@@ -1,0 +1,477 @@
+/* Global kernel variables */
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+
+/* Per-CPU and per-process globals */
+Mach *m = nil;
+Proc *up = nil;
+
+/* Global kernel data structures */
+struct Swapalloc swapalloc;
+struct Kmesg kmesg;
+struct Active active;
+Mach* machp[MAXMACH];
+
+/* Global function pointers */
+void (*consdebug)(void) = nil;
+void (*hwrandbuf)(void*, ulong) = nil;
+void (*kproftimer)(uintptr) = nil;
+void (*screenputs)(char*, int) = nil;
+
+/* libc9 formatting support */
+int _fmtFdFlush(Fmt *f)
+{
+	/* Stub for now - would write buffered format output to FD */
+	(void)f;
+	return 0;
+}
+
+/* Get return address of caller */
+uintptr getcallerpc(void *v)
+{
+	(void)v;
+	return (uintptr)__builtin_return_address(1);
+}
+
+/* Memory pool allocation - forward to xalloc for now */
+extern void* xalloc(ulong);
+extern void xfree(void*);
+
+void* poolalloc(void *pool, ulong size)
+{
+	(void)pool;
+	return xalloc(size);
+}
+
+void poolfree(void *pool, void *ptr)
+{
+	(void)pool;
+	xfree(ptr);
+}
+
+void* poolallocalign(void *pool, ulong size, ulong align, long offset, ulong span)
+{
+	(void)pool; (void)align; (void)offset; (void)span;
+	return xalloc(size);
+}
+
+void* poolrealloc(void *pool, void *ptr, ulong size)
+{
+	(void)pool;
+	/* Simple realloc - allocate new, copy, free old */
+	void *new = xalloc(size);
+	if(new && ptr) {
+		memmove(new, ptr, size);
+		xfree(ptr);
+	}
+	return new;
+}
+
+ulong poolmsize(void *pool, void *ptr)
+{
+	(void)pool; (void)ptr;
+	return 0; /* Unknown size */
+}
+
+/* Error strings */
+char Etoolong[] = "name too long";
+
+/* Utility stubs */
+void srvrenameuser(char *old, char *new)
+{
+	(void)old; (void)new;
+}
+
+void shrrenameuser(char *old, char *new)
+{
+	(void)old; (void)new;
+}
+
+int needpages(void *v)
+{
+	(void)v;
+	return 0;
+}
+
+char* cleanname(char *name)
+{
+	/* Simple stub - just return name as-is */
+	return name;
+}
+
+/* Device table - array of device drivers */
+extern Dev consdevtab;
+extern Dev rootdevtab;
+extern Dev mntdevtab;
+extern Dev procdevtab;
+
+Dev *devtab[] = {
+	&rootdevtab,
+	&consdevtab,
+	&mntdevtab,
+	&procdevtab,
+	nil,
+};
+
+/* Additional stubs for console/device support */
+void uartputs(char *s, int n) { (void)s; (void)n; }
+void microdelay(int us) { (void)us; }
+char* getconf(char *name) { (void)name; return nil; }
+int cpuserver = 0;
+void idlehands(void) {}
+char* configfile = "";
+uvlong fastticks(uvlong *hz) { if(hz) *hz = 1000000; return 0; }
+void delay(int ms) { (void)ms; }
+void kerndate(long secs) { (void)secs; }
+int fmtinstall(int c, int (*f)(Fmt*)) { (void)c; (void)f; return 0; }
+
+void setupwatchpts(Proc *p, Watchpt *wp, int nwp) { (void)p; (void)wp; (void)nwp; }
+int poolisoverlap(void *pool, uintptr addr, usize len) { (void)pool; (void)addr; (void)len; return 0; }
+extern char end[];  /* End of kernel - defined by linker */
+
+/* Microsecond timer - returns microseconds since boot */
+ulong µs(void) {
+	/* Stub: should use TSC or timer hardware */
+	return 0;
+}
+
+/* Memory address conversion functions provided by mmu.c */
+
+/* Swap system stubs */
+Image *swapimage = nil;  /* Global variable, not function */
+void putswap(Page *p) { (void)p; }
+int swapcount(uintptr pa) { (void)pa; return 0; }
+void kickpager(void) {}
+
+/* Architecture files */
+Dirtab* addarchfile(char *name, int perm, long (*read)(Chan*,void*,long,vlong), long (*write)(Chan*,void*,long,vlong)) {
+	(void)name; (void)perm; (void)read; (void)write;
+	return nil;
+}
+
+/* Random number - must match portlib.h signature */
+int nrand(int n) {
+	/* Simple LCG */
+	static ulong seed = 1;
+	seed = seed * 1103515245 + 12345;
+	return (int)((seed / 65536) % (ulong)n);
+}
+
+/* Error strings */
+char Ecmdargs[] = "invalid command arguments";
+
+/* Platform macro SET */
+void SET(void *x) { (void)x; }
+
+/* qsort implementation */
+static int (*qsort_cmp)(void*, void*);
+
+static void qsort_swap(char *a, char *b, ulong n) {
+	char t;
+	while(n--) {
+		t = *a;
+		*a++ = *b;
+		*b++ = t;
+	}
+}
+
+static void qsort_r(char *a, ulong n, ulong es) {
+	char *i, *j;
+	if(n < 2)
+		return;
+	qsort_swap(a, a + n/2 * es, es);
+	i = a;
+	j = a + n*es;
+	for(;;) {
+		do i += es; while(i < j && qsort_cmp(i, a) < 0);
+		do j -= es; while(j > a && qsort_cmp(j, a) > 0);
+		if(i >= j)
+			break;
+		qsort_swap(i, j, es);
+	}
+	qsort_swap(a, j, es);
+	qsort_r(a, (j-a)/es, es);
+	qsort_r(j+es, n - (j-a)/es - 1, es);
+}
+
+void qsort(void *va, ulong n, ulong es, int (*cmp)(void*, void*)) {
+	qsort_cmp = cmp;
+	qsort_r(va, n, es);
+}
+
+/* Interrupt/trap system */
+typedef struct {
+	void (*handler)(Ureg*, void*);
+	void *arg;
+	char *name;
+} Irqhandler;
+
+static Irqhandler irqhandlers[256];
+
+void trapenable(int irq, void (*handler)(Ureg*, void*), void *arg, char *name) {
+	if(irq >= 0 && irq < 256) {
+		irqhandlers[irq].handler = handler;
+		irqhandlers[irq].arg = arg;
+		irqhandlers[irq].name = name;
+	}
+}
+
+int irqhandled(Ureg *u, int irq) {
+	(void)u; (void)irq;
+	/* Return 1 if handled, 0 if not */
+	if(irq >= 0 && irq < 256 && irqhandlers[irq].handler) {
+		irqhandlers[irq].handler(u, irqhandlers[irq].arg);
+		return 1;
+	}
+	return 0;
+}
+
+void dumpmcregs(void) {
+	/* Dump machine check registers - stub */
+}
+
+/* Linker symbols */
+extern char etext[];  /* End of text segment */
+
+/* Format dispatch */
+int _fmtdispatch(Fmt *f, void *fmt, int isrunes) {
+	(void)f; (void)fmt; (void)isrunes;
+	return 0;
+}
+
+/* Architecture globals */
+extern int cpuserver;
+char *conffile = "";
+
+PCArch archgeneric;
+PCArch *arch = &archgeneric;
+
+/* Memory pool reset */
+void poolreset(void *pool) { (void)pool; }
+
+/* Configuration write */
+void writeconf(void) {}
+
+/* VMX (virtualization) stubs */
+void vmxshutdown(void) {}
+void vmxprocrestore(Proc *p) { (void)p; }
+
+/* PCI reset */
+void pcireset(void) {}
+
+/* RAM page allocation */
+void* rampage(void) {
+	/* Should allocate a physical page */
+	return xalloc(4096);
+}
+
+/* CPU identification */
+int cpuidentify(void) {
+	ulong regs[4];
+
+	cpuid(0, 0, regs);
+	m->cpuidax = regs[0];
+	strncpy(m->cpuidid, (char*)&regs[1], 12);
+	m->cpuidid[12] = 0;
+
+	cpuid(1, 0, regs);
+	m->cpuidax = regs[0];
+	m->cpuidcx = regs[2];
+	m->cpuiddx = regs[3];
+
+	m->cpuidfamily = (regs[0] >> 8) & 0xF;
+	if(m->cpuidfamily == 15){
+		m->cpuidfamily += (regs[0] >> 20) & 0xFF;
+	}
+	m->cpuidmodel = (regs[0] >> 4) & 0xF;
+	if(m->cpuidfamily >= 6)
+		m->cpuidmodel |= (regs[0] >> 12) & 0xF0;
+	m->cpuidstepping = regs[0] & 0xF;
+
+	if(strncmp(m->cpuidid, "AuthenticAMD", 12) == 0)
+		m->cpuidtype = "amd64";
+	else if(strncmp(m->cpuidid, "GenuineIntel", 12) == 0)
+		m->cpuidtype = "intel";
+	else
+		m->cpuidtype = "unknown";
+
+	return 1;
+}
+void cpuidprint(void) {}
+
+/* Clock synchronization */
+void syncclock(void) {}
+
+/* NVRAM access */
+uchar nvramread(int addr) { (void)addr; return 0; }
+void nvramwrite(int addr, uchar val) { (void)addr; (void)val; }
+
+/* TSC ticks */
+extern uvlong rdtsc(void);  /* From l.S */
+
+uvlong tscticks(uvlong *hz) {
+	if(hz) *hz = 1000000000ULL;
+	return rdtsc();
+}
+
+/* IRQ initialization */
+void irqinit(void) {}
+void nmienable(void) {}
+
+/* Interrupt enable */
+void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
+	(void)tbdf;
+	trapenable(irq, handler, arg, name);
+}
+
+/* DMA controller - function pointer (nil = not available) */
+void (*i8237alloc)(void) = nil;
+
+/* PCI configuration */
+void pcicfginit(void) {}
+
+/* Boot screen */
+void bootscreeninit(void) {}
+
+/* Links function - defined by bootlinks */
+void links(void) {}
+
+/* Environment */
+void ksetenv(char *name, char *val, int conf) { (void)name; (void)val; (void)conf; }
+void setconfenv(void) {}
+
+/* User mode */
+void touser(void *pc) { (void)pc; }
+
+/* Formatting */
+void quotefmtinstall(void) {}
+
+/* Memory initialization - meminit stub, meminit0 in boot.c */
+void meminit(void) {}
+
+/* Ramdisk */
+void ramdiskinit(void) {}
+
+/* Coherence function pointer - implementation in l.S */
+extern void coherence_impl(void);
+void (*coherence)(void) = coherence_impl;
+
+/* Additional global function pointers and buffers */
+int (*_pcmspecial)(char*, ISAConf*) = nil;
+void (*_pcmspecialclose)(int) = nil;
+int (*pcicfgrw8)(int,int,int,int) = nil;
+int (*pcicfgrw16)(int,int,int,int) = nil;
+int (*pcicfgrw32)(int,int,int,int) = nil;
+void (*cycles)(uvlong*) = nil;
+void (*fprestore)(FPsave*) = nil;
+void (*fpsave)(FPsave*) = nil;
+
+/* cmpswap - compare and swap function pointer */
+extern int cmpswap486(long*, long, long);
+int (*cmpswap)(long*, long, long) = cmpswap486;
+
+/* Architecture reset */
+void archreset(void) {}
+
+/* String functions */
+char* strrchr(char *s, int c) {
+	char *last = nil;
+	while(*s) {
+		if(*s == c) last = s;
+		s++;
+	}
+	if(c == '\0') return s;
+	return last;
+}
+
+/* Error strings */
+char Edirseek[] = "directory seek";
+char Eismtpt[] = "is a mount point";
+char Enegoff[] = "negative offset";
+
+/* Environment */
+void envcpy(Egrp *to, Egrp *from) { (void)to; (void)from; }
+void closeegrp(Egrp *eg) { (void)eg; }
+Egrp* newegrp(void) { return nil; }
+
+/* Swap */
+void dupswap(Page *p) { (void)p; }
+
+/* Signal search */
+void* sigsearch(char *name, int len) { (void)name; (void)len; return nil; }
+
+/* Timer */
+void timerset(Tval tv) { (void)tv; }
+
+/* System call table - global array of syscall name strings */
+int nosyscall(Sargs *args) { (void)args; return -1; }
+char *sysctab[] = { nil };
+void sysexit(Sargs *args, uintptr *ret) { (void)args; (void)ret; }
+
+/* DTrace */
+void dtracytick(Ureg *u) { (void)u; }
+
+/* Multiprocessor tables */
+void mpinit(void) {}
+void mpshutdown(void) {}
+void mpintrinit(int irq) { (void)irq; }
+void mpintrassign(void) {}
+int mpisabus = -1;
+int mpeisabus = -1;
+int mpbuslast = 0;
+void *mpbus = nil;
+void *mpapic = nil;
+void *mpioapic = nil;
+
+/* UART console - global pointer */
+Uart *consuart = nil;
+int uartgetc(void) { return -1; }
+
+/* Checksum */
+int checksum(void *addr, int len) {
+	uchar *p = addr;
+	int sum = 0;
+	while(len-- > 0)
+		sum += *p++;
+	return sum & 0xFF;
+}
+
+/* Delay loop */
+void delayloop(int ms) { (void)ms; }
+
+/* MTRR */
+void mtrrclock(void) {}
+
+/* Memory reserve */
+void memreserve(uintptr pa, uintptr len) { (void)pa; (void)len; }
+
+/* Performance ticks */
+ulong perfticks(void) { return (ulong)rdtsc(); }
+
+/* Format functions */
+int fmtstrinit(Fmt *f) { (void)f; return 0; }
+int fmtprint(Fmt *f, char *fmt, ...) { (void)f; (void)fmt; return 0; }
+
+/* Crypto */
+void sha2_512(uchar *data, ulong len, uchar *digest) { (void)data; (void)len; (void)digest; }
+void setupChachastate(void *state, uchar *key, ulong keylen, uchar *iv, int ivlen) {
+	(void)state; (void)key; (void)keylen; (void)iv; (void)ivlen;
+}
+void chacha_encrypt(uchar *data, ulong len, void *state) { (void)data; (void)len; (void)state; }
+
+/* Math */
+void mul64fract(uvlong *result, uvlong a, uvlong b) {
+	*result = (a * b) >> 32;
+}
+
+/* UTF-8 */
+char* utfecpy(char *to, char *e, char *from) {
+	if(to >= e) return to;
+	while(*from && to < e-1)
+		*to++ = *from++;
+	*to = '\0';
+	return to;
+}

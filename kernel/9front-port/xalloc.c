@@ -1,0 +1,307 @@
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+
+/* Limine HHDM offset - all physical memory mapped at PA + this offset */
+extern uintptr limine_hhdm_offset;
+
+enum
+{
+	Nhole		= 128,
+	Magichole	= 0x484F4C45,			/* HOLE */
+};
+
+typedef struct Hole Hole;
+typedef struct Xalloc Xalloc;
+typedef struct Xhdr Xhdr;
+
+struct Hole
+{
+	uintptr	addr;
+	uintptr	size;
+	uintptr	top;
+	Hole*	link;
+};
+
+struct Xhdr
+{
+	ulong	size;
+	ulong	magix;
+	char	data[];
+};
+
+struct Xalloc
+{
+	Lock	lk;  /* Named lock member instead of anonymous */
+	Hole	hole[Nhole];
+	Hole*	flist;
+	Hole*	table;
+};
+
+static Xalloc	xlists;
+
+void
+xinit(void)
+{
+	ulong maxpages, kpages, n;
+	Hole *h, *eh;
+	Confmem *cm;
+	int i;
+
+	eh = &xlists.hole[Nhole-1];
+	for(h = xlists.hole; h < eh; h++)
+		h->link = h+1;
+
+	xlists.flist = xlists.hole;
+
+	kpages = conf.npage - conf.upages;
+
+	for(i=0; i<nelem(conf.mem); i++){
+		cm = &conf.mem[i];
+		n = cm->npage;
+		if(n > kpages)
+			n = kpages;
+		/* don't try to use non-KADDR-able memory for kernel */
+		maxpages = cankaddr(cm->base)/BY2PG;
+		if(n > maxpages)
+			n = maxpages;
+		/* give to kernel */
+		if(n > 0){
+			cm->kbase = (uintptr)KADDR(cm->base);
+			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
+			if(cm->klimit == 0)
+				cm->klimit = (uintptr)-BY2PG;
+			xhole(cm->base, cm->klimit - cm->kbase);
+			kpages -= n;
+		}
+		/*
+		 * anything left over: cm->npage - nkpages(cm)
+		 * will be given to user by pageinit()
+		 */
+	}
+	/* Skip xsummary() - print() not working yet */
+	/* xsummary(); */
+}
+
+void*
+xspanalloc(ulong size, int align, ulong span)
+{
+	uintptr a, v, t;
+
+	a = (uintptr)xalloc(size+align+span);
+	if(a == 0)
+		panic("xspanalloc: %lud %d %lux", size, align, span);
+
+	if(span > 2) {
+		v = (a + span) & ~((uintptr)span-1);
+		t = v - a;
+		if(t > 0) {
+			/* xhole expects physical addr, but 'a' is virtual HHDM addr
+			 * Convert back to physical: vaddr - HHDM_offset */
+			xhole(a - limine_hhdm_offset, t);
+		}
+		t = a + span - v;
+		if(t > 0) {
+			xhole((v+size+align) - limine_hhdm_offset, t);
+		}
+	}
+	else
+		v = a;
+
+	if(align > 1)
+		v = (v + align) & ~((uintptr)align-1);
+
+	return (void*)v;
+}
+
+void*
+xallocz(ulong size, int zero)
+{
+	Xhdr *p;
+	Hole *h, **l;
+	ulong orig_size = size;
+
+	/* add room for magix & size overhead, round up to nearest vlong */
+	size += BY2V + offsetof(Xhdr, data[0]);
+	size &= ~(BY2V-1);
+
+	ilock(&xlists.lk);
+	l = &xlists.table;
+	for(h = *l; h; h = h->link) {
+		if(h->size >= size) {
+			/* h->addr is already a virtual address in HHDM - no KADDR needed! */
+			p = (Xhdr*)h->addr;
+			h->addr += size;
+			h->size -= size;
+			if(h->size == 0) {
+				*l = h->link;
+				h->link = xlists.flist;
+				xlists.flist = h;
+			}
+			iunlock(&xlists.lk);
+			if(zero)
+				memset(p, 0, size);
+			p->magix = Magichole;
+			p->size = size;
+			return p->data;
+		}
+		l = &h->link;
+	}
+	iunlock(&xlists.lk);
+	return nil;
+}
+
+void*
+xalloc(ulong size)
+{
+	return xallocz(size, 1);
+}
+
+void
+xfree(void *p)
+{
+	Xhdr *x;
+
+	x = (Xhdr*)((uintptr)p - offsetof(Xhdr, data[0]));
+	if(x->magix != Magichole) {
+		xsummary();
+		panic("xfree(%#p) %#ux != %#lux", p, Magichole, x->magix);
+	}
+	/* x is already a virtual HHDM address, convert to physical for xhole */
+	xhole((uintptr)x - limine_hhdm_offset, x->size);
+}
+
+int
+xmerge(void *vp, void *vq)
+{
+	Xhdr *p, *q;
+
+	p = (Xhdr*)(((uintptr)vp - offsetof(Xhdr, data[0])));
+	q = (Xhdr*)(((uintptr)vq - offsetof(Xhdr, data[0])));
+	if(p->magix != Magichole || q->magix != Magichole) {
+		int i;
+		ulong *wd;
+		void *badp;
+
+		xsummary();
+		badp = (p->magix != Magichole? p: q);
+		wd = (ulong *)badp - 12;
+		for (i = 24; i-- > 0; ) {
+			print("%#p: %lux", wd, *wd);
+			if (wd == badp)
+				print(" <-");
+			print("\n");
+			wd++;
+		}
+		panic("xmerge(%#p, %#p) bad magic %#lux, %#lux",
+			vp, vq, p->magix, q->magix);
+	}
+	if((uchar*)p+p->size == (uchar*)q) {
+		p->size += q->size;
+		return 1;
+	}
+	return 0;
+}
+
+/* Modern VM-aware xhole system for Limine boot environment
+ *
+ * Key changes from original Plan 9 design:
+ * 1. Works with VIRTUAL addresses (via Limine HHDM mapping)
+ * 2. Physical memory at PA is mapped to VA = PA + HHDM_offset
+ * 3. All allocations return virtual addresses in HHDM region
+ * 4. Holes track virtual address ranges, not physical
+ */
+
+void
+xhole(uintptr addr, uintptr size)
+{
+	Hole *h, *c, **l;
+	uintptr top;
+	uintptr vaddr;  /* Virtual address in HHDM */
+
+	if(size == 0)
+		return;
+
+	/* Convert physical address to virtual HHDM address
+	 * Now holes track virtual addresses in the HHDM region */
+	vaddr = addr + limine_hhdm_offset;
+	top = vaddr + size;
+
+	ilock(&xlists.lk);
+
+	/* Find if this hole can be merged with an existing one */
+	l = &xlists.table;
+	h = *l;
+	for(; h; h = h->link) {
+		/* Check if this new region is adjacent to existing hole (at top) */
+		if(h->top == vaddr) {
+			h->size += size;
+			h->top = h->addr+h->size;
+			c = h->link;
+			if(c && h->top == c->addr) {
+				h->top += c->size;
+				h->size += c->size;
+				h->link = c->link;
+				c->link = xlists.flist;
+				xlists.flist = c;
+			}
+			iunlock(&xlists.lk);
+			return;
+		}
+		/* Check if new region comes before this hole */
+		if(h->addr > vaddr)
+			break;
+		l = &h->link;
+	}
+
+	/* Check if this new region is adjacent to existing hole (at bottom) */
+	if(h && top == h->addr) {
+		h->addr = vaddr;
+		h->size += size;
+		iunlock(&xlists.lk);
+		return;
+	}
+
+	/* Need to create a new hole descriptor for this region */
+	if(xlists.flist == nil) {
+		iunlock(&xlists.lk);
+		/* Out of hole descriptors - this shouldn't happen with 128 holes
+		 * but if it does, we just leak the memory rather than panic */
+		return;
+	}
+
+	/* Get a free hole descriptor from the free list */
+	h = xlists.flist;
+	xlists.flist = h->link;
+
+	/* Fill in the hole with virtual address information */
+	h->addr = vaddr;  /* Virtual address in HHDM */
+	h->top = top;     /* End virtual address */
+	h->size = size;   /* Size in bytes */
+	h->link = *l;     /* Link into the table */
+	*l = h;
+
+	iunlock(&xlists.lk);
+}
+
+void
+xsummary(void)
+{
+	int i;
+	Hole *h;
+	uintptr s;
+
+	i = 0;
+	for(h = xlists.flist; h; h = h->link)
+		i++;
+	print("%d holes free\n", i);
+
+	s = 0;
+	for(h = xlists.table; h; h = h->link) {
+		print("%#8.8p %#8.8p %llud\n", h->addr, h->top, (uvlong)h->size);
+		s += h->size;
+	}
+	print("%llud bytes free\n", (uvlong)s);
+}
