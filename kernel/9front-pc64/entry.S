@@ -27,30 +27,33 @@ limine_base_revision:
     .quad bootloader_info_request
     .quad module_request
 
-/* Actual request structures in .data section */
-.section .data
-
-/* HHDM (Higher half direct map) request */
+/* HHDM (Higher half direct map) request - IN SAME SECTION */
 .align 8
 hhdm_request:
-    .quad 0x48dcf1cb8ad2b852  /* Limine HHDM magic */
-    .quad 0x63984e959a98244b
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0x48dcf1cb8ad2b852  /* HHDM request ID [2] */
+    .quad 0x63984e959a98244b  /* HHDM request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer */
 
 /* Memory map request */
 .align 8
 memmap_request:
-    .quad 0x67cf3d9d378a806f  /* Limine memory map magic */
-    .quad 0xe304acdfc50c3c62
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0x67cf3d9d378a806f  /* Memory map request ID [2] */
+    .quad 0xe304acdfc50c3c62  /* Memory map request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer */
 
 /* Framebuffer request */
 .align 8
 framebuffer_request:
-    .quad 0x9d5827dcd881dd75  /* Limine framebuffer magic */
-    .quad 0xa3148604f6fab11b
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0x9d5827dcd881dd75  /* Framebuffer request ID [2] */
+    .quad 0xa3148604f6fab11b  /* Framebuffer request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer */
     .quad 0                   /* framebuffer count */
@@ -59,16 +62,20 @@ framebuffer_request:
 /* Bootloader info request */
 .align 8
 bootloader_info_request:
-    .quad 0xf55038d8e2a1202f  /* Limine bootloader info magic */
-    .quad 0x279426fcf5f59740
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0xf55038d8e2a1202f  /* Bootloader info request ID [2] */
+    .quad 0x279426fcf5f59740  /* Bootloader info request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer (filled by bootloader) */
 
 /* Module request */
 .align 8
 module_request:
-    .quad 0x3e7e279702be32af  /* Limine module magic */
-    .quad 0xca1c4f3bd1280cee
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0x3e7e279702be32af  /* Module request ID [2] */
+    .quad 0xca1c4f3bd1280cee  /* Module request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer (filled by bootloader) */
     .quad 0                   /* internal module count */
@@ -120,9 +127,9 @@ _start:
     movb $0x80, %al
     outb %al, %dx
 
-    /* Set divisor to 1 (115200 baud) */
+    /* Set divisor to 12 (9600 baud) */
     movw $0x3F8, %dx          /* DLL */
-    movb $0x01, %al
+    movb $0x0C, %al
     outb %al, %dx
     movw $0x3F9, %dx          /* DLM */
     movb $0x00, %al
