@@ -70,26 +70,22 @@ putcr4:
 .global cpuid
 cpuid:
     pushq %rbx
-    pushq %rcx
-    pushq %rdx
-    
+
     movl %edi, %eax      /* function in rdi */
     movl %esi, %ecx      /* subfunction in rsi */
-    
+    movq %rdx, %r8       /* save output pointer from rdx */
+
     cpuid
-    
-    /* Store results: rax in *rdx (3rd param), rest in struct */
-    movq 24(%rsp), %r8   /* get output pointer from stack */
+
+    /* Store results in array pointed to by r8 */
     test %r8, %r8
     jz 1f
     movl %eax, 0(%r8)
     movl %ebx, 4(%r8)
     movl %ecx, 8(%r8)
     movl %edx, 12(%r8)
-    
-1:  popq %rdx
-    popq %rcx
-    popq %rbx
+
+1:  popq %rbx
     ret
 
 /* MSR access */

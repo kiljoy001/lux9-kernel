@@ -3,6 +3,7 @@
 #include "portlib.h"
 #include "mem.h"
 #include "dat.h"
+#include <stddef.h>
 #include "fns.h"
 
 /* Limine structures */
@@ -15,6 +16,25 @@ struct limine_hhdm_request {
 	u64int id[4];
 	u64int revision;
 	struct limine_hhdm_response *response;
+};
+
+struct limine_memmap_entry {
+	u64int base;
+	u64int length;
+	u64int type;
+	u32int unused;
+};
+
+struct limine_memmap_response {
+	u64int revision;
+	u64int entry_count;
+	struct limine_memmap_entry **entries;
+};
+
+struct limine_memmap_request {
+	u64int id[4];
+	u64int revision;
+	struct limine_memmap_response *response;
 };
 
 struct limine_file {
@@ -49,20 +69,28 @@ struct limine_module_request {
 };
 
 /* External symbols from entry.S */
-extern uintptr limine_memmap;
+extern struct limine_memmap_request *limine_memmap;
 extern struct limine_hhdm_request *limine_hhdm;
 extern struct limine_module_request *limine_module;
 extern uintptr limine_bootloader_info;
 
 /* Global HHDM offset from Limine - used by kaddr()
  * Limine maps all physical memory starting at HHDM offset
- * Limine typically uses 0xffff800000000000 on x86-64 */
-uintptr limine_hhdm_offset = 0xffff800000000000UL;
+ * Will be set from Limine response */
+uintptr limine_hhdm_offset = 0;
 
 void
 bootargsinit(void)
 {
-	/* HHDM offset already hardcoded - nothing to do here */
+	/* Parse Limine HHDM response */
+	if(limine_hhdm && limine_hhdm->response) {
+		limine_hhdm_offset = limine_hhdm->response->offset;
+		__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
+	} else {
+		/* Fallback if no response */
+		limine_hhdm_offset = 0xffff800000000000UL;
+		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
+	}
 	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
 }
 
@@ -105,3 +133,4 @@ archinit(void)
 	arch->clockinit = nil;
 	arch->clockenable = nil;
 }
+

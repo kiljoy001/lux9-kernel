@@ -272,9 +272,38 @@ void* rampage(void) {
 int cpuidentify(void) {
 	ulong regs[4];
 
+	/* Debug: entering function */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+
+	if(m == nil)
+		return 0;
+
+	/* Debug: about to call cpuid */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
+
 	cpuid(0, 0, regs);
+
+	/* Debug output after cpuid */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
+
 	m->cpuidax = regs[0];
-	strncpy(m->cpuidid, (char*)&regs[1], 12);
+
+	/* Debug output after cpuidax write */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
+
+	/* Build vendor string - cpuid returns it in EBX, EDX, ECX order */
+	m->cpuidid[0] = (regs[1] >> 0) & 0xFF;
+	m->cpuidid[1] = (regs[1] >> 8) & 0xFF;
+	m->cpuidid[2] = (regs[1] >> 16) & 0xFF;
+	m->cpuidid[3] = (regs[1] >> 24) & 0xFF;
+	m->cpuidid[4] = (regs[3] >> 0) & 0xFF;
+	m->cpuidid[5] = (regs[3] >> 8) & 0xFF;
+	m->cpuidid[6] = (regs[3] >> 16) & 0xFF;
+	m->cpuidid[7] = (regs[3] >> 24) & 0xFF;
+	m->cpuidid[8] = (regs[2] >> 0) & 0xFF;
+	m->cpuidid[9] = (regs[2] >> 8) & 0xFF;
+	m->cpuidid[10] = (regs[2] >> 16) & 0xFF;
+	m->cpuidid[11] = (regs[2] >> 24) & 0xFF;
 	m->cpuidid[12] = 0;
 
 	cpuid(1, 0, regs);
@@ -291,9 +320,16 @@ int cpuidentify(void) {
 		m->cpuidmodel |= (regs[0] >> 12) & 0xF0;
 	m->cpuidstepping = regs[0] & 0xF;
 
-	if(strncmp(m->cpuidid, "AuthenticAMD", 12) == 0)
+	/* Check vendor string byte by byte */
+	if(m->cpuidid[0] == 'A' && m->cpuidid[1] == 'u' && m->cpuidid[2] == 't' &&
+	   m->cpuidid[3] == 'h' && m->cpuidid[4] == 'e' && m->cpuidid[5] == 'n' &&
+	   m->cpuidid[6] == 't' && m->cpuidid[7] == 'i' && m->cpuidid[8] == 'c' &&
+	   m->cpuidid[9] == 'A' && m->cpuidid[10] == 'M' && m->cpuidid[11] == 'D')
 		m->cpuidtype = "amd64";
-	else if(strncmp(m->cpuidid, "GenuineIntel", 12) == 0)
+	else if(m->cpuidid[0] == 'G' && m->cpuidid[1] == 'e' && m->cpuidid[2] == 'n' &&
+	        m->cpuidid[3] == 'u' && m->cpuidid[4] == 'i' && m->cpuidid[5] == 'n' &&
+	        m->cpuidid[6] == 'e' && m->cpuidid[7] == 'I' && m->cpuidid[8] == 'n' &&
+	        m->cpuidid[9] == 't' && m->cpuidid[10] == 'e' && m->cpuidid[11] == 'l')
 		m->cpuidtype = "intel";
 	else
 		m->cpuidtype = "unknown";

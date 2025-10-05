@@ -261,18 +261,29 @@ main(void)
 	debugchar('C');  /* about to cpuidentify */
 	cpuidentify();
 	debugchar('c');  /* cpuidentify done */
+	/* Initialize initrd from Limine module - BEFORE meminit0 */
+	debugchar('I');  /* about to initrd_init */
+	extern struct limine_module_request *limine_module;
+	if(limine_module) {
+		debugchar('L');  /* limine_module exists */
+		if(limine_module->response) {
+			debugchar('R');  /* response exists */
+			if(limine_module->response->module_count > 0) {
+				debugchar('N');  /* module_count > 0 */
+				struct limine_file *initrd = limine_module->response->modules[0];
+				if(initrd && initrd->address) {
+					debugchar('A');  /* initrd address valid */
+					initrd_init(initrd->address, initrd->size);
+					debugchar('D');  /* initrd_init done */
+				}
+			}
+		}
+	}
+	debugchar('i');  /* initrd check complete */
+
 	debugchar('M');  /* about to meminit0 */
 	meminit0();
 	debugchar('m');  /* meminit0 done */
-
-	/* Initialize initrd from Limine module */
-	debugchar('I');  /* about to initrd_init */
-	extern struct limine_module_request *limine_module;
-	if(limine_module && limine_module->response && limine_module->response->module_count > 0) {
-		struct limine_file *initrd = limine_module->response->modules[0];
-		initrd_init(initrd->address, initrd->size);
-	}
-	debugchar('i');  /* initrd_init done */
 
 	debugchar('A');  /* about to archinit */
 	archinit();
