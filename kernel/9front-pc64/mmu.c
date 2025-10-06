@@ -914,40 +914,22 @@ cankaddr(uintptr pa)
 KMap*
 kmap(Page *page)
 {
-	uintptr *pte, pa, va;
-	int x;
+	extern uintptr limine_hhdm_offset;
+	uintptr pa, va;
 
+	/* Pure HHDM model: all physical memory already mapped via HHDM */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	pa = page->pa;
-	if(cankaddr(pa) != 0)
-		return (KMap*)KADDR(pa);
-
-	x = splhi();
-	va = KMAP + (((uintptr)up->kmapindex++ << PGSHIFT) & (KMAPSIZE-1));
-	pte = getpte(va);
-	if((*pte & PTEVALID) != 0)
-		panic("kmap: pa=%#p va=%#p", pa, va);
-	*pte = pa | PTEACCESSED|PTEDIRTY|PTEWRITE|PTENOEXEC|PTEVALID;
-	splx(x);
-	invlpg(va);
+	va = pa + limine_hhdm_offset;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	return (KMap*)va;
 }
 
 void
 kunmap(KMap *k)
 {
-	uintptr *pte, va;
-	int x;
-
-	va = (uintptr)k;
-	if(va >= KZERO)
-		return;
-
-	x = splhi();
-	pte = mmuwalk(m->pml4, va, 0, 0);
-	if(pte == nil || (*pte & PTEVALID) == 0)
-		panic("kunmap: va=%#p", va);
-	*pte = 0;
-	splx(x);
+	/* Pure HHDM model: no-op, memory stays mapped via HHDM */
+	USED(k);
 }
 
 /*
