@@ -9,7 +9,7 @@ AS := as
 CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-missing-braces -Wno-incompatible-pointer-types -std=gnu11 \
            -O0 -g3 -gdwarf-4 \
            -ffreestanding -fno-stack-protector -fno-stack-check \
-           -fno-lto -fno-pie -fno-pic \
+           -fno-lto -fno-pie -no-pie -fno-pic \
            -m64 -march=x86-64 -mcmodel=kernel \
            -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
            -Ikernel/include \

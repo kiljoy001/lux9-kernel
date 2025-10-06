@@ -589,13 +589,14 @@ enum {
 
 struct Timer
 {
+	/* Internal - Lock MUST be first for ilock(timer) to work */
+	Lock	lock;
 	/* Public interface */
 	int	tmode;		/* See above */
 	vlong	tns;		/* meaning defined by mode */
 	void	(*tf)(Ureg*, Timer*);
 	void	*ta;
 	/* Internal */
-	Lock lock;
 	Mach	*tactive;	/* The cpu that tf is active on */
 	Timers	*tt;		/* Timers queue this timer runs on */
 	Tval	tticks;		/* tns converted to ticks */

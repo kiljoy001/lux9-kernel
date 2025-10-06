@@ -68,10 +68,23 @@ struct limine_module_request {
 	struct limine_internal_module **internal_modules;
 };
 
+struct limine_kernel_address_response {
+	u64int revision;
+	u64int physical_base;
+	u64int virtual_base;
+};
+
+struct limine_kernel_address_request {
+	u64int id[4];
+	u64int revision;
+	struct limine_kernel_address_response *response;
+};
+
 /* External symbols from entry.S */
 extern struct limine_memmap_request *limine_memmap;
 extern struct limine_hhdm_request *limine_hhdm;
 extern struct limine_module_request *limine_module;
+extern struct limine_kernel_address_request *limine_kernel_address;
 extern uintptr limine_bootloader_info;
 
 /* Global HHDM offset from Limine - used by kaddr()
@@ -79,9 +92,19 @@ extern uintptr limine_bootloader_info;
  * Will be set from Limine response */
 uintptr limine_hhdm_offset = 0;
 
+/* Global kernel physical base from Limine */
+u64int limine_kernel_phys_base = 0;
+
 void
 bootargsinit(void)
 {
+	/* Parse Limine kernel address response */
+	if(limine_kernel_address && limine_kernel_address->response) {
+		limine_kernel_phys_base = limine_kernel_address->response->physical_base;
+		__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	}
+
 	/* Parse Limine HHDM response */
 	if(limine_hhdm && limine_hhdm->response) {
 		limine_hhdm_offset = limine_hhdm->response->offset;
@@ -104,21 +127,59 @@ ioinit(void)
 void
 meminit0(void)
 {
-	/* Early memory initialization */
-	/* TODO: Parse Limine memory map and set up conf.mem[] */
+	struct limine_memmap_response *memmap_response;
+	struct limine_memmap_entry *entry;
+	u64int i, base, length;
+	int nregions = 0;
+	ulong totalpages = 0;
 
-	/* For now, assume we have some memory */
-	conf.npage = 64*1024;  /* 256MB at 4KB pages */
-	conf.upages = conf.npage / 2;  /* Reserve half for user, half for kernel */
+	/* Parse Limine memory map and set up conf.mem[] */
+	if(limine_memmap && limine_memmap->response) {
+		memmap_response = limine_memmap->response;
+
+		/* Iterate through memory map entries */
+		for(i = 0; i < memmap_response->entry_count && nregions < nelem(conf.mem); i++) {
+			entry = memmap_response->entries[i];
+
+			/* Only use usable memory (type 0) */
+			if(entry->type != 0)  /* LIMINE_MEMMAP_USABLE */
+				continue;
+
+			base = entry->base;
+			length = entry->length;
+
+			/* Skip if too small (less than 1MB) */
+			if(length < 1*1024*1024)
+				continue;
+
+			/* Set up this memory region */
+			conf.mem[nregions].base = base;
+			conf.mem[nregions].npage = length / BY2PG;
+			conf.mem[nregions].kbase = 0;
+			conf.mem[nregions].klimit = 0;
+
+			totalpages += conf.mem[nregions].npage;
+			nregions++;
+		}
+	}
+
+	/* Fallback if no memory map */
+	if(nregions == 0) {
+		conf.mem[0].base = 1*1024*1024;
+		conf.mem[0].npage = 64*1024;  /* 256MB */
+		conf.mem[0].kbase = 0;
+		conf.mem[0].klimit = 0;
+		totalpages = conf.mem[0].npage;
+	}
+
+	/* Set global memory configuration */
+	conf.npage = totalpages;
+	conf.upages = totalpages / 2;  /* Reserve half for user */
 	conf.nproc = 100;
 	conf.nimage = 200;
 	conf.nswap = 0;
 	conf.nswppo = 0;
 	conf.ialloc = 0;
-
-	/* Set up first memory region */
-	conf.mem[0].base = 1*1024*1024;  /* Start at 1MB */
-	conf.mem[0].npage = conf.npage;
 }
 
 void

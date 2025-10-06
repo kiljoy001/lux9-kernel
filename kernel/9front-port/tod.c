@@ -58,24 +58,35 @@ static void todfix(void);
 void
 todinit(void)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)'a'), "Nd"((unsigned short)0x3F8));
+	/* Output debug before accessing tod */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+
+	/* Try to read tod.init - if this crashes, tod is not mapped */
 	if(tod.init)
 		return;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'b'), "Nd"((unsigned short)0x3F8));
+
+	/* Successfully read tod.init */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	ilock(&tod.lk);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	tod.init = 1;			/* prevent reentry via fastticks */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 	tod.last = fastticks((uvlong *)&tod.hz);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
 	tod.monolast = tod.last;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'f'), "Nd"((unsigned short)0x3F8));
 	iunlock(&tod.lk);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'g'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	todsetfreq(tod.hz);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'h'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	addclock0link(todfix, 100);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'i'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 }
 
 /*

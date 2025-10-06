@@ -94,7 +94,7 @@ timeradd(Timer *nt)
 	vlong when;
 
 	/* Must lock Timer struct before Timers struct */
-	ilock(nt);
+	ilock(&nt->lock);
 	if(tt = nt->tt){
 		ilock(&tt->lk);
 		tdel(nt);
@@ -104,11 +104,10 @@ timeradd(Timer *nt)
 	ilock(&tt->lk);
 	when = tadd(tt, nt);
 	if(when){
-		/* Skip timerset for now - not implemented in 9front port */
-		/* timerset(when); */
+		timerset(when);
 	}
 	iunlock(&tt->lk);
-	iunlock(nt);
+	iunlock(&nt->lock);
 }
 
 
@@ -127,8 +126,7 @@ timerdel(Timer *dt)
 		ilock(&tt->lk);
 		when = tdel(dt);
 		if(when && tt == &timers[m->machno]){
-			/* Skip timerset for now - not implemented in 9front port */
-			/* timerset(tt->head->twhen); */
+			timerset(tt->head->twhen);
 		}
 		iunlock(&tt->lk);
 	}
@@ -207,8 +205,7 @@ timerintr(Ureg *u, Tval)
 		 */
 		when = t->twhen;
 		if(when > now){
-			/* Skip timerset for now - not implemented in 9front port */
-			/* timerset(when); */
+			timerset(when);
 			iunlock(&tt->lk);
 			if(callhzclock)
 				hzclock(u);
@@ -248,6 +245,12 @@ timersinit(void)
 	t->tt = nil;
 	t->tns = 1000000000/HZ;
 	t->tf = nil;
+	/* Debug: check lock key before timeradd */
+	{
+		Lock *lk = (Lock*)t;
+		if(lk->key != 0) {
+		}
+	}
 	timeradd(t);
 }
 
@@ -258,6 +261,8 @@ addclock0link(void (*f)(void), int ms)
 	uvlong when;
 
 	/* Synchronize to hztimer if ms is 0 */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	nt = xalloc(sizeof(Timer));
 	if(nt == nil)
 		panic("addclock0link: no memory for Timer");
@@ -268,13 +273,22 @@ addclock0link(void (*f)(void), int ms)
 	nt->tt = nil;
 	nt->tf = (void (*)(Ureg*, Timer*))f;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	ilock(&timers[0].lk);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	when = tadd(&timers[0], nt);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	if(when){
-		/* Skip timerset for now - not implemented in 9front port */
-		/* timerset(when); */
+		timerset(when);
 	}
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 	iunlock(&timers[0].lk);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 	return nt;
 }
 

@@ -330,11 +330,10 @@ main(void)
 	xinit();
 	debugchar('4'); debugchar('1');  /* Step 41: xinit done */
 
-	/* TODO: Setup our own page tables to replace Limine's */
-	/* For now, continue using Limine's page tables */
-	// debugchar('S'); debugchar('P');  /* About to setup page tables */
-	// setuppagetables();
-	// debugchar('S'); debugchar('D');  /* Setup page tables done */
+	/* Setup OUR page tables - independent of Limine */
+	debugchar('S'); debugchar('P');  /* About to setup page tables */
+	setuppagetables();
+	debugchar('S'); debugchar('D');  /* Setup page tables done */
 
 	debugchar('4'); debugchar('2');  /* Step 42: about to trapinit */
 	trapinit();

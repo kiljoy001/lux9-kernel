@@ -113,6 +113,18 @@ initrd_init(void *addr, usize len)
 	print("initrd: loaded successfully\n");
 }
 
+/* Register initrd files with devroot - call AFTER chandevreset() */
+void
+initrd_register(void)
+{
+	struct initrd_file *f;
+
+	for(f = initrd_root; f != nil; f = f->next) {
+		print("initrd: registering %s with devroot\n", f->name);
+		addbootfile(f->name, f->data, f->size);
+	}
+}
+
 /* Find file in initrd */
 void*
 initrd_find(const char *path)

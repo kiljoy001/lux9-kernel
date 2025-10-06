@@ -467,3 +467,5 @@ extern uintptr paddr(void*);
 #ifndef kmapinval
 #define kmapinval()			/* Invalidate kmap cache */
 #endif
+
+void setuppagetables(void);		/* Setup kernel page tables */

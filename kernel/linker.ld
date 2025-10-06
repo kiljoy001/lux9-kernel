@@ -50,14 +50,24 @@ SECTIONS
         . += 0x1000;
         cpu0pd1 = .;
         . += 0x1000;
+
+        /* Reserve space for additional page tables (all levels: PDP, PD, PT) */
+        /* Mapping ~2MB of kernel needs: ~4 PDPs + ~8 PDs + ~512 PTs = ~524 tables */
+        /* Each table is 4KB, reserve 512 tables = 2MB to be safe */
+        cpu0pt_pool = .;
+        . += 0x200000;  /* 2MB = 512 page tables */
+
         cpu0gdt = .;
         . += 0x1000;
         cpu0mach = .;
         . += 0x8000;  /* MACHSIZE */
 
         *(.data .data.*)
+        . = ALIGN(8);
+        bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        bss_end = .;
 
         /* Kernel stack - 128KB */
         . = ALIGN(16);
@@ -71,6 +81,7 @@ SECTIONS
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
     .text : {
+        ttext = .;  /* Start of text section */
         KEEP(*(.text))
         *(.text.*)
         etext = .;

@@ -144,6 +144,8 @@ trap(Ureg *ureg)
 	int vno, user;
 
 	vno = ureg->type;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)('0' + (vno % 10))), "Nd"((unsigned short)0x3F8));
 	user = kenter(ureg);
 	if(vno != VectorCNA)
 		fpukenter(ureg);
@@ -433,6 +435,14 @@ syscall(Ureg* ureg)
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
 	fpukenter(ureg);
 	scallnr = ureg->bp;	/* RARG */
+
+	/* Debug: print first syscall */
+	static int first_syscall = 1;
+	if(first_syscall) {
+		print("syscall: first syscall number %ld (EXEC=7)\n", scallnr);
+		first_syscall = 0;
+	}
+
 	if(dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax)))
 		((void**)&ureg)[-1] = (void*)noteret;	/* loads RARG */
 	if((up->procctl || up->nnote) && donotify(ureg))

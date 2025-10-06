@@ -17,7 +17,7 @@ limine_requests_start_marker:
 limine_base_revision:
     .quad 0xf9562b2d5c95a6c8  /* ID[0] */
     .quad 0x6a7b384944536bdc  /* ID[1] */
-    .quad 3                   /* Revision 3 */
+    .quad 2                   /* Revision 2 - for Kernel Address request support */
 
 /* Limine protocol requests - pointers to actual requests */
 .section .limine_requests, "aw", @progbits
@@ -26,6 +26,7 @@ limine_base_revision:
     .quad framebuffer_request
     .quad bootloader_info_request
     .quad module_request
+    .quad kernel_address_request
 
 /* HHDM (Higher half direct map) request - IN SAME SECTION */
 .align 8
@@ -81,6 +82,17 @@ module_request:
     .quad 0                   /* internal module count */
     .quad 0                   /* internal modules */
 
+/* Kernel Address request */
+.align 8
+.global kernel_address_request
+kernel_address_request:
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0x71ba76863cc55f63  /* Kernel Address request ID [2] */
+    .quad 0xb2644a48c516a487  /* Kernel Address request ID [3] */
+    .quad 0                   /* revision */
+    .quad 0                   /* response pointer (filled by bootloader) */
+
 /* Limine protocol requests - end marker */
 .section .limine_requests_end, "aw", @progbits
 .global limine_requests_end_marker
@@ -97,84 +109,127 @@ _start:
     /* Clear direction flag for string operations */
     cld
 
-    /* Zero BSS section - CRITICAL for uninitialized globals! */
-    lea stack_bottom(%rip), %rdi    /* BSS starts after stack_bottom */
-    lea end(%rip), %rcx              /* End of BSS */
-    sub %rdi, %rcx                   /* BSS size */
-    xor %rax, %rax                   /* Zero value */
-    rep stosb                        /* Zero BSS */
-
-    /* Now set up proper kernel stack */
-    lea stack_top(%rip), %rsp
-    /* Ensure 16-byte alignment: RSP must be 16-byte aligned, but call pushes 8 bytes,
-       so we need RSP % 16 == 0 before call, which becomes (RSP-8) % 16 == 8 after call */
-    and $~0xF, %rsp           /* Align to 16-byte boundary */
-    xor %rbp, %rbp            /* Clear frame pointer */
-
-    /* Initialize UART before any output */
-    movw $0x3F8, %dx          /* COM1 base port */
-    movb $'Z', %al            /* Signal BSS zeroing complete */
+    /* Step 01: Zero BSS section */
+    movw $0x3F8, %dx
+    movb $'0', %al
     outb %al, %dx
-    movw $0x3F8, %dx          /* COM1 base port */
+    movb $'1', %al
+    outb %al, %dx
+
+    lea bss_start(%rip), %rdi
+    lea bss_end(%rip), %rcx
+    sub %rdi, %rcx
+    xor %rax, %rax
+    rep stosb
+
+    /* Step 02: Set up kernel stack */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'2', %al
+    outb %al, %dx
+
+    lea stack_top(%rip), %rsp
+    and $~0xF, %rsp
+    xor %rbp, %rbp
+
+    /* Step 03: Initialize UART */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'3', %al
+    outb %al, %dx
 
     /* Disable interrupts on UART */
-    movw $0x3F9, %dx          /* IER */
+    movw $0x3F9, %dx
     movb $0x00, %al
     outb %al, %dx
 
-    /* Enable DLAB (set baud rate) */
-    movw $0x3FB, %dx          /* LCR */
+    /* Enable DLAB */
+    movw $0x3FB, %dx
     movb $0x80, %al
     outb %al, %dx
 
     /* Set divisor to 12 (9600 baud) */
-    movw $0x3F8, %dx          /* DLL */
+    movw $0x3F8, %dx
     movb $0x0C, %al
     outb %al, %dx
-    movw $0x3F9, %dx          /* DLM */
+    movw $0x3F9, %dx
     movb $0x00, %al
     outb %al, %dx
 
     /* 8 bits, no parity, one stop bit */
-    movw $0x3FB, %dx          /* LCR */
+    movw $0x3FB, %dx
     movb $0x03, %al
     outb %al, %dx
 
     /* Enable FIFO */
-    movw $0x3FA, %dx          /* FCR */
+    movw $0x3FA, %dx
     movb $0xC7, %al
     outb %al, %dx
 
     /* Enable IRQs, set RTS/DSR */
-    movw $0x3FC, %dx          /* MCR */
+    movw $0x3FC, %dx
     movb $0x0B, %al
     outb %al, %dx
 
-    /* Early debug: output '1' to show entry point reached */
-    movw $0x3F8, %dx          /* COM1 data port */
-    movb $'1', %al
+    /* Step 04: UART initialized */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'4', %al
     outb %al, %dx
 
-    /* Output '2' to show about to call main */
-    movb $'2', %al
+    /* Step 05: Map .cpu0_data section in page tables */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'5', %al
     outb %al, %dx
 
-    /* Set up GS base to point to CPU0MACH for per-CPU data (m pointer) */
-    /* GS base MSR is 0xC0000101 */
+    /* Get current CR3 (Limine's PML4) */
+    mov %cr3, %rax
+
+    /* Map 0xffffffff80001000 to physical address (identity mapped from kernel base)
+     * We need to add page table entries for the .cpu0_data section
+     * For now, we'll map it as a 2MB page at 0xffffffff80000000 which covers
+     * the data section at 0xffffffff80001000
+     *
+     * The kernel ELF is loaded at a physical address by Limine, and we need
+     * to ensure the data section is also mapped.
+     *
+     * Since Limine already mapped the kernel text, we just need to ensure
+     * the data section (which comes BEFORE text in memory due to linker script)
+     * is also mapped. Let's verify this is already done by Limine.
+     */
+
+    /* Step 06: Set up GS base for CPU-local data */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'6', %al
+    outb %al, %dx
+
     movl $0xC0000101, %ecx
-    movl $0x80018000, %eax     /* CPU0MACH low 32 bits */
-    movl $0xffffffff, %edx     /* CPU0MACH high 32 bits */
+    movl $0x80018000, %eax
+    movl $0xffffffff, %edx
     wrmsr
 
-    /* Save Limine boot info (TODO: pass to kernel init) */
-    /* For now, 9front's main() doesn't take boot info */
+    /* Step 07: About to call main */
+    movw $0x3F8, %dx
+    movb $'0', %al
+    outb %al, %dx
+    movb $'7', %al
+    outb %al, %dx
 
     /* Call 9front kernel main */
     call main
 
-    /* Output '3' if main returns */
+    /* Step 08: main returned (should not happen) */
     movw $0x3F8, %dx
-    movb $'3', %al
+    movb $'0', %al
+    outb %al, %dx
+    movb $'8', %al
     outb %al, %dx
 
     /* If main returns, halt */
@@ -190,6 +245,7 @@ _start:
 .global limine_framebuffer
 .global limine_hhdm
 .global limine_module
+.global limine_kernel_address
 
 limine_bootloader_info:
     .quad bootloader_info_request
@@ -201,5 +257,19 @@ limine_hhdm:
     .quad hhdm_request
 limine_module:
     .quad module_request
+limine_kernel_address:
+    .quad kernel_address_request
 
 /* Stack is now defined in linker.ld, not here */
+
+/* Page table structures - aligned to 4KB */
+.section .bss
+.align 4096
+pml4:
+    .skip 4096
+pdpt_low:
+    .skip 4096
+pdpt_high:
+    .skip 4096
+pd_kernel:
+    .skip 4096

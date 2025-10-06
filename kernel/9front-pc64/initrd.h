@@ -37,6 +37,7 @@ extern usize initrd_size;
 
 /* Functions */
 void initrd_init(void *addr, usize len);
+void initrd_register(void);
 void* initrd_find(const char *path);
 usize initrd_filesize(const char *path);
 int initrd_read(const char *path, void *buf, usize offset, usize len);

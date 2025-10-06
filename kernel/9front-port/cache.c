@@ -63,9 +63,12 @@ cinit(void)
 	int i;
 	Mntcache *m;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
 	m = xalloc(sizeof(Mntcache)*NFILE);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'x'), "Nd"((unsigned short)0x3F8));
 	if(m == nil || (fscache = newimage(TOTALPAGES)) == nil)
 		panic("cinit: no memory");
+	__asm__ volatile("outb %0, %1" : : "a"((char)'n'), "Nd"((unsigned short)0x3F8));
 
 	fscache->notext = 1;
 

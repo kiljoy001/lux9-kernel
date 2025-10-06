@@ -198,7 +198,6 @@ iunlock(Lock *l)
 {
 	ulong sr;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));  /* iunlock entry */
 
 #ifdef LOCKCYCLES
 	static uint n;
@@ -211,32 +210,21 @@ iunlock(Lock *l)
 	if(l->lockcycles > 2400)
 		ilockpcs[n++ % nelem(ilockpcs)]  = l->pc;
 #endif
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));  /* After lockcycles */
 	if(l->key == 0){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ERROR: not locked */
 		print("iunlock(%#p): not locked: pc %#p\n", l, getcallerpc(&l));
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));  /* After key check */
 	if(!l->isilock){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ERROR: not isilock */
 		print("iunlock(%#p) of lock: pc %#p, held by %#p\n", l, getcallerpc(&l), l->pc);
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));  /* After isilock check */
 	if(islo()){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ERROR: while lo */
 		print("iunlock(%#p) while lo: pc %#p, held by %#p\n", l, getcallerpc(&l), l->pc);
 	}
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));  /* Before sr read */
 	sr = l->sr;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));  /* After sr read */
 	l->m = nil;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));  /* After m=nil */
 	/* Inline mfence instead of calling coherence() */
 	__asm__ volatile("mfence" ::: "memory");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));  /* After mfence */
 	l->key = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));  /* After key=0 */
 	/* Skip ilockdepth for now - test if that's the crash */
 	/* m->ilockdepth--; */
 	if(up)

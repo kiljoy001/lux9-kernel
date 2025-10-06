@@ -141,10 +141,14 @@ xallocz(ulong size, int zero)
 				xlists.flist = h;
 			}
 			iunlock(&xlists.lk);
-			if(zero)
-				memset(p, 0, size);
 			p->magix = Magichole;
 			p->size = size;
+			if(zero)
+				memset(p->data, 0, orig_size);
+			/* Debug: verify first ulong is zero */
+			if(zero && *(ulong*)p->data != 0) {
+				__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+			}
 			return p->data;
 		}
 		l = &h->link;

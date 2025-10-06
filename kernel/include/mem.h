@@ -74,9 +74,8 @@
 #define CPU0PD0		(KZERO+0x15000ull)		/* KZERO */
 #define CPU0PD1		(KZERO+0x16000ull)		/* KZERO+1GB */
 
-#define	CPU0GDT		(KZERO+0x17000ull)		/* bootstrap processor GDT */
-
-#define	CPU0MACH	(KZERO+0x18000ull)		/* Mach for bootstrap processor */
+#define	CPU0GDT		(KZERO+0x217000ull)		/* bootstrap processor GDT (after 2MB pt_pool) */
+#define	CPU0MACH	(KZERO+0x218000ull)		/* Mach for bootstrap processor (after pt_pool+gdt) */
 #define CPU0END		(CPU0MACH+MACHSIZE)
 
 #define	MACHSIZE	(2*KSTACK)

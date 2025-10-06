@@ -144,20 +144,40 @@ kstrdup(char **p, char *s)
 	free(prev);
 }
 
+/* Forward declarations of device reset functions */
+extern void rootreset_impl(void);
+
+/* Stubs for other device resets - implement later */
+static void consreset_impl(void) { }
+static void mntreset_impl(void) { }
+static void procreset_impl(void) { }
+
 void
 chandevreset(void)
 {
-	int i;
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	todinit();	/* avoid later reentry causing infinite recursion */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+
+	/* Call device reset functions directly to avoid function pointer issues */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
 	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
-	for(i=0; devtab[i] != nil; i++){
-		__asm__ volatile("outb %0, %1" : : "a"((char)('a'+i)), "Nd"((unsigned short)0x3F8));
-		devtab[i]->reset();
-		__asm__ volatile("outb %0, %1" : : "a"((char)('A'+i)), "Nd"((unsigned short)0x3F8));
-	}
+	rootreset_impl();
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
 	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
+	consreset_impl();
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
+	mntreset_impl();
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
+	procreset_impl();
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 }
 
 static void closeproc(void*);
