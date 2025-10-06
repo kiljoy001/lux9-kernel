@@ -464,6 +464,9 @@ extern uintptr paddr(void*);
 #define userureg(ur)	0		/* Will be overridden by arch */
 #endif
 
+KMap*	kmap(Page*);
+void	kunmap(KMap*);
+
 #ifndef kmapinval
 #define kmapinval()			/* Invalidate kmap cache */
 #endif

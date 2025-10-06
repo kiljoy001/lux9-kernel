@@ -114,6 +114,12 @@ bootargsinit(void)
 		limine_hhdm_offset = 0xffff800000000000UL;
 		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
 	}
+
+	/* Store HHDM offset in early boot memory before CR3 switch */
+	extern uintptr saved_limine_hhdm_offset;
+	saved_limine_hhdm_offset = limine_hhdm_offset;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
+
 	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
 }
 

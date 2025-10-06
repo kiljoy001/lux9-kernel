@@ -1030,7 +1030,7 @@ _intrestore:
 	MOVQ	0(SP), RUSER
 
 _iretnested:
-	ADDQ	$40, SP
+	ADDQ	$32, SP
 	IRETQ
 
 TEXT vectortable(SB), $0

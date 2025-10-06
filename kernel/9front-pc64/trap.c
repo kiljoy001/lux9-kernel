@@ -384,7 +384,11 @@ faultamd64(Ureg* ureg, void*)
 	uintptr addr;
 	int read, user;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));  /* Page fault entry */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	addr = getcr2();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'#'), "Nd"((unsigned short)0x3F8));
 	read = !(ureg->error & 2);
 	user = userureg(ureg);
 	if(!user){

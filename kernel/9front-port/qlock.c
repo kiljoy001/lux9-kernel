@@ -58,14 +58,18 @@ qlock(QLock *q)
 	Proc *p;
 	uintptr pc;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'Q'), "Nd"((unsigned short)0x3F8));
 	pc = getcallerpc(&q);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
 
 	if(m->ilockdepth != 0)
 		print("qlock: %#p: ilockdepth %d\n", pc, m->ilockdepth);
 	if(up != nil && up->nlocks)
 		print("qlock: %#p: nlocks %d\n", pc, up->nlocks);
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	lock(&q->use);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	if(!q->locked) {
 		q->pc = pc;
 		q->locked = 1;

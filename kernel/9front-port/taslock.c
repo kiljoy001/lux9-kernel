@@ -38,11 +38,27 @@ lock(Lock *l)
 	int i;
 	uintptr pc;
 
+	/* Debug: print lock address */
+	uintptr lock_addr = (uintptr)l;
+	for(int shift = 60; shift >= 0; shift -= 4){
+		int nibble = (lock_addr >> shift) & 0xF;
+		char c = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
+		__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((unsigned short)0x3F8));
+	}
+	__asm__ volatile("outb %0, %1" : : "a"((char)':'), "Nd"((unsigned short)0x3F8));
+
+	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	pc = getcallerpc(&l);
+	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
 	if(up)
 		up->nlocks++;	/* prevent being scheded */
-	if(tas(&l->key) == 0){
+	__asm__ volatile("outb %0, %1" : : "a"((char)'{'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
+	int tas_result = tas(&l->key);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));
+	if(tas_result == 0){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));
 		if(up)
 			up->lastlock = l;
 		l->pc = pc;
@@ -54,10 +70,13 @@ lock(Lock *l)
 #endif
 		return;
 	}
+	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 	if(up)
 		up->nlocks--;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'Y'), "Nd"((unsigned short)0x3F8));
 
 	for(;;){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'Z'), "Nd"((unsigned short)0x3F8));
 		i = 0;
 		while(l->key){
 			if(conf.nmach < 2 && up && up->edf && (up->edf->flags & Admitted)){

@@ -226,29 +226,63 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: entry */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	chandevinit();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: chandevinit done */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 	if(!waserror()){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: in waserror */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: snprint done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 		ksetenv("terminal", buf, 0);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: ksetenv 1 done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 		ksetenv("cputype", "amd64", 0);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: ksetenv 2 done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 		if(cpuserver)
 			ksetenv("service", "cpu", 0);
 		else
 			ksetenv("service", "terminal", 0);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: ksetenv 3 done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 		setconfenv();
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: setconfenv done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
 		poperror();
+		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: poperror done */
+		__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 	}
+	__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* Before alarm kproc */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 	kproc("alarm", alarmkproc, 0);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* After alarm kproc */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'s'), "Nd"((unsigned short)0x3F8));  /* Before sp calculation */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));  /* After sp calculation */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
 	sp[3] = sp[2] = nil;
 	strcpy(sp[1] = (char*)&sp[4], "boot");
 	sp[0] = nil;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* Before splhi */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	splhi();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* Before fpukexit */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	fpukexit(nil);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* Before touser */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	touser(sp);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* After touser - should never reach */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 }
 
 static void

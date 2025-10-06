@@ -9,6 +9,9 @@
 Mach *m = nil;
 Proc *up = nil;
 
+/* HHDM offset - stored in early boot, guaranteed to survive CR3 switch */
+uintptr saved_limine_hhdm_offset = 0;
+
 /* Global kernel data structures */
 struct Swapalloc swapalloc;
 struct Kmesg kmesg;
