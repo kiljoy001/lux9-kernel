@@ -1389,6 +1389,9 @@ pexit(char *exitstr, int freemem)
 	if(pt != nil)
 		pt(up, SDead, 0);
 
+	/* Clean up page ownership - implement Rust "drop" semantics */
+	pageown_cleanup_process(up);
+
 	/* nil out all the resources under lock (free later) */
 	qlock(&up->debug);
 	fgrp = up->fgrp;

@@ -299,6 +299,10 @@ dupseg(Segment **seg, int segno, int share)
 
 sameseg:
 	incref(s);
+
+	/* For shared segments, pages are automatically tracked via newpage() */
+	/* Borrow checker will enforce exclusive/shared access automatically */
+
 	qunlock(s);
 	poperror();
 	return s;

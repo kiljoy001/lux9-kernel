@@ -57,6 +57,11 @@ Syscall syspwrite;
 Syscall systsemacquire;
 Syscall sys_nsec;
 Syscall sysdeath;
+Syscall sysvmexchange;
+Syscall sysvmlend_shared;
+Syscall sysvmlend_mut;
+Syscall sysvmreturn;
+Syscall sysvmowninfo;
 
 Syscall *systab[]={
 	[SYSR1]		sysr1,
@@ -111,6 +116,11 @@ Syscall *systab[]={
 	[PWRITE]	syspwrite,
 	[TSEMACQUIRE]	systsemacquire,
 	[_NSEC]		sys_nsec,
+	[VMEXCHANGE]	sysvmexchange,
+	[VMLEND_SHARED]	sysvmlend_shared,
+	[VMLEND_MUT]	sysvmlend_mut,
+	[VMRETURN]	sysvmreturn,
+	[VMOWNINFO]	sysvmowninfo,
 };
 
 int nsyscall = (sizeof systab/sizeof systab[0]);

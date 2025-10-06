@@ -170,35 +170,55 @@ mach0init(void)
 	extern Mach *m;  /* Define m as extern - it should be in globals or bss */
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'a'), "Nd"((unsigned short)0x3F8));
 	conf.nmach = 1;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'b'), "Nd"((unsigned short)0x3F8));
 	MACHP(0) = (Mach*)CPU0MACH;
 
 	/* Initialize m to point to MACHP(0) */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));
 	m = MACHP(0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 
 	/* Zero the entire Mach structure to ensure clean state */
 	memset(m, 0, sizeof(Mach));
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
 	m->machno = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'f'), "Nd"((unsigned short)0x3F8));
 	m->pml4 = (u64int*)CPU0PML4;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'g'), "Nd"((unsigned short)0x3F8));
 	m->gdt = (Segdesc*)CPU0GDT;
 	m->ticks = 0;
 	m->ilockdepth = 0;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'h'), "Nd"((unsigned short)0x3F8));
 	machinit();
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'i'), "Nd"((unsigned short)0x3F8));
 	active.machs[0] = 1;
 	active.exiting = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'j'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -241,128 +261,141 @@ debugchar(char c)
 void
 main(void)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
+	debugchar('0'); debugchar('9');  /* Step 09: mach0init */
 	mach0init();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'m'), "Nd"((unsigned short)0x3F8));
+	debugchar('1'); debugchar('0');  /* Step 10: bootargsinit */
 	bootargsinit();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'b'), "Nd"((unsigned short)0x3F8));
+	debugchar('1'); debugchar('1');  /* Step 11: trapinit0 */
 	trapinit0();
-	debugchar('t');  /* trapinit0 done */
+	debugchar('1'); debugchar('2');  /* Step 12: ioinit */
 	ioinit();
-	debugchar('i');  /* ioinit done */
+	debugchar('1'); debugchar('3');  /* Step 13: i8250console */
 	i8250console();
-	debugchar('c');  /* i8250console done */
+	debugchar('1'); debugchar('4');  /* Step 14: quotefmtinstall */
 	quotefmtinstall();
-	debugchar('q');  /* quotefmtinstall done */
+	debugchar('1'); debugchar('5');  /* Step 15: screeninit */
 	screeninit();
-	debugchar('s');  /* screeninit done */
-	/* Skip print for now - it crashes */
-	/* print("\nPlan 9\n"); */
-	debugchar('C');  /* about to cpuidentify */
+	debugchar('1'); debugchar('6');  /* Step 16: print */
+	print("\nPlan 9\n");
+	debugchar('1'); debugchar('7');  /* Step 17: cpuidentify */
 	cpuidentify();
-	debugchar('c');  /* cpuidentify done */
 	/* Initialize initrd from Limine module - BEFORE meminit0 */
-	debugchar('I');  /* about to initrd_init */
+	debugchar('1'); debugchar('8');  /* Step 18: about to initrd_init */
 	extern struct limine_module_request *limine_module;
 	if(limine_module) {
-		debugchar('L');  /* limine_module exists */
+		debugchar('1'); debugchar('9');  /* Step 19: limine_module exists */
 		if(limine_module->response) {
-			debugchar('R');  /* response exists */
+			debugchar('2'); debugchar('0');  /* Step 20: response exists */
 			if(limine_module->response->module_count > 0) {
-				debugchar('N');  /* module_count > 0 */
+				debugchar('2'); debugchar('1');  /* Step 21: module_count > 0 */
 				struct limine_file *initrd = limine_module->response->modules[0];
 				if(initrd && initrd->address) {
-					debugchar('A');  /* initrd address valid */
+					debugchar('2'); debugchar('2');  /* Step 22: initrd address valid */
 					initrd_init(initrd->address, initrd->size);
-					debugchar('D');  /* initrd_init done */
+					debugchar('2'); debugchar('3');  /* Step 23: initrd_init done */
 				}
 			}
 		}
 	}
-	debugchar('i');  /* initrd check complete */
+	debugchar('2'); debugchar('4');  /* Step 24: initrd check complete */
 
-	debugchar('M');  /* about to meminit0 */
+	debugchar('2'); debugchar('5');  /* Step 25: about to meminit0 */
 	meminit0();
-	debugchar('m');  /* meminit0 done */
+	debugchar('2'); debugchar('6');  /* Step 26: meminit0 done */
 
-	debugchar('A');  /* about to archinit */
+	debugchar('2'); debugchar('7');  /* Step 27: about to archinit */
 	archinit();
-	debugchar('!');  /* archinit done */
-	debugchar('@');  /* returned from archinit */
-	debugchar('#');  /* about to check clockinit */
+	debugchar('2'); debugchar('8');  /* Step 28: archinit done */
+	debugchar('2'); debugchar('9');  /* Step 29: returned from archinit */
+	debugchar('3'); debugchar('0');  /* Step 30: about to check clockinit */
 	if(arch->clockinit){
-		debugchar('$');  /* clockinit exists */
+		debugchar('3'); debugchar('1');  /* Step 31: clockinit exists */
 		arch->clockinit();
-		debugchar('%');  /* clockinit done */
+		debugchar('3'); debugchar('2');  /* Step 32: clockinit done */
 	}
-	debugchar('^');  /* past clockinit */
-	debugchar('&');  /* about to meminit */
+	debugchar('3'); debugchar('3');  /* Step 33: past clockinit */
+	debugchar('3'); debugchar('4');  /* Step 34: about to meminit */
 	meminit();
-	debugchar('*');  /* meminit done */
-	debugchar('(');  /* about to ramdiskinit */
+	debugchar('3'); debugchar('5');  /* Step 35: meminit done */
+	debugchar('P'); debugchar('O');  /* Page ownership init */
+	pageowninit();
+	debugchar('P'); debugchar('D');  /* Page ownership done */
+	debugchar('3'); debugchar('6');  /* Step 36: about to ramdiskinit */
 	ramdiskinit();
-	debugchar(')');  /* ramdiskinit done */
-	debugchar('_');  /* about to confinit */
+	debugchar('3'); debugchar('7');  /* Step 37: ramdiskinit done */
+	debugchar('3'); debugchar('8');  /* Step 38: about to confinit */
 	confinit();
-	debugchar('+');  /* confinit done */
-	debugchar('X');  /* about to xinit */
+	debugchar('3'); debugchar('9');  /* Step 39: confinit done */
+	debugchar('4'); debugchar('0');  /* Step 40: about to xinit */
 	xinit();
-	debugchar('x');  /* xinit done */
-	debugchar('T');  /* about to trapinit */
+	debugchar('4'); debugchar('1');  /* Step 41: xinit done */
+
+	/* TODO: Setup our own page tables to replace Limine's */
+	/* For now, continue using Limine's page tables */
+	// debugchar('S'); debugchar('P');  /* About to setup page tables */
+	// setuppagetables();
+	// debugchar('S'); debugchar('D');  /* Setup page tables done */
+
+	debugchar('4'); debugchar('2');  /* Step 42: about to trapinit */
 	trapinit();
-	debugchar('t');  /* trapinit done */
-	debugchar('M');  /* about to mathinit */
+	debugchar('4'); debugchar('3');  /* Step 43: trapinit done */
+	debugchar('4'); debugchar('4');  /* Step 44: about to mathinit */
 	mathinit();
-	debugchar('m');  /* mathinit done */
+	debugchar('4'); debugchar('5');  /* Step 45: mathinit done */
 	if(i8237alloc != nil)
 		i8237alloc();
-	debugchar('P');  /* about to pcicfginit */
+	debugchar('4'); debugchar('6');  /* Step 46: about to pcicfginit */
 	pcicfginit();
-	debugchar('p');  /* pcicfginit done */
-	debugchar('B');  /* about to bootscreeninit */
+	debugchar('4'); debugchar('7');  /* Step 47: pcicfginit done */
+	debugchar('4'); debugchar('8');  /* Step 48: about to bootscreeninit */
 	bootscreeninit();
-	debugchar('b');  /* bootscreeninit done */
-	debugchar('R');  /* about to printinit */
+	debugchar('4'); debugchar('9');  /* Step 49: bootscreeninit done */
+	debugchar('5'); debugchar('0');  /* Step 50: about to printinit */
 	printinit();
-	debugchar('r');  /* printinit done */
-	debugchar('U');  /* about to cpuidprint */
+	debugchar('5'); debugchar('1');  /* Step 51: printinit done */
+	debugchar('5'); debugchar('2');  /* Step 52: about to cpuidprint */
 	cpuidprint();
-	debugchar('u');  /* cpuidprint done */
-	debugchar('N');  /* about to mmuinit */
-	/* Skip mmuinit - needs xinit's memory pools */
-	/* mmuinit(); */
-	debugchar('n');  /* mmuinit skipped */
-	debugchar('I');  /* about to arch->intrinit */
+	debugchar('5'); debugchar('3');  /* Step 53: cpuidprint done */
+	debugchar('5'); debugchar('4');  /* Step 54: about to mmuinit */
+	mmuinit();
+	debugchar('5'); debugchar('5');  /* Step 55: mmuinit done */
+	debugchar('5'); debugchar('6');  /* Step 56: about to arch->intrinit */
 	if(arch->intrinit)
 		arch->intrinit();
-	debugchar('i');  /* intrinit done */
-	debugchar('T');  /* about to timersinit */
-	/* Skip timersinit - needs xinit's memory pools */
-	/* timersinit(); */
-	debugchar('t');  /* timersinit skipped */
-	debugchar('C');  /* about to arch->clockenable */
+	debugchar('5'); debugchar('7');  /* Step 57: intrinit done */
+	debugchar('5'); debugchar('8');  /* Step 58: about to timersinit */
+	timersinit();
+	debugchar('5'); debugchar('9');  /* Step 59: timersinit done */
+	debugchar('6'); debugchar('0');  /* Step 60: about to arch->clockenable */
 	if(arch->clockenable)
 		arch->clockenable();
-	debugchar('c');  /* clockenable done */
-	debugchar('P');  /* about to procinit0 */
+	debugchar('6'); debugchar('1');  /* Step 61: clockenable done */
+	debugchar('6'); debugchar('2');  /* Step 62: about to procinit0 */
 	procinit0();
-	debugchar('p');  /* procinit0 done */
-	debugchar('S');  /* about to initseg */
+	debugchar('6'); debugchar('3');  /* Step 63: procinit0 done */
+	debugchar('6'); debugchar('4');  /* Step 64: about to initseg */
 	initseg();
-	debugchar('s');  /* initseg done */
-	debugchar('L');  /* about to links */
+	debugchar('6'); debugchar('5');  /* Step 65: initseg done */
+	debugchar('6'); debugchar('6');  /* Step 66: about to links */
 	links();
-	debugchar('l');  /* links done */
-	debugchar('D');  /* about to chandevreset */
+	debugchar('6'); debugchar('7');  /* Step 67: links done */
+	debugchar('6'); debugchar('8');  /* Step 68: about to chandevreset */
 	chandevreset();
-	debugchar('d');  /* chandevreset done */
-	debugchar('A');  /* about to preallocpages */
-	/* Skip preallocpages for now - crashes accessing conf.mem */
-	/* preallocpages(); */
-	debugchar('a');  /* preallocpages skipped */
-	debugchar('G');  /* about to pageinit */
+	debugchar('6'); debugchar('9');  /* Step 69: chandevreset done */
+
+	/* Register initrd files with devroot - must be after chandevreset */
+	if(initrd_root != nil) {
+		debugchar('7'); debugchar('0');  /* Step 70: about to initrd_register */
+		initrd_register();
+		debugchar('7'); debugchar('1');  /* Step 71: initrd_register done */
+	}
+
+	debugchar('7'); debugchar('2');  /* Step 72: about to preallocpages */
+	preallocpages();
+	debugchar('7'); debugchar('3');  /* Step 73: preallocpages done */
+	debugchar('7'); debugchar('4');  /* Step 74: about to pageinit */
 	pageinit();
-	debugchar('g');  /* pageinit done */
+	debugchar('7'); debugchar('5');  /* Step 75: pageinit done */
 
 	/* Initialize run queues to ensure clean state */
 	extern Schedq runq[];
@@ -372,14 +405,14 @@ main(void)
 		runq[i].tail = nil;
 		runq[i].n = 0;
 	}
-	debugchar('r');  /* runq initialized */
+	debugchar('7'); debugchar('6');  /* Step 76: runq initialized */
 
-	debugchar('U');  /* about to userinit */
+	debugchar('7'); debugchar('7');  /* Step 77: about to userinit */
 	userinit();
-	debugchar('u');  /* userinit done */
-	debugchar('Z');  /* about to schedinit */
+	debugchar('7'); debugchar('8');  /* Step 78: userinit done */
+	debugchar('7'); debugchar('9');  /* Step 79: about to schedinit */
 	schedinit();
-	debugchar('z');  /* schedinit done - shouldn't reach here */
+	debugchar('8'); debugchar('0');  /* Step 80: schedinit done - shouldn't reach here */
 }
 
 static void

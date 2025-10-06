@@ -230,6 +230,11 @@ newpage(uintptr va, QLock *locked)
 	p->modref = 0;
 	inittxtflush(p);
 
+	/* Automatically acquire ownership for the current process */
+	if(up != nil && p->pa != 0) {
+		pageown_acquire(up, p->pa, va);
+	}
+
 	return p;
 }
 
@@ -252,6 +257,11 @@ deadpage(Page *p)
 void
 putpage(Page *p)
 {
+	/* Release ownership before freeing */
+	if(p != nil && up != nil && p->pa != 0) {
+		pageown_release(up, p->pa);
+	}
+
 	p = deadpage(p);
 	if(p != nil)
 		freepages(p, p, 1);

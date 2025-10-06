@@ -50,3 +50,8 @@
 #define	PWRITE		51
 #define	TSEMACQUIRE	52
 #define _NSEC		53
+#define VMEXCHANGE	54
+#define VMLEND_SHARED	55
+#define VMLEND_MUT	56
+#define VMRETURN	57
+#define VMOWNINFO	58
