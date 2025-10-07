@@ -792,10 +792,15 @@ flushmmu(void)
 {
 	int x;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
 	x = splhi();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 	up->newtlb = 1;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	mmuswitch(up);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 	splx(x);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -830,7 +835,14 @@ mmuswitch(Proc *proc)
 		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));  /* After pml4 write */
 	}
 	__asm__ volatile("outb %0, %1" : : "a"((char)'%'), "Nd"((unsigned short)0x3F8));
+	if(proc->mmuhead == nil){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'U'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
+	}
 	for(p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'+'), "Nd"((unsigned short)0x3F8));
 		m->mmumap[p->index/MAPBITS] |= 1ull<<(p->index%MAPBITS);
 		m->pml4[p->index] = PADDR(p->page) | PTEUSER|PTEWRITE|PTEVALID;
 	}

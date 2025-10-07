@@ -67,6 +67,18 @@ proc0(void*)
 	 */
 	up->seg[SSEG] = newseg(SG_STACK | SG_NOEXEC, USTKTOP-USTKSIZE, USTKSIZE / BY2PG);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
+
+	/* Allocate initial stack page and map it */
+	p = newpage(USTKTOP - BY2PG, nil);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'s'), "Nd"((unsigned short)0x3F8));
+	k = kmap(p);
+	memset((uchar*)VA(k), 0, BY2PG);
+	kunmap(k);
+	segpage(up->seg[SSEG], p);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
+	pmap(up->seg[SSEG], USTKTOP - BY2PG, PTEWRITE|PTEUSER, p->pa, BY2PG);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
+
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 	up->seg[TSEG]->flushme = 1;
@@ -80,6 +92,8 @@ proc0(void*)
 	kunmap(k);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 	segpage(up->seg[TSEG], p);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
+	pmap(up->seg[TSEG], UTZERO, PTEUSER, p->pa, BY2PG);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
 
 	/*
