@@ -677,6 +677,7 @@ pmap(uintptr pa, uintptr va, vlong size)
 	uintptr *pte, *ptee, flags;
 	int z, l;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	/* Pure HHDM model: accept addresses in HHDM range, not VMAP */
 	if(size <= 0 || va < saved_limine_hhdm_offset)
 		panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
@@ -686,7 +687,9 @@ pmap(uintptr pa, uintptr va, vlong size)
 	flags |= PTEACCESSED|PTEDIRTY;
 	if(va >= KZERO)
 		flags |= PTEGLOBAL;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	while(size > 0){
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(size >= PGLSZ(1) && size < PGLSZ(2) && (va % PGLSZ(1)) == 0)
 			flags |= PTESIZE;
 		l = (flags & PTESIZE) != 0;
@@ -712,6 +715,7 @@ pmap(uintptr pa, uintptr va, vlong size)
 			size -= z;
 		}
 	}
+	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 }
 
 void
