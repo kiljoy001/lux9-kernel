@@ -723,6 +723,9 @@ struct Proc
 	int	insyscall;
 	ulong	time[6];	/* User, Sys, Real; child U, S, R */
 
+	/* Borrow checker */
+	uintptr		waiting_for_key;
+
 	uvlong	kentry;		/* Kernel entry time stamp (for profiling) */
 	/*
 	 * pcycles: cycles spent in this process (updated on procswitch)

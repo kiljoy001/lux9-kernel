@@ -4,6 +4,7 @@
 #include	"dat.h"
 #include	"fns.h"
 #include	"io.h"
+#include	"lock_borrow.h"
 
 /* Limine HHDM offset - defined in boot.c */
 extern uintptr limine_hhdm_offset;
@@ -29,7 +30,7 @@ Segdesc gdt[NGDT] =
 };
 
 static struct {
-	Lock;
+	BorrowLock;
 	MMU	*free;
 
 	ulong	nalloc;
@@ -346,6 +347,8 @@ mmuinit(void)
 	vlong v;
 	int i;
 
+	borrow_lock_init((BorrowLock*)&mmupool, (uintptr)&mmupool);
+
 	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	/* zap double map done by l.s */
 	m->pml4[512] = 0;
@@ -449,13 +452,13 @@ mmualloc(void)
 		m->mmufree = p->next;
 		m->mmucount--;
 	} else {
-		lock(&mmupool);
+		borrow_lock((BorrowLock*)&mmupool);
 		p = mmupool.free;
 		if(p != nil){
 			mmupool.free = p->next;
 			mmupool.nfree--;
 		} else {
-			unlock(&mmupool);
+borrow_unlock((BorrowLock*)&mmupool);
 
 			n = 256;
 			p = malloc(n * sizeof(MMU));
@@ -471,13 +474,13 @@ mmualloc(void)
 				p[i-1].next = &p[i];
 			}
 
-			lock(&mmupool);
+borrow_lock((BorrowLock*)&mmupool);
 			p[n-1].next = mmupool.free;
 			mmupool.free = p->next;
 			mmupool.nalloc += n;
 			mmupool.nfree += n-1;
 		}
-		unlock(&mmupool);
+		borrow_unlock((BorrowLock*)&mmupool);
 	}
 	p->next = nil;
 	return p;
@@ -679,7 +682,7 @@ pmap(uintptr pa, uintptr va, vlong size)
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	/* Pure HHDM model: accept addresses in HHDM range, not VMAP */
-	if(size <= 0 || va < saved_limine_hhdm_offset)
+	if(size <= 0)
 		panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
 	flags = pa;
 	pa = PPN(pa);
@@ -781,11 +784,11 @@ mmufree(Proc *proc)
 		m->mmufree = proc->mmuhead;
 		m->mmucount += proc->mmucount;
 	} else {
-		lock(&mmupool);
+borrow_lock((BorrowLock*)&mmupool);
 		p->next = mmupool.free;
 		mmupool.free = proc->mmuhead;
 		mmupool.nfree += proc->mmucount;
-		unlock(&mmupool);
+		borrow_unlock((BorrowLock*)&mmupool);
 	}
 	proc->mmuhead = proc->mmutail = nil;
 	proc->mmucount = 0;

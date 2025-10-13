@@ -107,4 +107,4 @@ iso: $(KERNEL) userspace/initrd.tar
 	@echo "✓ Created lux9.iso"
 
 run: iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial stdio -no-reboot
+	qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial stdio -no-reboot -display none

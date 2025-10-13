@@ -76,7 +76,7 @@ proc0(void*)
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
-	pmap(up->seg[SSEG], USTKTOP - BY2PG, PTEWRITE|PTEUSER, p->pa, BY2PG);
+	pmap(p->pa | PTEWRITE | PTEUSER, USTKTOP - BY2PG, BY2PG);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
@@ -93,7 +93,7 @@ proc0(void*)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 	segpage(up->seg[TSEG], p);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
-	pmap(up->seg[TSEG], UTZERO, PTEUSER, p->pa, BY2PG);
+	pmap(p->pa | PTEUSER, UTZERO, BY2PG);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
 
 	/*
