@@ -1,3 +1,4 @@
+#include "dat.h"
 #include <stdarg.h>
 
 void		_assert(char*);

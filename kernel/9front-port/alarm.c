@@ -26,7 +26,7 @@ alarmkproc(void*)
 	for(;;){
 		DBG('b');
 		DBG('A');  /* alarm: before sched */
-		sched();  /* Yield CPU to scheduler */
+		sleep(&alarmr, return0, nil);
 		DBG('Z');  /* alarm: after sched */
 		DBG('c');
 	}

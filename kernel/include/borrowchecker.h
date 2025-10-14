@@ -32,12 +32,19 @@ struct BorrowOwner {
 
 	/* Debugging */
 	ulong	borrow_count;		/* Total times borrowed */
+
+	struct BorrowOwner *next;	/* For hash table chaining */
+};
+
+/* Hash table bucket for BorrowOwner */
+struct BorrowBucket {
+	struct BorrowOwner *head;
 };
 
 /* Borrow pool - hash table of resources */
 struct BorrowPool {
-	Lock;
-	struct BorrowOwner *owners;	/* Hash table buckets */
+	Lock lock;
+	struct BorrowBucket *owners;	/* Hash table buckets */
 	ulong	nbuckets;		/* Number of hash buckets */
 	ulong	nowners;		/* Total number of owned resources */
 	ulong	nshared;		/* Resources with shared borrows */

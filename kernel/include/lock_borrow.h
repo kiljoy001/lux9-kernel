@@ -10,7 +10,7 @@
 
 /* A wrapper around the basic Lock to add borrow checking */
 typedef struct BorrowLock {
-	Lock;
+	Lock lock;
 	uintptr	key;
 } BorrowLock;
 

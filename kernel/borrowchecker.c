@@ -13,11 +13,6 @@
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
-/* Hash table bucket for BorrowOwner */
-struct BorrowBucket {
-	struct BorrowOwner *head;
-};
-
 /* Initialize the borrow pool */
 void
 borrowinit(void)
@@ -26,7 +21,7 @@ borrowinit(void)
 
 	/* Initialize hash table */
 	borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
-	borrowpool.owners = kmalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket), 0);
+	borrowpool.owners = xalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
 	if (borrowpool.owners == nil) {
 		panic("borrowinit: failed to allocate hash table");
 	}
@@ -69,7 +64,7 @@ static struct BorrowOwner*
 create_owner(uintptr key)
 {
 	ulong hash = borrow_hash(key);
-	struct BorrowOwner *owner = kmalloc(sizeof(struct BorrowOwner), 0);
+	struct BorrowOwner *owner = xalloc(sizeof(struct BorrowOwner));
 	if (owner == nil) {
 		return nil;
 	}
@@ -99,25 +94,25 @@ borrow_acquire(Proc *p, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	if (owner == nil) {
 		owner = create_owner(key);
 		if (owner == nil) {
-			iunlock(&borrowpool);
+			iunlock(&borrowpool.lock);
 			return BORROW_ENOMEM;
 		}
 	}
 
 	if (owner->state != BORROW_FREE) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_EALREADY;
 	}
 
 	owner->owner = p;
 	owner->state = BORROW_EXCLUSIVE;
 	owner->acquired_ns = todget(nil, nil);
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -131,27 +126,27 @@ borrow_release(Proc *p, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	if (owner == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (owner->owner != p) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTOWNER;
 	}
 
 	if (owner->shared_count > 0 || owner->mut_borrower != nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_EBORROWED;
 	}
 
 	owner->owner = nil;
 	owner->state = BORROW_FREE;
 	borrowpool.nowners--;
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -165,26 +160,26 @@ borrow_transfer(Proc *from, Proc *to, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	if (owner == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (owner->owner != from) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTOWNER;
 	}
 
 	if (owner->shared_count > 0 || owner->mut_borrower != nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_EBORROWED;
 	}
 
 	owner->owner = to;
 	owner->acquired_ns = todget(nil, nil);
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -198,20 +193,20 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	own = find_owner(key);
 	if (own == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (own->owner != owner) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTOWNER;
 	}
 
 	if (own->mut_borrower != nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_EMUTBORROW;
 	}
 
@@ -224,7 +219,7 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 		borrowpool.nshared++;
 	}
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -238,25 +233,25 @@ borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	own = find_owner(key);
 	if (own == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (own->owner != owner) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTOWNER;
 	}
 
 	if (own->shared_count > 0) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ESHAREDBORROW;
 	}
 
 	if (own->mut_borrower != nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_EMUTBORROW;
 	}
 
@@ -265,7 +260,7 @@ borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key)
 	own->borrow_count++;
 	borrowpool.nmut++;
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -279,15 +274,15 @@ borrow_return_shared(Proc *borrower, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	own = find_owner(key);
 	if (own == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (own->shared_count == 0) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTBORROWED;
 	}
 
@@ -297,7 +292,7 @@ borrow_return_shared(Proc *borrower, uintptr key)
 		borrowpool.nshared--;
 	}
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -311,15 +306,15 @@ borrow_return_mut(Proc *borrower, uintptr key)
 		return BORROW_EINVAL;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	own = find_owner(key);
 	if (own == nil) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTFOUND;
 	}
 
 	if (own->mut_borrower != borrower) {
-		iunlock(&borrowpool);
+		iunlock(&borrowpool.lock);
 		return BORROW_ENOTBORROWED;
 	}
 
@@ -327,7 +322,7 @@ borrow_return_mut(Proc *borrower, uintptr key)
 	own->state = BORROW_EXCLUSIVE;
 	borrowpool.nmut--;
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
 
@@ -338,10 +333,10 @@ borrow_is_owned(uintptr key)
 	struct BorrowOwner *owner;
 	int owned;
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	owned = (owner != nil && owner->state != BORROW_FREE);
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	return owned;
 }
@@ -352,10 +347,10 @@ borrow_get_owner(uintptr key)
 	struct BorrowOwner *owner;
 	Proc *p;
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	p = (owner != nil) ? owner->owner : nil;
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	return p;
 }
@@ -366,10 +361,10 @@ borrow_get_state(uintptr key)
 	struct BorrowOwner *owner;
 	enum BorrowState state;
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	state = (owner != nil) ? owner->state : BORROW_FREE;
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	return state;
 }
@@ -380,10 +375,10 @@ borrow_can_borrow_shared(uintptr key)
 	struct BorrowOwner *owner;
 	int can;
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	can = (owner != nil && owner->state != BORROW_FREE && owner->mut_borrower == nil);
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	return can;
 }
@@ -394,11 +389,11 @@ borrow_can_borrow_mut(uintptr key)
 	struct BorrowOwner *owner;
 	int can;
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	can = (owner != nil && owner->state != BORROW_FREE &&
 	       owner->shared_count == 0 && owner->mut_borrower == nil);
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	return can;
 }
@@ -415,7 +410,7 @@ borrow_cleanup_process(Proc *p)
 		return;
 	}
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 
 	for (i = 0; i < borrowpool.nbuckets; i++) {
 		prev = nil;
@@ -449,7 +444,7 @@ borrow_cleanup_process(Proc *p)
 				} else {
 					prev->next = next;
 				}
-				kfree(owner);
+				xfree(owner);
 			} else {
 				prev = owner;
 			}
@@ -458,7 +453,7 @@ borrow_cleanup_process(Proc *p)
 		}
 	}
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 
 	if (cleaned > 0) {
 		print("borrow: cleaned %d resources for pid %d\n", cleaned, p->pid);
@@ -469,12 +464,12 @@ borrow_cleanup_process(Proc *p)
 void
 borrow_stats(void)
 {
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	print("Borrow Checker Statistics:\n");
-	print("  Total owners:  %lud\n", borrowpool.nowners);
-	print("  Shared borrows: %lud\n", borrowpool.nshared);
-	print("  Mut borrows:   %lud\n", borrowpool.nmut);
-	iunlock(&borrowpool);
+	print("  Total owners:  %%lud\n", borrowpool.nowners);
+	print("  Shared borrows: %%lud\n", borrowpool.nshared);
+	print("  Mut borrows:   %%lud\n", borrowpool.nmut);
+	iunlock(&borrowpool.lock);
 }
 
 /* Dump resource info */
@@ -489,15 +484,15 @@ borrow_dump_resource(uintptr key)
 		"MUT_LENT",
 	};
 
-	ilock(&borrowpool);
+	ilock(&borrowpool.lock);
 	owner = find_owner(key);
 	if (owner == nil) {
-		print("Resource %#p not found\n", key);
-		iunlock(&borrowpool);
+		print("Resource %%#p not found\n", key);
+		iunlock(&borrowpool.lock);
 		return;
 	}
 
-	print("Resource %#p:\n", key);
+	print("Resource %%#p:\n", key);
 	print("  State:          %s\n", statestr[owner->state]);
 	print("  Owner:          %s (pid %d)\n",
 		owner->owner ? owner->owner->text : "none",
@@ -506,7 +501,7 @@ borrow_dump_resource(uintptr key)
 	print("  Mut borrower:   %s (pid %d)\n",
 		owner->mut_borrower ? owner->mut_borrower->text : "none",
 		owner->mut_borrower ? owner->mut_borrower->pid : -1);
-	print("  Total borrows:  %lud\n", owner->borrow_count);
+	print("  Total borrows:  %%lud\n", owner->borrow_count);
 
-	iunlock(&borrowpool);
+	iunlock(&borrowpool.lock);
 }

@@ -27,6 +27,7 @@ PORT_C := $(wildcard kernel/9front-port/*.c)
 PC64_C := $(wildcard kernel/9front-pc64/*.c)
 LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
+BORROW_C := kernel/borrowchecker.c
 
 # Assembly files
 ASM_S := kernel/9front-pc64/l.S kernel/9front-pc64/entry.S
@@ -38,8 +39,9 @@ LIBC_O := $(LIBC_C:.c=.o)
 ASM_O := $(ASM_S:.S=.o)
 
 MEMDRAW_O := $(MEMDRAW_C:.c=.o)
+BORROW_O := $(BORROW_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O)
 
 .PHONY: all clean count iso run
 
@@ -107,4 +109,4 @@ iso: $(KERNEL) userspace/initrd.tar
 	@echo "✓ Created lux9.iso"
 
 run: iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial stdio -no-reboot -display none
+	qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial file:qemu.log -no-reboot -display none

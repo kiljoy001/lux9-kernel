@@ -1,3 +1,4 @@
+#pragma once
 typedef struct Conf	Conf;
 typedef struct Confmem	Confmem;
 typedef struct FPssestate	FPssestate;

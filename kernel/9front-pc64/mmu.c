@@ -1,10 +1,10 @@
 #include	"u.h"
 #include <lib.h>
 #include	"mem.h"
-#include	"dat.h"
+
 #include	"fns.h"
 #include	"io.h"
-#include	"lock_borrow.h"
+#include "lock_borrow.h"
 
 /* Limine HHDM offset - defined in boot.c */
 extern uintptr limine_hhdm_offset;

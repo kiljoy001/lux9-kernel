@@ -1,5 +1,7 @@
 #include <fns.h>
 
+int tas(ulong*);
+
 Dirtab*	addarchfile(char*, int, long(*)(Chan*,void*,long,vlong), long(*)(Chan*,void*,long,vlong));
 void	archinit(void);
 void	archreset(void);

@@ -227,7 +227,7 @@ sched(void)
  		up->delaysched = 0;
 		/* Set state to Ready and re-queue before switching */
 		__asm__ volatile("outb %0, %1" : : "a"((char)'~'), "Nd"((unsigned short)0x3F8));
-		up->state = Ready;
+		up->state = Scheding;
 		ready(up);
 		__asm__ volatile("outb %0, %1" : : "a"((char)'`'), "Nd"((unsigned short)0x3F8));
 		procswitch();

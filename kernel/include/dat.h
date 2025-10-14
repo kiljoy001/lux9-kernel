@@ -1,3 +1,4 @@
+#pragma once
 typedef struct Conf	Conf;
 typedef struct Confmem	Confmem;
 typedef struct FPssestate	FPssestate;
@@ -339,7 +340,7 @@ enum {						/* MSRs */
 #define NISAOPT		8
 
 struct ISAConf {
-	char	*type;
+	char*	type;
 	uvlong	port;
 	int	irq;
 	ulong	dma;
@@ -348,7 +349,7 @@ struct ISAConf {
 	ulong	freq;
 
 	int	nopt;
-	char	*opt[NISAOPT];
+	char*	opt[NISAOPT];
 };
 
 extern PCArch	*arch;			/* PC architecture */
@@ -371,7 +372,7 @@ typedef struct {
 struct DevConf
 {
 	ulong	intnum;			/* interrupt number */
-	char	*type;			/* card type, malloced */
+	char*	type;			/* card type, malloced */
 	int	nports;			/* Number of ports */
 	Devport	*ports;			/* The ports themselves */
 };
