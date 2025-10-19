@@ -216,8 +216,6 @@ screeninit(void)
 	return;
 	if(getconf("*nocga"))
 		return;
-	if(getconf("*nocga"))
-		return;
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	cgapos = cgaregr(0x0E)<<8;

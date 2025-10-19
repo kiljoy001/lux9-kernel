@@ -69,19 +69,49 @@ struct FPssestate
 
 struct FPavxstate
 {
-	FPssestate sse_state;
+	FPssestate;
 	uchar	header[64];		/* XSAVE header */
 	uchar	ymm[256];		/* upper 128-bit regs (AVX) */
 };
 
 struct FPsave
 {
-	FPavxstate avx_state;
+	/* FPavxstate expanded */
+	/* FPssestate fields */
+	u16int	fcw;			/* x87 control word */
+	u16int	fsw;			/* x87 status word */
+	u8int	ftw;			/* x87 tag word */
+	u8int	zero;			/* 0 */
+	u16int	fop;			/* last x87 opcode */
+	u64int	rip;			/* last x87 instruction pointer */
+	u64int	rdp;			/* last x87 data pointer */
+	u32int	mxcsr;			/* MMX control and status */
+	u32int	mxcsrmask;		/* supported MMX feature bits */
+	uchar	st[128];		/* shared 64-bit media and x87 regs */
+	uchar	xmm[256];		/* 128-bit media regs */
+	uchar	ign[96];		/* reserved, ignored */
+	/* FPavxstate additional fields */
+	uchar	header[64];		/* XSAVE header */
+	uchar	ymm[256];		/* upper 128-bit regs (AVX) */
 };
 
 struct FPalloc
 {
-	FPsave fp_save;
+	/* FPsave fields */
+	u16int	fcw;
+	u16int	fsw;
+	u8int	ftw;
+	u8int	zero;
+	u16int	fop;
+	u64int	rip;
+	u64int	rdp;
+	u32int	mxcsr;
+	u32int	mxcsrmask;
+	uchar	st[128];
+	uchar	xmm[256];
+	uchar	ign[96];
+	uchar	header[64];
+	uchar	ymm[256];
 
 	FPalloc	*link;		/* when context nests */
 };
@@ -169,7 +199,7 @@ struct PMMU
 #define	inittxtflush(p)
 #define	settxtflush(p,c)
 
-#include "portdat.h"
+#include <portdat.h>
 
 typedef struct {
 	u32int	_0_;
@@ -188,7 +218,7 @@ struct Mach
 	uintptr	splpc;			/* pc of last caller to splhi */
 	Proc*	proc;			/* current process on this processor */
 
-	/* PMach fields */
+	/* PMach fields expanded */
 	Proc*	readied;		/* for runproc */
 	Label	sched;			/* scheduler wakeup */
 	ulong	ticks;			/* of the clock since boot time */
@@ -340,7 +370,7 @@ enum {						/* MSRs */
 #define NISAOPT		8
 
 struct ISAConf {
-	char*	type;
+	char	*type;
 	uvlong	port;
 	int	irq;
 	ulong	dma;
@@ -349,7 +379,7 @@ struct ISAConf {
 	ulong	freq;
 
 	int	nopt;
-	char*	opt[NISAOPT];
+	char	*opt[NISAOPT];
 };
 
 extern PCArch	*arch;			/* PC architecture */
@@ -358,8 +388,8 @@ extern Mach* machp[MAXMACH];
 
 #define	MACHP(n)	(machp[n])
 
-extern Mach* m;			/* R15 */
-extern Proc* up;			/* R14 */
+extern Mach* m;			/* R15 - was register in Plan 9 */
+extern Proc* up;			/* R14 - was register in Plan 9 */
 
 /*
  *  hardware info about a device
@@ -372,7 +402,7 @@ typedef struct {
 struct DevConf
 {
 	ulong	intnum;			/* interrupt number */
-	char*	type;			/* card type, malloced */
+	char	*type;			/* card type, malloced */
 	int	nports;			/* Number of ports */
 	Devport	*ports;			/* The ports themselves */
 };

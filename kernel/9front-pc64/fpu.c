@@ -144,9 +144,9 @@ matherror(Ureg *ureg, void*)
 {
 	if(!userureg(ureg)){
 		if(up == nil)
-			mathnote(m->fpsave->fsw, m->fpsave->rip, 1);
+			mathnote(m->fpsave->fp_save.avx_state.sse_state.fsw, m->fpsave->fp_save.avx_state.sse_state.rip, 1);
 		else
-			mathnote(up->kfpsave->fsw, up->kfpsave->rip, 1);
+			mathnote(up->kfpsave->fp_save.avx_state.sse_state.fsw, up->kfpsave->fp_save.avx_state.sse_state.rip, 1);
 		return;
 	}
 	if(up->fpstate != FPinactive){
@@ -154,7 +154,7 @@ matherror(Ureg *ureg, void*)
 		fpsave((FPsave*)up->fpsave);
 		up->fpstate = FPinactive;
 	}
-	mathnote(up->fpsave->fsw, up->fpsave->rip, 0);
+	mathnote(up->fpsave->fp_save.avx_state.sse_state.fsw, up->fpsave->fp_save.avx_state.sse_state.rip, 0);
 }
 
 /*
@@ -165,9 +165,9 @@ simderror(Ureg *ureg, void*)
 {
 	if(!userureg(ureg)){
 		if(up == nil)
-			mathnote(m->fpsave->mxcsr & 0x3f, ureg->pc, 1);
+			mathnote(m->fpsave->fp_save.avx_state.sse_state.mxcsr & 0x3f, ureg->pc, 1);
 		else
-			mathnote(up->kfpsave->mxcsr & 0x3f, ureg->pc, 1);
+			mathnote(up->kfpsave->fp_save.avx_state.sse_state.mxcsr & 0x3f, ureg->pc, 1);
 		return;
 	}
 	if(up->fpstate != FPinactive){
@@ -175,7 +175,7 @@ simderror(Ureg *ureg, void*)
 		fpsave((FPsave*)up->fpsave);
 		up->fpstate = FPinactive;
 	}
-	mathnote(up->fpsave->mxcsr & 0x3f, ureg->pc, 0);
+	mathnote(up->fpsave->fp_save.avx_state.sse_state.mxcsr & 0x3f, ureg->pc, 0);
 }
 
 /*
@@ -482,10 +482,10 @@ fpcheck(FPsave *save, int kernel)
 {
 	ulong status, control;
 
-	status = save->fsw;
-	control = save->fcw;
+	status = save->avx_state.sse_state.fsw;
+	control = save->avx_state.sse_state.fcw;
 	if((status & ~control) & 0x07F){
-		mathnote(status, save->rip, kernel);
+		mathnote(status, save->avx_state.sse_state.rip, kernel);
 		return 1;
 	}
 	return 0;

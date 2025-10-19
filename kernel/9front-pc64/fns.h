@@ -1,7 +1,5 @@
 #include <fns.h>
 
-int tas(ulong*);
-
 Dirtab*	addarchfile(char*, int, long(*)(Chan*,void*,long,vlong), long(*)(Chan*,void*,long,vlong));
 void	archinit(void);
 void	archreset(void);
@@ -158,7 +156,7 @@ void	touser(void*);
 void	trapenable(int, void (*)(Ureg*, void*), void*, char*);
 void	trapinit(void);
 void	trapinit0(void);
-int	tas(void*);
+int     tas(ulong*);
 uvlong	tscticks(uvlong*);
 ulong	umballoc(ulong, ulong, ulong);
 void	umbfree(ulong, ulong);
