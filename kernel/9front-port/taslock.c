@@ -38,6 +38,9 @@ lock(Lock *l)
 	int i;
 	uintptr pc;
 
+	pc = getcallerpc(&l);
+	print("lock(%#p) caller=%#p up=%#p\n", l, pc, up);
+
 	/* Debug: print lock address */
 	uintptr lock_addr = (uintptr)l;
 	for(int shift = 60; shift >= 0; shift -= 4){
@@ -46,10 +49,6 @@ lock(Lock *l)
 		__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((unsigned short)0x3F8));
 	}
 	__asm__ volatile("outb %0, %1" : : "a"((char)':'), "Nd"((unsigned short)0x3F8));
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
-	pc = getcallerpc(&l);
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
 	if(up)
 		up->nlocks++;	/* prevent being scheded */
@@ -178,6 +177,9 @@ canlock(Lock *l)
 void
 unlock(Lock *l)
 {
+	uintptr pc = getcallerpc(&l);
+	print("unlock(%#p) caller=%#p up=%#p\n", l, pc, up);
+
 #ifdef LOCKCYCLES
 	l->lockcycles += lcycles();
 	cumlockcycles += l->lockcycles;
