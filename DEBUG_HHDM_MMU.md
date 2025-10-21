@@ -203,6 +203,60 @@ This confirmed no user MMU entries were created.
 
 ---
 
+## Serial Boot Markers
+
+To make sense of the serial noise, we emit two breadcrumb styles:
+
+- Two-character pairs from `debugchar()` (e.g. `B0`, `77`, `C1`). Treat each consecutive pair as a milestone.
+- Human-readable lines prefixed with `BOOT:` (e.g. `BOOT: mmuinit complete - runtime page tables live`).
+
+### Key `debugchar()` pairs
+
+| Marker | Location | Meaning |
+| ------ | -------- | ------- |
+| `B0`   | `main.c` | Borrow checker initialisation started |
+| `B1`   | `main.c` | Borrow checker initialisation finished |
+| `69`   | `main.c` | `chandevreset()` finished |
+| `70`   | `main.c` | `initrd_register()` about to run |
+| `71`   | `main.c` | `initrd_register()` finished |
+| `72`   | `main.c` | `preallocpages()` about to run |
+| `73`   | `main.c` | `preallocpages()` finished |
+| `74`   | `main.c` | `pageinit()` about to run |
+| `75`   | `main.c` | `pageinit()` finished |
+| `77`   | `main.c` | About to call `userinit()` |
+| `78`   | `main.c` | `userinit()` finished |
+| `79`   | `main.c` | About to enter the scheduler |
+| `C1`   | `proc0()` | Kernel process 0 entered |
+| `C2`   | `proc0()` | Returned from `spllo()` |
+| `C/`   | `proc0()` | `waserror()` succeeded |
+| `Cs`   | `proc0()` | Stack page allocated and mapped |
+| `Cp`   | `proc0()` | Init text page mapped |
+| `Ch`   | `proc0()` | `flushmmu()` completed |
+| `Ci`   | `proc0()` | `poperror()` completed |
+| `Cj`   | `proc0()` | Returned from `init0()` (should not happen) |
+
+These pairs appear concatenated in the log; reading them in twos reveals where boot paused.
+
+### `BOOT:` text breadcrumbs
+
+- `BOOT: printinit complete - serial console ready`
+- `BOOT: borrow checker initialised`
+- `BOOT: mmuinit complete - runtime page tables live`
+- `BOOT: procinit0 complete - process table ready`
+- `BOOT: device reset sequence finished`
+- `BOOT: userinit scheduled *init* kernel process`
+- `BOOT: entering scheduler - expecting proc0 hand-off`
+- `BOOT[init0]: chandevinit complete`
+- `BOOT[init0]: environment configured`
+- `BOOT[init0]: entering user mode with initcode`
+- `BOOT[proc0]: about to call init0 - switching to userspace`
+- `BOOT[proc0]: init0 returned - this should never happen!`
+- `BOOT[userinit]: spawned proc0 kernel process`
+
+Use these markers to correlate serial output with boot progress without treating it as random noise.
+
+---
+
 ## Why pmap() Hangs - Investigation Needed
 
 ### Possible Causes:
@@ -409,3 +463,9 @@ The 'NULL' marker confirmed proc->mmuhead was NULL when mmuswitch() ran.
 ---
 
 **End of Report**
+- `PB?[…]` — `pageinit()` reporting a memory bank (`?` is `A`+index, contents show base and page count in hex).
+- `PF…U…I…` — `pageinit()` summary (`PF` = free pages, `U` = unmapped skips, `I` = poisoned skips).
+- `CL[…]` — `cankaddr()` reporting the physical-address limit it enforces (currently 4 GiB).
+- `CN[…]` — milestone addresses emitted roughly every 512 MiB while `cankaddr()` walks the map.
+- `C0[…]` — `cankaddr()` rejecting an address above its limit.
+- `KA[…]` — first successful `kaddr()` translation (`{}` contains the saved HHDM offset).

@@ -120,12 +120,12 @@ proc0(void*)
 	 *	prepare the stack for initcode
 	 *	switch to usermode to run initcode
 	 */
-	print("proc0: about to call init0 - switching to userspace\n");
+	print("BOOT[proc0]: about to call init0 - switching to userspace\n");
 	init0();
 	__asm__ volatile("outb %0, %1" : : "a"((char)'j'), "Nd"((unsigned short)0x3F8));
 
 	/* init0 will never return */
-	print("proc0: init0 returned - this should never happen!\n");
+	print("BOOT[proc0]: init0 returned - this should never happen!\n");
 	panic("init0");
 }
 
@@ -139,4 +139,5 @@ userinit(void)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	kproc("*init*", proc0, nil);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[userinit]: spawned proc0 kernel process\n");
 }

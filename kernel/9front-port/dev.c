@@ -72,7 +72,12 @@ devallowed(Pgrp *pgrp, int r)
 
 	w = sizeof(u64int) * 8;
 	rlock(&pgrp->ns);
+	if(waserror()){
+		runlock(&pgrp->ns);
+		nexterror();
+	}
 	b = !(pgrp->notallowed[t/w] & 1<<t%w);
+	poperror();
 	runlock(&pgrp->ns);
 	return b;
 }

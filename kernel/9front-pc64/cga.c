@@ -213,7 +213,7 @@ screeninit(void)
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 	/* Disable CGA to avoid page fault on unmapped VGA memory */
-	return;
+	/* return; */  /* Commented out to allow CGA initialization */
 	if(getconf("*nocga"))
 		return;
 	if(getconf("*nocga"))

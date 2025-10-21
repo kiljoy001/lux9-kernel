@@ -7,6 +7,29 @@
 
 Palloc palloc;
 
+static void
+dbgserial(int c)
+{
+	__asm__ volatile("outb %0, %1" : : "a"((char)c), "Nd"((unsigned short)0x3F8));
+}
+
+static void
+dbgserial_hex(uvlong v)
+{
+	int started, shift, nib;
+
+	started = 0;
+	for(shift = (int)(sizeof(uvlong)*8) - 4; shift >= 0; shift -= 4){
+		nib = (v>>shift) & 0xF;
+		if(!started && nib == 0 && shift != 0)
+			continue;
+		started = 1;
+		dbgserial(nib < 10 ? '0'+nib : 'A'+nib-10);
+	}
+	if(!started)
+		dbgserial('0');
+}
+
 ulong
 nkpages(Confmem *cm)
 {
@@ -20,6 +43,7 @@ pageinit(void)
 	Page *p, **t;
 	Confmem *cm;
 	vlong m, v, u;
+	ulong skipped_unmapped, skipped_poison;
 
 	if(palloc.pages == nil){
 		ulong np;
@@ -37,17 +61,37 @@ pageinit(void)
 	color = 0;
 	palloc.freecount = 0;
 	palloc.head = nil;
+	skipped_unmapped = 0;
+	skipped_poison = 0;
 
 	t = &palloc.head;
 	p = palloc.pages;
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
+		if(cm->npage == 0 || cm->base == 0)
+			continue;
+		dbgserial('P');
+		dbgserial('B');
+		dbgserial('A' + (i%26));
+		dbgserial('[');
+		dbgserial_hex(cm->base);
+		dbgserial(']');
+		dbgserial('(');
+		dbgserial_hex(cm->npage);
+		dbgserial(')');
 		for(j=nkpages(cm); j<cm->npage; j++){
 			memset(p, 0, sizeof *p);
 			p->pa = cm->base+j*BY2PG;
-			if(cankaddr(p->pa) && (KADDR(p->pa) == nil || KADDR(p->pa) == (void*)-BY2PG))
+			if(cankaddr(p->pa) == 0){
+				skipped_unmapped++;
 				continue;
+			}
+			void *kva = KADDR(p->pa);
+			if(kva == nil || kva == (void*)-BY2PG){
+				skipped_poison++;
+				continue;
+			}
 			p->color = color;
 			color = (color+1)%NCOLOR;
 			*t = p, t = &p->next;
@@ -59,6 +103,14 @@ pageinit(void)
 	palloc.user = p - palloc.pages;
 	u = palloc.user*BY2PG;
 	v = u + conf.nswap*BY2PG;
+	dbgserial('P');
+	dbgserial('F');
+	dbgserial_hex(palloc.freecount);
+	dbgserial('U');
+	dbgserial_hex(skipped_unmapped);
+	dbgserial('I');
+	dbgserial_hex(skipped_poison);
+	dbgserial('\n');
 
 	/* Paging numbers */
 	swapalloc.highwater = (palloc.user*5)/100;

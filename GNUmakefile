@@ -95,10 +95,10 @@ iso: $(KERNEL) userspace/initrd.tar
 	cp $(KERNEL) iso_root/boot/
 	cp userspace/initrd.tar iso_root/boot/
 	cp limine.conf iso_root/boot/limine/
-	cp /home/scott/Repo/limine/limine-bios.sys iso_root/boot/limine/
-	cp /home/scott/Repo/limine/limine-bios-cd.bin iso_root/boot/limine/
-	cp /home/scott/Repo/limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp /home/scott/Repo/limine/BOOTX64.EFI iso_root/EFI/BOOT/
+	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-bios.sys iso_root/boot/limine/
+	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-bios-cd.bin iso_root/boot/limine/
+	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-uefi-cd.bin iso_root/boot/limine/
+	cp /home/scott/Repo/limine-c-template-x86-64/limine/BOOTX64.EFI iso_root/EFI/BOOT/
 	xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \

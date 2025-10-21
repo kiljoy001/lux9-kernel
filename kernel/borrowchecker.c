@@ -39,6 +39,8 @@ borrowinit(void)
 ulong
 borrow_hash(uintptr key)
 {
+	if(borrowpool.nbuckets == 0 || borrowpool.owners == nil)
+		panic("borrow_hash: borrowinit not called");
 	/* Simple hash: use the lower bits */
 	return key % borrowpool.nbuckets;
 }

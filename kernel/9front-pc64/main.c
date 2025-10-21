@@ -4,6 +4,7 @@
 #include	"mem.h"
 #include	"dat.h"
 #include	"fns.h"
+#include	"borrowchecker.h"
 #include	"io.h"
 #include	"pci.h"
 #include	"ureg.h"
@@ -110,10 +111,21 @@ confinit(void)
 	if(kpages > ((uintptr)-KZERO)/BY2PG)
 		kpages = ((uintptr)-KZERO)/BY2PG;
 
+	/* Ensure reasonable memory allocation for userspace */
+	if(conf.npage > 0) {
+		/* Make sure we leave at least 30% of memory for userspace */
+		ulong min_upages = conf.npage * 30 / 100;
+		if(conf.npage - kpages < min_upages) {
+			kpages = conf.npage - min_upages;
+		}
+	}
+	
 	conf.upages = conf.npage - kpages;
-	/* TEMP: Give more memory to kernel for early boot xalloc */
-	if(conf.upages > conf.npage/2)
-		conf.upages = conf.npage/10;  /* Give 90% to kernel temporarily */
+	/* DEBUG: Print memory allocation details */
+	print("DEBUG: npage=%lud, kpages=%lud, upages=%lud\n", conf.npage, kpages, conf.upages);
+	/* Remove temporary memory allocation hack */
+	// if(conf.upages > conf.npage/2)
+	// 	conf.upages = conf.npage/10;  /* Give 90% to kernel temporarily */
 	conf.ialloc = (kpages/2)*BY2PG;
 
 	/*
@@ -231,6 +243,7 @@ init0(void)
 	chandevinit();
 	__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: chandevinit done */
 	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[init0]: chandevinit complete\n");
 
 	if(!waserror()){
 		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: in waserror */
@@ -253,6 +266,7 @@ init0(void)
 		setconfenv();
 		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: setconfenv done */
 		__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
+		print("BOOT[init0]: environment configured\n");
 		poperror();
 		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* init0: poperror done */
 		__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
@@ -280,6 +294,7 @@ init0(void)
 	fpukexit(nil);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* Before touser */
 	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[init0]: entering user mode with initcode\n");
 	touser(sp);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));  /* After touser - should never reach */
 	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
@@ -386,12 +401,18 @@ main(void)
 	debugchar('5'); debugchar('0');  /* Step 50: about to printinit */
 	printinit();
 	debugchar('5'); debugchar('1');  /* Step 51: printinit done */
+	print("BOOT: printinit complete - serial console ready\n");
 	debugchar('5'); debugchar('2');  /* Step 52: about to cpuidprint */
 	cpuidprint();
 	debugchar('5'); debugchar('3');  /* Step 53: cpuidprint done */
+	debugchar('B'); debugchar('0');  /* Borrow checker init start */
+	borrowinit();
+	debugchar('B'); debugchar('1');  /* Borrow checker init done */
+	print("BOOT: borrow checker initialised\n");
 	debugchar('5'); debugchar('4');  /* Step 54: about to mmuinit */
 	mmuinit();
 	debugchar('5'); debugchar('5');  /* Step 55: mmuinit done */
+	print("BOOT: mmuinit complete - runtime page tables live\n");
 	debugchar('5'); debugchar('6');  /* Step 56: about to arch->intrinit */
 	if(arch->intrinit)
 		arch->intrinit();
@@ -406,6 +427,7 @@ main(void)
 	debugchar('6'); debugchar('2');  /* Step 62: about to procinit0 */
 	procinit0();
 	debugchar('6'); debugchar('3');  /* Step 63: procinit0 done */
+	print("BOOT: procinit0 complete - process table ready\n");
 	debugchar('6'); debugchar('4');  /* Step 64: about to initseg */
 	initseg();
 	debugchar('6'); debugchar('5');  /* Step 65: initseg done */
@@ -415,6 +437,7 @@ main(void)
 	debugchar('6'); debugchar('8');  /* Step 68: about to chandevreset */
 	chandevreset();
 	debugchar('6'); debugchar('9');  /* Step 69: chandevreset done */
+	print("BOOT: device reset sequence finished\n");
 
 	/* Register initrd files with devroot - must be after chandevreset */
 	if(initrd_root != nil) {
@@ -443,7 +466,9 @@ main(void)
 	debugchar('7'); debugchar('7');  /* Step 77: about to userinit */
 	userinit();
 	debugchar('7'); debugchar('8');  /* Step 78: userinit done */
+	print("BOOT: userinit scheduled *init* kernel process\n");
 	debugchar('7'); debugchar('9');  /* Step 79: about to schedinit */
+	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
 	schedinit();
 	debugchar('8'); debugchar('0');  /* Step 80: schedinit done - shouldn't reach here */
 }
@@ -596,4 +621,3 @@ pcibiosinit(int *, int *)
 {
 	return -1;
 }
-
