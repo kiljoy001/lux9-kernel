@@ -436,6 +436,7 @@ faultamd64(Ureg* ureg, void*)
 	addr = getcr2();
 	read = !(ureg->error & 2);
 	user = userureg(ureg);
+	print("faultamd64: user=%d read=%d addr=%llux\n", user, read, (uvlong)addr);
 	if(!user){
 		extern void _peekinst(void);
 

@@ -158,6 +158,7 @@ void	trapinit(void);
 void	trapinit0(void);
 int     tas(ulong*);
 uvlong	tscticks(uvlong*);
+uintptr dbg_getpte(uintptr);
 ulong	umballoc(ulong, ulong, ulong);
 void	umbfree(ulong, ulong);
 uvlong	upaalloc(uvlong, uvlong, uvlong);

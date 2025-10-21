@@ -6,11 +6,16 @@
 #include	"fns.h"
 #include <error.h>
 
+extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
+extern void pmap(uintptr, uintptr, vlong);
+
 struct initrd_file;
 extern struct initrd_file *initrd_root;
 extern void *initrd_base;
 extern usize initrd_size;
 extern void initrd_init(void*, usize);
+
+uintptr dbg_getpte(uintptr);
 
 /*
  * The initcode array contains the binary text of the first
@@ -72,6 +77,10 @@ proc0(void*)
 	p = newpage(USTKTOP - BY2PG, nil);
 	k = kmap(p);
 	memset((uchar*)VA(k), 0, BY2PG);
+	if(p->pa == 0)
+		print("BOOT[proc0]: stack page pa=0 (unexpected)\n");
+	else
+		print("BOOT[proc0]: stack page pa nonzero\n");
 	{
 		char **ustack;
 		uintptr user_sp;
@@ -86,7 +95,13 @@ proc0(void*)
 	}
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
-	pmap(p->pa | PTEWRITE | PTEUSER | PTEVALID | PTENOEXEC, USTKTOP - BY2PG, BY2PG);
+	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 1, 1) == nil)
+		panic("proc0: mmuwalk stack");
+	putmmu(USTKTOP - BY2PG, p->pa | PTEWRITE | PTEVALID | PTENOEXEC, p);
+	if(dbg_getpte(USTKTOP - BY2PG) != 0)
+		print("BOOT[proc0]: stack pte present\n");
+	else
+		print("BOOT[proc0]: stack pte missing\n");
 
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
 	up->seg[TSEG]->flushme = 1;
@@ -95,9 +110,56 @@ proc0(void*)
 	memmove((uchar*)VA(k), initcode, sizeof(initcode));
 	memset((uchar*)VA(k)+sizeof(initcode), 0, BY2PG-sizeof(initcode));
 	kunmap(k);
+	if(p->pa == 0)
+		print("BOOT[proc0]: text page pa=0 (unexpected)\n");
+	else
+		print("BOOT[proc0]: text page pa nonzero\n");
 	segpage(up->seg[TSEG], p);
-	pmap(p->pa | PTEUSER | PTEVALID, UTZERO, BY2PG);
+	if(mmuwalk(m->pml4, UTZERO, 1, 1) == nil)
+		panic("proc0: mmuwalk text");
+	putmmu(UTZERO, p->pa | PTEVALID, p);
+	if(dbg_getpte(UTZERO) != 0)
+		print("BOOT[proc0]: text pte present\n");
+	else
+		print("BOOT[proc0]: text pte missing\n");
 	print("BOOT[proc0]: user segments populated\n");
+	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 2, 0) != nil)
+		print("BOOT[proc0]: mmuwalk level 2 present\n");
+	else
+		print("BOOT[proc0]: mmuwalk level 2 missing\n");
+	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 1, 0) != nil)
+		print("BOOT[proc0]: mmuwalk level 1 present\n");
+	else
+		print("BOOT[proc0]: mmuwalk level 1 missing\n");
+	{
+		uintptr *lvl2 = mmuwalk(m->pml4, USTKTOP - BY2PG, 2, 0);
+		if(lvl2 != nil){
+			if((*lvl2 & PTEVALID) != 0)
+				print("BOOT[proc0]: level 2 entry marked valid\n");
+			else
+				print("BOOT[proc0]: level 2 entry NOT valid\n");
+			uintptr *pdpt = kaddr(PPN(*lvl2));
+			uintptr idx1 = PTLX(USTKTOP - BY2PG, 2);
+			if(pdpt[idx1] != 0)
+				print("BOOT[proc0]: PDPT entry nonzero\n");
+			else
+				print("BOOT[proc0]: PDPT entry zero\n");
+		}
+	}
+	if(m->pml4[PTLX(USTKTOP-1, 3)] != 0)
+		print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
+	else
+		print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
+	if(up->mmuhead == nil)
+		print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
+	else if(up->mmuhead->level == 2)
+		print("BOOT[proc0]: mmuhead level 2 (PML4E)\n");
+	else if(up->mmuhead->level == 1)
+		print("BOOT[proc0]: mmuhead level 1 (PDPE)\n");
+	else if(up->mmuhead->level == 0)
+		print("BOOT[proc0]: mmuhead level 0 (PDE)\n");
+	else
+		print("BOOT[proc0]: mmuhead level unexpected\n");
 
 	/*
 	 * Become a user process.
@@ -108,7 +170,37 @@ proc0(void*)
 	procpriority(up, PriNormal, 0);
 	procsetup(up);
 
-	flushmmu();
+	/* Install user mappings now that proc0 drops kernel privileges */
+	{
+		int s = splhi();
+		mmuswitch(up);
+		splx(s);
+	}
+	{
+		uintptr idx = PTLX(USTKTOP-1, 3);
+		if((m->pml4[idx] & PTEVALID) != 0)
+			print("BOOT[proc0]: PML4 entry valid after mmuswitch\n");
+		else
+			print("BOOT[proc0]: PML4 entry still invalid after mmuswitch\n");
+		uintptr *pdpt = kaddr(PPN(m->pml4[idx]));
+		uintptr idx1 = PTLX(USTKTOP - BY2PG, 2);
+		if(pdpt[idx1] != 0)
+			print("BOOT[proc0]: PDPT entry after mmuswitch nonzero\n");
+		else
+			print("BOOT[proc0]: PDPT entry after mmuswitch zero\n");
+	}
+	if(m->pml4[PTLX(USTKTOP-1, 3)] != 0)
+		print("BOOT[proc0]: PML4 slot after mmuswitch nonzero\n");
+	else
+		print("BOOT[proc0]: PML4 slot after mmuswitch still zero\n");
+	if(dbg_getpte(USTKTOP - BY2PG) != 0)
+		print("BOOT[proc0]: stack pte present after mmuswitch\n");
+	else
+		print("BOOT[proc0]: stack pte still missing after mmuswitch\n");
+	if(dbg_getpte(UTZERO) != 0)
+		print("BOOT[proc0]: text pte present after mmuswitch\n");
+	else
+		print("BOOT[proc0]: text pte still missing after mmuswitch\n");
 
 	poperror();
 

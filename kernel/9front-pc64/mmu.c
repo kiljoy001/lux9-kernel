@@ -143,6 +143,17 @@ taskswitch(uintptr stack)
 
 static void kernelro(void);
 
+uintptr
+dbg_getpte(uintptr va)
+{
+	uintptr *pte;
+
+	pte = mmuwalk(m->pml4, va, 0, 0);
+	if(pte == nil)
+		return 0;
+	return *pte;
+}
+
 /*
  * Unified Kernel Memory Mapper
  * Single source of truth for all kernel memory mappings
