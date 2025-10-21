@@ -11,6 +11,49 @@ extern uintptr limine_hhdm_offset;
 /* Saved HHDM offset - defined in globals.c, survives CR3 switch */
 extern uintptr saved_limine_hhdm_offset;
 
+static uintptr max_physaddr;
+
+static void
+ensure_phys_range(void)
+{
+	Confmem *cm;
+	int i;
+
+	if(max_physaddr != 0)
+		return;
+
+	for(i = 0; i < nelem(conf.mem); i++){
+		cm = &conf.mem[i];
+		if(cm->npage == 0)
+			continue;
+		if(cm->base + (uintptr)cm->npage * BY2PG > max_physaddr)
+			max_physaddr = cm->base + (uintptr)cm->npage * BY2PG;
+	}
+	if(max_physaddr == 0)
+		max_physaddr = (uintptr)1 << 52;	/* 4PB default guard */
+}
+
+static inline uintptr
+hhdm_virt(uintptr pa)
+{
+	return pa + saved_limine_hhdm_offset;
+}
+
+static inline uintptr
+hhdm_phys(uintptr va)
+{
+	return va - saved_limine_hhdm_offset;
+}
+
+static int
+is_hhdm_va(uintptr va)
+{
+	if(saved_limine_hhdm_offset == 0 || va < saved_limine_hhdm_offset)
+		return 0;
+	ensure_phys_range();
+	return hhdm_phys(va) < max_physaddr;
+}
+
 /*
  * Simple segment descriptors with no translation.
  */
@@ -137,12 +180,12 @@ virt2phys(void *virt)
 	u64int addr = (u64int)virt;
 	extern u64int limine_kernel_phys_base;
 
+	if(is_hhdm_va(addr))
+		return hhdm_phys(addr);
 	if(addr >= KZERO) {
 		/* KZERO region maps to kernel physical base */
 		u64int kernel_phys = (limine_kernel_phys_base == 0) ? 0x7f8fa000 : limine_kernel_phys_base;
 		return addr - KZERO + kernel_phys;
-	} else if(addr >= saved_limine_hhdm_offset) {
-		return addr - saved_limine_hhdm_offset;
 	} else {
 		return addr;  /* Already physical */
 	}
@@ -180,7 +223,7 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 			if(pdp_phys < 0x400000)
 				pdp = (u64int*)(pdp_phys + KZERO);
 			else
-				pdp = (u64int*)(pdp_phys + 0xffff800000000000ULL);
+				pdp = (u64int*)hhdm_virt(pdp_phys);
 		}
 
 		/* Get or create PD */
@@ -193,7 +236,7 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 			if(pd_phys < 0x400000)
 				pd = (u64int*)(pd_phys + KZERO);
 			else
-				pd = (u64int*)(pd_phys + 0xffff800000000000ULL);
+				pd = (u64int*)hhdm_virt(pd_phys);
 		}
 
 		/* Map 2MB page directly in PD */
@@ -231,7 +274,7 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 			if(pdp_phys < 0x400000)
 				pdp = (u64int*)(pdp_phys + KZERO);
 			else
-				pdp = (u64int*)(pdp_phys + 0xffff800000000000ULL);
+				pdp = (u64int*)hhdm_virt(pdp_phys);
 		}
 
 		/* Get or create PD */
@@ -244,7 +287,7 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 			if(pd_phys < 0x400000)
 				pd = (u64int*)(pd_phys + KZERO);
 			else
-				pd = (u64int*)(pd_phys + 0xffff800000000000ULL);
+				pd = (u64int*)hhdm_virt(pd_phys);
 		}
 
 		/* Get or create PT */
@@ -257,12 +300,44 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 			if(pt_phys < 0x400000)
 				pt = (u64int*)(pt_phys + KZERO);
 			else
-				pt = (u64int*)(pt_phys + 0xffff800000000000ULL);
+				pt = (u64int*)hhdm_virt(pt_phys);
 		}
 
 		/* Map the page */
 		pt[pt_idx] = phys | perms;
 	}
+}
+
+static void
+map_hhdm_region(u64int *pml4, u64int phys_start, u64int size)
+{
+	u64int phys = phys_start;
+	u64int end = phys_start + size;
+	u64int virt = hhdm_virt(phys);
+	u64int perms_small = PTEVALID | PTEWRITE | PTEGLOBAL;
+	u64int perms_large = perms_small | PTESIZE;
+
+	/* map leading unaligned portion with 4KB pages */
+	if((phys & (PGLSZ(1) - 1)) != 0){
+		u64int chunk = PGLSZ(1) - (phys & (PGLSZ(1) - 1));
+		if(phys + chunk > end)
+			chunk = end - phys;
+		map_range(pml4, virt, phys, chunk, perms_small);
+		phys += chunk;
+		virt = hhdm_virt(phys);
+	}
+
+	/* map bulk with 2MB pages */
+	u64int aligned = (end - phys) & ~(PGLSZ(1) - 1);
+	if(aligned != 0){
+		map_range_2mb(pml4, virt, phys, aligned, perms_large);
+		phys += aligned;
+		virt = hhdm_virt(phys);
+	}
+
+	/* map trailing remainder */
+	if(phys < end)
+		map_range(pml4, virt, phys, end - phys, perms_small);
 }
 
 /* Setup our own page tables - SINGLE SOURCE OF TRUTH */
@@ -272,6 +347,7 @@ setuppagetables(void)
 	u64int *pml4;
 	u64int pml4_phys;
 	int i;
+	extern char end[];
 
 	/* Linker-provided symbols - declared in lib.h as char[] */
 
@@ -282,6 +358,8 @@ setuppagetables(void)
 	extern u64int cpu0pml4[];
 
 	pml4 = cpu0pml4;
+	next_pt = nil;
+	pt_count = 0;
 	pml4_phys = virt2phys(pml4);
 
 	/* Clear OUR PML4 to start fresh */
@@ -303,17 +381,22 @@ setuppagetables(void)
 		kernel_phys = limine_kernel_phys_base;
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
-	/* Map 8MB starting from the kernel's physical base address */
-	map_range(pml4, KZERO, kernel_phys, 0x800000, PTEVALID | PTEWRITE);
+	/* Map the kernel image at KZERO */
+	u64int kernel_size = ((uintptr)&end - KZERO + BY2PG - 1) & ~(BY2PG - 1);
+	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
-	/* Map HHDM (Higher Half Direct Map) - identity map first 4GB of physical memory
-	 * HHDM base is at 0xffff800000000000 and maps to physical 0x0
-	 * Use 2MB pages for HHDM to avoid consuming too many page tables
-	 * PURE HHDM MODEL: This is our ONLY mapping for physical memory access */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
-	map_range_2mb(pml4, 0xffff800000000000ULL, 0, 0x100000000ULL, PTEVALID | PTEWRITE | PTESIZE);  /* 4GB with 2MB pages */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'D'), "Nd"((unsigned short)0x3F8));
+	/* Identity-map the first 2MB for early firmware interactions */
+	map_range(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
+
+	/* Map physical memory into the HHDM using conf.mem */
+	ensure_phys_range();
+	for(i = 0; i < nelem(conf.mem); i++){
+		Confmem *cm = &conf.mem[i];
+		if(cm->npage == 0)
+			continue;
+		map_hhdm_region(pml4, cm->base, (u64int)cm->npage * BY2PG);
+	}
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
@@ -420,8 +503,7 @@ kaddr(uintptr pa)
 	if(pa >= (uintptr)-KZERO)
 		panic("kaddr: pa=%#p pc=%#p", pa, getcallerpc(&pa));
 
-	/* Use Limine's HHDM offset instead of KZERO */
-	return (void*)(pa + saved_limine_hhdm_offset);
+	return (void*)hhdm_virt(pa);
 }
 
 uintptr
@@ -434,8 +516,8 @@ paddr(void *v)
 	if(va >= KZERO)
 		return va - KZERO;
 	/* HHDM addresses - Limine maps all physical memory here */
-	if(va >= saved_limine_hhdm_offset)
-		return va - saved_limine_hhdm_offset;
+	if(is_hhdm_va(va))
+		return hhdm_phys(va);
 	if(va >= VMAP)
 		return va-VMAP;
 	panic("paddr: va=%#p pc=%#p", va, getcallerpc(&v));
@@ -509,10 +591,9 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 {
 	uintptr *page, flags;
 	MMU *p;
-	
+
 	flags = PTEWRITE|PTEVALID;
 	if(va < VMAP){
-		/* Handle pure HHDM case while no process context exists */
 		if(up == nil){
 			page = rampage();
 			goto make_entry;
@@ -568,7 +649,7 @@ mmuwalk(uintptr *table, uintptr va, int level, int create)
 				return nil;
 			pte = PPN(pte);
 			/* Pure HHDM model: ALL physical addresses mapped via HHDM */
-			table = (void*)(pte + saved_limine_hhdm_offset);
+			table = (void*)hhdm_virt(pte);
 		} else {
 			if(!create)
 				return nil;
@@ -953,13 +1034,12 @@ cankaddr(uintptr pa)
 KMap*
 kmap(Page *page)
 {
-	extern uintptr saved_limine_hhdm_offset;
 	uintptr pa, va;
 
 	/* Pure HHDM model: all physical memory already mapped via HHDM */
 	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	pa = page->pa;
-	va = pa + saved_limine_hhdm_offset;
+	va = hhdm_virt(pa);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	return (KMap*)va;
 }
@@ -988,7 +1068,7 @@ vmap(uvlong pa, vlong size)
 		print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
-	va = pa+limine_hhdm_offset;
+	va = hhdm_virt(pa);
 
 	/*
 	 * might be asking for less than a page.
@@ -1104,7 +1184,7 @@ preallocpages(void)
 			__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 			__asm__ volatile("outb %0, %1" : : "a"((char)'V'), "Nd"((unsigned short)0x3F8));
 			/* Pure HHDM model: map physical memory via HHDM, not VMAP */
-			va = top + limine_hhdm_offset;
+			va = hhdm_virt(top);
 			__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
 			pmap(top | PTEGLOBAL|PTEWRITE|PTENOEXEC|PTEVALID, va, psize);
 			__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
