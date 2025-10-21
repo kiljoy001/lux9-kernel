@@ -66,19 +66,45 @@ devallowed(Pgrp *pgrp, int r)
 {
 	int t, w, b;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'v'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	t = devno(r, 1);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'v'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	if(t == -1)
 		return 0;
 
 	w = sizeof(u64int) * 8;
+	if(((Lock*)&pgrp->ns)->key != 0){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'k'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+	}
+	if(((RWLock*)&pgrp->ns)->writer != 0){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'w'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+	}
+	if(((RWLock*)&pgrp->ns)->head != nil){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'h'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+	}
+	if(up == nil){
+		__asm__ volatile("outb %0, %1" : : "a"((char)'u'), "Nd"((unsigned short)0x3F8));
+		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
+	}
 	rlock(&pgrp->ns);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'v'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(waserror()){
 		runlock(&pgrp->ns);
 		nexterror();
 	}
 	b = !(pgrp->notallowed[t/w] & 1<<t%w);
 	poperror();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'v'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	runlock(&pgrp->ns);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'v'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	return b;
 }
 
@@ -191,16 +217,26 @@ devattach(int tc, char *spec)
 	Chan *c;
 	char *buf;
 
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	c = newchan();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	mkqid(&c->qid, 0, 0, QTDIR);
 	c->type = devno(tc, 0);
 	if(spec == nil)
 		spec = "";
 	n = 1+UTFmax+strlen(spec)+1;
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	buf = smalloc(n);
 	snprint(buf, n, "#%C%s", tc, spec);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	c->path = newpath(buf);
 	free(buf);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	return c;
 }
 

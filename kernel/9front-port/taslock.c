@@ -56,6 +56,9 @@ lock(Lock *l)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
 	int tas_result = tas(&l->key);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));
+	if(tas_result != 0)
+		print("lock busy: l=%#p caller=%#p held_by=%#p key=%#lux\n",
+			l, pc, l->pc, l->key);
 	if(tas_result == 0){
 		__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));
 		if(up)
@@ -87,7 +90,7 @@ lock(Lock *l)
 					l, pc, up ? up->pid : 0, l->pc, l->p ? l->p->pid : 0);
 				up->edf->d = µs();	/* yield to process with lock */
 			}
-			if(i++ > 100000000){
+			if(i++ > 100){
 				i = 0;
 				lockloop(l, pc);
 			}

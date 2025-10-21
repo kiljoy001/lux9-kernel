@@ -29,10 +29,10 @@ squidboy(Apic* apic)
 void
 mpstartap(Apic* apic)
 {
-	uintptr *apbootp, *pml4, *pdp0, v;
+	uintptr *apbootp, *pml4, *pdp0, apboot_phys, v;
 	Segdesc *gdt;
 	Mach *mach;
-	uchar *p;
+	uchar *apbootpage, *p;
 	int i;
 
 	/*
@@ -76,7 +76,11 @@ mpstartap(Apic* apic)
 	 * Tell the AP where its kernel vector and pdb are.
 	 * The offsets are known in the AP bootstrap code.
 	 */
-	apbootp = (uintptr*)(APBOOTSTRAP+0x08);
+	apboot_phys = (uintptr)APBOOTSTRAP - KZERO;
+	apbootpage = (uchar*)KADDR(apboot_phys);
+	memmove(apbootpage, (void*)APBOOTSTRAP, BY2PG);
+
+	apbootp = (uintptr*)(apbootpage + 0x08);
 	apbootp[0] = (uintptr)squidboy;	/* assembler jumps here eventually */
 	apbootp[1] = (uintptr)PADDR(pml4);
 	apbootp[2] = (uintptr)apic;
@@ -87,9 +91,9 @@ mpstartap(Apic* apic)
 	 * Universal Startup Algorithm.
 	 */
 	p = KADDR(0x467);		/* warm-reset vector */
-	*p++ = PADDR(APBOOTSTRAP);
-	*p++ = PADDR(APBOOTSTRAP)>>8;
-	i = (PADDR(APBOOTSTRAP) & ~0xFFFF)/16;
+	*p++ = apboot_phys;
+	*p++ = apboot_phys>>8;
+	i = (apboot_phys & ~0xFFFF)/16;
 	/* code assumes i==0 */
 	if(i != 0)
 		print("mp: bad APBOOTSTRAP\n");
@@ -98,7 +102,7 @@ mpstartap(Apic* apic)
 	coherence();
 
 	nvramwrite(0x0F, 0x0A);		/* shutdown code: warm reset upon init ipi */
-	lapicstartap(apic, PADDR(APBOOTSTRAP));
+	lapicstartap(apic, apboot_phys);
 	for(i = 0; i < 100000; i++){
 		if(arch->fastclock == tscticks)
 			cycles(&m->tscticks);	/* for ap's syncclock(); */

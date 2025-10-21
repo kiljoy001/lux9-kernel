@@ -385,10 +385,14 @@ setuppagetables(void)
 	/* Map the kernel image at KZERO */
 	u64int kernel_size = ((uintptr)&kend - KZERO + BY2PG - 1) & ~(BY2PG - 1);
 	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	/* Mirror the kernel image into the HHDM so KADDR() stays valid post-switch */
+	map_range(pml4, hhdm_virt(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
 	/* Identity-map the first 2MB for early firmware interactions */
 	map_range(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
+	/* Provide HHDM access to the low 2MB (warm-reset vector, AP trampoline, etc.) */
+	map_range(pml4, hhdm_virt(0), 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
 
 	/* Map physical memory into the HHDM using conf.mem */
 	ensure_phys_range();

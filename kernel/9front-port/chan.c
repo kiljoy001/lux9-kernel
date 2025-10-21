@@ -11,6 +11,12 @@ enum
 	PATHMSLOP	= 20,
 };
 
+static void
+namecdebug(char c)
+{
+	__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((ushort)0x3F8));
+}
+
 static struct Chanalloc
 {
 	Lock;
@@ -209,21 +215,35 @@ newchan(void)
 {
 	Chan *c;
 
+	namecdebug('c');
+	namecdebug('0');
 	lock(&chanalloc);
+	namecdebug('c');
+	namecdebug('1');
 	c = chanalloc.free;
 	if(c != nil){
 		chanalloc.free = c->next;
 		c->next = nil;
 	} else {
+		namecdebug('c');
+		namecdebug('2');
 		unlock(&chanalloc);
+		namecdebug('c');
+		namecdebug('3');
 		c = smalloc(sizeof(Chan));
+		namecdebug('c');
+		namecdebug('4');
 		lock(&chanalloc);
+		namecdebug('c');
+		namecdebug('5');
 		c->link = chanalloc.list;
 		chanalloc.list = c;
 	}
 	if(c->fid == 0)
 		c->fid = ++chanalloc.fid;
 	unlock(&chanalloc);
+	namecdebug('c');
+	namecdebug('6');
 
 	/* if you get an error before associating with a dev,
 	   close calls rootclose, a nop */
@@ -1318,9 +1338,13 @@ namec(char *aname, int amode, int omode, ulong perm)
 	char *err;
 	char *name;
 
+	namecdebug('n');
+	namecdebug('0');
 	if(aname[0] == '\0')
 		error("empty file name");
 	aname = validnamedup(aname, 1);
+	namecdebug('n');
+	namecdebug('1');
 	if(waserror()){
 		free(aname);
 		nexterror();
@@ -1353,11 +1377,15 @@ namec(char *aname, int amode, int omode, ulong perm)
 	nomount = 0;
 	switch(name[0]){
 	case '/':
+		namecdebug('n');
+		namecdebug('s');
 		c = up->slash;
 		incref(c);
 		break;
 	
 	case '#':
+		namecdebug('n');
+		namecdebug('#');
 		nomount = 1;
 		up->genbuf[0] = '\0';
 		n = 0;
@@ -1367,21 +1395,35 @@ namec(char *aname, int amode, int omode, ulong perm)
 			up->genbuf[n++] = *name++;
 		}
 		up->genbuf[n] = '\0';
+		namecdebug('n');
+		namecdebug('a');
 		n = chartorune(&r, up->genbuf+1)+1;
+		namecdebug('n');
+		namecdebug('c');
 		t = devno(r, 1);
+		namecdebug('n');
+		namecdebug('d');
 		if(t == -1)
 			error(Ebadsharp);
 		if(!devunmount && !devallowed(up->pgrp, r))
 			error(Enoattach);
+		namecdebug('n');
+		namecdebug('e');
 
 		c = devtab[t]->attach(up->genbuf+n);
+		namecdebug('n');
+		namecdebug('b');
 		break;
 
 	default:
+		namecdebug('n');
+		namecdebug('.');
 		c = up->dot;
 		incref(c);
 		break;
 	}
+	namecdebug('n');
+	namecdebug('2');
 
 	e.aname = aname;
 	e.prefix = name - aname;
@@ -1414,6 +1456,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 	 * Build a list of elements in the name.
 	 */
 	parsename(name, &e);
+	namecdebug('n');
+	namecdebug('3');
 
 	/*
 	 * On create, ....
@@ -1430,6 +1474,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 			error(Eexist);
 		e.nelems--;
 	}
+	namecdebug('n');
+	namecdebug('4');
 
 	if(walk(&c, e.elems, e.nelems, nomount, &e.nerror) < 0){
 		if(e.nerror < 0 || e.nerror > e.nelems){
@@ -1438,6 +1484,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 		}
 		nexterror();
 	}
+	namecdebug('n');
+	namecdebug('5');
 
 	if(e.mustbedir && (c->qid.type&QTDIR) == 0)
 		error("not a directory");
@@ -1658,6 +1706,10 @@ namec(char *aname, int amode, int omode, ulong perm)
 	poperror();	/* e c */
 	free(aname);
 	poperror();	/* aname */
+	namecdebug('n');
+	namecdebug('6');
+	namecdebug('n');
+	namecdebug('7');
 
 	return c;
 }
