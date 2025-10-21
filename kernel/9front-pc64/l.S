@@ -1,4 +1,5 @@
 /* 9front l.s converted to GAS syntax for x86_64 */
+#include "mem.h"
 .code64
 .section .text
 
@@ -197,16 +198,6 @@ coherence_impl:
     mfence
     ret
 
-
-/* Exception return stubs */
-.global noteret
-noteret:
-    iretq
-
-.global forkret
-forkret:
-    ret
-
 .global setlabel
 setlabel:
     movq %rsp, 0(%rdi)
@@ -372,6 +363,133 @@ gotolabel:
     movl $1, %eax
     ret
 
+/* -----------------------------------------------------------------------
+ * User/kernel transition helpers borrowed from 9front
+ * --------------------------------------------------------------------- */
+.global touser
+touser:
+    swapgs
+    xor %r15d, %r15d            /* RMACH = nil */
+    xor %r14d, %r14d            /* RUSER = nil */
+    movabsq $(UTZERO + 0x28), %rcx   /* entry pc */
+    mov $0x200, %r11            /* enable interrupts on return */
+    mov %rdi, %rsp              /* user stack pointer */
+    sysretq
+
+.global syscallentry
+syscallentry:
+    swapgs
+    movq %gs:0, %rax            /* m */
+    movq 16(%rax), %rbx         /* up */
+    movq %rsp, %r13             /* save user stack */
+    movq %rbx, %rsp             /* switch to kernel stack */
+
+    pushq $UDSEL                /* ss */
+    pushq %r13                  /* user sp */
+    pushq %r11                  /* rflags */
+    pushq $UESEL                /* cs */
+    pushq %rcx                  /* user pc */
+    pushq $0                    /* error code */
+    pushq $64                   /* trap number (VectorSYSCALL) */
+
+    subq $136, %rsp             /* space for Ureg (minus saved items) */
+    movq %r15, 120(%rsp)        /* save previous RMACH */
+    movq %r14, 112(%rsp)        /* save previous RUSER */
+    movq %rdi, 56(%rsp)         /* syscall arg register */
+
+    movq %rax, %r15             /* update RMACH */
+    movq %rbx, %r14             /* update RUSER */
+
+    leaq 8(%rsp), %rdi          /* &ureg */
+    call syscall
+    jmp noteret
+
+.global forkret
+forkret:
+    swapgs
+    movq 8(%rsp), %rax          /* return value */
+    movq 120(%rsp), %r15        /* restore RMACH */
+    movq 112(%rsp), %r14        /* restore RUSER */
+    movq 152(%rsp), %rcx        /* user pc */
+    movq 168(%rsp), %r11        /* rflags */
+    movq 176(%rsp), %rsp        /* user sp */
+    sysretq
+
+.global _strayintr
+_strayintr:
+    pushq %rax
+    movq 8(%rsp), %rax
+    jmp _intrcommon
+
+.global _strayintrx
+_strayintrx:
+    xchgq %rax, (%rsp)
+    jmp _intrcommon
+
+_intrcommon:
+    movzbq (%rax), %rax
+    xchgq %rax, (%rsp)
+    subq $24, %rsp
+    cmpw $KESEL, 48(%rsp)
+    je _intrnested
+
+    movq %r14, 0(%rsp)
+    movq %r15, 8(%rsp)
+
+    swapgs
+    movq %gs:0, %r15
+    movq 16(%r15), %r14
+
+_intrnested:
+    pushq %r13
+    pushq %r12
+    pushq %r11
+    pushq %r10
+    pushq %r9
+    pushq %r8
+    pushq %rbp
+    pushq %rdi
+    pushq %rsi
+    pushq %rdx
+    pushq %rcx
+    pushq %rbx
+    pushq %rax
+
+    movq %rsp, %rdi
+    pushq %rsp                  /* preserve stack slot for notifier */
+    call trap
+    jmp _intrestore
+
+.global noteret
+noteret:
+_intrestore:
+    popq %rax                   /* discard saved pointer */
+
+    popq %rax
+    popq %rbx
+    popq %rcx
+    popq %rdx
+    popq %rsi
+    popq %rdi
+    popq %rbp
+    popq %r8
+    popq %r9
+    popq %r10
+    popq %r11
+    popq %r12
+    popq %r13
+
+    cmpq $KESEL, 48(%rsp)
+    je _iretnested
+
+    swapgs
+    movq 8(%rsp), %r15
+    movq 0(%rsp), %r14
+
+_iretnested:
+    addq $32, %rsp
+    iretq
+
 .global putdr
 putdr:
     /* putdr(int reg, uintptr val) */
@@ -394,11 +512,6 @@ putdr7:
     movq %rdi, %dr7
     ret
 
-.global syscallentry
-syscallentry:
-    /* Syscall entry point stub */
-    ret
-
 .global cmpswap486
 cmpswap486:
     /* Compare and swap: bool cmpswap486(long *addr, long old, long new) */
@@ -411,5 +524,515 @@ cmpswap486:
 
 .global vectortable
 vectortable:
-    /* Interrupt vector table - array of function pointers */
-    .space 256*8
+    call _strayintr
+    .byte 0x00        /* divide error */
+    call _strayintr
+    .byte 0x01        /* debug exception */
+    call _strayintr
+    .byte 0x02        /* NMI interrupt */
+    call _strayintr
+    .byte 0x03        /* breakpoint */
+    call _strayintr
+    .byte 0x04        /* overflow */
+    call _strayintr
+    .byte 0x05        /* bound */
+    call _strayintr
+    .byte 0x06        /* invalid opcode */
+    call _strayintr
+    .byte 0x07        /* no coprocessor available */
+    call _strayintrx
+    .byte 0x08        /* double fault */
+    call _strayintr
+    .byte 0x09        /* coprocessor segment overflow */
+    call _strayintrx
+    .byte 0x0a        /* invalid TSS */
+    call _strayintrx
+    .byte 0x0b        /* segment not available */
+    call _strayintrx
+    .byte 0x0c        /* stack exception */
+    call _strayintrx
+    .byte 0x0d        /* general protection error */
+    call _strayintrx
+    .byte 0x0e        /* page fault */
+    call _strayintr
+    .byte 0x0f
+    call _strayintr
+    .byte 0x10        /* coprocessor error */
+    call _strayintrx
+    .byte 0x11        /* alignment check */
+    call _strayintr
+    .byte 0x12        /* machine check */
+    call _strayintr
+    .byte 0x13        /* simd error */
+    call _strayintr
+    .byte 0x14
+    call _strayintr
+    .byte 0x15
+    call _strayintr
+    .byte 0x16
+    call _strayintr
+    .byte 0x17
+    call _strayintr
+    .byte 0x18
+    call _strayintr
+    .byte 0x19
+    call _strayintr
+    .byte 0x1a
+    call _strayintr
+    .byte 0x1b
+    call _strayintr
+    .byte 0x1c
+    call _strayintr
+    .byte 0x1d
+    call _strayintr
+    .byte 0x1e
+    call _strayintr
+    .byte 0x1f
+    call _strayintr
+    .byte 0x20        /* VectorLAPIC */
+    call _strayintr
+    .byte 0x21
+    call _strayintr
+    .byte 0x22
+    call _strayintr
+    .byte 0x23
+    call _strayintr
+    .byte 0x24
+    call _strayintr
+    .byte 0x25
+    call _strayintr
+    .byte 0x26
+    call _strayintr
+    .byte 0x27
+    call _strayintr
+    .byte 0x28
+    call _strayintr
+    .byte 0x29
+    call _strayintr
+    .byte 0x2a
+    call _strayintr
+    .byte 0x2b
+    call _strayintr
+    .byte 0x2c
+    call _strayintr
+    .byte 0x2d
+    call _strayintr
+    .byte 0x2e
+    call _strayintr
+    .byte 0x2f
+    call _strayintr
+    .byte 0x30
+    call _strayintr
+    .byte 0x31
+    call _strayintr
+    .byte 0x32
+    call _strayintr
+    .byte 0x33
+    call _strayintr
+    .byte 0x34
+    call _strayintr
+    .byte 0x35
+    call _strayintr
+    .byte 0x36
+    call _strayintr
+    .byte 0x37
+    call _strayintr
+    .byte 0x38
+    call _strayintr
+    .byte 0x39
+    call _strayintr
+    .byte 0x3a
+    call _strayintr
+    .byte 0x3b
+    call _strayintr
+    .byte 0x3c
+    call _strayintr
+    .byte 0x3d
+    call _strayintr
+    .byte 0x3e
+    call _strayintr
+    .byte 0x3f
+    call _strayintr
+    .byte 0x40        /* was VectorSYSCALL */
+    call _strayintr
+    .byte 0x41
+    call _strayintr
+    .byte 0x42
+    call _strayintr
+    .byte 0x43
+    call _strayintr
+    .byte 0x44
+    call _strayintr
+    .byte 0x45
+    call _strayintr
+    .byte 0x46
+    call _strayintr
+    .byte 0x47
+    call _strayintr
+    .byte 0x48
+    call _strayintr
+    .byte 0x49
+    call _strayintr
+    .byte 0x4a
+    call _strayintr
+    .byte 0x4b
+    call _strayintr
+    .byte 0x4c
+    call _strayintr
+    .byte 0x4d
+    call _strayintr
+    .byte 0x4e
+    call _strayintr
+    .byte 0x4f
+    call _strayintr
+    .byte 0x50
+    call _strayintr
+    .byte 0x51
+    call _strayintr
+    .byte 0x52
+    call _strayintr
+    .byte 0x53
+    call _strayintr
+    .byte 0x54
+    call _strayintr
+    .byte 0x55
+    call _strayintr
+    .byte 0x56
+    call _strayintr
+    .byte 0x57
+    call _strayintr
+    .byte 0x58
+    call _strayintr
+    .byte 0x59
+    call _strayintr
+    .byte 0x5a
+    call _strayintr
+    .byte 0x5b
+    call _strayintr
+    .byte 0x5c
+    call _strayintr
+    .byte 0x5d
+    call _strayintr
+    .byte 0x5e
+    call _strayintr
+    .byte 0x5f
+    call _strayintr
+    .byte 0x60
+    call _strayintr
+    .byte 0x61
+    call _strayintr
+    .byte 0x62
+    call _strayintr
+    .byte 0x63
+    call _strayintr
+    .byte 0x64
+    call _strayintr
+    .byte 0x65
+    call _strayintr
+    .byte 0x66
+    call _strayintr
+    .byte 0x67
+    call _strayintr
+    .byte 0x68
+    call _strayintr
+    .byte 0x69
+    call _strayintr
+    .byte 0x6a
+    call _strayintr
+    .byte 0x6b
+    call _strayintr
+    .byte 0x6c
+    call _strayintr
+    .byte 0x6d
+    call _strayintr
+    .byte 0x6e
+    call _strayintr
+    .byte 0x6f
+    call _strayintr
+    .byte 0x70
+    call _strayintr
+    .byte 0x71
+    call _strayintr
+    .byte 0x72
+    call _strayintr
+    .byte 0x73
+    call _strayintr
+    .byte 0x74
+    call _strayintr
+    .byte 0x75
+    call _strayintr
+    .byte 0x76
+    call _strayintr
+    .byte 0x77
+    call _strayintr
+    .byte 0x78
+    call _strayintr
+    .byte 0x79
+    call _strayintr
+    .byte 0x7a
+    call _strayintr
+    .byte 0x7b
+    call _strayintr
+    .byte 0x7c
+    call _strayintr
+    .byte 0x7d
+    call _strayintr
+    .byte 0x7e
+    call _strayintr
+    .byte 0x7f
+    call _strayintr
+    .byte 0x80        /* Vector[A]PIC */
+    call _strayintr
+    .byte 0x81
+    call _strayintr
+    .byte 0x82
+    call _strayintr
+    .byte 0x83
+    call _strayintr
+    .byte 0x84
+    call _strayintr
+    .byte 0x85
+    call _strayintr
+    .byte 0x86
+    call _strayintr
+    .byte 0x87
+    call _strayintr
+    .byte 0x88
+    call _strayintr
+    .byte 0x89
+    call _strayintr
+    .byte 0x8a
+    call _strayintr
+    .byte 0x8b
+    call _strayintr
+    .byte 0x8c
+    call _strayintr
+    .byte 0x8d
+    call _strayintr
+    .byte 0x8e
+    call _strayintr
+    .byte 0x8f
+    call _strayintr
+    .byte 0x90
+    call _strayintr
+    .byte 0x91
+    call _strayintr
+    .byte 0x92
+    call _strayintr
+    .byte 0x93
+    call _strayintr
+    .byte 0x94
+    call _strayintr
+    .byte 0x95
+    call _strayintr
+    .byte 0x96
+    call _strayintr
+    .byte 0x97
+    call _strayintr
+    .byte 0x98
+    call _strayintr
+    .byte 0x99
+    call _strayintr
+    .byte 0x9a
+    call _strayintr
+    .byte 0x9b
+    call _strayintr
+    .byte 0x9c
+    call _strayintr
+    .byte 0x9d
+    call _strayintr
+    .byte 0x9e
+    call _strayintr
+    .byte 0x9f
+    call _strayintr
+    .byte 0xa0
+    call _strayintr
+    .byte 0xa1
+    call _strayintr
+    .byte 0xa2
+    call _strayintr
+    .byte 0xa3
+    call _strayintr
+    .byte 0xa4
+    call _strayintr
+    .byte 0xa5
+    call _strayintr
+    .byte 0xa6
+    call _strayintr
+    .byte 0xa7
+    call _strayintr
+    .byte 0xa8
+    call _strayintr
+    .byte 0xa9
+    call _strayintr
+    .byte 0xaa
+    call _strayintr
+    .byte 0xab
+    call _strayintr
+    .byte 0xac
+    call _strayintr
+    .byte 0xad
+    call _strayintr
+    .byte 0xae
+    call _strayintr
+    .byte 0xaf
+    call _strayintr
+    .byte 0xb0
+    call _strayintr
+    .byte 0xb1
+    call _strayintr
+    .byte 0xb2
+    call _strayintr
+    .byte 0xb3
+    call _strayintr
+    .byte 0xb4
+    call _strayintr
+    .byte 0xb5
+    call _strayintr
+    .byte 0xb6
+    call _strayintr
+    .byte 0xb7
+    call _strayintr
+    .byte 0xb8
+    call _strayintr
+    .byte 0xb9
+    call _strayintr
+    .byte 0xba
+    call _strayintr
+    .byte 0xbb
+    call _strayintr
+    .byte 0xbc
+    call _strayintr
+    .byte 0xbd
+    call _strayintr
+    .byte 0xbe
+    call _strayintr
+    .byte 0xbf
+    call _strayintr
+    .byte 0xc0
+    call _strayintr
+    .byte 0xc1
+    call _strayintr
+    .byte 0xc2
+    call _strayintr
+    .byte 0xc3
+    call _strayintr
+    .byte 0xc4
+    call _strayintr
+    .byte 0xc5
+    call _strayintr
+    .byte 0xc6
+    call _strayintr
+    .byte 0xc7
+    call _strayintr
+    .byte 0xc8
+    call _strayintr
+    .byte 0xc9
+    call _strayintr
+    .byte 0xca
+    call _strayintr
+    .byte 0xcb
+    call _strayintr
+    .byte 0xcc
+    call _strayintr
+    .byte 0xcd
+    call _strayintr
+    .byte 0xce
+    call _strayintr
+    .byte 0xcf
+    call _strayintr
+    .byte 0xd0
+    call _strayintr
+    .byte 0xd1
+    call _strayintr
+    .byte 0xd2
+    call _strayintr
+    .byte 0xd3
+    call _strayintr
+    .byte 0xd4
+    call _strayintr
+    .byte 0xd5
+    call _strayintr
+    .byte 0xd6
+    call _strayintr
+    .byte 0xd7
+    call _strayintr
+    .byte 0xd8
+    call _strayintr
+    .byte 0xd9
+    call _strayintr
+    .byte 0xda
+    call _strayintr
+    .byte 0xdb
+    call _strayintr
+    .byte 0xdc
+    call _strayintr
+    .byte 0xdd
+    call _strayintr
+    .byte 0xde
+    call _strayintr
+    .byte 0xdf
+    call _strayintr
+    .byte 0xe0
+    call _strayintr
+    .byte 0xe1
+    call _strayintr
+    .byte 0xe2
+    call _strayintr
+    .byte 0xe3
+    call _strayintr
+    .byte 0xe4
+    call _strayintr
+    .byte 0xe5
+    call _strayintr
+    .byte 0xe6
+    call _strayintr
+    .byte 0xe7
+    call _strayintr
+    .byte 0xe8
+    call _strayintr
+    .byte 0xe9
+    call _strayintr
+    .byte 0xea
+    call _strayintr
+    .byte 0xeb
+    call _strayintr
+    .byte 0xec
+    call _strayintr
+    .byte 0xed
+    call _strayintr
+    .byte 0xee
+    call _strayintr
+    .byte 0xef
+    call _strayintr
+    .byte 0xf0
+    call _strayintr
+    .byte 0xf1
+    call _strayintr
+    .byte 0xf2
+    call _strayintr
+    .byte 0xf3
+    call _strayintr
+    .byte 0xf4
+    call _strayintr
+    .byte 0xf5
+    call _strayintr
+    .byte 0xf6
+    call _strayintr
+    .byte 0xf7
+    call _strayintr
+    .byte 0xf8
+    call _strayintr
+    .byte 0xf9
+    call _strayintr
+    .byte 0xfa
+    call _strayintr
+    .byte 0xfb
+    call _strayintr
+    .byte 0xfc
+    call _strayintr
+    .byte 0xfd
+    call _strayintr
+    .byte 0xfe
+    call _strayintr
+    .byte 0xff

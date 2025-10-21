@@ -377,12 +377,6 @@ void links(void) {}
 void ksetenv(char *name, char *val, int conf) { (void)name; (void)val; (void)conf; }
 void setconfenv(void) {}
 
-/* User mode - TODO: wire up real SYSRET path */
-void touser(void *pc)
-{
-	USED(pc);
-}
-
 /* Formatting */
 void quotefmtinstall(void) {}
 
