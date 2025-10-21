@@ -86,7 +86,7 @@ proc0(void*)
 	}
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
-	pmap(p->pa | PTEWRITE | PTEUSER, USTKTOP - BY2PG, BY2PG);
+	pmap(p->pa | PTEWRITE | PTEUSER | PTEVALID | PTENOEXEC, USTKTOP - BY2PG, BY2PG);
 
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
 	up->seg[TSEG]->flushme = 1;
@@ -96,7 +96,7 @@ proc0(void*)
 	memset((uchar*)VA(k)+sizeof(initcode), 0, BY2PG-sizeof(initcode));
 	kunmap(k);
 	segpage(up->seg[TSEG], p);
-	pmap(p->pa | PTEUSER, UTZERO, BY2PG);
+	pmap(p->pa | PTEUSER | PTEVALID, UTZERO, BY2PG);
 	print("BOOT[proc0]: user segments populated\n");
 
 	/*

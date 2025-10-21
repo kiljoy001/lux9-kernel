@@ -1,31 +1,19 @@
 # HHDM MMU Debug Report - User Memory Access Issue
 
 **Date**: 2025-10-06  
-**Status**: System hangs when calling pmap() to create user page table entries  
-**Git Commit**: d191266 (Fix HHDM bugs: IRETQ stack corruption and enable user MMU setup)
-
----
-
-## 2025-10-07 Update — Unified HHDM Page-Table Model
-
-- `kernel/9front-pc64/mmu.c` now builds process page tables directly from an HHDM-visible allocator; the old `mmupool` + borrow-lock slab was removed.
-- Serial breadcrumb markers (e.g. `M0/M1` etc.) were stripped from the low-level lock and MMU paths to keep the console noise-free. The only remaining boot markers are the high-level step tags printed from `main.c`.
-- `tas()` gained a locked `XCHGL` and no longer emits diagnostic bytes on COM1.
-- `preallocpages()` reserves only the `Page` metadata array; there is no longer a carved-out MMU slab.
-- When debugging boot flow, refer to `main.c` step pairs (`42`, `43`, …) and the higher-level logging (`BOOT:` lines). No new serial keys were introduced for the MMU path.
-
-The remainder of this document documents the original failure mode for historical context.
+**Status**: Kernel reaches `touser()` (SYSRET) but user mode never runs; tracking SYSRET environment
+**Git Commit**: 614ca67 (pc64: port touser and syscallentry)
 
 ---
 
 ## Executive Summary
 
-The lux9-kernel boots successfully through all kernel initialization and kproc() creation, but **hangs when trying to set up user page tables** in proc0(). The root cause is that the pure HHDM (Higher Half Direct Map) memory model requires explicit page table entries for user memory access, even though the kernel can access all physical memory via HHDM.
+The lux9-kernel boots through all kernel initialization, kproc creation, and proc0() setup. We added explicit pmap() calls and ported Plan 9’s `touser/syscallentry/forkret` assembly. Now the kernel clears RMACH/RUSER, loads `%rcx/%r11/%rsp`, and executes `sysretq`. We see the `'U'` breadcrumb just before SYSRET, but no user-mode code runs (no `initcode` output) and the machine resets. The hypothesis: the SYSRET environment (CS/SS descriptor, stack pointer, or canonical addresses) is still incorrect.
 
-### Current Hang Location
-- **Function**: `proc0()` in `kernel/9front-port/userinit.c`
-- **Line**: 79 - call to `pmap(up->seg[SSEG], USTKTOP - BY2PG, ...)`
-- **Debug Marker**: 'P' (appears in boot output, system hangs immediately after)
+### Current Stoppage
+- **Function**: `touser()` in `kernel/9front-pc64/l.S`
+- **Instruction**: `sysretq`
+- **Serial marker**: `'U'` (emitted just before SYSRET). No further markers (no `'s'` from syscallentry), meaning the CPU does not return via our trap path; likely it triple-faults or reboots immediately.
 
 ---
 

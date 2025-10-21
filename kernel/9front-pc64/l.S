@@ -369,16 +369,26 @@ gotolabel:
 .global touser
 touser:
     swapgs
+    mov $'U', %al
+    mov $0x3F8, %dx
+    outb %al, %dx
     xor %r15d, %r15d            /* RMACH = nil */
     xor %r14d, %r14d            /* RUSER = nil */
-    movabsq $(UTZERO + 0x28), %rcx   /* entry pc */
-    mov $0x200, %r11            /* enable interrupts on return */
-    mov %rdi, %rsp              /* user stack pointer */
-    sysretq
+    movabsq $(UTZERO + 0x28), %rax   /* user entry */
+    mov %rdi, %rcx                   /* user stack */
+    pushq $UDSEL
+    pushq %rcx
+    pushq $0x202
+    pushq $UESEL
+    pushq %rax
+    iretq
 
 .global syscallentry
 syscallentry:
     swapgs
+    mov $'s', %al
+    mov $0x3F8, %dx
+    outb %al, %dx
     movq %gs:0, %rax            /* m */
     movq 16(%rax), %rbx         /* up */
     movq %rsp, %r13             /* save user stack */
