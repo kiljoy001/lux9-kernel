@@ -9,6 +9,7 @@
 struct initrd_file *initrd_root = nil;
 void *initrd_base = nil;
 usize initrd_size = 0;
+uintptr initrd_physaddr = 0;
 
 /* Parse octal number from TAR header */
 static usize
@@ -41,6 +42,27 @@ is_valid_tar(struct tar_header *hdr)
 }
 
 /* Initialize initrd from memory */
+extern void uartputs(char*, int);
+
+static void
+printhex(char *label, uvlong value)
+{
+    static char hex[] = "0123456789abcdef";
+    char buf[2 + sizeof(uvlong) * 2 + 2];
+    char *p = buf;
+
+    *p++ = '0';
+    *p++ = 'x';
+    for(int i = (int)(sizeof(uvlong) * 2 - 1); i >= 0; i--)
+        *p++ = hex[(value >> (i * 4)) & 0xF];
+    *p++ = '\n';
+    *p = 0;
+
+    if(label != nil)
+        uartputs(label, strlen(label));
+    uartputs(buf, p - buf);
+}
+
 void
 initrd_init(void *addr, usize len)
 {
@@ -51,12 +73,21 @@ initrd_init(void *addr, usize len)
 
 	initrd_base = addr;
 	initrd_size = len;
+	printhex("initrd addr ", (uvlong)(uintptr)addr);
+	printhex("initrd size ", (uvlong)len);
 
 	print("initrd: loading entries\n");
+	printhex("initrd start offset ", 0);
+	printhex("initrd end offset ", (uvlong)len);
 
 	/* Parse TAR archive */
 	while(offset < len) {
 		hdr = (struct tar_header*)((u8int*)addr + offset);
+		printhex("header @ ", (uvlong)(uintptr)hdr);
+		printhex("offset ", (uvlong)offset);
+		uvlong word0;
+		memmove(&word0, hdr, sizeof word0);
+		printhex("hdr word0 ", word0);
 
 		/* Check for end of archive (all zeros) */
 		if(hdr->name[0] == '\0')
@@ -68,17 +99,20 @@ initrd_init(void *addr, usize len)
 			break;
 		}
 
-		/* Get file size */
-		size = parse_octal(hdr->size, sizeof(hdr->size));
+	/* Get file size */
+	size = parse_octal(hdr->size, sizeof(hdr->size));
+	printhex("size parsed ", (uvlong)size);
+	printhex("malloc request ", (uvlong)sizeof(struct initrd_file));
 
-		/* Only handle regular files */
-		if(hdr->typeflag == '0' || hdr->typeflag == '\0') {
-			/* Allocate file entry */
-			file = malloc(sizeof(struct initrd_file));
-			if(file == nil) {
-			print("initrd: out of memory\n");
-			return;
-			}
+	/* Only handle regular files */
+	if(hdr->typeflag == '0' || hdr->typeflag == '\0') {
+		/* Allocate file entry */
+		file = malloc(sizeof(struct initrd_file));
+		printhex("malloc returned ", (uvlong)(uintptr)file);
+		if(file == nil) {
+		print("initrd: out of memory\n");
+		return;
+		}
 
 			/* Copy name */
 			memmove(file->name, hdr->name, sizeof(hdr->name));

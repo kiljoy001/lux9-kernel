@@ -34,6 +34,7 @@ struct initrd_file {
 extern struct initrd_file *initrd_root;
 extern void *initrd_base;
 extern usize initrd_size;
+extern uintptr initrd_physaddr;
 
 /* Functions */
 void initrd_init(void *addr, usize len);

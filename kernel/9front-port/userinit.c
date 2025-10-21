@@ -2,6 +2,7 @@
 #include "portlib.h"
 #include	"mem.h"
 #include	"dat.h"
+#include	"tos.h"
 #include	"fns.h"
 #include <error.h>
 
@@ -71,6 +72,18 @@ proc0(void*)
 	p = newpage(USTKTOP - BY2PG, nil);
 	k = kmap(p);
 	memset((uchar*)VA(k), 0, BY2PG);
+	{
+		char **ustack;
+		uintptr user_sp;
+
+		ustack = (char**)((uchar*)VA(k) + BY2PG - sizeof(Tos) - 8 - sizeof(ustack[0])*4);
+		user_sp = USTKTOP - sizeof(Tos) - 8 - sizeof(ustack[0])*4;
+
+		ustack[3] = ustack[2] = nil;
+		strcpy((char*)&ustack[4], "boot");
+		ustack[1] = (char*)(user_sp + sizeof(ustack[0])*4);
+		ustack[0] = nil;
+	}
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
 	pmap(p->pa | PTEWRITE | PTEUSER, USTKTOP - BY2PG, BY2PG);

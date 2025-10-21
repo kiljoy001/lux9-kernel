@@ -5,11 +5,34 @@
 #include	"fns.h"
 #include	"io.h"
 
+extern void uartputs(char*, int);
+
+static void
+dbghex(char *label, uvlong value)
+{
+	static char hex[] = "0123456789abcdef";
+	char buf[2 + sizeof(uvlong)*2 + 2];
+	char *p = buf;
+
+	*p++ = '0';
+	*p++ = 'x';
+	for(int i = (int)(sizeof(uvlong)*2 - 1); i >= 0; i--)
+		*p++ = hex[(value >> (i*4)) & 0xF];
+	*p++ = '\n';
+	*p = 0;
+
+	if(label != nil)
+		uartputs(label, strlen(label));
+	uartputs(buf, p - buf);
+}
+
 /* Limine HHDM offset - defined in boot.c */
 extern uintptr limine_hhdm_offset;
 /* Saved HHDM offset - defined in globals.c, survives CR3 switch */
 extern uintptr saved_limine_hhdm_offset;
 extern char kend[];
+extern uintptr initrd_physaddr;
+extern usize initrd_size;
 
 static uintptr max_physaddr;
 
@@ -379,6 +402,8 @@ setuppagetables(void)
 			continue;
 		map_hhdm_region(pml4, cm->base, (u64int)cm->npage * BY2PG);
 	}
+	if(initrd_physaddr != 0 && initrd_size != 0)
+		map_hhdm_region(pml4, initrd_physaddr, initrd_size);
 
 
 	/* Debug: output PT count before switch */
@@ -460,7 +485,11 @@ void*
 kaddr(uintptr pa)
 {
 	if(pa >= (uintptr)-KZERO)
+	{
+		dbghex("kaddr pa ", pa);
+		dbghex("kaddr caller ", (uvlong)getcallerpc(&pa));
 		panic("kaddr: pa=%#p pc=%#p", pa, getcallerpc(&pa));
+	}
 
 	return (void*)hhdm_virt(pa);
 }

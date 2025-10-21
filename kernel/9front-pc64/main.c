@@ -11,6 +11,7 @@
 #include	"pool.h"
 #include	"rebootcode.i"
 #include	"initrd.h"
+#include	"../../limine.h"
 
 Conf conf;
 int idle_spin;
@@ -18,36 +19,7 @@ int idle_spin;
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
 extern uintptr saved_limine_hhdm_offset;
-
-/* Limine boot structures */
-struct limine_file {
-	u64int revision;
-	void *address;
-	u64int size;
-	char *path;
-	char *cmdline;
-	u32int media_type;
-	u32int unused;
-	u32int tftp_ip;
-	u32int tftp_port;
-	u32int partition_index;
-	u32int mbr_disk_id;
-	void *gpt_disk_uuid;
-	void *gpt_part_uuid;
-	void *part_uuid;
-};
-
-struct limine_module_response {
-	u64int revision;
-	u64int module_count;
-	struct limine_file **modules;
-};
-
-struct limine_module_request {
-	u64int id[4];
-	u64int revision;
-	struct limine_module_response *response;
-};
+extern void* kaddr(uintptr);
 
 void
 confinit(void)
@@ -224,15 +196,20 @@ init0(void)
 		print("BOOT[init0]: environment configured\n");
 		poperror();
 	}
+	print("BOOT[init0]: starting alarm kproc\n");
 	kproc("alarm", alarmkproc, 0);
+	print("BOOT[init0]: alarm kproc scheduled\n");
 
+	print("BOOT[init0]: computing user stack frame\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	sp[3] = sp[2] = nil;
-	strcpy(sp[1] = (char*)&sp[4], "boot");
-	sp[0] = nil;
+	print("BOOT[init0]: initial sp computed\n");
+	print("BOOT[init0]: stack frame already seeded in proc0\n");
 
+	print("BOOT[init0]: preparing to disable interrupts\n");
 	splhi();
+	print("BOOT[init0]: fpukexit(nil) begin\n");
 	fpukexit(nil);
+	print("BOOT[init0]: fpukexit(nil) done\n");
 	print("BOOT[init0]: entering user mode with initcode\n");
 	touser(sp);
 }
@@ -254,10 +231,14 @@ main(void)
 	if(limine_module && limine_module->response && limine_module->response->module_count > 0) {
 		struct limine_file *initrd = limine_module->response->modules[0];
 		if(initrd && initrd->address){
-			uintptr modaddr = (uintptr)initrd->address;
-			if(modaddr < saved_limine_hhdm_offset)
-				modaddr += saved_limine_hhdm_offset;
-			initrd_base = (void*)modaddr;
+			uintptr addr = (uintptr)initrd->address;
+			if(addr >= saved_limine_hhdm_offset){
+				initrd_physaddr = addr - saved_limine_hhdm_offset;
+				initrd_base = initrd->address;
+			}else{
+				initrd_physaddr = addr;
+				initrd_base = (void*)(addr + saved_limine_hhdm_offset);
+			}
 			initrd_size = initrd->size;
 			print("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
 		}

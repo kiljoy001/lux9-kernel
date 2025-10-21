@@ -414,7 +414,7 @@ fpukexit(Ureg *ureg)
 	}
 
 	if(up->fpstate == FPprotected){
-		if(userureg(ureg)){
+		if(ureg != nil && userureg(ureg)){
 			up->fpstate = FPactive;
 			_clts();
 		}
