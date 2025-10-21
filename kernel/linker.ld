@@ -89,9 +89,10 @@ SECTIONS
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    .rodata : {
-        *(.rodata .rodata.*)
-    } :rodata
+.rodata : {
+    *(.rodata .rodata.*)
+    kend = .;
+} :rodata
 
     /DISCARD/ : {
         *(.eh_frame)

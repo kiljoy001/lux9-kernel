@@ -10,6 +10,7 @@
 extern uintptr limine_hhdm_offset;
 /* Saved HHDM offset - defined in globals.c, survives CR3 switch */
 extern uintptr saved_limine_hhdm_offset;
+extern char kend[];
 
 static uintptr max_physaddr;
 
@@ -382,7 +383,7 @@ setuppagetables(void)
 
 	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	/* Map the kernel image at KZERO */
-	u64int kernel_size = ((uintptr)&end - KZERO + BY2PG - 1) & ~(BY2PG - 1);
+	u64int kernel_size = ((uintptr)&kend - KZERO + BY2PG - 1) & ~(BY2PG - 1);
 	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
@@ -514,7 +515,7 @@ paddr(void *v)
 	va = (uintptr)v;
 	/* Kernel addresses at KZERO (0xffffffff80000000) */
 	if(va >= KZERO)
-		return va - KZERO;
+		return virt2phys(v);
 	/* HHDM addresses - Limine maps all physical memory here */
 	if(is_hhdm_va(va))
 		return hhdm_phys(va);
