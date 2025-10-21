@@ -82,17 +82,12 @@ newseg(int type, uintptr base, ulong size)
 
 	/* Debug: print malloc address */
 	uintptr seg_addr = (uintptr)s;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	for(int shift = 60; shift >= 0; shift -= 4){
 		int nibble = (seg_addr >> shift) & 0xF;
 		char c = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
-		__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((unsigned short)0x3F8));
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Z'), "Nd"((unsigned short)0x3F8));
 	memset(s, 0, sizeof(Segment));  /* Zero all fields including locks */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'z'), "Nd"((unsigned short)0x3F8));
 	/* Explicitly zero the qlock fields */
 	s->qlock.use.key = 0;
 	s->qlock.locked = 0;
@@ -338,9 +333,7 @@ segpage(Segment *s, Page *p)
 	uintptr soff;
 	Page **pg;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	qlock(&s->qlock);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(p->va < s->base || p->va >= s->top || s->mapsize == 0)
 		panic("segpage");
 	soff = p->va - s->base;
@@ -356,18 +349,14 @@ segpage(Segment *s, Page *p)
 	}
 	pg = &etp->pages[(soff&(PTEMAPMEM-1))/BY2PG];
 	assert(*pg == nil);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	settxtflush(p, s->flushme);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	*pg = p;
 	s->used++;
 	if(pg < etp->first)
 		etp->first = pg;
 	if(pg > etp->last)
 		etp->last = pg;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 	qunlock(&s->qlock);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 }
 
 void

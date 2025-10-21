@@ -234,11 +234,21 @@ panic(char *fmt, ...)
 	panicking = 1;
 
 	s = splhi();
+	if(fmt != nil){
+		char *p;
+		for(p = fmt; *p != 0; p++)
+			;
+		uartputs("panic fmt: ", 11);
+		uartputs(fmt, p - fmt);
+		uartputs("\n", 1);
+	}
 	strcpy(buf, "panic: ");
 	va_start(arg, fmt);
 	vseprint(buf+strlen(buf), buf+sizeof(buf), fmt, arg);
 	va_end(arg);
+	/* Emit panic to both iprint (interrupt-safe) and print for visibility */
 	iprint("%s\n", buf);
+	print("%s\n", buf);
 	if(consdebug)
 		(*consdebug)();
 	splx(s);

@@ -89,28 +89,19 @@ edflock(Proc *p)
 {
 	Edf *e;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'E'), "Nd"((unsigned short)0x3F8));
 	if (p->edf == nil)
 		return nil;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
 	ilock(&thelock);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'G'), "Nd"((unsigned short)0x3F8));
 	if((e = p->edf) && (e->flags & Admitted)){
 		thelock.pc = getcallerpc(&p);
 #ifdef EDFCYCLES
 		edfcycles -= lcycles();
 #endif
-		__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
 		now = µs();
-		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'J'), "Nd"((unsigned short)0x3F8));
 		iunlock(&thelock);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 		return e;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
 	iunlock(&thelock);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	return nil;
 }
 
@@ -507,10 +498,8 @@ edfready(Proc *p)
 	Edf *e;
 	long n;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
 	if((e = edflock(p)) == nil)
 		return 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'f'), "Nd"((unsigned short)0x3F8));
 	if(e->d - now <= 0){
 		/* past deadline, arrange for next release */
 		if((e->flags & Sporadic) == 0){

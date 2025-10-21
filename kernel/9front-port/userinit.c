@@ -5,6 +5,12 @@
 #include	"fns.h"
 #include <error.h>
 
+struct initrd_file;
+extern struct initrd_file *initrd_root;
+extern void *initrd_base;
+extern usize initrd_size;
+extern void initrd_init(void*, usize);
+
 /*
  * The initcode array contains the binary text of the first
  * user process. Its job is to invoke the exec system call
@@ -26,75 +32,59 @@ proc0(void*)
 	KMap *k;
 	Page *p;
 
-	/* Entry marker */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
-
 	spllo();
-
-	/* After spllo */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 
 	if(waserror())
 		panic("proc0: %s", up->errstr);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'/'), "Nd"((unsigned short)0x3F8));
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+	if(initrd_base != nil && initrd_root == nil) {
+		print("initrd: staging module\n");
+		initrd_init(initrd_base, initrd_size);
+		print("BOOT[proc0]: initrd staging complete\n");
+	} else if(initrd_base == nil) {
+		print("initrd: no initrd module present\n");
+	}
+
 	up->pgrp = newpgrp();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	up->egrp = smalloc(sizeof(Egrp));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	up->egrp->ref = 1;
 	up->fgrp = dupfgrp(nil);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	up->rgrp = newrgrp();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[proc0]: process groups ready\n");
 
 	/*
 	 * These are o.k. because rootinit is null.
 	 * Then early kproc's will have a root and dot.
 	 */
 	up->slash = namec("#/", Atodir, 0, 0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 	pathclose(up->slash->path);
 	up->slash->path = newpath("/");
 	up->dot = cclone(up->slash);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[proc0]: root namespace acquired\n");
 
 	/*
 	 * Setup Text and Stack segments for initcode.
 	 */
 	up->seg[SSEG] = newseg(SG_STACK | SG_NOEXEC, USTKTOP-USTKSIZE, USTKSIZE / BY2PG);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 
 	/* Allocate initial stack page and map it */
 	p = newpage(USTKTOP - BY2PG, nil);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'s'), "Nd"((unsigned short)0x3F8));
 	k = kmap(p);
 	memset((uchar*)VA(k), 0, BY2PG);
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
 	pmap(p->pa | PTEWRITE | PTEUSER, USTKTOP - BY2PG, BY2PG);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 	up->seg[TSEG]->flushme = 1;
 	p = newpage(UTZERO, nil);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'a'), "Nd"((unsigned short)0x3F8));
 	k = kmap(p);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'b'), "Nd"((unsigned short)0x3F8));
 	memmove((uchar*)VA(k), initcode, sizeof(initcode));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));
 	memset((uchar*)VA(k)+sizeof(initcode), 0, BY2PG-sizeof(initcode));
 	kunmap(k);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 	segpage(up->seg[TSEG], p);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
 	pmap(p->pa | PTEUSER, UTZERO, BY2PG);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));
+	print("BOOT[proc0]: user segments populated\n");
 
 	/*
 	 * Become a user process.
@@ -103,15 +93,11 @@ proc0(void*)
 	up->noswap = 0;
 	up->privatemem = 0;
 	procpriority(up, PriNormal, 0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'f'), "Nd"((unsigned short)0x3F8));
 	procsetup(up);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'g'), "Nd"((unsigned short)0x3F8));
 
 	flushmmu();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'h'), "Nd"((unsigned short)0x3F8));
 
 	poperror();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'i'), "Nd"((unsigned short)0x3F8));
 
 	/*
 	 * init0():
@@ -122,7 +108,6 @@ proc0(void*)
 	 */
 	print("BOOT[proc0]: about to call init0 - switching to userspace\n");
 	init0();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'j'), "Nd"((unsigned short)0x3F8));
 
 	/* init0 will never return */
 	print("BOOT[proc0]: init0 returned - this should never happen!\n");
@@ -132,12 +117,8 @@ proc0(void*)
 void
 userinit(void)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	up = nil;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	kstrdup(&eve, "");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	kproc("*init*", proc0, nil);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	print("BOOT[userinit]: spawned proc0 kernel process\n");
 }

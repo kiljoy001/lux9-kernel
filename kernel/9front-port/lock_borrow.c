@@ -55,18 +55,11 @@ borrow_lock_init(BorrowLock *bl, uintptr key)
 void
 borrow_lock(BorrowLock *bl)
 {
-	if (up == nil) {
-		void *pc = (void*)getcallerpc(&bl);
-		print("borrow_lock(%#p) caller=%#p up=nil\n", bl, pc);
-		/* Early boot, no process context */
+	if(up == nil){
 		lock(&bl->lock);
 		return;
 	}
 
-	{
-		void *pc = (void*)getcallerpc(&bl);
-		print("borrow_lock(%#p) caller=%#p up=%#p\n", bl, pc, up);
-	}
 	up->waiting_for_key = bl->key;
 
 	/* Check for deadlock before attempting to lock */
@@ -84,12 +77,7 @@ borrow_lock(BorrowLock *bl)
 void
 borrow_unlock(BorrowLock *bl)
 {
-	{
-		void *pc = (void*)getcallerpc(&bl);
-		print("borrow_unlock(%#p) caller=%#p up=%#p\n", bl, pc, up);
-	}
-	if (up != nil) {
+	if(up != nil)
 		borrow_release(up, bl->key);
-	}
 	unlock(&bl->lock);
 }

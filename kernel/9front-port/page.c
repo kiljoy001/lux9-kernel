@@ -10,7 +10,6 @@ Palloc palloc;
 static void
 dbgserial(int c)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)c), "Nd"((unsigned short)0x3F8));
 }
 
 static void

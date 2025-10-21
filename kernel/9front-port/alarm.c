@@ -7,29 +7,11 @@
 static Alarms	alarms;
 static Rendez	alarmr;
 
-/* Output char as 2 hex digits to avoid API filtering */
-#define DBG(c) do { \
-	char _c = (c); \
-	char _h1 = (_c >> 4) & 0xF; \
-	char _h2 = _c & 0xF; \
-	_h1 = _h1 < 10 ? '0' + _h1 : 'A' + (_h1 - 10); \
-	_h2 = _h2 < 10 ? '0' + _h2 : 'A' + (_h2 - 10); \
-	__asm__ volatile("outb %0, %1" : : "a"(_h1), "Nd"((unsigned short)0x3F8)); \
-	__asm__ volatile("outb %0, %1" : : "a"(_h2), "Nd"((unsigned short)0x3F8)); \
-} while(0)
-
 void
 alarmkproc(void*)
 {
-	DBG('a');
-
-	for(;;){
-		DBG('b');
-		DBG('A');  /* alarm: before sched */
+	for(;;)
 		sleep(&alarmr, return0, nil);
-		DBG('Z');  /* alarm: after sched */
-		DBG('c');
-	}
 }
 
 /*
@@ -47,16 +29,6 @@ checkalarms(void)
 		when = p->alarm;
 		if(when == 0 || (long)(now - when) >= 0)
 			wakeup(&alarmr);
-	}
-
-	/* TESTING: Wake alarm process every 100 ticks to test sleep/wakeup */
-	static ulong lastwake = 0;
-	now = MACHP(0)->ticks;
-	if(now - lastwake > 100){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* waking alarm */
-		lastwake = now;
-		wakeup(&alarmr);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));  /* wakeup done */
 	}
 }
 

@@ -60,13 +60,9 @@ addlist(Dirlist *l, char *name, uchar *contents, ulong len, int perm)
 	Dirtab *d;
 	ulong ndir, mdir;  /* Local copies to avoid repeated memory access */
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 	/* Check if pointer looks valid - should be in kernel address space */
 	if((uintptr)l < 0xffffffff80000000ULL) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 		panic("addlist: invalid Dirlist pointer %#p", l);
 	}
 
@@ -74,21 +70,13 @@ addlist(Dirlist *l, char *name, uchar *contents, ulong len, int perm)
 	ndir = *(volatile ulong*)&l->ndir;
 	mdir = *(volatile ulong*)&l->mdir;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 
 	if(ndir >= mdir)
 		panic("too many root files");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	l->data[l->ndir] = contents;
 	d = &l->dir[l->ndir];
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	if(strlen(name) >= sizeof d->name)
 		panic("root file name too long: %s", name);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	strcpy(d->name, name);
 	d->length = len;
 	d->perm = perm;
@@ -97,8 +85,6 @@ addlist(Dirlist *l, char *name, uchar *contents, ulong len, int perm)
 	d->qid.path = ++l->ndir + l->base;
 	if(perm & DMDIR)
 		d->qid.type |= QTDIR;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 }
 
 /*
@@ -123,8 +109,6 @@ addrootdir(char *name)
 void
 rootreset_impl(void)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)'R'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 	addrootdir("bin");
 	addrootdir("dev");
@@ -136,8 +120,6 @@ rootreset_impl(void)
 	addrootdir("root");
 	addrootdir("srv");
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'R'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 }
 
 /* Wrapper for devtab - not currently used but kept for compatibility */

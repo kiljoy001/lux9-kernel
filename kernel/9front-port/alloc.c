@@ -210,9 +210,7 @@ malloc(ulong size)
 {
 	void *v;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));  /* malloc called */
 	v = poolalloc(mainmem, size+Npadlong*sizeof(ulong));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));  /* poolalloc returned */
 	if(v == nil)
 		return nil;
 	if(Npadlong){

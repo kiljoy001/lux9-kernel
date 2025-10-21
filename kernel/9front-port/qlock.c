@@ -14,11 +14,6 @@ eqlock(QLock *q)
 
 	pc = getcallerpc(&q);
 
-	if(m->ilockdepth != 0)
-		print("eqlock: %#p: ilockdepth %d\n", pc, m->ilockdepth);
-	if(up != nil && up->nlocks)
-		print("eqlock: %#p: nlocks %d\n", pc, up->nlocks);
-
 	lock(&q->use);
 	if(!q->locked) {
 		q->pc = pc;
@@ -58,18 +53,9 @@ qlock(QLock *q)
 	Proc *p;
 	uintptr pc;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Q'), "Nd"((unsigned short)0x3F8));
 	pc = getcallerpc(&q);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
 
-	if(m->ilockdepth != 0)
-		print("qlock: %#p: ilockdepth %d\n", pc, m->ilockdepth);
-	if(up != nil && up->nlocks)
-		print("qlock: %#p: nlocks %d\n", pc, up->nlocks);
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	lock(&q->use);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	if(!q->locked) {
 		q->pc = pc;
 		q->locked = 1;
@@ -140,24 +126,11 @@ rlock(RWLock *q)
 {
 	Proc *p;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
-	if(m->ilockdepth != 0)
-		print("rlock: %#p: ilockdepth %d\n", getcallerpc(&q), m->ilockdepth);
-	if(up != nil && up->nlocks)
-		print("rlock: %#p: nlocks %d\n", getcallerpc(&q), up->nlocks);
-
 	lock(&q->use);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	if(q->writer == 0 && q->head == nil){
 		/* no writer, go for it */
 		q->readers++;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 		unlock(&q->use);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 		return;
 	}
 	p = q->tail;
@@ -206,18 +179,11 @@ wlock(RWLock *q)
 
 	pc = getcallerpc(&q);
 
-	if(m->ilockdepth != 0)
-		print("wlock: %#p: ilockdepth %d\n", pc, m->ilockdepth);
-	if(up != nil && up->nlocks)
-		print("wlock: %#p: nlocks %d\n", pc, up->nlocks);
-
 	lock(&q->use);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'W'), "Nd"((unsigned short)0x3F8));
 	if(q->readers == 0 && q->writer == 0){
 		/* noone waiting, go for it */
 		q->wpc = pc;
 		q->writer = 1;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'w'), "Nd"((unsigned short)0x3F8));
 		unlock(&q->use);
 		return;
 	}
@@ -244,12 +210,10 @@ wunlock(RWLock *q)
 	Proc *p;
 
 	lock(&q->use);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'w'), "Nd"((unsigned short)0x3F8));
 	p = q->head;
 	if(p == nil){
 		q->writer = 0;
 		unlock(&q->use);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'x'), "Nd"((unsigned short)0x3F8));
 		return;
 	}
 	if(p->state == QueueingW){
@@ -260,7 +224,6 @@ wunlock(RWLock *q)
 			q->tail = nil;
 		unlock(&q->use);
 		ready(p);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'x'), "Nd"((unsigned short)0x3F8));
 		return;
 	}
 
@@ -278,7 +241,6 @@ wunlock(RWLock *q)
 		q->tail = nil;
 	q->writer = 0;
 	unlock(&q->use);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'x'), "Nd"((unsigned short)0x3F8));
 }
 
 /* same as rlock but punts if there are any writers waiting */

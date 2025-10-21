@@ -145,10 +145,8 @@ xallocz(ulong size, int zero)
 			p->size = size;
 			if(zero)
 				memset(p->data, 0, orig_size);
-			/* Debug: verify first ulong is zero */
-			if(zero && *(ulong*)p->data != 0) {
-				__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-			}
+			if(zero && *(ulong*)p->data != 0)
+				panic("xallocz: zeroed block not cleared");
 			return p->data;
 		}
 		l = &h->link;

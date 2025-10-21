@@ -177,7 +177,6 @@ cgatokmesg(void)
 	/* TODO: Skip this for now - CGA screen memory not mapped yet */
 	/* This function copies CGA screen contents to kernel message buffer */
 	/* We'll enable it once we have proper page table setup */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	return;
 
 	/* Original code commented out:
@@ -211,7 +210,6 @@ screeninit(void)
 {
 	static int once;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 	/* Disable CGA to avoid page fault on unmapped VGA memory */
 	/* return; */  /* Commented out to allow CGA initialization */
 	if(getconf("*nocga"))
@@ -219,26 +217,19 @@ screeninit(void)
 	if(getconf("*nocga"))
 		return;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	cgapos = cgaregr(0x0E)<<8;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	cgapos |= cgaregr(0x0F);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	cgapos *= 2;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	if(cgapos >= Width*Height){
 		cgapos = 0;
 		movecursor();
 	}
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	if(once == 0){
 		once = 1;
 		cgatokmesg();
 	}
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 	screenputs = cgascreenputs;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 }

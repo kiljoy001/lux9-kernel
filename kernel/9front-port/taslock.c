@@ -39,28 +39,9 @@ lock(Lock *l)
 	uintptr pc;
 
 	pc = getcallerpc(&l);
-	print("lock(%#p) caller=%#p up=%#p\n", l, pc, up);
-
-	/* Debug: print lock address */
-	uintptr lock_addr = (uintptr)l;
-	for(int shift = 60; shift >= 0; shift -= 4){
-		int nibble = (lock_addr >> shift) & 0xF;
-		char c = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
-		__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((unsigned short)0x3F8));
-	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)':'), "Nd"((unsigned short)0x3F8));
-
 	if(up)
 		up->nlocks++;	/* prevent being scheded */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'{'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
-	int tas_result = tas(&l->key);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));
-	if(tas_result != 0)
-		print("lock busy: l=%#p caller=%#p held_by=%#p key=%#lux\n",
-			l, pc, l->pc, l->key);
-	if(tas_result == 0){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));
+	if(tas(&l->key) == 0){
 		if(up)
 			up->lastlock = l;
 		l->pc = pc;
@@ -72,13 +53,10 @@ lock(Lock *l)
 #endif
 		return;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 	if(up)
 		up->nlocks--;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Y'), "Nd"((unsigned short)0x3F8));
 
 	for(;;){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'Z'), "Nd"((unsigned short)0x3F8));
 		i = 0;
 		while(l->key){
 			if(conf.nmach < 2 && up && up->edf && (up->edf->flags & Admitted)){
@@ -139,15 +117,13 @@ ilock(Lock *l)
 		}
 	}
 acquire:
-	/* Skip ilockdepth for early boot - m may not be fully initialized */
-	/* m->ilockdepth++; */
+	m->ilockdepth++;
 	if(up)
 		up->lastilock = l;
 	l->sr = x;
 	l->pc = pc;
 	l->p = up;
-	/* Skip setting l->m for now */
-	/* l->m = MACHP(m->machno); */
+	l->m = MACHP(m->machno);
 	l->isilock = 1;
 #ifdef LOCKCYCLES
 	l->lockcycles = -lcycles();
@@ -181,7 +157,6 @@ void
 unlock(Lock *l)
 {
 	uintptr pc = getcallerpc(&l);
-	print("unlock(%#p) caller=%#p up=%#p\n", l, pc, up);
 
 #ifdef LOCKCYCLES
 	l->lockcycles += lcycles();
@@ -249,8 +224,7 @@ iunlock(Lock *l)
 	/* Inline mfence instead of calling coherence() */
 	__asm__ volatile("mfence" ::: "memory");
 	l->key = 0;
-	/* Skip ilockdepth for now - test if that's the crash */
-	/* m->ilockdepth--; */
+	m->ilockdepth--;
 	if(up)
 		up->lastilock = nil;
 	splx(sr);

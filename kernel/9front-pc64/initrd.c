@@ -52,7 +52,7 @@ initrd_init(void *addr, usize len)
 	initrd_base = addr;
 	initrd_size = len;
 
-	print("initrd: loading from %p, size %lld bytes\n", addr, len);
+	print("initrd: loading entries\n");
 
 	/* Parse TAR archive */
 	while(offset < len) {
@@ -64,7 +64,7 @@ initrd_init(void *addr, usize len)
 
 		/* Validate header */
 		if(!is_valid_tar(hdr)) {
-			print("initrd: invalid TAR header at offset %lld\n", offset);
+			print("initrd: invalid TAR header\n");
 			break;
 		}
 
@@ -76,8 +76,8 @@ initrd_init(void *addr, usize len)
 			/* Allocate file entry */
 			file = malloc(sizeof(struct initrd_file));
 			if(file == nil) {
-				print("initrd: out of memory\n");
-				return;
+			print("initrd: out of memory\n");
+			return;
 			}
 
 			/* Copy name */
@@ -102,12 +102,13 @@ initrd_init(void *addr, usize len)
 				last->next = file;
 			last = file;
 
-			print("initrd: found %s (%lld bytes)\n", file->name, size);
+			print("initrd: found file\n");
 		}
 
 		/* Move to next file (512-byte aligned) */
 		offset += 512;  /* Header */
 		offset += (size + 511) & ~511;  /* Data (rounded up to 512) */
+		print("initrd: entry processed\n");
 	}
 
 	print("initrd: loaded successfully\n");
@@ -120,7 +121,7 @@ initrd_register(void)
 	struct initrd_file *f;
 
 	for(f = initrd_root; f != nil; f = f->next) {
-		print("initrd: registering %s with devroot\n", f->name);
+		print("initrd: registering file with devroot\n");
 		addbootfile(f->name, f->data, f->size);
 	}
 }
@@ -195,6 +196,6 @@ initrd_list(void)
 
 	print("initrd: file list:\n");
 	for(f = initrd_root; f != nil; f = f->next) {
-		print("  %s (%lld bytes)\n", f->name, f->size);
+		print("  file entry\n");
 	}
 }

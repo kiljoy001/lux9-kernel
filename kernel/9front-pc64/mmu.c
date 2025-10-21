@@ -4,7 +4,6 @@
 
 #include	"fns.h"
 #include	"io.h"
-#include "lock_borrow.h"
 
 /* Limine HHDM offset - defined in boot.c */
 extern uintptr limine_hhdm_offset;
@@ -73,13 +72,9 @@ Segdesc gdt[NGDT] =
 [UESEG]		EXECSEGM(3),		/* user code */
 };
 
-static struct {
-	BorrowLock;
-	MMU	*free;
-
-	ulong	nalloc;
-	ulong	nfree;
-} mmupool;
+enum {
+	MMUFREELIMIT	= 256,
+};
 
 enum {
 	/* level */
@@ -110,25 +105,17 @@ taskswitch(uintptr stack)
 {
 	Tss *tss;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'='), "Nd"((unsigned short)0x3F8));
 	tss = m->tss;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'+'), "Nd"((unsigned short)0x3F8));
 	if(tss != nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'-'), "Nd"((unsigned short)0x3F8));
 		tss->rsp0[0] = (u32int)stack;
 		tss->rsp0[1] = stack >> 32;
 		tss->rsp1[0] = (u32int)stack;
 		tss->rsp1[1] = stack >> 32;
 		tss->rsp2[0] = (u32int)stack;
 		tss->rsp2[1] = stack >> 32;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'_'), "Nd"((unsigned short)0x3F8));
-	} else {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));  /* tss is nil */
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));  /* before mmuflushtlb */
 	/* For now, skip TLB flush during first process switch - we're using same page tables */
 	/* mmuflushtlb(PADDR(m->pml4)); */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'~'), "Nd"((unsigned short)0x3F8));
 }
 
 static void kernelro(void);
@@ -159,12 +146,8 @@ alloc_pt(void)
 	pt_count++;
 
 	/* Panic if we run out of preallocated page tables */
-	if(pt_count > 512) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-		for(;;);  /* Halt */
-	}
+	if(pt_count > 512)
+		panic("alloc_pt: cpu0pt_pool exhausted");
 
 	/* Zero the page table */
 	for(i = 0; i < 512; i++)
@@ -352,8 +335,6 @@ setuppagetables(void)
 
 	/* Linker-provided symbols - declared in lib.h as char[] */
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 	/* Use OUR page tables from linker script - completely independent of Limine */
 	extern u64int cpu0pml4[];
@@ -367,8 +348,6 @@ setuppagetables(void)
 	for(i = 0; i < 512; i++)
 		pml4[i] = 0;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 
 	/* Map kernel at KZERO to its ACTUAL physical load address from Limine */
 	extern u64int limine_kernel_phys_base;
@@ -381,13 +360,11 @@ setuppagetables(void)
 	else
 		kernel_phys = limine_kernel_phys_base;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	/* Map the kernel image at KZERO */
 	u64int kernel_size = ((uintptr)&kend - KZERO + BY2PG - 1) & ~(BY2PG - 1);
 	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	/* Mirror the kernel image into the HHDM so KADDR() stays valid post-switch */
 	map_range(pml4, hhdm_virt(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 
 	/* Identity-map the first 2MB for early firmware interactions */
 	map_range(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
@@ -403,26 +380,12 @@ setuppagetables(void)
 		map_hhdm_region(pml4, cm->base, (u64int)cm->npage * BY2PG);
 	}
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 
 	/* Debug: output PT count before switch */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)('0' + (pt_count / 100))), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)('0' + ((pt_count / 10) % 10))), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)('0' + (pt_count % 10))), "Nd"((unsigned short)0x3F8));
 
 	/* Now switch to OUR page tables */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'R'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	__asm__ volatile("mov %0, %%cr3" : : "r"(pml4_phys) : "memory");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'O'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 
 	/* Update m->pml4 to point to our page tables */
 	m->pml4 = pml4;
@@ -435,26 +398,17 @@ mmuinit(void)
 	vlong v;
 	int i;
 
-	borrow_lock_init((BorrowLock*)&mmupool, (uintptr)&mmupool);
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	/* zap double map done by l.s */
 	m->pml4[512] = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	m->pml4[0] = 0;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	if(m->machno == 0)
 		kernelro();
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	m->tss = mallocz(sizeof(Tss), 1);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 	m->tss->iomap = 0xDFFF;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
 	for(i=0; i<14; i+=2){
 		x = (uintptr)m + MACHSIZE;
 		m->tss->ist[i] = x;
@@ -532,63 +486,24 @@ static MMU*
 mmualloc(void)
 {
 	MMU *p;
-	int i, n;
-	int locked;
 
 	p = m->mmufree;
 	if(p != nil){
 		m->mmufree = p->next;
 		m->mmucount--;
-		goto found;
+		p->next = nil;
+		return p;
 	}
 
-	locked = 0;
-
-	borrow_lock((BorrowLock*)&mmupool);
-	locked = 1;
-	p = mmupool.free;
-	if(p != nil){
-		mmupool.free = p->next;
-		mmupool.nfree--;
-		goto release_and_found;
-	}
-
-	borrow_unlock((BorrowLock*)&mmupool);
-	locked = 0;
-
-	n = 256;
-	p = malloc(n * sizeof(MMU));
+	p = mallocz(sizeof(MMU), 1);
 	if(p == nil)
-		goto fail;
-	p->page = mallocalign(n * PTSZ, BY2PG, 0, 0);
+		return nil;
+	p->page = mallocalign(PTSZ, BY2PG, 0, 0);
 	if(p->page == nil){
 		free(p);
-		goto fail;
+		return nil;
 	}
-	for(i = 1; i < n; i++){
-		p[i].page = p[i-1].page + (1<<PTSHIFT);
-		p[i-1].next = &p[i];
-	}
-
-	borrow_lock((BorrowLock*)&mmupool);
-	locked = 1;
-	p[n-1].next = mmupool.free;
-	mmupool.free = p->next;
-	mmupool.nalloc += n;
-	mmupool.nfree += n-1;
-
-release_and_found:
-	borrow_unlock((BorrowLock*)&mmupool);
-	locked = 0;
-
-found:
-	p->next = nil;
 	return p;
-
-fail:
-	if(locked)
-		borrow_unlock((BorrowLock*)&mmupool);
-	return nil;
 }
 
 static uintptr*
@@ -720,34 +635,25 @@ copypagetables(void)
 	uintptr *oldpml4, *newpml4;
 	uintptr cr3;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	/* Get current PML4 from CR3 */
 	__asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	oldpml4 = kaddr(PPN(cr3));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 
 	/* Allocate a single writable page for our PML4 */
 	newpml4 = rampage();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	if(newpml4 == nil)
 		panic("copypagetables: out of memory");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 
 	/* Copy all PML4 entries - these point to Limine's lower level tables */
 	memmove(newpml4, oldpml4, PTSZ);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 
 	/* Update m->pml4 to point to new writable PML4 */
 	m->pml4 = newpml4;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
 
 	/* DON'T switch CR3 - just use Limine's page tables for now */
 	/* Switching CR3 causes triple fault - needs more investigation */
 	/* cr3 = paddr(newpml4); */
-	/* __asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8)); */
 	/* __asm__ volatile("mov %0, %%cr3" : : "r"(cr3)); */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 }
 
 static void
@@ -789,7 +695,6 @@ pmap(uintptr pa, uintptr va, vlong size)
 	uintptr *pte, *ptee, flags;
 	int z, l;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	/* Pure HHDM model: accept addresses in HHDM range, not VMAP */
 	if(size <= 0)
 		panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
@@ -799,20 +704,14 @@ pmap(uintptr pa, uintptr va, vlong size)
 	flags |= PTEACCESSED|PTEDIRTY;
 	if(va >= KZERO)
 		flags |= PTEGLOBAL;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	while(size > 0){
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(size >= PGLSZ(1) && size < PGLSZ(2) && (va % PGLSZ(1)) == 0)
 			flags |= PTESIZE;
 		l = (flags & PTESIZE) != 0;
 		z = PGLSZ(l);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 		pte = mmuwalk(m->pml4, va, l, 1);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 		if(pte == nil){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 			pte = mmuwalk(m->pml4, va, ++l, 0);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 			if(pte && (*pte & PTESIZE)){
 				flags |= PTESIZE;
 				z = va & (PGLSZ(l)-1);
@@ -831,7 +730,6 @@ pmap(uintptr pa, uintptr va, vlong size)
 			size -= z;
 		}
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -887,21 +785,18 @@ mmuzap(void)
 static void
 mmufree(Proc *proc)
 {
-	MMU *p;
+	MMU *next, *p;
 
-	p = proc->mmutail;
-	if(p == nil)
-		return;
-	if(m->mmucount+proc->mmucount < 256){
-		p->next = m->mmufree;
-		m->mmufree = proc->mmuhead;
-		m->mmucount += proc->mmucount;
-	} else {
-borrow_lock((BorrowLock*)&mmupool);
-		p->next = mmupool.free;
-		mmupool.free = proc->mmuhead;
-		mmupool.nfree += proc->mmucount;
-		borrow_unlock((BorrowLock*)&mmupool);
+	for(p = proc->mmuhead; p != nil; p = next){
+		next = p->next;
+		if(m->mmucount < MMUFREELIMIT){
+			p->next = m->mmufree;
+			m->mmufree = p;
+			m->mmucount++;
+			continue;
+		}
+		free(p->page);
+		free(p);
 	}
 	proc->mmuhead = proc->mmutail = nil;
 	proc->mmucount = 0;
@@ -912,15 +807,10 @@ flushmmu(void)
 {
 	int x;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
 	x = splhi();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
 	up->newtlb = 1;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	mmuswitch(up);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 	splx(x);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -928,47 +818,29 @@ mmuswitch(Proc *proc)
 {
 	MMU *p;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'&'), "Nd"((unsigned short)0x3F8));
 
 	mmuzap();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'*'), "Nd"((unsigned short)0x3F8));
 	if(proc->newtlb){
 		mmufree(proc);
 		proc->newtlb = 0;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'^'), "Nd"((unsigned short)0x3F8));
 
 	/* For kernel processes, there are no user MMU structures */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));  /* Before kp check */
 	if(proc->kp){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));  /* Kernel process detected, skip MMU setup */
 		taskswitch((uintptr)proc);
-		__asm__ volatile("outb %0, %1" : : "a"((char)';'), "Nd"((unsigned short)0x3F8));  /* After taskswitch */
 		return;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'U'), "Nd"((unsigned short)0x3F8));  /* User process, do MMU setup */
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));  /* Before kmaphead check */
 	if((p = proc->kmaphead) != nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));  /* kmaphead not nil */
 		m->pml4[PTLX(KMAP, 3)] = PADDR(p->page) | PTEWRITE|PTEVALID;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));  /* After pml4 write */
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'%'), "Nd"((unsigned short)0x3F8));
 	if(proc->mmuhead == nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'U'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
 	}
 	for(p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'+'), "Nd"((unsigned short)0x3F8));
 		m->mmumap[p->index/MAPBITS] |= 1ull<<(p->index%MAPBITS);
 		m->pml4[p->index] = PADDR(p->page) | PTEUSER|PTEWRITE|PTEVALID;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'$'), "Nd"((unsigned short)0x3F8));
 	taskswitch((uintptr)proc);
-	__asm__ volatile("outb %0, %1" : : "a"((char)';'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -1042,10 +914,8 @@ kmap(Page *page)
 	uintptr pa, va;
 
 	/* Pure HHDM model: all physical memory already mapped via HHDM */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
 	pa = page->pa;
 	va = hhdm_virt(pa);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	return (KMap*)va;
 }
 
@@ -1124,88 +994,43 @@ patwc(void *a, int n)
 	}
 }
 
-/*
- * The palloc.pages array and mmupool can be a large chunk
- * out of the 2GB window above KZERO, so we allocate from
- * upages and map in the VMAP window before pageinit()
- */
 void
 preallocpages(void)
 {
 	Confmem *cm;
-	uintptr va, base, top;
-	vlong tsize, psize;
-	ulong np, nt;
+	uintptr base, top;
+	vlong psize;
+	ulong np;
 	int i;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	np = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'i'), "Nd"((unsigned short)0x3F8));
-	i = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
-	for(; i<nelem(conf.mem); i++){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
+	for(i = 0; i < nelem(conf.mem); i++){
 		cm = &conf.mem[i];
-		__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));
 		if(cm->npage == 0)
 			continue;
 		np += cm->npage - nkpages(cm);
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
-	nt = np / 50;	/* 2% for mmupool */
-	np -= nt;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
+	if(np == 0)
+		return;
 
-	nt = (uvlong)nt*BY2PG / (sizeof(MMU)+PTSZ);
-	tsize = (uvlong)nt * (sizeof(MMU)+PTSZ);
-
-	psize = (uvlong)np * BY2PG;
-	psize += sizeof(Page) + BY2PG;
-	psize = (psize / (sizeof(Page)+BY2PG)) * sizeof(Page);
-
-	psize += tsize;
+	psize = (uvlong)np * sizeof(Page);
 	psize = ROUND(psize, PGLSZ(1));
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
-	for(i=0; i<nelem(conf.mem); i++){
+	for(i = 0; i < nelem(conf.mem); i++){
 		cm = &conf.mem[i];
 		if(cm->npage == 0)
 			continue;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 		base = cm->base;
 		top = base + (uvlong)cm->npage * BY2PG;
 		base += (uvlong)nkpages(cm) * BY2PG;
 		top &= -PGLSZ(1);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 		if(top <= VMAPSIZE && (vlong)(top - base) >= psize){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
-			/* steal memory from the end of the bank */
-			__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 			top -= psize;
-			__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));
 			cm->npage = (top - cm->base) / BY2PG;
-			__asm__ volatile("outb %0, %1" : : "a"((char)'n'), "Nd"((unsigned short)0x3F8));
-
-			__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
-			__asm__ volatile("outb %0, %1" : : "a"((char)'V'), "Nd"((unsigned short)0x3F8));
-			/* Pure HHDM model: map physical memory via HHDM, not VMAP */
-			va = hhdm_virt(top);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
-			pmap(top | PTEGLOBAL|PTEWRITE|PTENOEXEC|PTEVALID, va, psize);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));
-
-			palloc.pages = (void*)(va + tsize);
-
-			mmupool.nfree = mmupool.nalloc = nt;
-			mmupool.free = (void*)(va + (uvlong)nt*PTSZ);
-			for(i=0; i<nt; i++){
-				mmupool.free[i].page = (uintptr*)va;
-				mmupool.free[i].next = &mmupool.free[i+1];
-				va += PTSZ;
-			}
-			mmupool.free[i-1].next = nil;
-
+			palloc.pages = (Page*)hhdm_virt(top);
 			break;
 		}
 	}
+	if(palloc.pages == nil)
+		panic("preallocpages: insufficient memory for page array");
 }

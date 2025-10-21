@@ -120,7 +120,6 @@ Dev *devtab[] = {
 };
 
 /* Additional stubs for console/device support */
-void uartputs(char *s, int n) { (void)s; (void)n; }
 void microdelay(int us) { (void)us; }
 char* getconf(char *name) { (void)name; return nil; }
 int cpuserver = 0;
@@ -276,23 +275,19 @@ int cpuidentify(void) {
 	ulong regs[4];
 
 	/* Debug: entering function */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 	if(m == nil)
 		return 0;
 
 	/* Debug: about to call cpuid */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 
 	cpuid(0, 0, regs);
 
 	/* Debug output after cpuid */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 
 	m->cpuidax = regs[0];
 
 	/* Debug output after cpuidax write */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 
 	/* Build vendor string - cpuid returns it in EBX, EDX, ECX order */
 	m->cpuidid[0] = (regs[1] >> 0) & 0xFF;

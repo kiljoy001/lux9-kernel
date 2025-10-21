@@ -111,10 +111,6 @@ _start:
 
     /* Step 01: Zero BSS section */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'1', %al
-    outb %al, %dx
 
     lea bss_start(%rip), %rdi
     lea bss_end(%rip), %rcx
@@ -124,10 +120,6 @@ _start:
 
     /* Step 02: Set up kernel stack */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'2', %al
-    outb %al, %dx
 
     lea stack_top(%rip), %rsp
     and $~0xF, %rsp
@@ -135,10 +127,6 @@ _start:
 
     /* Step 03: Initialize UART */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'3', %al
-    outb %al, %dx
 
     /* Disable interrupts on UART */
     movw $0x3F9, %dx
@@ -175,17 +163,9 @@ _start:
 
     /* Step 04: UART initialized */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'4', %al
-    outb %al, %dx
 
     /* Step 05: Map .cpu0_data section in page tables */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'5', %al
-    outb %al, %dx
 
     /* Get current CR3 (Limine's PML4) */
     mov %cr3, %rax
@@ -205,10 +185,6 @@ _start:
 
     /* Step 06: Set up GS base for CPU-local data */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'6', %al
-    outb %al, %dx
 
     movl $0xC0000101, %ecx
     movl $0x80018000, %eax
@@ -217,20 +193,12 @@ _start:
 
     /* Step 07: About to call main */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'7', %al
-    outb %al, %dx
 
     /* Call 9front kernel main */
     call main
 
     /* Step 08: main returned (should not happen) */
     movw $0x3F8, %dx
-    movb $'0', %al
-    outb %al, %dx
-    movb $'8', %al
-    outb %al, %dx
 
     /* If main returns, halt */
 .Lhang:

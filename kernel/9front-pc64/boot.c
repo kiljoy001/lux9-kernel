@@ -101,26 +101,19 @@ bootargsinit(void)
 	/* Parse Limine kernel address response */
 	if(limine_kernel_address && limine_kernel_address->response) {
 		limine_kernel_phys_base = limine_kernel_address->response->physical_base;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'K'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 	}
 
 	/* Parse Limine HHDM response */
 	if(limine_hhdm && limine_hhdm->response) {
 		limine_hhdm_offset = limine_hhdm->response->offset;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
 	} else {
 		/* Fallback if no response */
 		limine_hhdm_offset = 0xffff800000000000UL;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
 	}
 
 	/* Store HHDM offset in early boot memory before CR3 switch */
 	extern uintptr saved_limine_hhdm_offset;
 	saved_limine_hhdm_offset = limine_hhdm_offset;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -142,25 +135,10 @@ meminit0(void)
 	/* Parse Limine memory map and set up conf.mem[] */
 	if(limine_memmap && limine_memmap->response) {
 		memmap_response = limine_memmap->response;
-		
-		/* DEBUG: Print memory map info */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
-		print("DEBUG: Limine memory map has %d entries\n", (int)memmap_response->entry_count);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 
 		/* Iterate through memory map entries */
 		for(i = 0; i < memmap_response->entry_count && nregions < nelem(conf.mem); i++) {
 			entry = memmap_response->entries[i];
-			
-			/* DEBUG: Print entry info */
-			print("DEBUG: Entry %d: base=0x%llx, length=0x%llx, type=%d\n", 
-				(int)i, entry->base, entry->length, (int)entry->type);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
-			__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 
 			/* Only use usable memory (type 0) */
 			if(entry->type != 0)  /* LIMINE_MEMMAP_USABLE */
@@ -215,4 +193,3 @@ archinit(void)
 	arch->clockinit = nil;
 	arch->clockenable = nil;
 }
-

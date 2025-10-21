@@ -13,45 +13,27 @@
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
-static void
-borrowdebugchar(char c)
-{
-	__asm__ volatile("outb %0, %1" : : "a"(c), "Nd"((ushort)0x3F8));
-}
-
 /* Initialize the borrow pool */
 void
 borrowinit(void)
 {
 	ulong i;
 
-	borrowdebugchar('b');
-	borrowdebugchar('0');
 
 	/* Initialize hash table */
 	borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
-	borrowdebugchar('b');
-	borrowdebugchar('1');
 	borrowpool.owners = xalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
 	if (borrowpool.owners == nil) {
-		borrowdebugchar('b');
-		borrowdebugchar('x');
 		panic("borrowinit: failed to allocate hash table");
 	}
 
-	borrowdebugchar('b');
-	borrowdebugchar('2');
 	for (i = 0; i < borrowpool.nbuckets; i++) {
 		borrowpool.owners[i].head = nil;
 	}
 
-	borrowdebugchar('b');
-	borrowdebugchar('3');
 	borrowpool.nowners = 0;
 	borrowpool.nshared = 0;
 	borrowpool.nmut = 0;
-	borrowdebugchar('b');
-	borrowdebugchar('4');
 }
 
 /* Hash function for uintptr keys */

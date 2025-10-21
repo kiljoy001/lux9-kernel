@@ -11,6 +11,8 @@
 
 extern int irqhandled(Ureg*, int);
 extern void irqinit(void);
+#define PSTATENAME_MAX 14
+extern char *statename[];
 
 static void debugexc(Ureg*, void*);
 static void debugbpt(Ureg*, void*);
@@ -30,12 +32,9 @@ trapinit0(void)
 	Segdesc *idt;
 	uintptr ptr[2];
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));
 	/* Use temp_idt in BSS instead of fixed IDTADDR until page tables are set up */
 	idt = temp_idt;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));
 	vaddr = (uintptr)vectortable;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	for(v = 0; v < 256; v++){
 		d1 = (vaddr & 0xFFFF0000)|SEGP;
 		switch(v){
@@ -62,13 +61,9 @@ trapinit0(void)
 
 		vaddr += 6;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	((ushort*)&ptr[1])[-1] = sizeof(Segdesc)*512-1;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	ptr[1] = (uintptr)temp_idt;  /* Use temp_idt address */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	lidt(&((ushort*)&ptr[1])[-1]);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 }
 
 void
@@ -144,8 +139,6 @@ trap(Ureg *ureg)
 	int vno, user;
 
 	vno = ureg->type;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)('0' + (vno % 10))), "Nd"((unsigned short)0x3F8));
 	user = kenter(ureg);
 	if(vno != VectorCNA)
 		fpukenter(ureg);
@@ -253,12 +246,68 @@ callwithureg(void (*fn)(Ureg*))
 }
 
 static void
+hexstr(char *buf, int n, uintptr v)
+{
+	int i, start;
+	static char hex[] = "0123456789abcdef";
+
+	if(n < 4){
+		if(n > 0)
+			buf[0] = 0;
+		return;
+	}
+
+	buf[0] = '0';
+	buf[1] = 'x';
+	for(i = n-2; i >= 2; i--){
+		buf[i] = hex[v & 0xf];
+		v >>= 4;
+	}
+	buf[n-1] = 0;
+
+	for(start = 2; start < n-2 && buf[start] == '0'; start++)
+		;
+	if(start == n-2){
+		buf[2] = '0';
+		buf[3] = 0;
+	}else if(start > 2)
+		memmove(buf+2, buf+start, n-start);
+}
+
+static void
 _dumpstack(Ureg *ureg)
 {
 	uintptr l, v, i, estack;
 	extern char etext[];
 	int x;
 	char *s;
+	char *pname = up ? up->text : "<nil>";
+	char numbuf[2+sizeof(uintptr)*2+1];
+
+	int pst = (up != nil) ? up->state : 0;
+	if(pst < 0 || pst >= PSTATENAME_MAX)
+		pst = 0;
+char *pstate = statename[pst];
+iprint("DBG\n");
+	char panicbuf[4];
+	hexstr(numbuf, sizeof numbuf, m->machno);
+	panicbuf[0] = '0' + (panicking % 10);
+	panicbuf[1] = 0;
+	print("PANIC TRACE: mach=%s panic=%s up=%s\n", numbuf, panicbuf, pname);
+	iprint("dumpstack: cpu %s panicking=%s\n", numbuf, panicbuf);
+	iprint("  up=%s\n", pname);
+	if(up != nil)
+	{
+		char pidbuf[2+sizeof(uintptr)*2+1];
+		hexstr(pidbuf, sizeof pidbuf, up->pid);
+		iprint("  pid=%s state=%s\n", pidbuf, pstate);
+	}
+	else
+		iprint("  pid=<none> state=%s\n", pstate);
+	hexstr(numbuf, sizeof numbuf, ureg->pc);
+	iprint("  pc=%s\n", numbuf);
+	hexstr(numbuf, sizeof numbuf, ureg->sp);
+	iprint("  sp=%s\n", numbuf);
 
 	if((s = getconf("*nodumpstack")) != nil && strcmp(s, "0") != 0){
 		iprint("dumpstack disabled\n");
@@ -384,11 +433,7 @@ faultamd64(Ureg* ureg, void*)
 	uintptr addr;
 	int read, user;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));  /* Page fault entry */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	addr = getcr2();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'#'), "Nd"((unsigned short)0x3F8));
 	read = !(ureg->error & 2);
 	user = userureg(ureg);
 	if(!user){
@@ -572,7 +617,6 @@ kprocchild(Proc *p, void (*entry)(void))
 {
 	uintptr *sp;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'k'), "Nd"((unsigned short)0x3F8));
 	/*
 	 * gotolabel will: load sp, write PC to *sp, ret (pop *sp and jump, sp += 8).
 	 * After gotolabel's ret, rsp will be sp + 8.
@@ -585,12 +629,10 @@ kprocchild(Proc *p, void (*entry)(void))
 	p->sched.sp = (uintptr)p - 16;         /* gotolabel writes PC here, rets (rsp becomes p - 8) */
 	p->sched.bp = 0;
 	p->sched.pc = (uintptr)entry;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));
 
 	/* Put linkproc at p - 8, which is where rsp will be after gotolabel's ret */
 	sp = (uintptr*)((uintptr)p - 8);
 	*sp = (uintptr)linkproc;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'C'), "Nd"((unsigned short)0x3F8));
 }
 
 void

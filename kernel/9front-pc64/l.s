@@ -551,20 +551,8 @@ TEXT islo(SB), 1, $-4
  */
 TEXT tas(SB), 1, $-4
 TEXT _tas(SB), 1, $-4
-	MOVB	$'t', AL
-	MOVW	$0x3F8, DX
-	OUTB	AL, (DX)
 	MOVL	$1, AX
-	XCHGL	AX, (RARG)			/*  */
-	TESTL	AX, AX
-	JNZ	_tas_nonzero
-	MOVB	$'0', AL
-	JMP	_tas_emit
-_tas_nonzero:
-	MOVB	$'1', AL
-_tas_emit:
-	MOVW	$0x3F8, DX
-	OUTB	AL, (DX)
+	LOCK; XCHGL AX, (RARG)
 	RET
 
 TEXT cmpswap486(SB), 1, $-4

@@ -65,30 +65,20 @@ schedinit(void)
 {
 	Edf *e;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	setlabel(&m->sched);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(up != nil) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 		if((e = up->edf) != nil && (e->flags & Admitted))
 			edfrecord(up);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 		m->proc = nil;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 		switch(up->state) {
 		default:
-			__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 			updatecpu(up);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
 			break;
 		case Running:
-			__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 			up->state = Scheding;
 			ready(up);
-			__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 			break;
 		case Moribund:
-			__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 			mmurelease(up);
 			lock(&procalloc);
 			up->state = Dead;
@@ -100,19 +90,13 @@ schedinit(void)
 			unlock(&procalloc);
 			goto out;
 		}
-		__asm__ volatile("outb %0, %1" : : "a"((char)'a'), "Nd"((unsigned short)0x3F8));
 		coherence();
-		__asm__ volatile("outb %0, %1" : : "a"((char)'b'), "Nd"((unsigned short)0x3F8));
 		up->mach = nil;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));
 		up = nil;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));
 	}
 out:
-	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 	for(;;){
 		sched();
-		__asm__ volatile("outb %0, %1" : : "a"((char)'Y'), "Nd"((unsigned short)0x3F8));
 	}
 }
 
@@ -162,7 +146,6 @@ procswitch(void)
 {
 	uvlong t;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'W'), "Nd"((unsigned short)0x3F8));
 	/* statistics */
 	m->cs++;
 
@@ -175,7 +158,6 @@ procswitch(void)
 	if(!setlabel(&up->sched))
 		gotolabel(&m->sched);
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Q'), "Nd"((unsigned short)0x3F8));
 	procrestore(up);
 
 	cycles(&t);
@@ -188,17 +170,13 @@ sched(void)
 {
 	int s;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	if(m->ilockdepth)
 		panic("cpu%d: ilockdepth %d, last lock %#p at %#p",
 			m->machno,
 			m->ilockdepth,
 			up != nil ? up->lastilock: nil,
 			(up != nil && up->lastilock != nil) ? up->lastilock->pc: 0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 	if(up != nil) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'{'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'U'), "Nd"((unsigned short)0x3F8));  /* up != nil path */
 		/*
 		 * Delay the sched until the process gives up the locks
 		 * it is holding.  This avoids dumb lock loops.
@@ -211,33 +189,25 @@ sched(void)
 		 * in the middle of taslock when a process holds a lock
 		 * but Lock.p has not yet been initialized.
 		 */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));  /* check nlocks */
 		if(up->nlocks)
 		if(up->state == Running)
 		if(up->delaysched < 20
 		|| palloc.lock.p == up
 		|| procalloc.lock.p == up){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'D'), "Nd"((unsigned short)0x3F8));  /* delaying sched */
 			up->delaysched++;
  			delayedscheds++;
 			return;
 		}
-		__asm__ volatile("outb %0, %1" : : "a"((char)'P'), "Nd"((unsigned short)0x3F8));  /* past delay check */
 		s = splhi();
  		up->delaysched = 0;
 		/* Set state to Ready and re-queue before switching */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'~'), "Nd"((unsigned short)0x3F8));
 		up->state = Scheding;
 		ready(up);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'`'), "Nd"((unsigned short)0x3F8));
 		procswitch();
 		splx(s);
 		return;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'G'), "Nd"((unsigned short)0x3F8));  /* Before runproc call */
 	up = runproc();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'('), "Nd"((unsigned short)0x3F8));
 	if(up != m->readied)
 		m->schedticks = m->ticks + HZ/10;
 	m->readied = nil;
@@ -245,12 +215,8 @@ sched(void)
 	up->mach = MACHP(m->machno);
 	up->affinity = m->machno;
 	up->state = Running;
-	__asm__ volatile("outb %0, %1" : : "a"((char)')'), "Nd"((unsigned short)0x3F8));
 	mmuswitch(up);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));
 	gotolabel(&up->sched);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'*'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	/* gotolabel returned - process yielded, go back to top of sched() */
 }
 
@@ -420,9 +386,7 @@ queueproc(Schedq *rq, Proc *p)
 {
 	int pri = rq - runq;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'q'), "Nd"((unsigned short)0x3F8));  /* queueproc: entry */
 	lock(rq);  /* Lock THIS queue, not runq[0]! */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'u'), "Nd"((unsigned short)0x3F8));  /* queueproc: locked */
 	switch(p->state){
 	case New:
 	case Queueing:
@@ -440,11 +404,9 @@ queueproc(Schedq *rq, Proc *p)
 	case Ready:
 	case Running:
 	case Waitrelease:
-		__asm__ volatile("outb %0, %1" : : "a"((char)'w'), "Nd"((unsigned short)0x3F8));  /* queueproc: bad state, unlock */
 		unlock(rq);
 		return -1;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'p'), "Nd"((unsigned short)0x3F8));  /* queueproc: state check passed */
 	p->state = Ready;
 
 	/*
@@ -480,36 +442,24 @@ queueproc(Schedq *rq, Proc *p)
 		if(pp == nil)
 			rq->tail = p;
 	} else {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));  /* queueproc: non-EDF path */
 		p->rnext = nil;
 		/* Verify p is not in runq range before queuing */
 		if((uintptr)p >= (uintptr)runq && (uintptr)p < (uintptr)(runq + Nrq)){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ERROR: p in runq! */
-			__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-			__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 		}
 		if(rq->tail != nil){
 			rq->tail->rnext = p;
-			__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));  /* tail was not nil, linked */
 		} else {
 			rq->head = p;
-			__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));  /* tail was nil, set head */
 		}
 		rq->tail = p;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'o'), "Nd"((unsigned short)0x3F8));  /* queueproc: added to queue */
 		/* Verify rq->head is not in runq range after queuing */
 		if((uintptr)rq->head >= (uintptr)runq && (uintptr)rq->head < (uintptr)(runq + Nrq)){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));  /* ERROR: head in runq! */
-			__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
-			__asm__ volatile("outb %0, %1" : : "a"((char)'H'), "Nd"((unsigned short)0x3F8));
 		}
 	}
 	rq->n++;
 	nrdy++;
 	runvec |= 1<<pri;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'c'), "Nd"((unsigned short)0x3F8));  /* queueproc: counters updated */
 	unlock(rq);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'k'), "Nd"((unsigned short)0x3F8));  /* queueproc: unlocked, success */
 	return 0;
 }
 
@@ -522,45 +472,32 @@ ready(Proc *p)
 {
 	int s, pri;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'R'), "Nd"((unsigned short)0x3F8));  /* ready: entry */
 	s = splhi();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'E'), "Nd"((unsigned short)0x3F8));  /* ready: splhi */
 	switch(edfready(p)){
 	default:
-		__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));  /* ready: edf default */
 		splx(s);
 		return;
 	case 0:
-		__asm__ volatile("outb %0, %1" : : "a"((char)'D'), "Nd"((unsigned short)0x3F8));  /* ready: edf case 0 */
 		if(up != p && (!p->wired || p->affinity == m->machno))
 			m->readied = p;	/* group scheduling */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'Y'), "Nd"((unsigned short)0x3F8));  /* ready: readied */
 		pri = reprioritize(p);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));  /* ready: repri */
 		break;
 	case 1:
-		__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));  /* ready: edf case 1 */
 		pri = PriEdf;
 		break;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Q'), "Nd"((unsigned short)0x3F8));  /* ready: before queueproc */
 	/* FAILSAFE: Ensure p->mach is nil before queueing */
 	p->mach = nil;
 	if(queueproc(&runq[pri], p) < 0){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));  /* ready: queueproc FAIL */
 		iprint("ready %s %lud %s pc %p\n",
 			p->text, p->pid, statename[p->state], getcallerpc(&p));
 	} else {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'S'), "Nd"((unsigned short)0x3F8));  /* ready: queueproc success */
 		void (*pt)(Proc*, int, vlong);
 		pt = proctrace;
 		if(pt != nil)
 			pt(p, SReady, 0);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'T'), "Nd"((unsigned short)0x3F8));  /* ready: trace done */
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));  /* ready: before splx */
 	splx(s);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ready: exit */
 }
 
 
@@ -572,12 +509,9 @@ dequeueproc(Schedq *rq, Proc *tp)
 {
 	Proc *l, *p;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'d'), "Nd"((unsigned short)0x3F8));  /* dequeueproc: entry */
 	if(!canlock(rq)){  /* Lock THIS queue, not runq[0]! */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'l'), "Nd"((unsigned short)0x3F8));  /* dequeueproc: canlock failed */
 		return nil;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'e'), "Nd"((unsigned short)0x3F8));  /* dequeueproc: locked */
 
 	/*
 	 *  the queue may have changed before we locked runq,
@@ -586,39 +520,30 @@ dequeueproc(Schedq *rq, Proc *tp)
 	l = nil;
 	/* Check if rq->head is corrupted */
 	if((uintptr)rq->head >= (uintptr)runq && (uintptr)rq->head < (uintptr)(runq + Nrq)){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));  /* ERROR: head in runq at dequeue! */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'D'), "Nd"((unsigned short)0x3F8));
 	}
 	for(p = rq->head; p != nil; p = p->rnext){
 		if(p == tp)
 			break;
 		l = p;
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'f'), "Nd"((unsigned short)0x3F8));  /* dequeueproc: found loop done */
 
 	/*
 	 *  p->mach==0 only when process state is saved
 	 */
 	if(p == nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'n'), "Nd"((unsigned short)0x3F8));  /* dequeueproc: p is nil */
 		unlock(rq);
 		return nil;
 	}
 	/* Check p->mach value */
 	if(p->mach != nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));  /* p->mach != nil */
 		/* Check if it's pointing to m (current machine) */
 		if(p->mach == m){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'='), "Nd"((unsigned short)0x3F8));  /* p->mach == m */
 		}
 		/* Check if it's pointing to MACHP(0) */
 		if(p->mach == MACHP(0)){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));  /* p->mach == MACHP(0) */
 		}
 		/* For now, just clear it and continue */
 		p->mach = nil;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* Cleared p->mach, continuing */
 	}
 	if(p->rnext == nil)
 		rq->tail = l;
@@ -707,11 +632,8 @@ runproc(void)
 	int i;
 	void (*pt)(Proc*, int, vlong);
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));  /* runproc: entry */
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'R'), "Nd"((unsigned short)0x3F8));  /* runproc start */
 	start = perfticks();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'r'), "Nd"((unsigned short)0x3F8));  /* after perfticks */
 
 	/* cooperative scheduling until the clock ticks */
 	if((p = m->readied) != nil && p->mach == nil && p->state == Ready
@@ -730,14 +652,12 @@ loop:
 	 *  or one that can be moved to this processor.
 	 */
 	spllo();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));  /* runproc: loop */
 	for(i = 0;; i++){
 		/*
 		 *  find the highest priority target process that this
 		 *  processor can run given affinity constraints.
 		 *
 		 */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));  /* runproc: forloop start */
 		for(rq = &runq[Nrq-1]; rq >= runq; rq--){
 			for(p = rq->head; p != nil; p = p->rnext){
 				if(p->affinity < 0 || p->affinity == m->machno
@@ -746,10 +666,8 @@ loop:
 			}
 		}
 
-		__asm__ volatile("outb %0, %1" : : "a"((char)'I'), "Nd"((unsigned short)0x3F8));  /* runproc: before idlehands */
 		/* waste time or halt the CPU */
 		idlehands();
-		__asm__ volatile("outb %0, %1" : : "a"((char)'i'), "Nd"((unsigned short)0x3F8));  /* runproc: after idlehands */
 
 		/* remember how much time we're here */
 		now = perfticks();
@@ -799,10 +717,8 @@ newproc(void)
 	Proc *p;
 
 	lock(&procalloc);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));  /* newproc entered */
 	p = procalloc.free;
 	if(p == nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'F'), "Nd"((unsigned short)0x3F8));  /* free is nil, need malloc */
 		if(procalloc.nextindex >= conf.nproc){
 			unlock(&procalloc);
 			return nil;
@@ -815,9 +731,6 @@ newproc(void)
 		p = (Proc*)(b + KSTACK);
 		/* Debug: verify p is not in runq range */
 		if((uintptr)p >= (uintptr)runq && (uintptr)p < (uintptr)(runq + Nrq)){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));  /* ERROR: p in runq! */
-			__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
-			__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 		}
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
@@ -829,10 +742,8 @@ newproc(void)
 
 	p->psstate = nil;
 	p->state = New;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'<'), "Nd"((unsigned short)0x3F8));  /* before setting mach = nil */
 	p->mach = nil;  /* Ensure mach is nil for new process */
 	__asm__ volatile("" ::: "memory");  /* Compiler barrier to prevent reordering */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'>'), "Nd"((unsigned short)0x3F8));  /* after setting mach = nil */
 	p->fpstate = FPinit;
 #ifdef KFPSTATE
 	p->kfpstate = FPinit;
@@ -942,9 +853,11 @@ sleep(Rendez *r, int (*f)(void*), void *arg)
 	lock(r);
 	lock(&up->rlock);
 	if(r->p != nil){
-		iprint("double sleep called from %#p, %s %lud -> %s %lud\n",
-			getcallerpc(&r), r->p->text, r->p->pid, up->text, up->pid);
-		dumpstack();
+		print("sleep: double sleep r=%#p caller=%#p prev=%s[%lud] state=%s cur=%s[%lud]\n",
+			r, getcallerpc(&r), r->p->text, r->p->pid,
+			statename[r->p->state], up->text, up->pid);
+		panic("double sleep r=%#p caller=%#p prev=%s[%lud] state=%s cur=%s[%lud]", r,
+			getcallerpc(&r), r->p->text, r->p->pid, statename[r->p->state], up->text, up->pid);
 	}
 
 	/*
@@ -1701,11 +1614,8 @@ procflushothers(void)
 void
 linkproc(void)
 {
-	__asm__ volatile("outb %0, %1" : : "a"((char)'L'), "Nd"((unsigned short)0x3F8));
 	spllo();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'M'), "Nd"((unsigned short)0x3F8));
 	(*up->kpfun)(up->kparg);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));
 	pexit("kproc exiting", 0);
 }
 
@@ -1715,99 +1625,68 @@ kproc(char *name, void (*func)(void *), void *arg)
 	static Pgrp *kpgrp;
 	Proc *p;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));  /* kproc: entry */
 	while((p = newproc()) == nil){
 		freebroken();
 		resrcwait("no procs for kproc");
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));  /* kproc: got newproc */
 
 	qlock(&p->debug);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'{'), "Nd"((unsigned short)0x3F8));  /* kproc: qlock done */
 	if(up != nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'|'), "Nd"((unsigned short)0x3F8));  /* kproc: up!=nil */
 		p->slash = up->slash;
 		p->dot = up->slash;	/* unlike fork, do not inherit the dot for kprocs */
 		if(p->dot != nil)
 			incref(p->dot);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));  /* kproc: slash/dot done */
 	} else {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'~'), "Nd"((unsigned short)0x3F8));  /* kproc: up==nil */
 		p->slash = nil;
 		p->dot = nil;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'`'), "Nd"((unsigned short)0x3F8));  /* kproc: nil slash/dot */
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'<'), "Nd"((unsigned short)0x3F8));  /* kproc: after slash/dot */
 
 	p->nnote = 0;
  	p->notify = nil;
 	p->notified = 0;
 	p->notepending = 0;
 	p->lastnote = nil;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'>'), "Nd"((unsigned short)0x3F8));  /* kproc: notes cleared */
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'?'), "Nd"((unsigned short)0x3F8));  /* kproc: before procmode */
 	p->procmode = 0640;
 	p->privatemem = 1;
 	p->noswap = 1;
 	p->hang = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)':'), "Nd"((unsigned short)0x3F8));  /* kproc: before p->kp */
 	p->kp = 1;
-	__asm__ volatile("outb %0, %1" : : "a"((char)';'), "Nd"((unsigned short)0x3F8));  /* kproc: kp set */
 
 	p->kpfun = func;
 	p->kparg = arg;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* kproc: before kprocchild */
 	kprocchild(p, linkproc);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'@'), "Nd"((unsigned short)0x3F8));  /* kproc: after kprocchild */
 
 	kstrdup(&p->text, name);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'#'), "Nd"((unsigned short)0x3F8));  /* kproc: text */
 	kstrdup(&p->user, eve);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'$'), "Nd"((unsigned short)0x3F8));  /* kproc: user */
 	kstrdup(&p->args, "");
-	__asm__ volatile("outb %0, %1" : : "a"((char)'%'), "Nd"((unsigned short)0x3F8));  /* kproc: args */
 	p->nargs = 0;
 	p->setargs = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'^'), "Nd"((unsigned short)0x3F8));  /* kproc: nargs */
 
 	if(kpgrp == nil)
 		kpgrp = newpgrp();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'&'), "Nd"((unsigned short)0x3F8));  /* kproc: pgrp */
 	p->pgrp = kpgrp;
 	kpgrp->ref++;  /* Direct increment instead of incref() */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'*'), "Nd"((unsigned short)0x3F8));  /* kproc: pgrp set */
 
 	p->insyscall = 1;
 	memset(p->time, 0, sizeof(p->time));
 	p->time[TReal] = MACHP(0)->ticks;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'('), "Nd"((unsigned short)0x3F8));  /* kproc: time */
 	/* Skip cycles() for now - not implemented */
 	/* cycles(&p->kentry); */
 	p->kentry = 0;
-	__asm__ volatile("outb %0, %1" : : "a"((char)')'), "Nd"((unsigned short)0x3F8));  /* kproc: kentry */
 	p->pcycles = 0; /* -p->kentry */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'_'), "Nd"((unsigned short)0x3F8));  /* kproc: pcycles */
 
 	pidalloc(p);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'+'), "Nd"((unsigned short)0x3F8));  /* kproc: pidalloc */
 
 	qunlock(&p->debug);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'='), "Nd"((unsigned short)0x3F8));  /* kproc: qunlock */
 
 	procpriority(p, PriKproc, 0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'-'), "Nd"((unsigned short)0x3F8));  /* kproc: procpriority */
 
 	/* Verify kp is still 1 before calling ready */
 	if(p->kp != 1){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));  /* ERROR: kp != 1 */
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
-		__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'V'), "Nd"((unsigned short)0x3F8));  /* kproc: kp verified as 1 */
 
 	ready(p);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'/'), "Nd"((unsigned short)0x3F8));  /* kproc: ready done, exit */
 }
 
 /*
@@ -2083,14 +1962,11 @@ pidinit(void)
 	 *	- noteid
 	 *	- parentpid
 	 */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'['), "Nd"((unsigned short)0x3F8));
 	pidhashmask = 1<<PIDSHIFT;
 	while(pidhashmask < conf.nproc*3)
 		pidhashmask <<= 1;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)']'), "Nd"((unsigned short)0x3F8));
 	pidhashtab = xalloc(pidhashmask * sizeof(pidhashtab[0]));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'{'), "Nd"((unsigned short)0x3F8));
 	if(pidhashtab == nil){
 		xsummary();
 		panic("cannot allocate pid hashtable of size %lud", pidhashmask);
@@ -2098,7 +1974,6 @@ pidinit(void)
 
 	/* make it a mask */
 	pidhashmask--;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'}'), "Nd"((unsigned short)0x3F8));
 }
 
 static Pid*
@@ -2128,35 +2003,23 @@ pidadd(long pid)
 	Pid *i, *e;
 	long o;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'z'), "Nd"((unsigned short)0x3F8));
 	if(pid > 0){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'+'), "Nd"((unsigned short)0x3F8));
 		i = pidlookup(pid);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'='), "Nd"((unsigned short)0x3F8));
 		if(i != nil)
 			incref(i);
 		return i;
 	}
 Again:
-	__asm__ volatile("outb %0, %1" : : "a"((char)'_'), "Nd"((unsigned short)0x3F8));
 	do {
 		static Ref gen;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'-'), "Nd"((unsigned short)0x3F8));
 		pid = incref(&gen) & PIDMASK;
-		__asm__ volatile("outb %0, %1" : : "a"((char)'~'), "Nd"((unsigned short)0x3F8));
 	} while(pid == 0 || pidlookup(pid) != nil);
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'`'), "Nd"((unsigned short)0x3F8));
 	i = &pidhashtab[(pid<<PIDSHIFT) & pidhashmask];
-	__asm__ volatile("outb %0, %1" : : "a"((char)'|'), "Nd"((unsigned short)0x3F8));
 	for(e = &i[1<<PIDSHIFT]; i < e; i++){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'<'), "Nd"((unsigned short)0x3F8));
 		while((o = i->pid) <= 0){
-			__asm__ volatile("outb %0, %1" : : "a"((char)'>'), "Nd"((unsigned short)0x3F8));
 			if(cmpswap(&i->pid, o, pid)){
-				__asm__ volatile("outb %0, %1" : : "a"((char)'?'), "Nd"((unsigned short)0x3F8));
 				incref(i);
-				__asm__ volatile("outb %0, %1" : : "a"((char)':'), "Nd"((unsigned short)0x3F8));
 				return i;
 			}
 		}
@@ -2235,27 +2098,18 @@ pidalloc(Proc *p)
 {
 	Pid *i;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'V'), "Nd"((unsigned short)0x3F8));
 	/* skip for the boot process */
 	if(up != nil){
-		__asm__ volatile("outb %0, %1" : : "a"((char)'W'), "Nd"((unsigned short)0x3F8));
 		i = pidadd(up->pid);
-		__asm__ volatile("outb %0, %1" : : "a"((char)'X'), "Nd"((unsigned short)0x3F8));
 		p->parentpid = i->pid;
 	} else
 		p->parentpid = 0;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Y'), "Nd"((unsigned short)0x3F8));
 	i = pidadd(0);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'Z'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'0'), "Nd"((unsigned short)0x3F8));  /* Before i->procindex */
 	if(i == nil) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'N'), "Nd"((unsigned short)0x3F8));  /* i is NULL! */
 		panic("pidadd returned nil");
 	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));  /* i is valid */
 	i->procindex = p->index;
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));  /* After assignment */
 
 	if(p->noteid == 0){
 		incref(i);
@@ -2263,7 +2117,6 @@ pidalloc(Proc *p)
 	} else
 		pidadd(p->noteid);
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'!'), "Nd"((unsigned short)0x3F8));
 	return p->pid = i->pid;
 }
 

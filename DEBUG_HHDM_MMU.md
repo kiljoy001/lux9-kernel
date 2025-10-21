@@ -1,8 +1,20 @@
 # HHDM MMU Debug Report - User Memory Access Issue
 
-**Date**: 2025-10-06
-**Status**: System hangs when calling pmap() to create user page table entries
+**Date**: 2025-10-06  
+**Status**: System hangs when calling pmap() to create user page table entries  
 **Git Commit**: d191266 (Fix HHDM bugs: IRETQ stack corruption and enable user MMU setup)
+
+---
+
+## 2025-10-07 Update — Unified HHDM Page-Table Model
+
+- `kernel/9front-pc64/mmu.c` now builds process page tables directly from an HHDM-visible allocator; the old `mmupool` + borrow-lock slab was removed.
+- Serial breadcrumb markers (e.g. `M0/M1` etc.) were stripped from the low-level lock and MMU paths to keep the console noise-free. The only remaining boot markers are the high-level step tags printed from `main.c`.
+- `tas()` gained a locked `XCHGL` and no longer emits diagnostic bytes on COM1.
+- `preallocpages()` reserves only the `Page` metadata array; there is no longer a carved-out MMU slab.
+- When debugging boot flow, refer to `main.c` step pairs (`42`, `43`, …) and the higher-level logging (`BOOT:` lines). No new serial keys were introduced for the MMU path.
+
+The remainder of this document documents the original failure mode for historical context.
 
 ---
 
