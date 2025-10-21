@@ -469,3 +469,6 @@ The 'NULL' marker confirmed proc->mmuhead was NULL when mmuswitch() ran.
 - `CN[…]` — milestone addresses emitted roughly every 512 MiB while `cankaddr()` walks the map.
 - `C0[…]` — `cankaddr()` rejecting an address above its limit.
 - `KA[…]` — first successful `kaddr()` translation (`{}` contains the saved HHDM offset).
+- `ML##` — MMU Lock operations (borrow_lock/borrow_unlock calls). The `##` represents line numbers or debug markers.
+- `{T@}` — pgrp->ns.lock operations (namespace lock acquisition).
+- `uprBock` — User process borrow lock related operations.

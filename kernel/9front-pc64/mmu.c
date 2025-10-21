@@ -446,44 +446,62 @@ mmualloc(void)
 {
 	MMU *p;
 	int i, n;
+	int locked;
 
 	p = m->mmufree;
 	if(p != nil){
 		m->mmufree = p->next;
 		m->mmucount--;
-	} else {
-		borrow_lock((BorrowLock*)&mmupool);
-		p = mmupool.free;
-		if(p != nil){
-			mmupool.free = p->next;
-			mmupool.nfree--;
-		} else {
-borrow_unlock((BorrowLock*)&mmupool);
-
-			n = 256;
-			p = malloc(n * sizeof(MMU));
-			if(p == nil)
-				return nil;
-			p->page = mallocalign(n * PTSZ, BY2PG, 0, 0);
-			if(p->page == nil){
-				free(p);
-				return nil;
-			}
-			for(i=1; i<n; i++){
-				p[i].page = p[i-1].page + (1<<PTSHIFT);
-				p[i-1].next = &p[i];
-			}
-
-borrow_lock((BorrowLock*)&mmupool);
-			p[n-1].next = mmupool.free;
-			mmupool.free = p->next;
-			mmupool.nalloc += n;
-			mmupool.nfree += n-1;
-		}
-		borrow_unlock((BorrowLock*)&mmupool);
+		goto found;
 	}
+
+	locked = 0;
+
+	borrow_lock((BorrowLock*)&mmupool);
+	locked = 1;
+	p = mmupool.free;
+	if(p != nil){
+		mmupool.free = p->next;
+		mmupool.nfree--;
+		goto release_and_found;
+	}
+
+	borrow_unlock((BorrowLock*)&mmupool);
+	locked = 0;
+
+	n = 256;
+	p = malloc(n * sizeof(MMU));
+	if(p == nil)
+		goto fail;
+	p->page = mallocalign(n * PTSZ, BY2PG, 0, 0);
+	if(p->page == nil){
+		free(p);
+		goto fail;
+	}
+	for(i = 1; i < n; i++){
+		p[i].page = p[i-1].page + (1<<PTSHIFT);
+		p[i-1].next = &p[i];
+	}
+
+	borrow_lock((BorrowLock*)&mmupool);
+	locked = 1;
+	p[n-1].next = mmupool.free;
+	mmupool.free = p->next;
+	mmupool.nalloc += n;
+	mmupool.nfree += n-1;
+
+release_and_found:
+	borrow_unlock((BorrowLock*)&mmupool);
+	locked = 0;
+
+found:
 	p->next = nil;
 	return p;
+
+fail:
+	if(locked)
+		borrow_unlock((BorrowLock*)&mmupool);
+	return nil;
 }
 
 static uintptr*
@@ -494,7 +512,11 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 	
 	flags = PTEWRITE|PTEVALID;
 	if(va < VMAP){
-		assert(up != nil);
+		/* Handle pure HHDM case while no process context exists */
+		if(up == nil){
+			page = rampage();
+			goto make_entry;
+		}
 		assert((va < USTKTOP) || (va >= KMAP && va < KMAP+KMAPSIZE));
 		if((p = mmualloc()) == nil)
 			return nil;
@@ -526,6 +548,7 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 	} else {
 		page = rampage();
 	}
+make_entry:
 	memset(page, 0, PTSZ);
 	table[index] = PADDR(page) | flags;
 	return page;
@@ -697,9 +720,13 @@ pmap(uintptr pa, uintptr va, vlong size)
 			flags |= PTESIZE;
 		l = (flags & PTESIZE) != 0;
 		z = PGLSZ(l);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 		pte = mmuwalk(m->pml4, va, l, 1);
+		__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 		if(pte == nil){
+			__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 			pte = mmuwalk(m->pml4, va, ++l, 0);
+			__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 			if(pte && (*pte & PTESIZE)){
 				flags |= PTESIZE;
 				z = va & (PGLSZ(l)-1);
