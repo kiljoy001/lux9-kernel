@@ -6,6 +6,7 @@
 #include "fns.h"
 #include "pci.h"
 #include "sdhw.h"
+#include "io.h"
 
 /* Per-CPU and per-process globals */
 Mach *m = nil;
@@ -237,11 +238,41 @@ typedef struct {
 static Irqhandler irqhandlers[256];
 
 void trapenable(int irq, void (*handler)(Ureg*, void*), void *arg, char *name) {
-	if(irq >= 0 && irq < 256) {
+	/* Real implementation - program the IDT gate */
+	extern Segdesc temp_idt[512];
+	Segdesc *idt;
+	uintptr vaddr;
+	u32int d1;
+	
+	if(irq < 0 || irq >= 256)
+		return;
+	
+	/* Store handler for compatibility with existing code */
+	if(irq < 256) {
 		irqhandlers[irq].handler = handler;
 		irqhandlers[irq].arg = arg;
 		irqhandlers[irq].name = name;
 	}
+	
+	/* Program the actual IDT gate */
+	idt = &temp_idt[irq * 2];  /* Each IDT entry is 2 Segdesc entries */
+	vaddr = (uintptr)handler;
+	
+	d1 = (vaddr & 0xFFFF0000) | SEGP;
+	switch(irq) {
+	case VectorBPT:
+	case VectorSYSCALL:
+		d1 |= SEGPL(3) | SEGIG;
+		break;
+	default:
+		d1 |= SEGPL(0) | SEGIG;
+		break;
+	}
+	
+	idt->d0 = (vaddr & 0xFFFF) | (KESEL << 16);
+	idt->d1 = d1;
+	(idt + 1)->d0 = (vaddr >> 32);
+	(idt + 1)->d1 = 0;
 }
 
 int irqhandled(Ureg *u, int irq) {
