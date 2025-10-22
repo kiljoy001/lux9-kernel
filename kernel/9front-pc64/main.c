@@ -12,6 +12,7 @@
 #include	"rebootcode.i"
 #include	"initrd.h"
 #include	"../../limine.h"
+#include	"sdhw.h"
 
 Conf conf;
 int idle_spin;

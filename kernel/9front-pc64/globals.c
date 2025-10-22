@@ -4,6 +4,8 @@
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "pci.h"
+#include "sdhw.h"
 
 /* Per-CPU and per-process globals */
 Mach *m = nil;
@@ -23,6 +25,18 @@ void (*consdebug)(void) = nil;
 void (*hwrandbuf)(void*, ulong) = nil;
 void (*kproftimer)(uintptr) = nil;
 void (*screenputs)(char*, int) = nil;
+
+/* SD hardware function pointers */
+int (*sd_inb)(int) = nil;
+void (*sd_outb)(int, int) = nil;
+ulong (*sd_inl)(int) = nil;
+void (*sd_outl)(int, ulong) = nil;
+void (*sd_insb)(int, void*, int) = nil;
+void (*sd_inss)(int, void*, int) = nil;
+void (*sd_outsb)(int, void*, int) = nil;
+void (*sd_outss)(int, void*, int) = nil;
+Pcidev* (*sd_pcimatch)(Pcidev* prev, int vid, int did) = nil;
+void (*sd_microdelay)(int) = nil;
 
 /* libc9 formatting support */
 int _fmtFdFlush(Fmt *f)
@@ -110,12 +124,14 @@ extern Dev consdevtab;
 extern Dev rootdevtab;
 extern Dev mntdevtab;
 extern Dev procdevtab;
+extern Dev sdisabidevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
 	&consdevtab,
 	&mntdevtab,
 	&procdevtab,
+	&sdisabidevtab,
 	nil,
 };
 
@@ -127,6 +143,13 @@ void idlehands(void) {}
 char* configfile = "";
 uvlong fastticks(uvlong *hz) { if(hz) *hz = 1000000; return 0; }
 void delay(int ms) { (void)ms; }
+
+/* SD hardware function pointer initialization */
+void sdhw_init(void)
+{
+	/* Function pointers will be initialized by architecture-specific code */
+	/* This is a placeholder - real initialization should happen in main.c after all symbols are available */
+}
 void kerndate(long secs) { (void)secs; }
 int fmtinstall(int c, int (*f)(Fmt*)) { (void)c; (void)f; return 0; }
 
