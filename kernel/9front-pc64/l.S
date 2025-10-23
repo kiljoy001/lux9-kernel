@@ -18,6 +18,20 @@ outb:
     outb %al, %dx
     ret
 
+.global ins
+ins:
+    movq %rdi, %rdx
+    xorq %rax, %rax
+    inw %dx, %ax
+    ret
+
+.global outs
+outs:
+    movq %rdi, %rdx
+    movq %rsi, %rax
+    outw %ax, %dx
+    ret
+
 .global inl
 inl:
     movq %rdi, %rdx

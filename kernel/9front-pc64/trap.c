@@ -22,7 +22,7 @@ static void unexpected(Ureg*, void*);
 static void _dumpstack(Ureg*);
 
 /* Temporary IDT until we can set up proper page tables */
-static Segdesc temp_idt[512] __attribute__((aligned(16)));
+Segdesc temp_idt[512] __attribute__((aligned(16)));
 
 void
 trapinit0(void)

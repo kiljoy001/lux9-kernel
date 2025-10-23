@@ -1,0 +1,212 @@
+/* Global kernel variables */
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "io.h"
+
+/* Per-CPU and per-process globals */
+Mach *m = nil;
+Proc *up = nil;
+
+/* HHDM offset - stored in early boot, guaranteed to survive CR3 switch */
+uintptr saved_limine_hhdm_offset = 0;
+
+/* Global kernel data structures */
+struct Swapalloc swapalloc;
+struct Kmesg kmesg;
+struct Active active;
+Mach* machp[MAXMACH];
+
+/* Global function pointers */
+void (*consdebug)(void) = nil;
+void (*hwrandbuf)(void*, ulong) = nil;
+void (*kproftimer)(uintptr) = nil;
+void (*screenputs)(char*, int) = nil;
+
+/* libc9 formatting support */
+int _fmtFdFlush(Fmt *f)
+{
+	/* Stub for now - would write buffered format output to FD */
+	(void)f;
+	return 0;
+}
+
+/* Get return address of caller */
+uintptr getcallerpc(void *v)
+{
+	(void)v;
+	return (uintptr)__builtin_return_address(1);
+}
+
+/* Memory pool allocation - forward to xalloc for now */
+extern void* xalloc(ulong);
+extern void xfree(void*);
+
+void* poolalloc(void *pool, ulong size)
+{
+	(void)pool;
+	return xalloc(size);
+}
+
+void poolfree(void *pool, void *ptr)
+{
+	(void)pool;
+	xfree(ptr);
+}
+
+void* poolallocalign(void *pool, ulong size, ulong align, long offset, ulong span)
+{
+	(void)pool; (void)align; (void)offset; (void)span;
+	return xalloc(size);
+}
+
+void* poolrealloc(void *pool, void *ptr, ulong size)
+{
+	(void)pool;
+	/* Simple realloc - allocate new, copy, free old */
+	void *new = xalloc(size);
+	if(new && ptr) {
+		memmove(new, ptr, size);
+		xfree(ptr);
+	}
+	return new;
+}
+
+ulong poolmsize(void *pool, void *ptr)
+{
+	(void)pool; (void)ptr;
+	return 0; /* Unknown size */
+}
+
+/* Error strings */
+char Etoolong[] = "name too long";
+
+/* Utility stubs */
+void srvrenameuser(char *old, char *new)
+{
+	(void)old; (void)new;
+}
+
+void shrrenameuser(char *old, char *new)
+{
+	(void)old; (void)new;
+}
+
+int needpages(void *v)
+{
+	(void)v;
+	return 0;
+}
+
+/* Interrupt/trap system */
+typedef struct {
+	void (*handler)(Ureg*, void*);
+	void *arg;
+	char *name;
+} Irqhandler;
+
+static Irqhandler irqhandlers[256];
+
+/* Extern declarations for IDT functions */
+extern Segdesc temp_idt[512];
+extern void lidt(void*);
+
+/* Proper trapenable implementation that programs IDT gates */
+void trapenable(int irq, void (*handler)(Ureg*, void*), void *arg, char *name) {
+	uintptr vaddr;
+	u32int d1;
+	Segdesc *idtentry;
+	
+	if(irq >= 0 && irq < 256) {
+		/* Store handler in our array for irqhandled() */
+		irqhandlers[irq].handler = handler;
+		irqhandlers[irq].arg = arg;
+		irqhandlers[irq].name = name;
+		
+		/* Program the actual IDT gate */
+		vaddr = (uintptr)handler;
+		d1 = (vaddr & 0xFFFF0000) | SEGP;
+		
+		/* Set appropriate privilege level and gate type */
+		switch(irq) {
+		case VectorBPT:
+		case VectorSYSCALL:
+			d1 |= SEGPL(3) | SEGIG;  /* User privilege, interrupt gate */
+			break;
+		default:
+			d1 |= SEGPL(0) | SEGIG;  /* Kernel privilege, interrupt gate */
+			break;
+		}
+		
+		/* Calculate IDT entry position */
+		idtentry = &temp_idt[irq * 2];  /* Each entry is 2 descriptors */
+		
+		/* Program the IDT gate descriptor */
+		idtentry->d0 = (vaddr & 0xFFFF) | (KESEL << 16);
+		idtentry->d1 = d1;
+		
+		/* Program the high 32 bits for 64-bit handlers */
+		idtentry[1].d0 = (vaddr >> 32);
+		idtentry[1].d1 = 0;
+	}
+}
+
+int irqhandled(Ureg *u, int irq) {
+	(void)u; (void)irq;
+	/* Return 1 if handled, 0 if not */
+	if(irq >= 0 && irq < 256 && irqhandlers[irq].handler) {
+		irqhandlers[irq].handler(u, irqhandlers[irq].arg);
+		return 1;
+	}
+	return 0;
+}
+
+void dumpmcregs(void) {
+	/* Dump machine check registers - stub */
+}
+
+/* Clock synchronization */
+void syncclock(void) {}
+
+/* NVRAM access */
+uchar nvramread(int addr) { (void)addr; return 0; }
+void nvramwrite(int addr, uchar val) { (void)addr; (void)val; }
+
+/* TSC ticks */
+extern uvlong rdtsc(void);  /* From l.S */
+
+uvlong tscticks(uvlong *hz) {
+	if(hz) *hz = 1000000000ULL;
+	return rdtsc();
+}
+
+/* IRQ initialization */
+void irqinit(void) {}
+void nmienable(void) {}
+
+/* Interrupt enable */
+void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
+	(void)tbdf;
+	trapenable(irq, handler, arg, name);
+}
+
+/* DMA controller - function pointer (nil = not available) */
+void (*i8237alloc)(void) = nil;
+
+/* PCI configuration */
+void pcicfginit(void) {}
+
+/* Boot screen */
+void bootscreeninit(void) {}
+
+/* Links function - defined by bootlinks */
+void links(void) {}
+
+/* Environment */
+void ksetenv(char *name, char *val, int conf) { (void)name; (void)val; (void)conf; }
+void setconfenv(void) {}
+
+/* Formatting */
+void quotefmtinstall(void) {}
