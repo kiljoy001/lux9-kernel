@@ -592,7 +592,29 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 		page = rampage();
 	}
 make_entry:
+	/* Zero the page table page first */
 	memset(page, 0, PTSZ);
+	
+	/* For intermediate page tables, pre-initialize the target entry */
+	if(flags & PTEUSER && va < USTKTOP && level > 0) {
+		int target_index = 0;
+		switch(level) {
+		case PDPE: /* PDPT level */
+			target_index = PTLX(va, 1);
+			break;
+		case PDE:  /* PD level */
+			target_index = PTLX(va, 0);
+			break;
+		default:
+			target_index = -1;
+			break;
+		}
+		if(target_index >= 0 && target_index < 512) {
+			/* Pre-initialize entry as present but zero - will be filled by caller */
+			((uintptr*)page)[target_index] = PTEVALID;  /* Mark present but zero data */
+		}
+	}
+	
 	table[index] = PADDR(page) | flags;
 	return page;
 }

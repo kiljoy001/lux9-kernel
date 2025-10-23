@@ -161,6 +161,30 @@ proc0(void*)
 				print("BOOT[proc0]: PDPT entry ZERO\n");
 		}
 	}
+	
+	/* Detailed page table chain check */
+	{
+		uintptr va = USTKTOP - BY2PG;
+		uintptr idx3 = PTLX(va, 3);
+		uintptr pml4_entry = m->pml4[idx3];
+		if(pml4_entry & PTEVALID) {
+			uintptr *pdpt = kaddr(PPN(pml4_entry));
+			uintptr idx2 = PTLX(va, 2);
+			uintptr pdpt_entry = pdpt[idx2];
+			if(pdpt_entry & PTEVALID) {
+				uintptr *pd = kaddr(PPN(pdpt_entry));
+				uintptr idx1 = PTLX(va, 1);
+				uintptr pd_entry = pd[idx1];
+				if(pd_entry & PTEVALID) {
+					print("BOOT[proc0]: Full chain valid to PD\n");
+				} else {
+					print("BOOT[proc0]: PD entry invalid (0x%llx)\n", pd_entry);
+				}
+			} else {
+				print("BOOT[proc0]: PDPT entry invalid (0x%llx)\n", pdpt_entry);
+			}
+		}
+	}
 	if(m->pml4[PTLX(USTKTOP-1, 3)] != 0)
 		print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
 	else
@@ -193,6 +217,12 @@ proc0(void*)
 
 	/* Install user mappings now that proc0 drops kernel privileges */
 	{
+		print("userinit: about to call mmuswitch, checking mmuhead...\n");
+		if(up->mmuhead == nil)
+			print("userinit: mmuhead is NULL!\n");
+		else
+			print("userinit: mmuhead has entries\n");
+			
 		int s = splhi();
 		mmuswitch(up);
 		splx(s);
