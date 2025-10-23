@@ -128,8 +128,8 @@ proc0(void*)
 	{
 		uintptr va = USTKTOP - BY2PG;
 		uintptr idx3 = PTLX(va, 3);
-		print("BOOT[proc0]: checking VA=0x%llx PML4idx=%d\n", va, idx3);
-		print("BOOT[proc0]: m->pml4[%d]=0x%llx\n", idx3, m->pml4[idx3]);
+		print("BOOT[proc0]: checking VA=0x%llx PML4idx=%lld\n", (unsigned long long)va, (long long)idx3);
+		print("BOOT[proc0]: m->pml4[%lld]=0x%llx\n", (unsigned long long)idx3, (unsigned long long)m->pml4[idx3]);
 		
 		uintptr *lvl2_walk = mmuwalk(m->pml4, va, 2, 0);
 		if(lvl2_walk != nil) {
@@ -144,7 +144,7 @@ proc0(void*)
 			print("BOOT[proc0]: mmuwalk L1 missing\n");
 			
 		uintptr *lvl2_direct = &m->pml4[idx3];
-		print("BOOT[proc0]: direct &m->pml4[%d]=0x%llx\n", idx3, *lvl2_direct);
+		print("BOOT[proc0]: direct &m->pml4[%lld]=0x%llx\n", (unsigned long long)idx3, (unsigned long long)*lvl2_direct);
 		if((*lvl2_direct & PTEVALID) != 0)
 			print("BOOT[proc0]: L2 entry VALID\n");
 		else
@@ -153,8 +153,8 @@ proc0(void*)
 		if((*lvl2_direct & PTEVALID) != 0) {
 			uintptr *pdpt = kaddr(PPN(*lvl2_direct));
 			uintptr idx2 = PTLX(va, 2);
-			print("BOOT[proc0]: PDPT=0x%llx idx=%d\n", (uintptr)pdpt, idx2);
-			print("BOOT[proc0]: pdpt[%d]=0x%llx\n", idx2, pdpt[idx2]);
+			print("BOOT[proc0]: PDPT=0x%llx idx=%lld\n", (unsigned long long)(uintptr)pdpt, (unsigned long long)idx2);
+			print("BOOT[proc0]: pdpt[%lld]=0x%llx\n", (unsigned long long)idx2, (unsigned long long)pdpt[idx2]);
 			if(pdpt[idx2] != 0)
 				print("BOOT[proc0]: PDPT entry NONZERO\n");
 			else
@@ -178,10 +178,10 @@ proc0(void*)
 				if(pd_entry & PTEVALID) {
 					print("BOOT[proc0]: Full chain valid to PD\n");
 				} else {
-					print("BOOT[proc0]: PD entry invalid (0x%llx)\n", pd_entry);
+					print("BOOT[proc0]: PD entry invalid (0x%llx)\n", (unsigned long long)pd_entry);
 				}
 			} else {
-				print("BOOT[proc0]: PDPT entry invalid (0x%llx)\n", pdpt_entry);
+				print("BOOT[proc0]: PDPT entry invalid (0x%llx)\n", (unsigned long long)pdpt_entry);
 			}
 		}
 	}

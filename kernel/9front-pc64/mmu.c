@@ -599,10 +599,10 @@ make_entry:
 	if(flags & PTEUSER && va < USTKTOP && level > 0) {
 		int target_index = 0;
 		switch(level) {
-		case PDPE: /* PDPT level */
-			target_index = PTLX(va, 1);
+		case PDPE: /* PDPT level - pre-init entry for PD */
+			target_index = PTLX(va, 0);
 			break;
-		case PDE:  /* PD level */
+		case PDE:  /* PD level - pre-init entry for PT */  
 			target_index = PTLX(va, 0);
 			break;
 		default:
