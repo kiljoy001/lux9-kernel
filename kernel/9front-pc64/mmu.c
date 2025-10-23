@@ -543,6 +543,8 @@ mmualloc(void)
 		free(p);
 		return nil;
 	}
+	/* Zero the page table page to ensure clean entries */
+	memset(p->page, 0, PTSZ);
 	return p;
 }
 
@@ -875,19 +877,10 @@ mmuswitch(Proc *proc)
 		m->pml4[PTLX(KMAP, 3)] = PADDR(p->page) | PTEWRITE|PTEVALID;
 	}
 	
-	/* Process all page table entries in the linked list */
-	for(p = proc->mmuhead; p != nil; p = p->next){
-		switch(p->level){
-		case PML4E:
-			/* Set the mmumap bit and install the PML4 entry */
-			m->mmumap[p->index/MAPBITS] |= 1ull<<(p->index%MAPBITS);
-			m->pml4[p->index] = PADDR(p->page) | PTEUSER|PTEWRITE|PTEVALID;
-			break;
-		case PDPE:
-		case PDE:
-			/* These should be handled by the PML4 entry that references them */
-			break;
-		}
+	/* Process all PML4E entries in the linked list */
+	for(p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next){
+		m->mmumap[p->index/MAPBITS] |= 1ull<<(p->index%MAPBITS);
+		m->pml4[p->index] = PADDR(p->page) | PTEUSER|PTEWRITE|PTEVALID;
 	}
 	
 	taskswitch((uintptr)proc);

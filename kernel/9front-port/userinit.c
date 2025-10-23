@@ -95,9 +95,10 @@ proc0(void*)
 	}
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
-	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 1, 1) == nil)
+	/* Pre-create page table entries for user stack - this should populate mmuhead */
+	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 0, 1) == nil)
 		panic("proc0: mmuwalk stack");
-	putmmu(USTKTOP - BY2PG, p->pa | PTEWRITE | PTEVALID | PTENOEXEC, p);
+	/* The segpage() + mmuwalk() should have created MMU structures in up->mmuhead */
 	if(dbg_getpte(USTKTOP - BY2PG) != 0)
 		print("BOOT[proc0]: stack pte present\n");
 	else
@@ -115,51 +116,71 @@ proc0(void*)
 	else
 		print("BOOT[proc0]: text page pa nonzero\n");
 	segpage(up->seg[TSEG], p);
-	if(mmuwalk(m->pml4, UTZERO, 1, 1) == nil)
+	/* Pre-create page table entries for user text - this should populate mmuhead */
+	if(mmuwalk(m->pml4, UTZERO, 0, 1) == nil)
 		panic("proc0: mmuwalk text");
-	putmmu(UTZERO, p->pa | PTEVALID, p);
+	/* The segpage() + mmuwalk() should have created MMU structures in up->mmuhead */
 	if(dbg_getpte(UTZERO) != 0)
 		print("BOOT[proc0]: text pte present\n");
 	else
 		print("BOOT[proc0]: text pte missing\n");
 	print("BOOT[proc0]: user segments populated\n");
-	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 2, 0) != nil)
-		print("BOOT[proc0]: mmuwalk level 2 present\n");
-	else
-		print("BOOT[proc0]: mmuwalk level 2 missing\n");
-	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 1, 0) != nil)
-		print("BOOT[proc0]: mmuwalk level 1 present\n");
-	else
-		print("BOOT[proc0]: mmuwalk level 1 missing\n");
 	{
-		uintptr *lvl2 = mmuwalk(m->pml4, USTKTOP - BY2PG, 2, 0);
-		if(lvl2 != nil){
-			if((*lvl2 & PTEVALID) != 0)
-				print("BOOT[proc0]: level 2 entry marked valid\n");
+		uintptr va = USTKTOP - BY2PG;
+		uintptr idx3 = PTLX(va, 3);
+		print("BOOT[proc0]: checking VA=0x%llx PML4idx=%d\n", va, idx3);
+		print("BOOT[proc0]: m->pml4[%d]=0x%llx\n", idx3, m->pml4[idx3]);
+		
+		uintptr *lvl2_walk = mmuwalk(m->pml4, va, 2, 0);
+		if(lvl2_walk != nil) {
+			print("BOOT[proc0]: mmuwalk L2 present *entry=0x%llx\n", *lvl2_walk);
+		} else {
+			print("BOOT[proc0]: mmuwalk L2 missing\n");
+		}
+			
+		if(mmuwalk(m->pml4, va, 1, 0) != nil)
+			print("BOOT[proc0]: mmuwalk L1 present\n");
+		else
+			print("BOOT[proc0]: mmuwalk L1 missing\n");
+			
+		uintptr *lvl2_direct = &m->pml4[idx3];
+		print("BOOT[proc0]: direct &m->pml4[%d]=0x%llx\n", idx3, *lvl2_direct);
+		if((*lvl2_direct & PTEVALID) != 0)
+			print("BOOT[proc0]: L2 entry VALID\n");
+		else
+			print("BOOT[proc0]: L2 entry INVALID\n");
+			
+		if((*lvl2_direct & PTEVALID) != 0) {
+			uintptr *pdpt = kaddr(PPN(*lvl2_direct));
+			uintptr idx2 = PTLX(va, 2);
+			print("BOOT[proc0]: PDPT=0x%llx idx=%d\n", (uintptr)pdpt, idx2);
+			print("BOOT[proc0]: pdpt[%d]=0x%llx\n", idx2, pdpt[idx2]);
+			if(pdpt[idx2] != 0)
+				print("BOOT[proc0]: PDPT entry NONZERO\n");
 			else
-				print("BOOT[proc0]: level 2 entry NOT valid\n");
-			uintptr *pdpt = kaddr(PPN(*lvl2));
-			uintptr idx1 = PTLX(USTKTOP - BY2PG, 2);
-			if(pdpt[idx1] != 0)
-				print("BOOT[proc0]: PDPT entry nonzero\n");
-			else
-				print("BOOT[proc0]: PDPT entry zero\n");
+				print("BOOT[proc0]: PDPT entry ZERO\n");
 		}
 	}
 	if(m->pml4[PTLX(USTKTOP-1, 3)] != 0)
 		print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
 	else
 		print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
-	if(up->mmuhead == nil)
-		print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
-	else if(up->mmuhead->level == 2)
-		print("BOOT[proc0]: mmuhead level 2 (PML4E)\n");
-	else if(up->mmuhead->level == 1)
-		print("BOOT[proc0]: mmuhead level 1 (PDPE)\n");
-	else if(up->mmuhead->level == 0)
-		print("BOOT[proc0]: mmuhead level 0 (PDE)\n");
-	else
-		print("BOOT[proc0]: mmuhead level unexpected\n");
+		if(up->mmuhead == nil)
+			print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
+		else {
+			MMU *p;
+			int count = 0;
+			for(p = up->mmuhead; p != nil && count < 5; p = p->next, count++) {
+				if(p->level == 2)
+					print("BOOT[proc0]: mmuhead[%d] PML4E index=%d\n", count, p->index);
+				else if(p->level == 1)
+					print("BOOT[proc0]: mmuhead[%d] PDPE index=%d\n", count, p->index);
+				else if(p->level == 0)
+					print("BOOT[proc0]: mmuhead[%d] PDE index=%d\n", count, p->index);
+				else
+					print("BOOT[proc0]: mmuhead[%d] level=%d index=%d\n", count, p->level, p->index);
+			}
+		}
 
 	/*
 	 * Become a user process.
