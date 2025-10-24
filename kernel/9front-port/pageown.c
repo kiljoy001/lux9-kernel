@@ -20,7 +20,7 @@ pa2pfn(uintptr pa)
 }
 
 /* Get page owner descriptor for physical address */
-static inline struct PageOwner*
+struct PageOwner*
 pa2owner(uintptr pa)
 {
 	ulong pfn = pa2pfn(pa);
@@ -36,18 +36,64 @@ pageowninit(void)
 	ulong i;
 
 	/* Calculate total number of physical pages */
-	/* TODO: Get actual memory size from Limine */
-	/* Defer initialization to avoid early boot issues */
-	/* For now, just mark as initialized with zero pages */
+	extern Conf conf;
+	npages = 0;
+	for(i = 0; i < nelem(conf.mem); i++) {
+		npages += conf.mem[i].npage;
+		print("pageown: conf.mem[%lud].npage = %lud\n", i, conf.mem[i].npage);
+	}
 
-	pageownpool.npages = 0;  /* Will expand on demand */
+	print("pageown: total npages = %lud\n", npages);
+
+	/* Check if we have any pages to manage */
+	if(npages == 0) {
+		pageownpool.npages = 0;
+		pageownpool.nowned = 0;
+		pageownpool.nshared = 0;
+		pageownpool.nmut = 0;
+		pageownpool.pages = nil;
+		print("pageown: no physical pages to manage\n");
+		return;
+	}
+
+	/* Calculate required memory size */
+	ulong size = npages * sizeof(struct PageOwner);
+	print("pageown: allocating %lud bytes for %lud pages\n", size, npages);
+
+	/* Allocate page owner array */
+	pageownpool.pages = xalloc(size);
+	if(pageownpool.pages == nil) {
+		/* Fallback - this should not happen in normal operation */
+		pageownpool.npages = 0;
+		pageownpool.nowned = 0;
+		pageownpool.nshared = 0;
+		pageownpool.nmut = 0;
+		print("pageown: failed to allocate page owner array (size: %lud)\n", size);
+		return;
+	}
+
+	/* Initialize all pages to FREE state */
+	for(i = 0; i < npages; i++) {
+		pageownpool.pages[i].owner = nil;
+		pageownpool.pages[i].state = POWN_FREE;
+		pageownpool.pages[i].shared_count = 0;
+		pageownpool.pages[i].shared_borrower_count = 0;
+		pageownpool.pages[i].mut_borrower = nil;
+		pageownpool.pages[i].acquired_ns = 0;
+		pageownpool.pages[i].borrow_deadline_ns = 0;
+		pageownpool.pages[i].owner_vaddr = 0;
+		pageownpool.pages[i].owner_pte = nil;
+		pageownpool.pages[i].pa = i << PGSHIFT;
+		pageownpool.pages[i].transfer_count = 0;
+		pageownpool.pages[i].borrow_count = 0;
+	}
+
+	pageownpool.npages = npages;
 	pageownpool.nowned = 0;
 	pageownpool.nshared = 0;
 	pageownpool.nmut = 0;
-	pageownpool.pages = nil;
 
-	/* Actual initialization deferred - pool will be lazy-allocated on first use */
-	print("pageown: deferred initialization (will allocate on demand)\n");
+	print("pageown: initialized with %lud pages\n", npages);
 }
 
 /*
@@ -205,7 +251,15 @@ pageown_borrow_shared(Proc *owner, Proc *borrower, uintptr pa, u64int vaddr)
 		return POWN_EMUTBORROW;
 	}
 
+	/* Check if we have space for another shared borrower */
+	if(own->shared_borrower_count >= MAX_SHARED_BORROWS) {
+		iunlock(&pageownpool);
+		return POWN_ENOMEM;
+	}
+
 	/* Add shared borrow */
+	own->shared_borrowers[own->shared_borrower_count] = borrower;
+	own->shared_borrower_count++;
 	own->shared_count++;
 	own->borrow_count++;
 
@@ -289,14 +343,25 @@ pageown_return_shared(Proc *borrower, uintptr pa)
 		return POWN_EINVAL;
 	}
 
-	/* Must have shared borrows */
-	if(own->shared_count == 0) {
+	/* Find and remove this borrower */
+	int found = 0;
+	for(int i = 0; i < own->shared_borrower_count; i++) {
+		if(own->shared_borrowers[i] == borrower) {
+			/* Remove this borrower by shifting others down */
+			for(int j = i; j < own->shared_borrower_count - 1; j++) {
+				own->shared_borrowers[j] = own->shared_borrowers[j + 1];
+			}
+			own->shared_borrower_count--;
+			own->shared_count--;
+			found = 1;
+			break;
+		}
+	}
+
+	if(!found) {
 		iunlock(&pageownpool);
 		return POWN_ENOTBORROWED;
 	}
-
-	/* Remove one shared borrow */
-	own->shared_count--;
 
 	/* If no more shared borrows, revert to exclusive */
 	if(own->shared_count == 0) {
@@ -441,6 +506,7 @@ pageown_cleanup_process(Proc *p)
 			own->owner = nil;
 			own->state = POWN_FREE;
 			own->shared_count = 0;
+			own->shared_borrower_count = 0;
 			own->mut_borrower = nil;
 			own->owner_vaddr = 0;
 			own->owner_pte = nil;
@@ -457,9 +523,23 @@ pageown_cleanup_process(Proc *p)
 			cleaned++;
 		}
 
-		/* Shared borrows are harder - we'd need to track individual borrowers */
-		/* For now, just decrement if there are any */
-		/* TODO: Track individual shared borrowers */
+		/* Remove shared borrows by this process */
+		for(int j = 0; j < own->shared_borrower_count; j++) {
+			if(own->shared_borrowers[j] == p) {
+				/* Remove this borrower by shifting others down */
+				for(int k = j; k < own->shared_borrower_count - 1; k++) {
+					own->shared_borrowers[k] = own->shared_borrowers[k + 1];
+				}
+				own->shared_borrower_count--;
+				own->shared_count--;
+				if(own->shared_count == 0 && own->state == POWN_SHARED_OWNED) {
+					own->state = POWN_EXCLUSIVE;
+					pageownpool.nshared--;
+				}
+				cleaned++;
+				break; /* Each process can only borrow a page once */
+			}
+		}
 	}
 
 	iunlock(&pageownpool);

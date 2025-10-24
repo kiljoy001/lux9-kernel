@@ -5,6 +5,8 @@
 #include	"fns.h"
 #include <error.h>
 
+extern void userpmap(uintptr va, uintptr pa, int perms);
+
 /*
  * Attachable segment types
  */
@@ -322,6 +324,19 @@ sameseg:
 	return s;
 }
 
+static int
+user_perms(Segment *s)
+{
+	int flags = PTEVALID | PTEUSER;
+	if(s->type & SG_STACK)
+		flags |= PTEWRITE;
+	if(s->type & SG_TEXT)
+		flags |= 0;  /* read-only, executable */
+	else
+		flags |= PTEWRITE;
+	return flags;
+}
+
 /*
  *  segpage inserts Page p into Segmnet s.
  *  on error, calls putpage() on p.
@@ -357,6 +372,10 @@ segpage(Segment *s, Page *p)
 	if(pg > etp->last)
 		etp->last = pg;
 	qunlock(&s->qlock);
+
+	/* Create user page table entries for this page */
+	extern void userpmap(uintptr va, uintptr pa, int perms);
+	userpmap(p->va, p->pa, user_perms(s));
 }
 
 void

@@ -22,6 +22,11 @@ struct PageOwner {
 	/* Borrow tracking */
 	int	shared_count;		/* Number of shared borrows (&) */
 	Proc	*mut_borrower;		/* Exclusive mutable borrower (&mut) */
+	
+	/* Track individual shared borrowers for cleanup */
+	#define MAX_SHARED_BORROWS 16
+	Proc	*shared_borrowers[MAX_SHARED_BORROWS];	/* Processes with shared borrows */
+	int	shared_borrower_count;			/* Current count */
 
 	/* Lifetime tracking */
 	uvlong	acquired_ns;		/* When ownership was acquired */
@@ -86,6 +91,9 @@ int	pageown_can_borrow_mut(uintptr pa);
 
 /* Process cleanup - called when process dies */
 void	pageown_cleanup_process(Proc *p);
+
+/* Get page owner descriptor for physical address */
+struct PageOwner* pa2owner(uintptr pa);
 
 /* Statistics and debugging */
 void	pageown_stats(void);

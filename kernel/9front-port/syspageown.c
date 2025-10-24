@@ -367,6 +367,7 @@ sysvmowninfo(va_list list)
 	u64int *pte;
 	Proc *owner;
 	enum PageOwnerState state;
+	struct PageOwner *own;
 
 	vaddr = va_arg(list, u64int);
 	info = va_arg(list, struct VmOwnInfo*);
@@ -384,13 +385,21 @@ sysvmowninfo(va_list list)
 	/* Get ownership info */
 	owner = pageown_get_owner(pa);
 	state = pageown_get_state(pa);
+	
+	/* Get the actual page owner structure for detailed info */
+	own = pa2owner(pa);
 
 	info->owner_pid = owner ? owner->pid : -1;
 	info->state = state;
 
-	/* TODO: Get actual counts - need to expose from pageown.c */
-	info->shared_count = 0;
-	info->mut_borrower_pid = -1;
+	/* Get actual counts from page owner structure */
+	if(own != nil) {
+		info->shared_count = own->shared_count;
+		info->mut_borrower_pid = own->mut_borrower ? own->mut_borrower->pid : -1;
+	} else {
+		info->shared_count = 0;
+		info->mut_borrower_pid = -1;
+	}
 
 	return 0;
 }

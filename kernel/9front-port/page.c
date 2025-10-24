@@ -5,6 +5,8 @@
 #include	"fns.h"
 #include <error.h>
 
+extern uintptr saved_limine_hhdm_offset;
+
 Palloc palloc;
 
 static void
@@ -282,8 +284,11 @@ newpage(uintptr va, QLock *locked)
 	inittxtflush(p);
 
 	/* Automatically acquire ownership for the current process */
+	/* With HHDM, use the HHDM virtual address instead of user VA */
 	if(up != nil && p->pa != 0) {
-		pageown_acquire(up, p->pa, va);
+		extern uintptr saved_limine_hhdm_offset;
+		uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
+		pageown_acquire(up, p->pa, hhdm_va);
 	}
 
 	return p;
@@ -453,4 +458,25 @@ zeroprivatepages(void)
 		}
 	}
 	unlock(&palloc);
+}
+
+/*
+ * Map a user page at a specific virtual address.
+ * This function creates the necessary page table entries
+ * and links them into the current process's mmuhead.
+ */
+void
+userpmap(uintptr va, uintptr pa, int perms)
+{
+	uintptr *pte;
+	int x;
+
+	x = splhi();
+	pte = mmuwalk(m->pml4, va, 0, 1);  // level=0 (PTE), create=1
+	if(pte == nil) {
+		splx(x);
+		panic("userpmap: out of memory for page tables");
+	}
+	*pte = pa | perms;
+	splx(x);
 }

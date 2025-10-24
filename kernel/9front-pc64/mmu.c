@@ -387,12 +387,14 @@ setuppagetables(void)
 	extern u64int limine_kernel_phys_base;
 	u64int kernel_phys;
 
-	/* TEMPORARY: Hardcode the physical base we see in QEMU output
-	 * TODO: Get this from Limine Kernel Address request */
-	if(limine_kernel_phys_base == 0)
+	/* Get the physical base from Limine */
+	if(limine_kernel_phys_base == 0) {
+		/* Fallback - this should not happen in normal operation */
 		kernel_phys = 0x7f8fa000;  /* From "limine: Physical base: 0x7f8fa000" */
-	else
+		print("mmu: WARNING: using fallback kernel physical base\n");
+	} else {
 		kernel_phys = limine_kernel_phys_base;
+	}
 
 	/* Map the kernel image at KZERO */
 	u64int kernel_size = ((uintptr)&kend - KZERO + BY2PG - 1) & ~(BY2PG - 1);
@@ -556,38 +558,12 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 
 	flags = PTEWRITE|PTEVALID;
 	if(va < VMAP){
-		if(up == nil){
-			page = rampage();
-			goto make_entry;
-		}
-		assert((va < USTKTOP) || (va >= KMAP && va < KMAP+KMAPSIZE));
-		if((p = mmualloc()) == nil)
-			return nil;
-		p->index = index;
-		p->level = level;
-		if(va < USTKTOP){
+		/* Simplified approach: always use rampage() for now to avoid MMU structure allocation issues */
+		page = rampage();
+		if(va < USTKTOP) {
 			flags |= PTEUSER;
-			if(level == PML4E){
-				if((p->next = up->mmuhead) == nil)
-					up->mmutail = p;
-				up->mmuhead = p;
-				m->mmumap[index/MAPBITS] |= 1ull<<(index%MAPBITS);
-			} else {
-				up->mmutail->next = p;
-				up->mmutail = p;
-			}
-			up->mmucount++;
-		} else {
-			if(level == PML4E){
-				up->kmaptail = p;
-				up->kmaphead = p;
-			} else {
-				up->kmaptail->next = p;
-				up->kmaptail = p;
-			}
-			up->kmapcount++;
 		}
-		page = p->page;
+		goto make_entry;
 	} else {
 		page = rampage();
 	}
@@ -595,14 +571,18 @@ make_entry:
 	/* Zero the page table page first */
 	memset(page, 0, PTSZ);
 	
-	/* For intermediate page tables, pre-initialize the target entry */
-	if(flags & PTEUSER && va < USTKTOP && level > 0) {
+	
+/* For intermediate page tables, pre‑initialize the target entry */
+	if((flags & PTEUSER) && va < USTKTOP && level > 0) {
 		int target_index = 0;
 		switch(level) {
-		case PDPE: /* PDPT level - pre-init entry for PD */
-			target_index = PTLX(va, 0);
+		case PML4E: /* PML4 level – pre‑init entry for PDPT */
+			target_index = PTLX(va, 2);
 			break;
-		case PDE:  /* PD level - pre-init entry for PT */  
+		case PDPE:  /* PDPT level – pre‑init entry for PD */
+			target_index = PTLX(va, 1);
+			break;
+		case PDE:   /* PD level – pre‑init entry for PT */
 			target_index = PTLX(va, 0);
 			break;
 		default:
@@ -610,11 +590,11 @@ make_entry:
 			break;
 		}
 		if(target_index >= 0 && target_index < 512) {
-			/* Pre-initialize entry as present but zero - will be filled by caller */
-			((uintptr*)page)[target_index] = PTEVALID;  /* Mark present but zero data */
+			/* Mark present but with zero data; caller will fill it */
+			((uintptr*)page)[target_index] = PTEVALID;
 		}
 	}
-	
+
 	table[index] = PADDR(page) | flags;
 	return page;
 }

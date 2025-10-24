@@ -252,9 +252,10 @@ main(void)
 		arch->clockinit();
 	}
 	meminit();
-	pageowninit();
 	ramdiskinit();
 	confinit();
+	pageowninit();
+	exchangeinit();
 	xinit();
 
 	/* Setup OUR page tables - independent of Limine */

@@ -246,32 +246,16 @@ callwithureg(void (*fn)(Ureg*))
 }
 
 static void
-hexstr(char *buf, int n, uintptr v)
+doublefault(Ureg*, void*)
 {
-	int i, start;
-	static char hex[] = "0123456789abcdef";
+	panic("double fault");
+}
 
-	if(n < 4){
-		if(n > 0)
-			buf[0] = 0;
-		return;
-	}
-
-	buf[0] = '0';
-	buf[1] = 'x';
-	for(i = n-2; i >= 2; i--){
-		buf[i] = hex[v & 0xf];
-		v >>= 4;
-	}
-	buf[n-1] = 0;
-
-	for(start = 2; start < n-2 && buf[start] == '0'; start++)
-		;
-	if(start == n-2){
-		buf[2] = '0';
-		buf[3] = 0;
-	}else if(start > 2)
-		memmove(buf+2, buf+start, n-start);
+static void
+unexpected(Ureg *ureg, void*)
+{
+	iprint("unexpected trap %llud\n", ureg->type);
+	panic("unexpected");
 }
 
 static void
@@ -281,40 +265,15 @@ _dumpstack(Ureg *ureg)
 	extern char etext[];
 	int x;
 	char *s;
-	char *pname = up ? up->text : "<nil>";
-	char numbuf[2+sizeof(uintptr)*2+1];
+	char *pname;
 
-	int pst = (up != nil) ? up->state : 0;
-	if(pst < 0 || pst >= PSTATENAME_MAX)
-		pst = 0;
-char *pstate = statename[pst];
-iprint("DBG\n");
-	char panicbuf[4];
-	hexstr(numbuf, sizeof numbuf, m->machno);
-	panicbuf[0] = '0' + (panicking % 10);
-	panicbuf[1] = 0;
-	print("PANIC TRACE: mach=%s panic=%s up=%s\n", numbuf, panicbuf, pname);
-	iprint("dumpstack: cpu %s panicking=%s\n", numbuf, panicbuf);
-	iprint("  up=%s\n", pname);
-	if(up != nil)
-	{
-		char pidbuf[2+sizeof(uintptr)*2+1];
-		hexstr(pidbuf, sizeof pidbuf, up->pid);
-		iprint("  pid=%s state=%s\n", pidbuf, pstate);
-	}
-	else
-		iprint("  pid=<none> state=%s\n", pstate);
-	hexstr(numbuf, sizeof numbuf, ureg->pc);
-	iprint("  pc=%s\n", numbuf);
-	hexstr(numbuf, sizeof numbuf, ureg->sp);
-	iprint("  sp=%s\n", numbuf);
-
+	iprint("DBG\n");
+	pname = up ? up->text : "<nil>";
+	iprint("dumpstack\n");
 	if((s = getconf("*nodumpstack")) != nil && strcmp(s, "0") != 0){
 		iprint("dumpstack disabled\n");
 		return;
 	}
-	iprint("dumpstack\n");
-
 	x = 0;
 	x += iprint("ktrace /kernel/path %#p %#p <<EOF\n", ureg->pc, ureg->sp);
 	i = 0;
@@ -331,7 +290,7 @@ iprint("DBG\n");
 
 	for(l = (uintptr)&l; l < estack; l += sizeof(uintptr)){
 		v = *(uintptr*)l;
-		if((KTZERO < v && v < (uintptr)&etext) || estack-l < 32){
+		if(KTZERO < v && v < (uintptr)&etext){
 			/*
 			 * Could Pick off general CALL (((uchar*)v)[-5] == 0xE8)
 			 * and CALL indirect through AX
@@ -413,18 +372,6 @@ debugbpt(Ureg* ureg, void*)
 	/* restore pc to instruction that caused the trap */
 	ureg->pc--;
 	postnote(up, 1, "sys: breakpoint", NDebug);
-}
-
-static void
-doublefault(Ureg*, void*)
-{
-	panic("double fault");
-}
-
-static void
-unexpected(Ureg* ureg, void*)
-{
-	print("unexpected trap %llud; ignoring\n", ureg->type);
 }
 
 static void

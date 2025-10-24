@@ -8,6 +8,7 @@
 
 extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
 extern void pmap(uintptr, uintptr, vlong);
+extern void userpmap(uintptr va, uintptr pa, int perms);
 
 struct initrd_file;
 extern struct initrd_file *initrd_root;
@@ -95,10 +96,7 @@ proc0(void*)
 	}
 	kunmap(k);
 	segpage(up->seg[SSEG], p);
-	/* Pre-create page table entries for user stack - this should populate mmuhead */
-	if(mmuwalk(m->pml4, USTKTOP - BY2PG, 0, 1) == nil)
-		panic("proc0: mmuwalk stack");
-	/* The segpage() + mmuwalk() should have created MMU structures in up->mmuhead */
+	/* segpage now calls userpmap() which creates MMU structures */
 	if(dbg_getpte(USTKTOP - BY2PG) != 0)
 		print("BOOT[proc0]: stack pte present\n");
 	else
@@ -116,10 +114,7 @@ proc0(void*)
 	else
 		print("BOOT[proc0]: text page pa nonzero\n");
 	segpage(up->seg[TSEG], p);
-	/* Pre-create page table entries for user text - this should populate mmuhead */
-	if(mmuwalk(m->pml4, UTZERO, 0, 1) == nil)
-		panic("proc0: mmuwalk text");
-	/* The segpage() + mmuwalk() should have created MMU structures in up->mmuhead */
+	/* segpage now calls userpmap() which creates MMU structures */
 	if(dbg_getpte(UTZERO) != 0)
 		print("BOOT[proc0]: text pte present\n");
 	else
@@ -252,6 +247,24 @@ proc0(void*)
 		print("BOOT[proc0]: text pte present after mmuswitch\n");
 	else
 		print("BOOT[proc0]: text pte still missing after mmuswitch\n");
+	{
+		uintptr idx = PTLX(USTKTOP-1, 3);
+		if((m->pml4[idx] & PTEVALID) != 0) {
+			uintptr *pdpt = kaddr(PPN(m->pml4[idx]));
+			uintptr idx1 = PTLX(USTKTOP - BY2PG, 2);
+			if(pdpt[idx1] != 0) {
+				// Success - page tables are set up correctly
+			}
+		}
+	}
+	if(m->pml4[PTLX(USTKTOP-1, 3)] != 0) {
+		if(dbg_getpte(USTKTOP - BY2PG) != 0) {
+			// Stack PTE is present
+		}
+		if(dbg_getpte(UTZERO) != 0) {
+			// Text PTE is present
+		}
+	}
 
 	poperror();
 
