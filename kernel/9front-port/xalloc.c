@@ -50,6 +50,7 @@ xinit(void)
 	Confmem *cm;
 	int i;
 
+	print("xinit: starting initialization\n");
 	eh = &xlists.hole[Nhole-1];
 	for(h = xlists.hole; h < eh; h++)
 		h->link = h+1;
@@ -57,14 +58,18 @@ xinit(void)
 	xlists.flist = xlists.hole;
 
 	kpages = conf.npage - conf.upages;
+	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
+		print("xinit: processing conf.mem[%d] base=%#p npage=%lud kbase=%#p klimit=%#p\n",
+			i, cm->base, cm->npage, cm->kbase, cm->klimit);
 		n = cm->npage;
 		if(n > kpages)
 			n = kpages;
 		/* don't try to use non-KADDR-able memory for kernel */
-		maxpages = cankaddr(cm->base)/BY2PG;
+		/* With Limine HHDM, all physical memory is already mapped */
+		maxpages = cm->npage;  /* Assume all pages are KADDR-able */
 		if(n > maxpages)
 			n = maxpages;
 		/* give to kernel */
@@ -73,6 +78,7 @@ xinit(void)
 			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
 			if(cm->klimit == 0)
 				cm->klimit = (uintptr)-BY2PG;
+			print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
 			xhole(cm->base, cm->klimit - cm->kbase);
 			kpages -= n;
 		}
@@ -83,6 +89,7 @@ xinit(void)
 	}
 	/* Skip xsummary() - print() not working yet */
 	/* xsummary(); */
+	print("xinit: initialization complete\n");
 }
 
 void*
@@ -123,13 +130,16 @@ xallocz(ulong size, int zero)
 	Hole *h, **l;
 	ulong orig_size = size;
 
+	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
 	/* add room for magix & size overhead, round up to nearest vlong */
 	size += BY2V + offsetof(Xhdr, data[0]);
 	size &= ~(BY2V-1);
+	print("xallocz: adjusted size %lud bytes\n", size);
 
 	ilock(&xlists.lk);
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
+		print("xallocz: checking hole addr=%#p size=%#p top=%#p\n", h->addr, h->size, h->top);
 		if(h->size >= size) {
 			/* h->addr is already a virtual address in HHDM - no KADDR needed! */
 			p = (Xhdr*)h->addr;
@@ -147,11 +157,13 @@ xallocz(ulong size, int zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
+			print("xallocz: allocated at %#p\n", p->data);
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
+	print("xallocz: allocation failed\n");
 	return nil;
 }
 

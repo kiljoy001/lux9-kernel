@@ -126,6 +126,7 @@ extern Dev rootdevtab;
 extern Dev mntdevtab;
 extern Dev procdevtab;
 extern Dev sdisabidevtab;
+extern Dev exchdevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -133,6 +134,7 @@ Dev *devtab[] = {
 	&mntdevtab,
 	&procdevtab,
 	&sdisabidevtab,
+	&exchdevtab,
 	nil,
 };
 

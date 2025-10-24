@@ -254,9 +254,9 @@ main(void)
 	meminit();
 	ramdiskinit();
 	confinit();
+	xinit();
 	pageowninit();
 	exchangeinit();
-	xinit();
 
 	/* Setup OUR page tables - independent of Limine */
 	setuppagetables();

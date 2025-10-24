@@ -145,7 +145,19 @@ main(int argc, char *argv[])
 
 	/* TODO: devfs, procfs, etc. */
 
-	/* Step 6: Execute real init or shell */
+	/* Step 6: Run exchange tests */
+	printf("init: running simple test...\n");
+	start_server("/bin/simple_test", NULL);
+	
+	/* Uncomment these lines to run the exchange tests instead
+	printf("init: running original exchange test...\n");
+	start_server("/bin/exchange_test", NULL);
+	
+	printf("init: running 9P exchange test...\n");
+	start_server("/bin/exchange_9p_test", NULL);
+	*/
+
+	/* Step 7: Execute real init or shell */
 	printf("init: attempting to exec /sbin/init...\n");
 	exec("/sbin/init", NULL);
 

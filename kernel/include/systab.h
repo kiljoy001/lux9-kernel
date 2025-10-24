@@ -61,10 +61,6 @@ Syscall sysvmlend_shared;
 Syscall sysvmlend_mut;
 Syscall sysvmreturn;
 Syscall sysvmowninfo;
-Syscall sys_exchange_prepare;
-Syscall sys_exchange_accept;
-Syscall sys_exchange_cancel;
-Syscall sys_exchange_prepare_range;
 
 Syscall *systab[]={
 	[SYSR1]		sysr1,
@@ -124,10 +120,6 @@ Syscall *systab[]={
 	[VMLEND_MUT]	sysvmlend_mut,
 	[VMRETURN]	sysvmreturn,
 	[VMOWNINFO]	sysvmowninfo,
-	[EXCHANGE_PREPARE]	sys_exchange_prepare,
-	[EXCHANGE_ACCEPT]	sys_exchange_accept,
-	[EXCHANGE_CANCEL]	sys_exchange_cancel,
-	[EXCHANGE_PREPARE_RANGE]	sys_exchange_prepare_range,
 };
 
 int nsyscall = (sizeof systab/sizeof systab[0]);
