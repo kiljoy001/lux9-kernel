@@ -75,12 +75,40 @@ xinit(void)
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
 		/* Only print first few entries to avoid verbose output */
-		if(i < 4) {
-			print("xinit: processing conf.mem[%d] base=%#p npage=%lud kbase=%#p klimit=%#p\n",
-				i, cm->base, cm->npage, cm->kbase, cm->klimit);
-		} else if(i == 4) {
-			print("xinit: ... (showing first 4 entries only)\n");
+		if(i < 2) {
+			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",
+				i, cm->base, cm->npage);
+		} else if(i == 2) {
+			print("xinit: ... (showing first 2 entries only)\n");
 		}
+		n = cm->npage;
+		if(n > kpages)
+			n = kpages;
+		/* don't try to use non-KADDR-able memory for kernel */
+		/* With Limine HHDM, all physical memory is already mapped */
+		maxpages = cm->npage;  /* Assume all pages are KADDR-able */
+		if(n > maxpages)
+			n = maxpages;
+		/* give to kernel */
+		if(n > 0){
+			cm->kbase = (uintptr)KADDR(cm->base);
+			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
+			if(cm->klimit == 0)
+				cm->klimit = (uintptr)-BY2PG;
+			/* Only print first few xhole calls to avoid verbose output */
+			if(i < 2) {
+				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
+			}
+			xhole(cm->base, cm->klimit - cm->kbase);
+			kpages -= n;
+		}
+		/*
+		 * anything left over: cm->npage - nkpages(cm)
+		 * will be given to user by pageinit()
+		 */
+	}
+	print("xinit: initialization complete\n");
+}
 		n = cm->npage;
 		if(n > kpages)
 			n = kpages;
@@ -154,8 +182,10 @@ xallocz(ulong size, int zero)
 	/* Calculate overhead */
 	overhead = BY2V + offsetof(Xhdr, data[0]);
 	
-	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
-	print("xallocz: overhead = %lud bytes\n", overhead);
+	/* Only print for large allocations to reduce verbose output */
+	if (size > 64*1024) {
+		print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
+	}
 	
 	/* Detect potential overflow when adding header overhead */
 	if (size > ~0UL - overhead) {
@@ -174,7 +204,11 @@ xallocz(ulong size, int zero)
 	/* add room for magix & size overhead, round up to nearest vlong */
 	size += overhead;
 	size &= ~(BY2V-1);
-	print("xallocz: adjusted size %lud bytes\n", size);
+	
+	/* Only print for large allocations to reduce verbose output */
+	if (size > 64*1024) {
+		print("xallocz: adjusted size %lud bytes\n", size);
+	}
 
 	ilock(&xlists.lk);
 	
@@ -185,10 +219,10 @@ xallocz(ulong size, int zero)
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
 		/* Debug print to see if we're in the loop - limit verbose output */
-		if (loop_count % 1000 == 0 && print_count < 10) {
-			print("xallocz: checking hole addr=%#p size=%#p top=%#p (count=%d)\n", h->addr, h->size, h->top, loop_count);
+		if (loop_count % 5000 == 0 && print_count < 3) {
+			print("xallocz: checking hole (count=%d)\n", loop_count);
 			print_count++;
-		} else if (print_count == 10 && loop_count % 1000 == 0) {
+		} else if (print_count == 3 && loop_count % 5000 == 0) {
 			print("xallocz: ... (limiting verbose output)\n");
 			print_count++;  /* Only print this message once */
 		}
@@ -219,15 +253,15 @@ xallocz(ulong size, int zero)
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
 			/* Limit verbose output for successful allocations */
-			if (size > 1024) {  /* Only print for large allocations */
-				print("xallocz: allocated %lud bytes at %#p\n", size, p->data);
+			if (size > 64*1024) {  /* Only print for large allocations */
+				print("xallocz: allocated %lud bytes\n", size);
 			}
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	if (size > 1024) {  /* Only print for large allocations */
+	if (size > 64*1024) {  /* Only print for large allocations */
 		print("xallocz: allocation failed for %lud bytes\n", size);
 	}
 	return nil;
