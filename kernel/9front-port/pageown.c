@@ -38,10 +38,8 @@ pageowninit(void)
 	/* Calculate total number of physical pages */
 	extern Conf conf;
 	npages = 0;
-	print("pageown: conf.npage = %lud, conf.upages = %lud\n", conf.npage, conf.upages);
 	for(i = 0; i < nelem(conf.mem); i++) {
 		npages += conf.mem[i].npage;
-		print("pageown: conf.mem[%lud].base = %#p, .npage = %lud\n", i, conf.mem[i].base, conf.mem[i].npage);
 	}
 	
 	print("pageown: total npages = %lud\n", npages);
@@ -54,7 +52,6 @@ pageowninit(void)
 		pageownpool.nshared = 0;
 		pageownpool.nmut = 0;
 		pageownpool.pages = nil;
-		print("pageown: failed due to unreasonably large npages\n");
 		return;
 	}
 
@@ -65,7 +62,6 @@ pageowninit(void)
 		pageownpool.nshared = 0;
 		pageownpool.nmut = 0;
 		pageownpool.pages = nil;
-		print("pageown: no physical pages to manage\n");
 		return;
 	}
 
@@ -81,7 +77,18 @@ pageowninit(void)
 		pageownpool.nshared = 0;
 		pageownpool.nmut = 0;
 		pageownpool.pages = nil;
-		print("pageown: failed due to unreasonably large allocation\n");
+		return;
+	}
+
+	/* Allocate page owner array */
+	pageownpool.pages = xalloc(size);
+	if(pageownpool.pages == nil) {
+		/* Fallback - this should not happen in normal operation */
+		pageownpool.npages = 0;
+		pageownpool.nowned = 0;
+		pageownpool.nshared = 0;
+		pageownpool.nmut = 0;
+		print("pageown: failed to allocate page owner array (size: %lud)\n", size);
 		return;
 	}
 

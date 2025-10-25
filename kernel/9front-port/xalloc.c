@@ -143,10 +143,10 @@ xallocz(ulong size, int zero)
 	ulong orig_size = size;
 	ulong overhead;
 
-	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
 	/* Calculate overhead */
 	overhead = BY2V + offsetof(Xhdr, data[0]);
-	print("xallocz: overhead = %lud bytes\n", overhead);
+	
+	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
 	
 	/* Detect potential overflow when adding header overhead */
 	if (size > ~0UL - overhead) {
