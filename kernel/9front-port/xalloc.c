@@ -141,15 +141,28 @@ xallocz(ulong size, int zero)
 	Xhdr *p;
 	Hole *h, **l;
 	ulong orig_size = size;
+	ulong overhead;
 
 	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
+	/* Calculate overhead */
+	overhead = BY2V + offsetof(Xhdr, data[0]);
+	print("xallocz: overhead = %lud bytes\n", overhead);
+	
 	/* Detect potential overflow when adding header overhead */
-	if (size > (uvlong)~0ULL - (BY2V + offsetof(Xhdr, data[0]))) {
+	if (size > ~0UL - overhead) {
+		print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size, overhead);
 		iunlock(&xlists.lk);
 		panic("xallocz: request size overflow (size=%lud)", size);
 	}
+	
+	/* Additional check for unreasonably large allocations */
+	if (size > 128*1024*1024) {  /* More than 128MB */
+		print("xallocz: unreasonably large allocation request: %lud bytes\n", size);
+		iunlock(&xlists.lk);
+		panic("xallocz: unreasonably large allocation request (size=%lud)", size);
+	}
 	/* add room for magix & size overhead, round up to nearest vlong */
-	size += BY2V + offsetof(Xhdr, data[0]);
+	size += overhead;
 	size &= ~(BY2V-1);
 	print("xallocz: adjusted size %lud bytes\n", size);
 
