@@ -254,6 +254,8 @@ main(void)
 	meminit();
 	ramdiskinit();
 	confinit();
+	printinit();
+	print("BOOT: printinit complete - serial console ready\n");
 	xinit();
 	pageowninit();
 	exchangeinit();
