@@ -43,8 +43,20 @@ pageowninit(void)
 		npages += conf.mem[i].npage;
 		print("pageown: conf.mem[%lud].base = %#p, .npage = %lud\n", i, conf.mem[i].base, conf.mem[i].npage);
 	}
-
+	
 	print("pageown: total npages = %lud\n", npages);
+	
+	/* Check for unreasonably large npages */
+	if (npages > 1024*1024) {  /* More than 1 million pages */
+		print("pageown: unreasonably large npages = %lud\n", npages);
+		pageownpool.npages = 0;
+		pageownpool.nowned = 0;
+		pageownpool.nshared = 0;
+		pageownpool.nmut = 0;
+		pageownpool.pages = nil;
+		print("pageown: failed due to unreasonably large npages\n");
+		return;
+	}
 
 	/* Check if we have any pages to manage */
 	if(npages == 0) {
@@ -60,6 +72,18 @@ pageowninit(void)
 	/* Calculate required memory size */
 	ulong size = npages * sizeof(struct PageOwner);
 	print("pageown: allocating %lud bytes for %lud pages\n", size, npages);
+	
+	/* Check for unreasonably large allocation */
+	if (size > 128*1024*1024) {  /* More than 128MB */
+		print("pageown: unreasonably large allocation = %lud bytes\n", size);
+		pageownpool.npages = 0;
+		pageownpool.nowned = 0;
+		pageownpool.nshared = 0;
+		pageownpool.nmut = 0;
+		pageownpool.pages = nil;
+		print("pageown: failed due to unreasonably large allocation\n");
+		return;
+	}
 
 	/* Allocate page owner array */
 	pageownpool.pages = xalloc(size);

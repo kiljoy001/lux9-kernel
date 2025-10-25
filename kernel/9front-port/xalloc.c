@@ -161,6 +161,7 @@ xallocz(ulong size, int zero)
 		iunlock(&xlists.lk);
 		panic("xallocz: unreasonably large allocation request (size=%lud)", size);
 	}
+	
 	/* add room for magix & size overhead, round up to nearest vlong */
 	size += overhead;
 	size &= ~(BY2V-1);
