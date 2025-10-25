@@ -353,6 +353,8 @@ xhole(uintptr addr, uintptr size)
 	h->size = size;   /* Size in bytes */
 	h->link = *l;     /* Link into the table */
 	*l = h;
+	
+	iunlock(&xlists.lk);
 }
 
 void
