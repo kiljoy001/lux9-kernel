@@ -301,7 +301,6 @@ xhole(uintptr addr, uintptr size)
 	 * If we have exhausted the static free list, allocate a fresh batch
 	 * of Hole descriptors from the kernel malloc pool.
 	 * --------------------------------------------------------------- */
-	if (xlists.flist == nil) {
 		Hole *extra = (Hole*)malloc(DYNAMIC_NHOLE * sizeof(Hole));
 		if (extra == nil) {
 			iunlock(&xlists.lk);
@@ -313,7 +312,6 @@ xhole(uintptr addr, uintptr size)
 		extra[DYNAMIC_NHOLE-1].link = nil;
 		xlists.flist = extra;
 	}
-	h->top = top;     /* End virtual address */
 	/* Get a free hole descriptor from the free list */
 	h = xlists.flist;
 	xlists.flist = h->link;
@@ -324,14 +322,6 @@ xhole(uintptr addr, uintptr size)
 	h->size = size;   /* Size in bytes */
 	h->link = *l;     /* Link into the table */
 	*l = h;
-
-	iunlock(&xlists.lk);
-}
-	h->size = size;   /* Size in bytes */
-	h->link = *l;     /* Link into the table */
-	*l = h;
-
-	iunlock(&xlists.lk);
 }
 
 void
