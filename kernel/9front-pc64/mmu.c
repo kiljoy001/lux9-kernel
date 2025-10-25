@@ -483,10 +483,18 @@ mmuinit(void)
 	rdmsr(Efer, &v);
 	v |= 1ull;
 	wrmsr(Efer, v);
+	
+	// Debug print for EFER
+	dbghex("EFER set to: ", v);
 
 	wrmsr(Star, ((uvlong)UE32SEL << 48) | ((uvlong)KESEL << 32));
 	wrmsr(Lstar, (uvlong)syscallentry);
 	wrmsr(Sfmask, 0x200);
+	
+	// Debug print for STAR
+	uvlong star_val;
+	rdmsr(Star, &star_val);
+	dbghex("STAR set to: ", star_val);
 }
 
 /*

@@ -7,10 +7,22 @@
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
 extern uintptr limine_hhdm_offset;
 
+/* -------------------------------------------------------------------------
+ * XALLOC configuration
+ * -------------------------------------------------------------------------
+ * INITIAL_NHOLE – number of static Hole descriptors (kept in the Xalloc
+ *                 struct).  This value must match the size of the static array.
+ * DYNAMIC_NHOLE – number of descriptors to allocate at once when the static
+ *                 pool runs out.
+ * Nhole        – alias for INITIAL_NHOLE used by the rest of the file.
+ * -------------------------------------------------------------------------
+ */
 enum
 {
-	Nhole		= 128,
-	Magichole	= 0x484F4C45,			/* HOLE */
+	INITIAL_NHOLE	= 128,
+	DYNAMIC_NHOLE	= 256,
+	Nhole		= INITIAL_NHOLE,	/* static hole descriptor count */
+	Magichole	= 0x484F4C45,		/* HOLE */
 };
 
 typedef struct Hole Hole;
@@ -131,6 +143,11 @@ xallocz(ulong size, int zero)
 	ulong orig_size = size;
 
 	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
+	/* Detect potential overflow when adding header overhead */
+	if (size > (uvlong)~0ULL - (BY2V + offsetof(Xhdr, data[0]))) {
+		iunlock(&xlists.lk);
+		panic("xallocz: request size overflow (size=%lud)", size);
+	}
 	/* add room for magix & size overhead, round up to nearest vlong */
 	size += BY2V + offsetof(Xhdr, data[0]);
 	size &= ~(BY2V-1);
@@ -280,12 +297,23 @@ xhole(uintptr addr, uintptr size)
 
 	/* Need to create a new hole descriptor for this region */
 	if(xlists.flist == nil) {
-		iunlock(&xlists.lk);
-		/* Out of hole descriptors - this shouldn't happen with 128 holes
-		 * but if it does, we just leak the memory rather than panic */
-		return;
+	/* ---------------------------------------------------------------
+	 * If we have exhausted the static free list, allocate a fresh batch
+	 * of Hole descriptors from the kernel malloc pool.
+	 * --------------------------------------------------------------- */
+	if (xlists.flist == nil) {
+		Hole *extra = (Hole*)malloc(DYNAMIC_NHOLE * sizeof(Hole));
+		if (extra == nil) {
+			iunlock(&xlists.lk);
+			panic("xhole: out of hole descriptors and malloc failed");
+		}
+		for (int i = 0; i < DYNAMIC_NHOLE-1; i++) {
+			extra[i].link = &extra[i+1];
+		}
+		extra[DYNAMIC_NHOLE-1].link = nil;
+		xlists.flist = extra;
 	}
-
+	h->top = top;     /* End virtual address */
 	/* Get a free hole descriptor from the free list */
 	h = xlists.flist;
 	xlists.flist = h->link;
@@ -293,6 +321,12 @@ xhole(uintptr addr, uintptr size)
 	/* Fill in the hole with virtual address information */
 	h->addr = vaddr;  /* Virtual address in HHDM */
 	h->top = top;     /* End virtual address */
+	h->size = size;   /* Size in bytes */
+	h->link = *l;     /* Link into the table */
+	*l = h;
+
+	iunlock(&xlists.lk);
+}
 	h->size = size;   /* Size in bytes */
 	h->link = *l;     /* Link into the table */
 	*l = h;
@@ -318,4 +352,35 @@ xsummary(void)
 		s += h->size;
 	}
 	print("%llud bytes free\n", (uvlong)s);
+}
+
+/* Test function to verify dynamic hole allocation works */
+void
+xalloc_test(void)
+{
+	print("xalloc_test: starting test\n");
+	
+	/* Try to exhaust static hole pool by making many small allocations */
+	void *ptrs[200];
+	int i;
+	
+	print("xalloc_test: making 200 small allocations\n");
+	for(i = 0; i < 200; i++) {
+		ptrs[i] = xalloc(16);  /* Small allocations */
+		if(ptrs[i] == nil) {
+			print("xalloc_test: allocation %d failed\n", i);
+			break;
+		}
+	}
+	print("xalloc_test: made %d allocations\n", i);
+	
+	/* Free all allocations */
+	for(int j = 0; j < i; j++) {
+		if(ptrs[j] != nil) {
+			xfree(ptrs[j]);
+		}
+	}
+	
+	print("xalloc_test: freed all allocations\n");
+	print("xalloc_test: test completed successfully\n");
 }
