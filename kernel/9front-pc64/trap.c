@@ -428,6 +428,7 @@ syscall(Ureg* ureg)
 {
 	ulong scallnr;
 
+	print("syscall: entered with CS=0x%4.4lluX\n", ureg->cs);
 	if(!kenter(ureg))
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
 	fpukenter(ureg);

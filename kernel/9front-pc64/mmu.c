@@ -487,7 +487,7 @@ mmuinit(void)
 	// Debug print for EFER
 	dbghex("EFER set to: ", v);
 
-	wrmsr(Star, ((uvlong)UE32SEL << 48) | ((uvlong)KESEL << 32));
+	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
 	wrmsr(Lstar, (uvlong)syscallentry);
 	wrmsr(Sfmask, 0x200);
 	

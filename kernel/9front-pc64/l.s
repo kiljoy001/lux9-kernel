@@ -911,12 +911,19 @@ TEXT touser(SB), 1, $-4
 	MOVL	$0x200, R11			/* flags */
 	MOVQ	RARG, SP			/* sp */
 
+	/* Debug: Output 'U' to serial before SYSRET */
+	MOVQ $0x55, AX
+	CALL uartputc
+
 	BYTE $0x48; SYSRET			/* SYSRETQ */
 
 /*
  */
 TEXT syscallentry(SB), 1, $-4
 	SWAPGS
+	/* Debug: Output 's' to serial when entering syscallentry */
+	MOVQ $0x73, AX
+	CALL uartputc
 	BYTE $0x65; MOVQ 0, AX			/* m-> (MOVQ GS:0x0, AX) */
 	MOVQ	16(AX), BX
 	MOVQ	SP, R13
@@ -955,6 +962,10 @@ TEXT forkret(SB), 1, $-4
 	MOVQ	(19*8)(SP), CX			/* ip */
 	MOVQ	(21*8)(SP), R11			/* flags */
 	MOVQ	(22*8)(SP), SP			/* sp */
+
+	/* Debug: Output 'F' to serial before SYSRET */
+	MOVQ $0x46, AX
+	CALL uartputc
 
 	BYTE $0x48; SYSRET			/* SYSRETQ */
 
