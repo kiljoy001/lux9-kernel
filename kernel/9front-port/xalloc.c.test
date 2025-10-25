@@ -74,13 +74,8 @@ xinit(void)
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
-		/* Only print first few entries to avoid verbose output */
-		if(i < 2) {
-			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",
-				i, cm->base, cm->npage);
-		} else if(i == 2) {
-			print("xinit: ... (showing first 2 entries only)\n");
-		}
+		print("xinit: processing conf.mem[%d] base=%#p npage=%lud kbase=%#p klimit=%#p\n",
+			i, cm->base, cm->npage, cm->kbase, cm->klimit);
 		n = cm->npage;
 		if(n > kpages)
 			n = kpages;
@@ -95,10 +90,7 @@ xinit(void)
 			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
 			if(cm->klimit == 0)
 				cm->klimit = (uintptr)-BY2PG;
-			/* Only print first few xhole calls to avoid verbose output */
-			if(i < 2) {
-				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
-			}
+			print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
 			xhole(cm->base, cm->klimit - cm->kbase);
 			kpages -= n;
 		}
@@ -107,6 +99,8 @@ xinit(void)
 		 * will be given to user by pageinit()
 		 */
 	}
+	/* Skip xsummary() - print() not working yet */
+	/* xsummary(); */
 	print("xinit: initialization complete\n");
 }
 
@@ -147,64 +141,22 @@ xallocz(ulong size, int zero)
 	Xhdr *p;
 	Hole *h, **l;
 	ulong orig_size = size;
-	ulong overhead;
 
-	/* Calculate overhead */
-	overhead = BY2V + offsetof(Xhdr, data[0]);
-	
-	/* Only print for large allocations to reduce verbose output */
-	if (size > 64*1024) {
-		print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
-	}
-	
+	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
 	/* Detect potential overflow when adding header overhead */
-	if (size > ~0UL - overhead) {
-		print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size, overhead);
+	if (size > (uvlong)~0ULL - (BY2V + offsetof(Xhdr, data[0]))) {
 		iunlock(&xlists.lk);
 		panic("xallocz: request size overflow (size=%lud)", size);
 	}
-	
-	/* Additional check for unreasonably large allocations */
-	if (size > 128*1024*1024) {  /* More than 128MB */
-		print("xallocz: unreasonably large allocation request: %lud bytes\n", size);
-		iunlock(&xlists.lk);
-		panic("xallocz: unreasonably large allocation request (size=%lud)", size);
-	}
-	
 	/* add room for magix & size overhead, round up to nearest vlong */
-	size += overhead;
+	size += BY2V + offsetof(Xhdr, data[0]);
 	size &= ~(BY2V-1);
-	
-	/* Only print for large allocations to reduce verbose output */
-	if (size > 64*1024) {
-		print("xallocz: adjusted size %lud bytes\n", size);
-	}
+	print("xallocz: adjusted size %lud bytes\n", size);
 
 	ilock(&xlists.lk);
-	
-	/* Debug counter to prevent infinite loop */
-	int loop_count = 0;
-	int print_count = 0;  /* Limit debug prints */
-	
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
-		/* Debug print to see if we're in the loop - limit verbose output */
-		if (loop_count % 5000 == 0 && print_count < 3) {
-			print("xallocz: checking hole (count=%d)\n", loop_count);
-			print_count++;
-		} else if (print_count == 3 && loop_count % 5000 == 0) {
-			print("xallocz: ... (limiting verbose output)\n");
-			print_count++;  /* Only print this message once */
-		}
-		loop_count++;
-		
-		/* Safety check to prevent infinite loop */
-		if (loop_count > 100000) {
-			print("xallocz: infinite loop detected, breaking\n");
-			iunlock(&xlists.lk);
-			return nil;
-		}
-		
+		print("xallocz: checking hole addr=%#p size=%#p top=%#p\n", h->addr, h->size, h->top);
 		if(h->size >= size) {
 			/* h->addr is already a virtual address in HHDM - no KADDR needed! */
 			p = (Xhdr*)h->addr;
@@ -222,18 +174,13 @@ xallocz(ulong size, int zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
-			/* Limit verbose output for successful allocations */
-			if (size > 64*1024) {  /* Only print for large allocations */
-				print("xallocz: allocated %lud bytes\n", size);
-			}
+			print("xallocz: allocated at %#p\n", p->data);
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	if (size > 64*1024) {  /* Only print for large allocations */
-		print("xallocz: allocation failed for %lud bytes\n", size);
-	}
+	print("xallocz: allocation failed\n");
 	return nil;
 }
 
@@ -354,6 +301,7 @@ xhole(uintptr addr, uintptr size)
 	 * If we have exhausted the static free list, allocate a fresh batch
 	 * of Hole descriptors from the kernel malloc pool.
 	 * --------------------------------------------------------------- */
+	if (xlists.flist == nil) {
 		Hole *extra = (Hole*)malloc(DYNAMIC_NHOLE * sizeof(Hole));
 		if (extra == nil) {
 			iunlock(&xlists.lk);
@@ -365,6 +313,7 @@ xhole(uintptr addr, uintptr size)
 		extra[DYNAMIC_NHOLE-1].link = nil;
 		xlists.flist = extra;
 	}
+	h->top = top;     /* End virtual address */
 	/* Get a free hole descriptor from the free list */
 	h = xlists.flist;
 	xlists.flist = h->link;
@@ -375,7 +324,13 @@ xhole(uintptr addr, uintptr size)
 	h->size = size;   /* Size in bytes */
 	h->link = *l;     /* Link into the table */
 	*l = h;
-	
+
+	iunlock(&xlists.lk);
+}
+	h->size = size;   /* Size in bytes */
+	h->link = *l;     /* Link into the table */
+	*l = h;
+
 	iunlock(&xlists.lk);
 }
 
@@ -397,35 +352,4 @@ xsummary(void)
 		s += h->size;
 	}
 	print("%llud bytes free\n", (uvlong)s);
-}
-
-/* Test function to verify dynamic hole allocation works */
-void
-xalloc_test(void)
-{
-	print("xalloc_test: starting test\n");
-	
-	/* Try to exhaust static hole pool by making many small allocations */
-	void *ptrs[200];
-	int i;
-	
-	print("xalloc_test: making 200 small allocations\n");
-	for(i = 0; i < 200; i++) {
-		ptrs[i] = xalloc(16);  /* Small allocations */
-		if(ptrs[i] == nil) {
-			print("xalloc_test: allocation %d failed\n", i);
-			break;
-		}
-	}
-	print("xalloc_test: made %d allocations\n", i);
-	
-	/* Free all allocations */
-	for(int j = 0; j < i; j++) {
-		if(ptrs[j] != nil) {
-			xfree(ptrs[j]);
-		}
-	}
-	
-	print("xalloc_test: freed all allocations\n");
-	print("xalloc_test: test completed successfully\n");
 }
