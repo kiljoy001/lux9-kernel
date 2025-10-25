@@ -74,8 +74,13 @@ xinit(void)
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
-		print("xinit: processing conf.mem[%d] base=%#p npage=%lud kbase=%#p klimit=%#p\n",
-			i, cm->base, cm->npage, cm->kbase, cm->klimit);
+		/* Only print first few entries to avoid verbose output */
+		if(i < 4) {
+			print("xinit: processing conf.mem[%d] base=%#p npage=%lud kbase=%#p klimit=%#p\n",
+				i, cm->base, cm->npage, cm->kbase, cm->klimit);
+		} else if(i == 4) {
+			print("xinit: ... (showing first 4 entries only)\n");
+		}
 		n = cm->npage;
 		if(n > kpages)
 			n = kpages;
@@ -90,7 +95,10 @@ xinit(void)
 			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
 			if(cm->klimit == 0)
 				cm->klimit = (uintptr)-BY2PG;
-			print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
+			/* Only print first few xhole calls to avoid verbose output */
+			if(i < 4) {
+				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
+			}
 			xhole(cm->base, cm->klimit - cm->kbase);
 			kpages -= n;
 		}
@@ -172,12 +180,17 @@ xallocz(ulong size, int zero)
 	
 	/* Debug counter to prevent infinite loop */
 	int loop_count = 0;
+	int print_count = 0;  /* Limit debug prints */
 	
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
-		/* Debug print to see if we're in the loop */
-		if (loop_count % 1000 == 0) {
+		/* Debug print to see if we're in the loop - limit verbose output */
+		if (loop_count % 1000 == 0 && print_count < 10) {
 			print("xallocz: checking hole addr=%#p size=%#p top=%#p (count=%d)\n", h->addr, h->size, h->top, loop_count);
+			print_count++;
+		} else if (print_count == 10 && loop_count % 1000 == 0) {
+			print("xallocz: ... (limiting verbose output)\n");
+			print_count++;  /* Only print this message once */
 		}
 		loop_count++;
 		
@@ -205,13 +218,18 @@ xallocz(ulong size, int zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
-			print("xallocz: allocated at %#p\n", p->data);
+			/* Limit verbose output for successful allocations */
+			if (size > 1024) {  /* Only print for large allocations */
+				print("xallocz: allocated %lud bytes at %#p\n", size, p->data);
+			}
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	print("xallocz: allocation failed\n");
+	if (size > 1024) {  /* Only print for large allocations */
+		print("xallocz: allocation failed for %lud bytes\n", size);
+	}
 	return nil;
 }
 
