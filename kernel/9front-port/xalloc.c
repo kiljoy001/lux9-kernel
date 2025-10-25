@@ -147,6 +147,7 @@ xallocz(ulong size, int zero)
 	overhead = BY2V + offsetof(Xhdr, data[0]);
 	
 	print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
+	print("xallocz: overhead = %lud bytes\n", overhead);
 	
 	/* Detect potential overflow when adding header overhead */
 	if (size > ~0UL - overhead) {
@@ -168,9 +169,25 @@ xallocz(ulong size, int zero)
 	print("xallocz: adjusted size %lud bytes\n", size);
 
 	ilock(&xlists.lk);
+	
+	/* Debug counter to prevent infinite loop */
+	int loop_count = 0;
+	
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
-		print("xallocz: checking hole addr=%#p size=%#p top=%#p\n", h->addr, h->size, h->top);
+		/* Debug print to see if we're in the loop */
+		if (loop_count % 1000 == 0) {
+			print("xallocz: checking hole addr=%#p size=%#p top=%#p (count=%d)\n", h->addr, h->size, h->top, loop_count);
+		}
+		loop_count++;
+		
+		/* Safety check to prevent infinite loop */
+		if (loop_count > 100000) {
+			print("xallocz: infinite loop detected, breaking\n");
+			iunlock(&xlists.lk);
+			return nil;
+		}
+		
 		if(h->size >= size) {
 			/* h->addr is already a virtual address in HHDM - no KADDR needed! */
 			p = (Xhdr*)h->addr;

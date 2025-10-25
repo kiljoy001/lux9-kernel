@@ -40,6 +40,7 @@ pageowninit(void)
 	npages = 0;
 	for(i = 0; i < nelem(conf.mem); i++) {
 		npages += conf.mem[i].npage;
+		print("pageown: conf.mem[%lud].base = %#p, .npage = %lud\n", i, conf.mem[i].base, conf.mem[i].npage);
 	}
 	
 	print("pageown: total npages = %lud\n", npages);
