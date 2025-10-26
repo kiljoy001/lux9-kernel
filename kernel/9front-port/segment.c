@@ -75,10 +75,13 @@ newseg(int type, uintptr base, ulong size)
 	Segment *s;
 	int mapsize;
 
+	print("newseg: type=%x base=%p size=%lud\n", type, base, size);
 	if(size > (SEGMAPSIZE*PTEPERTAB))
 		error(Enovmem);
 
+	print("newseg: calling malloc for Segment struct\n");
 	s = malloc(sizeof(Segment));
+	print("newseg: malloc returned %p\n", s);
 	if(s == nil)
 		error(Enomem);
 

@@ -388,14 +388,10 @@ touser:
     outb %al, %dx
     xor %r15d, %r15d            /* RMACH = nil */
     xor %r14d, %r14d            /* RUSER = nil */
-    movabsq $(UTZERO + 0x28), %rax   /* user entry */
-    mov %rdi, %rcx                   /* user stack */
-    pushq $UDSEL
-    pushq %rcx
-    pushq $0x202
-    pushq $UESEL
-    pushq %rax
-    iretq
+    movabsq $(UTZERO + 0x28), %rcx   /* user entry for sysretq */
+    movq $0x202, %r11                /* rflags for sysretq */
+    movq %rdi, %rsp                  /* user stack for sysretq */
+    sysretq
 
 .global syscallentry
 syscallentry:

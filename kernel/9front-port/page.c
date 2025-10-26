@@ -6,6 +6,13 @@
 #include <error.h>
 
 extern uintptr saved_limine_hhdm_offset;
+extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
+
+static inline uintptr
+hhdm_virt(uintptr pa)
+{
+	return pa + saved_limine_hhdm_offset;
+}
 
 Palloc palloc;
 
@@ -227,8 +234,12 @@ newpage(uintptr va, QLock *locked)
 	Page *p, **l;
 	int color;
 
+	print("newpage: va=%p locked=%p\n", va, locked);
+	print("newpage: palloc.freecount=%lud\n", palloc.freecount);
 	lock(&palloc);
+	print("newpage: acquired lock, checking ispages\n");
 	while(!ispages(nil)){
+		print("newpage: no pages available, waiting\n");
 		unlock(&palloc);
 		if(locked)
 			qunlock(locked);
@@ -237,7 +248,7 @@ newpage(uintptr va, QLock *locked)
 			Rendezq *q;
 
 			q = &palloc.pwait[!up->noswap];
-			eqlock(q);	
+			eqlock(q);
 			if(!waserror()){
 				kickpager();
 				sleep(q, ispages, nil);
@@ -259,38 +270,54 @@ newpage(uintptr va, QLock *locked)
 		lock(&palloc);
 	}
 
+	print("newpage: passed ispages check\n");
 	/* First try for our colour */
+	print("newpage: calling getpgcolor\n");
 	color = getpgcolor(va);
+	print("newpage: color=%d palloc.head=%p\n", color, palloc.head);
 	l = &palloc.head;
+	print("newpage: searching for page with color=%d\n", color);
 	for(p = *l; p != nil; p = p->next){
 		if(p->color == color)
 			break;
 		l = &p->next;
 	}
+	print("newpage: search complete, p=%p\n", p);
 
 	if(p == nil) {
+		print("newpage: color not found, using first page\n");
 		l = &palloc.head;
 		p = *l;
+		print("newpage: first page p=%p\n", p);
 	}
 
+	print("newpage: unlinking page from free list\n");
 	*l = p->next;
 	p->next = nil;
 	palloc.freecount--;
 	unlock(&palloc);
+	print("newpage: unlocked palloc\n");
 
+	print("newpage: setting page fields p=%p pa=%p\n", p, p->pa);
 	p->ref = 1;
 	p->va = va;
 	p->modref = 0;
+	print("newpage: calling inittxtflush\n");
 	inittxtflush(p);
+	print("newpage: inittxtflush complete\n");
 
 	/* Automatically acquire ownership for the current process */
 	/* With HHDM, use the HHDM virtual address instead of user VA */
+	/* RE-ENABLED for debugging */
 	if(up != nil && p->pa != 0) {
 		extern uintptr saved_limine_hhdm_offset;
 		uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
+		print("newpage: calling pageown_acquire pa=%p hhdm_va=%p\n", p->pa, hhdm_va);
 		pageown_acquire(up, p->pa, hhdm_va);
+		print("newpage: pageown_acquire complete\n");
 	}
 
+	print("newpage: returning page %p\n", p);
 	return p;
 }
 
@@ -314,7 +341,8 @@ void
 putpage(Page *p)
 {
 	/* Release ownership before freeing */
-	if(p != nil && up != nil && p->pa != 0) {
+	/* TEMPORARILY DISABLED - pageown lock is broken */
+	if(0 && p != nil && up != nil && p->pa != 0) {
 		pageown_release(up, p->pa);
 	}
 
@@ -477,6 +505,6 @@ userpmap(uintptr va, uintptr pa, int perms)
 		splx(x);
 		panic("userpmap: out of memory for page tables");
 	}
-	*pte = pa | perms;
+	*pte = hhdm_virt(pa) | perms;
 	splx(x);
 }

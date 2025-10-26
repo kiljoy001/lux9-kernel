@@ -305,18 +305,23 @@ exchwstat(Chan *c, uchar *dp, int n)
 }
 
 Dev exchdevtab = {
-	L'X',			/* dc - device character */
-	"exchange",		/* name */
-
-	exchinit,		/* init - initialization function */
-	exchattach,		/* attach - attach to the device */
-	exchwalk,		/* walk - walk the file tree */
-	exchstat,		/* stat - get file status */
-	exchopen,		/* open - open a file */
-	exchcreate,		/* create - create a file */
-	exchclose,		/* close - close a file */
-	exchread,		/* read - read from a file */
-	exchwrite,		/* write - write to a file */
-	exchremove,		/* remove - remove a file */
-	exchwstat,		/* wstat - write file status */
+	.dc = L'X',
+	.name = "exchange",
+	.reset = nil,
+	.init = exchinit,
+	.shutdown = nil,
+	.attach = exchattach,
+	.walk = exchwalk,
+	.stat = exchstat,
+	.open = exchopen,
+	.create = exchcreate,
+	.close = exchclose,
+	.read = exchread,
+	.bread = devbread,
+	.write = exchwrite,
+	.bwrite = devbwrite,
+	.remove = exchremove,
+	.wstat = exchwstat,
+	.power = nil,
+	.config = nil,
 };

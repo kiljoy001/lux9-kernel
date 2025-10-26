@@ -46,7 +46,7 @@ struct PageOwner {
 
 /* Page ownership pool - one entry per physical page */
 struct PageOwnPool {
-	Lock;
+	Lock lk;  /* Named lock instead of anonymous */
 	struct PageOwner *pages;	/* Array indexed by page frame number */
 	ulong	npages;			/* Total number of pages */
 	ulong	nowned;			/* Pages currently owned */

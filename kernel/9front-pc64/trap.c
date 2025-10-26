@@ -378,12 +378,39 @@ static void
 faultamd64(Ureg* ureg, void*)
 {
 	uintptr addr;
-	int read, user;
+	int read, user, present, reserved;
+	char *accesstype, *faulttype;
 
 	addr = getcr2();
 	read = !(ureg->error & 2);
 	user = userureg(ureg);
-	print("faultamd64: user=%d read=%d addr=%llux\n", user, read, (uvlong)addr);
+	present = ureg->error & 1;  /* 1=protection, 0=not-present */
+	reserved = ureg->error & 8; /* 1=reserved bit set */
+
+	/* Human-readable explanations */
+	accesstype = read ? "READ" : "WRITE";
+	if(reserved)
+		faulttype = "RESERVED BIT VIOLATION";
+	else if(present)
+		faulttype = "PROTECTION VIOLATION";
+	else
+		faulttype = "PAGE NOT PRESENT";
+
+	print("\n========== PAGE FAULT ==========\n");
+	print("  Fault Type: %s\n", faulttype);
+	print("  Access Type: %s\n", accesstype);
+	print("  Fault Addr: 0x%llux\n", (uvlong)addr);
+	print("  Instruction: 0x%llux\n", (uvlong)ureg->pc);
+	print("  Privilege:  %s (CPL=%d)\n", user ? "USER MODE" : "KERNEL MODE",
+	      (int)(ureg->cs & 3));
+	print("  Error Code: 0x%x (", (int)ureg->error);
+	if(ureg->error & 1) print("P");
+	if(ureg->error & 2) print("W");
+	if(ureg->error & 4) print("U");
+	if(ureg->error & 8) print("R");
+	if(ureg->error & 16) print("I");
+	print(")\n");
+	print("================================\n\n");
 	if(!user){
 		extern void _peekinst(void);
 

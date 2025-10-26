@@ -68,15 +68,21 @@ proc0(void*)
 	up->slash->path = newpath("/");
 	up->dot = cclone(up->slash);
 	print("BOOT[proc0]: root namespace acquired\n");
+	print("BOOT[proc0]: setting up segments\n");
 
 	/*
 	 * Setup Text and Stack segments for initcode.
 	 */
+	print("BOOT[proc0]: calling newseg for stack\n");
 	up->seg[SSEG] = newseg(SG_STACK | SG_NOEXEC, USTKTOP-USTKSIZE, USTKSIZE / BY2PG);
+	print("BOOT[proc0]: newseg returned for stack\n");
 
 	/* Allocate initial stack page and map it */
+	print("BOOT[proc0]: calling newpage for stack page\n");
 	p = newpage(USTKTOP - BY2PG, nil);
+	print("BOOT[proc0]: newpage returned %p\n", p);
 	k = kmap(p);
+	print("BOOT[proc0]: kmap returned %p\n", k);
 	memset((uchar*)VA(k), 0, BY2PG);
 	if(p->pa == 0)
 		print("BOOT[proc0]: stack page pa=0 (unexpected)\n");
@@ -102,18 +108,27 @@ proc0(void*)
 	else
 		print("BOOT[proc0]: stack pte missing\n");
 
+	print("BOOT[proc0]: creating text segment\n");
 	up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
+	print("BOOT[proc0]: text segment created\n");
 	up->seg[TSEG]->flushme = 1;
+	print("BOOT[proc0]: allocating text page\n");
 	p = newpage(UTZERO, nil);
+	print("BOOT[proc0]: text page allocated, p=%p\n", p);
+	print("BOOT[proc0]: mapping text page\n");
 	k = kmap(p);
+	print("BOOT[proc0]: text page mapped, k=%p\n", k);
 	memmove((uchar*)VA(k), initcode, sizeof(initcode));
 	memset((uchar*)VA(k)+sizeof(initcode), 0, BY2PG-sizeof(initcode));
+	print("BOOT[proc0]: unmapping text page\n");
 	kunmap(k);
 	if(p->pa == 0)
 		print("BOOT[proc0]: text page pa=0 (unexpected)\n");
 	else
 		print("BOOT[proc0]: text page pa nonzero\n");
+	print("BOOT[proc0]: about to call segpage for text\n");
 	segpage(up->seg[TSEG], p);
+	print("BOOT[proc0]: segpage for text completed\n");
 	/* segpage now calls userpmap() which creates MMU structures */
 	if(dbg_getpte(UTZERO) != 0)
 		print("BOOT[proc0]: text pte present\n");
@@ -219,7 +234,9 @@ proc0(void*)
 			print("userinit: mmuhead has entries\n");
 			
 		int s = splhi();
+		print("userinit: calling mmuswitch\n");
 		mmuswitch(up);
+		print("userinit: mmuswitch returned\n");
 		splx(s);
 	}
 	{

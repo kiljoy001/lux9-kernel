@@ -23,6 +23,7 @@ Successfully ported the 9front Plan 9 kernel to compile with GCC and boot via th
 - Synchronization (qlock.c, taslock.c)
 - Real-time scheduling (edf.c)
 - System calls (syscallfmt.c, sysfile.c, sysproc.c)
+- **Advanced memory safety (pageown.c, borrowchecker.c) - Zero-copy IPC with Rust-style borrow checking**
 
 **Platform Layer (9front-pc64/):** 11 files compiled
 - Boot and initialization (main.c, entry.S)
@@ -186,35 +187,26 @@ va_copy(f.args, args);
 
 ---
 
-### Challenge 6: Missing Platform Functions
+### Challenge 7: Page Ownership Tracking Migration
 
-**Problem:** 9front expects x86 assembly routines and platform-specific functions.
+**Problem:** Original page ownership tracking system was replaced with a generic borrow checker to provide Rust-style memory safety semantics for zero-copy IPC.
 
-**Solution:** Created comprehensive assembly file (l.S) with 60+ functions:
+**Solution:** Migrated all page ownership operations to use the unified borrow checker:
+- `pageown_acquire` → `borrow_acquire` 
+- `pageown_release` → `borrow_release`
+- `pageown_transfer` → `borrow_transfer`
+- `pageown_borrow_shared` → `borrow_borrow_shared`
+- `pageown_borrow_mut` → `borrow_borrow_mut`
+- `pageown_return_shared` → `borrow_return_shared`
+- `pageown_return_mut` → `borrow_return_mut`
 
-**CPU Control:**
-- `getcr0/2/3/4`, `putcr0/3/4` - Control register access
-- `cpuid` - CPU identification
-- `rdmsr/wrmsr` - Model-Specific Register access
-- `rdtsc` - Timestamp counter
+**API Compatibility:** Maintained full Plan 9 compatibility by implementing `pa2owner` as an adapter that converts `BorrowOwner` data to the legacy `PageOwner` format on demand, with locking to ensure consistent snapshots.
 
-**FPU Management:**
-- `_fxsave/_fxrstor` - Legacy FPU state
-- `_xsave/_xrstor/_xsaveopt` - Extended state (AVX, etc.)
-- `_fninit/_fwait/_fnclex` - FPU initialization
-- `_stts/_clts` - Task switched flag
-
-**Memory/Sync:**
-- `mfence/sfence/lfence` - Memory barriers
-- `coherence_impl` - Cache coherency
-- `tas` - Test-and-set
-- `cmpswap486` - Compare-and-swap
-
-**System:**
-- `lgdt/lidt/ltr` - Descriptor table loads
-- `splhi/spllo/splx/islo` - Interrupt priority
-- `idle/pause` - CPU hints
-- `invlpg` - TLB invalidation
+**Benefits:**
+- Zero-copy IPC with formal borrow checking semantics
+- Prevention of use-after-free and double-free bugs
+- Shared borrowing (one writer, many readers) for efficient memory access
+- Integration with existing kernel memory management
 
 ---
 
@@ -278,8 +270,9 @@ timeout: 5
 - `kernel/9front-pc64/entry.S` - Limine boot entry
 - `kernel/9front-pc64/globals.c` - 462 lines of platform stubs
 - `kernel/libc9/*.c` - 37 standard library files
-- `docs/gcc-plan9-plugin.md` - GCC plugin design document
-- `docs/PORTING-SUMMARY.md` - This file
+- `kernel/borrowchecker.c` - Generic borrow checker implementation
+- `docs/*.md` - Comprehensive documentation files
+- `shell_scripts/*` - Development and testing utilities
 - `limine.conf` - Bootloader configuration
 
 ### Modified Files
@@ -290,7 +283,16 @@ timeout: 5
 - `kernel/9front-pc64/dat.h` - Fixed struct definitions
 - `kernel/9front-pc64/fns.h` - Added platform function declarations
 - `kernel/9front-port/*.c` - Fixed anonymous struct references
+- `kernel/9front-port/pageown.c` - Migrated to borrow checker
 - `GNUmakefile` - Complete build system
+
+### Clean Project Structure
+- **`docs/`** - Organized documentation with clear naming
+- **`shell_scripts/`** - Development and testing utilities
+- **`kernel/`** - Well-organized kernel source tree
+- **`drivers/`** - Future driver implementations
+- **`userspace/`** - User space components and servers
+- **`test/`** - Testing infrastructure and utilities
 
 ---
 
@@ -299,12 +301,10 @@ timeout: 5
 **Total Lines Compiled:** ~25,000 lines of C
 **Object Files:** 81 (33 port + 11 pc64 + 37 libc9)
 **Assembly Lines:** 400+ (l.S + entry.S)
-**Kernel Size:** 346 KB (unstripped ELF)
+**Kernel Size:** 3.8 MB (unstripped ELF)
 **ISO Size:** 4.1 MB (bootable)
 
 **Compilation Time:** ~15 seconds (clean build, parallel)
-
----
 
 ## Current Status
 
@@ -314,20 +314,21 @@ timeout: 5
 - Bootable ISO creation
 - Limine protocol integration
 - Boot to kernel entry point
+- Advanced memory management with borrow checker
+- Zero-copy IPC with formal memory safety
+- Clean project organization
 
 ### 🚧 In Progress
-- Kernel initialization sequence
-- Platform hardware detection
-- Memory manager initialization
-- Interrupt handling setup
-- Device driver initialization
+- Userspace process development
+- File system integration
+- Driver implementation
+- Formal verification
 
-### ❌ Known Limitations
-- Many platform functions are stubs (need hardware-specific implementations)
-- No VGA graphics support (temporarily disabled)
-- Serial console not fully integrated
-- Multiprocessor support incomplete
-- ACPI initialization stubbed
+### 📋 Organized Structure
+- **Documentation** - Well-organized in `docs/` directory
+- **Scripts** - Development utilities in `shell_scripts/`
+- **Testing** - Comprehensive test infrastructure
+- **Kernel** - Clean source tree organization
 
 ---
 

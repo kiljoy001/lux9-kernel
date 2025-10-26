@@ -13,6 +13,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismat
            -m64 -march=x86-64 -mcmodel=kernel \
            -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
            -Ikernel/include \
+           -Iport \
            -I. \
            -D_PLAN9_SOURCE \
            -DKTZERO=0xffffffff80110000
@@ -28,6 +29,9 @@ PC64_C := $(wildcard kernel/9front-pc64/*.c)
 LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
 BORROW_C := kernel/borrowchecker.c
+REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
+
+# SD/FIS support files already included by wildcard above
 
 # Assembly files
 ASM_S := kernel/9front-pc64/l.S kernel/9front-pc64/entry.S
@@ -40,8 +44,9 @@ ASM_O := $(ASM_S:.S=.o)
 
 MEMDRAW_O := $(MEMDRAW_C:.c=.o)
 BORROW_O := $(BORROW_C:.c=.o)
+REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(REAL_DRIVERS_O)
 
 .PHONY: all clean count iso run
 

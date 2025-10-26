@@ -558,6 +558,42 @@ mmualloc(void)
 	return p;
 }
 
+/*
+ * pt_page - Allocate a page for page tables from the palloc pool
+ * Returns HHDM virtual address of the page, or nil if none available
+ */
+static uintptr*
+pt_page(void)
+{
+	Page *p;
+	uintptr pa, va;
+
+	lock(&palloc);
+
+	/* Check if pages are available */
+	if(palloc.head == nil || palloc.freecount == 0) {
+		unlock(&palloc);
+		return nil;
+	}
+
+	/* Take first page from free list */
+	p = palloc.head;
+	palloc.head = p->next;
+	p->next = nil;
+	palloc.freecount--;
+
+	unlock(&palloc);
+
+	/* Get physical address and convert to HHDM virtual address */
+	pa = p->pa;
+	va = pa + saved_limine_hhdm_offset;
+
+	/* Zero the page */
+	memset((void*)va, 0, PTSZ);
+
+	return (uintptr*)va;
+}
+
 static uintptr*
 mmucreate(uintptr *table, uintptr va, int level, int index)
 {
@@ -566,42 +602,22 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 
 	flags = PTEWRITE|PTEVALID;
 	if(va < VMAP){
-		/* Simplified approach: always use rampage() for now to avoid MMU structure allocation issues */
-		page = rampage();
+		/* Allocate from palloc pool for user/kernel page tables */
+		page = pt_page();
+		if(page == nil)
+			return nil;
 		if(va < USTKTOP) {
 			flags |= PTEUSER;
 		}
 		goto make_entry;
 	} else {
-		page = rampage();
+		/* VMAP region - also use pt_page */
+		page = pt_page();
+		if(page == nil)
+			return nil;
 	}
 make_entry:
-	/* Zero the page table page first */
-	memset(page, 0, PTSZ);
-	
-	
-/* For intermediate page tables, pre‑initialize the target entry */
-	if((flags & PTEUSER) && va < USTKTOP && level > 0) {
-		int target_index = 0;
-		switch(level) {
-		case PML4E: /* PML4 level – pre‑init entry for PDPT */
-			target_index = PTLX(va, 2);
-			break;
-		case PDPE:  /* PDPT level – pre‑init entry for PD */
-			target_index = PTLX(va, 1);
-			break;
-		case PDE:   /* PD level – pre‑init entry for PT */
-			target_index = PTLX(va, 0);
-			break;
-		default:
-			target_index = -1;
-			break;
-		}
-		if(target_index >= 0 && target_index < 512) {
-			/* Mark present but with zero data; caller will fill it */
-			((uintptr*)page)[target_index] = PTEVALID;
-		}
-	}
+	/* pt_page already zeros the page - no need to pre-initialize entries */
 
 	table[index] = PADDR(page) | flags;
 	return page;
@@ -991,9 +1007,18 @@ vmap(uvlong pa, vlong size)
 	uintptr va;
 	int o;
 
-	/* Pure HHDM model: no size limit check needed, physical memory is already mapped */
-	if(pa < BY2PG || size <= 0 || -pa < size){
+	/* Validate size */
+	if(size <= 0){
 		print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
+		return nil;
+	}
+
+	/*
+	 * All physical addresses map through HHDM, including PCI MMIO regions.
+	 * The HHDM maps the entire physical address space.
+	 */
+	if(pa < BY2PG){
+		print("vmap: invalid low pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
 	va = hhdm_virt(pa);
