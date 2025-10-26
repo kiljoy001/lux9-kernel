@@ -308,15 +308,14 @@ newpage(uintptr va, QLock *locked)
 
 	/* Automatically acquire ownership for the current process */
 	/* With HHDM, use the HHDM virtual address instead of user VA */
-	/* TEMPORARILY DISABLED - pageown lock is broken */
-	if(0 && up != nil && p->pa != 0) {
+	/* RE-ENABLED for debugging */
+	if(up != nil && p->pa != 0) {
 		extern uintptr saved_limine_hhdm_offset;
 		uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
 		print("newpage: calling pageown_acquire pa=%p hhdm_va=%p\n", p->pa, hhdm_va);
 		pageown_acquire(up, p->pa, hhdm_va);
 		print("newpage: pageown_acquire complete\n");
 	}
-	print("newpage: pageown disabled, skipping\n");
 
 	print("newpage: returning page %p\n", p);
 	return p;

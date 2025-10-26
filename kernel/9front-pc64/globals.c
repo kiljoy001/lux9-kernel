@@ -428,10 +428,9 @@ void vmxprocrestore(Proc *p) { (void)p; }
 /* PCI reset */
 void pcireset(void) {}
 
-/* RAM page allocation */
+/* RAM page allocation - uses xallocz which returns HHDM virtual addresses */
 void* rampage(void) {
-	/* Should allocate a physical page */
-	return xalloc(4096);
+	return xallocz(BY2PG, 1);  /* 1 = zero the memory */
 }
 
 /* CPU identification */

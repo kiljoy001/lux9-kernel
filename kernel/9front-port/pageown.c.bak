@@ -4,10 +4,6 @@
  *
  * This is a thin wrapper around the generic borrowchecker that uses
  * physical addresses (pa) as keys.
- *
- * Maintains Plan 9 compatibility by implementing pa2owner as a
- * safe snapshot adapter that converts BorrowOwner data to the
- * legacy PageOwner format on demand.
  */
 
 #include "u.h"
@@ -291,51 +287,11 @@ pageown_dump_page(uintptr pa)
 	borrow_dump_resource(hhdm_va);
 }
 
-/* --------------------------------------------------------------------
- *  Return a temporary PageOwner populated from the BorrowChecker.
- *  This preserves the historic API and Plan 9 conventions.
- *  Uses lock to ensure consistent snapshot as extra safeguard.
- * -------------------------------------------------------------------- */
+/* Dummy pa2owner for compatibility - should not be used */
 struct PageOwner*
 pa2owner(uintptr pa)
 {
-	struct BorrowOwner *bo;
-	static struct PageOwner buf[32];  /* Support up to 32 CPUs */
-	int cpu;
-	struct PageOwner *p;
-
-	/* Get current CPU index (0 if single CPU) */
-	cpu = 0;
-
-	/* Optional debugging message */
+	(void)pa;
 	print("pa2owner: DEPRECATED - pageown now uses borrowchecker\n");
-
-	/* Lock the borrow-checker to ensure consistent snapshot */
-	lock(&borrowpool.lock);
-
-	/* Find the BorrowOwner for the given physical address */
-	bo = borrow_get_owner(pa);
-	if (bo == nil) {
-		unlock(&borrowpool.lock);
-		return nil;
-	}
-
-	/* Use per-CPU static buffer to avoid returning stack pointer */
-	p = &buf[cpu];
-	memset(p, 0, sizeof(*p));
-
-	/* Fill fields that the old API exposed */
-	p->owner = bo->owner;
-	p->state = (enum PageOwnerState)bo->state;
-	p->shared_count = bo->shared_count;
-	p->mut_borrower = bo->mut_borrower;
-	p->acquired_ns = bo->acquired_ns;
-	p->borrow_deadline_ns = bo->borrow_deadline_ns;
-	p->owner_vaddr = (u64int)pa;  /* physical address used as key */
-	p->pa = pa;
-
-	/* Release the lock */
-	unlock(&borrowpool.lock);
-
-	return p;
+	return nil;
 }
