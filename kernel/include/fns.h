@@ -441,6 +441,11 @@ void		devmask(Pgrp*,int,char*);
 int		devallowed(Pgrp*, int);
 int		canmount(Pgrp*);
 
+/* PCI configuration space access function pointers */
+extern int	(*pcicfgrw8)(int, int, int, int);
+extern int	(*pcicfgrw16)(int, int, int, int);
+extern int	(*pcicfgrw32)(int, int, int, int);
+
 #pragma varargck argpos iprint	1
 #pragma	varargck argpos	panic	1
 #pragma varargck argpos pprint	1

@@ -425,9 +425,6 @@ void writeconf(void) {}
 void vmxshutdown(void) {}
 void vmxprocrestore(Proc *p) { (void)p; }
 
-/* PCI reset */
-void pcireset(void) {}
-
 /* RAM page allocation - uses xallocz which returns HHDM virtual addresses */
 void* rampage(void) {
 	return xallocz(BY2PG, 1);  /* 1 = zero the memory */
@@ -527,9 +524,6 @@ void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, cha
 /* DMA controller - function pointer (nil = not available) */
 void (*i8237alloc)(void) = nil;
 
-/* PCI configuration */
-void pcicfginit(void) {}
-
 /* Boot screen */
 void bootscreeninit(void) {}
 
@@ -556,9 +550,6 @@ void (*coherence)(void) = coherence_impl;
 /* Additional global function pointers and buffers */
 int (*_pcmspecial)(char*, ISAConf*) = nil;
 void (*_pcmspecialclose)(int) = nil;
-int (*pcicfgrw8)(int,int,int,int) = nil;
-int (*pcicfgrw16)(int,int,int,int) = nil;
-int (*pcicfgrw32)(int,int,int,int) = nil;
 void (*cycles)(uvlong*) = nil;
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;
@@ -668,4 +659,13 @@ char* utfecpy(char *to, char *e, char *from) {
 		*to++ = *from++;
 	*to = '\0';
 	return to;
+}
+
+/* UPA (user programmable arrays) - not implemented */
+uvlong upaalloc(uvlong, uvlong, uvlong) {
+	return 0;
+}
+
+uvlong upaallocwin(uvlong, uvlong, uvlong, uvlong) {
+	return 0;
 }
