@@ -65,7 +65,7 @@ void (*sd_insb)(int, void*, int) = nil;
 void (*sd_inss)(int, void*, int) = nil;
 void (*sd_outsb)(int, void*, int) = nil;
 void (*sd_outss)(int, void*, int) = nil;
-Pcidev* (*sd_pcimatch)(Pcidev* prev, int vid, int did) = nil;
+Pcidev* (*sd_pcimatch)(Pcidev* prev, int vid, int did) = pcimatch;
 void (*sd_microdelay)(int) = nil;
 
 /* libc9 formatting support */
