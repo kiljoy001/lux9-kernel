@@ -521,6 +521,12 @@ void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, cha
 	trapenable(irq, handler, arg, name);
 }
 
+/* Interrupt disable */
+void intrdisable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
+	USED(irq, handler, arg, tbdf, name);
+	/* TODO: Implement interrupt disable */
+}
+
 /* DMA controller - function pointer (nil = not available) */
 void (*i8237alloc)(void) = nil;
 

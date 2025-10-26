@@ -11,6 +11,7 @@
 #include "io.h"
 #include "pci.h"
 #include <error.h>
+#include "../port/sd.h"
 
 enum {
 	Qdir = 0,
@@ -33,45 +34,56 @@ extern int ahci_read_sector(ulong controller_base, int port, ulong lba, void *bu
 extern int ahci_write_sector(ulong controller_base, int port, ulong lba, void *buffer);
 extern int ide_read_sector(int cmdport, int ctlport, int device, ulong lba, void *buffer);
 extern int ide_write_sector(int cmdport, int ctlport, int device, ulong lba, void *buffer);
-extern int detect_ahci_controllers(void);
-extern int detect_ide_controllers(void);
+/* External driver interfaces */
+extern SDifc sdiahciifc;
+extern SDifc sdideifc;
 
 static SDevice devs[4];  /* support up to 4 devices */
 static int ndevs = 0;
 static Dirtab *sddir;
 static int sdnfiles;
 
+static SDev *sdevs;
+
 static void
 sdinit(void)
 {
-	/* Initialize devices - REAL hardware detection */
-	int ahci_count, ide_count;
-	
+	SDev *s, *tail;
+
 	print("sd: initializing storage devices\n");
-	
-	/* Detect real hardware controllers */
-	ahci_count = detect_ahci_controllers();
-	ide_count = detect_ide_controllers();
-	
-	print("sd: found %d AHCI controllers, %d IDE controllers\n", 
-	      ahci_count, ide_count);
-	
-	/* In real implementation, would populate devs[] with actual devices */
-	/* For now, create one placeholder device to show interface working */
-	if(ahci_count > 0 || ide_count > 0) {
-		devs[0].present = 1;
-		devs[0].capacity = 1024*1024; /* 512MB placeholder */
-		strcpy((char*)devs[0].model, "Detected Storage Device");
-		ndevs = 1;
-		print("sd: storage subsystem ready\n");
-	} else {
+
+	/* Probe AHCI controllers */
+	tail = nil;
+	if(sdiahciifc.pnp){
+		print("sd: probing AHCI controllers...\n");
+		s = sdiahciifc.pnp();
+		if(s){
+			sdevs = s;
+			for(tail = s; tail->next; tail = tail->next)
+				;
+			print("sd: found AHCI controller(s)\n");
+		}
+	}
+
+	/* Probe IDE controllers */
+	if(sdideifc.pnp){
+		print("sd: probing IDE controllers...\n");
+		s = sdideifc.pnp();
+		if(s){
+			if(tail)
+				tail->next = s;
+			else
+				sdevs = s;
+			print("sd: found IDE controller(s)\n");
+		}
+	}
+
+	if(sdevs == nil){
 		print("sd: no storage controllers found\n");
-		/* Create a dummy device for testing purposes */
-		devs[0].present = 1;
-		devs[0].capacity = 1024*1024; /* 512MB placeholder */
-		strcpy((char*)devs[0].model, "Dummy Storage Device");
-		ndevs = 1;
-		print("sd: created dummy device for testing\n");
+	} else {
+		print("sd: storage subsystem ready\n");
+		/* Add devices to the system */
+		sdadddevs(sdevs);
 	}
 }
 

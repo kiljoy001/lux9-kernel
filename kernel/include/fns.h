@@ -478,3 +478,7 @@ void	kunmap(KMap*);
 #endif
 
 void setuppagetables(void);		/* Setup kernel page tables */
+
+/* Interrupt handling functions */
+void	intrdisable(int, void (*)(Ureg *, void *), void*, int, char*);
+void	intrenable(int, void (*)(Ureg*, void*), void*, int, char*);
