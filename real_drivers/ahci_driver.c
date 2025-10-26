@@ -2166,18 +2166,25 @@ iapnp(void)
 
 	memset(olds, 0xff, sizeof olds);
 	p = nil;
+	print("iapnp: starting PCI scan for AHCI controllers\n");
 	while((p = pcimatch(p, 0, 0)) != nil){
+		print("iapnp: found PCI device vid=%x did=%x\n", p->vid, p->did);
 		if((type = didtype(p)) == -1)
 			continue;
+		print("iapnp: device type=%d, checking AHCI bar\n", type);
 		io = p->mem[Abar].bar;
-		if(io == 0 || (io & 1) != 0 || p->mem[Abar].size < 0x180)
+		if(io == 0 || (io & 1) != 0 || p->mem[Abar].size < 0x180){
+			print("iapnp: skipping - bad BAR (io=%llux size=%llux)\n", io, p->mem[Abar].size);
 			continue;
+		}
 		io &= ~0xf;
+		print("iapnp: AHCI controller found, io=%llux\n", io);
 		if(niactlr == NCtlr){
 			print("iapnp: %s: too many controllers\n", tname[type]);
 			break;
 		}
 		c = iactlr + niactlr;
+		print("iapnp: allocating SDev\n");
 		s = malloc(sizeof(SDev));
 		if(s == nil){
 			print("iapnp: %s: can't allocate SDev\n", tname[type]);
@@ -2185,11 +2192,14 @@ iapnp(void)
 		}
 		memset(s, 0, sizeof *s);
 		memset(c, 0, sizeof *c);
+		print("iapnp: calling vmap(io=%llux, size=%llux)\n", io, p->mem[Abar].size);
 		c->mmio = vmap(io, p->mem[Abar].size);
+		print("iapnp: vmap returned %p\n", c->mmio);
 		if(c->mmio == nil){
 			print("%s: can't map %llux\n", Tname(c), io);
 			continue;
 		}
+		print("iapnp: setting up controller structure\n");
 		c->lmmio = (ulong*)c->mmio;
 		c->pci = p;
 		c->type = type;
@@ -2199,8 +2209,11 @@ iapnp(void)
 		s->ctlr = c;
 		c->sdev = s;
 
+		print("iapnp: enabling PCI device\n");
 		pcienable(p);
+		print("iapnp: calling ahcihandoff\n");
 		ahcihandoff((Ahba*)c->mmio);
+		print("iapnp: ahcihandoff complete\n");
 		if(p->vid == 0x8086)
 			iasetupahci(c);
 		nunit = ahciconf(c);

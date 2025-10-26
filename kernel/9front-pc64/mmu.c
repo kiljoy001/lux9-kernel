@@ -1007,9 +1007,18 @@ vmap(uvlong pa, vlong size)
 	uintptr va;
 	int o;
 
-	/* Pure HHDM model: no size limit check needed, physical memory is already mapped */
-	if(pa < BY2PG || size <= 0 || -pa < size){
+	/* Validate size */
+	if(size <= 0){
 		print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
+		return nil;
+	}
+
+	/*
+	 * All physical addresses map through HHDM, including PCI MMIO regions.
+	 * The HHDM maps the entire physical address space.
+	 */
+	if(pa < BY2PG){
+		print("vmap: invalid low pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
 	va = hhdm_virt(pa);

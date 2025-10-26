@@ -285,6 +285,7 @@ main(void)
 	print("BOOT: procinit0 complete - process table ready\n");
 	initseg();
 	links();
+	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
 	chandevreset();
 	print("BOOT: device reset sequence finished\n");
 
