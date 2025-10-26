@@ -269,6 +269,7 @@ main(void)
 		i8237alloc();
 	pcicfginit();
 	bootscreeninit();
+	fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 	print("BOOT: printinit complete - serial console ready\n");
 	cpuidprint();
