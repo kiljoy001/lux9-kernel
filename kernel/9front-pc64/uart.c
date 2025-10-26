@@ -29,9 +29,14 @@ uart_putc(int c)
 	if(!uart_initialized)
 		return;
 
-	/* Wait for transmit holding register to be empty */
-	for(i = 0; i < 128 && !(inb(uart_base + UART_LSR) & LSR_THRE); i++)
-		;
+	/* Wait for transmit holding register to be empty with proper timeout */
+	for(i = 0; i < 100000; i++) {
+		if(inb(uart_base + UART_LSR) & LSR_THRE)
+			break;
+		/* Small delay to avoid busy-waiting too hard */
+		for(volatile int j = 0; j < 10; j++)
+			;
+	}
 
 	outb(uart_base + UART_DATA, c);
 }

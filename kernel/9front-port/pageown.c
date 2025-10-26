@@ -35,6 +35,9 @@ pageowninit(void)
 	ulong npages;
 	ulong i;
 
+	/* Initialize the lock FIRST */
+	memset(&pageownpool, 0, sizeof(pageownpool));
+
 	/* Calculate total number of physical pages */
 	extern Conf conf;
 	npages = 0;
@@ -143,11 +146,17 @@ pageown_acquire(Proc *p, uintptr pa, u64int vaddr)
 {
 	struct PageOwner *own;
 
-	if(p == nil || (pa & (BY2PG-1)) != 0)
+	print("pageown_acquire: enter p=%p pa=%p vaddr=%p\n", p, pa, vaddr);
+	if(p == nil || (pa & (BY2PG-1)) != 0){
+		print("pageown_acquire: invalid params\n");
 		return POWN_EINVAL;
+	}
 
+	print("pageown_acquire: calling ilock\n");
 	ilock(&pageownpool);
+	print("pageown_acquire: got lock\n");
 	own = pa2owner(pa);
+	print("pageown_acquire: pa2owner returned %p\n", own);
 	if(own == nil) {
 		iunlock(&pageownpool);
 		return POWN_EINVAL;

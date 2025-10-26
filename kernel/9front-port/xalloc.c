@@ -70,6 +70,8 @@ xinit(void)
 	xlists.flist = xlists.hole;
 
 	kpages = conf.npage - conf.upages;
+	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);
+	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);
 	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
 
 	for(i=0; i<nelem(conf.mem); i++){
@@ -160,14 +162,12 @@ xallocz(ulong size, int zero)
 	/* Detect potential overflow when adding header overhead */
 	if (size > ~0UL - overhead) {
 		print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size, overhead);
-		iunlock(&xlists.lk);
 		panic("xallocz: request size overflow (size=%lud)", size);
 	}
-	
+
 	/* Additional check for unreasonably large allocations */
 	if (size > 128*1024*1024) {  /* More than 128MB */
 		print("xallocz: unreasonably large allocation request: %lud bytes\n", size);
-		iunlock(&xlists.lk);
 		panic("xallocz: unreasonably large allocation request (size=%lud)", size);
 	}
 	

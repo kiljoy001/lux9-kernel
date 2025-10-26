@@ -8,6 +8,35 @@
 #include "sdhw.h"
 #include "io.h"
 
+/* Format flags - from libc.h */
+enum {
+	FmtWidth	= 1,
+	FmtLeft		= FmtWidth << 1,
+	FmtPrec		= FmtLeft << 1,
+	FmtSharp	= FmtPrec << 1,
+	FmtSpace	= FmtSharp << 1,
+	FmtSign		= FmtSpace << 1,
+	FmtZero		= FmtSign << 1,
+	FmtUnsigned	= FmtZero << 1,
+	FmtShort	= FmtUnsigned << 1,
+	FmtLong		= FmtShort << 1,
+	FmtVLong	= FmtLong << 1,
+	FmtComma	= FmtVLong << 1,
+	FmtByte		= FmtComma << 1,
+	FmtFlag		= FmtByte << 1
+};
+
+/* Format function declarations */
+extern int _charfmt(Fmt*);
+extern int _runefmt(Fmt*);
+extern int _ifmt(Fmt*);
+extern int _strfmt(Fmt*);
+extern int _runesfmt(Fmt*);
+extern int _percentfmt(Fmt*);
+extern int _countfmt(Fmt*);
+extern int _flagfmt(Fmt*);
+extern int _badfmt(Fmt*);
+
 /* Per-CPU and per-process globals */
 Mach *m = nil;
 Proc *up = nil;
@@ -294,10 +323,89 @@ void dumpmcregs(void) {
 /* Linker symbols */
 extern char etext[];  /* End of text segment */
 
-/* Format dispatch */
-int _fmtdispatch(Fmt *f, void *fmt, int isrunes) {
-	(void)f; (void)fmt; (void)isrunes;
-	return 0;
+/* Format dispatch - routes format characters to their handlers */
+void*
+_fmtdispatch(Fmt *f, void *fmt, int isrunes)
+{
+	char *s;
+	Rune r;
+
+	/* Clear flags for this format spec */
+	f->flags = 0;
+	f->width = 0;
+	f->prec = 0;
+
+	/* Loop to process flags, precision, width, then format character */
+	for(;;){
+		if(isrunes){
+			Rune *rs = fmt;
+			r = *rs++;
+			fmt = rs;
+		}else{
+			s = fmt;
+			if(*s < Runeself){
+				r = *s++;
+				fmt = s;
+			}else{
+				s += chartorune(&r, s);
+				fmt = s;
+			}
+		}
+
+		f->r = r;
+		switch(r){
+		case '\0':
+			return nil;
+		case 'c': /* character */
+			_charfmt(f);
+			return fmt;
+		case 'C': /* rune */
+			_runefmt(f);
+			return fmt;
+		case 'd': /* decimal (signed/unsigned based on flags) */
+			_ifmt(f);
+			return fmt;
+		case 'o': /* unsigned octal */
+		case 'x': /* unsigned hex lowercase */
+		case 'X': /* unsigned hex uppercase */
+			f->flags |= FmtUnsigned;
+			_ifmt(f);
+			return fmt;
+		case 'p': /* pointer */
+			_ifmt(f);
+			return fmt;
+		case 's': /* C string */
+			_strfmt(f);
+			return fmt;
+		case 'S': /* rune string */
+			_runesfmt(f);
+			return fmt;
+		case '%': /* literal % */
+			_percentfmt(f);
+			return fmt;
+		case 'n': /* count */
+			_countfmt(f);
+			return fmt;
+		case 'u': /* unsigned flag */
+		case 'h': /* short flag */
+		case 'l': /* long flag */
+		case 'z': /* size_t flag */
+		case '+': /* sign flag */
+		case '-': /* left align flag */
+		case '#': /* alternate form flag */
+		case ' ': /* space flag */
+		case ',': /* thousands separator flag */
+		case '0': case '1': case '2': case '3': case '4':
+		case '5': case '6': case '7': case '8': case '9': /* precision/width */
+		case '.': /* precision */
+			_flagfmt(f);
+			/* Continue loop to process next character */
+			break;
+		default:
+			_badfmt(f);
+			return fmt;
+		}
+	}
 }
 
 /* Architecture globals */

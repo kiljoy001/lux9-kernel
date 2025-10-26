@@ -1,19 +1,19 @@
 /* initcode.S - First userspace code
  * This code executes in the first userspace process created by the kernel.
- * Its job is to exec /boot/bin/init
+ * Its job is to exec /bin/init
  */
 
 .section .text
 .global _start
 
 _start:
-	/* Prepare to exec("/boot/bin/init", NULL) */
+	/* Prepare to exec("/bin/init", NULL) */
 
 	/* Set up argv on stack */
 	/* Stack layout:
 	 *   argv[1] = NULL
-	 *   argv[0] = pointer to "/boot/bin/init"
-	 *   path string: "/boot/bin/init\0"
+	 *   argv[0] = pointer to "/bin/init"
+	 *   path string: "/bin/init\0"
 	 */
 
 	/* Push the path string onto stack */
@@ -23,13 +23,10 @@ _start:
 	mov $0x74696e69, %rax  /* "init" in reverse */
 	push %rax
 
-	mov $0x2f6e69622f, %rax /* "/bin/" in reverse */
+	mov $0x6e69622f, %rax /* "/bin" in reverse */
 	push %rax
 
-	mov $0x746f6f622f, %rax /* "/boot" in reverse */
-	push %rax
-
-	/* Now rsp points to "/boot/bin/init\0" */
+	/* Now rsp points to "/bin/init\0" */
 	mov %rsp, %r10         /* Save pointer to path */
 
 	/* Build argv array */
