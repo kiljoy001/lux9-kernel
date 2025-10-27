@@ -14,6 +14,11 @@ extern void irqinit(void);
 #define PSTATENAME_MAX 14
 extern char *statename[];
 
+extern uvlong touser_target_pc;
+extern uvlong touser_target_sp;
+extern uvlong touser_target_flags;
+extern uvlong touser_attempt_count;
+
 static void debugexc(Ureg*, void*);
 static void debugbpt(Ureg*, void*);
 static void faultamd64(Ureg*, void*);
@@ -23,6 +28,12 @@ static void _dumpstack(Ureg*);
 
 /* Temporary IDT until we can set up proper page tables */
 Segdesc temp_idt[512] __attribute__((aligned(16)));
+
+int
+userureg(Ureg *ureg)
+{
+	return (ureg->cs & 3) == 3;
+}
 
 void
 trapinit0(void)
@@ -144,6 +155,11 @@ trap(Ureg *ureg)
 		fpukenter(ureg);
 
 	if(!irqhandled(ureg, vno) && (!user || !usertrap(vno))){
+		if((vno == VectorGPF || vno == VectorPF) && touser_attempt_count != 0){
+			iprint("touser state: attempts=%llud pc=%#llux sp=%#llux flags=%#llux\n",
+				touser_attempt_count, touser_target_pc,
+				touser_target_sp, touser_target_flags);
+		}
 		if(!user){
 			void (*pc)(void);
 

@@ -466,8 +466,7 @@ extern uintptr paddr(void*);
 #endif
 
 #ifndef userureg
-/* Check if in user mode - default implementation */
-#define userureg(ur)	0		/* Will be overridden by arch */
+int	userureg(Ureg*);
 #endif
 
 KMap*	kmap(Page*);

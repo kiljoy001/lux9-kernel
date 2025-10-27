@@ -173,6 +173,5 @@ int	wrmsr(int, vlong);
 int	xchgw(ushort*, int);
 void	rdrandbuf(void*, ulong);
 
-#define	userureg(ur)	(((ur)->cs & 3) == 3)
 #define	KADDR(a)	kaddr(a)
 #define PADDR(a)	paddr((void*)(a))
