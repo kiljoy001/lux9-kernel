@@ -470,29 +470,40 @@ void
 syscall(Ureg* ureg)
 {
 	ulong scallnr;
+	static int syscall_count = 0;
 
-	print("syscall: entered with CS=0x%4.4lluX\n", ureg->cs);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
+	syscall_count++;
+	print("syscall #%d: entered with CS=0x%4.4lluX\n", syscall_count, ureg->cs);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(!kenter(ureg))
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	fpukenter(ureg);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	scallnr = ureg->bp;	/* RARG */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 
-	/* Debug: print first syscall */
-	static int first_syscall = 1;
-	if(first_syscall) {
-		print("syscall: first syscall number %ld (EXEC=7)\n", scallnr);
-		first_syscall = 0;
-	}
+	print("syscall #%d: number=%ld PC=%#llux SP=%#llux\n",
+	      syscall_count, scallnr, ureg->pc, ureg->sp);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 
-	if(dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax)))
-		((void**)&ureg)[-1] = (void*)noteret;	/* loads RARG */
-	if((up->procctl || up->nnote) && donotify(ureg))
-		((void**)&ureg)[-1] = (void*)noteret;	/* loads RARG */
+	dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax));
+	/* TODO: Handle noteret signaling properly */
+	/* if(dosyscall(...)) ((void**)&ureg)[-1] = (void*)noteret; */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
+	/* TODO: Handle donotify */
+	/* if((up->procctl || up->nnote) && donotify(ureg)) */
+	/* 	((void**)&ureg)[-1] = (void*)noteret; */
+	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 	/* if we delayed sched because we held a lock, sched now */
 	if(up->delaysched)
 		sched();
+	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 	kexit(ureg);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 	fpukexit(ureg);
+	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
 }
 
 Ureg*

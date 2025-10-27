@@ -1,6 +1,24 @@
 /* 9front l.s converted to GAS syntax for x86_64 */
 #include "mem.h"
 .code64
+.section .data
+.align 8
+.global touser_target_pc
+touser_target_pc:
+    .quad 0
+.align 8
+.global touser_target_sp
+touser_target_sp:
+    .quad 0
+.align 8
+.global touser_target_flags
+touser_target_flags:
+    .quad 0
+.align 8
+.global touser_attempt_count
+touser_attempt_count:
+    .quad 0
+
 .section .text
 
 /* CPU I/O port access */
@@ -390,6 +408,10 @@ touser:
     xor %r14d, %r14d            /* RUSER = nil */
     movabsq $(UTZERO + 0x28), %rcx   /* user entry for sysretq */
     movq $0x202, %r11                /* rflags for sysretq */
+    movq %rcx, touser_target_pc(%rip)
+    movq %r11, touser_target_flags(%rip)
+    movq %rdi, touser_target_sp(%rip)
+    incq touser_attempt_count(%rip)
     movq %rdi, %rsp                  /* user stack for sysretq */
     sysretq
 
@@ -413,9 +435,10 @@ syscallentry:
     pushq $64                   /* trap number (VectorSYSCALL) */
 
     subq $136, %rsp             /* space for Ureg (minus saved items) */
-    movq %r15, 120(%rsp)        /* save previous RMACH */
-    movq %r14, 112(%rsp)        /* save previous RUSER */
-    movq %rdi, 56(%rsp)         /* syscall arg register */
+    movq %r15, 120(%rsp)        /* save previous RMACH (ureg->r15) */
+    movq %r14, 112(%rsp)        /* save previous RUSER (ureg->r14) */
+    movq %rdi, 48(%rsp)         /* save RDI (ureg->di) */
+    movq %rbp, 56(%rsp)         /* save syscall number (ureg->bp) */
 
     movq %rax, %r15             /* update RMACH */
     movq %rbx, %r14             /* update RUSER */
@@ -483,6 +506,9 @@ _intrnested:
 .global noteret
 noteret:
 _intrestore:
+    mov $'R', %al               /* debug: entering restore */
+    mov $0x3F8, %dx
+    outb %al, %dx
     popq %rax                   /* discard saved pointer */
 
     popq %rax
@@ -508,6 +534,22 @@ _intrestore:
 
 _iretnested:
     addq $32, %rsp
+    mov $'I', %al               /* debug: about to iretq */
+    mov $0x3F8, %dx
+    outb %al, %dx
+
+    /* Debug: dump iretq frame (rip, cs, rflags, rsp, ss) */
+    mov $'[', %al
+    outb %al, %dx
+    movq 0(%rsp), %rax          /* rip */
+    shrq $32, %rax
+    outb %al, %dx
+    movq 0(%rsp), %rax
+    shrq $24, %rax
+    outb %al, %dx
+    mov $']', %al
+    outb %al, %dx
+
     iretq
 
 .global putdr

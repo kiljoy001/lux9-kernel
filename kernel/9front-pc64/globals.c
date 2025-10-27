@@ -520,6 +520,11 @@ uvlong tscticks(uvlong *hz) {
 	return rdtsc();
 }
 
+/* cycles() - read CPU timestamp counter for timing */
+void cycles(uvlong *t) {
+	*t = rdtsc();
+}
+
 /* IRQ initialization */
 void irqinit(void) {}
 void nmienable(void) {}
@@ -565,7 +570,6 @@ void (*coherence)(void) = coherence_impl;
 /* Additional global function pointers and buffers */
 int (*_pcmspecial)(char*, ISAConf*) = nil;
 void (*_pcmspecialclose)(int) = nil;
-void (*cycles)(uvlong*) = nil;
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;
 

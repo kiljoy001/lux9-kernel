@@ -14,7 +14,7 @@ void	cpuid(int, int, ulong regs[]);
 void	fpuinit(void);
 int	cpuidentify(void);
 void	cpuidprint(void);
-extern void	(*cycles)(uvlong*);
+extern void	cycles(uvlong*);
 void	delay(int);
 void	delayloop(int);
 void*	dmabva(int);
@@ -178,7 +178,6 @@ int	wrmsr(int, vlong);
 int	xchgw(ushort*, int);
 void	rdrandbuf(void*, ulong);
 
-#define	userureg(ur)	(((ur)->cs & 3) == 3)
 #define	KADDR(a)	kaddr(a)
 #define PADDR(a)	paddr((void*)(a))
 void uart_screenputs(char*, int);

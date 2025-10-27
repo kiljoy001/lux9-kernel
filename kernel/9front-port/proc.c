@@ -127,7 +127,7 @@ kenter(Ureg *ureg)
 }
 
 void
-kexit(Ureg*)
+kexit(Ureg* ureg)
 {
 	uvlong t;
 	Tos *tos;
@@ -139,6 +139,8 @@ kexit(Ureg*)
 	tos->kcycles += t - up->kentry;
 	tos->pcycles = t + up->pcycles;
 	tos->pid = up->pid;
+	print("kexit: returning to user PC=%#llux SP=%#llux CS=%#llux\n",
+	      ureg->pc, ureg->sp, ureg->cs);
 }
 
 static void

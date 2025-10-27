@@ -1480,6 +1480,7 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 		panic("error stack");
 	}
 	*retp = ret;
+	print("dosyscall: syscall %ld completed, ret=%#llux\n", scallnr, ret);
 	if(up->procctl == Proc_tracesyscall){
 		todget(nil, &stopns);
 		sysretfmt(scallnr, *(va_list *)up->s.args, ret, startns, stopns);
