@@ -504,6 +504,10 @@ syscall(Ureg* ureg)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 	fpukexit(ureg);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
+
+	/* Debug: print iretq frame that will be used */
+	print("IRETQ frame: RIP=%#llux CS=%#llux RFLAGS=%#llux RSP=%#llux SS=%#llux\n",
+	      ureg->pc, ureg->cs, ureg->flags, ureg->sp, ureg->ss);
 }
 
 Ureg*
@@ -532,7 +536,7 @@ notify(Ureg *ureg, char *msg)
 	ureg->pc = (uintptr)up->notify;
 	ureg->bp = (uintptr)nureg;		/* arg1 passed in RARG */
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 
 	return nureg;
 }
@@ -582,7 +586,7 @@ execregs(uintptr entry, ulong ssize, ulong nargs)
 	ureg->sp = (uintptr)sp;
 	ureg->pc = entry;
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 	ureg->r14 = ureg->r15 = 0;	/* extern user registers */
 	return (uintptr)USTKTOP-sizeof(Tos);		/* address of kernel/user shared data */
 }
@@ -610,7 +614,7 @@ setregisters(Ureg* ureg, char* pureg, char* uva, int n)
 	flags = ureg->flags;
 	memmove(pureg, uva, n);
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 	ureg->flags = (ureg->flags & 0x00ff) | (flags & 0xff00);
 	ureg->pc &= UADDRMASK;
 }

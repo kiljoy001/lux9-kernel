@@ -96,8 +96,9 @@
 #define	KESEG	1	/* kernel executable */
 #define KDSEG	2	/* kernel data */
 #define UE32SEG	3	/* user executable 32bit */
-#define	UDSEG	4	/* user data/stack */
+#define	UDSEG	4	/* user data/stack 32bit */
 #define	UESEG	5	/* user executable 64bit */
+#define	UD64SEG	6	/* user data/stack 64bit */
 #define	TSSSEG	8	/* task segment (two descriptors) */
 
 #define	NGDT	10	/* number of GDT entries required */
@@ -110,9 +111,10 @@
 #define	NULLSEL	SELECTOR(NULLSEG, SELGDT, 0)
 #define KDSEL	NULLSEL
 #define	KESEL	SELECTOR(KESEG, SELGDT, 0)
-#define	UE32SEL	SELECTOR(UE32SEG, SELGDT, 3)
-#define	UDSEL	SELECTOR(UDSEG, SELGDT, 3)
 #define	UESEL	SELECTOR(UESEG, SELGDT, 3)
+#define	UDSEL	SELECTOR(UDSEG, SELGDT, 3)
+#define	UE32SEL	SELECTOR(UE32SEG, SELGDT, 3)
+#define	UD64SEL	SELECTOR(UD64SEG, SELGDT, 3)
 #define	TSSSEL	SELECTOR(TSSSEG, SELGDT, 0)
 
 /*

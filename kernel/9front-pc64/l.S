@@ -426,7 +426,7 @@ syscallentry:
     movq %rsp, %r13             /* save user stack */
     movq %rbx, %rsp             /* switch to kernel stack */
 
-    pushq $UDSEL                /* ss */
+    pushq $UD64SEL              /* ss - 64-bit user data segment */
     pushq %r13                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */
@@ -445,10 +445,16 @@ syscallentry:
 
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
-    jmp noteret
+    jmp syscallret
 
 .global forkret
+.global syscallret
+syscallret:
 forkret:
+    mov $'S', %al               /* debug: entering sysret path */
+    mov $0x3F8, %dx
+    outb %al, %dx
+
     swapgs
     movq 8(%rsp), %rax          /* return value */
     movq 120(%rsp), %r15        /* restore RMACH */
@@ -456,6 +462,10 @@ forkret:
     movq 152(%rsp), %rcx        /* user pc */
     movq 168(%rsp), %r11        /* rflags */
     movq 176(%rsp), %rsp        /* user sp */
+
+    mov $'Q', %al               /* debug: about to sysretq */
+    mov $0x3F8, %dx
+    outb %al, %dx
     sysretq
 
 .global _strayintr
@@ -536,18 +546,6 @@ _iretnested:
     addq $32, %rsp
     mov $'I', %al               /* debug: about to iretq */
     mov $0x3F8, %dx
-    outb %al, %dx
-
-    /* Debug: dump iretq frame (rip, cs, rflags, rsp, ss) */
-    mov $'[', %al
-    outb %al, %dx
-    movq 0(%rsp), %rax          /* rip */
-    shrq $32, %rax
-    outb %al, %dx
-    movq 0(%rsp), %rax
-    shrq $24, %rax
-    outb %al, %dx
-    mov $']', %al
     outb %al, %dx
 
     iretq

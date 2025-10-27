@@ -228,6 +228,10 @@ fbconsoleinit(void)
 {
 	struct limine_framebuffer_response *fb_response;
 	struct limine_framebuffer *framebuffer;
+	extern uintptr saved_limine_hhdm_offset;
+
+	uartputs("fbconsole: HHDM mappings incomplete, skipping framebuffer console\n", 68);
+	return;
 
 	uartputs("fbconsoleinit: starting\n", 24);
 
@@ -242,15 +246,19 @@ fbconsoleinit(void)
 	}
 
 	fb_response = limine_framebuffer->response;
+	print("fbconsole: response pointer=%#p\n", fb_response);
+	if((uintptr)fb_response < 0xFFFF800000000000ULL)
+		fb_response = (struct limine_framebuffer_response*)((uintptr)fb_response + saved_limine_hhdm_offset);
+	print("fbconsole: response mapped=%#p\n", fb_response);
 	if(fb_response->framebuffer_count == 0){
 		uartputs("fbconsole: no framebuffers\n", 28);
 		return;
 	}
 
 	framebuffer = fb_response->framebuffers[0];
+	print("fbconsole: raw framebuffer ptr=%#p\n", framebuffer);
 
 	/* Framebuffer address might be a physical address,  map it through HHDM */
-	extern uintptr saved_limine_hhdm_offset;
 	uintptr fbaddr = (uintptr)framebuffer->address;
 
 	/* If address looks like a physical address (below kernel space), add HHDM offset */

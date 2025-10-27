@@ -5,6 +5,8 @@
 #include	"dat.h"
 #include	"fns.h"
 #include	"borrowchecker.h"
+#include	"pageown.h"
+#include	"exchange.h"
 #include	"io.h"
 #include	"pci.h"
 #include	"ureg.h"

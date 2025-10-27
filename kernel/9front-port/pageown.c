@@ -294,48 +294,43 @@ pageown_dump_page(uintptr pa)
 /* --------------------------------------------------------------------
  *  Return a temporary PageOwner populated from the BorrowChecker.
  *  This preserves the historic API and Plan 9 conventions.
- *  Uses lock to ensure consistent snapshot as extra safeguard.
+ *  Uses the borrowchecker snapshot helper for a consistent view.
  * -------------------------------------------------------------------- */
 struct PageOwner*
 pa2owner(uintptr pa)
 {
-	struct BorrowOwner *bo;
+	struct BorrowOwner snapshot;
 	static struct PageOwner buf[32];  /* Support up to 32 CPUs */
 	int cpu;
 	struct PageOwner *p;
+	uintptr hhdm_va;
 
-	/* Get current CPU index (0 if single CPU) */
-	cpu = 0;
-
-	/* Optional debugging message */
-	print("pa2owner: DEPRECATED - pageown now uses borrowchecker\n");
-
-	/* Lock the borrow-checker to ensure consistent snapshot */
-	lock(&borrowpool.lock);
-
-	/* Find the BorrowOwner for the given physical address */
-	bo = borrow_get_owner(pa);
-	if (bo == nil) {
-		unlock(&borrowpool.lock);
+	if((pa & (BY2PG-1)) != 0)
 		return nil;
+
+	hhdm_va = (uintptr)kaddr(pa);
+	if(!borrow_get_owner_snapshot(hhdm_va, &snapshot))
+		return nil;
+
+	cpu = 0;
+	if(m != nil){
+		cpu = m->machno;
+		if(cpu < 0 || cpu >= (int)nelem(buf))
+			cpu = 0;
 	}
 
-	/* Use per-CPU static buffer to avoid returning stack pointer */
 	p = &buf[cpu];
 	memset(p, 0, sizeof(*p));
 
-	/* Fill fields that the old API exposed */
-	p->owner = bo->owner;
-	p->state = (enum PageOwnerState)bo->state;
-	p->shared_count = bo->shared_count;
-	p->mut_borrower = bo->mut_borrower;
-	p->acquired_ns = bo->acquired_ns;
-	p->borrow_deadline_ns = bo->borrow_deadline_ns;
-	p->owner_vaddr = (u64int)pa;  /* physical address used as key */
+	p->owner = snapshot.owner;
+	p->state = (enum PageOwnerState)snapshot.state;
+	p->shared_count = snapshot.shared_count;
+	p->mut_borrower = snapshot.mut_borrower;
+	p->acquired_ns = snapshot.acquired_ns;
+	p->borrow_deadline_ns = snapshot.borrow_deadline_ns;
+	p->owner_vaddr = (u64int)snapshot.key;
 	p->pa = pa;
-
-	/* Release the lock */
-	unlock(&borrowpool.lock);
+	p->borrow_count = snapshot.borrow_count;
 
 	return p;
 }

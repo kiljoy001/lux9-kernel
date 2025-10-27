@@ -144,6 +144,7 @@ struct MMU
 {
 	MMU	*next;
 	uintptr	*page;
+	void	*alloc;		/* original allocation base for page tables */
 	int	index;
 	int	level;
 };
