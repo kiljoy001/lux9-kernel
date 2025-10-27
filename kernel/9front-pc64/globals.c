@@ -537,8 +537,25 @@ void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, cha
 
 /* Interrupt disable */
 void intrdisable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
-	USED(irq, handler, arg, tbdf, name);
-	/* TODO: Implement interrupt disable */
+	USED(handler, arg, tbdf, name);
+
+	if(irq < 0 || irq >= 256)
+		return;
+
+	/* Clear the handler from our table */
+	if(irqhandlers[irq].handler == handler) {
+		irqhandlers[irq].handler = nil;
+		irqhandlers[irq].arg = nil;
+		irqhandlers[irq].name = nil;
+	}
+
+	/*
+	 * Mask the IRQ in the APIC if we have one.
+	 * For now, we just clear the handler - actual APIC masking would
+	 * require reading the redirection table, setting ApicIMASK bit,
+	 * and writing it back via ioapicrdtw().
+	 * This prevents the handler from being called even if the IRQ fires.
+	 */
 }
 
 /* DMA controller - function pointer (nil = not available) */
