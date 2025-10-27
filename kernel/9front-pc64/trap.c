@@ -489,16 +489,19 @@ syscall(Ureg* ureg)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
 
 	dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax));
-	/* TODO: noteret/donotify need proper implementation - syscallret uses
-	 * SYSRET which doesn't honor the stack slot mechanism. Need to either:
-	 * 1. Check stack slot and conditionally jump to noteret vs syscallret
-	 * 2. Implement notification via different mechanism */
 	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
 	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
 	/* if we delayed sched because we held a lock, sched now */
 	if(up->delaysched)
 		sched();
 	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
+
+	/* Initialize stack slot to 0 for fast SYSRET path
+	 * TODO: donotify/noteret disabled - up->nnote appears to be uninitialized
+	 * causing donotify to hang on first syscall. Need to investigate proper
+	 * Proc structure initialization before enabling notifications. */
+	((void**)ureg)[-1] = nil;
+
 	kexit(ureg);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 	fpukexit(ureg);

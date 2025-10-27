@@ -459,6 +459,15 @@ syscallentry:
 
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
+
+    /* Hybrid return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
+     * If noteret is set, use slow IRETQ path for notifications.
+     * If zero, use fast SYSRET path for normal returns. */
+    movq (%rsp), %rax           /* load stack slot */
+    testq %rax, %rax            /* check if noteret address is set */
+    jnz noteret                 /* if set, use slow IRETQ path */
+
+    /* Fall through to fast SYSRET path */
     jmp syscallret
 
 .global forkret
