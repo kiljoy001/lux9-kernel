@@ -435,13 +435,27 @@ syscallentry:
     pushq $64                   /* trap number (VectorSYSCALL) */
 
     subq $136, %rsp             /* space for Ureg (minus saved items) */
-    movq %r15, 120(%rsp)        /* save previous RMACH (ureg->r15) */
-    movq %r14, 112(%rsp)        /* save previous RUSER (ureg->r14) */
-    movq %rdi, 48(%rsp)         /* save RDI (ureg->di) */
-    movq %rbp, 56(%rsp)         /* save syscall number (ureg->bp) */
+
+    /* Save all general purpose registers for potential noteret path
+     * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
+    movq %rax, 8(%rsp)          /* ureg->ax (offset 0 in struct) */
+    movq %rbx, 16(%rsp)         /* ureg->bx (offset 8) */
+    movq %rcx, 24(%rsp)         /* ureg->cx (offset 16, user pc saved by syscall) */
+    movq %rdx, 32(%rsp)         /* ureg->dx (offset 24) */
+    movq %rsi, 40(%rsp)         /* ureg->si (offset 32) */
+    movq %rdi, 48(%rsp)         /* ureg->di (offset 40) */
+    movq %rbp, 56(%rsp)         /* ureg->bp (offset 48, syscall number) */
+    movq %r8,  64(%rsp)         /* ureg->r8 (offset 56) */
+    movq %r9,  72(%rsp)         /* ureg->r9 (offset 64) */
+    movq %r10, 80(%rsp)         /* ureg->r10 (offset 72) */
+    movq %r11, 88(%rsp)         /* ureg->r11 (offset 80, rflags saved by syscall) */
+    movq %r12, 96(%rsp)         /* ureg->r12 (offset 88) */
+    movq %r13, 104(%rsp)        /* ureg->r13 (offset 96) */
+    movq %r14, 120(%rsp)        /* save previous RUSER (ureg->r14, offset 112) */
+    movq %r15, 128(%rsp)        /* save previous RMACH (ureg->r15, offset 120) */
 
     movq %rax, %r15             /* update RMACH */
-    movq %rbx, %r14             /* update RUSER */
+    movq 16(%rax), %r14         /* update RUSER = up */
 
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
