@@ -773,6 +773,12 @@ newproc(void)
 	p->edf = nil;
 
 	pebbleprocinit(p);
+
+	/* Initialize with all capabilities for development
+	 * TODO: Once /dev/sip is implemented, processes should start with
+	 * zero capabilities and explicitly request them via SIP control */
+	p->capabilities = 0xFFFFFFFF;
+
 	return p;
 }
 

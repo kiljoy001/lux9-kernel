@@ -76,11 +76,11 @@ enum
 static void
 checkcap(ulong required)
 {
-	/*
-	 * TODO: Check up->capabilities & required
-	 * For now, allow all access for development
-	 */
-	USED(required);
+	if(up == nil)
+		return;	/* kernel processes have full access */
+
+	if((up->capabilities & required) != required)
+		error("insufficient capabilities for IRQ access");
 }
 
 /*
