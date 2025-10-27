@@ -58,6 +58,8 @@ typedef int    Devgen(Chan*, char*, Dirtab*, int, int, Dir*);
 #pragma incomplete Edf
 #pragma incomplete Mntcache
 #pragma incomplete Mntrpc
+
+#include "pebble.h"
 #pragma incomplete Queue
 #pragma incomplete Timers
 
@@ -833,9 +835,15 @@ struct Proc
 	void	*vmx;
 
 	char	*syscalltrace;	/* syscall trace */
-	
+
 	Watchpt	*watchpt;	/* watchpoints */
 	int	nwatchpt;
+
+	/* SIP/HIP capabilities - see docs/SIP_DEV_PLAN.md */
+	ulong	capabilities;	/* Capability bitmap for hardware access */
+
+	/* Pebble resource tracking */
+	PebbleState	pebble;
 };
 
 enum

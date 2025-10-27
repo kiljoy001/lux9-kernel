@@ -7,6 +7,7 @@
 #include	"borrowchecker.h"
 #include	"pageown.h"
 #include	"exchange.h"
+#include	"pebble.h"
 #include	"io.h"
 #include	"pci.h"
 #include	"ureg.h"
@@ -220,6 +221,8 @@ init0(void)
 void
 main(void)
 {
+	char *p;
+
 	mach0init();
 	bootargsinit();
 	trapinit0();
@@ -256,6 +259,14 @@ main(void)
 	meminit();
 	ramdiskinit();
 	confinit();
+	pebbleinit();
+	pebble_enabled = 1;
+	if((p = getconf("pebble")) != nil)
+		pebble_enabled = *p != '0';
+	if((p = getconf("pebbledebug")) != nil && *p != '0')
+		pebble_debug = 1;
+	if(pebble_enabled)
+		print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
 	printinit();
 	print("BOOT: printinit complete - serial console ready\n");
 	xinit();

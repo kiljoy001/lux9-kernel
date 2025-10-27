@@ -772,6 +772,7 @@ newproc(void)
 	p->lastupdate = MACHP(0)->ticks*Scaling;
 	p->edf = nil;
 
+	pebbleprocinit(p);
 	return p;
 }
 
@@ -1306,6 +1307,7 @@ pexit(char *exitstr, int freemem)
 
 	/* Clean up page ownership - implement Rust "drop" semantics */
 	pageown_cleanup_process(up);
+	pebble_cleanup(up);
 
 	/* nil out all the resources under lock (free later) */
 	qlock(&up->debug);

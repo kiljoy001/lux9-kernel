@@ -4,6 +4,7 @@
 #include	"mem.h"
 #include	"dat.h"
 #include	"fns.h"
+#include	"pebble.h"
 #include	"io.h"
 #include	"ureg.h"
 #include <error.h>
@@ -151,6 +152,8 @@ trap(Ureg *ureg)
 
 	vno = ureg->type;
 	user = kenter(ureg);
+	if(user && pebble_enabled)
+		pebble_auto_verify(up, ureg);
 	if(vno != VectorCNA)
 		fpukenter(ureg);
 
@@ -478,6 +481,8 @@ syscall(Ureg* ureg)
 	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(!kenter(ureg))
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
+	if(pebble_enabled)
+		pebble_auto_verify(up, ureg);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	fpukenter(ureg);
 	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));

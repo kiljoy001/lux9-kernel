@@ -88,22 +88,11 @@ isvalidmmio(uintptr pa, usize len)
 static void
 checkcap(ulong required)
 {
-	/*
-	 * TODO: Actual capability checking
-	 * For now, only allow if running as 'eve' (superuser)
-	 *
-	 * Real implementation should check:
-	 * - up->capabilities & required
-	 * - Process isolation domain
-	 * - SIP server registration
-	 */
+	if(up == nil)
+		return;	/* kernel processes have full access */
 
-	/* Temporary: allow all access for development */
-	/* In production, this should be: */
-	/*
-	if(!(up->capabilities & required))
-		error(Eperm);
-	*/
+	if((up->capabilities & required) != required)
+		error("insufficient capabilities for /dev/mem access");
 }
 
 static Chan*

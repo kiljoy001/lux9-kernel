@@ -7,6 +7,7 @@
 #include	"ureg.h"
 #include <error.h>
 #include	"edf.h"
+#include	"pebble.h"
 
 #include	<a.out.h>
 
@@ -1418,6 +1419,118 @@ sys_nsec(va_list list)
 	evenaddr((uintptr)v);
 	validaddr((uintptr)v, sizeof(vlong), 1);
 	*v = todget(nil, nil);
+	return 0;
+}
+
+uintptr
+syspebblewhiteissue(va_list list)
+{
+	ulong size;
+	void **out;
+	PebbleWhite *white;
+	PebbleState *ps;
+
+	size = va_arg(list, ulong);
+	out = va_arg(list, void**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	ps = pebble_state();
+	if(ps == nil)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(void*), 1);
+	white = pebble_issue_white(ps, nil, size);
+	if(white == nil)
+		error(PEBBLE_E_AGAIN);
+	*out = white;
+	if(pebble_debug)
+		print("PEBBLE: white issue pid=%lud size=%lud token=%#p\n",
+			up->pid, size, white);
+	return (uintptr)white;
+}
+
+uintptr
+syspebbleblackalloc(va_list list)
+{
+	uintptr size;
+	void **userp;
+	void *handle;
+
+	size = va_arg(list, uintptr);
+	userp = va_arg(list, void**);
+	if(userp == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)userp, sizeof(void*), 1);
+	handle = nil;
+	pebble_black_alloc(size, &handle);
+	*userp = handle;
+	return (uintptr)handle;
+}
+
+uintptr
+syspebbleblackfree(va_list list)
+{
+	void *handle;
+
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	handle = va_arg(list, void*);
+	pebble_black_free(handle);
+	return 0;
+}
+
+uintptr
+syspebblewhiteverify(va_list list)
+{
+	PebbleWhite *white;
+	void **out;
+	void *black;
+
+	white = va_arg(list, PebbleWhite*);
+	out = va_arg(list, void**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(void*), 1);
+	black = nil;
+	pebble_white_verify(white, &black);
+	*out = black;
+	return (uintptr)black;
+}
+
+uintptr
+syspebbleredcopy(va_list list)
+{
+	PebbleBlue *blue;
+	PebbleRed **out;
+	PebbleRed *red;
+
+	blue = va_arg(list, PebbleBlue*);
+	out = va_arg(list, PebbleRed**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(PebbleRed*), 1);
+	red = nil;
+	pebble_red_copy(blue, &red);
+	*out = red;
+	return (uintptr)red;
+}
+
+uintptr
+syspebblebluediscard(va_list list)
+{
+	PebbleBlue *blue;
+
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	blue = va_arg(list, PebbleBlue*);
+	pebble_blue_discard(blue);
 	return 0;
 }
 

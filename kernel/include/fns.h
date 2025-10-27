@@ -478,6 +478,11 @@ void	kunmap(KMap*);
 
 void setuppagetables(void);		/* Setup kernel page tables */
 
+/* Pebble primitives */
+void	pebbleinit(void);
+void	pebbleprocinit(Proc*);
+void	pebble_cleanup(Proc*);
+
 /* Interrupt handling functions */
 void	intrdisable(int, void (*)(Ureg *, void *), void*, int, char*);
 void	intrenable(int, void (*)(Ureg*, void*), void*, int, char*);

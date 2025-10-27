@@ -5,6 +5,7 @@
 #include	"tos.h"
 #include	"fns.h"
 #include <error.h>
+#include	"pebble.h"
 
 extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
 extern void pmap(uintptr, uintptr, vlong);
@@ -58,6 +59,8 @@ proc0(void*)
 	up->fgrp = dupfgrp(nil);
 	up->rgrp = newrgrp();
 	print("BOOT[proc0]: process groups ready\n");
+
+	pebble_selftest();
 
 	/*
 	 * These are o.k. because rootinit is null.

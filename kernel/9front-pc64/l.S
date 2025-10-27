@@ -21,6 +21,8 @@ touser_attempt_count:
 
 .section .text
 
+.extern pebble_red_blue_exit
+
 /* CPU I/O port access */
 .global inb
 inb:
@@ -412,6 +414,7 @@ touser:
     movq %r11, touser_target_flags(%rip)
     movq %rdi, touser_target_sp(%rip)
     incq touser_attempt_count(%rip)
+    call pebble_red_blue_exit
     movq %rdi, %rsp                  /* user stack for sysretq */
     sysretq
 
@@ -484,6 +487,7 @@ forkret:
     movq 112(%rsp), %r14        /* restore RUSER */
     movq 152(%rsp), %rcx        /* user pc */
     movq 168(%rsp), %r11        /* rflags */
+    call pebble_red_blue_exit
     movq 176(%rsp), %rsp        /* user sp */
 
     mov $'Q', %al               /* debug: about to sysretq */
