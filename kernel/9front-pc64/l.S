@@ -403,27 +403,33 @@ gotolabel:
 .global touser
 touser:
     swapgs
-    mov $'U', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    xor %r15d, %r15d            /* RMACH = nil */
-    xor %r14d, %r14d            /* RUSER = nil */
+
+    /* Save user stack pointer for after pebble call */
+    pushq %rdi
+
     movabsq $(UTZERO + 0x28), %rcx   /* user entry for sysretq */
     movq $0x202, %r11                /* rflags for sysretq */
     movq %rcx, touser_target_pc(%rip)
     movq %r11, touser_target_flags(%rip)
     movq %rdi, touser_target_sp(%rip)
     incq touser_attempt_count(%rip)
-    call pebble_red_blue_exit
-    movq %rdi, %rsp                  /* user stack for sysretq */
+
+    /* Call pebble while r14/r15 still have valid values */
+    /* Disabled for now - using IRETQ path instead of SYSRET */
+    /* call pebble_red_blue_exit */
+
+    /* Now zero the kernel pointers before entering userspace */
+    xor %r15d, %r15d            /* RMACH = nil */
+    xor %r14d, %r14d            /* RUSER = nil */
+
+    /* Restore user stack and prepare for sysretq */
+    popq %rsp                   /* user stack for sysretq */
+
     sysretq
 
 .global syscallentry
 syscallentry:
     swapgs
-    mov $'s', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
     movq %gs:0, %rax            /* m */
     movq 16(%rax), %rbx         /* up */
     movq %rsp, %r13             /* save user stack */
@@ -463,37 +469,33 @@ syscallentry:
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
 
-    /* Hybrid return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
-     * If noteret is set, use slow IRETQ path for notifications.
-     * If zero, use fast SYSRET path for normal returns. */
+    /* Return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
+     * If noteret is set, jump directly to noteret.
+     * Otherwise fall through to syscallret (both use IRETQ). */
     movq (%rsp), %rax           /* load stack slot */
     testq %rax, %rax            /* check if noteret address is set */
-    jnz noteret                 /* if set, use slow IRETQ path */
+    jnz noteret                 /* if set, use IRETQ path */
 
-    /* Fall through to fast SYSRET path */
+    /* Fall through to syscallret (which also uses IRETQ) */
     jmp syscallret
 
+/* NOTE: We use IRETQ for all returns instead of the faster SYSRET instruction.
+ * This is because our GDT layout (inherited from 9front) is incompatible with SYSRET.
+ *
+ * SYSRET requires: CS = STAR[63:48] + 16, SS = STAR[63:48] + 8
+ * Our GDT has: UESEL (CS64) = 0x2B, UD64SEL (SS64) = 0x33
+ * To get CS=0x2B: STAR[63:48] must = 0x1B
+ * To get SS=0x33: STAR[63:48] must = 0x2B
+ * These are conflicting! The CS64 and SS64 segments are not at the required +16/+8 offsets.
+ *
+ * Reorganizing the GDT would be complex and risky. IRETQ works correctly and the
+ * performance difference is negligible for our use case.
+ */
 .global forkret
 .global syscallret
 syscallret:
 forkret:
-    mov $'S', %al               /* debug: entering sysret path */
-    mov $0x3F8, %dx
-    outb %al, %dx
-
-    swapgs
-    movq 8(%rsp), %rax          /* return value */
-    movq 120(%rsp), %r15        /* restore RMACH */
-    movq 112(%rsp), %r14        /* restore RUSER */
-    movq 152(%rsp), %rcx        /* user pc */
-    movq 168(%rsp), %r11        /* rflags */
-    call pebble_red_blue_exit
-    movq 176(%rsp), %rsp        /* user sp */
-
-    mov $'Q', %al               /* debug: about to sysretq */
-    mov $0x3F8, %dx
-    outb %al, %dx
-    sysretq
+    jmp noteret  /* Use IRETQ path for all returns */
 
 .global _strayintr
 _strayintr:
@@ -543,9 +545,6 @@ _intrnested:
 .global noteret
 noteret:
 _intrestore:
-    mov $'R', %al               /* debug: entering restore */
-    mov $0x3F8, %dx
-    outb %al, %dx
     popq %rax                   /* discard saved pointer */
 
     popq %rax
@@ -571,10 +570,6 @@ _intrestore:
 
 _iretnested:
     addq $32, %rsp
-    mov $'I', %al               /* debug: about to iretq */
-    mov $0x3F8, %dx
-    outb %al, %dx
-
     iretq
 
 .global putdr

@@ -7,47 +7,37 @@
 .global _start
 
 _start:
-	/* Prepare to exec("/bin/init", NULL) */
+	/* Build the string "/bin/init\0" on the stack */
+	mov $0, %rax
+	push %rax              /* null terminator */
 
-	/* Set up argv on stack */
-	/* Stack layout:
-	 *   argv[1] = NULL
-	 *   argv[0] = pointer to "/bin/init"
-	 *   path string: "/bin/init\0"
-	 */
-
-	/* Push the path string onto stack */
-	mov $0x0, %rax
-	push %rax              /* null terminator (part of string) */
-
-	mov $0x74696e69, %rax  /* "init" in reverse */
+	mov $0x74696e69, %rax  /* "init" (little-endian) */
 	push %rax
 
-	mov $0x6e69622f, %rax /* "/bin" in reverse */
+	mov $0x6e69622f, %rax  /* "/bin" (little-endian) */
 	push %rax
 
-	/* Now rsp points to "/bin/init\0" */
-	mov %rsp, %r10         /* Save pointer to path */
+	/* rsp now points to the start of "/bin/init\0" */
+	mov %rsp, %rbx         /* rbx = pointer to "/bin/init" string */
 
-	/* Build argv array */
-	sub $16, %rsp          /* Make space for 2 pointers (argv[0], argv[1]) */
+	/* Build argv array: [pointer_to_string, NULL] */
+	sub $16, %rsp          /* Space for 2 pointers */
 	mov $0, %rax
 	mov %rax, 8(%rsp)      /* argv[1] = NULL */
-	mov %r10, 0(%rsp)      /* argv[0] = pointer to "/boot/bin/init" */
+	mov %rbx, 0(%rsp)      /* argv[0] = pointer to path */
 
-	/* Now call exec(path, argv) */
-	/* Syscall convention:
-	 *   rbp = syscall number (7 = EXEC)
-	 *   Stack: return address, arg1, arg2, ...
-	 */
+	/* rsp now points to start of argv array */
+	mov %rsp, %rcx         /* rcx = pointer to argv array */
 
-	mov $7, %rbp           /* EXEC syscall number */
-	push %r10              /* arg1: path */
-	push %rsp              /* arg2: argv (pointer to argv array) */
-	add $16, (%rsp)        /* Fix argv pointer since we just pushed twice */
+	/* Set up syscall: exec(path, argv) */
+	mov $7, %rbp           /* syscall number = 7 (EXEC) */
 
-	syscall                /* Invoke syscall */
+	/* Push arguments onto stack in reverse order */
+	push %rcx              /* arg2: argv */
+	push %rbx              /* arg1: path */
 
-	/* If exec returns, we failed - loop forever */
-failed:
-	jmp failed
+	syscall                /* invoke EXEC */
+
+	/* If we get here, exec failed - loop forever */
+fail:
+	jmp fail

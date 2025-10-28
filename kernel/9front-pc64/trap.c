@@ -469,37 +469,87 @@ faultamd64(Ureg* ureg, void*)
 /*
  *  Syscall is called directly from assembler without going through trap().
  */
+
+/* Syscall name lookup table for debug output */
+static char *syscallnames[] = {
+	[0] = "SYSR1",
+	[1] = "ERRSTR",
+	[2] = "BIND",
+	[3] = "CHDIR",
+	[4] = "CLOSE",
+	[5] = "DUP",
+	[6] = "ALARM",
+	[7] = "EXEC",
+	[8] = "EXITS",
+	[9] = "FSESSION",
+	[10] = "FAUTH",
+	[11] = "FSTAT",
+	[12] = "SEGBRK",
+	[13] = "MOUNT",
+	[14] = "OPEN",
+	[15] = "READ",
+	[16] = "OSEEK",
+	[17] = "SLEEP",
+	[18] = "STAT",
+	[19] = "RFORK",
+	[20] = "WRITE",
+	[21] = "PIPE",
+	[22] = "CREATE",
+	[23] = "FD2PATH",
+	[24] = "BRK",
+	[25] = "REMOVE",
+	[39] = "SEEK",
+	[41] = "ERRSTR",
+	[42] = "STAT",
+	[43] = "FSTAT",
+	[46] = "MOUNT",
+	[47] = "AWAIT",
+	[50] = "PREAD",
+	[51] = "PWRITE",
+};
+
 void
 syscall(Ureg* ureg)
 {
 	ulong scallnr;
 	static int syscall_count = 0;
+	char *scname;
 
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
 	syscall_count++;
-	print("syscall #%d: entered with CS=0x%4.4lluX\n", syscall_count, ureg->cs);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
 	if(!kenter(ureg))
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
 	if(pebble_enabled)
 		pebble_auto_verify(up, ureg);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
 	fpukenter(ureg);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
 	scallnr = ureg->bp;	/* RARG */
-	__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
 
-	print("syscall #%d: number=%ld PC=%#llux SP=%#llux\n",
-	      syscall_count, scallnr, ureg->pc, ureg->sp);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
+	/* Get syscall name for debug output */
+	scname = "UNKNOWN";
+	if(scallnr < nelem(syscallnames) && syscallnames[scallnr] != nil)
+		scname = syscallnames[scallnr];
 
-	dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
-	__asm__ volatile("outb %0, %1" : : "a"((char)'8'), "Nd"((unsigned short)0x3F8));
+	print("SYSCALL: %s (#%ld) from PC=%#llux SP=%#llux\n",
+	      scname, scallnr, ureg->pc, ureg->sp);
+
+	/* Debug: dump user stack before calling dosyscall */
+	{
+		extern int okaddr(uintptr, ulong, int);
+		if(okaddr(ureg->sp, 16, 0)) {
+			uintptr *ustack = (uintptr*)ureg->sp;
+			print("syscall: userstack[0] = %#llux\n", (unsigned long long)ustack[0]);
+			print("syscall: userstack[1] = %#llux\n", (unsigned long long)ustack[1]);
+		} else {
+			print("syscall: cannot read user stack at %#llux\n", ureg->sp);
+		}
+	}
+
+	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
+	 * so arguments start at SP+0, not SP+8 */
+	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
+
 	/* if we delayed sched because we held a lock, sched now */
 	if(up->delaysched)
 		sched();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'9'), "Nd"((unsigned short)0x3F8));
 
 	/* Initialize stack slot to 0 for fast SYSRET path
 	 * TODO: donotify/noteret disabled - up->nnote appears to be uninitialized
@@ -508,13 +558,7 @@ syscall(Ureg* ureg)
 	((void**)ureg)[-1] = nil;
 
 	kexit(ureg);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'A'), "Nd"((unsigned short)0x3F8));
 	fpukexit(ureg);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'B'), "Nd"((unsigned short)0x3F8));
-
-	/* Debug: print iretq frame that will be used */
-	print("IRETQ frame: RIP=%#llux CS=%#llux RFLAGS=%#llux RSP=%#llux SS=%#llux\n",
-	      ureg->pc, ureg->cs, ureg->flags, ureg->sp, ureg->ss);
 }
 
 Ureg*

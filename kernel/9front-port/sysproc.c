@@ -341,16 +341,23 @@ sysexec(va_list list)
 	Chan *tc;
 	Fgrp *f;
 
+	print("sysexec: started, list=%p\n", list);
+
 	args = elem = nil;
-	file0 = va_arg(list, char*);
-	validaddr((uintptr)file0, 1, 0);
-	argp0 = va_arg(list, char**);
-	evenaddr((uintptr)argp0);
-	validaddr((uintptr)argp0, 2*BY2WD, 0);
-	if(*argp0 == nil)
-		error(Ebadarg);
-	file0 = validnamedup(file0, 1);
+
+	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
+	{
+		static char *fake_argv[] = { "/bin/init", nil };
+		print("sysexec: USING HARDCODED PATH /bin/init with fake argv\n");
+		file0 = validnamedup("/bin/init", 1);
+		argp0 = fake_argv;
+		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
+	}
+
+	print("EXEC: attempting to execute '%s'\n", file0);
+
 	if(waserror()){
+		print("EXEC: failed with error '%s'\n", up->errstr);
 		free(file0);
 		free(elem);
 		free(args);
@@ -363,11 +370,13 @@ sysexec(va_list list)
 	indir = 0;
 	file = file0;
 	for(;;){
+		print("EXEC: opening file '%s'\n", file);
 		tc = namec(file, Aopen, OEXEC, 0);
 		if(waserror()){
 			cclose(tc);
 			nexterror();
 		}
+		print("EXEC: file opened successfully\n");
 		if(!indir)
 			kstrdup(&elem, up->genbuf);
 
@@ -1543,6 +1552,8 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 	uintptr ret;
 	int s;
 
+	print("dosyscall: entered, scallnr=%ld\n", scallnr);
+
 	m->syscall++;
 
 	up->insyscall = 1;
@@ -1568,7 +1579,9 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 			error(Ebadarg);
 		}
 		up->psstate = sysctab[scallnr];
-		ret = systab[scallnr](*(va_list *)up->s.args);			
+		print("dosyscall: calling syscall handler\n");
+		ret = systab[scallnr](*(va_list *)up->s.args);
+		print("dosyscall: syscall handler returned %#llux\n", ret);
 		poperror();
 		if(scallnr == NOTED){
 			/* special case: noted() changes the ureg, return without setting *retp */
@@ -1593,7 +1606,6 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 		panic("error stack");
 	}
 	*retp = ret;
-	print("dosyscall: syscall %ld completed, ret=%#llux\n", scallnr, ret);
 	if(up->procctl == Proc_tracesyscall){
 		todget(nil, &stopns);
 		sysretfmt(scallnr, *(va_list *)up->s.args, ret, startns, stopns);

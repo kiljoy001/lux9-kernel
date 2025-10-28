@@ -139,8 +139,6 @@ kexit(Ureg* ureg)
 	tos->kcycles += t - up->kentry;
 	tos->pcycles = t + up->pcycles;
 	tos->pid = up->pid;
-	print("kexit: returning to user PC=%#llux SP=%#llux CS=%#llux\n",
-	      ureg->pc, ureg->sp, ureg->cs);
 }
 
 static void

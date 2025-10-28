@@ -71,6 +71,7 @@ proc0(void*)
 	up->slash->path = newpath("/");
 	up->dot = cclone(up->slash);
 	print("BOOT[proc0]: root namespace acquired\n");
+	pebble_sip_issue_test();
 	print("BOOT[proc0]: setting up segments\n");
 
 	/*

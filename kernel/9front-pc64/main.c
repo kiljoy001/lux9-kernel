@@ -200,13 +200,15 @@ init0(void)
 		print("BOOT[init0]: environment configured\n");
 		poperror();
 	}
+	pebble_sip_issue_test();
 	print("BOOT[init0]: starting alarm kproc\n");
 	kproc("alarm", alarmkproc, 0);
 	print("BOOT[init0]: alarm kproc scheduled\n");
 
 	print("BOOT[init0]: computing user stack frame\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	print("BOOT[init0]: initial sp computed\n");
+	print("BOOT[init0]: initial sp computed: %#p\n", sp);
+	print("BOOT[init0]: USTKTOP=%#llux sizeof(Tos)=%lld\n", USTKTOP, (long long)sizeof(Tos));
 	print("BOOT[init0]: stack frame already seeded in proc0\n");
 
 	print("BOOT[init0]: preparing to disable interrupts\n");
@@ -215,6 +217,7 @@ init0(void)
 	fpukexit(nil);
 	print("BOOT[init0]: fpukexit(nil) done\n");
 	print("BOOT[init0]: entering user mode with initcode\n");
+	print("BOOT[init0]: calling touser(%#p)\n", sp);
 	touser(sp);
 }
 

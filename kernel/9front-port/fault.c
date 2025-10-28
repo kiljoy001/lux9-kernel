@@ -386,21 +386,38 @@ int
 okaddr(uintptr addr, ulong len, int write)
 {
 	Segment *s;
+	int iterations = 0;
+
+	print("okaddr: checking addr=%#p len=%lud write=%d\n", addr, len, write);
 
 	if((long)len >= 0 && len <= -addr) {
 		for(;;) {
+			iterations++;
+			if(iterations > 10) {
+				print("okaddr: too many iterations! addr=%#p len=%lud\n", addr, len);
+				break;
+			}
+
 			s = seg(up, addr, 0);
+			print("okaddr: iteration %d, seg=%p addr=%#p len=%lud\n",
+			      iterations, s, addr, len);
 			if(s == nil || (write && (s->type&SG_RONLY)))
 				break;
 
+			print("okaddr: segment base=%#p top=%#p\n", s->base, s->top);
+
 			if(addr+len > s->top) {
+				print("okaddr: addr+len (%#p) > s->top (%#p), continuing\n",
+				      addr+len, s->top);
 				len -= s->top - addr;
 				addr = s->top;
 				continue;
 			}
+			print("okaddr: address is valid\n");
 			return 1;
 		}
 	}
+	print("okaddr: address is INVALID\n");
 	return 0;
 }
 
