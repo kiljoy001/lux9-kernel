@@ -304,6 +304,21 @@ pciread(Chan *c, void *va, long n, vlong off)
 		len = 0;
 		lock(&pcistate.lock);
 		for(pd = pcistate.devlist; pd != nil; pd = pd->next) {
+			/* Check if we have enough space for device line */
+			int device_len = snprint(nil, 0,
+				"%s vendor=0x%04x device=0x%04x class=%02x.%02x.%02x irq=%d\n",
+				pd->name,
+				pd->pci->vid,
+				pd->pci->did,
+				pd->pci->ccrb,
+				pd->pci->ccru,
+				pd->pci->ccrp,
+				pd->pci->intl);
+			
+			/* Stop if we don't have enough space for this device */
+			if(len + device_len >= sizeof(buf) - 1)
+				break;
+				
 			len += snprint(buf + len, sizeof(buf) - len,
 				"%s vendor=0x%04x device=0x%04x class=%02x.%02x.%02x irq=%d\n",
 				pd->name,
@@ -317,6 +332,17 @@ pciread(Chan *c, void *va, long n, vlong off)
 			/* Add BAR information */
 			for(i = 0; i < nelem(pd->pci->mem); i++) {
 				if(pd->pci->mem[i].size > 0) {
+					/* Check if we have enough space for BAR line */
+					int bar_len = snprint(nil, 0,
+						"  bar%d: addr=0x%llux size=0x%llux\n",
+						i,
+						pd->pci->mem[i].bar,
+						pd->pci->mem[i].size);
+					
+					/* Stop if we don't have enough space for this BAR */
+					if(len + bar_len >= sizeof(buf) - 1)
+						break;
+						
 					len += snprint(buf + len, sizeof(buf) - len,
 						"  bar%d: addr=0x%llux size=0x%llux\n",
 						i,
@@ -324,6 +350,10 @@ pciread(Chan *c, void *va, long n, vlong off)
 						pd->pci->mem[i].size);
 				}
 			}
+			
+			/* Check if we've run out of buffer space */
+			if(len >= sizeof(buf) - 1)
+				break;
 		}
 		unlock(&pcistate.lock);
 
