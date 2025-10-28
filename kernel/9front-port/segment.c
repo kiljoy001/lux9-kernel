@@ -10,7 +10,7 @@ extern void userpmap(uintptr va, uintptr pa, int perms);
 /*
  * Attachable segment types
  */
-static Physseg physseg[10] = {
+static Physseg physseg[16] = {
 	{ SG_SHARED,	"shared",	0,	SEGMAXSIZE	},
 	{ SG_BSS,	"memory",	0,	SEGMAXSIZE	},
 	{ 0,		0,		0,	0		},
