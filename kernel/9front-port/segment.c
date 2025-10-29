@@ -56,7 +56,9 @@ newimage(ulong pages)
 	if(pghsize > 1024)
 		pghsize >>= 4;
 
-	i = malloc(sizeof(Image) + pghsize * sizeof(Page*));
+	/* Allocate an Image and zero all fields; the lock bits must start cleared
+	   otherwise attachimage can spin on stale lock state. */
+	i = mallocz(sizeof(Image) + pghsize * sizeof(Page*), 1);
 	if(i == nil)
 		return nil;
 
@@ -441,10 +443,12 @@ Image*
 attachimage(Chan *c, ulong pages)
 {
 	Image *i, **l;
-
+	int retry_count = 0;
+	
 retry:
+	retry_count++;
 	lock(&imagealloc);
-
+	
 	/*
 	 * Search the image cache for remains of the text from a previous
 	 * or currently running incarnation
@@ -455,6 +459,13 @@ retry:
 			goto found;
 		}
 	}
+	
+	/* Prevent infinite retry loop */
+	if(retry_count > 10) {
+		unlock(&imagealloc);
+		error(Enomem);
+	}
+	
 	if(imagealloc.nidle > conf.nimage
 	|| (i = newimage(pages)) == nil) {
 		unlock(&imagealloc);
@@ -593,31 +604,32 @@ imagereclaim(ulong pages)
 {
 	ulong np;
 	Image *i;
-
+	
 	eqlock(&imagealloc.ireclaim);
 	
 	lock(&imagealloc);
 	np = 0;
-	while(np < pages || imagealloc.nidle > conf.nimage) {
+	/* Always try to reduce nidle to conf.nimage, regardless of pages requested */
+	while(imagealloc.nidle > conf.nimage) {
 		i = imagealloc.idle;
 		if(i == nil)
 			break;
 		incref(i);
 		unlock(&imagealloc);
-
+		
 		np += pagereclaim(i);
-
+		
 		lock(i);
 		busyimage(i);	/* force re-insert into idle list */
 		putimage(i);
-
+		
 		lock(&imagealloc);
 	}
 	imagealloc.pgidle -= np;
 	unlock(&imagealloc);
-
+	
 	qunlock(&imagealloc.ireclaim);
-
+	
 	return np;
 }
 
