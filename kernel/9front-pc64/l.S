@@ -404,28 +404,52 @@ gotolabel:
 touser:
     swapgs
 
-    /* Save user stack pointer for after pebble call */
+    /* Debug: print the user stack pointer we're about to use */
+    pushq %rax
+    pushq %rsi
+    pushq %rdi                  /* save user SP argument */
+    movq %rdi, %rsi             /* arg2 = user sp value */
+    leaq touser_sp_msg(%rip), %rdi  /* arg1 = format string */
+    xorq %rax, %rax             /* no vector args */
+    call print
+    popq %rdi                   /* restore user SP */
+    popq %rsi
+    popq %rax
+
+    /* Save user SP in a register before setting up IRET frame */
+    movq %rdi, %r12             /* r12 = user SP */
+
+    /* Build IRETQ frame on current kernel stack:
+     * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
+    pushq $UD64SEL              /* SS - user data segment */
+    pushq %r12                  /* RSP - user stack pointer */
+    pushq $0x202                /* RFLAGS - interrupts enabled */
+    pushq $UESEL                /* CS - user code segment */
+    pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
+
+    /* Debug: print the IRET frame */
+    pushq %rax
     pushq %rdi
+    pushq %rsi
+    leaq touser_iret_msg(%rip), %rdi
+    xorq %rax, %rax
+    call print
+    popq %rsi
+    popq %rdi
+    popq %rax
 
-    movabsq $(UTZERO + 0x28), %rcx   /* user entry for sysretq */
-    movq $0x202, %r11                /* rflags for sysretq */
-    movq %rcx, touser_target_pc(%rip)
-    movq %r11, touser_target_flags(%rip)
-    movq %rdi, touser_target_sp(%rip)
-    incq touser_attempt_count(%rip)
-
-    /* Call pebble while r14/r15 still have valid values */
-    /* Disabled for now - using IRETQ path instead of SYSRET */
-    /* call pebble_red_blue_exit */
-
-    /* Now zero the kernel pointers before entering userspace */
+    /* Zero kernel pointers before entering userspace */
     xor %r15d, %r15d            /* RMACH = nil */
     xor %r14d, %r14d            /* RUSER = nil */
+    xor %r12d, %r12d            /* clear our temp register */
 
-    /* Restore user stack and prepare for sysretq */
-    popq %rsp                   /* user stack for sysretq */
+    iretq
 
-    sysretq
+.section .rodata
+touser_sp_msg:
+    .string "touser: jumping to user mode with SP=%#llux\n"
+touser_iret_msg:
+    .string "touser: about to IRETQ to userspace\n"
 
 .global syscallentry
 syscallentry:

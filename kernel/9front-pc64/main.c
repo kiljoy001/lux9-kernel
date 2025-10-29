@@ -188,6 +188,17 @@ init0(void)
 	chandevinit();
 	print("BOOT[init0]: chandevinit complete\n");
 
+	/* Register initrd files with devroot - must be after chandevinit */
+	extern struct initrd_file *initrd_root;
+	extern void initrd_register(void);
+	if(initrd_root != nil) {
+		print("BOOT[init0]: registering initrd files with devroot\n");
+		initrd_register();
+		print("BOOT[init0]: initrd files registered\n");
+	} else {
+		print("BOOT[init0]: WARNING - no initrd files to register\n");
+	}
+
 	if(!waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
 		ksetenv("terminal", buf, 0);
@@ -306,10 +317,8 @@ main(void)
 	chandevreset();
 	print("BOOT: device reset sequence finished\n");
 
-	/* Register initrd files with devroot - must be after chandevreset */
-	if(initrd_root != nil) {
-		initrd_register();
-	}
+	/* NOTE: initrd_register() is now called in init0() after chandevinit(),
+	 * because the initrd is loaded in proc0 which runs after main() */
 
 	preallocpages();
 	pageinit();

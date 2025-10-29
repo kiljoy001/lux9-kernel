@@ -155,7 +155,7 @@ retry:
 	goto retry;
 }
 
-static int
+int
 fixfault(Segment *s, uintptr addr, int read)
 {
 	Pte **pte, *etp;

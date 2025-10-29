@@ -531,15 +531,28 @@ syscall(Ureg* ureg)
 	print("SYSCALL: %s (#%ld) from PC=%#llux SP=%#llux\n",
 	      scname, scallnr, ureg->pc, ureg->sp);
 
-	/* Debug: dump user stack before calling dosyscall */
+	/* Debug: Read actual bytes from user stack */
 	{
 		extern int okaddr(uintptr, ulong, int);
-		if(okaddr(ureg->sp, 16, 0)) {
-			uintptr *ustack = (uintptr*)ureg->sp;
-			print("syscall: userstack[0] = %#llux\n", (unsigned long long)ustack[0]);
-			print("syscall: userstack[1] = %#llux\n", (unsigned long long)ustack[1]);
+		print("syscall: user_sp=%#llux (validating...)\n", ureg->sp);
+		if(okaddr(ureg->sp, 32, 0)) {
+			/* Read as bytes to see raw data */
+			volatile unsigned char *bytes = (volatile unsigned char*)ureg->sp;
+			print("syscall: Raw bytes at user stack:\n");
+			print("  [0-7]:  %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			      bytes[0], bytes[1], bytes[2], bytes[3],
+			      bytes[4], bytes[5], bytes[6], bytes[7]);
+			print("  [8-15]: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			      bytes[8], bytes[9], bytes[10], bytes[11],
+			      bytes[12], bytes[13], bytes[14], bytes[15]);
+
+			/* Also print as pointers */
+			volatile uintptr *ustack = (volatile uintptr*)ureg->sp;
+			print("syscall: Interpreted as pointers:\n");
+			print("  user[0] = %#llux\n", (unsigned long long)ustack[0]);
+			print("  user[1] = %#llux\n", (unsigned long long)ustack[1]);
 		} else {
-			print("syscall: cannot read user stack at %#llux\n", ureg->sp);
+			print("syscall: CANNOT validate user stack!\n");
 		}
 	}
 

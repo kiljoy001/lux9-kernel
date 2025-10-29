@@ -119,6 +119,7 @@ uvlong		fastticks(uvlong*);
 uvlong		fastticks2ns(uvlong);
 uvlong		fastticks2us(uvlong);
 int		fault(uintptr, uintptr, int);
+int		fixfault(Segment*, uintptr, int);
 void		faultnote(char*, char*, uintptr);
 void		fdclose(int, int);
 Chan*		fdtochan(int, int, int, int);
