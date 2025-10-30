@@ -54,7 +54,13 @@ newimage(ulong pages)
 	if(pghsize > 1024)
 		pghsize >>= 4;
 
-	i = malloc(sizeof(Image) + pghsize * sizeof(Page*));
+	/*
+	 * Image objects embed lock state, idle list links, and the page hash table.
+	 * They must start zeroed so new callers don't see garbage lock bits and spin
+	 * forever trying to lock the image, which previously left attachimage stuck
+	 * in its retry loop.  Use mallocz() to clear the allocation.
+	 */
+	i = mallocz(sizeof(Image) + pghsize * sizeof(Page*), 1);
 	if(i == nil)
 		return nil;
 
