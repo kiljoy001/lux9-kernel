@@ -1,7 +1,27 @@
 /* 9front l.s converted to GAS syntax for x86_64 */
 #include "mem.h"
 .code64
+.section .data
+.align 8
+.global touser_target_pc
+touser_target_pc:
+    .quad 0
+.align 8
+.global touser_target_sp
+touser_target_sp:
+    .quad 0
+.align 8
+.global touser_target_flags
+touser_target_flags:
+    .quad 0
+.align 8
+.global touser_attempt_count
+touser_attempt_count:
+    .quad 0
+
 .section .text
+
+.extern pebble_red_blue_exit
 
 /* CPU I/O port access */
 .global inb
@@ -383,28 +403,39 @@ gotolabel:
 .global touser
 touser:
     swapgs
-    mov $'U', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    xor %r15d, %r15d            /* RMACH = nil */
-    xor %r14d, %r14d            /* RUSER = nil */
+
+    /* Save user stack pointer for after pebble call */
+    pushq %rdi
+
     movabsq $(UTZERO + 0x28), %rcx   /* user entry for sysretq */
     movq $0x202, %r11                /* rflags for sysretq */
-    movq %rdi, %rsp                  /* user stack for sysretq */
+    movq %rcx, touser_target_pc(%rip)
+    movq %r11, touser_target_flags(%rip)
+    movq %rdi, touser_target_sp(%rip)
+    incq touser_attempt_count(%rip)
+
+    /* Call pebble while r14/r15 still have valid values */
+    /* Disabled for now - using IRETQ path instead of SYSRET */
+    /* call pebble_red_blue_exit */
+
+    /* Now zero the kernel pointers before entering userspace */
+    xor %r15d, %r15d            /* RMACH = nil */
+    xor %r14d, %r14d            /* RUSER = nil */
+
+    /* Restore user stack and prepare for sysretq */
+    popq %rsp                   /* user stack for sysretq */
+
     sysretq
 
 .global syscallentry
 syscallentry:
     swapgs
-    mov $'s', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
     movq %gs:0, %rax            /* m */
     movq 16(%rax), %rbx         /* up */
     movq %rsp, %r13             /* save user stack */
     movq %rbx, %rsp             /* switch to kernel stack */
 
-    pushq $UDSEL                /* ss */
+    pushq $UD64SEL              /* ss - 64-bit user data segment */
     pushq %r13                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */
@@ -413,27 +444,58 @@ syscallentry:
     pushq $64                   /* trap number (VectorSYSCALL) */
 
     subq $136, %rsp             /* space for Ureg (minus saved items) */
-    movq %r15, 120(%rsp)        /* save previous RMACH */
-    movq %r14, 112(%rsp)        /* save previous RUSER */
-    movq %rdi, 56(%rsp)         /* syscall arg register */
+
+    /* Save all general purpose registers for potential noteret path
+     * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
+    movq %rax, 8(%rsp)          /* ureg->ax (offset 0 in struct) */
+    movq %rbx, 16(%rsp)         /* ureg->bx (offset 8) */
+    movq %rcx, 24(%rsp)         /* ureg->cx (offset 16, user pc saved by syscall) */
+    movq %rdx, 32(%rsp)         /* ureg->dx (offset 24) */
+    movq %rsi, 40(%rsp)         /* ureg->si (offset 32) */
+    movq %rdi, 48(%rsp)         /* ureg->di (offset 40) */
+    movq %rbp, 56(%rsp)         /* ureg->bp (offset 48, syscall number) */
+    movq %r8,  64(%rsp)         /* ureg->r8 (offset 56) */
+    movq %r9,  72(%rsp)         /* ureg->r9 (offset 64) */
+    movq %r10, 80(%rsp)         /* ureg->r10 (offset 72) */
+    movq %r11, 88(%rsp)         /* ureg->r11 (offset 80, rflags saved by syscall) */
+    movq %r12, 96(%rsp)         /* ureg->r12 (offset 88) */
+    movq %r13, 104(%rsp)        /* ureg->r13 (offset 96) */
+    movq %r14, 120(%rsp)        /* save previous RUSER (ureg->r14, offset 112) */
+    movq %r15, 128(%rsp)        /* save previous RMACH (ureg->r15, offset 120) */
 
     movq %rax, %r15             /* update RMACH */
-    movq %rbx, %r14             /* update RUSER */
+    movq 16(%rax), %r14         /* update RUSER = up */
 
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
-    jmp noteret
 
+    /* Return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
+     * If noteret is set, jump directly to noteret.
+     * Otherwise fall through to syscallret (both use IRETQ). */
+    movq (%rsp), %rax           /* load stack slot */
+    testq %rax, %rax            /* check if noteret address is set */
+    jnz noteret                 /* if set, use IRETQ path */
+
+    /* Fall through to syscallret (which also uses IRETQ) */
+    jmp syscallret
+
+/* NOTE: We use IRETQ for all returns instead of the faster SYSRET instruction.
+ * This is because our GDT layout (inherited from 9front) is incompatible with SYSRET.
+ *
+ * SYSRET requires: CS = STAR[63:48] + 16, SS = STAR[63:48] + 8
+ * Our GDT has: UESEL (CS64) = 0x2B, UD64SEL (SS64) = 0x33
+ * To get CS=0x2B: STAR[63:48] must = 0x1B
+ * To get SS=0x33: STAR[63:48] must = 0x2B
+ * These are conflicting! The CS64 and SS64 segments are not at the required +16/+8 offsets.
+ *
+ * Reorganizing the GDT would be complex and risky. IRETQ works correctly and the
+ * performance difference is negligible for our use case.
+ */
 .global forkret
+.global syscallret
+syscallret:
 forkret:
-    swapgs
-    movq 8(%rsp), %rax          /* return value */
-    movq 120(%rsp), %r15        /* restore RMACH */
-    movq 112(%rsp), %r14        /* restore RUSER */
-    movq 152(%rsp), %rcx        /* user pc */
-    movq 168(%rsp), %r11        /* rflags */
-    movq 176(%rsp), %rsp        /* user sp */
-    sysretq
+    jmp noteret  /* Use IRETQ path for all returns */
 
 .global _strayintr
 _strayintr:

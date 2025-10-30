@@ -91,8 +91,9 @@ Segdesc gdt[NGDT] =
 [KESEG]		EXECSEGM(0),		/* kernel code */
 [KDSEG]		DATASEGM(0),		/* kernel data */
 [UE32SEG]	EXEC32SEGM(3),		/* user code 32 bit*/
-[UDSEG]		DATA32SEGM(3),		/* user data/stack */
-[UESEG]		EXECSEGM(3),		/* user code */
+[UDSEG]		DATA32SEGM(3),		/* user data/stack 32 bit */
+[UESEG]		EXECSEGM(3),		/* user code 64 bit */
+[UD64SEG]	DATASEGM(3),		/* user data/stack 64 bit */
 };
 
 enum {
@@ -548,11 +549,12 @@ mmualloc(void)
 	p = mallocz(sizeof(MMU), 1);
 	if(p == nil)
 		return nil;
-	p->page = mallocalign(PTSZ, BY2PG, 0, 0);
-	if(p->page == nil){
+	p->alloc = mallocz(PTSZ + BY2PG, 1);
+	if(p->alloc == nil){
 		free(p);
 		return nil;
 	}
+	p->page = (uintptr*)ROUND((uintptr)p->alloc, BY2PG);
 	/* Zero the page table page to ensure clean entries */
 	memset(p->page, 0, PTSZ);
 	return p;
@@ -563,38 +565,6 @@ mmualloc(void)
  * Returns HHDM virtual address of the page, or nil if none available
  */
 static uintptr*
-pt_page(void)
-{
-	Page *p;
-	uintptr pa, va;
-
-	lock(&palloc);
-
-	/* Check if pages are available */
-	if(palloc.head == nil || palloc.freecount == 0) {
-		unlock(&palloc);
-		return nil;
-	}
-
-	/* Take first page from free list */
-	p = palloc.head;
-	palloc.head = p->next;
-	p->next = nil;
-	palloc.freecount--;
-
-	unlock(&palloc);
-
-	/* Get physical address and convert to HHDM virtual address */
-	pa = p->pa;
-	va = pa + saved_limine_hhdm_offset;
-
-	/* Zero the page */
-	memset((void*)va, 0, PTSZ);
-
-	return (uintptr*)va;
-}
-
-static uintptr*
 mmucreate(uintptr *table, uintptr va, int level, int index)
 {
 	uintptr *page, flags;
@@ -602,24 +572,47 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 
 	flags = PTEWRITE|PTEVALID;
 	if(va < VMAP){
-		/* Allocate from palloc pool for user/kernel page tables */
-		page = pt_page();
-		if(page == nil)
+		if(up == nil)
+			panic("mmucreate: up nil va=%#p", va);
+		if((p = mmualloc()) == nil)
 			return nil;
-		if(va < USTKTOP) {
+		p->index = index;
+		p->level = level;
+		page = p->page;
+		memset(page, 0, PTSZ);
+		if(va < USTKTOP){
 			flags |= PTEUSER;
+			if(level == PML4E){
+				if((p->next = up->mmuhead) == nil)
+					up->mmutail = p;
+				up->mmuhead = p;
+				m->mmumap[index/MAPBITS] |= 1ull<<(index%MAPBITS);
+			}else{
+				if(up->mmutail != nil)
+					up->mmutail->next = p;
+				up->mmutail = p;
+			}
+			up->mmucount++;
+		}else{
+			if(level == PML4E){
+				up->kmaphead = p;
+				up->kmaptail = p;
+			}else{
+				if(up->kmaptail != nil)
+					up->kmaptail->next = p;
+				up->kmaptail = p;
+			}
+			up->kmapcount++;
 		}
-		goto make_entry;
-	} else {
-		/* VMAP region - also use pt_page */
-		page = pt_page();
+	}else{
+		page = rampage();
 		if(page == nil)
 			return nil;
+		memset(page, 0, PTSZ);
 	}
-make_entry:
-	/* pt_page already zeros the page - no need to pre-initialize entries */
-
 	table[index] = PADDR(page) | flags;
+	print("mmucreate: va=%#p level=%d index=%d flags=%#llux entry=%#llux page=%#p\n",
+		va, level, index, (uvlong)flags, (uvlong)table[index], page);
 	return page;
 }
 
@@ -863,7 +856,7 @@ mmufree(Proc *proc)
 			m->mmucount++;
 			continue;
 		}
-		free(p->page);
+		free(p->alloc);
 		free(p);
 	}
 	proc->mmuhead = proc->mmutail = nil;

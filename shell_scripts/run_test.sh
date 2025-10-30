@@ -1,5 +1,21 @@
 #!/bin/bash
-echo "Running xalloc test..."
-echo "test" > /tmp/qemu_input
-cd /home/scott/Repo/lux9-kernel
-timeout 30s make run < /tmp/qemu_input
+set -euo pipefail
+
+REPO=/home/scott/Repo/lux9-kernel
+LOG=${REPO}/qemu.log
+
+echo "[run_test] building kernel"
+cd "${REPO}"
+make -s >/dev/null
+
+echo "[run_test] launching qemu (pebble selftest)"
+rm -f "${LOG}"
+timeout 45s make run >/dev/null
+
+if grep -q "PEBBLE: selftest PASS" "${LOG}"; then
+    echo "[run_test] pebble selftest passed"
+else
+    echo "[run_test] pebble selftest FAILED"
+    tail -n 200 "${LOG}" || true
+    exit 1
+fi

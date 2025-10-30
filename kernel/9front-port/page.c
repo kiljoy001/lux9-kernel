@@ -505,6 +505,8 @@ userpmap(uintptr va, uintptr pa, int perms)
 		splx(x);
 		panic("userpmap: out of memory for page tables");
 	}
-	*pte = hhdm_virt(pa) | perms;
+	*pte = pa | perms;
+	print("userpmap: va=%#p pa=%#p perms=%#ux pte=%#llux\n",
+		va, pa, perms, (uvlong)*pte);
 	splx(x);
 }

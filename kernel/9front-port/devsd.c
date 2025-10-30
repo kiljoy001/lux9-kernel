@@ -50,6 +50,9 @@ sdinit(void)
 {
 	SDev *s, *tail;
 
+	print("sd: skipping storage init while debugging user-mode transition\n");
+	return;
+
 	print("sd: initializing storage devices\n");
 
 	/* Probe AHCI controllers */

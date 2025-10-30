@@ -88,22 +88,11 @@ isvalidmmio(uintptr pa, usize len)
 static void
 checkcap(ulong required)
 {
-	/*
-	 * TODO: Actual capability checking
-	 * For now, only allow if running as 'eve' (superuser)
-	 *
-	 * Real implementation should check:
-	 * - up->capabilities & required
-	 * - Process isolation domain
-	 * - SIP server registration
-	 */
+	if(up == nil)
+		return;	/* kernel processes have full access */
 
-	/* Temporary: allow all access for development */
-	/* In production, this should be: */
-	/*
-	if(!(up->capabilities & required))
-		error(Eperm);
-	*/
+	if((up->capabilities & required) != required)
+		error("insufficient capabilities for /dev/mem access");
 }
 
 static Chan*
@@ -171,10 +160,18 @@ memread(Chan *c, void *va, long n, vlong off)
 		a = va;
 		for(i = 0; i < n; i++){
 			/*
-			 * Use KADDR to map physical to virtual
-			 * This is safe because we validated the MMIO range
+			 * Use HHDM mapping for high addresses to avoid KADDR panic
+			 * For addresses below KZERO threshold, we can still use KADDR
 			 */
-			a[i] = *(uchar*)KADDR(pa + i);
+			uintptr phys_addr = pa + i;
+			if(phys_addr >= (uintptr)-KZERO) {
+				/* Use HHDM mapping for high addresses */
+				extern uintptr saved_limine_hhdm_offset;
+				a[i] = *(uchar*)(phys_addr + saved_limine_hhdm_offset);
+			} else {
+				/* Use KADDR for lower addresses */
+				a[i] = *(uchar*)KADDR(phys_addr);
+			}
 		}
 		return n;
 
@@ -214,10 +211,18 @@ memwrite(Chan *c, void *va, long n, vlong off)
 		a = va;
 		for(i = 0; i < n; i++){
 			/*
-			 * Use KADDR to map physical to virtual
-			 * Memory barriers are important for MMIO!
+			 * Use HHDM mapping for high addresses to avoid KADDR panic
+			 * For addresses below KZERO threshold, we can still use KADDR
 			 */
-			*(volatile uchar*)KADDR(pa + i) = a[i];
+			uintptr phys_addr = pa + i;
+			if(phys_addr >= (uintptr)-KZERO) {
+				/* Use HHDM mapping for high addresses */
+				extern uintptr saved_limine_hhdm_offset;
+				*(volatile uchar*)(phys_addr + saved_limine_hhdm_offset) = a[i];
+			} else {
+				/* Use KADDR for lower addresses */
+				*(volatile uchar*)KADDR(phys_addr) = a[i];
+			}
 		}
 
 		/* Ensure writes complete before returning */

@@ -4,6 +4,7 @@
 #include	"mem.h"
 #include	"dat.h"
 #include	"fns.h"
+#include	"pebble.h"
 #include	"io.h"
 #include	"ureg.h"
 #include <error.h>
@@ -14,6 +15,11 @@ extern void irqinit(void);
 #define PSTATENAME_MAX 14
 extern char *statename[];
 
+extern uvlong touser_target_pc;
+extern uvlong touser_target_sp;
+extern uvlong touser_target_flags;
+extern uvlong touser_attempt_count;
+
 static void debugexc(Ureg*, void*);
 static void debugbpt(Ureg*, void*);
 static void faultamd64(Ureg*, void*);
@@ -23,6 +29,12 @@ static void _dumpstack(Ureg*);
 
 /* Temporary IDT until we can set up proper page tables */
 Segdesc temp_idt[512] __attribute__((aligned(16)));
+
+int
+userureg(Ureg *ureg)
+{
+	return (ureg->cs & 3) == 3;
+}
 
 void
 trapinit0(void)
@@ -140,10 +152,17 @@ trap(Ureg *ureg)
 
 	vno = ureg->type;
 	user = kenter(ureg);
+	if(user && pebble_enabled)
+		pebble_auto_verify(up, ureg);
 	if(vno != VectorCNA)
 		fpukenter(ureg);
 
 	if(!irqhandled(ureg, vno) && (!user || !usertrap(vno))){
+		if((vno == VectorGPF || vno == VectorPF) && touser_attempt_count != 0){
+			iprint("touser state: attempts=%llud pc=%#llux sp=%#llux flags=%#llux\n",
+				touser_attempt_count, touser_target_pc,
+				touser_target_sp, touser_target_flags);
+		}
 		if(!user){
 			void (*pc)(void);
 
@@ -450,31 +469,94 @@ faultamd64(Ureg* ureg, void*)
 /*
  *  Syscall is called directly from assembler without going through trap().
  */
+
+/* Syscall name lookup table for debug output */
+static char *syscallnames[] = {
+	[0] = "SYSR1",
+	[1] = "ERRSTR",
+	[2] = "BIND",
+	[3] = "CHDIR",
+	[4] = "CLOSE",
+	[5] = "DUP",
+	[6] = "ALARM",
+	[7] = "EXEC",
+	[8] = "EXITS",
+	[9] = "FSESSION",
+	[10] = "FAUTH",
+	[11] = "FSTAT",
+	[12] = "SEGBRK",
+	[13] = "MOUNT",
+	[14] = "OPEN",
+	[15] = "READ",
+	[16] = "OSEEK",
+	[17] = "SLEEP",
+	[18] = "STAT",
+	[19] = "RFORK",
+	[20] = "WRITE",
+	[21] = "PIPE",
+	[22] = "CREATE",
+	[23] = "FD2PATH",
+	[24] = "BRK",
+	[25] = "REMOVE",
+	[39] = "SEEK",
+	[41] = "ERRSTR",
+	[42] = "STAT",
+	[43] = "FSTAT",
+	[46] = "MOUNT",
+	[47] = "AWAIT",
+	[50] = "PREAD",
+	[51] = "PWRITE",
+};
+
 void
 syscall(Ureg* ureg)
 {
 	ulong scallnr;
+	static int syscall_count = 0;
+	char *scname;
 
-	print("syscall: entered with CS=0x%4.4lluX\n", ureg->cs);
+	syscall_count++;
 	if(!kenter(ureg))
 		panic("syscall: cs 0x%4.4lluX", ureg->cs);
+	if(pebble_enabled)
+		pebble_auto_verify(up, ureg);
 	fpukenter(ureg);
 	scallnr = ureg->bp;	/* RARG */
 
-	/* Debug: print first syscall */
-	static int first_syscall = 1;
-	if(first_syscall) {
-		print("syscall: first syscall number %ld (EXEC=7)\n", scallnr);
-		first_syscall = 0;
+	/* Get syscall name for debug output */
+	scname = "UNKNOWN";
+	if(scallnr < nelem(syscallnames) && syscallnames[scallnr] != nil)
+		scname = syscallnames[scallnr];
+
+	print("SYSCALL: %s (#%ld) from PC=%#llux SP=%#llux\n",
+	      scname, scallnr, ureg->pc, ureg->sp);
+
+	/* Debug: dump user stack before calling dosyscall */
+	{
+		extern int okaddr(uintptr, ulong, int);
+		if(okaddr(ureg->sp, 16, 0)) {
+			uintptr *ustack = (uintptr*)ureg->sp;
+			print("syscall: userstack[0] = %#llux\n", (unsigned long long)ustack[0]);
+			print("syscall: userstack[1] = %#llux\n", (unsigned long long)ustack[1]);
+		} else {
+			print("syscall: cannot read user stack at %#llux\n", ureg->sp);
+		}
 	}
 
-	if(dosyscall(scallnr, (Sargs*)(ureg->sp+BY2WD), (uintptr*)(&ureg->ax)))
-		((void**)&ureg)[-1] = (void*)noteret;	/* loads RARG */
-	if((up->procctl || up->nnote) && donotify(ureg))
-		((void**)&ureg)[-1] = (void*)noteret;	/* loads RARG */
+	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
+	 * so arguments start at SP+0, not SP+8 */
+	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
+
 	/* if we delayed sched because we held a lock, sched now */
 	if(up->delaysched)
 		sched();
+
+	/* Initialize stack slot to 0 for fast SYSRET path
+	 * TODO: donotify/noteret disabled - up->nnote appears to be uninitialized
+	 * causing donotify to hang on first syscall. Need to investigate proper
+	 * Proc structure initialization before enabling notifications. */
+	((void**)ureg)[-1] = nil;
+
 	kexit(ureg);
 	fpukexit(ureg);
 }
@@ -505,7 +587,7 @@ notify(Ureg *ureg, char *msg)
 	ureg->pc = (uintptr)up->notify;
 	ureg->bp = (uintptr)nureg;		/* arg1 passed in RARG */
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 
 	return nureg;
 }
@@ -555,7 +637,7 @@ execregs(uintptr entry, ulong ssize, ulong nargs)
 	ureg->sp = (uintptr)sp;
 	ureg->pc = entry;
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 	ureg->r14 = ureg->r15 = 0;	/* extern user registers */
 	return (uintptr)USTKTOP-sizeof(Tos);		/* address of kernel/user shared data */
 }
@@ -583,7 +665,7 @@ setregisters(Ureg* ureg, char* pureg, char* uva, int n)
 	flags = ureg->flags;
 	memmove(pureg, uva, n);
 	ureg->cs = UESEL;
-	ureg->ss = UDSEL;
+	ureg->ss = UD64SEL;
 	ureg->flags = (ureg->flags & 0x00ff) | (flags & 0xff00);
 	ureg->pc &= UADDRMASK;
 }

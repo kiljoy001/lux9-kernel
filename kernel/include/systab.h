@@ -61,6 +61,12 @@ Syscall sysvmlend_shared;
 Syscall sysvmlend_mut;
 Syscall sysvmreturn;
 Syscall sysvmowninfo;
+Syscall syspebblewhiteissue;
+Syscall syspebbleblackalloc;
+Syscall syspebbleblackfree;
+Syscall syspebblewhiteverify;
+Syscall syspebbleredcopy;
+Syscall syspebblebluediscard;
 
 Syscall *systab[]={
 	[SYSR1]		sysr1,
@@ -120,6 +126,12 @@ Syscall *systab[]={
 	[VMLEND_MUT]	sysvmlend_mut,
 	[VMRETURN]	sysvmreturn,
 	[VMOWNINFO]	sysvmowninfo,
+	[PEBBLE_WHITE_ISSUE]	syspebblewhiteissue,
+	[PEBBLE_BLACK_ALLOC]	syspebbleblackalloc,
+	[PEBBLE_BLACK_FREE]	syspebbleblackfree,
+	[PEBBLE_WHITE_VERIFY]	syspebblewhiteverify,
+	[PEBBLE_RED_COPY]	syspebbleredcopy,
+	[PEBBLE_BLUE_DISCARD]	syspebblebluediscard,
 };
 
 int nsyscall = (sizeof systab/sizeof systab[0]);

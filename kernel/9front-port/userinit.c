@@ -5,6 +5,7 @@
 #include	"tos.h"
 #include	"fns.h"
 #include <error.h>
+#include	"pebble.h"
 
 extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
 extern void pmap(uintptr, uintptr, vlong);
@@ -59,6 +60,8 @@ proc0(void*)
 	up->rgrp = newrgrp();
 	print("BOOT[proc0]: process groups ready\n");
 
+	pebble_selftest();
+
 	/*
 	 * These are o.k. because rootinit is null.
 	 * Then early kproc's will have a root and dot.
@@ -68,6 +71,7 @@ proc0(void*)
 	up->slash->path = newpath("/");
 	up->dot = cclone(up->slash);
 	print("BOOT[proc0]: root namespace acquired\n");
+	pebble_sip_issue_test();
 	print("BOOT[proc0]: setting up segments\n");
 
 	/*

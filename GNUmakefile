@@ -30,6 +30,7 @@ LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
 BORROW_C := kernel/borrowchecker.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
+PEBBLE_C := kernel/pebble.c
 
 # SD/FIS support files already included by wildcard above
 
@@ -45,8 +46,9 @@ ASM_O := $(ASM_S:.S=.o)
 MEMDRAW_O := $(MEMDRAW_C:.c=.o)
 BORROW_O := $(BORROW_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
+PEBBLE_O := $(PEBBLE_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(REAL_DRIVERS_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O)
 
 .PHONY: all clean count iso run
 

@@ -83,6 +83,7 @@ enum BorrowError borrow_return_mut(Proc *borrower, uintptr key);
 /* Query operations */
 int	borrow_is_owned(uintptr key);
 Proc*	borrow_get_owner(uintptr key);
+int	borrow_get_owner_snapshot(uintptr key, struct BorrowOwner *out);
 enum BorrowState borrow_get_state(uintptr key);
 int	borrow_can_borrow_shared(uintptr key);
 int	borrow_can_borrow_mut(uintptr key);

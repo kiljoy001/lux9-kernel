@@ -466,8 +466,7 @@ extern uintptr paddr(void*);
 #endif
 
 #ifndef userureg
-/* Check if in user mode - default implementation */
-#define userureg(ur)	0		/* Will be overridden by arch */
+int	userureg(Ureg*);
 #endif
 
 KMap*	kmap(Page*);
@@ -478,6 +477,11 @@ void	kunmap(KMap*);
 #endif
 
 void setuppagetables(void);		/* Setup kernel page tables */
+
+/* Pebble primitives */
+void	pebbleinit(void);
+void	pebbleprocinit(Proc*);
+void	pebble_cleanup(Proc*);
 
 /* Interrupt handling functions */
 void	intrdisable(int, void (*)(Ureg *, void *), void*, int, char*);

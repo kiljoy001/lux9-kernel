@@ -127,7 +127,7 @@ kenter(Ureg *ureg)
 }
 
 void
-kexit(Ureg*)
+kexit(Ureg* ureg)
 {
 	uvlong t;
 	Tos *tos;
@@ -770,6 +770,13 @@ newproc(void)
 	p->lastupdate = MACHP(0)->ticks*Scaling;
 	p->edf = nil;
 
+	pebbleprocinit(p);
+
+	/* Initialize with all capabilities for development
+	 * TODO: Once /dev/sip is implemented, processes should start with
+	 * zero capabilities and explicitly request them via SIP control */
+	p->capabilities = 0xFFFFFFFF;
+
 	return p;
 }
 
@@ -1304,6 +1311,7 @@ pexit(char *exitstr, int freemem)
 
 	/* Clean up page ownership - implement Rust "drop" semantics */
 	pageown_cleanup_process(up);
+	pebble_cleanup(up);
 
 	/* nil out all the resources under lock (free later) */
 	qlock(&up->debug);

@@ -156,6 +156,7 @@ extern Dev mntdevtab;
 extern Dev procdevtab;
 extern Dev sdisabidevtab;
 extern Dev exchdevtab;
+extern Dev sipdevtab;
 
 extern Dev memdevtab;
 extern Dev irqdevtab;
@@ -169,6 +170,7 @@ Dev *devtab[] = {
 	&procdevtab,
 	&sdisabidevtab,
 	&exchdevtab,
+	&sipdevtab,
 	&memdevtab,
 	&irqdevtab,
 	&dmadevtab,
@@ -520,6 +522,11 @@ uvlong tscticks(uvlong *hz) {
 	return rdtsc();
 }
 
+/* cycles() - read CPU timestamp counter for timing */
+void cycles(uvlong *t) {
+	*t = rdtsc();
+}
+
 /* IRQ initialization */
 void irqinit(void) {}
 void nmienable(void) {}
@@ -532,8 +539,25 @@ void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, cha
 
 /* Interrupt disable */
 void intrdisable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
-	USED(irq, handler, arg, tbdf, name);
-	/* TODO: Implement interrupt disable */
+	USED(handler, arg, tbdf, name);
+
+	if(irq < 0 || irq >= 256)
+		return;
+
+	/* Clear the handler from our table */
+	if(irqhandlers[irq].handler == handler) {
+		irqhandlers[irq].handler = nil;
+		irqhandlers[irq].arg = nil;
+		irqhandlers[irq].name = nil;
+	}
+
+	/*
+	 * Mask the IRQ in the APIC if we have one.
+	 * For now, we just clear the handler - actual APIC masking would
+	 * require reading the redirection table, setting ApicIMASK bit,
+	 * and writing it back via ioapicrdtw().
+	 * This prevents the handler from being called even if the IRQ fires.
+	 */
 }
 
 /* DMA controller - function pointer (nil = not available) */
@@ -565,7 +589,6 @@ void (*coherence)(void) = coherence_impl;
 /* Additional global function pointers and buffers */
 int (*_pcmspecial)(char*, ISAConf*) = nil;
 void (*_pcmspecialclose)(int) = nil;
-void (*cycles)(uvlong*) = nil;
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;
 

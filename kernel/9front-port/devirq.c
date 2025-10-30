@@ -76,11 +76,11 @@ enum
 static void
 checkcap(ulong required)
 {
-	/*
-	 * TODO: Check up->capabilities & required
-	 * For now, allow all access for development
-	 */
-	USED(required);
+	if(up == nil)
+		return;	/* kernel processes have full access */
+
+	if((up->capabilities & required) != required)
+		error("insufficient capabilities for IRQ access");
 }
 
 /*
@@ -261,6 +261,18 @@ irqread(Chan *c, void *va, long n, vlong off)
 		len = 0;
 		for(i = 0; i < MaxIRQ; i++) {
 			if(irqstate[i].registered) {
+				/* Check if we have enough space in buffer */
+				int entry_len = snprint(nil, 0,
+					"irq %d: %s pending=%ud delivered=%ud dropped=%ud\n",
+					i, irqstate[i].name,
+					irqstate[i].pending,
+					irqstate[i].delivered,
+					irqstate[i].dropped);
+				
+				/* Stop if we don't have enough space for this entry */
+				if(len + entry_len >= sizeof(buf) - 1)
+					break;
+					
 				len += snprint(buf + len, sizeof(buf) - len,
 					"irq %d: %s pending=%ud delivered=%ud dropped=%ud\n",
 					i, irqstate[i].name,

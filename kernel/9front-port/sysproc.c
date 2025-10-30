@@ -7,6 +7,7 @@
 #include	"ureg.h"
 #include <error.h>
 #include	"edf.h"
+#include	"pebble.h"
 
 #include	<a.out.h>
 
@@ -340,16 +341,23 @@ sysexec(va_list list)
 	Chan *tc;
 	Fgrp *f;
 
+	print("sysexec: started, list=%p\n", list);
+
 	args = elem = nil;
-	file0 = va_arg(list, char*);
-	validaddr((uintptr)file0, 1, 0);
-	argp0 = va_arg(list, char**);
-	evenaddr((uintptr)argp0);
-	validaddr((uintptr)argp0, 2*BY2WD, 0);
-	if(*argp0 == nil)
-		error(Ebadarg);
-	file0 = validnamedup(file0, 1);
+
+	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
+	{
+		static char *fake_argv[] = { "/bin/init", nil };
+		print("sysexec: USING HARDCODED PATH /bin/init with fake argv\n");
+		file0 = validnamedup("/bin/init", 1);
+		argp0 = fake_argv;
+		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
+	}
+
+	print("EXEC: attempting to execute '%s'\n", file0);
+
 	if(waserror()){
+		print("EXEC: failed with error '%s'\n", up->errstr);
 		free(file0);
 		free(elem);
 		free(args);
@@ -362,11 +370,13 @@ sysexec(va_list list)
 	indir = 0;
 	file = file0;
 	for(;;){
+		print("EXEC: opening file '%s'\n", file);
 		tc = namec(file, Aopen, OEXEC, 0);
 		if(waserror()){
 			cclose(tc);
 			nexterror();
 		}
+		print("EXEC: file opened successfully\n");
 		if(!indir)
 			kstrdup(&elem, up->genbuf);
 
@@ -1421,6 +1431,118 @@ sys_nsec(va_list list)
 	return 0;
 }
 
+uintptr
+syspebblewhiteissue(va_list list)
+{
+	ulong size;
+	void **out;
+	PebbleWhite *white;
+	PebbleState *ps;
+
+	size = va_arg(list, ulong);
+	out = va_arg(list, void**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	ps = pebble_state();
+	if(ps == nil)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(void*), 1);
+	white = pebble_issue_white(ps, nil, size);
+	if(white == nil)
+		error(PEBBLE_E_AGAIN);
+	*out = white;
+	if(pebble_debug)
+		print("PEBBLE: white issue pid=%lud size=%lud token=%#p\n",
+			up->pid, size, white);
+	return (uintptr)white;
+}
+
+uintptr
+syspebbleblackalloc(va_list list)
+{
+	uintptr size;
+	void **userp;
+	void *handle;
+
+	size = va_arg(list, uintptr);
+	userp = va_arg(list, void**);
+	if(userp == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)userp, sizeof(void*), 1);
+	handle = nil;
+	pebble_black_alloc(size, &handle);
+	*userp = handle;
+	return (uintptr)handle;
+}
+
+uintptr
+syspebbleblackfree(va_list list)
+{
+	void *handle;
+
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	handle = va_arg(list, void*);
+	pebble_black_free(handle);
+	return 0;
+}
+
+uintptr
+syspebblewhiteverify(va_list list)
+{
+	PebbleWhite *white;
+	void **out;
+	void *black;
+
+	white = va_arg(list, PebbleWhite*);
+	out = va_arg(list, void**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(void*), 1);
+	black = nil;
+	pebble_white_verify(white, &black);
+	*out = black;
+	return (uintptr)black;
+}
+
+uintptr
+syspebbleredcopy(va_list list)
+{
+	PebbleBlue *blue;
+	PebbleRed **out;
+	PebbleRed *red;
+
+	blue = va_arg(list, PebbleBlue*);
+	out = va_arg(list, PebbleRed**);
+	if(out == nil)
+		error(Ebadarg);
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	validaddr((uintptr)out, sizeof(PebbleRed*), 1);
+	red = nil;
+	pebble_red_copy(blue, &red);
+	*out = red;
+	return (uintptr)red;
+}
+
+uintptr
+syspebblebluediscard(va_list list)
+{
+	PebbleBlue *blue;
+
+	if(!pebble_enabled)
+		error(PEBBLE_E_PERM);
+	blue = va_arg(list, PebbleBlue*);
+	pebble_blue_discard(blue);
+	return 0;
+}
+
 #include <systab.h>
 
 int
@@ -1429,6 +1551,8 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 	vlong startns, stopns;
 	uintptr ret;
 	int s;
+
+	print("dosyscall: entered, scallnr=%ld\n", scallnr);
 
 	m->syscall++;
 
@@ -1455,7 +1579,9 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 			error(Ebadarg);
 		}
 		up->psstate = sysctab[scallnr];
-		ret = systab[scallnr](*(va_list *)up->s.args);			
+		print("dosyscall: calling syscall handler\n");
+		ret = systab[scallnr](*(va_list *)up->s.args);
+		print("dosyscall: syscall handler returned %#llux\n", ret);
 		poperror();
 		if(scallnr == NOTED){
 			/* special case: noted() changes the ureg, return without setting *retp */

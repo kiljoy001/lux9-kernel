@@ -358,6 +358,27 @@ borrow_get_owner(uintptr key)
 	return p;
 }
 
+int
+borrow_get_owner_snapshot(uintptr key, struct BorrowOwner *out)
+{
+	struct BorrowOwner *owner;
+	int ok = 0;
+
+	if(out == nil)
+		return 0;
+
+	ilock(&borrowpool.lock);
+	owner = find_owner(key);
+	if(owner != nil){
+		*out = *owner;
+		out->next = nil;
+		ok = 1;
+	}
+	iunlock(&borrowpool.lock);
+
+	return ok;
+}
+
 enum BorrowState
 borrow_get_state(uintptr key)
 {
