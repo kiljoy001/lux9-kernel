@@ -6,6 +6,7 @@
 #include	"fns.h"
 #include	"ureg.h"
 #include <error.h>
+#include	"elf.h"
 #include	"edf.h"
 #include	"pebble.h"
 
@@ -332,7 +333,7 @@ sysexec(va_list list)
 	volatile char *args, *elem, *file0;
 	char **argv, **argp, **argp0;
 	char *a, *e, *charp, *file;
-	int i, n, indir;
+	int i, n, indir, is_elf;
 	ulong magic, ssize, nargs, nbytes;
 	uintptr entry, text, data, bss, adata, abss, ebss, tstk, align;
 	Segment *s, *ts;
@@ -347,9 +348,9 @@ sysexec(va_list list)
 
 	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
 	{
-		static char *fake_argv[] = { "/bin/init", nil };
-		print("sysexec: USING HARDCODED PATH /bin/init with fake argv\n");
-		file0 = validnamedup("/bin/init", 1);
+		static char *fake_argv[] = { "/boot/init", nil };
+		print("sysexec: USING HARDCODED PATH /boot/init with fake argv\n");
+		file0 = validnamedup("/boot/init", 1);
 		argp0 = fake_argv;
 		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
 	}
@@ -368,6 +369,7 @@ sysexec(va_list list)
 	}
 	align = BY2PG-1;
 	indir = 0;
+	is_elf = 0;
 	file = file0;
 	for(;;){
 		print("EXEC: opening file '%s'\n", file);
@@ -413,6 +415,65 @@ sysexec(va_list list)
 				}
 				break; /* for binary */
 			}
+
+			/* Check for ELF magic */
+			if(n >= sizeof(Elf64_Ehdr) &&
+			   u.buf[0] == ELF_MAGIC_0 && u.buf[1] == ELF_MAGIC_1 &&
+			   u.buf[2] == ELF_MAGIC_2 && u.buf[3] == ELF_MAGIC_3) {
+				Elf64_Ehdr *ehdr = (Elf64_Ehdr*)u.buf;
+				Elf64_Phdr phdr;
+				int i;
+				uintptr minva = ~0ULL, maxva_file = 0, maxva_mem = 0;
+
+				print("EXEC: detected ELF binary\n");
+
+				/* Verify it's a 64-bit little-endian executable for x86_64 */
+				if(ehdr->e_ident[4] != ELFCLASS64)
+					error("ELF: not 64-bit");
+				if(ehdr->e_ident[5] != ELFDATA2LSB)
+					error("ELF: not little-endian");
+				if(ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN)
+					error("ELF: not executable");
+				if(ehdr->e_machine != EM_X86_64)
+					error("ELF: not x86_64");
+
+				entry = ehdr->e_entry;
+				print("EXEC: ELF entry point = %#llux\n", entry);
+
+				/* Find the extent of loadable segments */
+				for(i = 0; i < ehdr->e_phnum; i++) {
+					devtab[tc->type]->read(tc, &phdr, sizeof(phdr),
+					                       ehdr->e_phoff + i * sizeof(phdr));
+					if(phdr.p_type == PT_LOAD) {
+						if(phdr.p_vaddr < minva)
+							minva = phdr.p_vaddr;
+						if(phdr.p_vaddr + phdr.p_filesz > maxva_file)
+							maxva_file = phdr.p_vaddr + phdr.p_filesz;
+						if(phdr.p_vaddr + phdr.p_memsz > maxva_mem)
+							maxva_mem = phdr.p_vaddr + phdr.p_memsz;
+					}
+				}
+
+				print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
+				print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
+
+				/* For Plan 9 exec compatibility:
+				 * - Treat all file-backed data as combined text+data
+				 * - BSS is the difference between memsz and filesz
+				 * Note: ELF addresses are absolute, but exec code expects
+				 * sizes relative to UTZERO, so we subtract minva */
+				text = maxva_file - minva;
+				data = 0;  /* Already included in text */
+				bss = maxva_mem - maxva_file;
+
+				print("EXEC: Computed text=%#llux data=%#llux bss=%#llux\n",
+				      text, data, bss);
+
+				/* ELF binaries use page alignment */
+				align = BY2PG - 1;
+				is_elf = 1;
+				break; /* for binary */
+			}
 		}
 
 		if(indir++)
@@ -437,10 +498,17 @@ sysexec(va_list list)
 		cclose(tc);
 	}
 
-	adata = (text+align) & ~align;
-	text -= UTZERO;
-	data = beswal(u.ehdr.exec.data);
-	bss = beswal(u.ehdr.exec.bss);
+	if(is_elf) {
+		/* For ELF, text/data/bss are already sizes, not addresses */
+		adata = (text+align) & ~align;
+		/* text, data, bss already set from ELF headers */
+	} else {
+		/* For a.out, text is end address, need to convert to size */
+		adata = (text+align) & ~align;
+		text -= UTZERO;
+		data = beswal(u.ehdr.exec.data);
+		bss = beswal(u.ehdr.exec.bss);
+	}
 	align = BY2PG-1;
 	
 	abss = (adata + data + align) & ~align;

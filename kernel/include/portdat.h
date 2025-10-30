@@ -417,6 +417,8 @@ struct Physseg
 	char	*name;			/* Attach name */
 	uintptr	pa;			/* Physical address */
 	uintptr	size;			/* Maximum segment size in bytes */
+	Physseg	*next;			/* Next in linked list */
+	Physseg	*prev;			/* Previous in linked list */
 };
 
 struct Sema

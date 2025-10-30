@@ -8,15 +8,17 @@
 extern void userpmap(uintptr va, uintptr pa, int perms);
 
 /*
- * Attachable segment types
+ * Attachable segment types - using dynamic allocation with doubly-linked list
  */
-static Physseg physseg[10] = {
-	{ SG_SHARED,	"shared",	0,	SEGMAXSIZE	},
-	{ SG_BSS,	"memory",	0,	SEGMAXSIZE	},
-	{ 0,		0,		0,	0		},
-};
-
+static Physseg *physseg_head = nil;	/* Head of doubly-linked list */
+static Physseg *physseg_tail = nil;	/* Tail of doubly-linked list */
 static Lock physseglock;
+
+/* Initial physical segments */
+static Physseg physseg_initial[] = {
+	{ SG_SHARED,	"shared",	0,	SEGMAXSIZE,	nil,	nil	},
+	{ SG_BSS,	"memory",	0,	SEGMAXSIZE,	nil,	nil	},
+};
 
 #define IHASHSIZE	64
 #define ihash(s)	imagealloc.hash[s%IHASHSIZE]
@@ -54,6 +56,8 @@ newimage(ulong pages)
 	if(pghsize > 1024)
 		pghsize >>= 4;
 
+	/* Allocate an Image and zero all fields; the lock bits must start cleared
+	   otherwise attachimage can spin on stale lock state. */
 	/*
 	 * Image objects embed lock state, idle list links, and the page hash table.
 	 * They must start zeroed so new callers don't see garbage lock bits and spin
@@ -73,6 +77,41 @@ newimage(ulong pages)
 void
 initseg(void)
 {
+	int i;
+	Physseg *ps, *prev_ps;
+	
+	/* Initialize the doubly-linked list with initial segments */
+	physseg_head = nil;
+	physseg_tail = nil;
+	prev_ps = nil;
+	
+	for(i = 0; i < nelem(physseg_initial); i++) {
+		ps = malloc(sizeof(Physseg));
+		if(ps != nil) {
+			/* Deep copy the Physseg structure */
+			ps->attr = physseg_initial[i].attr;
+			ps->name = malloc(strlen(physseg_initial[i].name) + 1);
+			if(ps->name != nil) {
+				strcpy(ps->name, physseg_initial[i].name);
+			} else {
+				free(ps);
+				continue;
+			}
+			ps->pa = physseg_initial[i].pa;
+			ps->size = physseg_initial[i].size;
+			ps->next = nil;
+			ps->prev = prev_ps;
+			
+			/* Update links */
+			if(prev_ps != nil) {
+				prev_ps->next = ps;
+			} else {
+				physseg_head = ps;  /* First element */
+			}
+			physseg_tail = ps;  /* Update tail */
+			prev_ps = ps;
+		}
+	}
 }
 
 Segment *
@@ -410,10 +449,12 @@ Image*
 attachimage(Chan *c, ulong pages)
 {
 	Image *i, **l;
-
+	int retry_count = 0;
+	
 retry:
+	retry_count++;
 	lock(&imagealloc);
-
+	
 	/*
 	 * Search the image cache for remains of the text from a previous
 	 * or currently running incarnation
@@ -424,6 +465,13 @@ retry:
 			goto found;
 		}
 	}
+	
+	/* Prevent infinite retry loop */
+	if(retry_count > 10) {
+		unlock(&imagealloc);
+		error(Enomem);
+	}
+	
 	if(imagealloc.nidle > conf.nimage
 	|| (i = newimage(pages)) == nil) {
 		unlock(&imagealloc);
@@ -531,7 +579,10 @@ putimage(Image *i)
 				l = &f->hash;
 			}
 		}
-		unlock(&imagealloc);
+		unlock(&imagealloc);The serial console never emits any characters because the architecture glue layer stubs out uartputs, the routine responsible for pushing bytes to the UART and the buffered console queues. The current implementation throws away both the string and its length, so every printk or kprintf call ends up writing to a no-op function and nothing ever reaches the console hardware.
+
+Consequence
+With the primary output path reduced to a stub, all higher-level console facilities (kernel boot logs, /dev/cons, and serial diagnostics) silently discard their data, which is why nothing appears on the console even though subsystems call the usual logging routines.
 	} else if(r == i->pgref) {
 		assert(i->pgref > 0);
 		assert(i->s == nil);
@@ -562,31 +613,32 @@ imagereclaim(ulong pages)
 {
 	ulong np;
 	Image *i;
-
+	
 	eqlock(&imagealloc.ireclaim);
 	
 	lock(&imagealloc);
 	np = 0;
-	while(np < pages || imagealloc.nidle > conf.nimage) {
+	/* Always try to reduce nidle to conf.nimage, regardless of pages requested */
+	while(imagealloc.nidle > conf.nimage) {
 		i = imagealloc.idle;
 		if(i == nil)
 			break;
 		incref(i);
 		unlock(&imagealloc);
-
+		
 		np += pagereclaim(i);
-
+		
 		lock(i);
 		busyimage(i);	/* force re-insert into idle list */
 		putimage(i);
-
+		
 		lock(&imagealloc);
 	}
 	imagealloc.pgidle -= np;
 	unlock(&imagealloc);
-
+	
 	qunlock(&imagealloc.ireclaim);
-
+	
 	return np;
 }
 
@@ -753,39 +805,92 @@ isoverlap(uintptr va, uintptr len)
 Physseg*
 addphysseg(Physseg* new)
 {
-	Physseg *ps;
-
+	Physseg *ps, *existing;
+	
 	/*
-	 * Check not already entered and there is room
-	 * for a new entry and the terminating null entry.
+	 * Check not already entered
 	 */
 	lock(&physseglock);
-	for(ps = physseg; ps->name; ps++){
+	
+	/* First check if it already exists */
+	for(ps = physseg_head; ps != nil; ps = ps->next){
 		if(strcmp(ps->name, new->name) == 0){
 			unlock(&physseglock);
-			return nil;
+			return ps;
 		}
 	}
-	if(ps-physseg >= nelem(physseg)-2){
+	
+	/* Allocate new entry */
+	existing = malloc(sizeof(Physseg));
+	if(existing == nil) {
 		unlock(&physseglock);
 		return nil;
 	}
-	*ps = *new;
+	
+	/* Copy the data */
+	existing->attr = new->attr;
+	existing->name = malloc(strlen(new->name) + 1);
+	if(existing->name == nil) {
+		free(existing);
+		unlock(&physseglock);
+		return nil;
+	}
+	strcpy(existing->name, new->name);
+	existing->pa = new->pa;
+	existing->size = new->size;
+	
+	/* Add to tail of doubly-linked list */
+	existing->next = nil;
+	existing->prev = physseg_tail;
+	if(physseg_tail != nil) {
+		physseg_tail->next = existing;
+	} else {
+		physseg_head = existing;  /* List was empty */
+	}
+	physseg_tail = existing;
+	
 	unlock(&physseglock);
-
-	return ps;
+	return existing;
 }
 
 Physseg*
 findphysseg(char *name)
 {
 	Physseg *ps;
-
-	for(ps = physseg; ps->name; ps++)
-		if(strcmp(ps->name, name) == 0)
+	
+	lock(&physseglock);
+	for(ps = physseg_head; ps != nil; ps = ps->next)
+		if(strcmp(ps->name, name) == 0) {
+			unlock(&physseglock);
 			return ps;
-
+		}
+	unlock(&physseglock);
+	
 	return nil;
+}
+
+/*
+ * Remove a Physseg entry from the doubly-linked list
+ * Note: This doesn't free the entry itself - caller must do that
+ */
+static void
+removephysseg(Physseg* entry)
+{
+	if(entry == nil)
+		return;
+		
+	if(entry->prev != nil)
+		entry->prev->next = entry->next;
+	else
+		physseg_head = entry->next;
+		
+	if(entry->next != nil)
+		entry->next->prev = entry->prev;
+	else
+		physseg_tail = entry->prev;
+		
+	entry->prev = nil;
+	entry->next = nil;
 }
 
 uintptr

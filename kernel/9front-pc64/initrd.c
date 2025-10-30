@@ -153,10 +153,15 @@ void
 initrd_register(void)
 {
 	struct initrd_file *f;
+	char *name;
 
 	for(f = initrd_root; f != nil; f = f->next) {
-		print("initrd: registering file with devroot\n");
-		addbootfile(f->name, f->data, f->size);
+		name = f->name;
+		/* Strip "bin/" prefix if present - files go into /boot/ directly */
+		if(strncmp(name, "bin/", 4) == 0)
+			name += 4;
+		print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
+		addbootfile(name, f->data, f->size);
 	}
 }
 

@@ -1306,6 +1306,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 	char *err;
 	char *name;
 
+	print("namec: looking up '%s' amode=%d omode=%d\n", aname, amode, omode);
+
 	if(aname[0] == '\0')
 		error("empty file name");
 	aname = validnamedup(aname, 1);
