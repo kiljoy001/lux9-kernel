@@ -73,16 +73,75 @@ prflush(void)
 			break;
 }
 
+static int
+isconsmarkup(int c)
+{
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+static char*
+filterconsolefmt(char *str, int *pn)
+{
+	char *buf;
+	int i, j, n;
+
+	n = *pn;
+	buf = nil;
+	j = 0;
+
+	for(i = 0; i < n; ){
+		if(str[i] == '%' && i+1 < n){
+			if(i+2 < n && str[i+2] == '%' && isconsmarkup((uchar)str[i+1])){
+				if(buf == nil){
+					buf = smalloc(n);
+					if(buf == nil)
+						return str;
+					if(i > 0)
+						memmove(buf, str, i);
+					j = i;
+				}
+				i += 3;
+				continue;
+			}
+			if(str[i+1] == '%'){
+				if(buf == nil){
+					buf = smalloc(n);
+					if(buf == nil)
+						return str;
+					if(i > 0)
+						memmove(buf, str, i);
+					j = i;
+				}
+				buf[j++] = '%';
+				i += 2;
+				continue;
+			}
+		}
+		if(buf != nil)
+			buf[j++] = str[i];
+		i++;
+	}
+
+	if(buf != nil){
+		*pn = j;
+		return buf;
+	}
+	return str;
+}
+
 static void
 kmesgputs(char *str, int n)
 {
 	uint nn, d;
+	char *clean;
+
+	clean = filterconsolefmt(str, &n);
 
 	ilock(&kmesg.lk);
 	/* take the tail of huge writes */
 	if(n > sizeof kmesg.buf){
 		d = n - sizeof kmesg.buf;
-		str += d;
+		clean += d;
 		n -= d;
 	}
 
@@ -96,10 +155,13 @@ kmesgputs(char *str, int n)
 	}
 
 	/* copy the data in */
-	memmove(kmesg.buf+nn, str, n);
+	memmove(kmesg.buf+nn, clean, n);
 	nn += n;
 	kmesg.n = nn;
 	iunlock(&kmesg.lk);
+
+	if(clean != str)
+		free(clean);
 }
 
 /*
@@ -112,13 +174,19 @@ static void
 putstrn0(char *str, int n, int usewrite)
 {
 	int m;
-	char *t;
+	char *t, *out;
 	int (*wq)(Queue*, void*, int);
+	int len;
+	char *clean;
+
+	clean = filterconsolefmt(str, &n);
+	out = clean;
+	len = n;
 
 	/*
 	 *  how many different output devices do we need?
 	 */
-	kmesgputs(str, n);
+	kmesgputs(out, len);
 
 	/*
 	 *  if someone is reading /dev/kprint,
@@ -131,28 +199,33 @@ putstrn0(char *str, int n, int usewrite)
 	 */
 	wq = usewrite && islo() ? qwrite : qiwrite;
 	if(kprintoq != nil && !qisclosed(kprintoq))
-		(*wq)(kprintoq, str, n);
+		(*wq)(kprintoq, out, len);
 	else if(screenputs != nil)
-		screenputs(str, n);
+		screenputs(out, len);
 
 	if(serialoq == nil){
-		uartputs(str, n);
+		uartputs(out, len);
+		if(clean != str)
+			free(clean);
 		return;
 	}
 
-	while(n > 0) {
-		t = memchr(str, '\n', n);
+	while(len > 0) {
+		t = memchr(out, '\n', len);
 		if(t != nil) {
-			m = t-str;
-			(*wq)(serialoq, str, m);
+			m = t-out;
+			(*wq)(serialoq, out, m);
 			(*wq)(serialoq, "\r\n", 2);
-			n -= m+1;
-			str = t+1;
+			len -= m+1;
+			out = t+1;
 		} else {
-			(*wq)(serialoq, str, n);
+			(*wq)(serialoq, out, len);
 			break;
 		}
 	}
+
+	if(clean != str)
+		free(clean);
 }
 
 void
