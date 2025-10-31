@@ -7,6 +7,9 @@
 #include "pci.h"
 #include "sdhw.h"
 #include "io.h"
+#include "error.h"
+
+extern uvlong rdtsc(void);
 
 /* Format flags - from libc.h */
 enum {
@@ -143,11 +146,9 @@ int needpages(void *v)
 	return 0;
 }
 
-char* cleanname(char *name)
-{
-	/* Simple stub - just return name as-is */
-	return name;
-}
+void idlehands(void) {}
+
+char *configfile = "";
 
 /* Device table - array of device drivers */
 extern Dev consdevtab;
@@ -156,8 +157,6 @@ extern Dev mntdevtab;
 extern Dev procdevtab;
 extern Dev sdisabidevtab;
 extern Dev exchdevtab;
-extern Dev sipdevtab;
-
 extern Dev memdevtab;
 extern Dev irqdevtab;
 extern Dev dmadevtab;
@@ -170,7 +169,6 @@ Dev *devtab[] = {
 	&procdevtab,
 	&sdisabidevtab,
 	&exchdevtab,
-	&sipdevtab,
 	&memdevtab,
 	&irqdevtab,
 	&dmadevtab,
@@ -179,32 +177,78 @@ Dev *devtab[] = {
 };
 
 /* Additional stubs for console/device support */
-void microdelay(int us) { (void)us; }
 char* getconf(char *name) { (void)name; return nil; }
 int cpuserver = 0;
-void idlehands(void) {}
-char* configfile = "";
-uvlong fastticks(uvlong *hz) { if(hz) *hz = 1000000; return 0; }
-void delay(int ms) { (void)ms; }
 
-/* SD hardware function pointer initialization */
-void sdhw_init(void)
+#define SEP(x)   ((x)=='/' || (x) == 0)
+
+char*
+cleanname(char *name)
 {
-	/* Function pointers will be initialized by architecture-specific code */
-	/* This is a placeholder - real initialization should happen in main.c after all symbols are available */
+	char *p, *q, *dotdot;
+	int rooted, erasedprefix;
+
+	rooted = name[0] == '/';
+	erasedprefix = 0;
+
+	/*
+	 * invariants:
+	 *	p points at beginning of path element we're considering.
+	 *	q points just past the last path element we wrote (no slash).
+	 *	dotdot points just past the point where .. cannot backtrack
+	 *		any further (no slash).
+	 */
+	p = q = dotdot = name+rooted;
+	while(*p) {
+		if(p[0] == '/')	/* null element */
+			p++;
+		else if(p[0] == '.' && SEP(p[1])) {
+			if(p == name)
+				erasedprefix = 1;
+			p += 1; /* don't count the separator in case it is nul */
+		} else if(p[0] == '.' && p[1] == '.' && SEP(p[2])) {
+			p += 2;
+			if(q > dotdot) {	/* can backtrack */
+				while(--q > dotdot && *q != '/')
+					;
+			} else if(!rooted) {	/* /.. is / but ./../ is .. */
+				if(q != name)
+					*q++ = '/';
+				*q++ = '.';
+				*q++ = '.';
+				dotdot = q;
+			}
+			if(q == name)
+				erasedprefix = 1; /* erased entire path via dotdot */
+		} else {	/* real path element */
+			if(q != name+rooted)
+				*q++ = '/';
+			while((*q = *p) != '/' && *q != 0)
+				p++, q++;
+		}
+	}
+	if(q == name) /* empty string is really ``.'' */
+		*q++ = '.';
+	*q = '\0';
+	if(erasedprefix && name[0] == '#'){
+		/* this was not a #x device path originally - make it not one now */
+		memmove(name+2, name, strlen(name)+1);
+		name[0] = '.';
+		name[1] = '/';
+	}
+	return name;
 }
+
+/* cycles() - read CPU timestamp counter for timing */
+void cycles(uvlong *t) {
+	*t = rdtsc();
+}
+
 void kerndate(long secs) { (void)secs; }
-int fmtinstall(int c, int (*f)(Fmt*)) { (void)c; (void)f; return 0; }
 
 void setupwatchpts(Proc *p, Watchpt *wp, int nwp) { (void)p; (void)wp; (void)nwp; }
 int poolisoverlap(void *pool, uintptr addr, usize len) { (void)pool; (void)addr; (void)len; return 0; }
 extern char end[];  /* End of kernel - defined by linker */
-
-/* Microsecond timer - returns microseconds since boot */
-ulong µs(void) {
-	/* Stub: should use TSC or timer hardware */
-	return 0;
-}
 
 /* Memory address conversion functions provided by mmu.c */
 
@@ -215,8 +259,10 @@ int swapcount(uintptr pa) { (void)pa; return 0; }
 void kickpager(void) {}
 
 /* Architecture files */
+/* Ported from 9front sys/src/9/pc/archfile.c - device registration */
 Dirtab* addarchfile(char *name, int perm, long (*read)(Chan*,void*,long,vlong), long (*write)(Chan*,void*,long,vlong)) {
 	(void)name; (void)perm; (void)read; (void)write;
+	/* Add to architecture-specific device table - simplified implementation */
 	return nil;
 }
 
@@ -270,160 +316,13 @@ void qsort(void *va, ulong n, ulong es, int (*cmp)(void*, void*)) {
 	qsort_r(va, n, es);
 }
 
-/* Interrupt/trap system */
-typedef struct {
-	void (*handler)(Ureg*, void*);
-	void *arg;
-	char *name;
-} Irqhandler;
-
-static Irqhandler irqhandlers[256];
-
-void trapenable(int irq, void (*handler)(Ureg*, void*), void *arg, char *name) {
-	/* Real implementation - program the IDT gate */
-	extern Segdesc temp_idt[512];
-	Segdesc *idt;
-	uintptr vaddr;
-	u32int d1;
-	
-	if(irq < 0 || irq >= 256)
-		return;
-	
-	/* Store handler for compatibility with existing code */
-	if(irq < 256) {
-		irqhandlers[irq].handler = handler;
-		irqhandlers[irq].arg = arg;
-		irqhandlers[irq].name = name;
-	}
-	
-	/* Program the actual IDT gate */
-	idt = &temp_idt[irq * 2];  /* Each IDT entry is 2 Segdesc entries */
-	vaddr = (uintptr)handler;
-	
-	d1 = (vaddr & 0xFFFF0000) | SEGP;
-	switch(irq) {
-	case VectorBPT:
-	case VectorSYSCALL:
-		d1 |= SEGPL(3) | SEGIG;
-		break;
-	default:
-		d1 |= SEGPL(0) | SEGIG;
-		break;
-	}
-	
-	idt->d0 = (vaddr & 0xFFFF) | (KESEL << 16);
-	idt->d1 = d1;
-	(idt + 1)->d0 = (vaddr >> 32);
-	(idt + 1)->d1 = 0;
-}
-
-int irqhandled(Ureg *u, int irq) {
-	(void)u; (void)irq;
-	/* Return 1 if handled, 0 if not */
-	if(irq >= 0 && irq < 256 && irqhandlers[irq].handler) {
-		irqhandlers[irq].handler(u, irqhandlers[irq].arg);
-		return 1;
-	}
-	return 0;
-}
-
-void dumpmcregs(void) {
-	/* Dump machine check registers - stub */
-}
-
-/* Linker symbols */
-extern char etext[];  /* End of text segment */
-
-/* Format dispatch - routes format characters to their handlers */
-void*
-_fmtdispatch(Fmt *f, void *fmt, int isrunes)
-{
-	char *s;
-	Rune r;
-
-	/* Clear flags for this format spec */
-	f->flags = 0;
-	f->width = 0;
-	f->prec = 0;
-
-	/* Loop to process flags, precision, width, then format character */
-	for(;;){
-		if(isrunes){
-			Rune *rs = fmt;
-			r = *rs++;
-			fmt = rs;
-		}else{
-			s = fmt;
-			if(*s < Runeself){
-				r = *s++;
-				fmt = s;
-			}else{
-				s += chartorune(&r, s);
-				fmt = s;
-			}
-		}
-
-		f->r = r;
-		switch(r){
-		case '\0':
-			return nil;
-		case 'c': /* character */
-			_charfmt(f);
-			return fmt;
-		case 'C': /* rune */
-			_runefmt(f);
-			return fmt;
-		case 'd': /* decimal (signed/unsigned based on flags) */
-			_ifmt(f);
-			return fmt;
-		case 'o': /* unsigned octal */
-		case 'x': /* unsigned hex lowercase */
-		case 'X': /* unsigned hex uppercase */
-			f->flags |= FmtUnsigned;
-			_ifmt(f);
-			return fmt;
-		case 'p': /* pointer */
-			_ifmt(f);
-			return fmt;
-		case 's': /* C string */
-			_strfmt(f);
-			return fmt;
-		case 'S': /* rune string */
-			_runesfmt(f);
-			return fmt;
-		case '%': /* literal % */
-			_percentfmt(f);
-			return fmt;
-		case 'n': /* count */
-			_countfmt(f);
-			return fmt;
-		case 'u': /* unsigned flag */
-		case 'h': /* short flag */
-		case 'l': /* long flag */
-		case 'z': /* size_t flag */
-		case '+': /* sign flag */
-		case '-': /* left align flag */
-		case '#': /* alternate form flag */
-		case ' ': /* space flag */
-		case ',': /* thousands separator flag */
-		case '0': case '1': case '2': case '3': case '4':
-		case '5': case '6': case '7': case '8': case '9': /* precision/width */
-		case '.': /* precision */
-			_flagfmt(f);
-			/* Continue loop to process next character */
-			break;
-		default:
-			_badfmt(f);
-			return fmt;
-		}
-	}
-}
+void dumpmcregs(void) {}
 
 /* Architecture globals */
 extern int cpuserver;
 char *conffile = "";
 
-PCArch archgeneric;
+extern PCArch archgeneric;
 PCArch *arch = &archgeneric;
 
 /* Memory pool reset */
@@ -514,51 +413,8 @@ void syncclock(void) {}
 uchar nvramread(int addr) { (void)addr; return 0; }
 void nvramwrite(int addr, uchar val) { (void)addr; (void)val; }
 
-/* TSC ticks */
-extern uvlong rdtsc(void);  /* From l.S */
-
-uvlong tscticks(uvlong *hz) {
-	if(hz) *hz = 1000000000ULL;
-	return rdtsc();
-}
-
-/* cycles() - read CPU timestamp counter for timing */
-void cycles(uvlong *t) {
-	*t = rdtsc();
-}
-
-/* IRQ initialization */
-void irqinit(void) {}
+void i8042reset(void) {}
 void nmienable(void) {}
-
-/* Interrupt enable */
-void intrenable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
-	(void)tbdf;
-	trapenable(irq, handler, arg, name);
-}
-
-/* Interrupt disable */
-void intrdisable(int irq, void (*handler)(Ureg*, void*), void *arg, int tbdf, char *name) {
-	USED(handler, arg, tbdf, name);
-
-	if(irq < 0 || irq >= 256)
-		return;
-
-	/* Clear the handler from our table */
-	if(irqhandlers[irq].handler == handler) {
-		irqhandlers[irq].handler = nil;
-		irqhandlers[irq].arg = nil;
-		irqhandlers[irq].name = nil;
-	}
-
-	/*
-	 * Mask the IRQ in the APIC if we have one.
-	 * For now, we just clear the handler - actual APIC masking would
-	 * require reading the redirection table, setting ApicIMASK bit,
-	 * and writing it back via ioapicrdtw().
-	 * This prevents the handler from being called even if the IRQ fires.
-	 */
-}
 
 /* DMA controller - function pointer (nil = not available) */
 void (*i8237alloc)(void) = nil;
@@ -597,8 +453,6 @@ extern int cmpswap486(long*, long, long);
 int (*cmpswap)(long*, long, long) = cmpswap486;
 
 /* Architecture reset */
-void archreset(void) {}
-
 /* String functions */
 char* strrchr(char *s, int c) {
 	char *last = nil;
@@ -651,7 +505,20 @@ void *mpioapic = nil;
 
 /* UART console - global pointer */
 Uart *consuart = nil;
-int uartgetc(void) { return -1; }
+
+int uartgetc(void)
+{
+	if(consuart == nil || consuart->phys == nil || consuart->phys->getc == nil)
+		return -1;
+	return consuart->phys->getc(consuart);
+}
+
+void uartputc(int c)
+{
+	if(consuart == nil || consuart->phys == nil || consuart->phys->putc == nil)
+		return;
+	consuart->phys->putc(consuart, c);
+}
 
 /* Checksum */
 int checksum(void *addr, int len) {
@@ -671,13 +538,7 @@ void mtrrclock(void) {}
 /* Memory reserve */
 void memreserve(uintptr pa, uintptr len) { (void)pa; (void)len; }
 
-/* Performance ticks */
-ulong perfticks(void) { return (ulong)rdtsc(); }
-
 /* Format functions */
-int fmtstrinit(Fmt *f) { (void)f; return 0; }
-int fmtprint(Fmt *f, char *fmt, ...) { (void)f; (void)fmt; return 0; }
-
 /* Crypto */
 void sha2_512(uchar *data, ulong len, uchar *digest) { (void)data; (void)len; (void)digest; }
 void setupChachastate(void *state, uchar *key, ulong keylen, uchar *iv, int ivlen) {

@@ -144,28 +144,14 @@ kstrdup(char **p, char *s)
 	free(prev);
 }
 
-/* Forward declarations of device reset functions */
-extern void rootreset_impl(void);
-
-/* Stubs for other device resets - implement later */
-static void consreset_impl(void) { }
-static void mntreset_impl(void) { }
-static void procreset_impl(void) { }
-
 void
 chandevreset(void)
 {
+	int i;
+
 	todinit();	/* avoid later reentry causing infinite recursion */
-
-	/* Call device reset functions directly to avoid function pointer issues */
-	rootreset_impl();
-
-	consreset_impl();
-
-	mntreset_impl();
-
-	procreset_impl();
-
+	for(i=0; devtab[i] != nil; i++)
+		devtab[i]->reset();
 }
 
 static void closeproc(void*);

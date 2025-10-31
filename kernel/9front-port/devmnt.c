@@ -42,7 +42,7 @@ enum
 
 static struct Mntalloc
 {
-	Lock;
+	Lock	lock;
 	Mnt*	list;		/* Mount devices in use */
 	Mnt*	mntfree;	/* Free list */
 	Mntrpc*	rpcfree;
@@ -208,19 +208,19 @@ mntversion(Chan *c, char *version, int msize, int returnlen)
 	}
 
 	/* now build Mnt associated with this connection */
-	lock(&mntalloc);
+	lock(&mntalloc.lock);
 	m = mntalloc.mntfree;
 	if(m != nil)
 		mntalloc.mntfree = m->list;
 	else {
-		unlock(&mntalloc);
+		unlock(&mntalloc.lock);
 		m = malloc(sizeof(Mnt));
 		if(m == nil) {
 			qfree(q);
 			free(v);
 			exhausted("mount devices");
 		}
-		lock(&mntalloc);
+		lock(&mntalloc.lock);
 	}
 	m->list = mntalloc.list;
 	mntalloc.list = m;
@@ -228,7 +228,7 @@ mntversion(Chan *c, char *version, int msize, int returnlen)
 	m->id = mntalloc.id++;
 	m->q = q;
 	m->msize = f.msize;
-	unlock(&mntalloc);
+	unlock(&mntalloc.lock);
 
 	if(returnlen > 0)
 		memmove(version, f.version, k);	/* length was checked above */
@@ -370,9 +370,9 @@ mntchan(void)
 	Chan *c;
 
 	c = devattach('M', 0);
-	lock(&mntalloc);
+	lock(&mntalloc.lock);
 	c->dev = mntalloc.id++;
-	unlock(&mntalloc);
+	unlock(&mntalloc.lock);
 
 	if(c->mchan != nil)
 		panic("mntchan non-zero %p", c->mchan);
@@ -581,7 +581,7 @@ muxclose(Mnt *m)
 	qfree(m->q);
 	m->q = nil;
 
-	lock(&mntalloc);
+	lock(&mntalloc.lock);
 	l = &mntalloc.list;
 	for(f = *l; f != nil; f = f->list) {
 		if(f == m) {
@@ -592,7 +592,7 @@ muxclose(Mnt *m)
 	}
 	m->list = mntalloc.mntfree;
 	mntalloc.mntfree = m;
-	unlock(&mntalloc);
+	unlock(&mntalloc.lock);
 }
 
 static void
@@ -774,7 +774,7 @@ mntproc(void *a)
 
 	m = p->m;
 	for(;;){
-		tsleep(p, mntprocwork, p, 500);
+		tsleep(&p->rendez, mntprocwork, p, 500);
 
 		lock(m);
 		if(p->f == nil){
@@ -823,7 +823,7 @@ mntdefer(void (*f)(Mntrpc*, void*), Mntrpc *r, void *a)
 			kproc("mntproc", mntproc, p);
 		} else {
 			unlock(m);
-			wakeup(p);
+			wakeup(&p->rendez);
 		}
 		return 1;
 	}
@@ -841,7 +841,7 @@ rahproc(Mntrpc *r, void *a)
 		poperror();
 	}
 	r->done = 2;
-	wakeup(rah);
+	wakeup(&rah->rendez);
 }
 
 static int
@@ -881,7 +881,7 @@ mntrahinit(Mntrah *rah)
 	for(i=0; i<nelem(rah->r); i++){
 		if((r = rah->r[i]) != nil){
 			while(!rahdone(r))
-				sleep(rah, rahdone, r);
+				sleep(&rah->rendez, rahdone, r);
 			rah->r[i] = nil;
 			mntfree(r);
 		}
@@ -942,7 +942,7 @@ mntrahread(Mntrah *rah, Chan *c, uchar *buf, long len, vlong off)
 	tot = 0;
 	while(len > 0 && (r = rahfindrpc(rah, off)) != nil){
 		while(!rahdone(r))
-			sleep(rah, rahdone, r);
+			sleep(&rah->rendez, rahdone, r);
 
 		switch(r->reply.type){
 		default:
@@ -1298,20 +1298,20 @@ mntralloc(Chan *c)
 		new = malloc(sizeof(Mntrpc));
 		if(new == nil)
 			exhausted("mount rpc header");
-		lock(&mntalloc);
+		lock(&mntalloc.lock);
 		new->request.tag = alloctag();
 	} else {
-		lock(&mntalloc);
+		lock(&mntalloc.lock);
 		new = mntalloc.rpcfree;
 		if(new == nil) {
-			unlock(&mntalloc);
+			unlock(&mntalloc.lock);
 			goto Alloc;
 		}
 		mntalloc.rpcfree = new->list;
 		mntalloc.nrpcfree--;
 	}
 	mntalloc.nrpcused++;
-	unlock(&mntalloc);
+	unlock(&mntalloc.lock);
 	new->c = c;
 	new->done = 0;
 	new->flushed = nil;
@@ -1325,17 +1325,17 @@ mntfree(Mntrpc *r)
 {
 	freeb(r->w);
 	freeblist(r->b);
-	lock(&mntalloc);
+	lock(&mntalloc.lock);
 	mntalloc.nrpcused--;
 	if(mntalloc.nrpcfree < 32) {
 		r->list = mntalloc.rpcfree;
 		mntalloc.rpcfree = r;
 		mntalloc.nrpcfree++;
-		unlock(&mntalloc);
+		unlock(&mntalloc.lock);
 		return;
 	}
 	freetag(r->request.tag);
-	unlock(&mntalloc);
+	unlock(&mntalloc.lock);
 	free(r);
 }
 

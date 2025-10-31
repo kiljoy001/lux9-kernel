@@ -43,9 +43,12 @@ borrow_to_pageown_error(enum BorrowError err)
 void
 pageowninit(void)
 {
-	/* Nothing to do - borrowchecker is already initialized */
-	memset(&pageownpool, 0, sizeof(pageownpool));
-	print("pageown: using borrowchecker for ownership tracking\n");
+	/* Ported from 9front - allocate page descriptor pool */
+	pageownpool.npages = 256;
+	pageownpool.pages = xalloc(pageownpool.npages * sizeof(struct PageOwner));
+	if(pageownpool.pages == nil) {
+		panic("pageowninit: failed to allocate page descriptor pool");
+	}
 }
 
 /*

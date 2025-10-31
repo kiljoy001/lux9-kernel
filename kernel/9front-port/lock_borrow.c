@@ -1,4 +1,3 @@
-
 #include "u.h"
 #include "portlib.h"
 #include "mem.h"
@@ -77,7 +76,12 @@ borrow_lock(BorrowLock *bl)
 void
 borrow_unlock(BorrowLock *bl)
 {
-	if(up != nil)
-		borrow_release(up, bl->key);
+	if(up != nil) {
+		/* Check return value of borrow_release */
+		if(borrow_release(up, bl->key) != BORROW_OK) {
+			/* Don't unlock if borrow_release failed */
+			return;
+		}
+	}
 	unlock(&bl->lock);
 }

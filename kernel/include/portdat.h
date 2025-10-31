@@ -103,7 +103,7 @@ struct RWLock
 
 struct Alarms
 {
-	QLock;
+	QLock	lock;
 	Proc	*head;
 };
 
@@ -279,7 +279,7 @@ struct Mhead
 
 struct Mntrah
 {
-	Rendez;
+	Rendez	rendez;
 
 	ulong	vers;
 
@@ -292,7 +292,7 @@ struct Mntrah
 
 struct Mntproc
 {
-	Rendez;
+	Rendez	rendez;
 
 	Mnt	*m;
 	Mntrpc	*r;
@@ -362,7 +362,7 @@ struct Page
 
 struct Swapalloc
 {
-	Lock;				/* Free map lock */
+	Lock	lock;			/* Free map lock */
 	int	free;			/* currently free swap pages */
 	uchar*	swmap;			/* Base of swap map in memory */
 	uchar*	alloc;			/* Round robin allocator */
@@ -423,7 +423,7 @@ struct Physseg
 
 struct Sema
 {
-	Rendez;
+	Rendez	rendez;
 	long	*addr;
 	int	waiting;
 	Sema	*next;
@@ -458,7 +458,7 @@ struct Segment
 
 struct Segio
 {
-	QLock;
+	QLock	lock;
 	Rendez	cmdwait;
 	Rendez	replywait;
 
@@ -971,7 +971,7 @@ struct Uart
 	int	special;		/* internal kernel device */
 	Uart*	next;			/* list of allocated uarts */
 
-	QLock;
+	QLock	lock;
 	int	type;			/* ?? */
 	int	dev;
 	int	opens;

@@ -579,10 +579,6 @@ putimage(Image *i)
 				l = &f->hash;
 			}
 		}
-		unlock(&imagealloc);The serial console never emits any characters because the architecture glue layer stubs out uartputs, the routine responsible for pushing bytes to the UART and the buffered console queues. The current implementation throws away both the string and its length, so every printk or kprintf call ends up writing to a no-op function and nothing ever reaches the console hardware.
-
-Consequence
-With the primary output path reduced to a stub, all higher-level console facilities (kernel boot logs, /dev/cons, and serial diagnostics) silently discard their data, which is why nothing appears on the console even though subsystems call the usual logging routines.
 	} else if(r == i->pgref) {
 		assert(i->pgref > 0);
 		assert(i->s == nil);

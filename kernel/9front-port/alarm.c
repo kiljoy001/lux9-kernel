@@ -55,7 +55,7 @@ procalarm(ulong time)
 	if(when == 0)
 		when = 1;
 
-	qlock(&alarms);
+	qlock(&alarms.lock);
 	l = &alarms.head;
 	for(f = *l; f; f = f->palarm) {
 		if(up == f){
@@ -74,7 +74,7 @@ procalarm(ulong time)
 	up->palarm = f;
 	*l = up;
 	up->alarm = when;
-	qunlock(&alarms);
+	qunlock(&alarms.lock);
 
 	return old;
 }

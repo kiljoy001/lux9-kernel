@@ -69,7 +69,7 @@ randomseed(void*)
 	timerdel(up);
 
 	sha2_512(s->buf, sizeof(s->buf), s->buf, &s->ds);
-	setupChachastate(rs, s->buf, 32, s->buf+32, 12, 20);
+setupChachastate(&rs->chacha, s->buf, 32, s->buf+32, 12, 20);
 	qunlock(&rs->qlock);
 
 	secfree(s);
