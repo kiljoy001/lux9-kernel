@@ -4,28 +4,24 @@
 #include "dat.h"
 #include "fns.h"
 
-extern uvlong rdtsc(void);
-
 uvlong
 tscticks(uvlong *hz)
 {
 	if(hz != nil)
-		*hz = 1000000000ULL;
-	return rdtsc();
+		*hz = m->cpuhz;
+
+	cycles(&m->tscticks);
+	return m->tscticks;
 }
 
 uvlong
 fastticks(uvlong *hz)
 {
-	if(arch->fastclock != nil)
-		return arch->fastclock(hz);
-	if(hz != nil)
-		*hz = 1000000ULL;
-	return 0;
+	return arch->fastclock(hz);
 }
 
 ulong
 µs(void)
 {
-	return fastticks2us(fastticks(nil));
+	return fastticks2us((*arch->fastclock)(nil));
 }

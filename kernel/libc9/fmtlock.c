@@ -1,19 +1,16 @@
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
+#include <u.h>
+#include <libc.h>
 
-static Lock fmtlock;
+static Lock fmtl;
 
 void
 _fmtlock(void)
 {
-	lock(&fmtlock);
+	lock(&fmtl);
 }
 
 void
 _fmtunlock(void)
 {
-	unlock(&fmtlock);
+	unlock(&fmtl);
 }

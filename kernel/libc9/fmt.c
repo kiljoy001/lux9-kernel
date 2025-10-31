@@ -11,7 +11,7 @@ typedef struct Convfmt Convfmt;
 struct Convfmt
 {
 	int	c;
-	volatile Fmts	fmt;	/* for spin lock in fmtfmt; avoids race due to write order */
+	volatile	Fmts	fmt;	/* for spin lock in fmtfmt; avoids race due to write order */
 };
 
 struct
@@ -20,8 +20,6 @@ struct
 	int	nfmt;
 	Convfmt	fmt[Maxfmt];
 } fmtalloc;
-
-extern int errfmt(Fmt*);
 
 static Convfmt knownfmt[] = {
 	' ',	_flagfmt,
@@ -66,7 +64,7 @@ _fmtinstall(int c, Fmts f)
 
 	if(c<=0 || c>Runemax)
 		return -1;
-	if(f == nil)
+	if(!f)
 		f = _badfmt;
 
 	ep = &fmtalloc.fmt[fmtalloc.nfmt];
@@ -196,7 +194,7 @@ _fmtdispatch(Fmt *f, void *fmt, int isrunes)
 			}
 			goto numflag;
 		}
-		n = fmtfmt(r)(f);
+		n = (*fmtfmt(r))(f);
 		if(n < 0)
 			return nil;
 		if(n == 0)

@@ -86,46 +86,6 @@ uintptr getcallerpc(void *v)
 	return (uintptr)__builtin_return_address(1);
 }
 
-/* Memory pool allocation - forward to xalloc for now */
-extern void* xalloc(ulong);
-extern void xfree(void*);
-
-void* poolalloc(void *pool, ulong size)
-{
-	(void)pool;
-	return xalloc(size);
-}
-
-void poolfree(void *pool, void *ptr)
-{
-	(void)pool;
-	xfree(ptr);
-}
-
-void* poolallocalign(void *pool, ulong size, ulong align, long offset, ulong span)
-{
-	(void)pool; (void)align; (void)offset; (void)span;
-	return xalloc(size);
-}
-
-void* poolrealloc(void *pool, void *ptr, ulong size)
-{
-	(void)pool;
-	/* Simple realloc - allocate new, copy, free old */
-	void *new = xalloc(size);
-	if(new && ptr) {
-		memmove(new, ptr, size);
-		xfree(ptr);
-	}
-	return new;
-}
-
-ulong poolmsize(void *pool, void *ptr)
-{
-	(void)pool; (void)ptr;
-	return 0; /* Unknown size */
-}
-
 /* Error strings */
 char Etoolong[] = "name too long";
 
@@ -247,7 +207,6 @@ void cycles(uvlong *t) {
 void kerndate(long secs) { (void)secs; }
 
 void setupwatchpts(Proc *p, Watchpt *wp, int nwp) { (void)p; (void)wp; (void)nwp; }
-int poolisoverlap(void *pool, uintptr addr, usize len) { (void)pool; (void)addr; (void)len; return 0; }
 extern char end[];  /* End of kernel - defined by linker */
 
 /* Memory address conversion functions provided by mmu.c */
@@ -330,8 +289,6 @@ extern PCArch archgeneric;
 PCArch *arch = &archgeneric;
 
 /* Memory pool reset */
-void poolreset(void *pool) { (void)pool; }
-
 /* Configuration write */
 void writeconf(void) {}
 
@@ -432,9 +389,6 @@ void links(void) {}
 /* Environment */
 void ksetenv(char *name, char *val, int conf) { (void)name; (void)val; (void)conf; }
 void setconfenv(void) {}
-
-/* Formatting */
-void quotefmtinstall(void) {}
 
 /* Memory initialization - meminit stub, meminit0 in boot.c */
 void meminit(void) {}
