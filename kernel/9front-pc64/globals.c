@@ -256,7 +256,11 @@ extern char end[];  /* End of kernel - defined by linker */
 Image *swapimage = nil;  /* Global variable, not function */
 void putswap(Page *p) { (void)p; }
 int swapcount(uintptr pa) { (void)pa; return 0; }
-void kickpager(void) {}
+void
+kickpager(void)
+{
+	wakeup(&swapalloc.r);
+}
 
 /* Architecture files */
 /* Ported from 9front sys/src/9/pc/archfile.c - device registration */
