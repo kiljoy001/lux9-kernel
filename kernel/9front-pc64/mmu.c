@@ -164,6 +164,7 @@ dbg_getpte(uintptr va)
 /* Helper: allocate and zero a page table from reserved pool */
 static u64int *next_pt = nil;
 static int pt_count = 0;
+static Lock allocptlock;
 
 static u64int*
 alloc_pt(void)
@@ -172,17 +173,16 @@ alloc_pt(void)
 	u64int *pt;
 	int i;
 
-	if(next_pt == nil) {
+	lock(&allocptlock);
+	if(next_pt == nil)
 		next_pt = cpu0pt_pool;  /* Start of PT pool */
-	}
+	if(pt_count >= 512)
+		panic("alloc_pt: cpu0pt_pool exhausted");
 
 	pt = next_pt;
 	next_pt += 512;  /* Each PT is 512 entries (4KB) */
 	pt_count++;
-
-	/* Panic if we run out of preallocated page tables */
-	if(pt_count > 512)
-		panic("alloc_pt: cpu0pt_pool exhausted");
+	unlock(&allocptlock);
 
 	/* Zero the page table */
 	for(i = 0; i < 512; i++)

@@ -149,6 +149,13 @@ rdtsc:
     orq %rdx, %rax
     ret
 
+.global _cycles
+_cycles:
+    rdtsc
+    movl %eax, 0(%rdi)
+    movl %edx, 4(%rdi)
+    ret
+
 /* GDT/IDT */
 .global lgdt
 lgdt:
@@ -166,6 +173,18 @@ ltr:
     ret
 
 /* Memory barriers */
+.global mb386
+mb386:
+    xorl %eax, %eax
+    cpuid
+    ret
+
+.global mb586
+mb586:
+    xorl %eax, %eax
+    cpuid
+    ret
+
 .global mfence
 mfence:
     mfence

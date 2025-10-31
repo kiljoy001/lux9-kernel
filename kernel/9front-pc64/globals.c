@@ -113,6 +113,7 @@ char *configfile = "";
 /* Device table - array of device drivers */
 extern Dev consdevtab;
 extern Dev rootdevtab;
+extern Dev archdevtab;
 extern Dev mntdevtab;
 extern Dev procdevtab;
 extern Dev sdisabidevtab;
@@ -124,6 +125,7 @@ extern Dev pcidevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
+	&archdevtab,
 	&consdevtab,
 	&mntdevtab,
 	&procdevtab,
@@ -200,7 +202,9 @@ cleanname(char *name)
 }
 
 /* cycles() - read CPU timestamp counter for timing */
-void cycles(uvlong *t) {
+void
+cycles(uvlong *t)
+{
 	*t = rdtsc();
 }
 
@@ -219,14 +223,6 @@ void
 kickpager(void)
 {
 	wakeup(&swapalloc.r);
-}
-
-/* Architecture files */
-/* Ported from 9front sys/src/9/pc/archfile.c - device registration */
-Dirtab* addarchfile(char *name, int perm, long (*read)(Chan*,void*,long,vlong), long (*write)(Chan*,void*,long,vlong)) {
-	(void)name; (void)perm; (void)read; (void)write;
-	/* Add to architecture-specific device table - simplified implementation */
-	return nil;
 }
 
 /* Random number - must match portlib.h signature */
@@ -284,9 +280,6 @@ void dumpmcregs(void) {}
 /* Architecture globals */
 extern int cpuserver;
 char *conffile = "";
-
-extern PCArch archgeneric;
-PCArch *arch = &archgeneric;
 
 /* Memory pool reset */
 /* Configuration write */

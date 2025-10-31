@@ -44,13 +44,6 @@ bootargsinit(void)
 }
 
 void
-ioinit(void)
-{
-	/* I/O port permissions - we're kernel, we have access */
-	/* This would set up IOPB in TSS if needed */
-}
-
-void
 meminit0(void)
 {
 	struct limine_memmap_response *memmap_response;
@@ -106,17 +99,4 @@ meminit0(void)
 	conf.nswap = 0;
 	conf.nswppo = 0;
 	conf.ialloc = 0;
-}
-
-void
-archinit(void)
-{
-	/* Architecture-specific initialization */
-	/* Set up arch structure */
-	arch->id = "Lux9 PC64";
-	arch->ident = nil;
-	arch->reset = nil;
-	arch->intrinit = nil;
-	arch->clockinit = nil;
-	arch->clockenable = nil;
 }
