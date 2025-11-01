@@ -111,6 +111,7 @@ xinit(void)
 		 */
 	}
 	print("DEBUG: calling xhole_user_init");
+		xhole_user_init();
 
 	print("xinit: initialization complete\n");
 }
