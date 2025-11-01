@@ -101,6 +101,11 @@ putcr4:
     movq %rdi, %cr4
     ret
 
+.global wbinvd
+wbinvd:
+    wbinvd
+    ret
+
 /* CPUID */
 .global cpuid
 cpuid:
@@ -1161,3 +1166,59 @@ vectortable:
     .byte 0xfe
     call _strayintr
     .byte 0xff
+
+.global halt
+halt:
+    cli
+    cmpl $0, nrdy(%rip)
+    jne 1f
+    sti
+    hlt
+    ret
+1:
+    sti
+    ret
+
+.global mwait
+mwait:
+    movq %rdi, %rax
+    movl (%rax), %ecx
+    testl %ecx, %ecx
+    jne 2f
+    xor %ecx, %ecx
+    xor %edx, %edx
+    .byte 0x0f,0x01,0xc8
+    movl (%rax), %ecx
+    testl %ecx, %ecx
+    jne 2f
+    xor %eax, %eax
+    xor %edx, %edx
+    .byte 0x0f,0x01,0xc9
+2:
+    ret
+
+.global rdrandbuf
+rdrandbuf:
+    movq %rdi, %r8          /* buffer pointer */
+    movq %rsi, %rcx         /* byte count */
+    movq %rcx, %rdx
+    shrq $2, %rcx
+    jz 4f
+3:
+    rdrand %eax
+    jnc 3b
+    movl %eax, (%r8)
+    addq $4, %r8
+    loop 3b
+4:
+    movq %rdx, %rcx
+    andq $3, %rcx
+    jz 6f
+5:
+    rdrand %eax
+    jnc 5b
+    movb %al, (%r8)
+    incq %r8
+    loop 5b
+6:
+    ret

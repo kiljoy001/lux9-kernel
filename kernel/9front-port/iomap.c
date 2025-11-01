@@ -16,7 +16,7 @@ struct IOMap
 
 static struct
 {
-	Lock;
+	Lock	lock;
 	IOMap	*m;
 	IOMap	*free;
 	IOMap	maps[32];	/* some initial free maps */
@@ -88,7 +88,7 @@ ioreservewin(ulong port, ulong win, ulong size, ulong align, char *tag)
 	if(port >= win || win - port < size)
 		return -1;
 
-	lock(&iomap);
+	lock(&iomap.lock);
 	for(l = &iomap.m; (m = *l) != nil; l = &m->next){
 		if(m->end <= port)
 			continue;
@@ -96,13 +96,13 @@ ioreservewin(ulong port, ulong win, ulong size, ulong align, char *tag)
 			break;
 		port = m->end;
 		port = (port+align) & ~align;
-		if(port >= win || win - port < size){
-			unlock(&iomap);
-			return -1;
-		}
+        if(port >= win || win - port < size){
+            unlock(&iomap.lock);
+            return -1;
+        }
 	}
 	insert(l, port, port + size, tag, 1);
-	unlock(&iomap);
+	unlock(&iomap.lock);
 
 	return port;
 }
@@ -123,7 +123,7 @@ ioalloc(ulong port, ulong size, ulong align, char *tag)
 	if(size == 0 || port & ~iomap.mask || (~port & iomap.mask) < (size-1 & iomap.mask))
 		return -1;
 
-	lock(&iomap);
+	lock(&iomap.lock);
 	for(l = &iomap.m; (m = *l) != nil; l = &m->next){
 		if(m->end <= port)
 			continue;
@@ -144,11 +144,11 @@ ioalloc(ulong port, ulong size, ulong align, char *tag)
 		print("ioalloc: %lux - %lux %s: clashes with: %lux - %lux %s\n",
 			port, port+size-1, tag,
 			m->start, m->end-1, m->tag);
-		unlock(&iomap);
+		unlock(&iomap.lock);
 		return -1;
 	}
 	insert(l, port, port + size, tag, 0);
-	unlock(&iomap);
+	unlock(&iomap.lock);
 
 	return port;
 }
@@ -161,7 +161,7 @@ iofree(ulong port)
 	if(port & ~iomap.mask)
 		return;
 
-	lock(&iomap);
+    lock(&iomap.lock);
 	for(l = &iomap.m; (m = *l) != nil; l = &m->next){
 		if(m->start == port){
 			*l = m->next;
@@ -172,7 +172,7 @@ iofree(ulong port)
 		if(m->start > port)
 			break;
 	}
-	unlock(&iomap);
+    unlock(&iomap.lock);
 }
 
 int
@@ -197,11 +197,11 @@ iounused(ulong start, ulong end)
 static long
 iomapread(Chan*, void *a, long n, vlong offset)
 {
-	char buf[32];
-	IOMap *m;
-	int i;
+    char buf[32];
+    IOMap *m;
+    int i;
 
-	lock(&iomap);
+    lock(&iomap.lock);
 	i = 0;
 	for(m = iomap.m; m != nil; m = m->next){
 		i = snprint(buf, sizeof(buf), "%8lux %8lux %-12.12s\n",
@@ -209,8 +209,8 @@ iomapread(Chan*, void *a, long n, vlong offset)
 		offset -= i;
 		if(offset < 0)
 			break;
-	}
-	unlock(&iomap);
+    }
+    unlock(&iomap.lock);
 	if(offset >= 0)
 		return 0;
 	if(n > -offset)

@@ -4,6 +4,7 @@ Dirtab*	addarchfile(char*, int, long(*)(Chan*,void*,long,vlong), long(*)(Chan*,v
 void	archinit(void);
 void	archreset(void);
 void	bootargsinit(void);
+void	bootconfinit(void);
 uintptr	cankaddr(uintptr);
 int	checksum(void *, int);
 void	clockintr(Ureg*, void*);
@@ -14,7 +15,7 @@ void	cpuid(int, int, ulong regs[]);
 void	fpuinit(void);
 int	cpuidentify(void);
 void	cpuidprint(void);
-extern void	cycles(uvlong*);
+extern void	(*cycles)(uvlong*);
 void	delay(int);
 void	delayloop(int);
 void*	dmabva(int);

@@ -46,6 +46,10 @@ Proc *up = nil;
 
 /* HHDM offset - stored in early boot, guaranteed to survive CR3 switch */
 uintptr saved_limine_hhdm_offset = 0;
+uintptr hhdm_base = 0;
+
+/* HHDM base for the hhdm.h interface - initialized from Limine offset */
+
 
 /* Global kernel data structures */
 struct Swapalloc swapalloc;
@@ -106,12 +110,11 @@ int needpages(void *v)
 	return 0;
 }
 
-void idlehands(void) {}
-
 char *configfile = "";
 
 /* Device table - array of device drivers */
 extern Dev consdevtab;
+extern Dev envdevtab;
 extern Dev rootdevtab;
 extern Dev archdevtab;
 extern Dev mntdevtab;
@@ -123,10 +126,12 @@ extern Dev irqdevtab;
 extern Dev dmadevtab;
 extern Dev pcidevtab;
 
+
 Dev *devtab[] = {
 	&rootdevtab,
 	&archdevtab,
 	&consdevtab,
+	&envdevtab,
 	&mntdevtab,
 	&procdevtab,
 	&sdisabidevtab,
@@ -139,7 +144,6 @@ Dev *devtab[] = {
 };
 
 /* Additional stubs for console/device support */
-char* getconf(char *name) { (void)name; return nil; }
 int cpuserver = 0;
 
 #define SEP(x)   ((x)=='/' || (x) == 0)
@@ -201,16 +205,10 @@ cleanname(char *name)
 	return name;
 }
 
-/* cycles() - read CPU timestamp counter for timing */
-void
-cycles(uvlong *t)
-{
-	*t = rdtsc();
-}
+/* cycles pointer initialised in devarch/mp code */
 
 void kerndate(long secs) { (void)secs; }
 
-void setupwatchpts(Proc *p, Watchpt *wp, int nwp) { (void)p; (void)wp; (void)nwp; }
 extern char end[];  /* End of kernel - defined by linker */
 
 /* Memory address conversion functions provided by mmu.c */
@@ -275,15 +273,11 @@ void qsort(void *va, ulong n, ulong es, int (*cmp)(void*, void*)) {
 	qsort_r(va, n, es);
 }
 
-void dumpmcregs(void) {}
-
 /* Architecture globals */
 extern int cpuserver;
 char *conffile = "";
 
 /* Memory pool reset */
-/* Configuration write */
-void writeconf(void) {}
 
 /* VMX (virtualization) stubs */
 void vmxshutdown(void) {}
@@ -294,81 +288,15 @@ void* rampage(void) {
 	return xallocz(BY2PG, 1);  /* 1 = zero the memory */
 }
 
-/* CPU identification */
-int cpuidentify(void) {
-	ulong regs[4];
+/* CPU identification provided by devarch.c */
 
-	/* Debug: entering function */
-
-	if(m == nil)
-		return 0;
-
-	/* Debug: about to call cpuid */
-
-	cpuid(0, 0, regs);
-
-	/* Debug output after cpuid */
-
-	m->cpuidax = regs[0];
-
-	/* Debug output after cpuidax write */
-
-	/* Build vendor string - cpuid returns it in EBX, EDX, ECX order */
-	m->cpuidid[0] = (regs[1] >> 0) & 0xFF;
-	m->cpuidid[1] = (regs[1] >> 8) & 0xFF;
-	m->cpuidid[2] = (regs[1] >> 16) & 0xFF;
-	m->cpuidid[3] = (regs[1] >> 24) & 0xFF;
-	m->cpuidid[4] = (regs[3] >> 0) & 0xFF;
-	m->cpuidid[5] = (regs[3] >> 8) & 0xFF;
-	m->cpuidid[6] = (regs[3] >> 16) & 0xFF;
-	m->cpuidid[7] = (regs[3] >> 24) & 0xFF;
-	m->cpuidid[8] = (regs[2] >> 0) & 0xFF;
-	m->cpuidid[9] = (regs[2] >> 8) & 0xFF;
-	m->cpuidid[10] = (regs[2] >> 16) & 0xFF;
-	m->cpuidid[11] = (regs[2] >> 24) & 0xFF;
-	m->cpuidid[12] = 0;
-
-	cpuid(1, 0, regs);
-	m->cpuidax = regs[0];
-	m->cpuidcx = regs[2];
-	m->cpuiddx = regs[3];
-
-	m->cpuidfamily = (regs[0] >> 8) & 0xF;
-	if(m->cpuidfamily == 15){
-		m->cpuidfamily += (regs[0] >> 20) & 0xFF;
-	}
-	m->cpuidmodel = (regs[0] >> 4) & 0xF;
-	if(m->cpuidfamily >= 6)
-		m->cpuidmodel |= (regs[0] >> 12) & 0xF0;
-	m->cpuidstepping = regs[0] & 0xF;
-
-	/* Check vendor string byte by byte */
-	if(m->cpuidid[0] == 'A' && m->cpuidid[1] == 'u' && m->cpuidid[2] == 't' &&
-	   m->cpuidid[3] == 'h' && m->cpuidid[4] == 'e' && m->cpuidid[5] == 'n' &&
-	   m->cpuidid[6] == 't' && m->cpuidid[7] == 'i' && m->cpuidid[8] == 'c' &&
-	   m->cpuidid[9] == 'A' && m->cpuidid[10] == 'M' && m->cpuidid[11] == 'D')
-		m->cpuidtype = "amd64";
-	else if(m->cpuidid[0] == 'G' && m->cpuidid[1] == 'e' && m->cpuidid[2] == 'n' &&
-	        m->cpuidid[3] == 'u' && m->cpuidid[4] == 'i' && m->cpuidid[5] == 'n' &&
-	        m->cpuidid[6] == 'e' && m->cpuidid[7] == 'I' && m->cpuidid[8] == 'n' &&
-	        m->cpuidid[9] == 't' && m->cpuidid[10] == 'e' && m->cpuidid[11] == 'l')
-		m->cpuidtype = "intel";
-	else
-		m->cpuidtype = "unknown";
-
-	return 1;
-}
-void cpuidprint(void) {}
-
-/* Clock synchronization */
-void syncclock(void) {}
+/* Clock synchronization provided by mp.c */
 
 /* NVRAM access */
 uchar nvramread(int addr) { (void)addr; return 0; }
 void nvramwrite(int addr, uchar val) { (void)addr; (void)val; }
 
 void i8042reset(void) {}
-void nmienable(void) {}
 
 /* DMA controller - function pointer (nil = not available) */
 void (*i8237alloc)(void) = nil;
@@ -379,10 +307,6 @@ void bootscreeninit(void) {}
 /* Links function - defined by bootlinks */
 void links(void) {}
 
-/* Environment */
-void ksetenv(char *name, char *val, int conf) { (void)name; (void)val; (void)conf; }
-void setconfenv(void) {}
-
 /* Memory initialization - meminit stub, meminit0 in boot.c */
 void meminit(void) {}
 
@@ -390,18 +314,9 @@ void meminit(void) {}
 void ramdiskinit(void) {}
 
 /* Coherence function pointer - implementation in l.S */
-extern void coherence_impl(void);
-void (*coherence)(void) = coherence_impl;
-
 /* Additional global function pointers and buffers */
-int (*_pcmspecial)(char*, ISAConf*) = nil;
-void (*_pcmspecialclose)(int) = nil;
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;
-
-/* cmpswap - compare and swap function pointer */
-extern int cmpswap486(long*, long, long);
-int (*cmpswap)(long*, long, long) = cmpswap486;
 
 /* Architecture reset */
 /* String functions */
@@ -420,19 +335,11 @@ char Edirseek[] = "directory seek";
 char Eismtpt[] = "is a mount point";
 char Enegoff[] = "negative offset";
 
-/* Environment */
-void envcpy(Egrp *to, Egrp *from) { (void)to; (void)from; }
-void closeegrp(Egrp *eg) { (void)eg; }
-Egrp* newegrp(void) { return nil; }
-
 /* Swap */
 void dupswap(Page *p) { (void)p; }
 
 /* Signal search */
 void* sigsearch(char *name, int len) { (void)name; (void)len; return nil; }
-
-/* Timer */
-void timerset(Tval tv) { (void)tv; }
 
 /* System call table - global array of syscall name strings */
 int nosyscall(Sargs *args) { (void)args; return -1; }
@@ -441,18 +348,6 @@ void sysexit(Sargs *args, uintptr *ret) { (void)args; (void)ret; }
 
 /* DTrace */
 void dtracytick(Ureg *u) { (void)u; }
-
-/* Multiprocessor tables */
-void mpinit(void) {}
-void mpshutdown(void) {}
-void mpintrinit(int irq) { (void)irq; }
-void mpintrassign(void) {}
-int mpisabus = -1;
-int mpeisabus = -1;
-int mpbuslast = 0;
-void *mpbus = nil;
-void *mpapic = nil;
-void *mpioapic = nil;
 
 /* UART console - global pointer */
 Uart *consuart = nil;
@@ -482,12 +377,6 @@ int checksum(void *addr, int len) {
 
 /* Delay loop */
 void delayloop(int ms) { (void)ms; }
-
-/* MTRR */
-void mtrrclock(void) {}
-
-/* Memory reserve */
-void memreserve(uintptr pa, uintptr len) { (void)pa; (void)len; }
 
 /* Format functions */
 /* Crypto */

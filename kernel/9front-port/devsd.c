@@ -43,6 +43,8 @@ static int ndevs = 0;
 static Dirtab *sddir;
 static int sdnfiles;
 
+static void sdreset(void);
+
 static SDev *sdevs;
 
 static void
@@ -323,7 +325,7 @@ sdbwrite(Chan *c, Block *bp, ulong offset)
 Dev sdisabidevtab = {
  .dc = 'S',
  .name = "sd",
- .reset = nil,
+ .reset = sdreset,
  .init = sdinit,
  .shutdown = nil,
  .attach = sdattach,
@@ -341,3 +343,13 @@ Dev sdisabidevtab = {
  .power = nil,
  .config = nil,
 };
+
+static void
+sdreset(void)
+{
+	/*
+	 * Proper controller enumeration still pending port from 9front.
+	 * Provide a no-op reset hook so chandevreset() can advance.
+	 */
+	print("sd: reset stub - controller discovery disabled\n");
+}

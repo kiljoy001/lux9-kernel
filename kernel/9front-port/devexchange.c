@@ -304,10 +304,12 @@ exchwstat(Chan *c, uchar *dp, int n)
 	return 0;
 }
 
+static void exchreset(void);
+
 Dev exchdevtab = {
 	.dc = L'X',
 	.name = "exchange",
-	.reset = nil,
+	.reset = exchreset,
 	.init = exchinit,
 	.shutdown = nil,
 	.attach = exchattach,
@@ -325,3 +327,9 @@ Dev exchdevtab = {
 	.power = nil,
 	.config = nil,
 };
+
+static void
+exchreset(void)
+{
+	/* Nothing to prime yet; hook exists to satisfy chandevreset(). */
+}

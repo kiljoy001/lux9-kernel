@@ -41,7 +41,7 @@ SECTIONS
         idtaddr = .;
         . += 0x3000;  /* IDT is 512 entries * 16 bytes = 8KB, round to 12KB */
 
-        . = 0x12000;  /* CPU0PML4 at KZERO+0x13000 */
+        . = 0x13000;  /* CPU0PML4 at KZERO+0x13000 */
         cpu0pml4 = .;
         . += 0x1000;
         cpu0pdp = .;

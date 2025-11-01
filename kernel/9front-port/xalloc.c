@@ -53,6 +53,7 @@ struct Xalloc
 };
 
 static Xalloc	xlists;
+static void xhole_user_init(void);
 
 void
 xinit(void)
@@ -109,6 +110,8 @@ xinit(void)
 		 * will be given to user by pageinit()
 		 */
 	}
+	print("DEBUG: calling xhole_user_init");
+
 	print("xinit: initialization complete\n");
 }
 
@@ -428,4 +431,45 @@ xalloc_test(void)
 	
 	print("xalloc_test: freed all allocations\n");
 	print("xalloc_test: test completed successfully\n");
+}
+
+/*
+ * Initialize user virtual address space holes for HHDM model
+ * In HHDM, all physical memory is already mapped, so holes represent
+ * available virtual address space, not unmapped memory regions
+ */
+static void
+xhole_user_init(void)
+{
+	Hole *h;
+	/* Create holes for user virtual address space */
+	uintptr user_start = 0;
+	uintptr user_size = conf.upages * BY2PG;  /* Actual user memory */
+	uintptr user_end = user_size;  /* Size based on available memory */
+
+	print("xhole_user_init: creating user holes for HHDM model\n");
+	print("xhole_user_init: user range [0x%016llx, 0x%016llx) - %lld bytes\n",
+		(unsigned long long)user_start, (unsigned long long)user_end, (unsigned long long)user_size);
+
+	/* Get free hole descriptor from flist */
+	ilock(&xlists.lk);
+
+	h = xlists.flist;
+	if(h == nil){
+		iunlock(&xlists.lk);
+		panic("xhole_user_init: no free hole descriptors");
+	}
+
+	xlists.flist = h->link;
+
+	/* Create a large hole covering all user virtual address space */
+	h->addr = user_start;
+	h->top = user_end;
+	h->size = user_size;
+	h->link = xlists.table;
+	xlists.table = h;
+
+	iunlock(&xlists.lk);
+
+	print("xhole_user_init: initialized %lld bytes of user virtual space\n", (unsigned long long)user_size);
 }

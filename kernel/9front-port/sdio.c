@@ -97,14 +97,3 @@ ledw(void *p, int on)
 	USED(p, on);
 	/* LED write activity - not implemented */
 }
-
-/*
- * pcmspecial - PCM special handling stub
- */
-int
-pcmspecial(char *idstr, void *p)
-{
-	USED(idstr, p);
-	return 0;
-}
-

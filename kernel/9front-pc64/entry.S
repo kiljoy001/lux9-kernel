@@ -25,6 +25,7 @@ limine_base_revision:
     .quad memmap_request
     .quad framebuffer_request
     .quad bootloader_info_request
+    .quad executable_file_request
     .quad module_request
     .quad kernel_address_request
 
@@ -81,6 +82,16 @@ module_request:
     .quad 0                   /* response pointer (filled by bootloader) */
     .quad 0                   /* internal module count */
     .quad 0                   /* internal modules */
+
+/* Executable (kernel) file request */
+.align 8
+executable_file_request:
+    .quad 0xc7b1dd30df4c8b88  /* Limine common magic [0] */
+    .quad 0x0a82e883a194f07b  /* Limine common magic [1] */
+    .quad 0xad97e90e83f1ed67  /* Executable file request ID [2] */
+    .quad 0x31eb5d1c5ff23b69  /* Executable file request ID [3] */
+    .quad 0                   /* revision */
+    .quad 0                   /* response pointer (filled by bootloader) */
 
 /* Kernel Address request */
 .align 8
@@ -213,6 +224,7 @@ _start:
 .global limine_framebuffer
 .global limine_hhdm
 .global limine_module
+.global limine_executable_file
 .global limine_kernel_address
 
 limine_bootloader_info:
@@ -225,6 +237,8 @@ limine_hhdm:
     .quad hhdm_request
 limine_module:
     .quad module_request
+limine_executable_file:
+    .quad executable_file_request
 limine_kernel_address:
     .quad kernel_address_request
 
