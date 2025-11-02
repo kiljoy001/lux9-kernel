@@ -40,6 +40,10 @@ bootargsinit(void)
 
 	/* Store HHDM offset in early boot memory before CR3 switch */
 	extern uintptr saved_limine_hhdm_offset;
+
+	/* Initialize hhdm_base for hhdm.h interface compatibility */
+	extern uintptr hhdm_base;
+	hhdm_base = limine_hhdm_offset;
 	saved_limine_hhdm_offset = limine_hhdm_offset;
 }
 
