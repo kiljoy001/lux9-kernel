@@ -3,7 +3,8 @@
 #include	"mem.h"
 
 #include	"fns.h"
-#include	"io.h"
+#include	"hhdm.h"
+#include	"hhdm.h"
 
 extern void uartputs(char*, int);
 
@@ -56,17 +57,10 @@ ensure_phys_range(void)
 		max_physaddr = (uintptr)1 << 52;	/* 4PB default guard */
 }
 
-static inline uintptr
-hhdm_virt(uintptr pa)
-{
-	return pa + saved_limine_hhdm_offset;
-}
+/* Unified HHDM implementation moved to include/hhdm.h */
 
-static inline uintptr
-hhdm_phys(uintptr va)
-{
-	return va - saved_limine_hhdm_offset;
-}
+
+
 
 static int
 is_hhdm_va(uintptr va)
@@ -93,7 +87,6 @@ Segdesc gdt[NGDT] =
 [UE32SEG]	EXEC32SEGM(3),		/* user code 32 bit*/
 [UDSEG]		DATA32SEGM(3),		/* user data/stack 32 bit */
 [UESEG]		EXECSEGM(3),		/* user code 64 bit */
-[UD64SEG]	DATASEGM(3),		/* user data/stack 64 bit */
 };
 
 enum {
@@ -174,8 +167,10 @@ alloc_pt(void)
 	int i;
 
 	lock(&allocptlock);
-	if(next_pt == nil)
+	if(next_pt == nil){
 		next_pt = cpu0pt_pool;  /* Start of PT pool */
+		uartputs("alloc_pt: initialized pool\n", 27);
+	}
 	if(pt_count >= 512)
 		panic("alloc_pt: cpu0pt_pool exhausted");
 
@@ -188,26 +183,29 @@ alloc_pt(void)
 	for(i = 0; i < 512; i++)
 		pt[i] = 0;
 
+	uartputs("alloc_pt: allocated page table\n", 31);
 	return pt;
 }
 
-/* Helper: get physical address */
+/* Helper: get physical address
+ * Option A: Linear mapping with small Limine offset for kernel addresses
+ * This is used during page table setup while still on Limine's page tables */
 static u64int
 virt2phys(void *virt)
 {
-	extern uintptr saved_limine_hhdm_offset;
-	u64int addr = (u64int)virt;
 	extern u64int limine_kernel_phys_base;
+	uintptr va = (uintptr)virt;
 
-	if(is_hhdm_va(addr))
-		return hhdm_phys(addr);
-	if(addr >= KZERO) {
-		/* KZERO region maps to kernel physical base */
-		u64int kernel_phys = (limine_kernel_phys_base == 0) ? 0x7f8fa000 : limine_kernel_phys_base;
-		return addr - KZERO + kernel_phys;
-	} else {
-		return addr;  /* Already physical */
-	}
+	/* Kernel addresses at KZERO - need offset since Limine loaded us arbitrarily */
+	if(va >= KZERO)
+		return (va - KZERO) + limine_kernel_phys_base;
+
+	/* VMAP addresses - simple subtraction like 9front */
+	if(va >= VMAP)
+		return va - VMAP;
+
+	/* Already physical */
+	return va;
 }
 
 /* Map a virtual address range to physical with 2MB pages */
@@ -220,46 +218,81 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 	u64int *pdp, *pd;
 	u64int pdp_phys, pd_phys;
 
+	dbghex("map_range_2mb: virt_start (before align) = ", virt_start);
+
 	virt_start &= ~0x1FFFFFULL;  /* Align to 2MB */
 	phys_start &= ~0x1FFFFFULL;
 	size = (size + 0x1FFFFF) & ~0x1FFFFFULL;
 
+	dbghex("map_range_2mb: virt_start (after align) = ", virt_start);
+
 	virt_end = virt_start + size;
 
-	for(virt = virt_start, phys = phys_start; virt < virt_end; virt += 2*MiB, phys += 2*MiB) {
+	/* Special check: always print for debugging */
+	if(virt_start == 0xffffffffffe00000ULL){
+		uartputs("!!! EXACT MATCH 0xffffffffffe00000 !!!\n", 40);
+		if(virt_end == 0){
+			uartputs("!!! virt_end == 0, WRAPAROUND CONFIRMED !!!\n", 45);
+		}
+	}
+
+	/* Handle address space wrap: if virt_end wrapped to a small value, we're mapping to end of address space */
+	int wraps = (virt_end < virt_start);
+	if(wraps){
+		uartputs("map_range_2mb: *** WRAPAROUND DETECTED! ***\n", 44);
+	}
+
+	/* Debug first iteration */
+	uartputs("map_range_2mb: about to enter loop\n", 35);
+	int first_iter = 1;
+
+	for(virt = virt_start, phys = phys_start; wraps ? (virt >= virt_start) : (virt < virt_end); virt += 2*MiB, phys += 2*MiB) {
+		if(first_iter){
+			first_iter = 0;
+			dbghex("map_range_2mb: virt (loop var) = ", virt);
+		}
+
 		/* Calculate indices */
 		pml4_idx = (virt >> 39) & 0x1FF;
 		pdp_idx = (virt >> 30) & 0x1FF;
 		pd_idx = (virt >> 21) & 0x1FF;
 
+		if(first_iter == 0){
+			dbghex("map_range_2mb: pml4_idx = ", pml4_idx);
+			first_iter = -1;
+		}
+
 		/* Get or create PDP */
 		if((pml4[pml4_idx] & PTEVALID) == 0) {
 			pdp = alloc_pt();
 			pdp_phys = virt2phys(pdp);
-			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE;
+			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
 		} else {
 			pdp_phys = pml4[pml4_idx] & ~0xFFF;
-			if(pdp_phys < 0x400000)
-				pdp = (u64int*)(pdp_phys + KZERO);
-			else
-				pdp = (u64int*)hhdm_virt(pdp_phys);
+			pdp = (u64int*)hhdm_virt(pdp_phys);
 		}
 
 		/* Get or create PD */
 		if((pdp[pdp_idx] & PTEVALID) == 0) {
 			pd = alloc_pt();
 			pd_phys = virt2phys(pd);
-			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE;
+			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
 		} else {
 			pd_phys = pdp[pdp_idx] & ~0xFFF;
-			if(pd_phys < 0x400000)
-				pd = (u64int*)(pd_phys + KZERO);
-			else
-				pd = (u64int*)hhdm_virt(pd_phys);
+			pd = (u64int*)hhdm_virt(pd_phys);
 		}
 
 		/* Map 2MB page directly in PD */
 		pd[pd_idx] = phys | perms;  /* perms should include PTESIZE */
+	}
+
+	/* Debug: verify PML4 entries were actually set */
+	uartputs("map_range_2mb: checking PML4 after mapping\n", 43);
+	for(int idx = 0; idx < 512; idx++){
+		if(pml4[idx] & PTEVALID){
+			uartputs("  PML4 entry is valid\n", 24);
+			break;
+		}
 	}
 }
 
@@ -286,80 +319,39 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 		if((pml4[pml4_idx] & PTEVALID) == 0) {
 			pdp = alloc_pt();
 			pdp_phys = virt2phys(pdp);
-			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE;
+			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
 		} else {
 			pdp_phys = pml4[pml4_idx] & ~0xFFF;
 			/* Our page tables are in KZERO range, existing ones might be anywhere */
-			if(pdp_phys < 0x400000)
-				pdp = (u64int*)(pdp_phys + KZERO);
-			else
-				pdp = (u64int*)hhdm_virt(pdp_phys);
+			pdp = (u64int*)hhdm_virt(pdp_phys);
 		}
 
 		/* Get or create PD */
 		if((pdp[pdp_idx] & PTEVALID) == 0) {
 			pd = alloc_pt();
 			pd_phys = virt2phys(pd);
-			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE;
+			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
 		} else {
 			pd_phys = pdp[pdp_idx] & ~0xFFF;
-			if(pd_phys < 0x400000)
-				pd = (u64int*)(pd_phys + KZERO);
-			else
-				pd = (u64int*)hhdm_virt(pd_phys);
+			pd = (u64int*)hhdm_virt(pd_phys);
 		}
 
 		/* Get or create PT */
 		if((pd[pd_idx] & PTEVALID) == 0) {
 			pt = alloc_pt();
 			pt_phys = virt2phys(pt);
-			pd[pd_idx] = pt_phys | PTEVALID | PTEWRITE;
+			pd[pd_idx] = pt_phys | PTEVALID | PTEWRITE | PTEACCESSED;
 		} else {
 			pt_phys = pd[pd_idx] & ~0xFFF;
-			if(pt_phys < 0x400000)
-				pt = (u64int*)(pt_phys + KZERO);
-			else
-				pt = (u64int*)hhdm_virt(pt_phys);
+			pt = (u64int*)hhdm_virt(pt_phys);
 		}
 
-		/* Map the page */
+		/* Map 4KB page in PT */
 		pt[pt_idx] = phys | perms;
 	}
 }
 
-static void
-map_hhdm_region(u64int *pml4, u64int phys_start, u64int size)
-{
-	u64int phys = phys_start;
-	u64int end = phys_start + size;
-	u64int virt = hhdm_virt(phys);
-	u64int perms_small = PTEVALID | PTEWRITE | PTEGLOBAL;
-	u64int perms_large = perms_small | PTESIZE;
-
-	/* map leading unaligned portion with 4KB pages */
-	if((phys & (PGLSZ(1) - 1)) != 0){
-		u64int chunk = PGLSZ(1) - (phys & (PGLSZ(1) - 1));
-		if(phys + chunk > end)
-			chunk = end - phys;
-		map_range(pml4, virt, phys, chunk, perms_small);
-		phys += chunk;
-		virt = hhdm_virt(phys);
-	}
-
-	/* map bulk with 2MB pages */
-	u64int aligned = (end - phys) & ~(PGLSZ(1) - 1);
-	if(aligned != 0){
-		map_range_2mb(pml4, virt, phys, aligned, perms_large);
-		phys += aligned;
-		virt = hhdm_virt(phys);
-	}
-
-	/* map trailing remainder */
-	if(phys < end)
-		map_range(pml4, virt, phys, end - phys, perms_small);
-}
-
-/* Setup our own page tables - SINGLE SOURCE OF TRUTH */
+/* Setup our own page tables with linear RAM mapping at KZERO */
 void
 setuppagetables(void)
 {
@@ -368,66 +360,156 @@ setuppagetables(void)
 	int i;
 	extern char end[];
 
+	uartputs("setuppagetables: ENTRY\n", 23);
+
 	/* Linker-provided symbols - declared in lib.h as char[] */
 
 
 	/* Use OUR page tables from linker script - completely independent of Limine */
 	extern u64int cpu0pml4[];
 
+	uartputs("setuppagetables: setting pml4 = cpu0pml4\n", 42);
 	pml4 = cpu0pml4;
+	uartputs("setuppagetables: pml4 set\n", 26);
+	uartputs("setuppagetables: about to set next_pt\n", 39);
 	next_pt = nil;
+	uartputs("setuppagetables: pt_count = 0\n", 31);
 	pt_count = 0;
+	uartputs("setuppagetables: calling virt2phys(pml4)\n", 41);
 	pml4_phys = virt2phys(pml4);
+	uartputs("setuppagetables: pml4_phys computed\n", 37);
 
+	uartputs("setuppagetables: about to clear PML4\n", 37);
 	/* Clear OUR PML4 to start fresh */
 	for(i = 0; i < 512; i++)
 		pml4[i] = 0;
+	uartputs("setuppagetables: PML4 cleared\n", 30);
 
+	/* 9front style: Map ALL physical memory at KZERO
+	 * This means:
+	 *   physical 0 → KZERO+0
+	 *   physical X → KZERO+X
+	 * Then PADDR(va) = va - KZERO (simple!)
+	 * And KADDR(pa) = pa + KZERO (simple!)
+	 */
 
-	/* Map kernel at KZERO to its ACTUAL physical load address from Limine */
-	extern u64int limine_kernel_phys_base;
-	u64int kernel_phys;
+	/* Map physical memory at KZERO
+	 * 9front expects: physical 0 → KZERO+0, physical X → KZERO+X
+	 * This makes PADDR(va) = va - KZERO and KADDR(pa) = pa + KZERO work correctly.
+	 * Map 2GB of physical memory starting from address 0. */
+	u64int kernel_map_size = 2ULL * 1024 * 1024 * 1024;  /* Map 2GB */
 
-	/* Get the physical base from Limine */
-	if(limine_kernel_phys_base == 0) {
-		/* Fallback - this should not happen in normal operation */
-		kernel_phys = 0x7f8fa000;  /* From "limine: Physical base: 0x7f8fa000" */
-		print("mmu: WARNING: using fallback kernel physical base\n");
-	} else {
-		kernel_phys = limine_kernel_phys_base;
+	uartputs("setuppagetables: mapping 2GB physical at KZERO\n", 46);
+
+	/* Map physical memory 0-2GB to KZERO */
+	for(u64int pa = 0; pa < kernel_map_size; pa += PGLSZ(1)) {
+		u64int va = KZERO + pa;
+		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
+	uartputs("setuppagetables: 2GB mapped at KZERO\n", 37);
 
-	/* Map the kernel image at KZERO */
-	u64int kernel_size = ((uintptr)&kend - KZERO + BY2PG - 1) & ~(BY2PG - 1);
-	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
-	/* Mirror the kernel image into the HHDM so KADDR() stays valid post-switch */
-	map_range(pml4, hhdm_virt(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
-
-	/* Identity-map the first 2MB for early firmware interactions */
-	map_range(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
-	/* Provide HHDM access to the low 2MB (warm-reset vector, AP trampoline, etc.) */
-	map_range(pml4, hhdm_virt(0), 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL);
-
-	/* Map physical memory into the HHDM using conf.mem */
+	/* Ensure conf.mem is populated */
+	uartputs("setuppagetables: calling ensure_phys_range\n", 45);
 	ensure_phys_range();
-	for(i = 0; i < nelem(conf.mem); i++){
-		Confmem *cm = &conf.mem[i];
-		if(cm->npage == 0)
-			continue;
-		map_hhdm_region(pml4, cm->base, (u64int)cm->npage * BY2PG);
+	uartputs("setuppagetables: ensure_phys_range complete\n", 45);
+
+	/* NOTE: We do NOT map high memory (>2GB physical) at KZERO because:
+	 * 1. KZERO only has 2GB of virtual address space before wrapping
+	 * 2. High memory access should use HHDM instead
+	 * 3. Dynamic page mapping uses VMAP, not KZERO */
+
+	/* Identity-map first 2MB for firmware/BIOS access (reboot code, etc.) */
+	uartputs("setuppagetables: identity-mapping first 2MB\n", 44);
+	map_range_2mb(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
+	uartputs("setuppagetables: identity mapping complete\n", 43);
+
+	/* CRITICAL: Map HHDM region - kernel uses this extensively!
+	 * DON'T copy Limine's entries - they point to Limine's page tables!
+	 * Instead, create our own HHDM mapping for first 2GB of physical RAM */
+	extern uintptr hhdm_base;
+	uartputs("setuppagetables: creating our own HHDM mapping\n", 48);
+
+	/* Map first 2GB of physical memory to HHDM using 2MB pages */
+	u64int hhdm_phys_size = 2ULL * 1024 * 1024 * 1024;
+	for(u64int pa = 0; pa < hhdm_phys_size; pa += PGLSZ(1)) {
+		u64int va = hhdm_base + pa;
+		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
-	if(initrd_physaddr != 0 && initrd_size != 0)
-		map_hhdm_region(pml4, initrd_physaddr, initrd_size);
+	uartputs("setuppagetables: HHDM mapping complete (2GB)\n", 45);
 
+	/* Verify our current code location is mapped before switching */
+	uintptr current_rip;
+	__asm__ volatile("lea (%%rip), %0" : "=r"(current_rip));
+	uartputs("setuppagetables: current RIP check\n", 36);
 
-	/* Debug: output PT count before switch */
+	/* Check if RIP is in KZERO range */
+	if(current_rip >= KZERO) {
+		uartputs("setuppagetables: RIP is in KZERO range (good)\n", 48);
+	} else {
+		uartputs("setuppagetables: RIP NOT in KZERO range (bad!)\n", 49);
+	}
 
-	/* Now switch to OUR page tables */
-	__asm__ volatile("mov %0, %%cr3" : : "r"(pml4_phys) : "memory");
+	/* Debug: Check PML4 entries before switch */
+	uartputs("setuppagetables: checking PML4 entries\n", 40);
+	if(pml4[0] & PTEVALID)
+		uartputs("  PML4[0] (identity) is valid\n", 31);
+	if(pml4[511] & PTEVALID)
+		uartputs("  PML4[511] (KZERO) is valid\n", 30);
+	uintptr hhdm_pml4_idx = (hhdm_base >> 39) & 0x1FF;
+	if(pml4[hhdm_pml4_idx] & PTEVALID)
+		uartputs("  PML4[HHDM] is valid\n", 23);
 
+	uartputs("setuppagetables: preparing CR3 switch trampoline\n", 50);
+
+	/* Copy CR3 switch trampoline to low memory (will be identity-mapped)
+	 * We use physical address 0x1000 which is in our identity-mapped first 2MB */
+	extern void cr3_switch_trampoline(void);
+	extern void cr3_switch_trampoline_end(void);
+
+	u64int trampoline_phys = 0x1000;  /* Physical address in identity-mapped region */
+	void *trampoline_virt_limine = hhdm_virt(trampoline_phys);  /* Virtual address under Limine's HHDM */
+	void *trampoline_virt_new = (void*)trampoline_phys;  /* Virtual address under our identity map */
+	uintptr trampoline_size = (uintptr)cr3_switch_trampoline_end - (uintptr)cr3_switch_trampoline;
+
+	uartputs("setuppagetables: copying trampoline to low memory\n", 51);
+	dbghex("  trampoline physical: ", trampoline_phys);
+	dbghex("  trampoline size: ", trampoline_size);
+
+	/* Copy trampoline code to low memory using Limine's HHDM */
+	memmove(trampoline_virt_limine, cr3_switch_trampoline, trampoline_size);
+
+	uartputs("setuppagetables: switching to new page tables via trampoline\n", 62);
+	dbghex("setuppagetables: new CR3 value: ", pml4_phys);
+
+	/* Create a continuation function label to return to after CR3 switch */
+	void *continuation = &&after_cr3_switch;
+	dbghex("  continuation address: ", (uintptr)continuation);
+
+	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
+	 * NOT via Limine's HHDM! After CR3 switch, Limine's HHDM is gone, so the CPU
+	 * must fetch the next instruction from an identity-mapped address. */
+	typedef void (*trampoline_fn_t)(u64int new_cr3, void *cont);
+	trampoline_fn_t trampoline_fn = (trampoline_fn_t)trampoline_phys;  /* Use identity-mapped address! */
+
+	uartputs("setuppagetables: calling trampoline at identity-mapped address\n", 64);
+	dbghex("  trampoline call address: ", trampoline_phys);
+	trampoline_fn(pml4_phys, continuation);
+
+	/* Should not reach here - trampoline jumps to continuation */
+	panic("CR3 switch trampoline returned unexpectedly");
+
+after_cr3_switch:
+	/* We're now executing on the new page tables! */
+	uartputs("setuppagetables: CR3 switch successful!\n", 41);
+
+	uartputs("setuppagetables: validating HHDM\n", 34);
+	/* Verify HHDM mapping works */
+	volatile uintptr test_addr = *(volatile uintptr*)hhdm_virt(0);
+	uartputs("setuppagetables: HHDM validation passed\n", 40);
 
 	/* Update m->pml4 to point to our page tables */
 	m->pml4 = pml4;
+	uartputs("setuppagetables: page tables fully operational\n", 47);
 }
 
 void
@@ -506,30 +588,42 @@ mmuinit(void)
 void*
 kaddr(uintptr pa)
 {
-	if(pa >= (uintptr)-KZERO)
-	{
-		dbghex("kaddr pa ", pa);
-		dbghex("kaddr caller ", (uvlong)getcallerpc(&pa));
-		panic("kaddr: pa=%#p pc=%#p", pa, getcallerpc(&pa));
-	}
-
+	if(saved_limine_hhdm_offset == 0)
+		panic("kaddr: HHDM not initialized yet!");
 	return (void*)hhdm_virt(pa);
 }
 
 uintptr
 paddr(void *v)
 {
+	/* Handle multiple address spaces:
+	 * HHDM, KZERO (kernel), and VMAP (virtual mappings) */
+	extern u64int limine_kernel_phys_base;
+	extern uintptr hhdm_base;
+	extern char end[];
 	uintptr va;
 
 	va = (uintptr)v;
-	/* Kernel addresses at KZERO (0xffffffff80000000) */
-	if(va >= KZERO)
-		return virt2phys(v);
-	/* HHDM addresses - Limine maps all physical memory here */
-	if(is_hhdm_va(va))
-		return hhdm_phys(va);
+
+	/* HHDM addresses - direct physical mapping */
+	if(va >= hhdm_base && va < hhdm_base + (256ULL*GiB)) {
+		return va - hhdm_base;
+	}
+
+	/* Kernel addresses at KZERO - need offset for where Limine loaded us */
+	if(va >= KZERO && va < (uintptr)end) {
+		/* Inside kernel image: account for Limine's load address */
+		return (va - KZERO) + limine_kernel_phys_base;
+	} else if(va >= KZERO) {
+		/* Outside kernel but >= KZERO: simple linear mapping */
+		return va - KZERO;
+	}
+
+	/* VMAP addresses - exact 9front style */
 	if(va >= VMAP)
-		return va-VMAP;
+		return va - VMAP;
+
+	/* Neither HHDM, KZERO, nor VMAP - panic like 9front does */
 	panic("paddr: va=%#p pc=%#p", va, getcallerpc(&v));
 }
 
@@ -569,9 +663,12 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 {
 	uintptr *page, flags;
 	MMU *p;
+	extern uintptr hhdm_base;
 
 	flags = PTEWRITE|PTEVALID;
-	if(va < VMAP){
+	/* Check if this is a user/kmap address that needs process tracking
+	 * Exclude HHDM addresses which are kernel direct-map and don't need up */
+	if(va < VMAP && (va < hhdm_base || va >= hhdm_base + (256ULL*GiB))){
 		if(up == nil)
 			panic("mmucreate: up nil va=%#p", va);
 		if((p = mmualloc()) == nil)
@@ -720,34 +817,65 @@ copypagetables(void)
 static void
 kernelro(void)
 {
-	extern char ttext[], etext[];
+	extern char ttext[], etext[], kend[];
 	uintptr *pte, psz, va;
+	uintptr kernel_end;
+	uintptr *active_pml4;
 
-	ptesplit(m->pml4, APBOOTSTRAP);
-	ptesplit(m->pml4, KTZERO);
-	ptesplit(m->pml4, (uintptr)ttext);
-	ptesplit(m->pml4, (uintptr)etext-1);
+	/* CRITICAL FIX: Only process kernel image, not entire address space!
+	 * Original bug: loop continued until va wrapped to 0, corrupting HHDM and other regions
+	 * Use kend (end of .rodata) not end (end of .data which comes before .text!) */
+	kernel_end = PGROUND((uintptr)kend) + 16*MiB;  /* Kernel + reasonable margin */
+
+	/* Get the ACTIVE page tables from CR3, not m->pml4 which is unused */
+	active_pml4 = (uintptr*)getcr3();
+	active_pml4 = (uintptr*)kaddr((uintptr)active_pml4);  /* Convert physical to virtual */
+
+	print("kernelro: ttext=%#p etext=%#p kend=%#p kernel_end=%#p\n",
+	      ttext, etext, kend, kernel_end);
+	print("kernelro: active CR3=%#p (using Limine's page tables)\n", active_pml4);
+	print("kernelro: m->havenx=%d PTENOEXEC=%#llux\n", m->havenx, PTENOEXEC);
+
+	ptesplit(active_pml4, APBOOTSTRAP);
+	ptesplit(active_pml4, KTZERO);
+	ptesplit(active_pml4, (uintptr)ttext);
+	ptesplit(active_pml4, (uintptr)etext-1);
 
 	/* Now we can modify PTEs - our page tables are writable! */
-	for(va = KZERO; va != 0; va += psz){
+	uintptr text_pages = 0, noexec_pages = 0;
+	for(va = KZERO; va < kernel_end && va != 0; va += psz){
 		psz = PGLSZ(0);
-		pte = mmuwalk(m->pml4, va, 0, 0);
+		pte = mmuwalk(active_pml4, va, 0, 0);
 		if(pte == nil){
 			if(va & PGLSZ(1)-1)
 				continue;
-			pte = mmuwalk(m->pml4, va, 1, 0);
+			pte = mmuwalk(active_pml4, va, 1, 0);
 			if(pte == nil)
 				continue;
 			psz = PGLSZ(1);
 		}
 		if((*pte & PTEVALID) == 0)
 			continue;
-		if(va >= (uintptr)ttext && va < (uintptr)etext)
+		if(va >= (uintptr)ttext && va < (uintptr)etext){
+			uvlong old_pte = *pte;
 			*pte &= ~PTEWRITE;  /* Make text section read-only */
-		else if(va != (APBOOTSTRAP & -BY2PG))
-			*pte |= PTENOEXEC;  /* Make non-text sections non-executable */
-		invlpg(va);
+			if(text_pages < 3 || va == 0xffffffff802e8000){  /* Debug first few and todinit page */
+				print("  text page va=%#p: pte %#llux -> %#llux\n", va, old_pte, *pte);
+			}
+			text_pages++;
+			invlpg(va);
+		}
+		/* TEMPORARY: Skip PTENOEXEC to isolate the issue */
+		/*
+		else if(va != (APBOOTSTRAP & -BY2PG)){
+			*pte |= PTENOEXEC;
+			noexec_pages++;
+			invlpg(va);
+		}
+		*/
 	}
+	print("kernelro: marked %lud text pages R-X, %lud data pages RW-\n",
+	      text_pages, noexec_pages);
 }
 
 void
@@ -977,7 +1105,7 @@ kmap(Page *page)
 
 	/* Pure HHDM model: all physical memory already mapped via HHDM */
 	pa = page->pa;
-	va = hhdm_virt(pa);
+	va = (uintptr)hhdm_virt(pa);
 	return (KMap*)va;
 }
 
@@ -1014,7 +1142,7 @@ vmap(uvlong pa, vlong size)
 		print("vmap: invalid low pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
-	va = hhdm_virt(pa);
+	va = (uintptr)hhdm_virt(pa);
 
 	/*
 	 * might be asking for less than a page.

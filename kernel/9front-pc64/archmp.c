@@ -10,6 +10,9 @@
 
 static PCMP *pcmp;
 
+/* Fallback to PIC mode if MP tables not found */
+extern void i8259init(void);
+
 static char* buses[] = {
 	"CBUSI ",
 	"CBUSII",
@@ -289,10 +292,22 @@ pcmpinit(void)
 	Apic *apic;
 	void *va;
 
+	print("pcmpinit: ENTRY\n");
+	print("pcmpinit: pcmp=%#p\n", pcmp);
+	if(pcmp == nil) {
+		print("pcmpinit: WARNING - pcmp is nil, MP not found\n");
+		print("pcmpinit: Falling back to i8259 (PIC mode)\n");
+		i8259init();
+		return;
+	}
+	print("pcmpinit: pcmp->lapicbase=%#lux\n", pcmp->lapicbase);
+
 	/*
 	 * Map the local APIC.
 	 */
+	print("pcmpinit: calling vmap(%#lux, 1024)\n", pcmp->lapicbase);
 	va = vmap(pcmp->lapicbase, 1024);
+	print("pcmpinit: vmap returned %#p\n", va);
 
 	print("LAPIC: %.8lux %#p\n", pcmp->lapicbase, va);
 	if(va == nil)

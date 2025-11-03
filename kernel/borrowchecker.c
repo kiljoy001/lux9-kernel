@@ -76,6 +76,7 @@ create_owner(uintptr key)
 	owner->owner = nil;
 	owner->state = BORROW_FREE;
 	owner->shared_count = 0;
+	owner->shared_list = nil;  /* Initialize shared borrower list */
 	owner->mut_borrower = nil;
 	owner->acquired_ns = 0;
 	owner->borrow_deadline_ns = 0;
@@ -123,7 +124,8 @@ borrow_acquire(Proc *p, uintptr key)
 enum BorrowError
 borrow_release(Proc *p, uintptr key)
 {
-	struct BorrowOwner *owner;
+	struct BorrowOwner *owner, *prev;
+	ulong hash;
 
 	if (p == nil) {
 		return BORROW_EINVAL;
@@ -141,7 +143,7 @@ borrow_release(Proc *p, uintptr key)
 		return BORROW_ENOTOWNER;
 	}
 
-	if (owner->shared_count > 0 || owner->mut_borrower != nil) {
+	if (owner->shared_count > 0 || owner->shared_list != nil || owner->mut_borrower != nil) {
 		iunlock(&borrowpool.lock);
 		return BORROW_EBORROWED;
 	}
@@ -149,6 +151,23 @@ borrow_release(Proc *p, uintptr key)
 	owner->owner = nil;
 	owner->state = BORROW_FREE;
 	borrowpool.nowners--;
+
+	/* FIX MEMORY LEAK: Remove and free the owner entry from hash table */
+	hash = borrow_hash(key);
+	prev = nil;
+	for (owner = borrowpool.owners[hash].head; owner != nil; owner = owner->next) {
+		if (owner->key == key) {
+			if (prev == nil) {
+				borrowpool.owners[hash].head = owner->next;
+			} else {
+				prev->next = owner->next;
+			}
+			xfree(owner);
+			break;
+		}
+		prev = owner;
+	}
+
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
@@ -191,6 +210,7 @@ enum BorrowError
 borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 {
 	struct BorrowOwner *own;
+	struct SharedBorrower *sb;
 
 	if (owner == nil || borrower == nil) {
 		return BORROW_EINVAL;
@@ -212,6 +232,26 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 		iunlock(&borrowpool.lock);
 		return BORROW_EMUTBORROW;
 	}
+
+	/* Check if this borrower already has a shared borrow */
+	for (sb = own->shared_list; sb != nil; sb = sb->next) {
+		if (sb->proc == borrower) {
+			iunlock(&borrowpool.lock);
+			return BORROW_EALREADY;  /* Already has a shared borrow */
+		}
+	}
+
+	/* Allocate new shared borrower node */
+	sb = xalloc(sizeof(struct SharedBorrower));
+	if (sb == nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOMEM;
+	}
+
+	/* Add to front of shared list */
+	sb->proc = borrower;
+	sb->next = own->shared_list;
+	own->shared_list = sb;
 
 	own->shared_count++;
 	own->borrow_count++;
@@ -272,6 +312,7 @@ enum BorrowError
 borrow_return_shared(Proc *borrower, uintptr key)
 {
 	struct BorrowOwner *own;
+	struct SharedBorrower *sb, *prev;
 
 	if (borrower == nil) {
 		return BORROW_EINVAL;
@@ -284,19 +325,38 @@ borrow_return_shared(Proc *borrower, uintptr key)
 		return BORROW_ENOTFOUND;
 	}
 
-	if (own->shared_count == 0) {
+	if (own->shared_count == 0 || own->shared_list == nil) {
 		iunlock(&borrowpool.lock);
 		return BORROW_ENOTBORROWED;
 	}
 
-	own->shared_count--;
-	if (own->shared_count == 0) {
-		own->state = BORROW_EXCLUSIVE;
-		borrowpool.nshared--;
+	/* Find and remove borrower from shared list */
+	prev = nil;
+	for (sb = own->shared_list; sb != nil; sb = sb->next) {
+		if (sb->proc == borrower) {
+			/* Found it - remove from list */
+			if (prev == nil) {
+				own->shared_list = sb->next;
+			} else {
+				prev->next = sb->next;
+			}
+			xfree(sb);  /* Free the shared borrower node */
+
+			own->shared_count--;
+			if (own->shared_count == 0) {
+				own->state = BORROW_EXCLUSIVE;
+				borrowpool.nshared--;
+			}
+
+			iunlock(&borrowpool.lock);
+			return BORROW_OK;
+		}
+		prev = sb;
 	}
 
+	/* Borrower not found in list */
 	iunlock(&borrowpool.lock);
-	return BORROW_OK;
+	return BORROW_ENOTBORROWED;
 }
 
 /* Return a mutable borrow */
@@ -428,6 +488,7 @@ borrow_cleanup_process(Proc *p)
 {
 	ulong i;
 	struct BorrowOwner *owner, *prev, *next;
+	struct SharedBorrower *sb, *sb_next;
 	int cleaned = 0;
 
 	if (p == nil) {
@@ -443,7 +504,12 @@ borrow_cleanup_process(Proc *p)
 			next = owner->next;
 
 			if (owner->owner == p) {
-				/* Force release */
+				/* Force release - free all shared borrowers */
+				for (sb = owner->shared_list; sb != nil; sb = sb_next) {
+					sb_next = sb->next;
+					xfree(sb);
+				}
+				owner->shared_list = nil;
 				owner->owner = nil;
 				owner->state = BORROW_FREE;
 				owner->shared_count = 0;
@@ -461,8 +527,32 @@ borrow_cleanup_process(Proc *p)
 				cleaned++;
 			}
 
-			/* Remove from list if freed */
-			if (owner->state == BORROW_FREE && owner->shared_count == 0 && owner->mut_borrower == nil) {
+			/* Remove this process from shared borrower list if present */
+			struct SharedBorrower *sb_prev = nil;
+			for (sb = owner->shared_list; sb != nil; sb = sb_next) {
+				sb_next = sb->next;
+				if (sb->proc == p) {
+					/* Remove from list */
+					if (sb_prev == nil) {
+						owner->shared_list = sb_next;
+					} else {
+						sb_prev->next = sb_next;
+					}
+					xfree(sb);
+					owner->shared_count--;
+					if (owner->shared_count == 0 && owner->state == BORROW_SHARED_OWNED) {
+						owner->state = BORROW_EXCLUSIVE;
+						borrowpool.nshared--;
+					}
+					cleaned++;
+				} else {
+					sb_prev = sb;
+				}
+			}
+
+			/* Remove from list if freed and no borrows */
+			if (owner->state == BORROW_FREE && owner->shared_count == 0 &&
+			    owner->shared_list == nil && owner->mut_borrower == nil) {
 				if (prev == nil) {
 					borrowpool.owners[i].head = next;
 				} else {

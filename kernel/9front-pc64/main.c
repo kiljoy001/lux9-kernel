@@ -286,9 +286,11 @@ main(void)
 	xinit();
 	pageowninit();
 	exchangeinit();
+	print("BOOT: exchangeinit complete\n");
 
-	/* Setup OUR page tables - independent of Limine */
+	/* Switch to our own page tables - REQUIRED for user space! */
 	setuppagetables();
+	print("BOOT: switched to kernel-managed page tables with HHDM\n");
 
 	trapinit();
 	mathinit();
@@ -300,15 +302,32 @@ main(void)
 	printinit();
 	print("BOOT: printinit complete - serial console ready\n");
 	cpuidprint();
+	/* FIXED: Borrow checker improvements:
+	 * - NOW tracks WHO has shared borrows (security fix)
+	 * - Fixed memory leaks in hash table cleanup
+	 * - Shared borrower list properly managed
+	 * Still TODO: per-bucket locking, atomic operations, actual enforcement */
 	borrowinit();
-	print("BOOT: borrow checker initialised\n");
+	print("BOOT: borrow checker initialized (with fixes)\n");
+	print("BOOT: about to call mmuinit\n");
 	mmuinit();
 	print("BOOT: mmuinit complete - runtime page tables live\n");
-	if(arch->intrinit)
+	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
+	if(arch->intrinit) {
+		print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
 		arch->intrinit();
+		print("BOOT: arch->intrinit returned successfully\n");
+	} else {
+		print("WARNING: arch->intrinit is nil\n");
+	}
+	print("BOOT: calling timersinit\n");
 	timersinit();
+	print("BOOT: timersinit complete\n");
+	print("BOOT: calling arch->clockenable\n");
 	if(arch->clockenable)
 		arch->clockenable();
+	print("BOOT: arch->clockenable complete\n");
+	print("BOOT: calling procinit0\n");
 	procinit0();
 	print("BOOT: procinit0 complete - process table ready\n");
 	initseg();

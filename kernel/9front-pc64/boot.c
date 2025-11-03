@@ -25,6 +25,11 @@ u64int limine_kernel_phys_base = 0;
 void
 bootargsinit(void)
 {
+	struct limine_memmap_response *memmap_response;
+	struct limine_memmap_entry *entry;
+	u64int i, max_addr;
+	extern u32int MemMin;
+
 	/* Parse Limine kernel address response */
 	if(limine_kernel_address && limine_kernel_address->response) {
 		limine_kernel_phys_base = limine_kernel_address->response->physical_base;
@@ -45,62 +50,35 @@ bootargsinit(void)
 	extern uintptr hhdm_base;
 	hhdm_base = limine_hhdm_offset;
 	saved_limine_hhdm_offset = limine_hhdm_offset;
-}
 
-void
-meminit0(void)
-{
-	struct limine_memmap_response *memmap_response;
-	struct limine_memmap_entry *entry;
-	u64int i, base, length;
-	int nregions = 0;
-	ulong totalpages = 0;
-
-	/* Parse Limine memory map and set up conf.mem[] */
+	/* Initialize MemMin from Limine memory map
+	 * MemMin indicates the end of the initially mapped physical memory
+	 * With Limine HHDM, all physical memory is mapped, so we set MemMin
+	 * to the highest usable physical address (limited to 4GB for cankaddr) */
+	max_addr = 0;
 	if(limine_memmap && limine_memmap->response) {
 		memmap_response = limine_memmap->response;
-
-		/* Iterate through memory map entries */
-		for(i = 0; i < memmap_response->entry_count && nregions < nelem(conf.mem); i++) {
+		for(i = 0; i < memmap_response->entry_count; i++) {
 			entry = memmap_response->entries[i];
-
-			/* Only use usable memory (type 0) */
-			if(entry->type != 0)  /* LIMINE_MEMMAP_USABLE */
-				continue;
-
-			base = entry->base;
-			length = entry->length;
-
-			/* Skip if too small (less than 1MB) */
-			if(length < 1*1024*1024)
-				continue;
-
-			/* Set up this memory region */
-			conf.mem[nregions].base = base;
-			conf.mem[nregions].npage = length / BY2PG;
-			conf.mem[nregions].kbase = 0;
-			conf.mem[nregions].klimit = 0;
-
-			totalpages += conf.mem[nregions].npage;
-			nregions++;
+			/* Only count usable memory (type 0 = LIMINE_MEMMAP_USABLE) */
+			if(entry->type == 0) {
+				u64int end = entry->base + entry->length;
+				if(end > max_addr)
+					max_addr = end;
+			}
 		}
 	}
 
-	/* Fallback if no memory map */
-	if(nregions == 0) {
-		conf.mem[0].base = 1*1024*1024;
-		conf.mem[0].npage = 64*1024;  /* 256MB */
-		conf.mem[0].kbase = 0;
-		conf.mem[0].klimit = 0;
-		totalpages = conf.mem[0].npage;
-	}
+	/* Limit to 4GB since cankaddr() can't handle more */
+	if(max_addr > 4ULL*1024*1024*1024)
+		max_addr = 4ULL*1024*1024*1024;
 
-	/* Set global memory configuration */
-	conf.npage = totalpages;
-	conf.upages = totalpages / 2;  /* Reserve half for user */
-	conf.nproc = 100;
-	conf.nimage = 200;
-	conf.nswap = 0;
-	conf.nswppo = 0;
-	conf.ialloc = 0;
+	/* Set MemMin - use the actual max RAM address we found
+	 * Don't try to compute kernel end here since PADDR() might not work yet */
+	if(max_addr == 0)
+		max_addr = 64*1024*1024;  /* Fallback: 64MB minimum */
+
+	MemMin = (u32int)max_addr;
 }
+
+/* meminit0() provided by memory_9front.c - it handles memory discovery */

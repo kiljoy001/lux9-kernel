@@ -96,6 +96,7 @@ void	mfence(void);
 #define mmuflushtlb(pml4) putcr3(pml4)
 void	mmuinit(void);
 void	copypagetables(void);
+void	setuppagetables(void);
 uintptr	*mmuwalk(uintptr*, uintptr, int, int);
 char*	mtrr(uvlong, uvlong, char *);
 char*	mtrrattr(uvlong, uvlong *);

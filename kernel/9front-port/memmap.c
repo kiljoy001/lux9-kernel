@@ -17,7 +17,7 @@ struct Mapent
 };
 
 static struct {
-	Lock;
+	Lock	lk;  /* Named lock member instead of anonymous */
 	int	n;
 	int	m;
 	Mapent	a[256];
@@ -141,15 +141,27 @@ Again:
 }
 
 void
+memmapzero(void)
+{
+	/* Zero the entire mapalloc structure to ensure clean state
+	 * This is critical because mapalloc is in .cpu0_data (not BSS)
+	 * and won't be zeroed by boot code */
+	print("memmapzero: &mapalloc=%#p sizeof=%d n=%d m=%d\n",
+	      &mapalloc, (int)sizeof(mapalloc), mapalloc.n, mapalloc.m);
+	memset(&mapalloc, 0, sizeof(mapalloc));
+	print("memmapzero: after memset n=%d m=%d\n", mapalloc.n, mapalloc.m);
+}
+
+void
 memmapdump(void)
 {
 	int i;
 
-	lock(&mapalloc);
+	lock(&mapalloc.lk);
 	sort();
 	for(i = 0; i < mapalloc.n; i++)
 		dump1(&mapalloc.a[i]);
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 }
 
 uvlong
@@ -157,17 +169,17 @@ memmapnext(uvlong addr, ulong type)
 {
 	Mapent *i, *e;
 
-	lock(&mapalloc);
+	lock(&mapalloc.lk);
 	sort();
 	for(i = mapalloc.a, e = i+mapalloc.n; i < e; i++){
 		if(((i->type ^ type) & ~Allocated) == 0
 		&& (addr == -1 || i->addr > addr)){
 			addr = i->addr;
-			unlock(&mapalloc);
+			unlock(&mapalloc.lk);
 			return addr;
 		}
 	}
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 	return -1;
 }
 
@@ -178,7 +190,7 @@ memmapsize(uvlong addr, uvlong align)
 	uvlong size;
 
 	size = 0;
-	lock(&mapalloc);
+	lock(&mapalloc.lk);
 	sort();
 	if((i = lookup(addr)) != nil){
 		if(align){
@@ -188,19 +200,26 @@ memmapsize(uvlong addr, uvlong align)
 		if(addr - i->addr < i->size)
 			size = i->size - (addr - i->addr);
 	}
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 	return size;
 }
 
 void
 memmapadd(uvlong addr, uvlong size, ulong type)
 {
+	int result;
 	type &= ~Allocated;
-	lock(&mapalloc);
-	if(insert(addr, size, type))
+	print("memmapadd[pre-lock]: n=%d m=%d\n", mapalloc.n, mapalloc.m);
+	lock(&mapalloc.lk);
+	print("memmapadd: addr=%#llux size=%#llux type=%lux (before: n=%d m=%d)\n",
+	      addr, size, type, mapalloc.n, mapalloc.m);
+	result = insert(addr, size, type);
+	print("memmapadd: insert returned %d (after: n=%d m=%d)\n",
+	      result, mapalloc.n, mapalloc.m);
+	if(result)
 		if(mapalloc.n+mapalloc.m >= nelem(mapalloc.a)-1)
 			sort();
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 }
 
 uvlong
@@ -209,7 +228,7 @@ memmapalloc(uvlong addr, uvlong size, uvlong align, ulong type)
 	Mapent *i, *e;
 
 	type &= ~Allocated;
-	lock(&mapalloc);
+	lock(&mapalloc.lk);
 	sort();
 	if(addr != -1){
 		i = lookup(addr);
@@ -226,7 +245,7 @@ memmapalloc(uvlong addr, uvlong size, uvlong align, ulong type)
 Alloc:
 		if(size > 0 && !insert(addr, size, type|Allocated))
 			goto Fail;
-		unlock(&mapalloc);
+		unlock(&mapalloc.lk);
 		return addr;
 	}
 	e = mapalloc.a + mapalloc.n;
@@ -244,7 +263,7 @@ Alloc:
 			goto Alloc;
 	}
 Fail:
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 	return -1;
 }
 
@@ -253,13 +272,13 @@ memmapfree(uvlong addr, uvlong size, ulong type)
 {
 	Mapent *i;
 
-	lock(&mapalloc);
+	lock(&mapalloc.lk);
 	sort();
 	i = lookup(addr);
 	if(i == nil
 	|| i->type != (type|Allocated)
 	|| addr - i->addr + size > i->size){
-		unlock(&mapalloc);
+		unlock(&mapalloc.lk);
 		return;
 	}
 	if(i->addr < addr)
@@ -267,5 +286,5 @@ memmapfree(uvlong addr, uvlong size, ulong type)
 	if(addr - i->addr + size < i->size)
 		insert(addr+size, addr - i->addr + i->size - size, i->type);
 	i->type &= ~Allocated;
-	unlock(&mapalloc);
+	unlock(&mapalloc.lk);
 }

@@ -13,8 +13,8 @@ PHDRS
 
 SECTIONS
 {
-    /* Kernel starts in higher half */
-    . = 0xffffffff80000000;
+    /* Kernel starts at KZERO - Limine will load us wherever it wants physically */
+    . = 0xffffffff80000000;  /* KZERO */
 
     /* Limine requests at start */
     .limine_requests : {
@@ -26,8 +26,8 @@ SECTIONS
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
-    /* Reserve space for ALL bootstrap structures at fixed offsets from KZERO */
-    . = 0xffffffff80001000;  /* Start after first page */
+    /* Bootstrap data and kernel sections start after first page */
+    . = 0xffffffff80001000;
     .cpu0_data : {
         . = 0x200;   /* CONFADDR at KZERO+0x1200 */
         confaddr = .;
@@ -41,7 +41,7 @@ SECTIONS
         idtaddr = .;
         . += 0x3000;  /* IDT is 512 entries * 16 bytes = 8KB, round to 12KB */
 
-        . = 0x13000;  /* CPU0PML4 at KZERO+0x13000 */
+        . = 0x13000;  /* CPU0PML4 at KZERO+0x14000 */
         cpu0pml4 = .;
         . += 0x1000;
         cpu0pdp = .;

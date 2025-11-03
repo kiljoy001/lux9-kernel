@@ -1,13 +1,17 @@
 /* Global kernel variables */
 #include "u.h"
-#include "portlib.h"
+#include <lib.h>
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "io.h"
+#include "ureg.h"
 #include "pci.h"
 #include "sdhw.h"
-#include "io.h"
 #include "error.h"
+
+/* Memory constants defined in memory_9front.c */
+extern u32int MemMin;		/* set by l.s */
 
 extern uvlong rdtsc(void);
 
@@ -283,10 +287,7 @@ char *conffile = "";
 void vmxshutdown(void) {}
 void vmxprocrestore(Proc *p) { (void)p; }
 
-/* RAM page allocation - uses xallocz which returns HHDM virtual addresses */
-void* rampage(void) {
-	return xallocz(BY2PG, 1);  /* 1 = zero the memory */
-}
+/* RAM page allocation - provided by memory_9front.c */
 
 /* CPU identification provided by devarch.c */
 
@@ -307,8 +308,7 @@ void bootscreeninit(void) {}
 /* Links function - defined by bootlinks */
 void links(void) {}
 
-/* Memory initialization - meminit stub, meminit0 in boot.c */
-void meminit(void) {}
+/* Memory initialization functions provided by memory_9front.c */
 
 /* Ramdisk */
 void ramdiskinit(void) {}
@@ -338,8 +338,7 @@ char Enegoff[] = "negative offset";
 /* Swap */
 void dupswap(Page *p) { (void)p; }
 
-/* Signal search */
-void* sigsearch(char *name, int len) { (void)name; (void)len; return nil; }
+/* Signal search provided by memory_9front.c */
 
 /* System call table - global array of syscall name strings */
 int nosyscall(Sargs *args) { (void)args; return -1; }
@@ -366,14 +365,7 @@ void uartputc(int c)
 	consuart->phys->putc(consuart, c);
 }
 
-/* Checksum */
-int checksum(void *addr, int len) {
-	uchar *p = addr;
-	int sum = 0;
-	while(len-- > 0)
-		sum += *p++;
-	return sum & 0xFF;
-}
+/* Checksum provided by memory_9front.c */
 
 /* Delay loop */
 void delayloop(int ms) { (void)ms; }
@@ -400,11 +392,4 @@ char* utfecpy(char *to, char *e, char *from) {
 	return to;
 }
 
-/* UPA (user programmable arrays) - not implemented */
-uvlong upaalloc(uvlong, uvlong, uvlong) {
-	return 0;
-}
-
-uvlong upaallocwin(uvlong, uvlong, uvlong, uvlong) {
-	return 0;
-}
+/* UPA (user programmable arrays) provided by memory_9front.c */

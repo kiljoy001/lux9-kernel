@@ -13,6 +13,12 @@ enum BorrowState {
 	BORROW_MUT_LENT,          /* Owner lent resource as mutable, blocked */
 };
 
+/* Shared borrower tracking - linked list node */
+struct SharedBorrower {
+	Proc	*proc;			/* Process that has a shared borrow */
+	struct SharedBorrower *next;	/* Next shared borrower */
+};
+
 /* Per-resource ownership tracking descriptor */
 struct BorrowOwner {
 	/* Resource identification */
@@ -24,6 +30,7 @@ struct BorrowOwner {
 
 	/* Borrow tracking */
 	int	shared_count;		/* Number of shared borrows (&) */
+	struct SharedBorrower *shared_list;	/* List of shared borrowers */
 	Proc	*mut_borrower;		/* Exclusive mutable borrower (&mut) */
 
 	/* Lifetime tracking */

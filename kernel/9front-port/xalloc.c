@@ -61,6 +61,7 @@ xinit(void)
 	Hole *h, *eh;
 	Confmem *cm;
 	int i;
+	uintptr size_bytes;
 
 	print("xinit: starting initialization\n");
 	eh = &xlists.hole[Nhole-1];
@@ -97,11 +98,13 @@ xinit(void)
 			cm->klimit = (uintptr)cm->kbase+(uintptr)n*BY2PG;
 			if(cm->klimit == 0)
 				cm->klimit = (uintptr)-BY2PG;
+			/* cm->klimit - cm->kbase gives byte size (both have same offset applied) */
+			size_bytes = cm->klimit - cm->kbase;
 			/* Only print first few xhole calls to avoid verbose output */
 			if(i < 2) {
-				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, cm->klimit - cm->kbase);
+				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, size_bytes);
 			}
-			xhole(cm->base, cm->klimit - cm->kbase);
+			xhole(cm->base, size_bytes);
 			kpages -= n;
 		}
 		/*
@@ -291,13 +294,12 @@ xmerge(void *vp, void *vq)
 
 /* Modern VM-aware xhole system for Limine boot environment
  *
- * Key changes from original Plan 9 design:
- * 1. Works with VIRTUAL addresses (via Limine HHDM mapping)
- * 2. Physical memory at PA is mapped to VA = PA + HHDM_offset
- * 3. All allocations return virtual addresses in HHDM region
- * 4. Holes track virtual address ranges, not physical
+ * API Contract:
+ * - Takes a PHYSICAL address and size
+ * - Converts to VIRTUAL internally using HHDM mapping
+ * - All allocations return virtual addresses in HHDM region
+ * - Holes track virtual address ranges after conversion
  */
-
 void
 xhole(uintptr addr, uintptr size)
 {

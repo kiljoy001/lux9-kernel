@@ -58,13 +58,8 @@ static void todfix(void);
 void
 todinit(void)
 {
-	/* Output debug before accessing tod */
-
-	/* Try to read tod.init - if this crashes, tod is not mapped */
 	if(tod.init)
 		return;
-
-	/* Successfully read tod.init */
 
 	ilock(&tod.lk);
 	tod.init = 1;			/* prevent reentry via fastticks */

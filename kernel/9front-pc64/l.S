@@ -23,6 +23,32 @@ touser_attempt_count:
 
 .extern pebble_red_blue_exit
 
+/* CR3 switch trampoline - designed to be copied to low memory (identity-mapped)
+ * Arguments: RDI = new CR3 physical address, RSI = high-memory continuation address
+ * This function MUST execute from identity-mapped low memory */
+.global cr3_switch_trampoline
+.global cr3_switch_trampoline_end
+.align 16
+cr3_switch_trampoline:
+	/* Save continuation address */
+	movq %rsi, %rax
+
+	/* Disable interrupts during switch */
+	cli
+
+	/* Switch CR3 - this invalidates TLB and starts using new page tables */
+	movq %rdi, %cr3
+
+	/* Short jump to ensure next instruction uses new tables (still in identity map) */
+	jmp .Lafter_cr3
+
+.Lafter_cr3:
+	/* Now jump to high-memory continuation */
+	jmp *%rax
+
+cr3_switch_trampoline_end:
+	nop
+
 /* CPU I/O port access */
 .global inb
 inb:

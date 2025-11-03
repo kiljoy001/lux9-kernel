@@ -34,9 +34,14 @@ i8259init(void)
 {
 	int x;
 
+	print("i8259init: ENTRY\n");
+	print("i8259init: calling ioalloc for Int0ctl\n");
 	ioalloc(Int0ctl, 2, 0, "i8259.0");
+	print("i8259init: calling ioalloc for Int1ctl\n");
 	ioalloc(Int1ctl, 2, 0, "i8259.1");
+	print("i8259init: calling ilock\n");
 	ilock(&i8259lock);
+	print("i8259init: ilock acquired\n");
 
 	/*
 	 *  Set up the first 8259 interrupt processor.

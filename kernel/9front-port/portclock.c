@@ -103,9 +103,8 @@ timeradd(Timer *nt)
 	tt = &timers[m->machno];
 	ilock(&tt->lk);
 	when = tadd(tt, nt);
-	if(when){
+	if(when)
 		timerset(when);
-	}
 	iunlock(&tt->lk);
 	iunlock(&nt->lock);
 }
