@@ -288,7 +288,9 @@ main(void)
 	exchangeinit();
 	print("BOOT: exchangeinit complete\n");
 
-	/* Switch to our own page tables - REQUIRED for user space! */
+	/* Switch to our own page tables - REQUIRED for user space!
+	 * NOTE: This must happen AFTER xinit(), but xinit() marks physical 2MB+ as free.
+	 * setuppagetables() will relocate kernel to 2MB, then remove that region from xalloc. */
 	setuppagetables();
 	print("BOOT: switched to kernel-managed page tables\n");
 

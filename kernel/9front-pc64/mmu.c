@@ -512,12 +512,8 @@ setuppagetables(void)
 	__asm__ volatile("wbinvd" ::: "memory");  /* Write back and invalidate cache */
 	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
 
-	uartputs("setuppagetables: switching to new page tables via trampoline\n", 62);
-	dbghex("setuppagetables: new CR3 value: ", pml4_phys);
-
 	/* Create a continuation function label to return to after CR3 switch */
 	void *continuation = &&after_cr3_switch;
-	dbghex("  continuation address: ", (uintptr)continuation);
 
 	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
 	 * NOT via Limine's HHDM! After CR3 switch, Limine's HHDM is gone, so the CPU
@@ -525,8 +521,7 @@ setuppagetables(void)
 	typedef void (*trampoline_fn_t)(u64int new_cr3, void *cont);
 	trampoline_fn_t trampoline_fn = (trampoline_fn_t)trampoline_phys;  /* Use identity-mapped address! */
 
-	uartputs("setuppagetables: calling trampoline at identity-mapped address\n", 64);
-	dbghex("  trampoline call address: ", trampoline_phys);
+	uartputs("setuppagetables: calling CR3 trampoline...\n", 45);
 	trampoline_fn(pml4_phys, continuation);
 
 	/* Should not reach here - trampoline jumps to continuation */
@@ -535,6 +530,19 @@ setuppagetables(void)
 after_cr3_switch:
 	/* We're now executing on the new page tables! */
 	__asm__ volatile("" ::: "memory");  /* Memory barrier */
+	/* Use minimal UART output to avoid any complex dependencies */
+	__asm__ volatile(
+		"movw $0x3f8, %%dx\n"  /* COM1 port */
+		"movb $'O', %%al\n"
+		"outb %%al, %%dx\n"
+		"movb $'K', %%al\n"
+		"outb %%al, %%dx\n"
+		"movb $'!', %%al\n"
+		"outb %%al, %%dx\n"
+		"movb $'\\n', %%al\n"
+		"outb %%al, %%dx\n"
+		::: "dx", "al"
+	);
 	uartputs("setuppagetables: CR3 switch successful!\n", 41);
 
 	uartputs("setuppagetables: validating HHDM\n", 34);

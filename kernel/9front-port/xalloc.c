@@ -157,11 +157,6 @@ xallocz(ulong size, int zero)
 	/* Calculate overhead */
 	overhead = BY2V + offsetof(Xhdr, data[0]);
 	
-	/* Only print for large allocations to reduce verbose output */
-	if (size > 64*1024) {
-		print("xallocz: requesting %lud bytes (zero=%d)\n", size, zero);
-	}
-	
 	/* Detect potential overflow when adding header overhead */
 	if (size > ~0UL - overhead) {
 		print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size, overhead);
@@ -184,32 +179,10 @@ xallocz(ulong size, int zero)
 	}
 
 	ilock(&xlists.lk);
-	
-	/* Debug counter to prevent infinite loop */
-	int loop_count = 0;
-	int print_count = 0;  /* Limit debug prints */
-	
+
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
-		/* Debug print to see if we're in the loop - limit verbose output */
-		if (loop_count % 5000 == 0 && print_count < 3) {
-			print("xallocz: checking hole (count=%d)\n", loop_count);
-			print_count++;
-		} else if (print_count == 3 && loop_count % 5000 == 0) {
-			print("xallocz: ... (limiting verbose output)\n");
-			print_count++;  /* Only print this message once */
-		}
-		loop_count++;
-		
-		/* Safety check to prevent infinite loop */
-		if (loop_count > 100000) {
-			print("xallocz: infinite loop detected, breaking\n");
-			iunlock(&xlists.lk);
-			return nil;
-		}
-		
 		if(h->size >= size) {
-			/* h->addr is already a virtual address in HHDM - no KADDR needed! */
 			p = (Xhdr*)h->addr;
 			h->addr += size;
 			h->size -= size;
@@ -225,18 +198,11 @@ xallocz(ulong size, int zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
-			/* Limit verbose output for successful allocations */
-			if (size > 64*1024) {  /* Only print for large allocations */
-				print("xallocz: allocated %lud bytes\n", size);
-			}
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	if (size > 64*1024) {  /* Only print for large allocations */
-		print("xallocz: allocation failed for %lud bytes\n", size);
-	}
 	return nil;
 }
 
