@@ -295,8 +295,12 @@ pcmpinit(void)
 	print("pcmpinit: ENTRY\n");
 	print("pcmpinit: pcmp=%#p\n", pcmp);
 	if(pcmp == nil) {
+		extern PCArch archgeneric;
+		extern PCArch *arch;
 		print("pcmpinit: WARNING - pcmp is nil, MP not found\n");
 		print("pcmpinit: Falling back to i8259 (PIC mode)\n");
+		print("pcmpinit: switching arch from archmp to archgeneric\n");
+		arch = &archgeneric;
 		i8259init();
 		return;
 	}

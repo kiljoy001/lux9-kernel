@@ -196,6 +196,8 @@ i8253timerset(uvlong next)
 	ulong want;
 	ulong now;
 
+	print("i8253timerset: ENTRY (next=%lld)\n", next);
+
 	want = next>>Tickshift;
 	now = i8253.ticks;	/* assuming whomever called us just did fastticks() */
 
@@ -205,9 +207,13 @@ i8253timerset(uvlong next)
 	else if(period > MaxPeriod)
 		period = MaxPeriod;
 
+	print("i8253timerset: period=%ld, i8253.period=%ld\n", period, i8253.period);
+
 	/* hysteresis */
 	if(i8253.period != period){
+		print("i8253timerset: acquiring i8253.lock\n");
 		ilock(&i8253.lock);
+		print("i8253timerset: lock acquired, programming timer\n");
 		/* load new value */
 		outb(Tmode, Load0|Square);
 		outb(T0cntr, period);		/* low byte */
@@ -217,7 +223,11 @@ i8253timerset(uvlong next)
 		i8253.period = period;
 		i8253.periodset++;
 		iunlock(&i8253.lock);
+		print("i8253timerset: timer programmed, lock released\n");
+	} else {
+		print("i8253timerset: period unchanged, skipping\n");
 	}
+	print("i8253timerset: DONE\n");
 }
 
 static void

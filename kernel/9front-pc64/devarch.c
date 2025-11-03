@@ -941,7 +941,14 @@ pcmspecialclose(int a)
 void
 timerset(Tval x)
 {
+	print("timerset: ENTRY (x=%lld), arch=%#p, arch->timerset=%#p\n", x, arch, arch->timerset);
+	if(arch->timerset == nil) {
+		print("timerset: ERROR - arch->timerset is nil!\n");
+		return;
+	}
+	print("timerset: calling arch->timerset\n");
 	(*arch->timerset)(x);
+	print("timerset: arch->timerset returned\n");
 }
 
 /*

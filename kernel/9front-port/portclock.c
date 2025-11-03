@@ -233,13 +233,20 @@ timersinit(void)
 {
 	Timer *t;
 
+	print("timersinit: ENTRY\n");
+
 	/*
 	 * T->tf == nil means the HZ clock for this processor.
 	 */
+	print("timersinit: calling todinit\n");
 	todinit();
+	print("timersinit: todinit complete, calling xalloc\n");
+
 	t = xalloc(sizeof(*t));
 	if(t == nil)
 		panic("timersinit: no memory for Timer");
+	print("timersinit: xalloc complete, setting up timer\n");
+
 	t->tmode = Tperiodic;
 	t->tt = nil;
 	t->tns = 1000000000/HZ;
@@ -250,7 +257,9 @@ timersinit(void)
 		if(lk->key != 0) {
 		}
 	}
+	print("timersinit: calling timeradd\n");
 	timeradd(t);
+	print("timersinit: timeradd complete, DONE\n");
 }
 
 Timer*
@@ -259,10 +268,14 @@ addclock0link(void (*f)(void), int ms)
 	Timer *nt;
 	uvlong when;
 
+	print("addclock0link: ENTRY (ms=%d)\n", ms);
+
 	/* Synchronize to hztimer if ms is 0 */
 	nt = xalloc(sizeof(Timer));
 	if(nt == nil)
 		panic("addclock0link: no memory for Timer");
+	print("addclock0link: xalloc complete\n");
+
 	if(ms == 0)
 		ms = 1000/HZ;
 	nt->tns = (vlong)ms*1000000LL;
@@ -270,12 +283,18 @@ addclock0link(void (*f)(void), int ms)
 	nt->tt = nil;
 	nt->tf = (void (*)(Ureg*, Timer*))f;
 
+	print("addclock0link: acquiring timers[0].lk\n");
 	ilock(&timers[0].lk);
+	print("addclock0link: lock acquired, calling tadd\n");
 	when = tadd(&timers[0], nt);
+	print("addclock0link: tadd returned when=%lld\n", when);
 	if(when){
+		print("addclock0link: calling timerset\n");
 		timerset(when);
+		print("addclock0link: timerset returned\n");
 	}
 	iunlock(&timers[0].lk);
+	print("addclock0link: DONE\n");
 	return nt;
 }
 
