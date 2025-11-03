@@ -468,8 +468,12 @@ setuppagetables(void)
 
 	u64int trampoline_phys = 0x1000;  /* Physical address in identity-mapped region */
 	void *trampoline_virt_limine = hhdm_virt(trampoline_phys);  /* Virtual address under Limine's HHDM */
-	void *trampoline_virt_new = (void*)trampoline_phys;  /* Virtual address under our identity map */
 	uintptr trampoline_size = (uintptr)cr3_switch_trampoline_end - (uintptr)cr3_switch_trampoline;
+
+	/* Add static assertion to ensure trampoline fits in low memory page */
+	if(trampoline_size > 0x1000) {
+		panic("CR3 switch trampoline too large: %d bytes > 4KB page", trampoline_size);
+	}
 
 	uartputs("setuppagetables: copying trampoline to low memory\n", 51);
 	dbghex("  trampoline physical: ", trampoline_phys);
@@ -477,6 +481,9 @@ setuppagetables(void)
 
 	/* Copy trampoline code to low memory using Limine's HHDM */
 	memmove(trampoline_virt_limine, cr3_switch_trampoline, trampoline_size);
+
+	/* Ensure the copied trampoline is visible to the CPU */
+	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
 
 	uartputs("setuppagetables: switching to new page tables via trampoline\n", 62);
 	dbghex("setuppagetables: new CR3 value: ", pml4_phys);
