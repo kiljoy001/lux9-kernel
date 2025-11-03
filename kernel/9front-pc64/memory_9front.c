@@ -662,7 +662,9 @@ meminit(void)
 {
 	uintptr base, size;
 	Confmem *cm;
+	int cmidx = 0;
 
+	print("meminit: ENTRY\n");
 	umbexclude();
 	/* Skip UMB mapping - using HHDM for all physical memory access */
 	/* for(base = memmapnext(-1, MemUMB); base != -1; base = memmapnext(base, MemUMB)){
@@ -673,19 +675,34 @@ meminit(void)
 
 	cm = &conf.mem[0];
 	for(base = memmapnext(-1, MemRAM); base != -1; base = memmapnext(base, MemRAM)){
+		print("meminit: found MemRAM at base=%#p\n", base);
 		size = memmapsize(base, BY2PG) & ~(BY2PG-1);
-		if(size == 0)
+		print("meminit: size=%#llux (%llu pages)\n", (uvlong)size, (uvlong)(size/BY2PG));
+		if(size == 0) {
+			print("meminit: size is 0, skipping\n");
 			continue;
+		}
 		if(cm >= &conf.mem[nelem(conf.mem)]){
 			print("meminit: out of entries, loosing: %#p (%llud)\n", base, (uvlong)size);
 			continue;
 		}
 		cm->base = memmapalloc(base, size, BY2PG, MemRAM);
-		if(cm->base == -1)
+		print("meminit: memmapalloc returned base=%#p\n", cm->base);
+		if(cm->base == -1) {
+			print("meminit: memmapalloc failed, skipping\n");
 			continue;
+		}
 		base = cm->base;
 		cm->npage = size/BY2PG;
+		print("meminit: conf.mem[%d]: base=%#p npage=%lu\n", cmidx, cm->base, cm->npage);
 		cm++;
+		cmidx++;
+	}
+
+	print("meminit: populated %d conf.mem[] entries\n", cmidx);
+	for(int i = 0; i < cmidx && i < nelem(conf.mem); i++){
+		print("meminit: conf.mem[%d]: base=%#p npage=%lu\n",
+			i, conf.mem[i].base, conf.mem[i].npage);
 	}
 
 	if(0) memmapdump();

@@ -645,10 +645,10 @@ paddr(void *v)
 		return va - hhdm_base;
 	}
 
-	/* Kernel addresses at KZERO - need offset for where Limine loaded us */
+	/* Kernel addresses at KZERO - kernel was relocated to physical 2MB */
 	if(va >= KZERO && va < (uintptr)end) {
-		/* Inside kernel image: account for Limine's load address */
-		return (va - KZERO) + limine_kernel_phys_base;
+		/* Inside kernel image: kernel is now at physical 2MB (relocated from Limine's location) */
+		return (va - KZERO) + (2*MiB);
 	} else if(va >= KZERO) {
 		/* Outside kernel but >= KZERO: simple linear mapping */
 		return va - KZERO;
