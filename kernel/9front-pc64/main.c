@@ -290,7 +290,7 @@ main(void)
 
 	/* Switch to our own page tables - REQUIRED for user space! */
 	setuppagetables();
-	print("BOOT: switched to kernel-managed page tables with HHDM\n");
+	print("BOOT: switched to kernel-managed page tables\n");
 
 	trapinit();
 	mathinit();

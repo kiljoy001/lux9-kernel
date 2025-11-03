@@ -385,28 +385,40 @@ setuppagetables(void)
 		pml4[i] = 0;
 	uartputs("setuppagetables: PML4 cleared\n", 30);
 
-	/* 9front style: Map ALL physical memory at KZERO
-	 * This means:
-	 *   physical 0 → KZERO+0
-	 *   physical X → KZERO+X
-	 * Then PADDR(va) = va - KZERO (simple!)
-	 * And KADDR(pa) = pa + KZERO (simple!)
-	 */
+	/* Relocate kernel to 9front-expected location (2MB physical)
+	 * Limine loaded us high (~2GB), but 9front expects kernel at low memory
+	 * Strategy: Copy entire kernel to physical 2MB, then use standard 9front mapping */
+	extern u64int limine_kernel_phys_base;
+	extern char ttext[], etext[], kend[];  /* Kernel boundaries from linker */
 
-	/* Map physical memory at KZERO
-	 * 9front expects: physical 0 → KZERO+0, physical X → KZERO+X
-	 * This makes PADDR(va) = va - KZERO and KADDR(pa) = pa + KZERO work correctly.
-	 * Map 2GB of physical memory starting from address 0. */
-	u64int kernel_map_size = 2ULL * 1024 * 1024 * 1024;  /* Map 2GB */
+	u64int target_phys = 2*MiB;  /* Relocate to 2MB physical */
+	uintptr kernel_size = (uintptr)kend - KZERO;  /* Size of kernel in memory */
 
-	uartputs("setuppagetables: mapping 2GB physical at KZERO\n", 46);
+	uartputs("setuppagetables: relocating kernel to 9front-compatible location\n", 66);
+	dbghex("  kernel source (phys): ", limine_kernel_phys_base);
+	dbghex("  kernel target (phys): ", target_phys);
+	dbghex("  kernel size: ", kernel_size);
 
-	/* Map physical memory 0-2GB to KZERO */
-	for(u64int pa = 0; pa < kernel_map_size; pa += PGLSZ(1)) {
-		u64int va = KZERO + pa;
+	/* Copy kernel from Limine's location to target using HHDM */
+	void *target_virt = (void*)hhdm_virt(target_phys);
+	void *source_virt = (void*)hhdm_virt(limine_kernel_phys_base);
+	memmove(target_virt, source_virt, kernel_size);
+	uartputs("  kernel relocated!\n", 19);
+
+	/* Now use standard 9front mapping: physical X → KZERO+X
+	 * This means: physical 2MB → KZERO+2MB
+	 * But our kernel expects to be at KZERO, so we need offset mapping:
+	 * Virtual KZERO → Physical target_phys */
+	uartputs("setuppagetables: mapping KZERO to relocated kernel\n", 51);
+
+	/* Map 512MB starting from target, to KZERO */
+	u64int map_size = 512*MiB;
+	for(u64int offset = 0; offset < map_size; offset += PGLSZ(1)) {
+		u64int va = KZERO + offset;
+		u64int pa = target_phys + offset;
 		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
-	uartputs("setuppagetables: 2GB mapped at KZERO\n", 37);
+	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
 	/* Ensure conf.mem is populated */
 	uartputs("setuppagetables: calling ensure_phys_range\n", 45);
@@ -480,15 +492,31 @@ setuppagetables(void)
 	dbghex("  trampoline size: ", trampoline_size);
 
 	/* Copy trampoline code to low memory using Limine's HHDM */
+	memmove((void*)hhdm_virt(trampoline_phys), cr3_switch_trampoline, trampoline_size);
+
+	/* Verify copy with hex dump of first 16 bytes */
+	uartputs("  trampoline bytes: ", 20);
+	unsigned char *tb = (unsigned char*)hhdm_virt(trampoline_phys);
+	for(int i = 0; i < 16 && i < trampoline_size; i++) {
+		char hex[4];
+		hex[0] = "0123456789abcdef"[tb[i] >> 4];
+		hex[1] = "0123456789abcdef"[tb[i] & 0xf];
+		hex[2] = ' ';
+		hex[3] = 0;
+		uartputs(hex, 3);
+	}
+	uartputs("\n", 1);
 
 	/* Ensure the copied trampoline is visible to the CPU */
+	__asm__ volatile("mfence" ::: "memory");  /* Memory fence */
+	__asm__ volatile("wbinvd" ::: "memory");  /* Write back and invalidate cache */
 	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
 
 	uartputs("setuppagetables: switching to new page tables via trampoline\n", 62);
 	dbghex("setuppagetables: new CR3 value: ", pml4_phys);
 
 	/* Create a continuation function label to return to after CR3 switch */
-	void *continuation = after_cr3_switch;
+	void *continuation = &&after_cr3_switch;
 	dbghex("  continuation address: ", (uintptr)continuation);
 
 	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
@@ -506,6 +534,7 @@ setuppagetables(void)
 
 after_cr3_switch:
 	/* We're now executing on the new page tables! */
+	__asm__ volatile("" ::: "memory");  /* Memory barrier */
 	uartputs("setuppagetables: CR3 switch successful!\n", 41);
 
 	uartputs("setuppagetables: validating HHDM\n", 34);
