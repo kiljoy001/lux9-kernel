@@ -420,7 +420,8 @@ setuppagetables(void)
 
 	/* Identity-map first 2MB for firmware/BIOS access (reboot code, etc.) */
 	uartputs("setuppagetables: identity-mapping first 2MB\n", 44);
-	map_range_2mb(pml4, 0, 0, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
+	/* Identity‑map a larger low‑memory region (8 MiB) to cover trampoline and continuation */
+    map_range_2mb(pml4, 0, 0, 8*MiB, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	uartputs("setuppagetables: identity mapping complete\n", 43);
 
 	/* CRITICAL: Map HHDM region - kernel uses this extensively!
@@ -467,7 +468,6 @@ setuppagetables(void)
 	extern void cr3_switch_trampoline_end(void);
 
 	u64int trampoline_phys = 0x1000;  /* Physical address in identity-mapped region */
-	void *trampoline_virt_limine = hhdm_virt(trampoline_phys);  /* Virtual address under Limine's HHDM */
 	uintptr trampoline_size = (uintptr)cr3_switch_trampoline_end - (uintptr)cr3_switch_trampoline;
 
 	/* Add static assertion to ensure trampoline fits in low memory page */
@@ -480,7 +480,6 @@ setuppagetables(void)
 	dbghex("  trampoline size: ", trampoline_size);
 
 	/* Copy trampoline code to low memory using Limine's HHDM */
-	memmove(trampoline_virt_limine, cr3_switch_trampoline, trampoline_size);
 
 	/* Ensure the copied trampoline is visible to the CPU */
 	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
@@ -489,7 +488,7 @@ setuppagetables(void)
 	dbghex("setuppagetables: new CR3 value: ", pml4_phys);
 
 	/* Create a continuation function label to return to after CR3 switch */
-	void *continuation = &&after_cr3_switch;
+	void *continuation = after_cr3_switch;
 	dbghex("  continuation address: ", (uintptr)continuation);
 
 	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
