@@ -562,7 +562,8 @@ setuppagetables(void)
 }
 
 /* Continuation function called after CR3 switch
- * This runs on the new page tables with KZERO mapped to physical 2MB */
+ * This runs on the new page tables with KZERO mapped to physical 2MB
+ * NEVER RETURNS - continues boot by calling main_after_cr3() */
 void
 cr3_continuation(void)
 {
@@ -600,9 +601,13 @@ cr3_continuation(void)
 	m->pml4 = cpu0pml4;
 	uartputs("cr3_continuation: page tables fully operational\n", 48);
 
-	/* Return to caller (main) - but we can't! Stack changed!
-	 * For now, just continue booting... */
-	uartputs("cr3_continuation: returning (will need to fix return path)\n", 60);
+	/* Continue boot sequence - this NEVER RETURNS */
+	extern void main_after_cr3(void);
+	uartputs("cr3_continuation: jumping to main_after_cr3\n", 45);
+	main_after_cr3();
+
+	/* UNREACHABLE */
+	panic("cr3_continuation: main_after_cr3 returned unexpectedly");
 }
 
 void

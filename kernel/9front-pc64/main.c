@@ -180,6 +180,94 @@ mach0init(void)
 	active.exiting = 0;
 }
 
+/* Main boot continuation after CR3 switch
+ * Called by cr3_continuation() after page table switch is complete */
+void
+main_after_cr3(void)
+{
+	char *p;
+
+	/* CRITICAL: First output must be via UART to verify we got here */
+	extern void uartputs(char*, int);
+	uartputs("main_after_cr3: ENTERED\n", 24);
+
+	/* Skip print() until we've reinitialized - it was set up with old stack */
+	uartputs("BOOT: switched to kernel-managed page tables\n", 46);
+
+	uartputs("main_after_cr3: calling xinit\n", 31);
+	xinit();
+	uartputs("main_after_cr3: calling pageowninit\n", 37);
+	pageowninit();
+	uartputs("main_after_cr3: calling exchangeinit\n", 38);
+	exchangeinit();
+	uartputs("BOOT: exchangeinit complete\n", 29);
+
+	uartputs("main_after_cr3: calling trapinit\n", 35);
+	trapinit();
+	uartputs("main_after_cr3: calling mathinit\n", 35);
+	mathinit();
+	if(i8237alloc != nil)
+		i8237alloc();
+	uartputs("main_after_cr3: calling pcicfginit\n", 37);
+	pcicfginit();
+	uartputs("main_after_cr3: calling bootscreeninit\n", 41);
+	bootscreeninit();
+	uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
+	fbconsoleinit();  /* Initialize framebuffer console */
+	uartputs("main_after_cr3: calling printinit\n", 36);
+	printinit();
+
+	/* NOW print() should work - printinit() re-initialized it for new stack */
+	print("BOOT: printinit complete - serial console ready\n");
+	cpuidprint();
+	print("BOOT: about to call mmuinit\n");
+	mmuinit();
+	print("BOOT: mmuinit complete - runtime page tables live\n");
+	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
+	if(arch->intrinit) {
+		print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
+		arch->intrinit();
+		print("BOOT: arch->intrinit returned successfully\n");
+	} else {
+		print("WARNING: arch->intrinit is nil\n");
+	}
+	print("BOOT: calling timersinit\n");
+	timersinit();
+	print("BOOT: timersinit complete\n");
+	print("BOOT: calling arch->clockenable\n");
+	if(arch->clockenable)
+		arch->clockenable();
+	print("BOOT: arch->clockenable complete\n");
+	print("BOOT: calling procinit0\n");
+	procinit0();
+	print("BOOT: procinit0 complete - process table ready\n");
+	initseg();
+	links();
+	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
+	chandevreset();
+	print("BOOT: device reset sequence finished\n");
+
+	/* NOTE: initrd_register() is now called in init0() after chandevinit(),
+	 * because the initrd is loaded in proc0 which runs after main() */
+
+	preallocpages();
+	pageinit();
+
+	/* Initialize run queues to ensure clean state */
+	extern Schedq runq[];
+	extern int Nrq;
+	for(int i = 0; i < 22; i++){  /* Nrq = 22 */
+		runq[i].head = nil;
+		runq[i].tail = nil;
+		runq[i].n = 0;
+	}
+
+	userinit();
+	print("BOOT: userinit scheduled *init* kernel process\n");
+	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
+	schedinit();
+}
+
 void
 init0(void)
 {
@@ -295,71 +383,13 @@ main(void)
 
 	/* Switch to our own page tables - REQUIRED for user space!
 	 * NOTE: This must happen BEFORE xinit() to avoid corrupting xalloc's Hole structures.
-	 * setuppagetables() relocates kernel to 2MB first, then xinit() properly excludes it. */
+	 * setuppagetables() relocates kernel to 2MB first, then xinit() properly excludes it.
+	 * IMPORTANT: setuppagetables() NEVER RETURNS! It jumps to cr3_continuation() which
+	 * calls main_after_cr3() to continue the boot sequence. */
 	setuppagetables();
-	print("BOOT: switched to kernel-managed page tables\n");
 
-	xinit();
-	pageowninit();
-	exchangeinit();
-	print("BOOT: exchangeinit complete\n");
-
-	trapinit();
-	mathinit();
-	if(i8237alloc != nil)
-		i8237alloc();
-	pcicfginit();
-	bootscreeninit();
-	fbconsoleinit();  /* Initialize framebuffer console */
-	printinit();
-	print("BOOT: printinit complete - serial console ready\n");
-	cpuidprint();
-	print("BOOT: about to call mmuinit\n");
-	mmuinit();
-	print("BOOT: mmuinit complete - runtime page tables live\n");
-	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
-	if(arch->intrinit) {
-		print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
-		arch->intrinit();
-		print("BOOT: arch->intrinit returned successfully\n");
-	} else {
-		print("WARNING: arch->intrinit is nil\n");
-	}
-	print("BOOT: calling timersinit\n");
-	timersinit();
-	print("BOOT: timersinit complete\n");
-	print("BOOT: calling arch->clockenable\n");
-	if(arch->clockenable)
-		arch->clockenable();
-	print("BOOT: arch->clockenable complete\n");
-	print("BOOT: calling procinit0\n");
-	procinit0();
-	print("BOOT: procinit0 complete - process table ready\n");
-	initseg();
-	links();
-	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
-	chandevreset();
-	print("BOOT: device reset sequence finished\n");
-
-	/* NOTE: initrd_register() is now called in init0() after chandevinit(),
-	 * because the initrd is loaded in proc0 which runs after main() */
-
-	preallocpages();
-	pageinit();
-
-	/* Initialize run queues to ensure clean state */
-	extern Schedq runq[];
-	extern int Nrq;
-	for(int i = 0; i < 22; i++){  /* Nrq = 22 */
-		runq[i].head = nil;
-		runq[i].tail = nil;
-		runq[i].n = 0;
-	}
-
-	userinit();
-	print("BOOT: userinit scheduled *init* kernel process\n");
-	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
-	schedinit();
+	/* UNREACHABLE - setuppagetables() never returns */
+	panic("main: setuppagetables returned unexpectedly");
 }
 
 static void
