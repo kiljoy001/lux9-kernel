@@ -415,39 +415,30 @@ setuppagetables(void)
 		pml4[i] = 0;
 	uartputs("setuppagetables: PML4 cleared\n", 30);
 
-	/* Relocate kernel to 9front-expected location (2MB physical)
-	 * Limine loaded us high (~2GB), but 9front expects kernel at low memory
-	 * Strategy: Copy entire kernel to physical 2MB, then use standard 9front mapping */
+	/* Keep kernel at Limine load address - no relocation needed
+	 * Limine loads us high (~2GB), and we can work with that
+	 * Strategy: Map KZERO directly to the actual physical load address */
 	extern u64int limine_kernel_phys_base;
 	extern char ttext[], etext[], kend[];  /* Kernel boundaries from linker */
 
-	u64int target_phys = 2*MiB;  /* Relocate to 2MB physical */
+	u64int kernel_phys = limine_kernel_phys_base;  /* Keep at Limine load address */
 	uintptr kernel_size = (uintptr)kend - KZERO;  /* Size of kernel in memory */
 
-	uartputs("setuppagetables: relocating kernel to 9front-compatible location\n", 66);
-	dbghex("  kernel source (phys): ", limine_kernel_phys_base);
-	dbghex("  kernel target (phys): ", target_phys);
+	uartputs("setuppagetables: using kernel at Limine load address\n", 53);
+	dbghex("  kernel physical (Limine): ", kernel_phys);
 	dbghex("  kernel size: ", kernel_size);
 
-	/* Copy kernel from Limine's location to target using HHDM */
-	void *target_virt = (void*)hhdm_virt(target_phys);
-	void *source_virt = (void*)hhdm_virt(limine_kernel_phys_base);
-	memmove(target_virt, source_virt, kernel_size);
-	uartputs("  kernel relocated!\n", 19);
+	/* Map kernel at KZERO to actual Limine load address */
+	uartputs("setuppagetables: mapping KZERO to Limine load address\n", 52);
 
-	/* Now use standard 9front mapping: physical X → KZERO+X
-	 * This means: physical 2MB → KZERO+2MB
-	 * But our kernel expects to be at KZERO, so we need offset mapping:
-	 * Virtual KZERO → Physical target_phys */
-	uartputs("setuppagetables: mapping KZERO to relocated kernel\n", 51);
+	/* Map kernel image directly */
+	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	uartputs("setuppagetables: KZERO mapped to kernel image\n", 47);
 
-	/* Map 512MB starting from target, to KZERO */
-	u64int map_size = 512*MiB;
-	for(u64int offset = 0; offset < map_size; offset += PGLSZ(1)) {
-		u64int va = KZERO + offset;
-		u64int pa = target_phys + offset;
-		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	}
+	/* Mirror kernel image into HHDM for memory functions */
+	uartputs("setuppagetables: mirroring kernel in HHDM\n", 43);
+	map_range(pml4, kaddr(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	uartputs("setuppagetables: kernel mapping complete\n", 42);
 	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
 	/* Ensure conf.mem is populated */
@@ -460,15 +451,30 @@ setuppagetables(void)
 	 * 2. High memory access should use HHDM instead
 	 * 3. Dynamic page mapping uses VMAP, not KZERO */
 
-	/* Identity-map first 2MB for firmware/BIOS access (reboot code, etc.) */
-	uartputs("setuppagetables: identity-mapping first 2MB\n", 44);
-	/* Identity‑map a larger low‑memory region (8 MiB) to cover trampoline and continuation */
-    map_range_2mb(pml4, 0, 0, 8*MiB, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	uartputs("setuppagetables: identity mapping complete\n", 43);
+	/* HHDM provides access to low memory (0-8MB) for firmware/BIOS access
+	 * No separate identity mapping needed - HHDM handles all physical memory */
+	uartputs("setuppagetables: using HHDM for low memory access\n", 52);
 
-	/* NO HHDM MAPPING - kernel uses VMAP for physical memory access (9front way)
-	 * Bootloader's job is done - kernel manages its own memory now */
-	uartputs("setuppagetables: skipping HHDM (using VMAP for physical access)\n", 66);
+	/* Setup HHDM mapping for all physical memory access */
+	uartputs("setuppagetables: setting up HHDM mapping\n", 45);
+	
+	/* Simple HHDM setup - covers all physical memory */
+	u64int hhdm_start = saved_limine_hhdm_offset;
+	u64int hhdm_end = hhdm_start + max_physaddr;
+	
+	/* Map entire HHDM range using large pages where possible */
+	for(u64int va = hhdm_start; va < hhdm_end; va += PGLSZ(3)) {
+		u64int pa = va - hhdm_start;
+		u64int size = PGLSZ(3);
+		if(pa + size > max_physaddr) size = max_physaddr - pa;
+		
+		if(size >= PGLSZ(3)) {
+			map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
+		} else {
+			map_range(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTEACCESSED);
+		}
+	}
+	uartputs("setuppagetables: HHDM mapping complete\n", 42);
 
 	/* Verify our current code location is mapped before switching */
 	uintptr current_rip;
@@ -490,45 +496,8 @@ setuppagetables(void)
 		uartputs("  PML4[511] (KZERO) is valid\n", 30);
 	uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
 
-	uartputs("setuppagetables: preparing CR3 switch trampoline\n", 50);
-
-	/* Copy CR3 switch trampoline to low memory (will be identity-mapped)
-	 * We use physical address 0x1000 which is in our identity-mapped first 2MB */
-	extern void cr3_switch_trampoline(void);
-	extern void cr3_switch_trampoline_end(void);
-
-	u64int trampoline_phys = 0x1000;  /* Physical address in identity-mapped region */
-	uintptr trampoline_size = (uintptr)cr3_switch_trampoline_end - (uintptr)cr3_switch_trampoline;
-
-	/* Add static assertion to ensure trampoline fits in low memory page */
-	if(trampoline_size > 0x1000) {
-		panic("CR3 switch trampoline too large: %d bytes > 4KB page", trampoline_size);
-	}
-
-	uartputs("setuppagetables: copying trampoline to low memory\n", 51);
-	dbghex("  trampoline physical: ", trampoline_phys);
-	dbghex("  trampoline size: ", trampoline_size);
-
-	/* Copy trampoline code to low memory using Limine's HHDM */
-	memmove((void*)hhdm_virt(trampoline_phys), cr3_switch_trampoline, trampoline_size);
-
-	/* Verify copy with hex dump of first 16 bytes */
-	uartputs("  trampoline bytes: ", 20);
-	unsigned char *tb = (unsigned char*)hhdm_virt(trampoline_phys);
-	for(int i = 0; i < 16 && i < trampoline_size; i++) {
-		char hex[4];
-		hex[0] = "0123456789abcdef"[tb[i] >> 4];
-		hex[1] = "0123456789abcdef"[tb[i] & 0xf];
-		hex[2] = ' ';
-		hex[3] = 0;
-		uartputs(hex, 3);
-	}
-	uartputs("\n", 1);
-
-	/* Ensure the copied trampoline is visible to the CPU */
-	__asm__ volatile("mfence" ::: "memory");  /* Memory fence */
-	__asm__ volatile("wbinvd" ::: "memory");  /* Write back and invalidate cache */
-	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
+	/* Simplified CR3 switch - HHDM ensures accessibility */
+	uartputs("setuppagetables: preparing simple CR3 switch\n", 50);
 
 	/* Check if memory system is ready before CR3 switch */
 	if(!memory_system_ready_before_cr3()) {
@@ -541,73 +510,24 @@ setuppagetables(void)
 		uartputs("setuppagetables: memory system already ready\n", 47);
 	}
 
-	/* Use a function pointer instead of a label for better code generation */
-	extern void cr3_continuation(void);
-	void *continuation_virt = (void*)cr3_continuation;
-
-	dbghex("  continuation virtual (KZERO): ", (uintptr)continuation_virt);
-	uartputs("  (jumping to KZERO virtual address, not physical)\n", 51);
-
-	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
-	 * NOT via Limine's HHDM! After CR3 switch, Limine's HHDM is gone, so the CPU
-	 * must fetch the next instruction from an identity-mapped address. */
-	typedef void (*trampoline_fn_t)(u64int new_cr3, void *cont);
-	trampoline_fn_t trampoline_fn = (trampoline_fn_t)trampoline_phys;  /* Use identity-mapped address! */
-
-	uartputs("setuppagetables: calling CR3 trampoline...\n", 45);
-	trampoline_fn(pml4_phys, continuation_virt);  /* Jump to KZERO virtual address */
-
-	/* Should not reach here - trampoline jumps to continuation */
-	panic("CR3 switch trampoline returned unexpectedly");
-}
-
-/* Continuation function called after CR3 switch
- * This runs on the new page tables with KZERO mapped to physical 2MB
- * NEVER RETURNS - continues boot by calling main_after_cr3() */
-void
-cr3_continuation(void)
-{
-	/* CRITICAL: We CANNOT use the stack! Limine's stack is unmapped!
-	 * Set up a new stack first using inline asm */
+	/* Simple, direct CR3 switch - HHDM ensures both old and new code are accessible */
+	uartputs("setuppagetables: switching to kernel page tables\n", 50);
 	__asm__ volatile(
-		/* Output success via serial port (stack-free) */
-		"movw $0x3f8, %%dx\n"
-		"movb $'O', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'K', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'!', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'\\n', %%al\n"
-		"outb %%al, %%dx\n"
-
-		/* Load address of global m into RAX */
-		"movq m(%%rip), %%rax\n"
-		/* Set RSP to top of m's stack: m + MACHSIZE */
-		"leaq %c0(%%rax), %%rsp\n"
-		/* Clear RBP to mark stack bottom */
-		"xorq %%rbp, %%rbp\n"
-
-		:
-		: "i"(MACHSIZE)
-		: "rax", "rdx", "memory"  /* Don't list rbp/rsp in clobbers - GCC doesn't allow it */
+		"mov %0, %%cr3" 
+		: : "r"(pml4_phys) 
+		: "memory"
 	);
 
-	/* NOW we can safely use C code and the stack */
-	uartputs("cr3_continuation: new stack set up\n", 36);
+	/* Update kernel's page table pointer */
+	m->pml4 = pml4;
+	uartputs("setuppagetables: CR3 switch complete\n", 40);
 
-	/* Update m->pml4 to point to our page tables */
-	extern u64int cpu0pml4[];
-	m->pml4 = cpu0pml4;
-	uartputs("cr3_continuation: page tables fully operational\n", 48);
-
-	/* Continue boot sequence - this NEVER RETURNS */
-	extern void main_after_cr3(void);
-	uartputs("cr3_continuation: jumping to main_after_cr3\n", 45);
+	/* Direct call to continue boot - no trampoline needed */
+	uartputs("setuppagetables: calling main_after_cr3\n", 44);
 	main_after_cr3();
 
-	/* UNREACHABLE */
-	panic("cr3_continuation: main_after_cr3 returned unexpectedly");
+	/* Should never reach here */
+	panic("setuppagetables: main_after_cr3 returned unexpectedly");
 }
 
 void

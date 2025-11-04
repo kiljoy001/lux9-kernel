@@ -23,54 +23,6 @@ touser_attempt_count:
 
 .extern pebble_red_blue_exit
 
-/* CR3 switch trampoline - designed to be copied to low memory (identity-mapped)
- * Arguments: RDI = new CR3 physical address, RSI = high-memory continuation address
- * This function MUST execute from identity-mapped low memory */
-.global cr3_switch_trampoline
-.global cr3_switch_trampoline_end
-.align 16
-cr3_switch_trampoline:
-	/* Save continuation address to R8 (not clobbered by CPUID or debug output) */
-	movq %rsi, %r8
-	/* Save CR3 to R9 (will be clobbered by debug output using DX) */
-	movq %rdi, %r9
-
-	/* Debug: Output 'A' to serial (0x3f8) */
-	movw $0x3f8, %dx
-	movb $'A', %al
-	outb %al, %dx
-
-	/* Disable interrupts during switch */
-	cli
-
-	/* Debug: Output 'B' */
-	movw $0x3f8, %dx
-	movb $'B', %al
-	outb %al, %dx
-
-	/* Switch CR3 - this invalidates TLB and starts using new page tables */
-	movq %r9, %cr3
-
-	/* CPUID is a serializing instruction - it waits for all prior instructions
-	 * to complete and flushes the instruction pipeline. This prevents the CPU
-	 * from speculatively executing instructions fetched with the old page tables.
-	 * CPUID clobbers RAX, RBX, RCX, RDX but not R8. */
-	xorl %eax, %eax    /* CPUID function 0 */
-	cpuid
-
-	/* Move continuation address to RAX and jump - no stack dependencies */
-	movq %r8, %rax
-	jmp *%rax  /* Direct jump to continuation - avoids stack issues */
-
-	/* Should NEVER reach here - but if we do, output 'X' */
-	movw $0x3f8, %dx
-	movb $'X', %al
-	outb %al, %dx
-	hlt
-
-cr3_switch_trampoline_end:
-	nop
-
 /* CPU I/O port access */
 .global inb
 inb:

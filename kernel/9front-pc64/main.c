@@ -181,7 +181,7 @@ mach0init(void)
 }
 
 /* Main boot continuation after CR3 switch
- * Called by cr3_continuation() after page table switch is complete */
+ * Called directly by setuppagetables() after page table switch is complete */
 void
 main_after_cr3(void)
 {
@@ -382,10 +382,9 @@ main(void)
 	print("BOOT: memory coordination system initialized\n");
 
 	/* Switch to our own page tables - REQUIRED for user space!
-	 * NOTE: This must happen BEFORE xinit() to avoid corrupting xalloc's Hole structures.
-	 * setuppagetables() relocates kernel to 2MB first, then xinit() properly excludes it.
-	 * IMPORTANT: setuppagetables() NEVER RETURNS! It jumps to cr3_continuation() which
-	 * calls main_after_cr3() to continue the boot sequence. */
+	/* NOTE: This must happen AFTER setuppagetables() to avoid memory map conflicts.
+	 * setuppagetables() now uses HHDM and no longer relocates the kernel.
+	 * IMPORTANT: setuppagetables() calls main_after_cr3() directly to continue boot. */
 	setuppagetables();
 
 	/* UNREACHABLE - setuppagetables() never returns */
