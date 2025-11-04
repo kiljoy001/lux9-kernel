@@ -7,6 +7,9 @@
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
 extern uintptr limine_hhdm_offset;
 
+/* Flag to indicate xinit() has completed (for early-boot allocators) */
+int xinit_done = 0;
+
 /* -------------------------------------------------------------------------
  * XALLOC configuration
  * -------------------------------------------------------------------------
@@ -113,6 +116,9 @@ xinit(void)
 		 */
 	}
 	print("xinit: initialization complete\n");
+
+	/* Mark xinit as complete for early-boot allocators */
+	xinit_done = 1;
 }
 
 void*

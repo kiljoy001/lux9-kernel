@@ -283,16 +283,26 @@ main(void)
 		print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
 	printinit();
 	print("BOOT: printinit complete - serial console ready\n");
+
+	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
+	 * because memory coordination needs it during CR3 switch */
+	borrowinit();
+	print("BOOT: borrow checker initialized\n");
+
+	/* Initialize memory coordination system for boot handoff */
+	boot_memory_coordination_init();
+	print("BOOT: memory coordination system initialized\n");
+
+	/* Switch to our own page tables - REQUIRED for user space!
+	 * NOTE: This must happen BEFORE xinit() to avoid corrupting xalloc's Hole structures.
+	 * setuppagetables() relocates kernel to 2MB first, then xinit() properly excludes it. */
+	setuppagetables();
+	print("BOOT: switched to kernel-managed page tables\n");
+
 	xinit();
 	pageowninit();
 	exchangeinit();
 	print("BOOT: exchangeinit complete\n");
-
-	/* Switch to our own page tables - REQUIRED for user space!
-	 * NOTE: This must happen AFTER xinit(), but xinit() marks physical 2MB+ as free.
-	 * setuppagetables() will relocate kernel to 2MB, then remove that region from xalloc. */
-	setuppagetables();
-	print("BOOT: switched to kernel-managed page tables\n");
 
 	trapinit();
 	mathinit();
@@ -304,13 +314,6 @@ main(void)
 	printinit();
 	print("BOOT: printinit complete - serial console ready\n");
 	cpuidprint();
-	/* FIXED: Borrow checker improvements:
-	 * - NOW tracks WHO has shared borrows (security fix)
-	 * - Fixed memory leaks in hash table cleanup
-	 * - Shared borrower list properly managed
-	 * Still TODO: per-bucket locking, atomic operations, actual enforcement */
-	borrowinit();
-	print("BOOT: borrow checker initialized (with fixes)\n");
 	print("BOOT: about to call mmuinit\n");
 	mmuinit();
 	print("BOOT: mmuinit complete - runtime page tables live\n");

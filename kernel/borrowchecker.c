@@ -7,24 +7,51 @@
 #include "portlib.h"
 #include "mem.h"
 #include "dat.h"
+
+/* External declarations for CR3 switch memory system checks */
+extern uintptr saved_limine_hhdm_offset;
+extern struct MemoryCoordination mem_coord;
+extern struct BorrowPool borrowpool;
 #include "fns.h"
 #include "borrowchecker.h"
 
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
+/* Static early-boot hash table (before xinit) */
+#define EARLY_BOOT_BUCKETS 256
+#define EARLY_BOOT_OWNERS 512  /* Pool of pre-allocated BorrowOwner structs */
+#define EARLY_BOOT_SHARED 128  /* Pool of pre-allocated SharedBorrower structs */
+static struct BorrowBucket early_boot_buckets[EARLY_BOOT_BUCKETS];
+static struct BorrowOwner early_boot_owner_pool[EARLY_BOOT_OWNERS];
+static struct SharedBorrower early_boot_shared_pool[EARLY_BOOT_SHARED];
+static int early_boot_owner_next = 0;
+static int early_boot_shared_next = 0;
+static int using_early_boot = 0;
+
 /* Initialize the borrow pool */
 void
 borrowinit(void)
 {
 	ulong i;
+	extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 
-
-	/* Initialize hash table */
-	borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
-	borrowpool.owners = xalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
-	if (borrowpool.owners == nil) {
-		panic("borrowinit: failed to allocate hash table");
+	/* Check if we're in early boot (before xinit) */
+	if (!xinit_done) {
+		/* Use static pre-allocated hash table for early boot */
+		borrowpool.nbuckets = EARLY_BOOT_BUCKETS;
+		borrowpool.owners = early_boot_buckets;
+		using_early_boot = 1;
+		print("borrowinit: using early-boot static hash table (%d buckets)\n", EARLY_BOOT_BUCKETS);
+	} else {
+		/* Normal initialization with xalloc */
+		borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
+		borrowpool.owners = xalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
+		if (borrowpool.owners == nil) {
+			panic("borrowinit: failed to allocate hash table");
+		}
+		using_early_boot = 0;
+		print("borrowinit: using xalloc hash table (%d buckets)\n", (int)borrowpool.nbuckets);
 	}
 
 	for (i = 0; i < borrowpool.nbuckets; i++) {
@@ -67,14 +94,28 @@ static struct BorrowOwner*
 create_owner(uintptr key)
 {
 	ulong hash = borrow_hash(key);
-	struct BorrowOwner *owner = xalloc(sizeof(struct BorrowOwner));
-	if (owner == nil) {
-		return nil;
+	struct BorrowOwner *owner;
+
+	/* Use static pool during early boot, xalloc otherwise */
+	if (using_early_boot) {
+		if (early_boot_owner_next >= EARLY_BOOT_OWNERS) {
+			print("create_owner: early boot pool exhausted (%d/%d)\n",
+			      early_boot_owner_next, EARLY_BOOT_OWNERS);
+			return nil;
+		}
+		owner = &early_boot_owner_pool[early_boot_owner_next++];
+	} else {
+		owner = xalloc(sizeof(struct BorrowOwner));
+		if (owner == nil) {
+			return nil;
+		}
 	}
 
 	owner->key = key;
 	owner->owner = nil;
 	owner->state = BORROW_FREE;
+	owner->system_owner = OWNER_BOOTLOADER;  /* Default to bootloader ownership */
+	owner->is_system_owned = 0;  /* Not system owned by default */
 	owner->shared_count = 0;
 	owner->shared_list = nil;  /* Initialize shared borrower list */
 	owner->mut_borrower = nil;
@@ -162,7 +203,9 @@ borrow_release(Proc *p, uintptr key)
 			} else {
 				prev->next = owner->next;
 			}
-			xfree(owner);
+			if (!using_early_boot) {
+				xfree(owner);
+			}
 			break;
 		}
 		prev = owner;
@@ -242,10 +285,18 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 	}
 
 	/* Allocate new shared borrower node */
-	sb = xalloc(sizeof(struct SharedBorrower));
-	if (sb == nil) {
-		iunlock(&borrowpool.lock);
-		return BORROW_ENOMEM;
+	if (using_early_boot) {
+		if (early_boot_shared_next >= EARLY_BOOT_SHARED) {
+			iunlock(&borrowpool.lock);
+			return BORROW_ENOMEM;
+		}
+		sb = &early_boot_shared_pool[early_boot_shared_next++];
+	} else {
+		sb = xalloc(sizeof(struct SharedBorrower));
+		if (sb == nil) {
+			iunlock(&borrowpool.lock);
+			return BORROW_ENOMEM;
+		}
 	}
 
 	/* Add to front of shared list */
@@ -340,7 +391,10 @@ borrow_return_shared(Proc *borrower, uintptr key)
 			} else {
 				prev->next = sb->next;
 			}
-			xfree(sb);  /* Free the shared borrower node */
+			/* Only free if not from early boot pool */
+			if (!using_early_boot) {
+				xfree(sb);
+			}
 
 			own->shared_count--;
 			if (own->shared_count == 0) {
@@ -507,7 +561,9 @@ borrow_cleanup_process(Proc *p)
 				/* Force release - free all shared borrowers */
 				for (sb = owner->shared_list; sb != nil; sb = sb_next) {
 					sb_next = sb->next;
-					xfree(sb);
+					if (!using_early_boot) {
+						xfree(sb);
+					}
 				}
 				owner->shared_list = nil;
 				owner->owner = nil;
@@ -538,7 +594,9 @@ borrow_cleanup_process(Proc *p)
 					} else {
 						sb_prev->next = sb_next;
 					}
-					xfree(sb);
+					if (!using_early_boot) {
+						xfree(sb);
+					}
 					owner->shared_count--;
 					if (owner->shared_count == 0 && owner->state == BORROW_SHARED_OWNED) {
 						owner->state = BORROW_EXCLUSIVE;
@@ -558,7 +616,9 @@ borrow_cleanup_process(Proc *p)
 				} else {
 					prev->next = next;
 				}
-				xfree(owner);
+				if (!using_early_boot) {
+					xfree(owner);
+				}
 			} else {
 				prev = owner;
 			}
@@ -618,4 +678,612 @@ borrow_dump_resource(uintptr key)
 	print("  Total borrows:  %%lud\n", owner->borrow_count);
 
 	iunlock(&borrowpool.lock);
+}
+
+/* ========== System-Level Ownership Functions ========== */
+
+/* Acquire system-level ownership of a resource */
+enum BorrowError
+borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner)
+{
+	struct BorrowOwner *own;
+
+	ilock(&borrowpool.lock);
+	own = find_owner(key);
+	if (own == nil) {
+		own = create_owner(key);
+		if (own == nil) {
+			iunlock(&borrowpool.lock);
+			return BORROW_ENOMEM;
+		}
+	}
+
+	if (own->state != BORROW_FREE) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EALREADY;
+	}
+
+	own->system_owner = owner;
+	own->is_system_owned = 1;
+	own->state = BORROW_EXCLUSIVE;
+	/* Skip timestamp during early boot (before xinit) to avoid timer init */
+	if (!using_early_boot) {
+		own->acquired_ns = todget(nil, nil);
+	} else {
+		own->acquired_ns = 0;
+	}
+	iunlock(&borrowpool.lock);
+	return BORROW_OK;
+}
+
+/* Release system-level ownership of a resource */
+enum BorrowError
+borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
+{
+	struct BorrowOwner *own, *prev;
+	ulong hash;
+
+	ilock(&borrowpool.lock);
+	own = find_owner(key);
+	if (own == nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTFOUND;
+	}
+
+	if (!own->is_system_owned || own->system_owner != owner) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTOWNER;
+	}
+
+	if (own->shared_count > 0 || own->shared_list != nil || own->mut_borrower != nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
+
+	own->is_system_owned = 0;
+	own->state = BORROW_FREE;
+	borrowpool.nowners--;
+
+	/* Remove and free the owner entry from hash table */
+	hash = borrow_hash(key);
+	prev = nil;
+	for (own = borrowpool.owners[hash].head; own != nil; own = own->next) {
+		if (own->key == key) {
+			if (prev == nil) {
+				borrowpool.owners[hash].head = own->next;
+			} else {
+				prev->next = own->next;
+			}
+			if (!using_early_boot) {
+				xfree(own);
+			}
+			break;
+		}
+		prev = own;
+	}
+
+	iunlock(&borrowpool.lock);
+	return BORROW_OK;
+}
+
+/* Transfer system-level ownership between systems */
+enum BorrowError
+borrow_transfer_system(enum BorrowSystemOwner from, enum BorrowSystemOwner to, uintptr key)
+{
+	struct BorrowOwner *owner;
+
+	ilock(&borrowpool.lock);
+	owner = find_owner(key);
+	if (owner == nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTFOUND;
+	}
+
+	if (!owner->is_system_owned || owner->system_owner != from) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTOWNER;
+	}
+
+	if (owner->shared_count > 0 || owner->mut_borrower != nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
+
+	owner->system_owner = to;
+	/* Skip timestamp during early boot (before xinit) to avoid timer init */
+	if (!using_early_boot) {
+		owner->acquired_ns = todget(nil, nil);
+	} else {
+		owner->acquired_ns = 0;
+	}
+	iunlock(&borrowpool.lock);
+	return BORROW_OK;
+}
+
+/* Get system owner of a resource */
+enum BorrowSystemOwner
+borrow_get_system_owner(uintptr key)
+{
+	struct BorrowOwner *owner;
+	enum BorrowSystemOwner sys_owner;
+
+	ilock(&borrowpool.lock);
+	owner = find_owner(key);
+	if (owner == nil || !owner->is_system_owned) {
+		sys_owner = OWNER_BOOTLOADER;  /* Default */
+	} else {
+		sys_owner = owner->system_owner;
+	}
+	iunlock(&borrowpool.lock);
+
+	return sys_owner;
+}
+
+/* Check if resource is owned by a specific system */
+int
+borrow_is_owned_by_system(uintptr key, enum BorrowSystemOwner owner)
+{
+	struct BorrowOwner *own;
+	int owned;
+
+	ilock(&borrowpool.lock);
+	own = find_owner(key);
+	owned = (own != nil && own->is_system_owned && own->system_owner == owner);
+	iunlock(&borrowpool.lock);
+
+	return owned;
+}
+
+/* ========== Range-Based Memory Tracking ========== */
+
+/* Static range pool for early boot */
+#define MAX_MEMORY_RANGES 32
+static struct MemoryRange range_pool[MAX_MEMORY_RANGES];
+static int range_count = 0;
+static struct MemoryRange *range_list = nil;
+static Lock range_lock;
+
+/* Initialize range tracking */
+void
+memory_range_init(void)
+{
+	int i;
+
+	range_count = 0;
+	range_list = nil;
+
+	/* Clear the pool */
+	for (i = 0; i < MAX_MEMORY_RANGES; i++) {
+		range_pool[i].start = 0;
+		range_pool[i].end = 0;
+		range_pool[i].owner = OWNER_BOOTLOADER;
+		range_pool[i].next = nil;
+	}
+
+	print("memory_range_init: initialized (max %d ranges)\n", MAX_MEMORY_RANGES);
+}
+
+/* Add a memory range with ownership (early boot - static pool) */
+void
+memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner)
+{
+	struct MemoryRange *range;
+
+	/* During early boot, use static pool */
+	if (using_early_boot) {
+		if (range_count >= MAX_MEMORY_RANGES) {
+			print("memory_range_add: EARLY BOOT pool exhausted (%d/%d)\n",
+			      range_count, MAX_MEMORY_RANGES);
+			return;
+		}
+
+		ilock(&range_lock);
+
+		/* Allocate from static pool */
+		range = &range_pool[range_count++];
+		range->start = start;
+		range->end = end;
+		range->owner = owner;
+
+		/* Add to front of list */
+		range->next = range_list;
+		range_list = range;
+
+		iunlock(&range_lock);
+
+		print("memory_range_add: [%#p-%#p] owner=%d (static)\n", start, end, owner);
+	} else {
+		/* After xinit(), use dynamic allocation */
+		memory_range_add_discovered(start, end, owner);
+	}
+}
+
+/* Add range with dynamic allocation (after xinit) */
+void
+memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner owner)
+{
+	struct MemoryRange *range;
+
+	/* Dynamically allocate range entry */
+	range = xalloc(sizeof(struct MemoryRange));
+	if (range == nil) {
+		print("memory_range_add_discovered: xalloc failed for range [%#p-%#p]\n",
+		      start, end);
+		return;
+	}
+
+	ilock(&range_lock);
+
+	range->start = start;
+	range->end = end;
+	range->owner = owner;
+
+	/* Add to front of list */
+	range->next = range_list;
+	range_list = range;
+
+	iunlock(&range_lock);
+
+	print("memory_range_add_discovered: [%#p-%#p] owner=%d (dynamic)\n", start, end, owner);
+}
+
+/* Remove a memory range */
+void
+memory_range_remove(uintptr start, uintptr end)
+{
+	struct MemoryRange *range, *prev;
+
+	ilock(&range_lock);
+
+	prev = nil;
+	for (range = range_list; range != nil; range = range->next) {
+		if (range->start == start && range->end == end) {
+			/* Found it - remove from list */
+			if (prev == nil) {
+				range_list = range->next;
+			} else {
+				prev->next = range->next;
+			}
+
+			/* Free if dynamically allocated (not from static pool) */
+			if (!using_early_boot &&
+			    (range < &range_pool[0] || range >= &range_pool[MAX_MEMORY_RANGES])) {
+				xfree(range);
+			}
+
+			iunlock(&range_lock);
+			print("memory_range_remove: [%#p-%#p] removed\n", start, end);
+			return;
+		}
+		prev = range;
+	}
+
+	iunlock(&range_lock);
+	print("memory_range_remove: [%#p-%#p] not found\n", start, end);
+}
+
+/* Dump all memory ranges (debug) */
+void
+memory_range_dump(void)
+{
+	struct MemoryRange *range;
+	int count = 0;
+
+	ilock(&range_lock);
+
+	print("=== Memory Range Tracking ===\n");
+	for (range = range_list; range != nil; range = range->next) {
+		print("  [%#p-%#p] owner=%s size=%#p\n",
+		      range->start, range->end,
+		      range->owner == OWNER_BOOTLOADER ? "BOOTLOADER" : "KERNEL",
+		      range->end - range->start);
+		count++;
+	}
+	print("Total: %d ranges\n", count);
+	if (using_early_boot) {
+		print("Mode: EARLY BOOT (static pool %d/%d used)\n",
+		      range_count, MAX_MEMORY_RANGES);
+	} else {
+		print("Mode: RUNTIME (dynamic allocation)\n");
+	}
+
+	iunlock(&range_lock);
+}
+
+/* Check capacity - how many more ranges can we add? */
+int
+memory_range_capacity(void)
+{
+	if (using_early_boot) {
+		return MAX_MEMORY_RANGES - range_count;
+	} else {
+		/* After xinit, limited only by available memory */
+		return 999999;  /* Effectively unlimited */
+	}
+}
+
+/* Get owner of an address */
+enum BorrowSystemOwner
+memory_range_get_owner(uintptr addr)
+{
+	struct MemoryRange *range;
+	enum BorrowSystemOwner owner;
+
+	ilock(&range_lock);
+
+	/* Search for containing range */
+	for (range = range_list; range != nil; range = range->next) {
+		if (addr >= range->start && addr < range->end) {
+			owner = range->owner;
+			iunlock(&range_lock);
+			return owner;
+		}
+	}
+
+	iunlock(&range_lock);
+
+	/* Not in any tracked range - assume bootloader for now */
+	return OWNER_BOOTLOADER;
+}
+
+/* Check if requester can access an address */
+int
+memory_range_check_access(uintptr addr, enum BorrowSystemOwner requester)
+{
+	enum BorrowSystemOwner owner = memory_range_get_owner(addr);
+
+	/* Owner can always access */
+	if (owner == requester)
+		return 1;
+
+	/* For now, deny cross-owner access */
+	return 0;
+}
+
+/* ========== Per-Page Tracking (Runtime) ========== */
+
+/* Acquire ownership of a physical address range - PAGE BY PAGE */
+enum BorrowError
+borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner owner)
+{
+	uintptr pa;
+	enum BorrowError err;
+
+	/* IMPORTANT: Only use this after xinit() for runtime tracking!
+	 * For boot coordination, use memory_range_add() instead */
+	if (using_early_boot) {
+		print("borrow_acquire_range_phys: ERROR - called during early boot\n");
+		print("  Use memory_range_add() for boot coordination instead\n");
+		return BORROW_EINVAL;
+	}
+
+	/* Acquire ownership for each 4KB page in the range */
+	for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
+		err = borrow_acquire_system(pa, owner);
+		if (err != BORROW_OK && err != BORROW_EALREADY) {
+			/* Rollback on error */
+			while (pa > start_pa) {
+				pa -= 0x1000;
+				borrow_release_system(pa, owner);
+			}
+			return err;
+		}
+	}
+
+	return BORROW_OK;
+}
+
+/* Check if entire range is owned by a specific system */
+int
+borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwner owner)
+{
+	uintptr pa;
+
+	/* During early boot, check range tracking instead */
+	if (using_early_boot) {
+		/* Check if entire range has same owner */
+		for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
+			if (memory_range_get_owner(pa) != owner)
+				return 0;
+		}
+		return 1;
+	}
+
+	/* Runtime: check page-by-page */
+	for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
+		if (!borrow_is_owned_by_system(pa, owner))
+			return 0;
+	}
+
+	return 1;
+}
+
+/* Check if a system can access a physical address range */
+int
+borrow_can_access_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner requester)
+{
+	uintptr pa;
+
+	/* During early boot, check range tracking */
+	if (using_early_boot) {
+		for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
+			if (!memory_range_check_access(pa, requester))
+				return 0;
+		}
+		return 1;
+	}
+
+	/* Runtime: check page-by-page ownership */
+	for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
+		enum BorrowSystemOwner owner = borrow_get_system_owner(pa);
+		if (owner != requester)
+			return 0;
+	}
+
+	return 1;
+}
+
+/* ========== Memory Coordination Functions ========== */
+
+/* Global memory coordination state */
+struct MemoryCoordination mem_coord;
+
+/* Initialize memory coordination system */
+void
+boot_memory_coordination_init(void)
+{
+	mem_coord.state = MEMORY_BOOTLOADER;
+	mem_coord.current_owner = OWNER_BOOTLOADER;
+	mem_coord.coordination_enabled = 1;
+
+	/* Initialize range-based tracking */
+	memory_range_init();
+
+	print("boot_memory_coordination_init: initialized (state=BOOTLOADER)\n");
+}
+
+/* Transfer bootloader memory to kernel - simple state transition */
+void
+transfer_bootloader_to_kernel(void)
+{
+	/* Simple state transition - no per-page tracking needed */
+	mem_coord.state = MEMORY_KERNEL_ACTIVE;
+	mem_coord.current_owner = OWNER_KERNEL;
+
+	print("transfer_bootloader_to_kernel: ownership transferred (BOOTLOADER → KERNEL)\n");
+}
+
+/* Establish memory ownership zones using range-based tracking (STATIC) */
+void
+establish_memory_ownership_zones(void)
+{
+	/* Define memory regions using efficient range tracking
+	 * Each range covers potentially many pages with single entry
+	 *
+	 * NOTE: These are HARDCODED for early boot. Use
+	 * establish_memory_ownership_zones_dynamic() after xinit()
+	 * to discover actual kernel layout dynamically.
+	 */
+
+	/* Kernel code region: 0x200000 - 0x400000 (2MB) */
+	memory_range_add(0x200000, 0x400000, OWNER_KERNEL);
+
+	/* Kernel data region: 0x400000 - 0x600000 (2MB) */
+	memory_range_add(0x400000, 0x600000, OWNER_KERNEL);
+
+	/* CR3 continuation region: 0x600000 - 0x700000 (1MB) */
+	memory_range_add(0x600000, 0x700000, OWNER_KERNEL);
+
+	/* Page tables region: 0x210000 - 0x220000 (64KB) */
+	memory_range_add(0x210000, 0x220000, OWNER_KERNEL);
+
+	mem_coord.state = MEMORY_COORDINATED;
+
+	print("establish_memory_ownership_zones: zones established (static, %d ranges)\n",
+	      4);
+}
+
+/* Establish memory ownership zones DYNAMICALLY (after xinit) */
+void
+establish_memory_ownership_zones_dynamic(void)
+{
+	extern Conf conf;
+	int i;
+	uintptr start, region_end;
+
+	if (using_early_boot) {
+		print("establish_memory_ownership_zones_dynamic: ERROR - call after xinit()\n");
+		return;
+	}
+
+	print("establish_memory_ownership_zones_dynamic: discovering memory from conf.mem[]\n");
+
+	/* Discover kernel memory regions from conf.mem[] */
+	for (i = 0; i < nelem(conf.mem); i++) {
+		if (conf.mem[i].npage == 0)
+			continue;
+
+		start = conf.mem[i].base;
+		region_end = start + (conf.mem[i].npage * BY2PG);
+
+		/* Determine ownership based on region type */
+		if (start >= conf.mem[i].kbase && start < conf.mem[i].klimit) {
+			/* Kernel memory */
+			memory_range_add_discovered(start, region_end, OWNER_KERNEL);
+			print("  Kernel region [%#p-%#p] size=%#p\n",
+			      start, region_end, region_end - start);
+		} else {
+			/* User/free memory - not tracked initially */
+			print("  User/free region [%#p-%#p] size=%#p (not tracked)\n",
+			      start, region_end, region_end - start);
+		}
+	}
+
+	print("establish_memory_ownership_zones_dynamic: discovery complete\n");
+	memory_range_dump();
+}
+
+/* Validate memory coordination ready - check zones are established */
+int
+validate_memory_coordination_ready(void)
+{
+	/* Check coordination enabled */
+	if (!mem_coord.coordination_enabled) {
+		print("validate_memory_coordination_ready: coordination disabled\n");
+		return 0;
+	}
+
+	/* Check we're in coordinated state */
+	if (mem_coord.state != MEMORY_COORDINATED && mem_coord.state != MEMORY_KERNEL_ACTIVE) {
+		print("validate_memory_coordination_ready: wrong state %d\n", mem_coord.state);
+		return 0;
+	}
+
+	/* Check kernel owns critical region (sample check) */
+	if (memory_range_get_owner(0x200000) != OWNER_KERNEL) {
+		print("validate_memory_coordination_ready: kernel doesn't own 0x200000\n");
+		return 0;
+	}
+
+	print("validate_memory_coordination_ready: ready for CR3 switch\n");
+	return 1;
+}
+
+/* Check if memory system is ready before CR3 switch */
+int
+memory_system_ready_before_cr3(void)
+{
+	/* Check if HHDM offset is known */
+	if(saved_limine_hhdm_offset == 0)
+		return 0;
+
+	/* Check if memory coordination is initialized */
+	if(mem_coord.state != MEMORY_KERNEL_ACTIVE)
+		return 0;
+
+	/* Check borrow pool accessibility */
+	if(borrowpool.owners == nil || borrowpool.nbuckets == 0)
+		return 0;
+
+	return 1;
+}
+
+/* Validate that memory system is operational after CR3 switch */
+int
+post_cr3_memory_system_operational(void)
+{
+	/* After CR3 switch, verify we can still access our data structures */
+	if (borrowpool.owners == nil || borrowpool.nbuckets == 0) {
+		print("post_cr3_memory_system_operational: borrow pool inaccessible\n");
+		return 0;
+	}
+
+	/* Verify coordination state is accessible */
+	if (mem_coord.state != MEMORY_KERNEL_ACTIVE) {
+		print("post_cr3_memory_system_operational: unexpected state %d\n", mem_coord.state);
+		return 0;
+	}
+
+	print("post_cr3_memory_system_operational: memory system operational\n");
+	return 1;
 }

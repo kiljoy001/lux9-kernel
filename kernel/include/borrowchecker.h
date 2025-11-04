@@ -1,9 +1,18 @@
 /*
  * Unified borrow checker for kernel primitives
  * Provides Rust-style ownership and borrowing for locks, memory, I/O, etc.
+ * 
+ * Enhanced with system-level ownership for boot memory coordination
+ * between bootloader, kernel, and HHDM memory systems.
  */
 
 #pragma once
+
+/* System-level ownership types for boot coordination */
+enum BorrowSystemOwner {
+	OWNER_BOOTLOADER = 0,    /* Limine bootloader owns this memory */
+	OWNER_KERNEL,            /* 9front kernel owns this memory */
+};
 
 /* Borrow states - based on Rust borrow semantics */
 enum BorrowState {
@@ -27,6 +36,10 @@ struct BorrowOwner {
 	/* Core ownership */
 	Proc	*owner;			/* Original owner process */
 	enum BorrowState state;		/* Current ownership state */
+
+	/* System-level ownership (for boot coordination) */
+	enum BorrowSystemOwner system_owner;	/* System-level owner (bootloader/kernel/HHDM) */
+	int is_system_owned;		/* True if owned by a system (not a process) */
 
 	/* Borrow tracking */
 	int	shared_count;		/* Number of shared borrows (&) */
@@ -104,3 +117,57 @@ void	borrow_dump_resource(uintptr key);
 
 /* Hash function for keys */
 ulong	borrow_hash(uintptr key);
+
+/* System-level ownership operations - NEW */
+enum BorrowError borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner);
+enum BorrowError borrow_release_system(uintptr key, enum BorrowSystemOwner owner);
+enum BorrowError borrow_transfer_system(enum BorrowSystemOwner from, enum BorrowSystemOwner to, uintptr key);
+
+/* System ownership queries */
+enum BorrowSystemOwner borrow_get_system_owner(uintptr key);
+int borrow_is_owned_by_system(uintptr key, enum BorrowSystemOwner owner);
+
+/* Range-based memory tracking (efficient for large regions) */
+struct MemoryRange {
+	uintptr start;
+	uintptr end;
+	enum BorrowSystemOwner owner;
+	struct MemoryRange *next;
+};
+
+/* Range-based tracking operations */
+void memory_range_init(void);
+void memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner);
+void memory_range_remove(uintptr start, uintptr end);
+void memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner owner);  /* Runtime discovery */
+enum BorrowSystemOwner memory_range_get_owner(uintptr addr);
+int memory_range_check_access(uintptr addr, enum BorrowSystemOwner requester);
+void memory_range_dump(void);  /* Debug: show all ranges */
+int memory_range_capacity(void);  /* How many more ranges can we add? */
+
+/* Per-page tracking (for fine-grained runtime tracking after boot) */
+enum BorrowError borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner owner);
+int borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwner owner);
+int borrow_can_access_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner requester);
+
+/* Memory coordination functions - simplified for boot handoff */
+void boot_memory_coordination_init(void);
+void transfer_bootloader_to_kernel(void);
+void establish_memory_ownership_zones(void);
+void establish_memory_ownership_zones_dynamic(void);  /* Runtime discovery from conf.mem[] */
+int validate_memory_coordination_ready(void);
+int post_cr3_memory_system_operational(void);
+
+/* Memory system state tracking - NEW */
+enum MemorySystemState {
+	MEMORY_BOOTLOADER,      /* Limine-only memory system */
+	MEMORY_TRANSITIONING,   /* In process of handoff */
+	MEMORY_KERNEL_ACTIVE,   /* 9front memory system active */
+	MEMORY_COORDINATED,     /* Full coordination operational */
+};
+
+struct MemoryCoordination {
+	enum MemorySystemState state;
+	enum BorrowSystemOwner current_owner;
+	int coordination_enabled;
+};

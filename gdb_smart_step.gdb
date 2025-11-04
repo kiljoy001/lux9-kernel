@@ -82,8 +82,8 @@ def print_status():
         line = int(gdb.parse_and_eval("$linum"))
         func = get_current_function()
 
-        # Only print when in meminit or related functions
-        if func and 'meminit' in func:
+        # Only print when in post-cr3 execution or related functions
+        if func and ('post_cr3' in func or 'after_cr3' in func or func == 'main'):
             # Try to print relevant variables
             try:
                 base = gdb.parse_and_eval("base")
@@ -130,18 +130,18 @@ def smart_step():
 end
 
 # Set breakpoint at meminit
-break meminit
+break *0x200000
 
 # Continue to breakpoint
 continue
 
 printf "\n========================================\n"
-printf "=== REACHED MEMINIT ===\n"
+printf "=== REACHED CONTINUATION AT 0x200000 ===\n"
 printf "========================================\n\n"
 
 # Run smart stepping
 python
-print("\nStarting smart stepping through meminit()...\n")
+print("\nStarting smart stepping through post-CR3 execution...\n")
 
 try:
     while smart_step():
@@ -151,7 +151,7 @@ try:
             func = frame.name()
             # If we're back in main (caller), stop
             if func and func == 'main':
-                print(f"\nReturned to main(), meminit() complete")
+                print(f"\nReturned to main(), post-CR3 execution complete")
                 break
         except:
             pass

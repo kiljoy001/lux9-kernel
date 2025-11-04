@@ -4,9 +4,14 @@
 
 #include	"fns.h"
 #include	"hhdm.h"
-#include	"hhdm.h"
+#include	"borrowchecker.h"
 
 extern void uartputs(char*, int);
+
+/* CR3 switch memory system functions */
+extern int memory_system_ready_before_cr3(void);
+extern void transfer_bootloader_to_kernel(void);
+extern void pre_init_memory_system(void);
 
 static void
 dbghex(char *label, uvlong value)
@@ -352,6 +357,31 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 }
 
 /* Setup our own page tables with linear RAM mapping at KZERO */
+
+/* Pre-initialize memory system for CR3 switch */
+void
+pre_init_memory_system(void)
+{
+	uartputs("pre_init_memory_system: starting\n", 36);
+	
+	/* Initialize borrow pool if not done yet - needed for memory coordination */
+	uartputs("pre_init_memory_system: checking borrow pool\n", 45);
+	if(borrowpool.owners == nil) {
+		uartputs("pre_init_memory_system: initializing borrow pool\n", 52);
+		borrowinit();
+		uartputs("pre_init_memory_system: borrow pool initialized\n", 48);
+	} else {
+		uartputs("pre_init_memory_system: borrow pool already initialized\n", 58);
+	}
+	
+	/* Transfer memory coordination state from bootloader to kernel */
+	/* This sets mem_coord.state = MEMORY_KERNEL_ACTIVE */
+	uartputs("pre_init_memory_system: transferring memory coordination\n", 56);
+	transfer_bootloader_to_kernel();
+	uartputs("pre_init_memory_system: memory coordination transferred\n", 57);
+	
+	uartputs("pre_init_memory_system: complete\n", 33);
+}
 void
 setuppagetables(void)
 {
@@ -436,19 +466,9 @@ setuppagetables(void)
     map_range_2mb(pml4, 0, 0, 8*MiB, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	uartputs("setuppagetables: identity mapping complete\n", 43);
 
-	/* CRITICAL: Map HHDM region - kernel uses this extensively!
-	 * DON'T copy Limine's entries - they point to Limine's page tables!
-	 * Instead, create our own HHDM mapping for first 2GB of physical RAM */
-	extern uintptr hhdm_base;
-	uartputs("setuppagetables: creating our own HHDM mapping\n", 48);
-
-	/* Map first 2GB of physical memory to HHDM using 2MB pages */
-	u64int hhdm_phys_size = 2ULL * 1024 * 1024 * 1024;
-	for(u64int pa = 0; pa < hhdm_phys_size; pa += PGLSZ(1)) {
-		u64int va = hhdm_base + pa;
-		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	}
-	uartputs("setuppagetables: HHDM mapping complete (2GB)\n", 45);
+	/* NO HHDM MAPPING - kernel uses VMAP for physical memory access (9front way)
+	 * Bootloader's job is done - kernel manages its own memory now */
+	uartputs("setuppagetables: skipping HHDM (using VMAP for physical access)\n", 66);
 
 	/* Verify our current code location is mapped before switching */
 	uintptr current_rip;
@@ -465,12 +485,10 @@ setuppagetables(void)
 	/* Debug: Check PML4 entries before switch */
 	uartputs("setuppagetables: checking PML4 entries\n", 40);
 	if(pml4[0] & PTEVALID)
-		uartputs("  PML4[0] (identity) is valid\n", 31);
+		uartputs("  PML4[0] (identity 0-8MB) is valid\n", 37);
 	if(pml4[511] & PTEVALID)
 		uartputs("  PML4[511] (KZERO) is valid\n", 30);
-	uintptr hhdm_pml4_idx = (hhdm_base >> 39) & 0x1FF;
-	if(pml4[hhdm_pml4_idx] & PTEVALID)
-		uartputs("  PML4[HHDM] is valid\n", 23);
+	uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
 
 	uartputs("setuppagetables: preparing CR3 switch trampoline\n", 50);
 
@@ -512,8 +530,23 @@ setuppagetables(void)
 	__asm__ volatile("wbinvd" ::: "memory");  /* Write back and invalidate cache */
 	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
 
-	/* Create a continuation function label to return to after CR3 switch */
-	void *continuation = &&after_cr3_switch;
+	/* Check if memory system is ready before CR3 switch */
+	if(!memory_system_ready_before_cr3()) {
+		/* Transfer memory ownership from bootloader to kernel */
+		transfer_bootloader_to_kernel();
+		/* Initialize memory system for CR3 switch */
+		pre_init_memory_system();
+		uartputs("setuppagetables: memory system ready for CR3 switch\n", 50);
+	} else {
+		uartputs("setuppagetables: memory system already ready\n", 47);
+	}
+
+	/* Use a function pointer instead of a label for better code generation */
+	extern void cr3_continuation(void);
+	void *continuation_virt = (void*)cr3_continuation;
+
+	dbghex("  continuation virtual (KZERO): ", (uintptr)continuation_virt);
+	uartputs("  (jumping to KZERO virtual address, not physical)\n", 51);
 
 	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
 	 * NOT via Limine's HHDM! After CR3 switch, Limine's HHDM is gone, so the CPU
@@ -522,17 +555,22 @@ setuppagetables(void)
 	trampoline_fn_t trampoline_fn = (trampoline_fn_t)trampoline_phys;  /* Use identity-mapped address! */
 
 	uartputs("setuppagetables: calling CR3 trampoline...\n", 45);
-	trampoline_fn(pml4_phys, continuation);
+	trampoline_fn(pml4_phys, continuation_virt);  /* Jump to KZERO virtual address */
 
 	/* Should not reach here - trampoline jumps to continuation */
 	panic("CR3 switch trampoline returned unexpectedly");
+}
 
-after_cr3_switch:
-	/* We're now executing on the new page tables! */
-	__asm__ volatile("" ::: "memory");  /* Memory barrier */
-	/* Use minimal UART output to avoid any complex dependencies */
+/* Continuation function called after CR3 switch
+ * This runs on the new page tables with KZERO mapped to physical 2MB */
+void
+cr3_continuation(void)
+{
+	/* CRITICAL: We CANNOT use the stack! Limine's stack is unmapped!
+	 * Set up a new stack first using inline asm */
 	__asm__ volatile(
-		"movw $0x3f8, %%dx\n"  /* COM1 port */
+		/* Output success via serial port (stack-free) */
+		"movw $0x3f8, %%dx\n"
 		"movb $'O', %%al\n"
 		"outb %%al, %%dx\n"
 		"movb $'K', %%al\n"
@@ -541,18 +579,30 @@ after_cr3_switch:
 		"outb %%al, %%dx\n"
 		"movb $'\\n', %%al\n"
 		"outb %%al, %%dx\n"
-		::: "dx", "al"
-	);
-	uartputs("setuppagetables: CR3 switch successful!\n", 41);
 
-	uartputs("setuppagetables: validating HHDM\n", 34);
-	/* Verify HHDM mapping works */
-	volatile uintptr test_addr = *(volatile uintptr*)hhdm_virt(0);
-	uartputs("setuppagetables: HHDM validation passed\n", 40);
+		/* Load address of global m into RAX */
+		"movq m(%%rip), %%rax\n"
+		/* Set RSP to top of m's stack: m + MACHSIZE */
+		"leaq %c0(%%rax), %%rsp\n"
+		/* Clear RBP to mark stack bottom */
+		"xorq %%rbp, %%rbp\n"
+
+		:
+		: "i"(MACHSIZE)
+		: "rax", "rdx", "memory"  /* Don't list rbp/rsp in clobbers - GCC doesn't allow it */
+	);
+
+	/* NOW we can safely use C code and the stack */
+	uartputs("cr3_continuation: new stack set up\n", 36);
 
 	/* Update m->pml4 to point to our page tables */
-	m->pml4 = pml4;
-	uartputs("setuppagetables: page tables fully operational\n", 47);
+	extern u64int cpu0pml4[];
+	m->pml4 = cpu0pml4;
+	uartputs("cr3_continuation: page tables fully operational\n", 48);
+
+	/* Return to caller (main) - but we can't! Stack changed!
+	 * For now, just continue booting... */
+	uartputs("cr3_continuation: returning (will need to fix return path)\n", 60);
 }
 
 void
