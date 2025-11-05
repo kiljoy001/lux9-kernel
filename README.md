@@ -1,64 +1,130 @@
 # Lux9 Microkernel Operating System
 
-Modern microkernel OS combining Plan 9 architecture with formal verification and multi-language safety.
+Revolutionary microkernel OS combining Plan 9 architecture with capability-based security and zero-copy IPC.
 
 ## Overview
 
-Lux9 is a microkernel operating system that extracts the core 9front kernel (15K LOC) and moves device drivers to userspace for isolation and safety.
+Lux9 is a microkernel operating system featuring innovative **pebble memory management** with Rust-style borrowing semantics, **Plan 9 heritage** with modern security enhancements, and **zero-copy page exchange** for high-performance IPC.
 
-**Key features:**
-- Formal verification (1,175 lines Coq proofs)
-- Memory safety (Go/Rust userspace, C only where necessary)
-- Driver compatibility (virtio, NetBSD rump, Linux compat)
-- Protocol translation (9P.e bridges 9P2000/u/L dialects)
-- Zero-copy IPC with Rust-style borrow checker semantics
+**Key innovations:**
+- **Pebble System**: Capability-based resource management with Red-Blue copy-on-write
+- **Exchange Pages**: Zero-copy memory transfer between processes (Singularity-inspired)
+- **Borrow Checker**: Rust-style ownership and borrowing for kernel primitives
+- **9P Enhancement**: Revolutionary capability-safe distributed filesystem architecture
 
 ## Current Status
 
-**Kernel:** ✅ Complete (25K LOC ported, bootable)  
-**Proofs:** 🚧 In progress (1,175 LOC Coq)  
-**Userspace:** 🚧 Partial (Go servers, ext4fs)  
-**Drivers:** 📋 Design complete, implementation pending
-**Memory Management:** ✅ Advanced page ownership tracking with borrow checker
+**Kernel Core**: ✅ **Functional** (Plan 9 heritage, advanced memory management)  
+**Pebble Infrastructure**: ✅ **Operational** (borrow checker, page ownership, exchange system)  
+**9P Protocol**: 🚧 **Security Issues** (protocol violations, buffer overflows)  
+**System Init**: ❌ **Blocked** (syscall stubs prevent userspace boot)  
+**Hardware**: ⚠️ **Limited** (no interrupts/PCI, limits testing scenarios)  
+
+## Revolutionary Features
+
+### Pebble Memory Management
+- **Capability-based security** via white tokens
+- **Red-Blue copy-on-write** for crash-safe operations
+- **Resource quotas** prevent DoS attacks
+- **Speculative execution** prevents partial write corruption
+
+### Zero-Copy Exchange System
+- **Process-to-process page transfer** without copying
+- **Singularity-style exchange heap** semantics
+- **Memory ownership tracking** with borrow checker integration
+
+### Enhanced 9P Protocol
+- **Capability-scoped FIDs** instead of integer handles
+- **Budget-based client limiting** per connection
+- **Atomic operations** via Red-Blue system
+- **Zero-copy large file transfers** via exchange handles
 
 ## Quick Start
 
 ```bash
-make          # Build kernel
-make iso      # Create bootable ISO
-make run      # Test in QEMU
-cd proofs && make  # Verify proofs (requires Coq)
+# Build kernel (currently bootable to graphics initialization)
+make kernel
+
+# Testing blocked by system init issues
+# see docs/serious-bugs.md for current blockers
+
+# Development
+cd shell_scripts && ./debug.sh  # Debug utilities
 ```
 
 ## Architecture
 
 ```
-Kernel (C, 15K LOC) → 9pe-translator (Rust) → Servers (Go/C)
+Lux9 Kernel (C)
+├── Pebble System (capability-based security)
+├── Exchange Pages (zero-copy IPC)  
+├── Borrow Checker (Rust-style memory safety)
+├── 9P Protocol (enhanced with pebble integration)
+└── Plan 9 Heritage (channels, mount, devmnt)
+
+Userspace Servers
+├── Go 9P servers (protocol implementation)
+├── ext4fs (filesystem server)
+└── Test utilities
 ```
 
-## Recent Improvements
+## Current Development Focus
 
-- Completed migration of page ownership tracking to generic borrow checker
-- Maintained full Plan 9 API compatibility while implementing modern memory safety
-- Zero-copy IPC with formal borrow checking semantics
-- Clean project structure with organized documentation and scripts
+**Immediate Priority**: System initialization and 9P protocol security
+- Fix syscall stubs to enable userspace boot
+- Resolve 9P message corruption and buffer overflow vulnerabilities
+- Implement interrupt/PCI initialization for hardware access
+
+**Next Phase**: Pebble-9P Integration
+- Deploy capability-based FIDs (P9Cap structures)
+- Implement budget guards per 9P connection
+- Add zero-copy file transfer via exchange system
+
+**Long-term Vision**: World's first capability-safe distributed filesystem
 
 ## Documentation
 
-Detailed documentation available in `docs/`:
-- `docs/PORTING-SUMMARY.md` - Complete porting process documentation
-- `docs/PAGEOWN_BORROW_CHECKER.md` - Memory safety implementation details
-- `docs/MEMORY_SAFETY_MILESTONE.md` - Recent borrow checker integration summary
-- `docs/SYSTEM_VISION.md` - Overall project vision and roadmap
-- `docs/PROJECT_STRUCTURE.md` - Clean directory organization guide
+Comprehensive documentation in `docs/`:
+- `docs/serious-bugs.md` - Detailed bug analysis and status
+- `docs/PEBBLE_9P_INTEGRATION_PLAN.md` - Revolutionary 9P enhancement roadmap
+- `docs/BOOT_MEMORY_COORDINATION_PLAN.md` - Memory management improvements
+- `docs/SYSTEM_VISION.md` - Project vision and architecture
+- `docs/PROJECT_STRUCTURE.md` - Directory organization and conventions
+
+## Recent Major Improvements
+
+✅ **Infrastructure Stabilization**
+- Borrow checker data structures completely rebuilt and operational
+- Page ownership system functional (pebble foundation ready)
+- Memory management safety and alignment issues resolved
+- Time system functional with real hardware tick support
+
+✅ **Innovation Foundation**
+- Pebble system architecture ready for 9P integration
+- Exchange page system operational for zero-copy IPC
+- Red-Blue copy-on-write for crash-safe operations
+
+🚧 **Next Development Sprint**
+- System init syscall implementation
+- 9P protocol security hardening
+- Hardware foundation (interrupts, PCI, console)
+
+## Innovation Status
+
+Lux9 represents a potential breakthrough in operating system security:
+
+**Traditional OS**: Memory safety issues, resource exhaustion vulnerabilities, unreliable IPC
+**Lux9 Vision**: Capability-based security, resource quotas, zero-copy performance, atomic operations
+
+The pebble system creates possibilities that **no other operating system has achieved**, combining Plan 9's proven IPC model with modern capability security and zero-copy performance.
 
 ## Scripts
 
-Development and testing scripts in `shell_scripts/`:
-- Debugging utilities (`debug.sh`, `debug_kernel.sh`)
-- Testing frameworks (`test_9p_*.sh`)
-- QEMU runners (`run_debug.sh`, `run_qemu_gdb.sh`)
+Development utilities in `shell_scripts/`:
+- Debugging and analysis tools
+- 9P protocol testing frameworks  
+- QEMU development environments
 
 ## License
 
-9front MIT-style license. See individual components for details.
+MIT-style license. Individual components retain their original licenses where applicable.
