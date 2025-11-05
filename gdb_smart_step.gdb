@@ -1,4 +1,4 @@
-# GDB script with smart loop detection
+# GDB script with smart loop detection for configuration debugging
 # Usage: gdb lux9.elf -x gdb_smart_step.gdb
 
 target remote :1234
@@ -14,7 +14,7 @@ python
 import gdb
 import hashlib
 
-print("=== Smart Loop Detection GDB Script ===\n")
+print("=== Smart Loop Detection for Config Debug ===\n")
 
 # Circular buffers for loop detection
 small_buffer = []
@@ -82,30 +82,30 @@ def print_status():
         line = int(gdb.parse_and_eval("$linum"))
         func = get_current_function()
 
-        # Only print when in post-cr3 execution or related functions
-        if func and ('post_cr3' in func or 'after_cr3' in func or func == 'main'):
+        # Focus on main_after_cr3 and config-related functions
+        if func and ('main_after_cr3' in func or 'waserror' in func or 'setconfenv' in func or 'ksetenv' in func or func == 'main'):
             # Try to print relevant variables
             try:
-                base = gdb.parse_and_eval("base")
-                print(f"[{func}:{line}] base = {base}")
+                arch_val = gdb.parse_and_eval("arch")
+                print(f"[{func}:{line}] arch = {arch_val}")
             except:
                 pass
 
             try:
-                size = gdb.parse_and_eval("size")
-                print(f"[{func}:{line}] size = {size}")
+                conffile_val = gdb.parse_and_eval("conffile")
+                print(f"[{func}:{line}] conffile = {conffile_val}")
             except:
                 pass
-
+                
             try:
-                cm = gdb.parse_and_eval("cm")
-                if cm:
-                    try:
-                        cm_base = gdb.parse_and_eval("cm->base")
-                        cm_npage = gdb.parse_and_eval("cm->npage")
-                        print(f"[{func}:{line}] cm->base = {cm_base}, cm->npage = {cm_npage}")
-                    except:
-                        pass
+                buf_val = gdb.parse_and_eval("buf")
+                print(f"[{func}:{line}] buf = {buf_val}")
+            except:
+                pass
+                
+            try:
+                cpuserver_val = gdb.parse_and_eval("cpuserver")
+                print(f"[{func}:{line}] cpuserver = {cpuserver_val}")
             except:
                 pass
     except:
@@ -129,49 +129,135 @@ def smart_step():
 
 end
 
-# Set breakpoint at meminit
-break *0x200000
+# Set breakpoints for configuration sequence
+break main_after_cr3
+commands 1
+printf "\n=== ENTERED main_after_cr3 ===\n"
+printf "Starting normal execution to configuration setup...\n"
+continue
+end
 
-# Continue to breakpoint
+break waserror  
+commands 2
+printf "\n=== ENTERED waserror ===\n"
+print "WARNING: waserror called - this suggests a configuration setup failure"
+backtrace 3
+continue
+end
+
+break setconfenv
+commands 3
+printf "\n=== ENTERED setconfenv ===\n"
+print "Hit setconfenv function"
+backtrace 3
+continue
+end
+
+break ksetenv
+commands 4
+printf "\n=== ENTERED ksetenv ===\n"
+print "Hit ksetenv function"
+continue
+end
+
+break snprint
+commands 5
+printf "\n=== ENTERED snprint ===\n" 
+print "Hit snprint function"
+backtrace 3
+continue
+end
+
+# Continue to first breakpoint
+printf "Starting execution to main_after_cr3...\n"
 continue
 
 printf "\n========================================\n"
-printf "=== REACHED CONTINUATION AT 0x200000 ===\n"
+printf "=== REACHED main_after_cr3 ===\n"
 printf "========================================\n\n"
 
-# Run smart stepping
+# Run smart stepping through main_after_cr3
 python
-print("\nStarting smart stepping through post-CR3 execution...\n")
+print("\nStarting smart stepping through main_after_cr3...\n")
 
 try:
+    # Set a breakpoint specifically at the configuration setup line
+    config_line = None
+    try:
+        # Try to find the exact line with configuration setup
+        lines = gdb.execute("list main_after_cr3", to_string=True).split('\n')
+        for i, line in enumerate(lines):
+            if "BOOT: setting up configuration environment" in line:
+                # This is approximate, we'll step through anyway
+                print(f"Found config setup line: {line}")
+                break
+    except:
+        pass
+    
+    # Step through until we hit config setup
+    target_reached = False
     while smart_step():
-        # Check if meminit has returned
+        # Check if we've reached the configuration setup
         try:
             frame = gdb.selected_frame()
             func = frame.name()
+            if func and func == 'main_after_cr3':
+                # Try to see if we're past the config setup
+                try:
+                    pc = int(gdb.parse_and_eval("$pc"))
+                    # This is where the configuration setup should be
+                    if pc > 0xffffffff80317500 and pc < 0xffffffff80317600:
+                        print(f"[CONFIG REGION] PC: 0x{pc:x} - stepping through config setup")
+                        # More detailed stepping in config region
+                        for i in range(20):  # Step 20 more times through config
+                            if not smart_step():
+                                break
+                        target_reached = True
+                        break
+                except:
+                    pass
+                    
             # If we're back in main (caller), stop
-            if func and func == 'main':
-                print(f"\nReturned to main(), post-CR3 execution complete")
+            elif func and func == 'main':
+                print(f"\nReturned to main(), main_after_cr3 complete")
                 break
         except:
             pass
+            
+        # Special detection for configuration setup failure
+        try:
+            # Check if we've stuck in a loop in config area
+            if is_looping():
+                print("\n=== DETECTED CONFIG SETUP LOOP ===")
+                print("Configuration environment setup is stuck in a loop")
+                break
+        except:
+            pass
+            
 except KeyboardInterrupt:
     print("\nInterrupted by user")
 except Exception as e:
     print(f"\nException: {e}")
 
 print(f"\nTotal steps: {step_count}")
-print("\n=== CHECKING FINAL CONF.MEM STATE ===\n")
+print("\n=== CHECKING FINAL CONFIG STATE ===\n")
 
-# Print final conf.mem array
-for i in range(16):
-    try:
-        base = gdb.parse_and_eval(f"conf.mem[{i}].base")
-        npage = gdb.parse_and_eval(f"conf.mem[{i}].npage")
-        if int(npage) != 0:
-            print(f"conf.mem[{i}]: base={base} npage={npage}")
-    except:
-        pass
+# Print final configuration variables
+try:
+    arch_val = gdb.parse_and_eval("arch")
+    print(f"arch: {arch_val}")
+    
+    conffile_val = gdb.parse_and_eval("conffile")
+    print(f"conffile: {conffile_val}")
+    
+    cpuserver_val = gdb.parse_and_eval("cpuserver")
+    print(f"cpuserver: {cpuserver_val}")
+    
+    conf_monitor_val = gdb.parse_and_eval("conf.monitor")
+    print(f"conf.monitor: {conf_monitor_val}")
+    
+except Exception as e:
+    print(f"Could not read config variables: {e}")
 
 end
 

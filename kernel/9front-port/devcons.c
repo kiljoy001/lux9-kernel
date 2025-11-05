@@ -10,6 +10,9 @@
 extern void	(*consdebug)(void);
 extern void	(*screenputs)(char*, int);
 
+/* Global debug flag for panic handling - defined in 9front-pc64/main.c */
+extern int panic_debug;
+
 Queue*	serialoq;		/* serial console output */
 Queue*	kprintoq;		/* console output, for /dev/kprint */
 ulong	kprintinuse;		/* test and set whether /dev/kprint is open */
@@ -329,9 +332,11 @@ panic(char *fmt, ...)
 	dumpstack();
 
 	/* reboot cpu servers and headless machines when not debugging */
-	if(getconf("*debug") == nil)
-	if(cpuserver || !conf.monitor)
+	/* FIX: Use global debug flag instead of environment device dependency */
+	if(panic_debug == 0 && cpuserver && !conf.monitor)
 		exit(1);
+
+	print("PANIC: System will hang instead of reboot to allow debugging\n");
 
 	/* otherwise, just hang */
 	while(islo()) idlehands();

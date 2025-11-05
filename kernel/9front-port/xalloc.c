@@ -57,6 +57,13 @@ struct Xalloc
 
 static Xalloc	xlists;
 
+/* TEST 2A: Memory Allocation Tracking */
+static ulong xalloc_failures = 0;
+static ulong xalloc_successes = 0;
+static ulong xalloc_last_failure_size = 0;
+static void* xalloc_last_failure_pc = nil;
+
+
 void
 xinit(void)
 {
@@ -66,7 +73,7 @@ xinit(void)
 	int i;
 	uintptr size_bytes;
 
-	print("xinit: starting initialization\n");
+// 	print("xinit: starting initialization\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 	eh = &xlists.hole[Nhole-1];
 	for(h = xlists.hole; h < eh; h++)
 		h->link = h+1;
@@ -74,18 +81,18 @@ xinit(void)
 	xlists.flist = xlists.hole;
 
 	kpages = conf.npage - conf.upages;
-	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);
-	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);
-	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
+// 	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);  // TEST PRINT - CRASHES DURING EARLY BOOT
+// 	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);  // TEST PRINT - CRASHES DURING EARLY BOOT
+// 	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);  // TEMPORARILY DISABLED - crashes during early boot before print init
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
 		/* Only print first few entries to avoid verbose output */
 		if(i < 2) {
-			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",
-				i, cm->base, cm->npage);
+// 			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",  // TEMPORARILY DISABLED - crashes during early boot before print init
+// 				i, cm->base, cm->npage);
 		} else if(i == 2) {
-			print("xinit: ... (showing first 2 entries only)\n");
+// 			print("xinit: ... (showing first 2 entries only)\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 		}
 		n = cm->npage;
 		if(n > kpages)
@@ -105,7 +112,7 @@ xinit(void)
 			size_bytes = cm->klimit - cm->kbase;
 			/* Only print first few xhole calls to avoid verbose output */
 			if(i < 2) {
-				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, size_bytes);
+// 				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, size_bytes);  // TEMPORARILY DISABLED - crashes during early boot before print init
 			}
 			xhole(cm->base, size_bytes);
 			kpages -= n;
@@ -115,7 +122,7 @@ xinit(void)
 		 * will be given to user by pageinit()
 		 */
 	}
-	print("xinit: initialization complete\n");
+// 	print("xinit: initialization complete\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 
 	/* Mark xinit as complete for early-boot allocators */
 	xinit_done = 1;
@@ -198,6 +205,8 @@ xallocz(ulong size, int zero)
 				xlists.flist = h;
 			}
 			iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
 			p->magix = Magichole;
 			p->size = size;
 			if(zero)
@@ -209,6 +218,13 @@ xallocz(ulong size, int zero)
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
+	/* TEST 2A: Track allocation failure */
+	xalloc_failures++;
+	xalloc_last_failure_size = orig_size;
+	print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures, orig_size, getcallerpc(&orig_size));
+
 	return nil;
 }
 
@@ -306,6 +322,8 @@ xhole(uintptr addr, uintptr size)
 				xlists.flist = c;
 			}
 			iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
 			return;
 		}
 		/* Check if new region comes before this hole */
@@ -319,6 +337,8 @@ xhole(uintptr addr, uintptr size)
 		h->addr = vaddr;
 		h->size += size;
 		iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
 		return;
 	}
 
@@ -331,6 +351,8 @@ xhole(uintptr addr, uintptr size)
 		Hole *extra = (Hole*)malloc(DYNAMIC_NHOLE * sizeof(Hole));
 		if (extra == nil) {
 			iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
 			panic("xhole: out of hole descriptors and malloc failed");
 		}
 		for (int i = 0; i < DYNAMIC_NHOLE-1; i++) {
@@ -351,6 +373,8 @@ xhole(uintptr addr, uintptr size)
 	*l = h;
 	
 	iunlock(&xlists.lk);
+	/* TEST 2A: Track allocation success */
+	xalloc_successes++;
 }
 
 void

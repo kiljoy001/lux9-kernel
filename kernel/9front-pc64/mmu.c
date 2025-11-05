@@ -861,7 +861,7 @@ kernelro(void)
 
 	/* Now we can modify PTEs - our page tables are writable! */
 	uintptr text_pages = 0, noexec_pages = 0;
-	for(va = KZERO; va < kernel_end && va != 0; va += psz){
+	for(va = KZERO; va < kernel_end; va += psz){
 		psz = PGLSZ(0);
 		pte = mmuwalk(active_pml4, va, 0, 0);
 		if(pte == nil){
