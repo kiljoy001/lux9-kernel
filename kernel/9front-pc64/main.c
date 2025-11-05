@@ -20,8 +20,10 @@
 Conf conf;
 int idle_spin;
 
-/* CRITICAL: Global debug flag that doesn't depend on environment device */
-int panic_debug = 1;  /* Default to debug mode to prevent reboot during early boot */
+/* Page table protection exclusion data for kernelro() */
+int panic_debug = 1;  /* Already exists */
+uintptr protected_page_tables_base = 0;  /* Will store active page table base */
+uintptr protected_page_tables_end = 0;   /* Will store computed end address */
 
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
@@ -224,11 +226,14 @@ main_after_cr3(void)
 	print("BOOT: printinit complete - serial console ready\n");
 	cpuidprint();
 
-	print("BOOT: getconf(\"*debug\") = %s\n", (getconf("*debug") == nil) ? "NIL" : "SET");
-	print("BOOT: cpuserver = %d, conf.monitor = %d\n", cpuserver, conf.monitor);
+	print("BOOT: capturing page table information for kernelro() exclusion...\n");
+	protected_page_tables_base = (uintptr)getcr3();
+	/* Estimate page table size: 4 levels * 512 entries * 8 bytes each = ~64KB per CPU */
+	/* For single CPU system, estimate 128KB total for safety */
+	protected_page_tables_end = protected_page_tables_base + 128*1024;
+	print("BOOT: page tables 0x%lx - 0x%lx will be excluded from kernelro()\n", 
+	      protected_page_tables_base, protected_page_tables_end);
 
-	/* FIX: Move configuration environment setup earlier to prevent reboot */
-	/* FIX: Set only the most critical variable early, defer the rest until devices are ready */
 	print("BOOT: setting up minimal configuration environment\n");
 	
 	/* Note: *debug is now handled by global panic_debug variable, no need for ksetenv here */
@@ -238,6 +243,7 @@ main_after_cr3(void)
 	print("BOOT: about to call mmuinit\n");
 	mmuinit();
 	print("BOOT: mmuinit complete - runtime page tables live\n");
+
 	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
 	if(arch->intrinit) {
 	print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
