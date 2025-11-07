@@ -1302,6 +1302,21 @@ namec(char *aname, int amode, int omode, ulong perm)
 		nexterror();
 	}
 	name = aname;
+	
+	if(aname[0] == '\0') {
+		print("namec: empty file name error\n");
+		error("empty file name");
+	}
+	print("namec: calling validnamedup\n");
+	aname = validnamedup(aname, 1);
+	print("namec: validnamedup returned\n");
+	if(waserror()){
+		print("namec: waserror() triggered\n");
+		free(aname);
+		nexterror();
+	}
+	name = aname;
+	print("namec: setting name = aname\n");
 
 	/*
 	 * When unmounting, the name parameter must be accessed
@@ -1312,13 +1327,17 @@ namec(char *aname, int amode, int omode, ulong perm)
 	 */
 	devunmount = 0;
 	if(amode == Aunmount){
+		print("namec: Aunmount mode\n");
 		/*
 		 * Doing any walks down the device could leak information
 		 * about the existence of files.
 		 */
-		if(name[0] == '#' && utflen(name) == 2)
+		if(name[0] == '#' && utflen(name) == 2) {
+			print("namec: setting devunmount = 1\n");
 			devunmount = 1;
+		}
 		amode = Aopen;
+		print("namec: changed amode to Aopen\n");
 	}
 
 	/*
@@ -1327,37 +1346,55 @@ namec(char *aname, int amode, int omode, ulong perm)
 	 * evaluate starting there.
 	 */
 	nomount = 0;
+	print("namec: checking name[0] = '%c'\n", name[0]);
 	switch(name[0]){
 	case '/':
+		print("namec: case '/' - using up->slash\n");
 		c = up->slash;
 		incref(c);
 		break;
 	
 	case '#':
+		print("namec: case '#' - processing device path\n");
 		nomount = 1;
 		up->genbuf[0] = '\0';
 		n = 0;
+		print("namec: collecting device name\n");
 		while(*name != '\0' && (*name != '/' || n < 2)){
-			if(n >= sizeof(up->genbuf)-1)
+			print("namec: processing char '%c', n=%d\n", *name, n);
+			if(n >= sizeof(up->genbuf)-1) {
+				print("namec: filename error\n");
 				error(Efilename);
+			}
 			up->genbuf[n++] = *name++;
 		}
 		up->genbuf[n] = '\0';
+		print("namec: collected device name '%s'\n", up->genbuf);
 		n = chartorune(&r, up->genbuf+1)+1;
+		print("namec: chartorune returned n=%d, r='%C'\n", n, r);
 		t = devno(r, 1);
-		if(t == -1)
+		print("namec: devno returned t=%d\n", t);
+		if(t == -1) {
+			print("namec: bad sharp error\n");
 			error(Ebadsharp);
-		if(!devunmount && !devallowed(up->pgrp, r))
+		}
+		if(!devunmount && !devallowed(up->pgrp, r)) {
+			print("namec: no attach error\n");
 			error(Enoattach);
-
+		}
+		
+		print("namec: calling devtab[%d]->attach(%s)\n", t, up->genbuf+n);
 		c = devtab[t]->attach(up->genbuf+n);
+		print("namec: attach returned c=%p\n", c);
 		break;
 
 	default:
+		print("namec: default case - using up->dot\n");
 		c = up->dot;
 		incref(c);
 		break;
 	}
+	print("namec: device lookup complete, c=%p\n", c);
 
 	e.aname = aname;
 	e.prefix = name - aname;
