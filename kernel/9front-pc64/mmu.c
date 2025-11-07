@@ -564,18 +564,13 @@ mmuinit(void)
 	 * a factor of about 10 to 100.
 	 */
 	print("DEBUG: Setting up GDT\n");
-	print("DEBUG: m->gdt = %p, gdt = %p, sizeof gdt = %lu\n", m->gdt, gdt, sizeof gdt);
-	
-	/* WORKAROUND: Fix NULL GDT pointer */
+	/* Ensure m->gdt is valid - using static allocation for bootstrap */
 	if (m->gdt == 0) {
-		print("WORKAROUND: m->gdt is NULL, allocating dynamic GDT\n");
-		static Segdesc dynamic_gdt[NGDT];
+		static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));
 		m->gdt = dynamic_gdt;
-		print("WORKAROUND: m->gdt now = %p\n", m->gdt);
 	}
 	
 	memmove(m->gdt, gdt, sizeof gdt);
-	print("DEBUG: GDT memmove completed\n");
 
 	x = (uintptr)m->tss;
 	m->gdt[TSSSEG+0].d0 = (x<<16)|(sizeof(Tss)-1);

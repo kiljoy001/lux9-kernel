@@ -169,27 +169,11 @@ mach0init(void)
 	m = MACHP(0);
 
 	/* Zero the entire Mach structure to ensure clean state */
-	uartputs("DEBUG[mach0init]: About to zero Mach structure\n", 46);
 	memset(m, 0, sizeof(Mach));
-	uartputs("DEBUG[mach0init]: Zeroed Mach structure\n", 41);
 
 	m->machno = 0;
-	uartputs("DEBUG[mach0init]: Setting m->pml4\n", 35);
 	m->pml4 = (u64int*)CPU0PML4;
-	
-	/* Debug CPU0GDT value directly */
-	char gdt_debug[64];
-	snprint(gdt_debug, sizeof(gdt_debug), "DEBUG: CPU0GDT = 0x%llx\n", (unsigned long long)CPU0GDT);
-	uartputs(gdt_debug, strlen(gdt_debug));
-	
-	uartputs("DEBUG[mach0init]: Setting m->gdt\n", 33);
 	m->gdt = (Segdesc*)CPU0GDT;
-	
-	/* Debug m->gdt after assignment */
-	snprint(gdt_debug, sizeof(gdt_debug), "DEBUG: m->gdt after = 0x%llx\n", (unsigned long long)m->gdt);
-	uartputs(gdt_debug, strlen(gdt_debug));
-	
-	uartputs("DEBUG[mach0init]: Set m->gdt\n", 30);
 	m->ticks = 0;
 	m->ilockdepth = 0;
 
@@ -278,17 +262,23 @@ main_after_cr3(void)
 	chandevreset();
 	print("BOOT: device reset sequence finished\n");
 	
-	/* DEFERRED: Now that devices are initialized, set up the full environment */
-	print("BOOT: setting up full environment after device initialization...\n");
-	char buf[2*KNAMELEN];
-	snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
-	ksetenv("terminal", buf, 0);
-	ksetenv("cputype", "amd64", 0);
-	if(cpuserver)
-		ksetenv("service", "cpu", 0);
-	else
-		ksetenv("service", "terminal", 0);
-	print("BOOT: environment setup complete\n");
+	/* Set up the full environment - wrap in error handling like working 9/pc64 */
+	print("BOOT: setting up full environment with error handling...\n");
+	if(!waserror()) {
+		char buf[2*KNAMELEN];
+		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+		ksetenv("terminal", buf, 0);
+		ksetenv("cputype", "amd64", 0);
+		if(cpuserver)
+			ksetenv("service", "cpu", 0);
+		else
+			ksetenv("service", "terminal", 0);
+		poperror();
+		print("BOOT: environment setup completed successfully\n");
+	} else {
+		print("BOOT: WARNING - environment setup failed, continuing anyway\n");
+		poperror();
+	}
 	
 	userinit();
 	print("BOOT: userinit scheduled *init* kernel process\n");
