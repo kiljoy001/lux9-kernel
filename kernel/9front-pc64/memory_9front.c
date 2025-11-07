@@ -687,10 +687,15 @@ meminit(void)
 			continue;
 		}
 		cm->base = memmapalloc(base, size, BY2PG, MemRAM);
-		print("meminit: memmapalloc returned base=%#p\n", cm->base);
+		print("meminit: memmapalloc(%#p, %#p, BY2PG, MemRAM) returned base=%#p\n", base, size, cm->base);
 		if(cm->base == -1) {
-			print("meminit: memmapalloc failed, skipping\n");
-			continue;
+			print("meminit: memmapalloc failed, trying without alignment\n");
+			cm->base = memmapalloc(base, size, 0, MemRAM);
+			print("meminit: retry with no alignment returned base=%#p\n", cm->base);
+			if(cm->base == -1) {
+				print("meminit: memmapalloc failed, skipping\n");
+				continue;
+			}
 		}
 		base = cm->base;
 		cm->npage = size/BY2PG;

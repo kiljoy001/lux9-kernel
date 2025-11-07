@@ -10,6 +10,29 @@ extern uintptr limine_hhdm_offset;
 /* Flag to indicate xinit() has completed (for early-boot allocators) */
 int xinit_done = 0;
 
+/* Bootstrap allocation for early boot systems */
+static uchar bootstrap_pool[8192];  /* Simple 8KB bootstrap pool */
+static ulong bootstrap_offset = 0;
+
+void*
+bootstrap_alloc(ulong size)
+{
+	ulong aligned_size;
+	
+	/* Align to 8-byte boundary */
+	aligned_size = (size + 7) & ~7;
+	
+	/* Check if we have enough space */
+	if (bootstrap_offset + aligned_size > sizeof(bootstrap_pool)) {
+		return nil;
+	}
+	
+	/* Return the allocated space */
+	void *ptr = &bootstrap_pool[bootstrap_offset];
+	bootstrap_offset += aligned_size;
+	return ptr;
+}
+
 /* -------------------------------------------------------------------------
  * XALLOC configuration
  * -------------------------------------------------------------------------

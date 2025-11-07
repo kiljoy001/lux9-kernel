@@ -5,6 +5,7 @@
 #include	"fns.h"
 #include	"hhdm.h"
 #include	"borrowchecker.h"
+#include <stddef.h>
 
 extern void uartputs(char*, int);
 
@@ -543,6 +544,7 @@ mmuinit(void)
 		kernelro();
 
 	m->tss = mallocz(sizeof(Tss), 1);
+	print("DEBUG: TSS allocated at %p\n", m->tss);
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
 	m->tss->iomap = 0xDFFF;
@@ -561,7 +563,19 @@ mmuinit(void)
 	 * than Intels in this regard).  Under VMware it pays off
 	 * a factor of about 10 to 100.
 	 */
+	print("DEBUG: Setting up GDT\n");
+	print("DEBUG: m->gdt = %p, gdt = %p, sizeof gdt = %lu\n", m->gdt, gdt, sizeof gdt);
+	
+	/* WORKAROUND: Fix NULL GDT pointer */
+	if (m->gdt == 0) {
+		print("WORKAROUND: m->gdt is NULL, allocating dynamic GDT\n");
+		static Segdesc dynamic_gdt[NGDT];
+		m->gdt = dynamic_gdt;
+		print("WORKAROUND: m->gdt now = %p\n", m->gdt);
+	}
+	
 	memmove(m->gdt, gdt, sizeof gdt);
+	print("DEBUG: GDT memmove completed\n");
 
 	x = (uintptr)m->tss;
 	m->gdt[TSSSEG+0].d0 = (x<<16)|(sizeof(Tss)-1);
@@ -569,31 +583,61 @@ mmuinit(void)
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;
 
+	print("DEBUG: Loading GDT and IDT\n");
 	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
 	loadptr(sizeof(Segdesc)*512-1, (uintptr)IDTADDR, lidt);
+	print("DEBUG: Setting up task switch\n");
 	taskswitch((uintptr)m + MACHSIZE);
+	print("DEBUG: Loading TSS\n");
 	ltr(TSSSEL);
+	print("DEBUG: Setting up MSRs\n");
 
+	print("DEBUG: Setting up MSRs\n");
 	wrmsr(FSbase, 0ull);
+	print("DEBUG: Set FSbase\n");
 	wrmsr(GSbase, (uvlong)&machp[m->machno]);
+	print("DEBUG: Set GSbase\n");
 	wrmsr(KernelGSbase, 0ull);
+	print("DEBUG: Set KernelGSbase\n");
 
 	/* enable syscall extension */
+	print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
+	
+	/* WORKAROUND: Fix NULL GDT pointer issue */
+	if (m->gdt == NULL) {
+		print("WORKAROUND: m->gdt is NULL, using dynamic allocation\n");
+		/* Allocate GDT dynamically instead of using fixed address */
+		static Segdesc dynamic_gdt[NGDT];
+		m->gdt = dynamic_gdt;
+		print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
+	}
+	
+	print("DEBUG[mmuinit]: About to read EFER MSR\n");
 	rdmsr(Efer, &v);
+	print("DEBUG[mmuinit]: Read EFER MSR, value=%#llux\n", v);
 	v |= 1ull;
+	print("DEBUG[mmuinit]: About to write EFER MSR\n");
 	wrmsr(Efer, v);
+	print("DEBUG[mmuinit]: Wrote EFER MSR\n");
 	
 	// Debug print for EFER
 	dbghex("EFER set to: ", v);
 
+	print("DEBUG: Setting up syscall MSRs\n");
 	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
+	print("DEBUG: Set STAR MSR\n");
 	wrmsr(Lstar, (uvlong)syscallentry);
+	print("DEBUG: Set LSTAR MSR\n");
 	wrmsr(Sfmask, 0x200);
+	print("DEBUG: Set SFMASK MSR\n");
 	
 	// Debug print for STAR
 	uvlong star_val;
+	print("DEBUG: About to read STAR MSR\n");
 	rdmsr(Star, &star_val);
+	print("DEBUG: Read STAR MSR\n");
 	dbghex("STAR set to: ", star_val);
+	print("DEBUG: mmuinit completed successfully\n");
 }
 
 /*

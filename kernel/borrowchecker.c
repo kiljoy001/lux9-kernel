@@ -12,47 +12,26 @@
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
+extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 #include "fns.h"
 #include "borrowchecker.h"
 
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
-/* Static early-boot hash table (before xinit) */
-#define EARLY_BOOT_BUCKETS 256
-#define EARLY_BOOT_OWNERS 512  /* Pool of pre-allocated BorrowOwner structs */
-#define EARLY_BOOT_SHARED 128  /* Pool of pre-allocated SharedBorrower structs */
-static struct BorrowBucket early_boot_buckets[EARLY_BOOT_BUCKETS];
-static struct BorrowOwner early_boot_owner_pool[EARLY_BOOT_OWNERS];
-static struct SharedBorrower early_boot_shared_pool[EARLY_BOOT_SHARED];
-static int early_boot_owner_next = 0;
-static int early_boot_shared_next = 0;
-static int using_early_boot = 0;
-
 /* Initialize the borrow pool */
 void
 borrowinit(void)
 {
 	ulong i;
-	extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
-
-	/* Check if we're in early boot (before xinit) */
-	if (!xinit_done) {
-		/* Use static pre-allocated hash table for early boot */
-		borrowpool.nbuckets = EARLY_BOOT_BUCKETS;
-		borrowpool.owners = early_boot_buckets;
-		using_early_boot = 1;
-		print("borrowinit: using early-boot static hash table (%d buckets)\n", EARLY_BOOT_BUCKETS);
-	} else {
-		/* Normal initialization with xalloc */
-		borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
-		borrowpool.owners = xalloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
-		if (borrowpool.owners == nil) {
-			panic("borrowinit: failed to allocate hash table");
-		}
-		using_early_boot = 0;
-		print("borrowinit: using xalloc hash table (%d buckets)\n", (int)borrowpool.nbuckets);
+	
+	/* Always use bootstrap allocator for early boot - no xinit dependency */
+	borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
+	borrowpool.owners = bootstrap_alloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
+	if (borrowpool.owners == nil) {
+		panic("borrowinit: failed to allocate hash table");
 	}
+	print("borrowinit: using bootstrap_alloc hash table (%lu buckets)\n", borrowpool.nbuckets);
 
 	for (i = 0; i < borrowpool.nbuckets; i++) {
 		borrowpool.owners[i].head = nil;
@@ -96,19 +75,11 @@ create_owner(uintptr key)
 	ulong hash = borrow_hash(key);
 	struct BorrowOwner *owner;
 
-	/* Use static pool during early boot, xalloc otherwise */
-	if (using_early_boot) {
-		if (early_boot_owner_next >= EARLY_BOOT_OWNERS) {
-			print("create_owner: early boot pool exhausted (%d/%d)\n",
-			      early_boot_owner_next, EARLY_BOOT_OWNERS);
-			return nil;
-		}
-		owner = &early_boot_owner_pool[early_boot_owner_next++];
-	} else {
-		owner = xalloc(sizeof(struct BorrowOwner));
-		if (owner == nil) {
-			return nil;
-		}
+	/* Always use bootstrap allocator for early boot */
+	owner = bootstrap_alloc(sizeof(struct BorrowOwner));
+	if (owner == nil) {
+		print("create_owner: bootstrap_alloc failed for BorrowOwner\n");
+		return nil;
 	}
 
 	owner->key = key;
@@ -198,15 +169,16 @@ borrow_release(Proc *p, uintptr key)
 	prev = nil;
 	for (owner = borrowpool.owners[hash].head; owner != nil; owner = owner->next) {
 		if (owner->key == key) {
-			if (prev == nil) {
-				borrowpool.owners[hash].head = owner->next;
-			} else {
-				prev->next = owner->next;
-			}
-			if (!using_early_boot) {
-				xfree(owner);
-			}
-			break;
+		if (prev == nil) {
+			borrowpool.owners[hash].head = owner->next;
+		} else {
+			prev->next = owner->next;
+		}
+		/* Don't free bootstrap-allocated memory, only free xalloc'd memory after xinit */
+		if (xinit_done) {
+			xfree(owner);
+		}
+		break;
 		}
 		prev = owner;
 	}
@@ -285,18 +257,10 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 	}
 
 	/* Allocate new shared borrower node */
-	if (using_early_boot) {
-		if (early_boot_shared_next >= EARLY_BOOT_SHARED) {
-			iunlock(&borrowpool.lock);
-			return BORROW_ENOMEM;
-		}
-		sb = &early_boot_shared_pool[early_boot_shared_next++];
-	} else {
-		sb = xalloc(sizeof(struct SharedBorrower));
-		if (sb == nil) {
-			iunlock(&borrowpool.lock);
-			return BORROW_ENOMEM;
-		}
+	sb = bootstrap_alloc(sizeof(struct SharedBorrower));
+	if (sb == nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOMEM;
 	}
 
 	/* Add to front of shared list */
@@ -391,8 +355,8 @@ borrow_return_shared(Proc *borrower, uintptr key)
 			} else {
 				prev->next = sb->next;
 			}
-			/* Only free if not from early boot pool */
-			if (!using_early_boot) {
+			/* Only free if allocated with xalloc after xinit */
+			if (xinit_done) {
 				xfree(sb);
 			}
 
@@ -561,7 +525,7 @@ borrow_cleanup_process(Proc *p)
 				/* Force release - free all shared borrowers */
 				for (sb = owner->shared_list; sb != nil; sb = sb_next) {
 					sb_next = sb->next;
-					if (!using_early_boot) {
+					if (xinit_done) {
 						xfree(sb);
 					}
 				}
@@ -594,7 +558,7 @@ borrow_cleanup_process(Proc *p)
 					} else {
 						sb_prev->next = sb_next;
 					}
-					if (!using_early_boot) {
+					if (xinit_done) {
 						xfree(sb);
 					}
 					owner->shared_count--;
@@ -616,7 +580,7 @@ borrow_cleanup_process(Proc *p)
 				} else {
 					prev->next = next;
 				}
-				if (!using_early_boot) {
+				if (xinit_done) {
 					xfree(owner);
 				}
 			} else {
@@ -707,7 +671,7 @@ borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner)
 	own->is_system_owned = 1;
 	own->state = BORROW_EXCLUSIVE;
 	/* Skip timestamp during early boot (before xinit) to avoid timer init */
-	if (!using_early_boot) {
+	if (xinit_done) {
 		own->acquired_ns = todget(nil, nil);
 	} else {
 		own->acquired_ns = 0;
@@ -754,7 +718,7 @@ borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
 			} else {
 				prev->next = own->next;
 			}
-			if (!using_early_boot) {
+			if (xinit_done) {
 				xfree(own);
 			}
 			break;
@@ -791,7 +755,7 @@ borrow_transfer_system(enum BorrowSystemOwner from, enum BorrowSystemOwner to, u
 
 	owner->system_owner = to;
 	/* Skip timestamp during early boot (before xinit) to avoid timer init */
-	if (!using_early_boot) {
+	if (xinit_done) {
 		owner->acquired_ns = todget(nil, nil);
 	} else {
 		owner->acquired_ns = 0;
@@ -836,10 +800,7 @@ borrow_is_owned_by_system(uintptr key, enum BorrowSystemOwner owner)
 
 /* ========== Range-Based Memory Tracking ========== */
 
-/* Static range pool for early boot */
-#define MAX_MEMORY_RANGES 32
-static struct MemoryRange range_pool[MAX_MEMORY_RANGES];
-static int range_count = 0;
+/* Global range list for memory tracking */
 static struct MemoryRange *range_list = nil;
 static Lock range_lock;
 
@@ -847,55 +808,15 @@ static Lock range_lock;
 void
 memory_range_init(void)
 {
-	int i;
-
-	range_count = 0;
-	range_list = nil;
-
-	/* Clear the pool */
-	for (i = 0; i < MAX_MEMORY_RANGES; i++) {
-		range_pool[i].start = 0;
-		range_pool[i].end = 0;
-		range_pool[i].owner = OWNER_BOOTLOADER;
-		range_pool[i].next = nil;
-	}
-
-	print("memory_range_init: initialized (max %d ranges)\n", MAX_MEMORY_RANGES);
+	print("memory_range_init: initialized\n");
 }
 
 /* Add a memory range with ownership (early boot - static pool) */
 void
 memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner)
 {
-	struct MemoryRange *range;
-
-	/* During early boot, use static pool */
-	if (using_early_boot) {
-		if (range_count >= MAX_MEMORY_RANGES) {
-			print("memory_range_add: EARLY BOOT pool exhausted (%d/%d)\n",
-			      range_count, MAX_MEMORY_RANGES);
-			return;
-		}
-
-		ilock(&range_lock);
-
-		/* Allocate from static pool */
-		range = &range_pool[range_count++];
-		range->start = start;
-		range->end = end;
-		range->owner = owner;
-
-		/* Add to front of list */
-		range->next = range_list;
-		range_list = range;
-
-		iunlock(&range_lock);
-
-		print("memory_range_add: [%#p-%#p] owner=%d (static)\n", start, end, owner);
-	} else {
-		/* After xinit(), use dynamic allocation */
-		memory_range_add_discovered(start, end, owner);
-	}
+	/* Always use dynamic allocation */
+	memory_range_add_discovered(start, end, owner);
 }
 
 /* Add range with dynamic allocation (after xinit) */
@@ -905,9 +826,13 @@ memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner o
 	struct MemoryRange *range;
 
 	/* Dynamically allocate range entry */
-	range = xalloc(sizeof(struct MemoryRange));
+	if (xinit_done) {
+		range = xalloc(sizeof(struct MemoryRange));
+	} else {
+		range = bootstrap_alloc(sizeof(struct MemoryRange));
+	}
 	if (range == nil) {
-		print("memory_range_add_discovered: xalloc failed for range [%#p-%#p]\n",
+		print("memory_range_add_discovered: allocation failed for range [%#p-%#p]\n",
 		      start, end);
 		return;
 	}
@@ -945,9 +870,8 @@ memory_range_remove(uintptr start, uintptr end)
 				prev->next = range->next;
 			}
 
-			/* Free if dynamically allocated (not from static pool) */
-			if (!using_early_boot &&
-			    (range < &range_pool[0] || range >= &range_pool[MAX_MEMORY_RANGES])) {
+			/* Free if dynamically allocated (after xinit) */
+			if (xinit_done) {
 				xfree(range);
 			}
 
@@ -980,12 +904,7 @@ memory_range_dump(void)
 		count++;
 	}
 	print("Total: %d ranges\n", count);
-	if (using_early_boot) {
-		print("Mode: EARLY BOOT (static pool %d/%d used)\n",
-		      range_count, MAX_MEMORY_RANGES);
-	} else {
-		print("Mode: RUNTIME (dynamic allocation)\n");
-	}
+	print("Mode: BOOTSTRAP ALLOCATION (early boot)\n");
 
 	iunlock(&range_lock);
 }
@@ -994,8 +913,10 @@ memory_range_dump(void)
 int
 memory_range_capacity(void)
 {
-	if (using_early_boot) {
-		return MAX_MEMORY_RANGES - range_count;
+	/* During early boot, limited by bootstrap pool, after xinit unlimited */
+	if (!xinit_done) {
+		/* Bootstrap allocation is limited */
+		return 1000;  /* Conservative estimate */
 	} else {
 		/* After xinit, limited only by available memory */
 		return 999999;  /* Effectively unlimited */
@@ -1051,7 +972,7 @@ borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner o
 
 	/* IMPORTANT: Only use this after xinit() for runtime tracking!
 	 * For boot coordination, use memory_range_add() instead */
-	if (using_early_boot) {
+	if (!xinit_done) {
 		print("borrow_acquire_range_phys: ERROR - called during early boot\n");
 		print("  Use memory_range_add() for boot coordination instead\n");
 		return BORROW_EINVAL;
@@ -1080,7 +1001,7 @@ borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwne
 	uintptr pa;
 
 	/* During early boot, check range tracking instead */
-	if (using_early_boot) {
+	if (!xinit_done) {
 		/* Check if entire range has same owner */
 		for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
 			if (memory_range_get_owner(pa) != owner)
@@ -1105,7 +1026,7 @@ borrow_can_access_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwne
 	uintptr pa;
 
 	/* During early boot, check range tracking */
-	if (using_early_boot) {
+	if (!xinit_done) {
 		for (pa = start_pa; pa < start_pa + size; pa += 0x1000) {
 			if (!memory_range_check_access(pa, requester))
 				return 0;
@@ -1191,7 +1112,7 @@ establish_memory_ownership_zones_dynamic(void)
 	int i;
 	uintptr start, region_end;
 
-	if (using_early_boot) {
+	if (!xinit_done) {
 		print("establish_memory_ownership_zones_dynamic: ERROR - call after xinit()\n");
 		return;
 	}
