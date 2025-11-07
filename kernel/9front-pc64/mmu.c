@@ -462,17 +462,15 @@ setuppagetables(void)
 	u64int hhdm_start = saved_limine_hhdm_offset;
 	u64int hhdm_end = hhdm_start + max_physaddr;
 	
-	/* Map entire HHDM range using large pages where possible */
-	for(u64int va = hhdm_start; va < hhdm_end; va += PGLSZ(3)) {
-		u64int pa = va - hhdm_start;
-		u64int size = PGLSZ(3);
+	/* Map only the actual physical memory we have, not a huge range */
+	/* Map in 2MB chunks to avoid excessive page table allocation */
+	for(u64int pa = 0; pa < max_physaddr; pa += PGLSZ(2)) {
+		u64int va = hhdm_start + pa;
+		u64int size = PGLSZ(2);  /* 2MB chunks */
 		if(pa + size > max_physaddr) size = max_physaddr - pa;
 		
-		if(size >= PGLSZ(3)) {
-			map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-		} else {
-			map_range(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTEACCESSED);
-		}
+		/* Create 2MB mappings where possible for efficiency */
+		map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
 	uartputs("setuppagetables: HHDM mapping complete\n", 42);
 
