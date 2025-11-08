@@ -258,9 +258,14 @@ main_after_cr3(void)
 	print("BOOT: procinit0 complete - process table ready\n");
 	initseg();
 	links();
-	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
-	chandevreset();
-	print("BOOT: device reset sequence finished\n");
+	
+	/* Initialize I/O port allocation after links() */
+	iomapinit(0xFFFF);  
+	
+	/* Reset and initialize all devices before environment setup */
+	chandevreset();   
+	chandevinit();    /* <-- This will call envinit() for the environment device */
+	print("BOOT: device initialization sequence finished\n");
 	
 	/* Set up the full environment - wrap in error handling like working 9/pc64 */
 	print("BOOT: setting up full environment with error handling...\n");
@@ -281,7 +286,7 @@ main_after_cr3(void)
 	}
 	
 	userinit();
-	print("BOOT: userinit scheduled *init* kernel process\n");
+	print("BOOT: userinit called successfully - proceeding to scheduler\n");
 	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
 	schedinit();
 }
@@ -291,8 +296,8 @@ init0(void)
 {
 	char **sp;
 
-	chandevinit();
-	print("BOOT[init0]: chandevinit complete\n");
+	/* chandevinit() is now called in main_after_cr3(), no need to call it again */
+	print("BOOT[init0]: chandevinit already completed in main\n");
 
 	/* Register initrd files with devroot - must be after chandevinit */
 	extern struct initrd_file *initrd_root;

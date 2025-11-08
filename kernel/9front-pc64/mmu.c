@@ -563,7 +563,6 @@ mmuinit(void)
 	 * than Intels in this regard).  Under VMware it pays off
 	 * a factor of about 10 to 100.
 	 */
-	print("DEBUG: Setting up GDT\n");
 	/* Ensure m->gdt is valid - using static allocation for bootstrap */
 	if (m->gdt == 0) {
 		static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));

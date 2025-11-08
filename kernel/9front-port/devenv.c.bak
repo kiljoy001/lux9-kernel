@@ -117,24 +117,6 @@ envattach(char *spec)
 	return c;
 }
 
-/*
- * Initialize the global environment group
- */
-void
-envinit(void)
-{
-	// Initialize global configuration environment group
-	memset(&confegrp, 0, sizeof(confegrp));
-	confegrp.ref = 1;           // Reference count
-	confegrp.nent = 0;          // No entries yet
-	confegrp.ent = nil;         // No entries allocated
-	confegrp.low = 0;           // No free slots used
-	confegrp.alloc = 0;         // No bytes allocated
-	confegrp.path = 0;          // No QIDs generated yet
-	confegrp.vers = 0;          // Version 0
-	// Hash table already zeroed by memset
-}
-
 static Walkqid*
 envwalk(Chan *c, Chan *nc, char **name, int nname)
 {
@@ -395,9 +377,9 @@ envwrite(Chan *c, void *a, long n, vlong off)
 Dev envdevtab = {
 	'e',
 	"env",
-	
+
 	devreset,
-	envinit,
+	devinit,
 	devshutdown,
 	envattach,
 	envwalk,
