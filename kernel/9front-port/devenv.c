@@ -100,6 +100,17 @@ Notfound:
 	return 1;
 }
 
+/**
+ * Attach to the env device, optionally selecting the global configuration group.
+ *
+ * If spec is "c", the returned channel will be associated with the global
+ * configuration environment group. Any other non-empty spec value is invalid
+ * and causes an Ebadarg error.
+ *
+ * @param spec Optional device specifier; "c" selects the global configuration group,
+ *             nil or empty string selects the default (per-process) environment.
+ * @returns Pointer to a newly attached Chan with its aux field set to the selected Egrp
+ */
 static Chan*
 envattach(char *spec)
 {
@@ -117,8 +128,11 @@ envattach(char *spec)
 	return c;
 }
 
-/*
- * Initialize the global environment group
+/**
+ * Initialize the global configuration environment group used for kernel configuration.
+ *
+ * Sets the global `confegrp` to an empty, initialized state with a reference count of 1
+ * and zeros for entry, allocation, path, and version counters; the hash table is cleared.
  */
 void
 envinit(void)
@@ -135,6 +149,14 @@ envinit(void)
 	// Hash table already zeroed by memset
 }
 
+/**
+ * Walks the env device namespace for a sequence of path elements.
+ * @param c Source channel to walk from.
+ * @param nc Optional channel to update with the final walked state (may be nil).
+ * @param name Array of path element strings to consume during the walk.
+ * @param nname Number of elements in `name`.
+ * @returns Pointer to a Walkqid list describing the walked path on success, `nil` on failure.
+ */
 static Walkqid*
 envwalk(Chan *c, Chan *nc, char **name, int nname)
 {

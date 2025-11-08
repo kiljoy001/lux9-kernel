@@ -652,10 +652,15 @@ memreserve(uintptr pa, uintptr size)
 	memmapadd(pa, size, MemReserved);
 }
 
-/*
- * Finalize the memory map:
- *  (re-)map the upper memory blocks
- *  allocate all usable ram to the conf.mem[] banks
+/**
+ * Finalize the system memory map and populate conf.mem[] with usable RAM banks.
+ *
+ * Scans the memory map for regions marked usable RAM, reserves each region
+ * into the allocator, and records the resulting base address and page count
+ * in conf.mem[]. Regions of size zero or beyond the conf.mem[] capacity are
+ * skipped. Allocation prefers page-aligned placement and will retry without
+ * alignment if alignment fails. Upper Memory Block (UMB) mapping is not
+ * performed here; UMB exclusions are applied before populating conf.mem[].
  */
 void
 meminit(void)

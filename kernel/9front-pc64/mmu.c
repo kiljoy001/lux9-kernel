@@ -383,6 +383,14 @@ pre_init_memory_system(void)
 	
 	uartputs("pre_init_memory_system: complete\n", 33);
 }
+/**
+ * Prepare kernel page tables, establish HHDM and kernel mappings, then switch CR3 and continue boot.
+ *
+ * Initializes the kernel's PML4, maps the kernel image at KZERO and into the Higher Half Direct Map (HHDM),
+ * constructs 2MB HHDM mappings covering actual physical memory, ensures the memory subsystem is ready for
+ * the CR3 switch, performs the CR3 switch to the newly prepared page tables, updates the kernel MMU state,
+ * and transfers control to main_after_cr3. This function does not return on success.
+ */
 void
 setuppagetables(void)
 {
@@ -529,6 +537,16 @@ setuppagetables(void)
 	panic("setuppagetables: main_after_cr3 returned unexpectedly");
 }
 
+/**
+ * Initialize per-CPU MMU and CPU state required for kernel operation on this processor.
+ *
+ * Performs processor-local setup needed before switching to kernel page tables and user/syscall transitions.
+ * This includes allocating and initializing the TSS, installing and loading the GDT and IDT, loading the TSS,
+ * initializing task-switch state, configuring model-specific registers used for syscall handling (EFER, STAR, LSTAR, SFMASK),
+ * and setting FS/GS base registers.
+ *
+ * If TSS allocation fails, the function will panic.
+ */
 void
 mmuinit(void)
 {
