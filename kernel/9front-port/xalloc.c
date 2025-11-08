@@ -14,6 +14,17 @@ int xinit_done = 0;
 static uchar bootstrap_pool[8192];  /* Simple 8KB bootstrap pool */
 static ulong bootstrap_offset = 0;
 
+/**
+ * Allocate a small aligned block from the early-boot bootstrap pool.
+ *
+ * Allocates `size` bytes from the internal 8KB bootstrap pool and returns
+ * an 8-byte-aligned pointer into that pool. If there is not enough space
+ * remaining, returns `nil`.
+ *
+ * @param size Number of bytes requested.
+ * @returns Pointer to the start of the allocated, 8-byte-aligned region within
+ *          the bootstrap pool, or `nil` if allocation fails due to insufficient space.
+ */
 void*
 bootstrap_alloc(ulong size)
 {

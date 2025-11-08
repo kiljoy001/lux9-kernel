@@ -291,6 +291,15 @@ main_after_cr3(void)
 	schedinit();
 }
 
+/**
+ * Perform final boot-time setup and transfer proc0 to user mode.
+ *
+ * Registers any initrd files with the device root (if present), ensures the
+ * environment is configured, runs a Pebble SIP test, starts the alarm kernel
+ * process, computes and logs proc0's initial user stack frame, prepares and
+ * clears FPU state, raises interrupt level, and finally enters user mode by
+ * calling touser() with the prepared stack frame.
+ */
 void
 init0(void)
 {

@@ -19,7 +19,12 @@ extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
-/* Initialize the borrow pool */
+/**
+ * Initialize the global borrow pool and allocate its bucket table using the bootstrap allocator.
+ *
+ * Sets the pool to 1024 buckets, allocates the bucket array via bootstrap_alloc, initializes all bucket
+ * heads to nil, and resets the owner, shared, and mutable borrow counters to zero. Panics if allocation fails.
+ */
 void
 borrowinit(void)
 {
@@ -68,7 +73,17 @@ find_owner(uintptr key)
 	return nil;
 }
 
-/* Create new BorrowOwner for a key */
+/**
+ * Create and insert a new BorrowOwner for the given resource key.
+ *
+ * The new BorrowOwner is allocated using the bootstrap allocator, initialized with
+ * default fields (no owner, state BORROW_FREE, system_owner OWNER_BOOTLOADER,
+ * is_system_owned == 0, zeroed counters and lists), and prepended into the
+ * borrow pool bucket computed from `key`.
+ *
+ * @param key Resource identifier used as the borrow-owner lookup key.
+ * @returns Pointer to the newly created BorrowOwner, or `nil` if allocation failed.
+ */
 static struct BorrowOwner*
 create_owner(uintptr key)
 {
@@ -132,7 +147,22 @@ borrow_acquire(Proc *p, uintptr key)
 	return BORROW_OK;
 }
 
-/* Release ownership of a resource */
+/**
+ * Release ownership of a resource identified by `key` held by process `p`.
+ *
+ * Validates that `p` is the current owner and that there are no active shared or
+ * mutable borrows; on success clears ownership, marks the resource free, removes
+ * the owner entry from the hash table, and frees that entry only if `xinit_done`
+ * indicates post-initialization.
+ *
+ * @param p Process attempting the release; must be non-nil and the current owner.
+ * @param key Resource key whose ownership is being released.
+ * @returns BORROW_OK on success.
+ * @returns BORROW_EINVAL if `p` is nil.
+ * @returns BORROW_ENOTFOUND if no owner entry exists for `key`.
+ * @returns BORROW_ENOTOWNER if `p` is not the recorded owner of the resource.
+ * @returns BORROW_EBORROWED if there are active shared or mutable borrows that prevent release.
+ */
 enum BorrowError
 borrow_release(Proc *p, uintptr key)
 {
@@ -220,7 +250,23 @@ borrow_transfer(Proc *from, Proc *to, uintptr key)
 	return BORROW_OK;
 }
 
-/* Borrow resource as shared */
+/**
+ * Grant a shared borrow of the identified resource from an owner to a borrower.
+ *
+ * Adds the borrower to the owner's shared-borrow list and updates owner/resource
+ * state and global counters when the operation succeeds.
+ *
+ * @param owner The current owning process of the resource.
+ * @param borrower The process to receive the shared borrow.
+ * @param key Identifier for the resource to be borrowed.
+ * @returns BORROW_OK on success.
+ * @returns BORROW_EINVAL if `owner` or `borrower` is NULL.
+ * @returns BORROW_ENOTFOUND if no owner entry exists for `key`.
+ * @returns BORROW_ENOTOWNER if `owner` is not the recorded owner of the resource.
+ * @returns BORROW_EMUTBORROW if a mutable borrow is active for the resource.
+ * @returns BORROW_EALREADY if `borrower` already holds a shared borrow for the resource.
+ * @returns BORROW_ENOMEM if allocation of the shared-borrow record fails.
+ */
 enum BorrowError
 borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 {
@@ -322,7 +368,20 @@ borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key)
 	return BORROW_OK;
 }
 
-/* Return a shared borrow */
+/**
+ * Release a shared borrow held by a process for a given resource key.
+ *
+ * Removes the borrower from the resource's shared-borrow list, decrements
+ * shared counters, updates the resource state when no shared borrowers
+ * remain, and frees borrow bookkeeping memory when permitted.
+ *
+ * @param borrower Process returning the shared borrow; must not be nil.
+ * @param key Resource identifier whose shared borrow is being returned.
+ * @returns BORROW_OK on successful return;
+ *          BORROW_EINVAL if `borrower` is nil;
+ *          BORROW_ENOTFOUND if no owner exists for `key`;
+ *          BORROW_ENOTBORROWED if the borrower does not hold a shared borrow. 
+ */
 enum BorrowError
 borrow_return_shared(Proc *borrower, uintptr key)
 {
@@ -500,7 +559,18 @@ borrow_can_borrow_mut(uintptr key)
 	return can;
 }
 
-/* Cleanup all resources for a process */
+/**
+ * Release and remove all borrow/bookkeeping state associated with a process.
+ *
+ * Scans the global borrow pool and: force-releases resources owned by the process, clears
+ * shared and mutable borrows held by the process, removes the process from other owners'
+ * shared lists, and removes owner entries that become unused.
+ *
+ * Memory allocated for SharedBorrower and BorrowOwner nodes is freed when the global
+ * xinit_done flag indicates full initialization; otherwise nodes are only detached but not freed.
+ *
+ * @param p Pointer to the process whose borrow-related state should be cleaned; no action is taken if `p` is `nil`.
+ */
 void
 borrow_cleanup_process(Proc *p)
 {
@@ -646,7 +716,18 @@ borrow_dump_resource(uintptr key)
 
 /* ========== System-Level Ownership Functions ========== */
 
-/* Acquire system-level ownership of a resource */
+/**
+ * Acquire system-level exclusive ownership of the resource identified by `key`.
+ *
+ * Marks the resource as owned by `owner` and sets its state to exclusive.
+ * If ownership is recorded after system initialization completes, records the acquisition timestamp; before initialization the timestamp is set to zero.
+ *
+ * @param key Identifier for the resource (e.g., physical page frame or resource key).
+ * @param owner System owner to assign to the resource.
+ * @returns BORROW_OK on success;
+ *          BORROW_ENOMEM if an owner entry could not be allocated;
+ *          BORROW_EALREADY if the resource is not free.
+ */
 enum BorrowError
 borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner)
 {
@@ -680,7 +761,20 @@ borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner)
 	return BORROW_OK;
 }
 
-/* Release system-level ownership of a resource */
+/**
+ * Release system-level ownership for the resource identified by `key`.
+ *
+ * Clears the resource's system ownership and marks it free; if removal conditions are met
+ * the owner entry is also removed from the pool. Fails if the resource does not exist,
+ * is not owned by `owner`, or has active shared or mutable borrows.
+ *
+ * @param key Resource identifier (key) whose system ownership should be released.
+ * @param owner System owner expected to currently hold ownership for the resource.
+ * @returns BORROW_OK on success.
+ * @returns BORROW_ENOTFOUND if no owner entry exists for `key`.
+ * @returns BORROW_ENOTOWNER if `key` is not owned by the specified `owner`.
+ * @returns BORROW_EBORROWED if the resource has active shared or mutable borrows.
+ */
 enum BorrowError
 borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
 {
@@ -730,7 +824,20 @@ borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
 	return BORROW_OK;
 }
 
-/* Transfer system-level ownership between systems */
+/**
+ * Transfer system-level ownership of a resource identified by `key` from one system owner to another.
+ *
+ * Updates the resource's system owner and records a new acquisition timestamp when the system is initialized;
+ * if the system is not yet initialized (`xinit_done` is false) the timestamp is set to 0.
+ *
+ * @param from The current system owner expected to hold ownership of the resource.
+ * @param to The system owner to transfer ownership to.
+ * @param key The resource identifier whose system ownership will be transferred.
+ * @returns BORROW_OK on success.
+ * @returns BORROW_ENOTFOUND if the resource is not tracked.
+ * @returns BORROW_ENOTOWNER if the resource is not system-owned by `from`.
+ * @returns BORROW_EBORROWED if the resource has active shared or mutable borrows and cannot be transferred.
+ */
 enum BorrowError
 borrow_transfer_system(enum BorrowSystemOwner from, enum BorrowSystemOwner to, uintptr key)
 {
@@ -804,14 +911,30 @@ borrow_is_owned_by_system(uintptr key, enum BorrowSystemOwner owner)
 static struct MemoryRange *range_list = nil;
 static Lock range_lock;
 
-/* Initialize range tracking */
+/**
+ * Initialize the memory range tracking subsystem.
+ *
+ * Prepares internal state used to record and manage ownership of memory ranges
+ * during bootstrap and runtime.
+ */
 void
 memory_range_init(void)
 {
 	print("memory_range_init: initialized\n");
 }
 
-/* Add a memory range with ownership (early boot - static pool) */
+/**
+ * Add a physical memory range to the tracked memory ranges and associate it with a system owner.
+ *
+ * The range is identified by the provided start and end physical addresses and will be recorded
+ * in the global memory range list. Allocation for the internal tracking entry is performed
+ * automatically: before xinit completes a bootstrap allocation is used, and after xinit the
+ * entry is allocated with the regular allocator.
+ *
+ * @param start Start physical address of the range.
+ * @param end End physical address of the range.
+ * @param owner System owner to associate with this memory range.
+ */
 void
 memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner)
 {
@@ -819,7 +942,19 @@ memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner)
 	memory_range_add_discovered(start, end, owner);
 }
 
-/* Add range with dynamic allocation (after xinit) */
+/**
+ * Add a memory ownership range to the global list, allocating the tracking entry.
+ *
+ * This creates a MemoryRange for [start, end) owned by `owner` and prepends it
+ * to the global range_list. Allocation is performed with xalloc when the system
+ * has completed initialization (xinit_done true) or with bootstrap_alloc
+ * during early bootstrap. If allocation fails the function logs an error and
+ * returns without modifying the list.
+ *
+ * @param start Start physical address of the range (inclusive).
+ * @param end End physical address of the range (exclusive).
+ * @param owner The system owner to associate with the range.
+ */
 void
 memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner owner)
 {
@@ -852,7 +987,17 @@ memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner o
 	print("memory_range_add_discovered: [%#p-%#p] owner=%d (dynamic)\n", start, end, owner);
 }
 
-/* Remove a memory range */
+/**
+ * Remove a tracked memory range that exactly matches the provided bounds.
+ *
+ * Searches the registered memory ranges for an entry whose start and end match
+ * the given values; if found, removes it from the global list. If the entry
+ * was allocated after system initialization, its storage is freed. If no
+ * matching entry exists the function returns without modifying the list.
+ *
+ * @param start Starting address of the range to remove (same value used when the range was added).
+ * @param end Ending address of the range to remove (same value used when the range was added).
+ */
 void
 memory_range_remove(uintptr start, uintptr end)
 {
@@ -886,7 +1031,13 @@ memory_range_remove(uintptr start, uintptr end)
 	print("memory_range_remove: [%#p-%#p] not found\n", start, end);
 }
 
-/* Dump all memory ranges (debug) */
+/**
+ * Print a debug listing of all tracked memory ranges and their owners.
+ *
+ * Iterates the global memory range list and prints each range's start and end
+ * addresses, owner (BOOTLOADER or KERNEL), and size, followed by a total count
+ * and the current allocation mode indicator.
+ */
 void
 memory_range_dump(void)
 {
@@ -909,7 +1060,16 @@ memory_range_dump(void)
 	iunlock(&range_lock);
 }
 
-/* Check capacity - how many more ranges can we add? */
+/**
+ * Estimate how many additional memory ranges can be added to the tracking list.
+ *
+ * Before the allocator initialization completes (xinit not done), this returns a
+ * conservative capacity based on the bootstrap allocator. After initialization it
+ * returns a very large value representing essentially unlimited capacity.
+ *
+ * @returns An approximate number of additional ranges that can be added:
+ *          1000 before xinit is complete, 999999 after xinit.
+ */
 int
 memory_range_capacity(void)
 {
@@ -963,7 +1123,24 @@ memory_range_check_access(uintptr addr, enum BorrowSystemOwner requester)
 
 /* ========== Per-Page Tracking (Runtime) ========== */
 
-/* Acquire ownership of a physical address range - PAGE BY PAGE */
+/**
+ * Acquire system ownership for a physical address range, performed page-by-page.
+ *
+ * Attempts to acquire ownership for each 4KB page in the half-open range
+ * [start_pa, start_pa + size). This function must be called only after full
+ * runtime initialization (xinit); it returns an error and performs no changes
+ * if called during early boot. On failure for any page, previously acquired
+ * pages in the range are released (rollback).
+ *
+ * @param start_pa Starting physical address of the range (bytes).
+ * @param size Size of the range in bytes; the range is processed in 4KB pages.
+ * @param owner System owner to assign to each page.
+ * @returns BORROW_OK on success.
+ *          BORROW_EINVAL if called before runtime initialization.
+ *          BORROW_EALREADY if a page was already owned (treated as success for that page).
+ *          Other BorrowError values if acquisition fails for a page; in that case
+ *          previously acquired pages are released and the error is returned.
+ */
 enum BorrowError
 borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner owner)
 {
@@ -994,7 +1171,18 @@ borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner o
 	return BORROW_OK;
 }
 
-/* Check if entire range is owned by a specific system */
+/**
+ * Determine whether every page in a physical address range is owned by a given system owner.
+ *
+ * Checks ownership per 4KB page across the range [start_pa, start_pa + size). Before kernel
+ * initialization (when xinit_done is false) the function consults the bootstrap memory range
+ * tracking; after initialization it checks runtime per-page system ownership.
+ *
+ * @param start_pa Starting physical address of the range (inclusive).
+ * @param size Size of the range in bytes; the check is performed per 4KB page over the range.
+ * @param owner System owner to verify for each page in the range.
+ * @returns `1` if every page in the specified range is owned by `owner`, `0` otherwise.
+ */
 int
 borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwner owner)
 {
@@ -1019,7 +1207,19 @@ borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwne
 	return 1;
 }
 
-/* Check if a system can access a physical address range */
+/**
+ * Determine whether a system owner may access an entire physical address range.
+ *
+ * Checks access at 4KB page granularity. Before full kernel initialization (when
+ * xinit_done is false) the function consults the boot-time memory range tracker;
+ * after initialization it verifies per-page system ownership.
+ *
+ * @param start_pa Starting physical address of the range.
+ * @param size Size of the range in bytes.
+ * @param requester System owner requesting access.
+ * @returns `1` if `requester` is allowed to access every 4KB page in the range,
+ *          `0` otherwise.
+ */
 int
 borrow_can_access_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner requester)
 {
@@ -1104,7 +1304,16 @@ establish_memory_ownership_zones(void)
 	      4);
 }
 
-/* Establish memory ownership zones DYNAMICALLY (after xinit) */
+/**
+ * Discover runtime memory regions and register kernel-owned ranges with the memory tracker.
+ *
+ * Scans the global configuration's memory table and registers regions that belong to the kernel
+ * with the memory-range tracking subsystem; prints discovered regions and then dumps the current
+ * range table.
+ *
+ * Note: If invoked before xinit has completed, the function logs an error and returns without
+ * registering any ranges.
+ */
 void
 establish_memory_ownership_zones_dynamic(void)
 {
