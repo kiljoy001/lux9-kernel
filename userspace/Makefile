@@ -1,7 +1,7 @@
 # Userspace programs Makefile
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I./include -I./lib/lib9p
+CFLAGS = -Wall -Wextra -O2 -I./include -I./lib/lib9p -I./lib
 LDFLAGS = -lext2fs -lcom_err
 
 # Directories
@@ -46,7 +46,9 @@ $(GO_SERVERS_DIR)/exchange/exchange_test $(GO_SERVERS_DIR)/exchange/exchange_9p_
 $(BINDIR)/fscheck: $(BINDIR)/fscheck.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-$(BINDIR)/init: $(BINDIR)/init.c $(BINDIR)/syscalls.c
+INIT_SRCS = $(BINDIR)/init.c $(BINDIR)/syscalls.c lib/syscall.c lib/syscall_amd64.S
+
+$(BINDIR)/init: $(INIT_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ -static -nostdlib -e main
 
 # Initrd

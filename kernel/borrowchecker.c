@@ -8,6 +8,12 @@
 #include "mem.h"
 #include "dat.h"
 
+/* Allocation source tracking for proper memory management */
+enum AllocSource {
+	ALLOC_BOOTSTRAP,
+	ALLOC_XALLOC
+};
+
 /* External declarations for CR3 switch memory system checks */
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
@@ -109,6 +115,7 @@ create_owner(uintptr key)
 	owner->borrow_deadline_ns = 0;
 	owner->borrow_count = 0;
 	owner->next = borrowpool.owners[hash].head;
+	owner->alloc_source = ALLOC_BOOTSTRAP;  /* Track allocation source */
 	borrowpool.owners[hash].head = owner;
 
 	borrowpool.nowners++;
@@ -204,8 +211,8 @@ borrow_release(Proc *p, uintptr key)
 		} else {
 			prev->next = owner->next;
 		}
-		/* Don't free bootstrap-allocated memory, only free xalloc'd memory after xinit */
-		if (xinit_done) {
+		/* Don't free bootstrap-allocated memory, only free xalloc'd memory */
+		if (owner->alloc_source == ALLOC_XALLOC) {
 			xfree(owner);
 		}
 		break;
@@ -312,6 +319,7 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 	/* Add to front of shared list */
 	sb->proc = borrower;
 	sb->next = own->shared_list;
+	sb->alloc_source = ALLOC_BOOTSTRAP;  /* Track allocation source */
 	own->shared_list = sb;
 
 	own->shared_count++;
@@ -415,9 +423,9 @@ borrow_return_shared(Proc *borrower, uintptr key)
 				prev->next = sb->next;
 			}
 			/* Only free if allocated with xalloc after xinit */
-			if (xinit_done) {
-				xfree(sb);
-			}
+					if (sb->alloc_source == ALLOC_XALLOC) {
+						xfree(sb);
+					}
 
 			own->shared_count--;
 			if (own->shared_count == 0) {
@@ -628,7 +636,7 @@ borrow_cleanup_process(Proc *p)
 					} else {
 						sb_prev->next = sb_next;
 					}
-					if (xinit_done) {
+					if (sb->alloc_source == ALLOC_XALLOC) {
 						xfree(sb);
 					}
 					owner->shared_count--;
@@ -650,7 +658,8 @@ borrow_cleanup_process(Proc *p)
 				} else {
 					prev->next = next;
 				}
-				if (xinit_done) {
+				/* Don't free bootstrap-allocated memory, only free xalloc'd memory */
+				if (owner->alloc_source == ALLOC_XALLOC) {
 					xfree(owner);
 				}
 			} else {
@@ -812,7 +821,7 @@ borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
 			} else {
 				prev->next = own->next;
 			}
-			if (xinit_done) {
+			if (own->alloc_source == ALLOC_XALLOC) {
 				xfree(own);
 			}
 			break;

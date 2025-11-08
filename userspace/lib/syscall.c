@@ -2,15 +2,12 @@
  * Syscall bridge - Plan 9 style syscalls for Lux9
  * Based on 9front libc implementation
  */
-#include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
-/* Syscall numbers must match kernel definitions */
 #include "../../../kernel/include/sys.h"
-
-/* External syscall entry point - implemented in assembly */
-extern long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6);
+#include "syscall.h"
 
 /**
  * Invoke a system call with a single argument.
@@ -110,30 +107,9 @@ int fork(void) {
  * @returns The raw syscall result cast to int; `-1` on error (e.g., NULL path or allocation failure).
  */
 int exec(const char *path, char *const argv[]) {
-    /* Convert argv to Plan 9 format */
-    char **nargp;
-    int argc, i;
-    uintptr argp, q;
-    
-    if(path == nil)
+    if(path == NULL)
         return -1;
-    
-    /* Count arguments */
-    for(argc = 0; argv && argv[argc]; argc++)
-        ;
-    
-    /* Convert to Plan 9 format */
-    nargp = malloc((argc + 1) * sizeof(char*));
-    if(nargp == nil)
-        return -1;
-    
-    for(i = 0; i < argc; i++)
-        nargp[i] = (char*)argv[i];
-    nargp[argc] = nil;
-    
-    long result = syscall2(EXEC, (long)path, (long)nargp);
-    free(nargp);
-    return (int)result;
+    return (int)syscall2(EXEC, (long)path, (long)argv);
 }
 
 /**
@@ -156,7 +132,7 @@ void exit(int status) {
  * @returns The child's process ID on success, `-1` on error.
  */
 int wait(int *status) {
-    if(status == nil)
+    if(status == NULL)
         return syscall1(_WAIT, 0);
     return (int)syscall2(_WAIT, (long)status, 0);
 }
@@ -168,7 +144,7 @@ int wait(int *status) {
  * @returns File descriptor on success, -1 on failure.
  */
 int open(const char *path, int flags) {
-    if(path == nil)
+    if(path == NULL)
         return -1;
     return (int)syscall3(OPEN, (long)path, flags, 0);
 }
@@ -191,7 +167,7 @@ int close(int fd) {
  * @returns Number of bytes actually read. Returns `0` if `buf` is NULL or `count` is `0`. Returns a negative value on error.
  */
 ssize_t read(int fd, void *buf, size_t count) {
-    if(buf == nil || count == 0)
+    if(buf == NULL || count == 0)
         return 0;
     return (ssize_t)syscall3(_READ, fd, (long)buf, count);
 }
@@ -205,29 +181,30 @@ ssize_t read(int fd, void *buf, size_t count) {
  * @returns Number of bytes written on success, or a negative value on error; returns 0 when `buf` is nil or `count` is 0.
  */
 ssize_t write(int fd, const void *buf, size_t count) {
-    if(buf == nil)
+    if(buf == NULL)
         return 0;
     if(count == 0)
         return 0;
     return (ssize_t)syscall3(_WRITE, fd, (long)buf, count);
 }
 
+<<<<<<< HEAD
 /**
  * Adjust the program break by the given increment.
  * @param increment Number of bytes to change the program break by; may be negative to reduce it.
  * @returns Pointer to the resulting program break, or `(void*)-1` on failure.
  */
-void *sbrk(intptr increment) {
+void *sbrk(intptr_t increment) {
     return (void*)syscall1(BRK_, increment);
 }
 
 /**
- * Suspend execution for the specified number of seconds.
- * @param seconds Number of seconds to sleep.
- * @returns The amount of time remaining (in seconds) if the sleep was interrupted, otherwise 0.
+ * Suspend execution for the specified number of milliseconds.
+ * @param ms Number of milliseconds to sleep.
+ * @returns The amount of time remaining (in milliseconds) if the sleep was interrupted, otherwise 0.
  */
-unsigned long sleep(unsigned long seconds) {
-    return (unsigned long)syscall1(SLEEP, seconds);
+unsigned long sleep(unsigned long ms) {
+    return (unsigned long)syscall1(SLEEP, ms);
 }
 
 /**
@@ -249,7 +226,7 @@ int pipe(int *fd) {
  * @returns A non-negative mount-specific result on success, `-1` on failure (also returned if `path` or `proto` is NULL).
  */
 int mount(const char *path, int server_pid, const char *proto) {
-    if(path == nil || proto == nil)
+    if(path == NULL || proto == NULL)
         return -1;
     return (int)syscall3(MOUNT, (long)path, server_pid, (long)proto);
 }
@@ -272,7 +249,7 @@ void* pebble_issue_white(unsigned long size) {
  * @returns 0 on success, negative value on failure.
  */
 int pebble_black_alloc(unsigned long size, void **handle) {
-    if(handle == nil)
+    if(handle == NULL)
         return -1;
     long result = syscall2(PEBBLE_BLACK_ALLOC, size, (long)handle);
     return (int)result;

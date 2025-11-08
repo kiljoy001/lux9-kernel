@@ -28,7 +28,7 @@ borrow_check_deadlock(Proc *p, BorrowLock *l)
 
 		if (owner == p) {
 			/* Deadlock detected! */
-			panic("deadlock detected: proc %lud is waiting for lock %#p held by itself", p->pid, wait_key);
+			panic("deadlock detected: proc %lud is waiting for lock %#p held by itself", p->pid, (void*)wait_key);
 		}
 
 		wait_key = owner->waiting_for_key;
@@ -46,14 +46,16 @@ borrow_check_deadlock(Proc *p, BorrowLock *l)
 void
 borrow_lock_init(BorrowLock *bl, uintptr key)
 {
+	memset(bl, 0, sizeof(*bl));
 	bl->key = key;
-	/* Other initialization if needed */
 }
 
 /* Acquire a lock with deadlock detection */
 void
 borrow_lock(BorrowLock *bl)
 {
+	enum BorrowError err;
+
 	if(up == nil){
 		lock(&bl->lock);
 		return;
@@ -69,7 +71,19 @@ borrow_lock(BorrowLock *bl)
 
 	/* Lock acquired, clear waiting key and register ownership */
 	up->waiting_for_key = 0;
-	borrow_acquire(up, bl->key);
+	err = borrow_acquire(up, bl->key);
+	switch(err){
+		case BORROW_OK:
+			return;
+		case BORROW_EALREADY:
+			/* Recursive acquisition is not supported */
+			unlock(&bl->lock);
+			panic("borrow_lock: recursive acquire on key %#p by pid %lud", (void*)bl->key, up->pid);
+		default:
+			unlock(&bl->lock);
+			panic("borrow_lock: borrow_acquire failed (err=%d key=%#p pid=%lud)",
+				err, (void*)bl->key, up->pid);
+		}
 }
 
 /* Release a lock */
@@ -77,10 +91,11 @@ void
 borrow_unlock(BorrowLock *bl)
 {
 	if(up != nil) {
-		/* Check return value of borrow_release */
-		if(borrow_release(up, bl->key) != BORROW_OK) {
-			/* Don't unlock if borrow_release failed */
-			return;
+		enum BorrowError err = borrow_release(up, bl->key);
+		if(err != BORROW_OK) {
+			unlock(&bl->lock);
+			panic("borrow_unlock: borrow_release failed (err=%d key=%#p pid=%lud)",
+				err, (void*)bl->key, up->pid);
 		}
 	}
 	unlock(&bl->lock);

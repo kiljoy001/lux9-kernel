@@ -1307,14 +1307,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 		print("namec: empty file name error\n");
 		error("empty file name");
 	}
-	print("namec: calling validnamedup\n");
-	aname = validnamedup(aname, 1);
-	print("namec: validnamedup returned\n");
-	if(waserror()){
-		print("namec: waserror() triggered\n");
-		free(aname);
-		nexterror();
-	}
+	/* NOTE: Removed duplicate validnamedup call that was causing memory leak 
+	 * The first allocation is reused, preventing double allocation and memory leak */
 	name = aname;
 	print("namec: setting name = aname\n");
 

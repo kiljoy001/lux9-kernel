@@ -284,8 +284,9 @@ char *conffile = "";
 /* Memory pool reset */
 
 /* VMX (virtualization) stubs */
-void vmxshutdown(void) {}
-void vmxprocrestore(Proc *p) { (void)p; }
+/* Now implemented in devvmx.c */
+//void vmxshutdown(void) {}
+//void vmxprocrestore(Proc *p) { (void)p; }
 
 /* RAM page allocation - provided by memory_9front.c */
 
