@@ -188,7 +188,6 @@ ssize_t write(int fd, const void *buf, size_t count) {
     return (ssize_t)syscall3(_WRITE, fd, (long)buf, count);
 }
 
-<<<<<<< HEAD
 /**
  * Adjust the program break by the given increment.
  * @param increment Number of bytes to change the program break by; may be negative to reduce it.
