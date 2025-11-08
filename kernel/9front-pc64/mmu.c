@@ -4,9 +4,15 @@
 
 #include	"fns.h"
 #include	"hhdm.h"
-#include	"hhdm.h"
+#include	"borrowchecker.h"
+#include <stddef.h>
 
 extern void uartputs(char*, int);
+
+/* CR3 switch memory system functions */
+extern int memory_system_ready_before_cr3(void);
+extern void transfer_bootloader_to_kernel(void);
+extern void pre_init_memory_system(void);
 
 static void
 dbghex(char *label, uvlong value)
@@ -352,6 +358,39 @@ map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64in
 }
 
 /* Setup our own page tables with linear RAM mapping at KZERO */
+
+/* Pre-initialize memory system for CR3 switch */
+void
+pre_init_memory_system(void)
+{
+	uartputs("pre_init_memory_system: starting\n", 36);
+	
+	/* Initialize borrow pool if not done yet - needed for memory coordination */
+	uartputs("pre_init_memory_system: checking borrow pool\n", 45);
+	if(borrowpool.owners == nil) {
+		uartputs("pre_init_memory_system: initializing borrow pool\n", 52);
+		borrowinit();
+		uartputs("pre_init_memory_system: borrow pool initialized\n", 48);
+	} else {
+		uartputs("pre_init_memory_system: borrow pool already initialized\n", 58);
+	}
+	
+	/* Transfer memory coordination state from bootloader to kernel */
+	/* This sets mem_coord.state = MEMORY_KERNEL_ACTIVE */
+	uartputs("pre_init_memory_system: transferring memory coordination\n", 56);
+	transfer_bootloader_to_kernel();
+	uartputs("pre_init_memory_system: memory coordination transferred\n", 57);
+	
+	uartputs("pre_init_memory_system: complete\n", 33);
+}
+/**
+ * Prepare kernel page tables, establish HHDM and kernel mappings, then switch CR3 and continue boot.
+ *
+ * Initializes the kernel's PML4, maps the kernel image at KZERO and into the Higher Half Direct Map (HHDM),
+ * constructs 2MB HHDM mappings covering actual physical memory, ensures the memory subsystem is ready for
+ * the CR3 switch, performs the CR3 switch to the newly prepared page tables, updates the kernel MMU state,
+ * and transfers control to main_after_cr3. This function does not return on success.
+ */
 void
 setuppagetables(void)
 {
@@ -385,39 +424,30 @@ setuppagetables(void)
 		pml4[i] = 0;
 	uartputs("setuppagetables: PML4 cleared\n", 30);
 
-	/* Relocate kernel to 9front-expected location (2MB physical)
-	 * Limine loaded us high (~2GB), but 9front expects kernel at low memory
-	 * Strategy: Copy entire kernel to physical 2MB, then use standard 9front mapping */
+	/* Keep kernel at Limine load address - no relocation needed
+	 * Limine loads us high (~2GB), and we can work with that
+	 * Strategy: Map KZERO directly to the actual physical load address */
 	extern u64int limine_kernel_phys_base;
 	extern char ttext[], etext[], kend[];  /* Kernel boundaries from linker */
 
-	u64int target_phys = 2*MiB;  /* Relocate to 2MB physical */
+	u64int kernel_phys = limine_kernel_phys_base;  /* Keep at Limine load address */
 	uintptr kernel_size = (uintptr)kend - KZERO;  /* Size of kernel in memory */
 
-	uartputs("setuppagetables: relocating kernel to 9front-compatible location\n", 66);
-	dbghex("  kernel source (phys): ", limine_kernel_phys_base);
-	dbghex("  kernel target (phys): ", target_phys);
+	uartputs("setuppagetables: using kernel at Limine load address\n", 53);
+	dbghex("  kernel physical (Limine): ", kernel_phys);
 	dbghex("  kernel size: ", kernel_size);
 
-	/* Copy kernel from Limine's location to target using HHDM */
-	void *target_virt = (void*)hhdm_virt(target_phys);
-	void *source_virt = (void*)hhdm_virt(limine_kernel_phys_base);
-	memmove(target_virt, source_virt, kernel_size);
-	uartputs("  kernel relocated!\n", 19);
+	/* Map kernel at KZERO to actual Limine load address */
+	uartputs("setuppagetables: mapping KZERO to Limine load address\n", 52);
 
-	/* Now use standard 9front mapping: physical X → KZERO+X
-	 * This means: physical 2MB → KZERO+2MB
-	 * But our kernel expects to be at KZERO, so we need offset mapping:
-	 * Virtual KZERO → Physical target_phys */
-	uartputs("setuppagetables: mapping KZERO to relocated kernel\n", 51);
+	/* Map kernel image directly */
+	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	uartputs("setuppagetables: KZERO mapped to kernel image\n", 47);
 
-	/* Map 512MB starting from target, to KZERO */
-	u64int map_size = 512*MiB;
-	for(u64int offset = 0; offset < map_size; offset += PGLSZ(1)) {
-		u64int va = KZERO + offset;
-		u64int pa = target_phys + offset;
-		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	}
+	/* Mirror kernel image into HHDM for memory functions */
+	uartputs("setuppagetables: mirroring kernel in HHDM\n", 43);
+	map_range(pml4, kaddr(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	uartputs("setuppagetables: kernel mapping complete\n", 42);
 	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
 	/* Ensure conf.mem is populated */
@@ -430,25 +460,28 @@ setuppagetables(void)
 	 * 2. High memory access should use HHDM instead
 	 * 3. Dynamic page mapping uses VMAP, not KZERO */
 
-	/* Identity-map first 2MB for firmware/BIOS access (reboot code, etc.) */
-	uartputs("setuppagetables: identity-mapping first 2MB\n", 44);
-	/* Identity‑map a larger low‑memory region (8 MiB) to cover trampoline and continuation */
-    map_range_2mb(pml4, 0, 0, 8*MiB, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	uartputs("setuppagetables: identity mapping complete\n", 43);
+	/* HHDM provides access to low memory (0-8MB) for firmware/BIOS access
+	 * No separate identity mapping needed - HHDM handles all physical memory */
+	uartputs("setuppagetables: using HHDM for low memory access\n", 52);
 
-	/* CRITICAL: Map HHDM region - kernel uses this extensively!
-	 * DON'T copy Limine's entries - they point to Limine's page tables!
-	 * Instead, create our own HHDM mapping for first 2GB of physical RAM */
-	extern uintptr hhdm_base;
-	uartputs("setuppagetables: creating our own HHDM mapping\n", 48);
-
-	/* Map first 2GB of physical memory to HHDM using 2MB pages */
-	u64int hhdm_phys_size = 2ULL * 1024 * 1024 * 1024;
-	for(u64int pa = 0; pa < hhdm_phys_size; pa += PGLSZ(1)) {
-		u64int va = hhdm_base + pa;
-		map_range_2mb(pml4, va, pa, PGLSZ(1), PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
+	/* Setup HHDM mapping for all physical memory access */
+	uartputs("setuppagetables: setting up HHDM mapping\n", 45);
+	
+	/* Simple HHDM setup - covers all physical memory */
+	u64int hhdm_start = saved_limine_hhdm_offset;
+	u64int hhdm_end = hhdm_start + max_physaddr;
+	
+	/* Map only the actual physical memory we have, not a huge range */
+	/* Map in 2MB chunks to avoid excessive page table allocation */
+	for(u64int pa = 0; pa < max_physaddr; pa += PGLSZ(2)) {
+		u64int va = hhdm_start + pa;
+		u64int size = PGLSZ(2);  /* 2MB chunks */
+		if(pa + size > max_physaddr) size = max_physaddr - pa;
+		
+		/* Create 2MB mappings where possible for efficiency */
+		map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
-	uartputs("setuppagetables: HHDM mapping complete (2GB)\n", 45);
+	uartputs("setuppagetables: HHDM mapping complete\n", 42);
 
 	/* Verify our current code location is mapped before switching */
 	uintptr current_rip;
@@ -465,96 +498,55 @@ setuppagetables(void)
 	/* Debug: Check PML4 entries before switch */
 	uartputs("setuppagetables: checking PML4 entries\n", 40);
 	if(pml4[0] & PTEVALID)
-		uartputs("  PML4[0] (identity) is valid\n", 31);
+		uartputs("  PML4[0] (identity 0-8MB) is valid\n", 37);
 	if(pml4[511] & PTEVALID)
 		uartputs("  PML4[511] (KZERO) is valid\n", 30);
-	uintptr hhdm_pml4_idx = (hhdm_base >> 39) & 0x1FF;
-	if(pml4[hhdm_pml4_idx] & PTEVALID)
-		uartputs("  PML4[HHDM] is valid\n", 23);
+	uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
 
-	uartputs("setuppagetables: preparing CR3 switch trampoline\n", 50);
+	/* Simplified CR3 switch - HHDM ensures accessibility */
+	uartputs("setuppagetables: preparing simple CR3 switch\n", 50);
 
-	/* Copy CR3 switch trampoline to low memory (will be identity-mapped)
-	 * We use physical address 0x1000 which is in our identity-mapped first 2MB */
-	extern void cr3_switch_trampoline(void);
-	extern void cr3_switch_trampoline_end(void);
-
-	u64int trampoline_phys = 0x1000;  /* Physical address in identity-mapped region */
-	uintptr trampoline_size = (uintptr)cr3_switch_trampoline_end - (uintptr)cr3_switch_trampoline;
-
-	/* Add static assertion to ensure trampoline fits in low memory page */
-	if(trampoline_size > 0x1000) {
-		panic("CR3 switch trampoline too large: %d bytes > 4KB page", trampoline_size);
+	/* Check if memory system is ready before CR3 switch */
+	if(!memory_system_ready_before_cr3()) {
+		/* Transfer memory ownership from bootloader to kernel */
+		transfer_bootloader_to_kernel();
+		/* Initialize memory system for CR3 switch */
+		pre_init_memory_system();
+		uartputs("setuppagetables: memory system ready for CR3 switch\n", 50);
+	} else {
+		uartputs("setuppagetables: memory system already ready\n", 47);
 	}
 
-	uartputs("setuppagetables: copying trampoline to low memory\n", 51);
-	dbghex("  trampoline physical: ", trampoline_phys);
-	dbghex("  trampoline size: ", trampoline_size);
-
-	/* Copy trampoline code to low memory using Limine's HHDM */
-	memmove((void*)hhdm_virt(trampoline_phys), cr3_switch_trampoline, trampoline_size);
-
-	/* Verify copy with hex dump of first 16 bytes */
-	uartputs("  trampoline bytes: ", 20);
-	unsigned char *tb = (unsigned char*)hhdm_virt(trampoline_phys);
-	for(int i = 0; i < 16 && i < trampoline_size; i++) {
-		char hex[4];
-		hex[0] = "0123456789abcdef"[tb[i] >> 4];
-		hex[1] = "0123456789abcdef"[tb[i] & 0xf];
-		hex[2] = ' ';
-		hex[3] = 0;
-		uartputs(hex, 3);
-	}
-	uartputs("\n", 1);
-
-	/* Ensure the copied trampoline is visible to the CPU */
-	__asm__ volatile("mfence" ::: "memory");  /* Memory fence */
-	__asm__ volatile("wbinvd" ::: "memory");  /* Write back and invalidate cache */
-	__asm__ volatile("invlpg (%0)" :: "r"(trampoline_phys) : "memory");
-
-	/* Create a continuation function label to return to after CR3 switch */
-	void *continuation = &&after_cr3_switch;
-
-	/* CRITICAL: Call the trampoline using the IDENTITY-MAPPED address (0x1000),
-	 * NOT via Limine's HHDM! After CR3 switch, Limine's HHDM is gone, so the CPU
-	 * must fetch the next instruction from an identity-mapped address. */
-	typedef void (*trampoline_fn_t)(u64int new_cr3, void *cont);
-	trampoline_fn_t trampoline_fn = (trampoline_fn_t)trampoline_phys;  /* Use identity-mapped address! */
-
-	uartputs("setuppagetables: calling CR3 trampoline...\n", 45);
-	trampoline_fn(pml4_phys, continuation);
-
-	/* Should not reach here - trampoline jumps to continuation */
-	panic("CR3 switch trampoline returned unexpectedly");
-
-after_cr3_switch:
-	/* We're now executing on the new page tables! */
-	__asm__ volatile("" ::: "memory");  /* Memory barrier */
-	/* Use minimal UART output to avoid any complex dependencies */
+	/* Simple, direct CR3 switch - HHDM ensures both old and new code are accessible */
+	uartputs("setuppagetables: switching to kernel page tables\n", 50);
 	__asm__ volatile(
-		"movw $0x3f8, %%dx\n"  /* COM1 port */
-		"movb $'O', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'K', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'!', %%al\n"
-		"outb %%al, %%dx\n"
-		"movb $'\\n', %%al\n"
-		"outb %%al, %%dx\n"
-		::: "dx", "al"
+		"mov %0, %%cr3" 
+		: : "r"(pml4_phys) 
+		: "memory"
 	);
-	uartputs("setuppagetables: CR3 switch successful!\n", 41);
 
-	uartputs("setuppagetables: validating HHDM\n", 34);
-	/* Verify HHDM mapping works */
-	volatile uintptr test_addr = *(volatile uintptr*)hhdm_virt(0);
-	uartputs("setuppagetables: HHDM validation passed\n", 40);
-
-	/* Update m->pml4 to point to our page tables */
+	/* Update kernel's page table pointer */
 	m->pml4 = pml4;
-	uartputs("setuppagetables: page tables fully operational\n", 47);
+	uartputs("setuppagetables: CR3 switch complete\n", 40);
+
+	/* Direct call to continue boot - no trampoline needed */
+	uartputs("setuppagetables: calling main_after_cr3\n", 44);
+	main_after_cr3();
+
+	/* Should never reach here */
+	panic("setuppagetables: main_after_cr3 returned unexpectedly");
 }
 
+/**
+ * Initialize per-CPU MMU and CPU state required for kernel operation on this processor.
+ *
+ * Performs processor-local setup needed before switching to kernel page tables and user/syscall transitions.
+ * This includes allocating and initializing the TSS, installing and loading the GDT and IDT, loading the TSS,
+ * initializing task-switch state, configuring model-specific registers used for syscall handling (EFER, STAR, LSTAR, SFMASK),
+ * and setting FS/GS base registers.
+ *
+ * If TSS allocation fails, the function will panic.
+ */
 void
 mmuinit(void)
 {
@@ -570,6 +562,7 @@ mmuinit(void)
 		kernelro();
 
 	m->tss = mallocz(sizeof(Tss), 1);
+	print("DEBUG: TSS allocated at %p\n", m->tss);
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
 	m->tss->iomap = 0xDFFF;
@@ -588,6 +581,12 @@ mmuinit(void)
 	 * than Intels in this regard).  Under VMware it pays off
 	 * a factor of about 10 to 100.
 	 */
+	/* Ensure m->gdt is valid - using static allocation for bootstrap */
+	if (m->gdt == 0) {
+		static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));
+		m->gdt = dynamic_gdt;
+	}
+	
 	memmove(m->gdt, gdt, sizeof gdt);
 
 	x = (uintptr)m->tss;
@@ -596,31 +595,61 @@ mmuinit(void)
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;
 
+	print("DEBUG: Loading GDT and IDT\n");
 	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
 	loadptr(sizeof(Segdesc)*512-1, (uintptr)IDTADDR, lidt);
+	print("DEBUG: Setting up task switch\n");
 	taskswitch((uintptr)m + MACHSIZE);
+	print("DEBUG: Loading TSS\n");
 	ltr(TSSSEL);
+	print("DEBUG: Setting up MSRs\n");
 
+	print("DEBUG: Setting up MSRs\n");
 	wrmsr(FSbase, 0ull);
+	print("DEBUG: Set FSbase\n");
 	wrmsr(GSbase, (uvlong)&machp[m->machno]);
+	print("DEBUG: Set GSbase\n");
 	wrmsr(KernelGSbase, 0ull);
+	print("DEBUG: Set KernelGSbase\n");
 
 	/* enable syscall extension */
+	print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
+	
+	/* WORKAROUND: Fix NULL GDT pointer issue */
+	if (m->gdt == NULL) {
+		print("WORKAROUND: m->gdt is NULL, using dynamic allocation\n");
+		/* Allocate GDT dynamically instead of using fixed address */
+		static Segdesc dynamic_gdt[NGDT];
+		m->gdt = dynamic_gdt;
+		print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
+	}
+	
+	print("DEBUG[mmuinit]: About to read EFER MSR\n");
 	rdmsr(Efer, &v);
+	print("DEBUG[mmuinit]: Read EFER MSR, value=%#llux\n", v);
 	v |= 1ull;
+	print("DEBUG[mmuinit]: About to write EFER MSR\n");
 	wrmsr(Efer, v);
+	print("DEBUG[mmuinit]: Wrote EFER MSR\n");
 	
 	// Debug print for EFER
 	dbghex("EFER set to: ", v);
 
+	print("DEBUG: Setting up syscall MSRs\n");
 	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
+	print("DEBUG: Set STAR MSR\n");
 	wrmsr(Lstar, (uvlong)syscallentry);
+	print("DEBUG: Set LSTAR MSR\n");
 	wrmsr(Sfmask, 0x200);
+	print("DEBUG: Set SFMASK MSR\n");
 	
 	// Debug print for STAR
 	uvlong star_val;
+	print("DEBUG: About to read STAR MSR\n");
 	rdmsr(Star, &star_val);
+	print("DEBUG: Read STAR MSR\n");
 	dbghex("STAR set to: ", star_val);
+	print("DEBUG: mmuinit completed successfully\n");
 }
 
 /*
@@ -886,7 +915,7 @@ kernelro(void)
 
 	/* Now we can modify PTEs - our page tables are writable! */
 	uintptr text_pages = 0, noexec_pages = 0;
-	for(va = KZERO; va < kernel_end && va != 0; va += psz){
+	for(va = KZERO; va < kernel_end; va += psz){
 		psz = PGLSZ(0);
 		pte = mmuwalk(active_pml4, va, 0, 0);
 		if(pte == nil){

@@ -1,3 +1,4 @@
+# Header section of xalloc.c
 #include "u.h"
 #include "portlib.h"
 #include "mem.h"
@@ -9,40 +10,6 @@ extern uintptr limine_hhdm_offset;
 
 /* Flag to indicate xinit() has completed (for early-boot allocators) */
 int xinit_done = 0;
-
-/* Bootstrap allocation for early boot systems */
-static uchar bootstrap_pool[8192];  /* Simple 8KB bootstrap pool */
-static ulong bootstrap_offset = 0;
-
-/**
- * Allocate a small aligned block from the early-boot bootstrap pool.
- *
- * Allocates `size` bytes from the internal 8KB bootstrap pool and returns
- * an 8-byte-aligned pointer into that pool. If there is not enough space
- * remaining, returns `nil`.
- *
- * @param size Number of bytes requested.
- * @returns Pointer to the start of the allocated, 8-byte-aligned region within
- *          the bootstrap pool, or `nil` if allocation fails due to insufficient space.
- */
-void*
-bootstrap_alloc(ulong size)
-{
-	ulong aligned_size;
-	
-	/* Align to 8-byte boundary */
-	aligned_size = (size + 7) & ~7;
-	
-	/* Check if we have enough space */
-	if (bootstrap_offset + aligned_size > sizeof(bootstrap_pool)) {
-		return nil;
-	}
-	
-	/* Return the allocated space */
-	void *ptr = &bootstrap_pool[bootstrap_offset];
-	bootstrap_offset += aligned_size;
-	return ptr;
-}
 
 /* -------------------------------------------------------------------------
  * XALLOC configuration
@@ -95,8 +62,46 @@ static Xalloc	xlists;
 static ulong xalloc_failures = 0;
 static ulong xalloc_successes = 0;
 static ulong xalloc_last_failure_size = 0;
-static void* xalloc_last_failure_pc = nil;
+static void* xalloc_last_failure_pc = nil;/* BOOTSTRAP ALLOCATOR - Eliminates malloc dependency during early boot */
 
+typedef struct BootHole BootHole;
+struct BootHole {
+	BootHole* link;
+	uintptr addr;
+	uintptr size;
+	uintptr top;
+};
+
+static BootHole bootstrap_pool[64];  // Bootstrap pool (no external deps)
+static int bootstrap_next = 0;
+static BootHole* bootstrap_flist = nil;
+
+static BootHole*
+bootstrap_alloc_hole(void)
+{
+	// Try bootstrap pool first
+	if(bootstrap_next < 64) {
+		return &bootstrap_pool[bootstrap_next++];
+	}
+	
+	// Try expanded pool
+	if(bootstrap_flist) {
+		BootHole* hole = bootstrap_flist;
+		bootstrap_flist = hole->link;
+		return hole;
+	}
+	
+	// Need to expand pool - use page-based allocation
+	uvlong pa = memmapalloc(-1, BY2PG, BY2PG, MemRAM);
+	if(pa == -1) return nil;  // Expansion failed
+	
+	// Convert to virtual HHDM address and link
+	BootHole* new_pool = (BootHole*)hhdm_virt(pa);
+	new_pool[0].link = bootstrap_flist;
+	bootstrap_flist = &new_pool[0];
+	
+	return &new_pool[0];  // Return first descriptor
+}
 
 void
 xinit(void)
@@ -382,18 +387,12 @@ xhole(uintptr addr, uintptr size)
 	 * If we have exhausted the static free list, allocate a fresh batch
 	 * of Hole descriptors from the kernel malloc pool.
 	 * --------------------------------------------------------------- */
-		Hole *extra = (Hole*)malloc(DYNAMIC_NHOLE * sizeof(Hole));
-		if (extra == nil) {
-			iunlock(&xlists.lk);
-	/* TEST 2A: Track allocation success */
-	xalloc_successes++;
-			panic("xhole: out of hole descriptors and malloc failed");
-		}
-		for (int i = 0; i < DYNAMIC_NHOLE-1; i++) {
-			extra[i].link = &extra[i+1];
-		}
-		extra[DYNAMIC_NHOLE-1].link = nil;
-		xlists.flist = extra;
+		BootHole* extra_ptr = bootstrap_alloc_hole();
+			if(extra_ptr == nil) {
+				iunlock(&xlists.lk);
+				panic("xhole: bootstrap allocator failed - out of memory");
+			}
+			Hole* extra = (Hole*)extra_ptr;
 	}
 	/* Get a free hole descriptor from the free list */
 	h = xlists.flist;
