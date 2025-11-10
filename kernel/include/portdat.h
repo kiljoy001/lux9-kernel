@@ -685,8 +685,10 @@ struct Schedq
 
 struct Proc
 {
+	Label	sched;		/* known to l.s */
+
 	union {
-		Timer	timer;	/* Must be first: Proc* may be used as Timer* */
+		Timer	timer;	/* Timer state for tsleep/realtime */
 		struct {
 			Lock	tlock;
 			int	tmode;
@@ -700,7 +702,6 @@ struct Proc
 			Timer	*tnext;
 		};
 	};
-	Label	sched;		/* known to l.s */
 
 	Mach	*mach;		/* machine running this proc */
 	char	*text;

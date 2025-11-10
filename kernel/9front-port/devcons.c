@@ -529,9 +529,7 @@ readstr(ulong off, char *buf, ulong n, char *str)
 static void
 consinit(void)
 {
-	print("consinit: ENTRY\n");
 	todinit();
-	print("consinit: DONE\n");
 }
 
 static Chan*

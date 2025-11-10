@@ -323,63 +323,29 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
-	print("BOOT[init0]: starting chandevinit\n");
 	chandevinit();
-	print("BOOT[init0]: chandevinit complete\n");
+	randominit();
 
-	print("BOOT[init0]: setting up environment variables\n");
 	if(!waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
 		ksetenv("terminal", buf, 0);
 		ksetenv("cputype", "amd64", 0);
-		if(cpuserver)
-			ksetenv("service", "cpu", 0);
-		else
-			ksetenv("service", "terminal", 0);
+		ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
 		setconfenv();
 		poperror();
 		print("BOOT[init0]: environment setup completed\n");
-	} else {
-		print("BOOT[init0]: WARNING - environment setup failed\n");
-		poperror();
 	}
 
-	/* Register initrd files with devroot - must be after chandevinit */
-	extern struct initrd_file *initrd_root;
-	extern void initrd_register(void);
-	if(initrd_root != nil) {
-		print("BOOT[init0]: registering initrd files with devroot\n");
-		initrd_register();
-		print("BOOT[init0]: initrd files registered\n");
-	} else {
-		print("BOOT[init0]: WARNING - no initrd files to register\n");
-	}
-
-	print("BOOT[init0]: initializing random subsystem\n");
-	randominit();
-
-	print("BOOT[init0]: starting closeproc worker\n");
-	closeproc_bootstrap();
-
-	print("BOOT[init0]: starting alarm kproc\n");
 	kproc("alarm", alarmkproc, 0);
-	print("BOOT[init0]: alarm kproc scheduled\n");
 
-	pebble_sip_issue_test();
-
-	print("BOOT[init0]: computing user stack frame\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	print("BOOT[init0]: initial sp computed: %#p\n", sp);
-	print("BOOT[init0]: USTKTOP=%#llux sizeof(Tos)=%lld\n", USTKTOP, (long long)sizeof(Tos));
-	print("BOOT[init0]: stack frame already seeded in proc0\n");
+	sp[3] = sp[2] = nil;
+	strcpy(sp[1] = (char*)&sp[4], "boot");
+	sp[0] = nil;
 
-	print("BOOT[init0]: preparing to disable interrupts\n");
 	splhi();
-	print("BOOT[init0]: fpukexit(nil) begin\n");
 	fpukexit(nil);
-	print("BOOT[init0]: fpukexit(nil) done\n");
-	print("BOOT[init0]: entering user mode with initcode\n");
-	print("BOOT[init0]: calling touser(%#p)\n", sp);
+	print("BOOT[init0]: transferring control to user mode\n");
 	touser(sp);
 }
 

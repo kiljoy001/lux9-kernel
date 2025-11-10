@@ -31,20 +31,12 @@ rampage(void)
 	/*
 	 * Allocate from the map directly to make page tables.
 	 */
-	print("rampage: called from pc=%#p\n", getcallerpc(&pa));
-	print("rampage: calling memmapalloc for MemRAM\n");
-	extern void memmapdump(void);
-	memmapdump();  /* Show what's in the memory map */
 	pa = memmapalloc(-1, BY2PG, BY2PG, MemRAM);
-	print("rampage: memmapalloc returned pa=%#p\n", pa);
 	if(pa == -1) {
-		print("rampage: memmapalloc failed (returned -1)\n");
 		panic("rampage: out of memory\n");
 	}
 	cka = cankaddr(pa);
-	print("rampage: cankaddr(%#p) returned %#p\n", pa, cka);
 	if(cka == 0) {
-		print("rampage: cankaddr returned 0\n");
 		panic("rampage: out of memory\n");
 	}
 	return KADDR(pa);
@@ -385,16 +377,12 @@ liminescan(void)
 	struct limine_memmap_entry *entry;
 	uvlong base, size, i;
 
-	print("liminescan: starting\n");
-
 	/* Check if Limine memory map is available */
 	if(limine_memmap == nil || limine_memmap->response == nil) {
-		print("liminescan: limine_memmap=%#p or response is nil\n", limine_memmap);
 		return -1;
 	}
 
 	memmap_response = limine_memmap->response;
-	print("liminescan: found %llud memory map entries\n", (uvlong)memmap_response->entry_count);
 
 	/* Iterate through Limine memory map entries */
 	for(i = 0; i < memmap_response->entry_count; i++) {
@@ -417,11 +405,7 @@ liminescan(void)
 		 */
 		switch(entry->type){
 		case 0:  /* LIMINE_MEMMAP_USABLE */
-			print("liminescan: adding MemRAM base=%#llux size=%#llux\n", base, size);
 			memmapadd(base, size, MemRAM);
-			print("liminescan: after memmapadd, checking if it's there...\n");
-			extern void memmapdump(void);
-			memmapdump();
 			break;
 		case 2:  /* LIMINE_MEMMAP_ACPI_RECLAIMABLE */
 		case 3:  /* LIMINE_MEMMAP_ACPI_NVS */

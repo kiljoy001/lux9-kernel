@@ -30,7 +30,6 @@ int		canrlock(RWLock*);
 void		chandevinit(void);
 void		chandevreset(void);
 void		chandevshutdown(void);
-void		closeproc_bootstrap(void);
 void		chanfree(Chan*);
 void		checkalarms(void);
 void		checkpages(void);

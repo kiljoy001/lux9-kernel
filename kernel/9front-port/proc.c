@@ -65,9 +65,7 @@ schedinit(void)
 {
 	Edf *e;
 
-	print("schedinit: ENTRY\n");
 	setlabel(&m->sched);
-	print("schedinit: setlabel complete, about to check up\n");
 	if(up != nil) {
 		if((e = up->edf) != nil && (e->flags & Admitted))
 			edfrecord(up);
@@ -97,9 +95,7 @@ schedinit(void)
 		up = nil;
 	}
 out:
-	print("schedinit: entering main scheduler loop\n");
 	for(;;){
-		print("G");
 		sched();
 	}
 }
@@ -173,12 +169,7 @@ void
 sched(void)
 {
 	int s;
-	static int sched_count = 0;
 
-	if(sched_count < 10) {
-		print("sched: ENTRY (call %d), up=%p\n", sched_count, up);
-		sched_count++;
-	}
 	if(m->ilockdepth)
 		panic("cpu%d: ilockdepth %d, last lock %#p at %#p",
 			m->machno,
@@ -216,11 +207,7 @@ sched(void)
 		splx(s);
 		return;
 	}
-	if(sched_count < 10)
-		print("sched: about to call runproc\n");
 	up = runproc();
-	if(sched_count < 10)
-		print("sched: runproc returned up=%p\n", up);
 	if(up != m->readied)
 		m->schedticks = m->ticks + HZ/10;
 	m->readied = nil;
@@ -228,17 +215,9 @@ sched(void)
 	up->mach = MACHP(m->machno);
 	up->affinity = m->machno;
 	up->state = Running;
-	if(sched_count < 10)
-		print("sched: about to call mmuswitch, up->text=%s\n", up->text);
 	mmuswitch(up);
-	if(sched_count < 10)
-		print("sched: mmuswitch returned, calling gotolabel\n");
 	gotolabel(&up->sched);
-	if(sched_count < 10)
-		print("sched: gotolabel returned!\n");
 	/* gotolabel returned - process yielded, go back to top of sched() */
-	if(sched_count < 10)
-		print("sched: gotolabel returned (process yielded)\n");
 }
 
 int
@@ -679,21 +658,6 @@ loop:
 		 *  processor can run given affinity constraints.
 		 *
 		 */
-		static int loop_count = 0;
-		if(loop_count < 10) {
-			int has_procs = 0;
-			for(rq = &runq[Nrq-1]; rq >= runq; rq--){
-				if(rq->head != nil) {
-					has_procs = 1;
-					print("runproc: found process %s in queue %d, state=%d, affinity=%d, wired=%d\n",
-						rq->head->text, (int)(rq - runq), rq->head->state, rq->head->affinity, rq->head->wired);
-					break;
-				}
-			}
-			if(!has_procs)
-				print("runproc: no processes in any queue (loop %d)\n", loop_count);
-			loop_count++;
-		}
 		for(rq = &runq[Nrq-1]; rq >= runq; rq--){
 			for(p = rq->head; p != nil; p = p->rnext){
 				if(p->affinity < 0 || p->affinity == m->machno
@@ -1669,16 +1633,12 @@ kproc(char *name, void (*func)(void *), void *arg)
 	static Pgrp *kpgrp;
 	Proc *p;
 
-	print("kproc: launching %s\n", name);
 	while((p = newproc()) == nil){
-		print("kproc: newproc returned nil for %s\n", name);
 		freebroken();
 		resrcwait("no procs for kproc");
 	}
-	print("kproc: newproc success for %s (p=%p)\n", name, p);
 
 	qlock(&p->debug);
-	print("kproc: configuring proc struct for %s\n", name);
 	if(up != nil){
 		p->slash = up->slash;
 		p->dot = up->slash;	/* unlike fork, do not inherit the dot for kprocs */
@@ -1704,16 +1664,13 @@ kproc(char *name, void (*func)(void *), void *arg)
 	p->kpfun = func;
 	p->kparg = arg;
 	kprocchild(p, linkproc);
-	print("kproc: child context built for %s\n", name);
 
-	print("kproc: duplicating strings for %s\n", name);
 	kstrdup(&p->text, name);
 	kstrdup(&p->user, eve);
 	kstrdup(&p->args, "");
 	p->nargs = 0;
 	p->setargs = 0;
 
-	print("kproc: ensuring kpgrp for %s\n", name);
 	if(kpgrp == nil)
 		kpgrp = newpgrp();
 	p->pgrp = kpgrp;
@@ -1737,9 +1694,7 @@ kproc(char *name, void (*func)(void *), void *arg)
 	if(p->kp != 1){
 	}
 
-	print("kproc: enqueueing %s\n", name);
 	ready(p);
-	print("kproc: ready complete for %s\n", name);
 }
 
 /*

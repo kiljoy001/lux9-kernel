@@ -7,6 +7,11 @@
 #include <error.h>
 #include	"pebble.h"
 
+#ifndef BOOTVERBOSE
+#define BOOTVERBOSE 0
+#endif
+#define BOOTPRINT(...) do { if(BOOTVERBOSE) print(__VA_ARGS__); } while(0)
+
 extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
 extern void pmap(uintptr, uintptr, vlong);
 extern void userpmap(uintptr va, uintptr pa, int perms);
@@ -40,20 +45,24 @@ proc0(void*)
 	KMap *k;
 	Page *p;
 
-	print("proc0: ENTRY\n");
-	print("proc0: about to call spllo\n");
+	BOOTPRINT("proc0: ENTRY\n");
+	BOOTPRINT("proc0: about to call spllo\n");
 	spllo();
-	print("proc0: spllo returned\n");
+	BOOTPRINT("proc0: spllo returned\n");
 
 	if(waserror())
 		panic("proc0: %s", up->errstr);
 
 	if(initrd_base != nil && initrd_root == nil) {
-		print("initrd: staging module\n");
+		BOOTPRINT("initrd: staging module\n");
 		initrd_init(initrd_base, initrd_size);
-		print("BOOT[proc0]: initrd staging complete\n");
+		BOOTPRINT("BOOT[proc0]: initrd staging complete\n");
+		extern void initrd_register(void);
+		BOOTPRINT("BOOT[proc0]: registering initrd files with devroot\n");
+		initrd_register();
+		BOOTPRINT("BOOT[proc0]: initrd registration complete\n");
 	} else if(initrd_base == nil) {
-		print("initrd: no initrd module present\n");
+		BOOTPRINT("initrd: no initrd module present\n");
 	}
 
 	up->pgrp = newpgrp();
@@ -61,7 +70,7 @@ proc0(void*)
 	up->egrp->ref = 1;
 	up->fgrp = dupfgrp(nil);
 	up->rgrp = newrgrp();
-	print("BOOT[proc0]: process groups ready\n");
+	BOOTPRINT("BOOT[proc0]: process groups ready\n");
 
 	pebble_selftest();
 
@@ -75,7 +84,7 @@ proc0(void*)
 	up->dot = cclone(up->slash);
 	print("BOOT[proc0]: root namespace acquired\n");
 	pebble_sip_issue_test();
-	print("BOOT[proc0]: setting up segments\n");
+	BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
 	/*
 	 * Setup Text and Stack segments for initcode.

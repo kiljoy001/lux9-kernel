@@ -209,13 +209,9 @@ memmapadd(uvlong addr, uvlong size, ulong type)
 {
 	int result;
 	type &= ~Allocated;
-	print("memmapadd[pre-lock]: n=%d m=%d\n", mapalloc.n, mapalloc.m);
+	/* noisy during early boot */
 	lock(&mapalloc.lk);
-	print("memmapadd: addr=%#llux size=%#llux type=%lux (before: n=%d m=%d)\n",
-	      addr, size, type, mapalloc.n, mapalloc.m);
 	result = insert(addr, size, type);
-	print("memmapadd: insert returned %d (after: n=%d m=%d)\n",
-	      result, mapalloc.n, mapalloc.m);
 	if(result)
 		if(mapalloc.n+mapalloc.m >= nelem(mapalloc.a)-1)
 			sort();

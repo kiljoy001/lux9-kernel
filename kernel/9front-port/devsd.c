@@ -48,12 +48,9 @@ static void sdreset(void);
 static SDev *sdevs;
 
 static void
-sdinit(void)
+sdprobe(void)
 {
 	SDev *s, *tail;
-
-	print("sd: skipping storage init while debugging user-mode transition\n");
-	return;
 
 	print("sd: initializing storage devices\n");
 
@@ -90,6 +87,12 @@ sdinit(void)
 		/* Add devices to the system */
 		sdadddevs(sdevs);
 	}
+}
+
+static void
+sdinit(void)
+{
+	/* nothing; we probe during reset */
 }
 
 static Chan*
@@ -347,9 +350,5 @@ Dev sdisabidevtab = {
 static void
 sdreset(void)
 {
-	/*
-	 * Proper controller enumeration still pending port from 9front.
-	 * Provide a no-op reset hook so chandevreset() can advance.
-	 */
-	print("sd: reset stub - controller discovery disabled\n");
+	sdprobe();
 }
