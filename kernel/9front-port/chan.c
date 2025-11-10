@@ -155,15 +155,18 @@ chandevreset(void)
 }
 
 static void closeproc(void*);
+void closeproc_bootstrap(void);
 
 void
 chandevinit(void)
 {
 	int i;
 
-	for(i=0; devtab[i] != nil; i++)
+	for(i=0; devtab[i] != nil; i++){
+		print("chandevinit: initializing devtab[%d]=%s (%C)\n", i, devtab[i]->name, devtab[i]->dc);
 		devtab[i]->init();
-	kproc("closeproc", closeproc, nil);
+		print("chandevinit: finished devtab[%d]=%s\n", i, devtab[i]->name);
+	}
 }
 
 void
@@ -511,6 +514,12 @@ closeproc(void *)
 		}
 		chanfree(c);
 	}
+}
+
+void
+closeproc_bootstrap(void)
+{
+	kproc("closeproc", closeproc, nil);
 }
 
 void

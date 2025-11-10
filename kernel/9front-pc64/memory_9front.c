@@ -203,6 +203,8 @@ sigsearch(char* signature, int size)
 	uintptr p;
 	void *r;
 
+	print("sigsearch: looking for '%s' (size=%d)\n", signature, size);
+
 	/*
 	 * Search for the data structure:
 	 * 1) within the first KiB of the Extended BIOS Data Area (EBDA), or
@@ -212,17 +214,36 @@ sigsearch(char* signature, int size)
 	 *    (but will actually check 0xe0000 to 0xfffff).
 	 */
 	if((p = ebdaseg()) != 0){
-		if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil)
+		print("sigsearch: checking EBDA at phys=%#lux virt=%#p\n", p, KADDR(p));
+		if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
+			print("sigsearch: FOUND in EBDA at %#p\n", r);
 			return r;
+		}
+	}else{
+		print("sigsearch: EBDA not found (ebdaseg returned 0)\n");
 	}
-	if((r = sigscan(KADDR(convmemsize()), 1*KB, signature, size, 16)) != nil)
+
+	p = convmemsize();
+	print("sigsearch: checking convmem at phys=%#lux virt=%#p\n", p, KADDR(p));
+	if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
+		print("sigsearch: FOUND in convmem at %#p\n", r);
 		return r;
+	}
 
 	/* hack for virtualbox: look in KiB below 0xa0000 */
-	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil)
+	print("sigsearch: checking 0xA0000-1KB area\n");
+	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil){
+		print("sigsearch: FOUND in 0xA0000 area at %#p\n", r);
 		return r;
+	}
 
-	return sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
+	print("sigsearch: checking BIOS ROM 0xE0000-0xFFFFF\n");
+	r = sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
+	if(r != nil)
+		print("sigsearch: FOUND in BIOS ROM at %#p\n", r);
+	else
+		print("sigsearch: NOT FOUND anywhere!\n");
+	return r;
 }
 
 void*

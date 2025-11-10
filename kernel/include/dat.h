@@ -47,7 +47,6 @@ struct Lock
 struct Label
 {
 	uintptr	sp;
-	uintptr	bp;
 	uintptr	pc;
 };
 

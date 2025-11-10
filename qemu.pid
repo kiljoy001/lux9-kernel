@@ -1,1 +1,1 @@
-133474
+ sleep 2 gdb -batch -x gdb_scripts/check_idt.gdb

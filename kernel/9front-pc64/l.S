@@ -178,6 +178,11 @@ lidt:
     lidt (%rdi)
     ret
 
+.global sidt
+sidt:
+    sidt (%rdi)
+    ret
+
 .global ltr
 ltr:
     ltr %di
@@ -264,11 +269,10 @@ coherence_impl:
 
 .global setlabel
 setlabel:
-    movq %rsp, 0(%rdi)
-    movq %rbp, 8(%rdi)
-    movq (%rsp), %rax
-    movq %rax, 16(%rdi)
-    xorl %eax, %eax
+    movq %rsp, 0(%rdi)         /* Save SP at offset 0 */
+    movq (%rsp), %rax          /* Get return address from stack */
+    movq %rax, 8(%rdi)         /* Save PC at offset 8 */
+    xorl %eax, %eax            /* Return 0 */
     ret
 
 .global _peekinst
@@ -393,38 +397,10 @@ invlpg:
 
 .global gotolabel
 gotolabel:
-    push %rdi
-    mov $'G', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rdi
-
-    movq 0(%rdi), %rsp
-
-    push %rax
-    mov $'H', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movq 8(%rdi), %rbp
-
-    push %rax
-    mov $'I', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movq 16(%rdi), %rax
-    movq %rax, (%rsp)
-
-    push %rax
-    mov $'J', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movl $1, %eax
+    movq 0(%rdi), %rsp         /* Restore SP from offset 0 */
+    movq 8(%rdi), %rax         /* Load PC from offset 8 */
+    movq %rax, (%rsp)          /* Place PC on stack as return address */
+    movl $1, %eax              /* Return 1 */
     ret
 
 /* -----------------------------------------------------------------------
@@ -480,6 +456,14 @@ touser_sp_msg:
     .string "touser: jumping to user mode with SP=%#llux\n"
 touser_iret_msg:
     .string "touser: about to IRETQ to userspace\n"
+_debug_vec_msg:
+    .string "_intrcommon: Vector = %#llx\n"
+_debug_rip_msg:
+    .string "_intrcommon: RIP = %#llx\n"
+_debug_cs_msg:
+    .string "_intrcommon: CS = %#x\n"
+_debug_rflags_msg:
+    .string "_intrcommon: RFLAGS = %#llx\n"
 
 .global syscallentry
 syscallentry:
@@ -559,22 +543,22 @@ _strayintr:
 
 .global _strayintrx
 _strayintrx:
-    xchgq %rax, (%rsp)
-    jmp _intrcommon
-
+    xchgq %rax, (%rsp)     /* Swap RAX with error code, like 9front */
 _intrcommon:
     movzbq (%rax), %rax
     xchgq %rax, (%rsp)
     subq $24, %rsp
+
+    /* Check CS like 9front does */
     cmpw $KESEL, 48(%rsp)
     je _intrnested
 
+    /* Coming from user mode - need to set up kernel context */
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
-
     swapgs
-    movq %gs:0, %r15
-    movq 16(%r15), %r14
+    movq %gs:0, %r15        /* Load m into r15 */
+    movq 16(%r15), %r14     /* Load up into r14 */
 
 _intrnested:
     pushq %r13
@@ -615,7 +599,7 @@ _intrestore:
     popq %r12
     popq %r13
 
-    cmpq $KESEL, 48(%rsp)
+    cmpq $KESEL, 48(%rsp)    /* CS at offset 48, like 9front */
     je _iretnested
 
     swapgs
@@ -623,7 +607,7 @@ _intrestore:
     movq 0(%rsp), %r14
 
 _iretnested:
-    addq $32, %rsp
+    addq $40, %rsp   /* Skip to hardware frame */
     iretq
 
 .global putdr
@@ -704,7 +688,7 @@ vectortable:
     .byte 0x0d        /* general protection error */
     call _strayintrx
     .byte 0x0e        /* page fault */
-    call _strayintr
+    call _strayintrx
     .byte 0x0f
     call _strayintr
     .byte 0x10        /* coprocessor error */

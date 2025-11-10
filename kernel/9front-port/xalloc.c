@@ -117,13 +117,13 @@ xinit(void)
 	kpages = conf.npage - conf.upages;
 // 	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);  // TEST PRINT - CRASHES DURING EARLY BOOT
 // 	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);  // TEST PRINT - CRASHES DURING EARLY BOOT
-// 	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);  // TEMPORARILY DISABLED - crashes during early boot before print init
+	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
 		/* Only print first few entries to avoid verbose output */
 		if(i < 2) {
-// 			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",  // TEMPORARILY DISABLED - crashes during early boot before print init
+			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n", i, cm->base, cm->npage);
 // 				i, cm->base, cm->npage);
 		} else if(i == 2) {
 // 			print("xinit: ... (showing first 2 entries only)\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
@@ -239,26 +239,24 @@ xallocz(ulong size, int zero)
 				xlists.flist = h;
 			}
 			iunlock(&xlists.lk);
-	/* TEST 2A: Track allocation success */
-	xalloc_successes++;
 			p->magix = Magichole;
 			p->size = size;
 			if(zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
+			/* TEST 2A: Track allocation success */
+			xalloc_successes++;
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	/* TEST 2A: Track allocation success */
-	xalloc_successes++;
+
 	/* TEST 2A: Track allocation failure */
 	xalloc_failures++;
 	xalloc_last_failure_size = orig_size;
 	print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures, orig_size, getcallerpc(&orig_size));
-
 	return nil;
 }
 

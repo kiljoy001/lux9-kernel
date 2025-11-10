@@ -11,6 +11,8 @@
  *  IO queues
  */
 typedef struct Queue	Queue;
+
+extern int xinit_done;
 struct Queue
 {
 	Lock;
@@ -1343,7 +1345,22 @@ qsetlimit(Queue *q, int limit)
 void
 qnoblock(Queue *q, int onoff)
 {
+	if(!xinit_done){
+		/*
+		 * Early boot callers (e.g. printinit before xinit())
+		 * run before scheduler/locking is fully operational.
+		 * Avoid spinning on q->Lock by setting the flag directly.
+		 */
+		q->noblock = onoff;
+		return;
+	}
 	ilock(q);
 	q->noblock = onoff;
 	iunlock_consumer(q);
+}
+
+void
+qsetnoblock_early(Queue *q, int onoff)
+{
+	q->noblock = onoff;
 }

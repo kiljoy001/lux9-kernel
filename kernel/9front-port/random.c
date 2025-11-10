@@ -15,6 +15,7 @@ static struct
 	QLock qlock;
 	Chachastate chacha;
 } *rs;
+static int random_initialized;
 
 typedef struct Seedbuf Seedbuf;
 struct Seedbuf
@@ -80,9 +81,18 @@ setupChachastate(&rs->chacha, s->buf, 32, s->buf+32, 12, 20);
 void
 randominit(void)
 {
+	if(random_initialized){
+		print("randominit: already initialized\n");
+		return;
+	}
+	random_initialized = 1;
+	print("randominit: allocating state\n");
 	rs = secalloc(sizeof(*rs));
+	print("randominit: state allocated, acquiring qlock\n");
 	qlock(&rs->qlock);	/* randomseed() unlocks once seeded */
+	print("randominit: launching randomseed kproc\n");
 	kproc("randomseed", randomseed, nil);
+	print("randominit: kproc launched, returning\n");
 }
 
 ulong

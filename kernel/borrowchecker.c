@@ -8,12 +8,6 @@
 #include "mem.h"
 #include "dat.h"
 
-/* Allocation source tracking for proper memory management */
-enum AllocSource {
-	ALLOC_BOOTSTRAP,
-	ALLOC_XALLOC
-};
-
 /* External declarations for CR3 switch memory system checks */
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;

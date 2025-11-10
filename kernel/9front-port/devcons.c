@@ -9,6 +9,7 @@
 
 extern void	(*consdebug)(void);
 extern void	(*screenputs)(char*, int);
+extern Uart*	consuart;
 
 /* Global debug flag for panic handling - defined in 9front-pc64/main.c */
 extern int panic_debug;
@@ -52,9 +53,55 @@ Cmdtab drivermsg[] =
 	CMchdev,	"chdev",	0,
 };
 
+static void	serialoqkick(void*);
+
 void
 printinit(void)
 {
+	if(kprintoq == nil){
+		kprintoq = qopen(8*1024, Qcoalesce, nil, nil);
+		if(kprintoq == nil){
+			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 72);
+		} else {
+			uartputs("printinit: kprintoq initialized successfully\n", 45);
+			qsetnoblock_early(kprintoq, 1);
+		}
+	}
+
+	if(serialoq == nil){
+		if(consuart == nil){
+			uartputs("printinit: INFO - consuart nil, skipping serial queue\n", 58);
+		} else {
+			serialoq = qopen(4*1024, 0, serialoqkick, nil);
+			if(serialoq == nil){
+				uartputs("printinit: ERROR - qopen for serialoq failed - memory allocation may not be ready\n", 69);
+			} else {
+				uartputs("printinit: serialoq initialized successfully\n", 44);
+				qsetnoblock_early(serialoq, 1);
+			}
+		}
+	}
+
+	/*
+	 * Dump any buffered boot messages through the newly
+	 * initialised console path so late screens/UARTs gain context.
+	 */
+	if(kmesg.n > 0)
+		uartputs(kmesg.buf, kmesg.n);
+	uartputs("printinit: initialization complete\n", 35);
+}
+
+static void
+serialoqkick(void*)
+{
+	char buf[PRINTSIZE];
+	int n;
+
+	if(serialoq == nil)
+		return;
+
+	while((n = qconsume(serialoq, buf, sizeof(buf))) > 0)
+		uartputs(buf, n);
 }
 
 int
@@ -482,8 +529,9 @@ readstr(ulong off, char *buf, ulong n, char *str)
 static void
 consinit(void)
 {
+	print("consinit: ENTRY\n");
 	todinit();
-	randominit();
+	print("consinit: DONE\n");
 }
 
 static Chan*

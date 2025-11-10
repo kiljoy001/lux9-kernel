@@ -408,8 +408,11 @@ identify(void)
 	_MP_ *_mp_;
 	ulong pa, len;
 
-	if((cp = getconf("*nomp")) != nil && strcmp(cp, "0") != 0)
+	print("identify: ENTRY\n");
+	if((cp = getconf("*nomp")) != nil && strcmp(cp, "0") != 0){
+		print("identify: *nomp is set, skipping MP\n");
 		return 1;
+	}
 
 	/*
 	 * Search for an MP configuration table. For now,
@@ -418,37 +421,74 @@ identify(void)
 	 * if correct, check the version.
 	 * To do: check extended table checksum.
 	 */
-	if((_mp_ = sigsearch("_MP_", _MP_sz)) == nil || _mp_->physaddr == 0)
+	_mp_ = sigsearch("_MP_", _MP_sz);
+	print("identify: sigsearch returned %#p\n", _mp_);
+	if(_mp_ == nil){
+		print("identify: FAIL - sigsearch returned nil\n");
 		return 1;
+	}
+	print("identify: _mp_->physaddr=%#lux\n", _mp_->physaddr);
+	if(_mp_->physaddr == 0){
+		print("identify: FAIL - physaddr is 0 (default config not supported)\n");
+		return 1;
+	}
 
 	len = PCMPsz;
 	pa = _mp_->physaddr;
-	if(pa + len-1 < pa)
-		return 1;
-
-	memreserve(pa, len);
-	if((pcmp = vmap(pa, len)) == nil)
-		return 1;
-	if(pcmp->length < PCMPsz
-	|| pa + pcmp->length-1 < pa
-	|| memcmp(pcmp, "PCMP", 4) != 0
-	|| (pcmp->version != 1 && pcmp->version != 4)){
-Bad:
-		vunmap(pcmp, len);
-		pcmp = nil;
+	print("identify: pa=%#lux len=%lud\n", pa, len);
+	if(pa + len-1 < pa){
+		print("identify: FAIL - address overflow\n");
 		return 1;
 	}
+
+	memreserve(pa, len);
+	print("identify: calling vmap(pa=%#lux, len=%lud)\n", pa, len);
+	if((pcmp = vmap(pa, len)) == nil){
+		print("identify: FAIL - vmap returned nil\n");
+		return 1;
+	}
+	print("identify: pcmp=%#p\n", pcmp);
+	print("identify: checking PCMP signature and version\n");
+	if(pcmp->length < PCMPsz){
+		print("identify: FAIL - pcmp->length=%lud < PCMPsz=%lud\n", pcmp->length, (ulong)PCMPsz);
+		goto Bad;
+	}
+	if(pa + pcmp->length-1 < pa){
+		print("identify: FAIL - pcmp length causes overflow\n");
+		goto Bad;
+	}
+	if(memcmp(pcmp, "PCMP", 4) != 0){
+		print("identify: FAIL - PCMP signature mismatch\n");
+		goto Bad;
+	}
+	if(pcmp->version != 1 && pcmp->version != 4){
+		print("identify: FAIL - bad version %d\n", pcmp->version);
+		goto Bad;
+	}
+
 	len = pcmp->length;
+	print("identify: PCMP valid, length=%lud, remapping\n", len);
 	memreserve(pa, len);
 	vunmap(pcmp, PCMPsz);
-	if((pcmp = vmap(pa, len)) == nil)
+	if((pcmp = vmap(pa, len)) == nil){
+		print("identify: FAIL - second vmap returned nil\n");
 		return 1;
+	}
 
-	if(checksum(pcmp, len) != 0)
+	print("identify: checking checksum\n");
+	if(checksum(pcmp, len) != 0){
+		print("identify: FAIL - checksum failed\n");
 		goto Bad;
+	}
 
+	print("identify: SUCCESS - MP configuration found\n");
 	if(m->havetsc && getconf("*notsc") == nil)
 		archmp.fastclock = tscticks;
 
 	return 0;
+Bad:
+	print("identify: cleaning up and failing\n");
+	vunmap(pcmp, len);
+	pcmp = nil;
+	return 1;
 }

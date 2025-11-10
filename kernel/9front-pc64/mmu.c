@@ -595,9 +595,9 @@ mmuinit(void)
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;
 
-	print("DEBUG: Loading GDT and IDT\n");
+	print("DEBUG: Loading GDT\n");
 	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
-	loadptr(sizeof(Segdesc)*512-1, (uintptr)IDTADDR, lidt);
+	/* IDT already set up by trapinit0() - don't reload from uninitialized IDTADDR */
 	print("DEBUG: Setting up task switch\n");
 	taskswitch((uintptr)m + MACHSIZE);
 	print("DEBUG: Loading TSS\n");

@@ -40,7 +40,10 @@ proc0(void*)
 	KMap *k;
 	Page *p;
 
+	print("proc0: ENTRY\n");
+	print("proc0: about to call spllo\n");
 	spllo();
+	print("proc0: spllo returned\n");
 
 	if(waserror())
 		panic("proc0: %s", up->errstr);

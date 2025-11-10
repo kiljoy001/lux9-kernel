@@ -116,4 +116,4 @@ iso: $(KERNEL) userspace/initrd.tar
 	@echo "✓ Created lux9.iso"
 
 run: iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial file:qemu.log -no-reboot -display none
+	/home/scott/Repo/gnumach/qemu-9.1.0-x64-install/bin/qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial file:qemu.log -no-reboot -display none

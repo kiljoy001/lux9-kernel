@@ -20,6 +20,12 @@ enum BorrowSystemOwner {
 	OWNER_TRAMPOLINE,         /* CR3 switch trampoline code */
 };
 
+/* Track where ownership bookkeeping structs are allocated */
+enum AllocSource {
+	ALLOC_BOOTSTRAP,
+	ALLOC_XALLOC,
+};
+
 
 
 /* Memory tracking structures for boot coordination */
