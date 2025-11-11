@@ -239,6 +239,8 @@ save_framebuffer_info(void)
 {
 	struct limine_framebuffer_response *fb_response;
 	struct limine_framebuffer *framebuffer;
+	uintptr fbaddr;
+	extern uintptr saved_limine_hhdm_offset;
 
 	saved_fb_info.valid = 0;
 
@@ -254,7 +256,15 @@ save_framebuffer_info(void)
 	}
 
 	framebuffer = fb_response->framebuffers[0];
-	saved_fb_info.fb_phys_addr = (uintptr)framebuffer->address;
+	fbaddr = (uintptr)framebuffer->address;
+
+	/* Limine may give us a virtual address in its HHDM space - convert to physical */
+	if(fbaddr >= saved_limine_hhdm_offset){
+		fbaddr -= saved_limine_hhdm_offset;
+		uartputs("save_framebuffer_info: converted HHDM virtual to physical\n", 59);
+	}
+
+	saved_fb_info.fb_phys_addr = fbaddr;
 	saved_fb_info.width = framebuffer->width;
 	saved_fb_info.height = framebuffer->height;
 	saved_fb_info.pitch = framebuffer->pitch;
@@ -279,12 +289,25 @@ fbconsoleinit(void)
 
 	uartputs("fbconsole: using saved framebuffer info\n", 41);
 
-	/* Map physical framebuffer address through HHDM */
+	/* Map physical framebuffer address using vmap (for MMIO) */
 	fbaddr = saved_fb_info.fb_phys_addr;
-	if(fbaddr < 0xFFFF800000000000ULL)
-		fbaddr += saved_limine_hhdm_offset;
 
-	fb.addr = (uchar*)fbaddr;
+	char msg[128];
+	snprint(msg, sizeof(msg), "fbconsole: phys_addr=0x%llx width=%llu height=%llu pitch=%llu bpp=%u\n",
+		(unsigned long long)fbaddr, saved_fb_info.width, saved_fb_info.height, saved_fb_info.pitch, saved_fb_info.bpp);
+	uartputs(msg, strlen(msg));
+
+	/* Use vmap to create mapping for MMIO framebuffer */
+	uintptr size = saved_fb_info.pitch * saved_fb_info.height;
+	fb.addr = vmap(fbaddr, size);
+	if(fb.addr == nil){
+		uartputs("fbconsole: ERROR - vmap failed for framebuffer\n", 49);
+		return;
+	}
+	snprint(msg, sizeof(msg), "fbconsole: vmap(0x%llx, 0x%llx) = %p\n",
+		(unsigned long long)fbaddr, (unsigned long long)size, fb.addr);
+	uartputs(msg, strlen(msg));
+
 	fb.width = saved_fb_info.width;
 	fb.height = saved_fb_info.height;
 	fb.pitch = saved_fb_info.pitch;

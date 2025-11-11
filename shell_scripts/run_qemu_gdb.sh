@@ -4,13 +4,13 @@ cd /home/scott/Repo/lux9-kernel || exit
 # Log file path
 LOGFILE="/home/scott/Repo/lux9-kernel/qemu.log"
 
-# Run QEMU headless with serial output redirected to logfile
-qemu-system-x86_64 \
+# Run QEMU with GTK window and serial output to both logfile and stdio
+/home/scott/Repo/gnumach/qemu-9.1.0-x64-install/bin/qemu-system-x86_64 \
   -M q35 \
   -m 2G \
   -cdrom lux9.iso \
   -boot d \
-  -nographic \
+  -display gtk \
   -serial file:"$LOGFILE" \
   -no-reboot \
   -s -S &
