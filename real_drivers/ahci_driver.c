@@ -2199,6 +2199,8 @@ iapnp(void)
 			print("%s: can't map %llux\n", Tname(c), io);
 			continue;
 		}
+		print("iapnp: checking PTE for mmio mapping\n");
+		print("iapnp: dbg_getpte(%p) = %#p\n", c->mmio, dbg_getpte((uintptr)c->mmio));
 		print("iapnp: setting up controller structure\n");
 		c->lmmio = (ulong*)c->mmio;
 		c->pci = p;
