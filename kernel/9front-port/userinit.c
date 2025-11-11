@@ -319,8 +319,13 @@ proc0(void*)
 void
 userinit(void)
 {
+	extern void uartputs(char*, int);
+	uartputs("userinit: ENTRY\n", 17);
 	up = nil;
+	uartputs("userinit: set up=nil\n", 21);
 	kstrdup(&eve, "");
+	uartputs("userinit: calling kproc for *init*\n", 36);
 	kproc("*init*", proc0, nil);
+	uartputs("userinit: kproc returned\n", 25);
 	print("BOOT[userinit]: spawned proc0 kernel process\n");
 }

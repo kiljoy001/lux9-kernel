@@ -1746,6 +1746,8 @@ procctl(void)
 _Noreturn void
 error(char *err)
 {
+	if(up == nil)
+		panic("error(%s) with no user process (caller=%#p)", err, getcallerpc(&err));
 	spllo();
 
 	assert(up->nerrlab < NERR);

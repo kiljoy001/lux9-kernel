@@ -307,6 +307,7 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 	print("BOOT: printinit complete - print queues initialized\n");
 
+	print("BOOT: entering userinit\n");
 	userinit();
 	print("BOOT: userinit called successfully - proceeding to scheduler\n");
 	print("BOOT: entering scheduler - expecting proc0 hand-off\n");

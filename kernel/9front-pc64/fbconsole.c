@@ -325,6 +325,7 @@ fbconsoleinit(void)
 
 	/* Hook into screenputs */
 	screenputs = fbconsolescreenputs;
+	uartputs("fbconsole: screen output enabled\n", 34);
 }
 
 static void
