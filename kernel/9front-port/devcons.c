@@ -54,12 +54,13 @@ Cmdtab drivermsg[] =
 };
 
 static void	serialoqkick(void*);
+static void	kprintoqkick(void*);
 
 void
 printinit(void)
 {
 	if(kprintoq == nil){
-		kprintoq = qopen(8*1024, Qcoalesce, nil, nil);
+		kprintoq = qopen(8*1024, Qcoalesce, kprintoqkick, nil);
 		if(kprintoq == nil){
 			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 72);
 		} else {
@@ -102,6 +103,21 @@ serialoqkick(void*)
 
 	while((n = qconsume(serialoq, buf, sizeof(buf))) > 0)
 		uartputs(buf, n);
+}
+
+static void
+kprintoqkick(void*)
+{
+	char buf[PRINTSIZE];
+	int n;
+
+	if(kprintoq == nil)
+		return;
+
+	while((n = qconsume(kprintoq, buf, sizeof(buf))) > 0){
+		if(screenputs != nil)
+			screenputs(buf, n);
+	}
 }
 
 int
