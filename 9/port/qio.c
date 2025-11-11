@@ -13,7 +13,7 @@
 typedef struct Queue	Queue;
 struct Queue
 {
-	Lock;
+	Lock lock;
 
 	int	state;
 	int	dlen;		/* data length in bytes */

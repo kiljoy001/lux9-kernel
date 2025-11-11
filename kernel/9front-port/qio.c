@@ -15,7 +15,7 @@ typedef struct Queue	Queue;
 extern int xinit_done;
 struct Queue
 {
-	Lock;
+	Lock lock;
 
 	int	state;
 	int	dlen;		/* data length in bytes */
@@ -727,6 +727,9 @@ qopen(int limit, int msg, void (*kick)(void*), void *arg)
 	if(q == nil)
 		return nil;
 
+	/* Initialize the Lock (memset to zero all fields including anonymous Lock) */
+	memset(q, 0, sizeof(Queue));
+
 	q->dlen = 0;
 	q->wp = q->rp = 0;
 	q->limit = q->inilim = limit;
@@ -748,6 +751,9 @@ qbypass(void (*bypass)(void*, Block*), void *arg)
 	q = malloc(sizeof(Queue));
 	if(q == nil)
 		return nil;
+
+	/* Initialize the Lock */
+	memset(q, 0, sizeof(Queue));
 
 	q->dlen = 0;
 	q->wp = q->rp = 0;
