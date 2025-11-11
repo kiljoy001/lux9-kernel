@@ -440,6 +440,7 @@ uint		nhgetl(void*);
 ushort		nhgets(void*);
 ulong		µs(void);
 long		lcycles(void);
+extern void	(*cycles)(uvlong*);
 void		devmask(Pgrp*,int,char*);
 int		devallowed(Pgrp*, int);
 int		canmount(Pgrp*);
