@@ -12,6 +12,7 @@
 #include "pageown.h"
 #include "exchange.h"
 #include <error.h>
+#include "lock_borrow.h"
 
 /* Track prepared pages for cancellation */
 struct PreparedPage {
@@ -22,7 +23,8 @@ struct PreparedPage {
 };
 
 static struct PreparedPage *prepared_pages = nil;
-static Lock prepared_lock;
+static BorrowLock prepared_lock;
+static LockDagNode lockdag_exchange_prepared = LOCKDAG_NODE("exchange-prepared");
 
 /* Convert physical address to page frame number */
 static inline ulong
@@ -38,6 +40,7 @@ void
 exchangeinit(void)
 {
 	/* Exchange system uses existing pageown infrastructure */
+	borrow_lock_init(&prepared_lock, (uintptr)&prepared_lock, &lockdag_exchange_prepared);
 	print("exchange: initialized\n");
 }
 
@@ -89,10 +92,10 @@ exchange_prepare(uintptr vaddr)
 	pp->original_vaddr = vaddr;
 	pp->owner = up;
 	
-	lock(&prepared_lock);
+	borrow_lock(&prepared_lock);
 	pp->next = prepared_pages;
 	prepared_pages = pp;
-	unlock(&prepared_lock);
+	borrow_unlock(&prepared_lock);
 
 	/* Return the physical address as the exchange handle */
 	return pa;
@@ -116,7 +119,7 @@ exchange_accept(ExchangeHandle handle, uintptr dest_vaddr, int prot)
 		return EXCHANGE_ENOTEXCHANGE;
 
 	/* Remove from prepared pages list */
-	lock(&prepared_lock);
+	borrow_lock(&prepared_lock);
 	for(prev = &prepared_pages; (pp = *prev) != nil; prev = &pp->next) {
 		if(pp->handle == handle) {
 			*prev = pp->next;
@@ -124,7 +127,7 @@ exchange_accept(ExchangeHandle handle, uintptr dest_vaddr, int prot)
 			break;
 		}
 	}
-	unlock(&prepared_lock);
+	borrow_unlock(&prepared_lock);
 
 	/* Map the page into current process at the specified address */
 	extern void userpmap(uintptr va, uintptr pa, int perms);
@@ -157,14 +160,14 @@ exchange_cancel(ExchangeHandle handle)
 		return EXCHANGE_EINVAL;
 
 	/* Find the prepared page */
-	lock(&prepared_lock);
+	borrow_lock(&prepared_lock);
 	for(prev = &prepared_pages; (pp = *prev) != nil; prev = &pp->next) {
 		if(pp->handle == handle) {
 			*prev = pp->next;
 			break;
 		}
 	}
-	unlock(&prepared_lock);
+	borrow_unlock(&prepared_lock);
 
 	if(pp == nil)
 		return EXCHANGE_EINVAL;

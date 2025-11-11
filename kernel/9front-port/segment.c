@@ -3,6 +3,7 @@
 #include	"mem.h"
 #include	"dat.h"
 #include	"fns.h"
+#include	"lock_borrow.h"
 #include <error.h>
 
 extern void userpmap(uintptr va, uintptr pa, int perms);
@@ -12,7 +13,8 @@ extern void userpmap(uintptr va, uintptr pa, int perms);
  */
 static Physseg *physseg_head = nil;	/* Head of doubly-linked list */
 static Physseg *physseg_tail = nil;	/* Tail of doubly-linked list */
-static Lock physseglock;
+static BorrowLock physseglock;
+static LockDagNode lockdag_physseg = LOCKDAG_NODE("physseg");
 
 /* Initial physical segments */
 static Physseg physseg_initial[] = {
@@ -80,6 +82,7 @@ initseg(void)
 	int i;
 	Physseg *ps, *prev_ps;
 	
+	borrow_lock_init(&physseglock, (uintptr)&physseglock, &lockdag_physseg);
 	/* Initialize the doubly-linked list with initial segments */
 	physseg_head = nil;
 	physseg_tail = nil;
@@ -806,12 +809,12 @@ addphysseg(Physseg* new)
 	/*
 	 * Check not already entered
 	 */
-	lock(&physseglock);
+	borrow_lock(&physseglock);
 	
 	/* First check if it already exists */
 	for(ps = physseg_head; ps != nil; ps = ps->next){
 		if(strcmp(ps->name, new->name) == 0){
-			unlock(&physseglock);
+			borrow_unlock(&physseglock);
 			return ps;
 		}
 	}
@@ -819,7 +822,7 @@ addphysseg(Physseg* new)
 	/* Allocate new entry */
 	existing = malloc(sizeof(Physseg));
 	if(existing == nil) {
-		unlock(&physseglock);
+		borrow_unlock(&physseglock);
 		return nil;
 	}
 	
@@ -828,7 +831,7 @@ addphysseg(Physseg* new)
 	existing->name = malloc(strlen(new->name) + 1);
 	if(existing->name == nil) {
 		free(existing);
-		unlock(&physseglock);
+		borrow_unlock(&physseglock);
 		return nil;
 	}
 	strcpy(existing->name, new->name);
@@ -845,7 +848,7 @@ addphysseg(Physseg* new)
 	}
 	physseg_tail = existing;
 	
-	unlock(&physseglock);
+	borrow_unlock(&physseglock);
 	return existing;
 }
 
@@ -854,13 +857,13 @@ findphysseg(char *name)
 {
 	Physseg *ps;
 	
-	lock(&physseglock);
+	borrow_lock(&physseglock);
 	for(ps = physseg_head; ps != nil; ps = ps->next)
 		if(strcmp(ps->name, name) == 0) {
-			unlock(&physseglock);
+			borrow_unlock(&physseglock);
 			return ps;
 		}
-	unlock(&physseglock);
+	borrow_unlock(&physseglock);
 	
 	return nil;
 }

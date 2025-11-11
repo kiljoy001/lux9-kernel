@@ -4,6 +4,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "lock_borrow.h"
+#include "lock_dag.h"
 
 /* Deadlock detection logic */
 static void
@@ -44,10 +45,11 @@ borrow_check_deadlock(Proc *p, BorrowLock *l)
 
 /* Initialize a BorrowLock */
 void
-borrow_lock_init(BorrowLock *bl, uintptr key)
+borrow_lock_init(BorrowLock *bl, uintptr key, LockDagNode *node)
 {
 	memset(bl, 0, sizeof(*bl));
 	bl->key = key;
+	bl->dag_node = node;
 }
 
 /* Acquire a lock with deadlock detection */
@@ -71,6 +73,7 @@ borrow_lock(BorrowLock *bl)
 
 	/* Lock acquired, clear waiting key and register ownership */
 	up->waiting_for_key = 0;
+	lockdag_record_acquire(up, bl->dag_node, bl->key);
 	err = borrow_acquire(up, bl->key);
 	switch(err){
 		case BORROW_OK:
@@ -92,6 +95,7 @@ borrow_unlock(BorrowLock *bl)
 {
 	if(up != nil) {
 		enum BorrowError err = borrow_release(up, bl->key);
+		lockdag_record_release(up, bl->dag_node, bl->key);
 		if(err != BORROW_OK) {
 			unlock(&bl->lock);
 			panic("borrow_unlock: borrow_release failed (err=%d key=%#p pid=%lud)",

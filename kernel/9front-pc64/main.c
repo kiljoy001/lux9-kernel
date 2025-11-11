@@ -303,6 +303,10 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	pageinit();
 	print("BOOT: pageinit complete\n");
 
+	print("BOOT: calling printinit\n");
+	printinit();
+	print("BOOT: printinit complete - print queues initialized\n");
+
 	userinit();
 	print("BOOT: userinit called successfully - proceeding to scheduler\n");
 	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
@@ -440,6 +444,9 @@ main(void)
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();
 	print("BOOT: memory coordination system initialized\n");
+
+	/* Save framebuffer info BEFORE switching page tables */
+	save_framebuffer_info();
 
 	/* Switch to our own page tables - REQUIRED for user space!
 	/* NOTE: This must happen AFTER setuppagetables() to avoid memory map conflicts.

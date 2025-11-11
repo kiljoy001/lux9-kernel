@@ -150,6 +150,7 @@ void	realmode(Ureg*);
 void*	rsdsearch(void);
 void	screeninit(void);
 void	fbconsoleinit(void);
+void	save_framebuffer_info(void);
 void	fbconsoleputc(int);
 void	fbconsolescreenputs(char*, int);
 extern void	(*screenputs)(char*, int);

@@ -59,6 +59,8 @@ typedef int    Devgen(Chan*, char*, Dirtab*, int, int, Dir*);
 #pragma incomplete Mntcache
 #pragma incomplete Mntrpc
 
+#include "lock_dag.h"
+
 #include "pebble.h"
 #pragma incomplete Queue
 #pragma incomplete Timers
@@ -743,8 +745,9 @@ struct Proc
 	int	insyscall;
 	ulong	time[6];	/* User, Sys, Real; child U, S, R */
 
-	/* Borrow checker */
+	/* Borrow checker / lock DAG */
 	uintptr		waiting_for_key;
+	struct LockDagContext lockdag;
 
 	uvlong	kentry;		/* Kernel entry time stamp (for profiling) */
 	/*

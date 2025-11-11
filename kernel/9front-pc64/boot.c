@@ -53,8 +53,9 @@ bootargsinit(void)
 
 	/* Initialize MemMin from Limine memory map
 	 * MemMin indicates the end of the initially mapped physical memory
-	 * With Limine HHDM, all physical memory is mapped, so we set MemMin
-	 * to the highest usable physical address (limited to 4GB for cankaddr) */
+	 * We only consider usable RAM (type 0) to avoid trying to pre-map
+	 * enormous MMIO regions at high physical addresses.
+	 * Cap at 128GB to avoid exhausting page tables during early boot. */
 	extern void uartputs(char*, int);
 	max_addr = 0;
 	uartputs("bootargsinit: checking limine_memmap\n", 38);
@@ -63,21 +64,28 @@ bootargsinit(void)
 		uartputs("bootargsinit: memmap response valid\n", 37);
 		for(i = 0; i < memmap_response->entry_count; i++) {
 			entry = memmap_response->entries[i];
-			/* HHDM maps ALL physical memory - check all entry types
-			 * This includes usable RAM, modules (initrd), MMIO, reserved regions, etc. */
-			u64int end = entry->base + entry->length;
-			if(end > max_addr)
-				max_addr = end;
+			/* Only consider usable RAM (type 0) for initial mapping
+			 * MMIO regions will be mapped on-demand via vmap() */
+			if(entry->type == 0) {  /* LIMINE_MEMMAP_USABLE */
+				u64int end = entry->base + entry->length;
+				if(end > max_addr)
+					max_addr = end;
+			}
 		}
 	} else {
 		uartputs("bootargsinit: ERROR - memmap is NULL!\n", 39);
 	}
 
-	/* Set MemMin - use the actual max RAM address we found
-	 * Now supports full 64-bit address range for modern systems */
+	/* Set MemMin - cap at 128GB to avoid exhausting page tables during boot
+	 * Additional memory can be mapped on demand later */
 	if(max_addr == 0) {
 		uartputs("bootargsinit: WARNING - max_addr is 0, using fallback\n", 56);
 		max_addr = 4ULL*1024*1024*1024;  /* 4GB fallback */
+	}
+
+	/* Cap at 128GB */
+	if(max_addr > 128ULL*1024*1024*1024) {
+		max_addr = 128ULL*1024*1024*1024;
 	}
 
 	MemMin = max_addr;

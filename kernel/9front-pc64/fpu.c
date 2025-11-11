@@ -18,7 +18,7 @@ enum {
  * is in l.s.
  */
 extern void _clts(void);
-extern void _fldcw(u16int);
+extern void _fldcw(u16int*);
 extern void _fnclex(void);
 extern void _fninit(void);
 extern void _fxrstor(void*);
@@ -27,7 +27,7 @@ extern void _xrstor(void*);
 extern void _xsave(void*);
 extern void _xsaveopt(void*);
 extern void _fwait(void);
-extern void _ldmxcsr(u32int);
+extern void _ldmxcsr(u32int*);
 extern void _stts(void);
 
 static void mathemu(Ureg *ureg, void*);
@@ -83,14 +83,19 @@ fpxsaveopt(FPsave *s)
  *  Set the precision and mask the exceptions
  *  we don't care about from the generic Mach value.
  */
+
+/* FPU control word and MXCSR values - must be in memory for fldcw/ldmxcsr */
+static u16int fpucw = 0x0232;
+static u32int fpumxcsr = 0x1900;
+
 void
 fpinit(void)
 {
 	_clts();
 	_fninit();
 	_fwait();
-	_fldcw(0x0232);
-	_ldmxcsr(0x1900);
+	_fldcw(&fpucw);
+	_ldmxcsr(&fpumxcsr);
 }
 
 static char* mathmsg[] =

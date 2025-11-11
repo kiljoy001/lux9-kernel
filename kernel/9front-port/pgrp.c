@@ -3,22 +3,29 @@
 #include	"mem.h"
 #include	"dat.h"
 #include	"fns.h"
+#include "lock_borrow.h"
 #include <error.h>
 
 enum {
 	Whinesecs = 10,		/* frequency of out-of-resources printing */
 };
 
+static LockDagNode lockdag_nextmount = LOCKDAG_NODE("pgrp-nextmount");
+static uintptr nextmount_lock_key;
+static BorrowLock nextmount_lock = {
+	.key = (uintptr)&nextmount_lock_key,
+	.dag_node = &lockdag_nextmount,
+};
+
 uvlong
 nextmount(void)
 {
 	static uvlong next = 0;
-	static Lock lk;
 	uvlong n;
 
-	lock(&lk);
+	borrow_lock(&nextmount_lock);
 	n = ++next;
-	unlock(&lk);
+	borrow_unlock(&nextmount_lock);
 	return n;
 }
 

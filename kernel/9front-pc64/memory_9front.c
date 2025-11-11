@@ -573,6 +573,7 @@ void
 meminit0(void)
 {
 	extern char end[];
+	extern char cpu0data_end[];
 
 	/* CRITICAL: Zero the memmap allocator structure
 	 * It's in .cpu0_data (not BSS), so it's not zeroed by boot code */
@@ -597,7 +598,7 @@ meminit0(void)
 	/*
 	 * Memory below CPU0END is reserved for the kernel.
 	 */
-	memreserve(0, PADDR(CPU0END));
+	memreserve(0, PADDR(cpu0data_end));
 
 	/*
 	 * Addresses below 16MB default to be upper

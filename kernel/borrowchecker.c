@@ -15,6 +15,7 @@ extern struct BorrowPool borrowpool;
 extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 #include "fns.h"
 #include "borrowchecker.h"
+#include "lock_dag.h"
 
 /* Global borrow pool */
 struct BorrowPool borrowpool;
@@ -30,6 +31,7 @@ borrowinit(void)
 {
 	ulong i;
 	
+	lockdag_init();
 	/* Always use bootstrap allocator for early boot - no xinit dependency */
 	borrowpool.nbuckets = 1024; /* Arbitrary size, can be tuned */
 	borrowpool.owners = bootstrap_alloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
