@@ -223,50 +223,23 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 	u64int pml4_idx, pdp_idx, pd_idx;
 	u64int *pdp, *pd;
 	u64int pdp_phys, pd_phys;
-
-	dbghex("map_range_2mb: virt_start (before align) = ", virt_start);
+	u64int orig_size = size;
+	u64int page_count = 0;
 
 	virt_start &= ~0x1FFFFFULL;  /* Align to 2MB */
 	phys_start &= ~0x1FFFFFULL;
 	size = (size + 0x1FFFFF) & ~0x1FFFFFULL;
 
-	dbghex("map_range_2mb: virt_start (after align) = ", virt_start);
-
 	virt_end = virt_start + size;
-
-	/* Special check: always print for debugging */
-	if(virt_start == 0xffffffffffe00000ULL){
-		uartputs("!!! EXACT MATCH 0xffffffffffe00000 !!!\n", 40);
-		if(virt_end == 0){
-			uartputs("!!! virt_end == 0, WRAPAROUND CONFIRMED !!!\n", 45);
-		}
-	}
 
 	/* Handle address space wrap: if virt_end wrapped to a small value, we're mapping to end of address space */
 	int wraps = (virt_end < virt_start);
-	if(wraps){
-		uartputs("map_range_2mb: *** WRAPAROUND DETECTED! ***\n", 44);
-	}
-
-	/* Debug first iteration */
-	uartputs("map_range_2mb: about to enter loop\n", 35);
-	int first_iter = 1;
 
 	for(virt = virt_start, phys = phys_start; wraps ? (virt >= virt_start) : (virt < virt_end); virt += 2*MiB, phys += 2*MiB) {
-		if(first_iter){
-			first_iter = 0;
-			dbghex("map_range_2mb: virt (loop var) = ", virt);
-		}
-
 		/* Calculate indices */
 		pml4_idx = (virt >> 39) & 0x1FF;
 		pdp_idx = (virt >> 30) & 0x1FF;
 		pd_idx = (virt >> 21) & 0x1FF;
-
-		if(first_iter == 0){
-			dbghex("map_range_2mb: pml4_idx = ", pml4_idx);
-			first_iter = -1;
-		}
 
 		/* Get or create PDP */
 		if((pml4[pml4_idx] & PTEVALID) == 0) {
@@ -290,16 +263,19 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 
 		/* Map 2MB page directly in PD */
 		pd[pd_idx] = phys | perms;  /* perms should include PTESIZE */
+		page_count++;
 	}
 
-	/* Debug: verify PML4 entries were actually set */
-	uartputs("map_range_2mb: checking PML4 after mapping\n", 43);
-	for(int idx = 0; idx < 512; idx++){
-		if(pml4[idx] & PTEVALID){
-			uartputs("  PML4 entry is valid\n", 24);
-			break;
-		}
-	}
+	/* Print single summary line */
+	uartputs("map_range_2mb: mapped ", 22);
+	dbghex("", orig_size);
+	uartputs(" bytes (", 8);
+	dbghex("", page_count);
+	uartputs(" x 2MB pages) phys ", 19);
+	dbghex("", phys_start);
+	uartputs(" -> virt ", 9);
+	dbghex("", virt_start);
+	uartputs("\n", 1);
 }
 
 /* Map a virtual address range to physical with given permissions */
