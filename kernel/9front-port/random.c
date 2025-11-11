@@ -4,6 +4,7 @@
 #include	"dat.h"
 #include	"fns.h"
 #include <error.h>
+#include "lock_borrow.h"
 
 #include	"libsec.h"
 
@@ -16,6 +17,7 @@ static struct
 	Chachastate chacha;
 } *rs;
 static int random_initialized;
+static LockDagNode lockdag_random_lrand = LOCKDAG_NODE("random-lrand");
 
 typedef struct Seedbuf Seedbuf;
 struct Seedbuf
@@ -90,7 +92,7 @@ randominit(void)
 	rs = secalloc(sizeof(*rs));
 	print("randominit: state allocated, acquiring qlock\n");
 	qlock(&rs->qlock);	/* randomseed() unlocks once seeded */
-	print("randominit: launching randomseed kproc\n");
+	print("randominit: qlock acquired, launching randomseed kproc\n");
 	kproc("randomseed", randomseed, nil);
 	print("randominit: kproc launched, returning\n");
 }
@@ -138,7 +140,10 @@ lrand(void)
 	/* xoroshiro128+ algorithm */
 	static int seeded = 0;
 	static uvlong s[2];
-	static Lock lk;
+	static BorrowLock lrand_lock = {
+		.key = (uintptr)s,
+		.dag_node = &lockdag_random_lrand,
+	};
 	ulong r;
 
 	if(seeded == 0){
@@ -146,12 +151,12 @@ lrand(void)
 		seeded = (s[0] | s[1]) != 0;
 	}
 
-	lock(&lk);
+	borrow_lock(&lrand_lock);
 	r = (s[0] + s[1]) >> 33;
 	s[1] ^= s[0];
  	s[0] = (s[0] << 55 | s[0] >> 9) ^ s[1] ^ (s[1] << 14);
  	s[1] = (s[1] << 36 | s[1] >> 28);
-	unlock(&lk);
+	borrow_unlock(&lrand_lock);
 
  	return r;
 }
