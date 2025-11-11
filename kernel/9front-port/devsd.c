@@ -92,7 +92,7 @@ sdprobe(void)
 static void
 sdinit(void)
 {
-	/* nothing; we probe during reset */
+	/* Nothing - probing happens during reset */
 }
 
 static Chan*
@@ -350,5 +350,6 @@ Dev sdisabidevtab = {
 static void
 sdreset(void)
 {
+	/* Probe storage devices during reset, like 9front does */
 	sdprobe();
 }

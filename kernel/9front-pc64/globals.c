@@ -11,7 +11,7 @@
 #include "error.h"
 
 /* Memory constants defined in memory_9front.c */
-extern u32int MemMin;		/* set by l.s */
+extern u64int MemMin;		/* set by bootargsinit() */
 
 extern uvlong rdtsc(void);
 

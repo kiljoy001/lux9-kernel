@@ -17,7 +17,7 @@ limine_requests_start_marker:
 limine_base_revision:
     .quad 0xf9562b2d5c95a6c8  /* ID[0] */
     .quad 0x6a7b384944536bdc  /* ID[1] */
-    .quad 2                   /* Revision 2 - for Kernel Address request support */
+    .quad 0                   /* Revision 0 - MUST be 0 for LIMINE_BASE_REVISION_SUPPORTED */
 
 /* Limine protocol requests - pointers to actual requests */
 .section .limine_requests, "aw", @progbits
@@ -103,6 +103,31 @@ kernel_address_request:
     .quad 0xb2644a48c516a487  /* Kernel Address request ID [3] */
     .quad 0                   /* revision */
     .quad 0                   /* response pointer (filled by bootloader) */
+
+/* Export request pointers in the same section for early boot access */
+.align 8
+.global limine_bootloader_info
+.global limine_memmap
+.global limine_framebuffer
+.global limine_hhdm
+.global limine_module
+.global limine_executable_file
+.global limine_kernel_address
+
+limine_bootloader_info:
+    .quad bootloader_info_request
+limine_memmap:
+    .quad memmap_request
+limine_framebuffer:
+    .quad framebuffer_request
+limine_hhdm:
+    .quad hhdm_request
+limine_module:
+    .quad module_request
+limine_executable_file:
+    .quad executable_file_request
+limine_kernel_address:
+    .quad kernel_address_request
 
 /* Limine protocol requests - end marker */
 .section .limine_requests_end, "aw", @progbits
@@ -216,31 +241,6 @@ _start:
     cli
     hlt
     jmp .Lhang
-
-/* Export Limine request responses for kernel access */
-.section .data
-.global limine_bootloader_info
-.global limine_memmap
-.global limine_framebuffer
-.global limine_hhdm
-.global limine_module
-.global limine_executable_file
-.global limine_kernel_address
-
-limine_bootloader_info:
-    .quad bootloader_info_request
-limine_memmap:
-    .quad memmap_request
-limine_framebuffer:
-    .quad framebuffer_request
-limine_hhdm:
-    .quad hhdm_request
-limine_module:
-    .quad module_request
-limine_executable_file:
-    .quad executable_file_request
-limine_kernel_address:
-    .quad kernel_address_request
 
 /* Stack is now defined in linker.ld, not here */
 

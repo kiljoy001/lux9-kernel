@@ -450,10 +450,16 @@ setuppagetables(void)
 	uartputs("setuppagetables: kernel mapping complete\n", 42);
 	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
-	/* Ensure conf.mem is populated */
-	uartputs("setuppagetables: calling ensure_phys_range\n", 45);
-	ensure_phys_range();
-	uartputs("setuppagetables: ensure_phys_range complete\n", 45);
+	/* Set max_physaddr from MemMin (already computed from Limine memory map)
+	 * Don't use ensure_phys_range() yet - conf.mem isn't populated until meminit0() */
+	extern u64int MemMin;
+	if(MemMin > 0)
+		max_physaddr = MemMin;
+	else
+		max_physaddr = 64*MiB;  /* Safe fallback if MemMin not set */
+
+	uartputs("setuppagetables: max_physaddr set from MemMin\n", 47);
+	dbghex("  max_physaddr: ", max_physaddr);
 
 	/* NOTE: We do NOT map high memory (>2GB physical) at KZERO because:
 	 * 1. KZERO only has 2GB of virtual address space before wrapping
@@ -738,9 +744,11 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 	extern uintptr hhdm_base;
 
 	flags = PTEWRITE|PTEVALID;
-	/* Check if this is a user/kmap address that needs process tracking
-	 * Exclude HHDM addresses which are kernel direct-map and don't need up */
-	if(va < VMAP && (va < hhdm_base || va >= hhdm_base + (256ULL*GiB))){
+	/* Check if this is a user address that requires a process context.
+	 * User addresses are < USTKTOP.
+	 * Kernel addresses include: >= KZERO, HHDM range (vmap uses HHDM for device MMIO).
+	 * The kmap region (USTKTOP to KZERO, outside HHDM) also requires up. */
+	if(va < VMAP && !is_hhdm_va(va)){
 		if(up == nil)
 			panic("mmucreate: up nil va=%#p", va);
 		if((p = mmualloc()) == nil)

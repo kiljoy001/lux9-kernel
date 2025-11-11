@@ -17,7 +17,7 @@ enum {
 	KB = 1024,
 };
 
-u32int	MemMin;		/* set by bootargsinit() from Limine memory map */
+u64int	MemMin;		/* set by bootargsinit() from Limine memory map - full 64-bit for modern systems */
 
 void*
 rampage(void)
