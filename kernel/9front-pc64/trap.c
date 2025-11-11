@@ -225,24 +225,19 @@ trap(Ureg *ureg)
 			panic("%s", excname[vno]);
 		panic("unknown trap/intr: %d", vno);
 	}
-	print("K");  /* Mark that we reached out label */
 out:
 	intret_debug_stage = 1;
-	print("L");
 	splhi();
 	intret_debug_stage = 2;
-	print("M");
 	if(user){
 		if(up->procctl || up->nnote)
 			donotify(ureg);
 		kexit(ureg);
 	}
 	intret_debug_stage = 3;
-	print("N");
 	if(vno != VectorCNA)
 		fpukexit(ureg);
 	intret_debug_stage = 4;
-	print("O\n");
 }
 
 void
