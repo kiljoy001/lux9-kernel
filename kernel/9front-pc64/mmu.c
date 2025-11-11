@@ -210,6 +210,8 @@ virt2phys(void *virt)
 	if(va >= VMAP)
 		return va - VMAP;
 
+	if(is_hhdm_va(va))
+		return hhdm_phys((void*)va);
 	/* Already physical */
 	return va;
 }
