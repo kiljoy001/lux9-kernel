@@ -1187,20 +1187,15 @@ void*
 poolalloc(Pool *p, ulong n)
 {
 	void *v;
-	extern void iprint(char*, ...);
 
-	/* Debug removed for cleaner boot - enable for development only */
-	/* iprint("poolalloc: ENTRY p=%p n=%lud\n", p, n); */
-	/* iprint("poolalloc: about to call p->lock(p)\n"); */
+	/* Debug removed - iprint may be causing hangs */
 	p->lock(p);
-	/* iprint("poolalloc: lock acquired\n"); */
 	paranoia {
 		poolcheckl(p);
 	}
 	verbosity {
 		pooldumpl(p);
 	}
-	/* Debug output disabled to avoid output buffer overflow */
 	v = poolallocl(p, n);
 	paranoia {
 		poolcheckl(p);

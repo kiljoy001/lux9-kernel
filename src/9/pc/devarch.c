@@ -499,15 +499,18 @@ cpuidprint(void)
 int
 cpuidentify(void)
 {
-	int family, model;
+	int family, model, i;
 	X86type *t, *tab;
 	ulong regs[4];
 	uintptr cr4;
 
 	cpuid(Highstdfunc, 0, regs);
-	memmove(m->cpuidid,   &regs[1], BY2WD);	/* bx */
-	memmove(m->cpuidid+4, &regs[3], BY2WD);	/* dx */
-	memmove(m->cpuidid+8, &regs[2], BY2WD);	/* cx */
+	for(i = 0; i < 4; i++)
+		m->cpuidid[i] = (regs[1] >> (i*8)) & 0xFF;
+	for(i = 0; i < 4; i++)
+		m->cpuidid[4+i] = (regs[3] >> (i*8)) & 0xFF;
+	for(i = 0; i < 4; i++)
+		m->cpuidid[8+i] = (regs[2] >> (i*8)) & 0xFF;
 	m->cpuidid[12] = '\0';
 
 	cpuid(Procsig, 0, regs);
