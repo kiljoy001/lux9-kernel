@@ -159,7 +159,8 @@ lapictimerinit(void)
 	a = &lapictimer[m->machno];
 	a->tdx = 0;
 Retry:
-	lapicw(LapicTIMER, ApicIMASK|LapicCLKIN|LapicONESHOT|(VectorPIC+IrqTIMER));
+	/* Don't mask during calibration - some QEMU versions won't count if masked */
+	lapicw(LapicTIMER, LapicCLKIN|LapicONESHOT|(VectorPIC+IrqTIMER));
 	lapicw(LapicTDCR, lapictdxtab[a->tdx]);
 
 	x = fastticks(&hz);

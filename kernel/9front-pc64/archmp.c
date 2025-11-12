@@ -293,6 +293,11 @@ pcmpinit(void)
 	void *va;
 
 	print("pcmpinit: ENTRY\n");
+
+	/* Initialize i8253 timer first - needed by lapictimerinit() */
+	i8253init();
+	print("pcmpinit: i8253init complete\n");
+
 	print("pcmpinit: pcmp=%#p\n", pcmp);
 	if(pcmp == nil) {
 		extern PCArch archgeneric;
@@ -389,7 +394,7 @@ static int identify(void);
 extern int i8259irqno(int, int);
 
 PCArch archmp = {
-.id=		"_MP_",	
+.id=		"_MP_",
 .ident=		identify,
 .reset=		mpreset,
 .intrinit=	pcmpinit,
@@ -397,6 +402,7 @@ PCArch archmp = {
 .intrirqno=	i8259irqno,
 .intron=	lapicintron,
 .introff=	lapicintroff,
+.clockinit=	i8253init,
 .fastclock=	i8253read,
 .timerset=	lapictimerset,
 };
