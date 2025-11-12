@@ -1200,9 +1200,8 @@ poolalloc(Pool *p, ulong n)
 	verbosity {
 		pooldumpl(p);
 	}
-	iprint("poolalloc: calling poolallocl for size %lud\n", n);
+	/* Debug output disabled to avoid output buffer overflow */
 	v = poolallocl(p, n);
-	iprint("poolalloc: poolallocl returned %p for size %lud\n", v, n);
 	paranoia {
 		poolcheckl(p);
 	}
@@ -1212,7 +1211,6 @@ poolalloc(Pool *p, ulong n)
 	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
 	LOG(p, "poolalloc %p %lud = %p\n", p, n, v);
 	p->unlock(p);
-	/* iprint("poolalloc: returning %p\n", v); */
 	return v;
 }
 

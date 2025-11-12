@@ -19,6 +19,14 @@ Queue*	kprintoq;		/* console output, for /dev/kprint */
 ulong	kprintinuse;		/* test and set whether /dev/kprint is open */
 int	iprintscreenputs = 1;
 
+/* Configurable kprint queue size: min 128KB, max 2MB, default 128KB */
+enum {
+	KPRINTQ_MIN = 128*1024,		/* 128KB minimum */
+	KPRINTQ_MAX = 2*1024*1024,	/* 2MB maximum */
+	KPRINTQ_DEFAULT = 128*1024,	/* 128KB default */
+};
+ulong	kprintqsize = KPRINTQ_DEFAULT;
+
 int	panicking;
 
 char	*sysname;
@@ -56,15 +64,56 @@ Cmdtab drivermsg[] =
 static void	serialoqkick(void*);
 static void	kprintoqkick(void*);
 
+/**
+ * Set kprint queue buffer size from boot parameter.
+ * Usage: kprintqsize=512k or kprintqsize=1m
+ * Enforces min 128KB, max 2MB limits.
+ */
+void
+setkprintqsize(char *val)
+{
+	ulong size;
+	char *p;
+
+	if(val == nil)
+		return;
+
+	size = strtoul(val, &p, 0);
+	if(p != nil && *p != '\0'){
+		/* Handle k/K/m/M suffix */
+		if(*p == 'k' || *p == 'K')
+			size *= 1024;
+		else if(*p == 'm' || *p == 'M')
+			size *= 1024*1024;
+	}
+
+	/* Clamp to valid range */
+	if(size < KPRINTQ_MIN)
+		size = KPRINTQ_MIN;
+	if(size > KPRINTQ_MAX)
+		size = KPRINTQ_MAX;
+
+	kprintqsize = size;
+}
+
 void
 printinit(void)
 {
+	char msg[128];
+
 	if(kprintoq == nil){
-		kprintoq = qopen(8*1024, Qcoalesce, kprintoqkick, nil);
+		/* Clamp buffer size to valid range */
+		if(kprintqsize < KPRINTQ_MIN)
+			kprintqsize = KPRINTQ_MIN;
+		if(kprintqsize > KPRINTQ_MAX)
+			kprintqsize = KPRINTQ_MAX;
+
+		kprintoq = qopen(kprintqsize, Qcoalesce, kprintoqkick, nil);
 		if(kprintoq == nil){
-			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 72);
+			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 85);
 		} else {
-			uartputs("printinit: kprintoq initialized successfully\n", 45);
+			snprint(msg, sizeof(msg), "printinit: kprintoq initialized (%lud KB buffer)\n", kprintqsize/1024);
+			uartputs(msg, strlen(msg));
 			qsetnoblock_early(kprintoq, 1);
 		}
 	}
@@ -578,7 +627,13 @@ consopen(Chan *c, int omode)
 			error(Einuse);
 		}
 		if(kprintoq == nil){
-			kprintoq = qopen(8*1024, Qcoalesce, 0, 0);
+			/* Clamp buffer size to valid range */
+			if(kprintqsize < KPRINTQ_MIN)
+				kprintqsize = KPRINTQ_MIN;
+			if(kprintqsize > KPRINTQ_MAX)
+				kprintqsize = KPRINTQ_MAX;
+
+			kprintoq = qopen(kprintqsize, Qcoalesce, 0, 0);
 			if(kprintoq == nil){
 				c->flag &= ~COPEN;
 				error(Enomem);

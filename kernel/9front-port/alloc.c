@@ -210,9 +210,7 @@ malloc(ulong size)
 {
 	void *v;
 
-	iprint("malloc: size=%lud\n", size);
 	v = poolalloc(mainmem, size+Npadlong*sizeof(ulong));
-	iprint("malloc: poolalloc returned %p\n", v);
 	if(v == nil)
 		return nil;
 	if(Npadlong){
@@ -220,9 +218,7 @@ malloc(ulong size)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
-	iprint("malloc: about to memset v=%p size=%lud\n", v, size);
 	memset(v, 0, size);
-	iprint("malloc: memset complete, returning %p\n", v);
 	return v;
 }
 

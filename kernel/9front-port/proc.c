@@ -777,43 +777,26 @@ newproc(void)
 	char *b;
 	Proc *p;
 
-	iprint("newproc: ENTRY\n");
 	lock(&procalloc);
-	iprint("newproc: acquired procalloc lock\n");
 	p = procalloc.free;
-	iprint("newproc: procalloc.free=%p\n", p);
 	if(p == nil){
-		iprint("newproc: procalloc.free is nil, allocating new proc\n");
 		if(procalloc.nextindex >= conf.nproc){
-			iprint("newproc: no more procs available (nextindex=%d >= nproc=%d)\n", procalloc.nextindex, conf.nproc);
 			unlock(&procalloc);
 			return nil;
 		}
-		iprint("newproc: calling malloc for KSTACK+Proc\n");
 		b = malloc(KSTACK+sizeof(Proc));
-		iprint("newproc: malloc returned %p\n", b);
 		if(b == nil){
 			unlock(&procalloc);
 			return nil;
 		}
 		p = (Proc*)(b + KSTACK);
-		/* Debug: verify p is not in runq range */
-		if((uintptr)p >= (uintptr)runq && (uintptr)p < (uintptr)(runq + Nrq)){
-		}
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
-		print("newproc: allocated new proc at %p with index %d\n", p, p->index);
 	}
-	print("newproc: about to assert p->state == Dead\n");
 	assert(p->state == Dead);
-	print("newproc: assert passed\n");
-	iprint("newproc: about to access p->qnext\n");
 	procalloc.free = p->qnext;
-	iprint("newproc: about to set p->qnext = nil\n");
 	p->qnext = nil;
-	iprint("newproc: about to unlock procalloc\n");
 	unlock(&procalloc);
-	print("newproc: released procalloc lock\n");
 
 	p->psstate = nil;
 	p->state = New;
@@ -1711,16 +1694,12 @@ kproc(char *name, void (*func)(void *), void *arg)
 	static Pgrp *kpgrp;
 	Proc *p;
 
-	iprint("kproc: creating '%s'\n", name);
 	while((p = newproc()) == nil){
-		iprint("kproc: newproc returned nil, calling freebroken\n");
 		freebroken();
 		resrcwait("no procs for kproc");
 	}
-	iprint("kproc: newproc returned p=%p\n", p);
 
 	qlock(&p->debug);
-	iprint("kproc: acquired debug lock\n");
 	if(up != nil){
 		p->slash = up->slash;
 		p->dot = up->slash;	/* unlike fork, do not inherit the dot for kprocs */

@@ -92,11 +92,21 @@ create_owner(uintptr key)
 	ulong hash = borrow_hash(key);
 	struct BorrowOwner *owner;
 
-	/* Always use bootstrap allocator for early boot */
-	owner = bootstrap_alloc(sizeof(struct BorrowOwner));
-	if (owner == nil) {
-		print("create_owner: bootstrap_alloc failed for BorrowOwner\n");
-		return nil;
+	/* Use xalloc after initialization, bootstrap during early boot */
+	if (xinit_done) {
+		owner = xalloc(sizeof(struct BorrowOwner));
+		if (owner == nil) {
+			print("create_owner: xalloc failed for BorrowOwner\n");
+			return nil;
+		}
+		owner->alloc_source = ALLOC_XALLOC;
+	} else {
+		owner = bootstrap_alloc(sizeof(struct BorrowOwner));
+		if (owner == nil) {
+			print("create_owner: bootstrap_alloc failed for BorrowOwner\n");
+			return nil;
+		}
+		owner->alloc_source = ALLOC_BOOTSTRAP;
 	}
 
 	owner->key = key;
@@ -111,7 +121,6 @@ create_owner(uintptr key)
 	owner->borrow_deadline_ns = 0;
 	owner->borrow_count = 0;
 	owner->next = borrowpool.owners[hash].head;
-	owner->alloc_source = ALLOC_BOOTSTRAP;  /* Track allocation source */
 	borrowpool.owners[hash].head = owner;
 
 	borrowpool.nowners++;
@@ -305,17 +314,26 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 		}
 	}
 
-	/* Allocate new shared borrower node */
-	sb = bootstrap_alloc(sizeof(struct SharedBorrower));
-	if (sb == nil) {
-		iunlock(&borrowpool.lock);
-		return BORROW_ENOMEM;
+	/* Allocate new shared borrower node - use xalloc after initialization */
+	if (xinit_done) {
+		sb = xalloc(sizeof(struct SharedBorrower));
+		if (sb == nil) {
+			iunlock(&borrowpool.lock);
+			return BORROW_ENOMEM;
+		}
+		sb->alloc_source = ALLOC_XALLOC;
+	} else {
+		sb = bootstrap_alloc(sizeof(struct SharedBorrower));
+		if (sb == nil) {
+			iunlock(&borrowpool.lock);
+			return BORROW_ENOMEM;
+		}
+		sb->alloc_source = ALLOC_BOOTSTRAP;
 	}
 
 	/* Add to front of shared list */
 	sb->proc = borrower;
 	sb->next = own->shared_list;
-	sb->alloc_source = ALLOC_BOOTSTRAP;  /* Track allocation source */
 	own->shared_list = sb;
 
 	own->shared_count++;

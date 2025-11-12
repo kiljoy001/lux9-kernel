@@ -263,6 +263,7 @@ int		pprint(char*, ...);
 void		preempted(int);
 void		prflush(void);
 void		printinit(void);
+void		setkprintqsize(char*);
 ulong		procalarm(ulong);
 void		procctl(void);
 int		procfdprint(Chan*, int, char*, int);

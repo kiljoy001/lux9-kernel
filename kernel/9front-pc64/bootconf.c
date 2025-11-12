@@ -81,8 +81,14 @@ parsebootargs(char *cp)
 void
 bootconfinit(void)
 {
+	char *p;
+
 	nconf = 0;
 	parsebootargs(BOOTARGS);
+
+	/* Check for kprintqsize boot parameter */
+	if((p = getconf("kprintqsize")) != nil)
+		setkprintqsize(p);
 }
 
 char*
