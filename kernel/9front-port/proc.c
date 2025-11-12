@@ -169,6 +169,12 @@ void
 sched(void)
 {
 	int s;
+	static int sched_call_count = 0;
+
+	if(sched_call_count < 5) {
+		iprint("sched: ENTRY #%d, up=%p\n", sched_call_count, up);
+		sched_call_count++;
+	}
 
 	if(m->ilockdepth)
 		panic("cpu%d: ilockdepth %d, last lock %#p at %#p",
@@ -207,7 +213,13 @@ sched(void)
 		splx(s);
 		return;
 	}
+	if(sched_call_count <= 5) {
+		iprint("sched: calling runproc() (up was nil)\n");
+	}
 	up = runproc();
+	if(sched_call_count <= 5) {
+		iprint("sched: runproc() returned %p (%s)\n", up, up ? up->text : "nil");
+	}
 	if(up != m->readied)
 		m->schedticks = m->ticks + HZ/10;
 	m->readied = nil;
@@ -215,9 +227,19 @@ sched(void)
 	up->mach = MACHP(m->machno);
 	up->affinity = m->machno;
 	up->state = Running;
+	if(sched_call_count <= 5) {
+		iprint("sched: about to call mmuswitch(up=%p)\n", up);
+	}
 	mmuswitch(up);
+	if(sched_call_count <= 5) {
+		iprint("sched: mmuswitch returned, about to gotolabel(sp=%#p, pc=%#p)\n",
+			up->sched.sp, up->sched.pc);
+	}
 	gotolabel(&up->sched);
 	/* gotolabel returned - process yielded, go back to top of sched() */
+	if(sched_call_count <= 5) {
+		iprint("sched: gotolabel RETURNED! This means process yielded.\n");
+	}
 }
 
 int
@@ -471,19 +493,35 @@ void
 ready(Proc *p)
 {
 	int s, pri;
+	static int ready_call_count = 0;
+
+	if(ready_call_count < 10) {
+		iprint("ready: ENTRY, proc=%p (%s), state=%s\n",
+			p, p->text, statename[p->state]);
+		ready_call_count++;
+	}
 
 	s = splhi();
 	switch(edfready(p)){
 	default:
+		if(ready_call_count <= 10) {
+			iprint("ready: edfready returned default, returning\n");
+		}
 		splx(s);
 		return;
 	case 0:
 		if(up != p && (!p->wired || p->affinity == m->machno))
 			m->readied = p;	/* group scheduling */
 		pri = reprioritize(p);
+		if(ready_call_count <= 10) {
+			iprint("ready: edfready case 0, pri=%d, m->readied=%p\n", pri, m->readied);
+		}
 		break;
 	case 1:
 		pri = PriEdf;
+		if(ready_call_count <= 10) {
+			iprint("ready: edfready case 1 (EDF), pri=%d\n", pri);
+		}
 		break;
 	}
 	/* FAILSAFE: Ensure p->mach is nil before queueing */
@@ -492,6 +530,11 @@ ready(Proc *p)
 		iprint("ready %s %lud %s pc %p\n",
 			p->text, p->pid, statename[p->state], getcallerpc(&p));
 	} else {
+		if(ready_call_count <= 10) {
+			iprint("ready: queueproc succeeded for %s at pri=%d\n", p->text, pri);
+		}
+	}
+	{
 		void (*pt)(Proc*, int, vlong);
 		pt = proctrace;
 		if(pt != nil)
@@ -631,9 +674,16 @@ runproc(void)
 	ulong start, now;
 	int i;
 	void (*pt)(Proc*, int, vlong);
-
+	static int runproc_call_count = 0;
+	static int search_count = 0;
 
 	start = perfticks();
+
+	if(runproc_call_count < 5) {
+		iprint("runproc: ENTRY #%d, m->readied=%p, runvec=%#x\n",
+			runproc_call_count, m->readied, runvec);
+		runproc_call_count++;
+	}
 
 	/* cooperative scheduling until the clock ticks */
 	if((p = m->readied) != nil && p->mach == nil && p->state == Ready
@@ -641,6 +691,9 @@ runproc(void)
 	&& runq[Nrq-1].head == nil && runq[Nrq-2].head == nil){
 		skipscheds++;
 		rq = &runq[p->priority];
+		if(runproc_call_count <= 5) {
+			iprint("runproc: using m->readied %p (%s)\n", p, p->text);
+		}
 		goto found;
 	}
 
@@ -658,8 +711,16 @@ loop:
 		 *  processor can run given affinity constraints.
 		 *
 		 */
+		if(runproc_call_count <= 5 && search_count < 3) {
+			iprint("runproc: searching runq, iteration i=%d\n", i);
+			search_count++;
+		}
 		for(rq = &runq[Nrq-1]; rq >= runq; rq--){
 			for(p = rq->head; p != nil; p = p->rnext){
+				if(runproc_call_count <= 5) {
+					iprint("runproc: found proc %p (%s) in queue pri=%d\n",
+						p, p->text, (int)(rq - runq));
+				}
 				if(p->affinity < 0 || p->affinity == m->machno
 				|| (!p->wired && i > 0))
 					goto found;
@@ -716,14 +777,21 @@ newproc(void)
 	char *b;
 	Proc *p;
 
+	iprint("newproc: ENTRY\n");
 	lock(&procalloc);
+	iprint("newproc: acquired procalloc lock\n");
 	p = procalloc.free;
+	iprint("newproc: procalloc.free=%p\n", p);
 	if(p == nil){
+		iprint("newproc: procalloc.free is nil, allocating new proc\n");
 		if(procalloc.nextindex >= conf.nproc){
+			iprint("newproc: no more procs available (nextindex=%d >= nproc=%d)\n", procalloc.nextindex, conf.nproc);
 			unlock(&procalloc);
 			return nil;
 		}
+		iprint("newproc: calling malloc for KSTACK+Proc\n");
 		b = malloc(KSTACK+sizeof(Proc));
+		iprint("newproc: malloc returned %p\n", b);
 		if(b == nil){
 			unlock(&procalloc);
 			return nil;
@@ -734,11 +802,18 @@ newproc(void)
 		}
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
+		print("newproc: allocated new proc at %p with index %d\n", p, p->index);
 	}
+	print("newproc: about to assert p->state == Dead\n");
 	assert(p->state == Dead);
+	print("newproc: assert passed\n");
+	iprint("newproc: about to access p->qnext\n");
 	procalloc.free = p->qnext;
+	iprint("newproc: about to set p->qnext = nil\n");
 	p->qnext = nil;
+	iprint("newproc: about to unlock procalloc\n");
 	unlock(&procalloc);
+	print("newproc: released procalloc lock\n");
 
 	p->psstate = nil;
 	p->state = New;
@@ -1217,7 +1292,7 @@ postnotepg(ulong noteid, char *msg, int flag)
 
 /* keep some broken processes around */
 static struct {
-	Lock;
+	Lock lock;
 	int	n;
 	Proc	*p[4];
 } broken;
@@ -1622,8 +1697,11 @@ procflushothers(void)
 void
 linkproc(void)
 {
+	iprint("linkproc: ENTRY for proc %p (%s)\n", up, up->text);
 	spllo();
+	iprint("linkproc: calling kpfun=%p with kparg=%p\n", up->kpfun, up->kparg);
 	(*up->kpfun)(up->kparg);
+	iprint("linkproc: kpfun returned, calling pexit\n");
 	pexit("kproc exiting", 0);
 }
 
@@ -1633,12 +1711,16 @@ kproc(char *name, void (*func)(void *), void *arg)
 	static Pgrp *kpgrp;
 	Proc *p;
 
+	iprint("kproc: creating '%s'\n", name);
 	while((p = newproc()) == nil){
+		iprint("kproc: newproc returned nil, calling freebroken\n");
 		freebroken();
 		resrcwait("no procs for kproc");
 	}
+	iprint("kproc: newproc returned p=%p\n", p);
 
 	qlock(&p->debug);
+	iprint("kproc: acquired debug lock\n");
 	if(up != nil){
 		p->slash = up->slash;
 		p->dot = up->slash;	/* unlike fork, do not inherit the dot for kprocs */
@@ -1687,14 +1769,18 @@ kproc(char *name, void (*func)(void *), void *arg)
 	pidalloc(p);
 
 	qunlock(&p->debug);
+	iprint("kproc: released debug lock\n");
 
 	procpriority(p, PriKproc, 0);
+	iprint("kproc: set priority\n");
 
 	/* Verify kp is still 1 before calling ready */
 	if(p->kp != 1){
 	}
 
+	iprint("kproc: calling ready(p)\n");
 	ready(p);
+	iprint("kproc: ready() returned, '%s' created successfully\n", name);
 }
 
 /*

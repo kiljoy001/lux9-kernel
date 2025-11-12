@@ -20,7 +20,7 @@ enum {
 
 typedef struct Exchctl Exchctl;
 struct Exchctl {
-	QLock;
+	QLock qlock;
 
 	/* Prepared pages tracking */
 	struct {

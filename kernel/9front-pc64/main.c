@@ -328,8 +328,11 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
+	iprint("BOOT[init0]: calling chandevinit\n");
 	chandevinit();
+	iprint("BOOT[init0]: chandevinit returned\n");
 	randominit();
+	iprint("BOOT[init0]: randominit complete\n");
 
 	if(!waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);

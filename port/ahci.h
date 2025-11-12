@@ -319,8 +319,8 @@ enum {
 };
 
 typedef struct {
-	QLock;
-	Rendez;
+	QLock qlock;
+	Rendez rendez;
 	uchar	flag;
 	Sfis	sfis;
 	Afis	fis;

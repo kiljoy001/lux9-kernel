@@ -26,7 +26,7 @@ static Physseg physseg_initial[] = {
 #define ihash(s)	imagealloc.hash[s%IHASHSIZE]
 static struct Imagealloc
 {
-	Lock;
+	Lock lock;
 
 	QLock	ireclaim;	/* mutex on reclaiming idle images */
 

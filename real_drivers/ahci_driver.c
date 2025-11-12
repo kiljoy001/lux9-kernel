@@ -109,7 +109,7 @@ struct Htab {
 };
 
 typedef struct {
-	Lock;
+	Lock lock;
 
 	Ctlr	*ctlr;
 	SDunit	*unit;
@@ -149,7 +149,7 @@ typedef struct {
 } Drive;
 
 struct Ctlr {
-	Lock;
+	Lock lock;
 
 	int	type;
 	int	enabled;

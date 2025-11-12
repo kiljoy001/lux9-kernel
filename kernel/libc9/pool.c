@@ -1187,15 +1187,22 @@ void*
 poolalloc(Pool *p, ulong n)
 {
 	void *v;
+	extern void iprint(char*, ...);
 
+	/* Debug removed for cleaner boot - enable for development only */
+	/* iprint("poolalloc: ENTRY p=%p n=%lud\n", p, n); */
+	/* iprint("poolalloc: about to call p->lock(p)\n"); */
 	p->lock(p);
+	/* iprint("poolalloc: lock acquired\n"); */
 	paranoia {
 		poolcheckl(p);
 	}
 	verbosity {
 		pooldumpl(p);
 	}
+	iprint("poolalloc: calling poolallocl for size %lud\n", n);
 	v = poolallocl(p, n);
+	iprint("poolalloc: poolallocl returned %p for size %lud\n", v, n);
 	paranoia {
 		poolcheckl(p);
 	}
@@ -1205,6 +1212,7 @@ poolalloc(Pool *p, ulong n)
 	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
 	LOG(p, "poolalloc %p %lud = %p\n", p, n, v);
 	p->unlock(p);
+	/* iprint("poolalloc: returning %p\n", v); */
 	return v;
 }
 

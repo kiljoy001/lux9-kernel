@@ -285,16 +285,16 @@ typedef struct Ctlr {
 	Prd*	prdt;			/* physical region descriptor table */
 	void	(*irqack)(Ctlr*);
 
-	QLock;				/* current command */
+	QLock qlock;				/* current command */
 	Drive*	curdrive;
 	int	command;		/* last command issued (debugging) */
-	Rendez;
+	Rendez rendez;
 	int	done;
 	uint	nrq;
 	uint	nildrive;
 	uint	bsy;
 
-	Lock;				/* register access */
+	Lock lock;				/* register access */
 } Ctlr;
 
 typedef struct Drive {
@@ -320,7 +320,7 @@ typedef struct Drive {
 	char	firmware[8+1];
 	char	model[40+1];
 
-	QLock;				/* drive access */
+	QLock qlock;				/* drive access */
 	int	command;		/* current command */
 	int	write;
 	uchar*	data;

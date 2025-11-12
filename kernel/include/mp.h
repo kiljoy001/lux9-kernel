@@ -179,7 +179,7 @@ typedef struct Apic {
 	ulong	paddr;
 	int	flags;			/* PcmpBP|PcmpEN */
 
-	Lock;				/* I/O APIC: register access */
+	Lock lock;				/* I/O APIC: register access */
 	int	mre;			/* I/O APIC: maximum redirection entry */
 	int	gsibase;		/* I/O APIC: global system interrupt base (acpi) */
 

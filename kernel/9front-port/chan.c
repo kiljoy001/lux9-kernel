@@ -13,7 +13,7 @@ enum
 
 static struct Chanalloc
 {
-	Lock;
+	Lock lock;
 	int	fid;
 	Chan	*free;
 	Chan	*list;
@@ -162,11 +162,13 @@ chandevinit(void)
 	int i;
 
 	for(i=0; devtab[i] != nil; i++){
-		print("chandevinit: initializing devtab[%d]=%s (%C)\n", i, devtab[i]->name, devtab[i]->dc);
+		iprint("chandevinit: initializing devtab[%d]=%s (%C)\n", i, devtab[i]->name, devtab[i]->dc);
 		devtab[i]->init();
-		print("chandevinit: finished devtab[%d]=%s\n", i, devtab[i]->name);
+		iprint("chandevinit: finished devtab[%d]=%s\n", i, devtab[i]->name);
 	}
+	iprint("chandevinit: about to create closeproc kproc\n");
 	kproc("closeproc", closeproc, nil);
+	iprint("chandevinit: closeproc kproc created, returning\n");
 }
 
 void
