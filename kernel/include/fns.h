@@ -491,3 +491,32 @@ void	pebble_cleanup(Proc*);
 /* Interrupt handling functions */
 void	intrdisable(int, void (*)(Ureg *, void *), void*, int, char*);
 void	intrenable(int, void (*)(Ureg*, void*), void*, int, char*);
+
+/* Additional low-level functions */
+void	idlehands(void);
+int	tas(ulong*);  /* Updated to match architecture-specific declaration */
+/* coherence() is declared as function pointer in arch-specific fns.h */
+extern void	(*coherence)(void);
+void	SET(void*);
+/* addarchfile() is declared in arch-specific fns.h with proper signature */
+Dirtab*	addarchfile(char*, int, long(*)(Chan*,void*,long,vlong), long(*)(Chan*,void*,long,vlong));
+/* I/O port access functions */
+ushort		ins(int port);  /* Input from I/O port */
+void		outs(int port, ushort value);  /* Output to I/O port */
+
+/* Memory and page ownership functions */
+uintptr	cankaddr(uintptr);  /* Check if address in kernel address space - matches arch signature */
+enum PageOwnError	pageown_acquire(Proc*, uintptr, u64int);  /* Acquire page ownership */
+enum PageOwnError	pageown_release(Proc*, uintptr);  /* Release page ownership */
+void	pageown_cleanup_process(Proc*);  /* Clean up page ownership for process */
+
+/* Architecture-specific process functions - declarations handled in arch-specific fns.h */
+void	procsave(Proc*);  /* Save process state */
+void	procrestore(Proc*);  /* Restore process state */
+void	procsetup(Proc*);  /* Setup process state */
+void	procfork(Proc*);  /* Fork process state */
+
+/* MMU and page table functions */
+uintptr*	mmuwalk(uintptr*, uintptr, int, int);  /* Walk page table */
+u64int		getcr3(void);  /* Get CR3 register (page directory base) */
+void		putcr3(u64int);  /* Set CR3 register (page directory base) */

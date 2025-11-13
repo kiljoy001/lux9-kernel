@@ -16,17 +16,15 @@
 
 static int early_uart_initialized = 0;
 
-/* Direct port I/O (borrowed from existing implementation) */
+/* Use existing kernel I/O functions */
 static inline void early_outb(int port, uchar data)
 {
-	asm volatile("outb %0, %1" : : "a"(data), "d"(port));
+	outb(port, data);
 }
 
 static inline uchar early_inb(int port)
 {
-	uchar data;
-	asm volatile("inb %1, %0" : "=a"(data) : "d"(port));
-	return data;
+	return inb(port);
 }
 
 /* Early UART character output */

@@ -60,7 +60,7 @@ static PCArch* knownarch[] = {
  * Add a file to the #P listing.  Once added, you can't delete it.
  * You can't add a file with the same name as one already there,
  * and you get a pointer to the Dirtab entry so you can do things
- * like change the Qid version.  Changing the Qid path is disallowed.
+ * * like change the Qid version.  Changing the Qid path is disallowed.
  */
 Dirtab*
 addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn)
@@ -352,7 +352,7 @@ cmpswap386(long *addr, long old, long new)
  * On VMware, it's safe (and a huge win) to set this to nop.
  * Aux/vmware does this via the #P/archctl file.
  */
-void (*coherence)(void) = nop;
+extern void (*coherence)(void);
 
 int (*cmpswap)(long*, long, long) = cmpswap386;
 

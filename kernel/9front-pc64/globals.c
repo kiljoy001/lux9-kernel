@@ -315,6 +315,9 @@ void links(void) {}
 void ramdiskinit(void) {}
 
 /* Coherence function pointer - implementation in l.S */
+extern void coherence_impl(void);
+void (*coherence)(void) = coherence_impl;
+
 /* Additional global function pointers and buffers */
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;

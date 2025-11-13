@@ -326,6 +326,12 @@ typedef struct {
 	Afis	fis;
 	Alist	*list;
 	Actab	*ctab;
+	
+	/* 9front compatibility members */
+	uchar	feat;		/* feature flags */
+	uchar	udma;		/* UDMA mode */
+	uchar	physshift;	/* physical shift */
+	uchar	physalign;	/* physical alignment */
 } Aportm;
 
 typedef struct {

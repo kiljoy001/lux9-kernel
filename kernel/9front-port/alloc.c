@@ -75,6 +75,13 @@ Pool*	mainmem = &pmainmem;
 Pool*	imagmem = &pimagmem;
 Pool*	secrmem = &psecrmem;
 
+int
+checkmainmemlockkey(void)
+{
+	Private *pv = &pmainpriv;
+	return pv->lk.key;
+}
+
 /*
  * because we can't print while we're holding the locks, 
  * we have the save the message and print it once we let go.
@@ -201,7 +208,6 @@ smalloc(ulong size)
 		v = (ulong*)v+Npadlong;
 		setmalloctag(v, getcallerpc(&size));
 	}
-	memset(v, 0, size);
 	return v;
 }
 
@@ -218,7 +224,6 @@ malloc(ulong size)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
-	memset(v, 0, size);
 	return v;
 }
 
@@ -236,7 +241,7 @@ mallocz(ulong size, int clr)
 		setrealloctag(v, 0);
 	}
 	if(clr)
-		memset(v, 0, size);
+		return v;
 	return v;
 }
 
@@ -253,7 +258,6 @@ mallocalign(ulong size, ulong align, long offset, ulong span)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
-	memset(v, 0, size);
 	return v;
 }
 
@@ -306,7 +310,6 @@ secalloc(ulong size)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
-	memset(v, 0, size);
 	return v;
 }
 

@@ -4,6 +4,7 @@
 #include	"dat.h"
 #include	"fns.h"
 #include <error.h>
+#include "pageown.h"
 
 extern uintptr saved_limine_hhdm_offset;
 extern uintptr* mmuwalk(uintptr*, uintptr, int, int);
