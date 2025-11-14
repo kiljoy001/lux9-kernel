@@ -12,10 +12,15 @@ BUILD_DIR := build
 OUTPUT_DIR := output
 
 # Build targets
-.PHONY: all kernel userspace drivers os clean test dev ci help
+.PHONY: iso all kernel userspace drivers os clean test dev ci help
 
 # Default target
 all: os
+
+# Main ISO build target - RECOMMENDED COMMAND
+iso: kernel userspace drivers os
+	@echo "Complete ISO build finished: os/lux9.iso"
+	@ls -lh os/lux9.iso
 
 # Individual component builds
 kernel:
@@ -65,10 +70,12 @@ clean:
 
 help:
 	@echo "Lux9 Build System Targets:"
-	@echo "  all           - Build complete OS"
+	@echo "  iso           - Build complete bootable ISO (RECOMMENDED)"
+	@echo "  all           - Build complete OS (alias for iso)"
 	@echo "  kernel        - Build kernel only"
 	@echo "  userspace     - Build userspace only"
-	@echo "  os            - Build complete OS"
-	@echo "  dev           - Development build"
-	@echo "  test          - Run all tests"
+	@echo "  drivers       - Build userspace drivers only"
+	@echo "  os            - Create bootable ISO from components"
 	@echo "  clean         - Clean all builds"
+	@echo "  dev           - Development build (fast)"
+	@echo "  test          - Run all tests"

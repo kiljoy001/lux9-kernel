@@ -52,7 +52,7 @@ PEBBLE_O := $(PEBBLE_C:.c=.o)
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
 
-.PHONY: all clean count iso run
+.PHONY: all clean count iso run help
 
 all: $(KERNEL)
 
@@ -97,43 +97,33 @@ test-build:
 	$(CC) $(CFLAGS) -c kernel/9front-port/alloc.c -o /tmp/test.o
 	@echo "✓ Basic compilation works!"
 
-iso: $(KERNEL) userspace/initrd.tar
+iso: $(KERNEL) userspace/build/initrd.tar
 	@echo "Creating ISO image..."
-	@# Check for required tools
+	@echo "Checking for xorriso..."
 	@which xorriso > /dev/null || (echo "Error: xorriso not found. Please install xorriso package." && exit 1)
-	@# Use local limine if available, otherwise try system limine
-	@if [ -d "boot/limine" ] && [ -f "boot/limine/limine-bios.sys" ]; then \
-		LIMINE_DIR="boot/limine"; \
-	elif [ -d "/usr/local/share/limine" ]; then \
-		LIMINE_DIR="/usr/local/share/limine"; \
-	elif [ -d "/usr/share/limine" ]; then \
-		LIMINE_DIR="/usr/share/limine"; \
-	else \
-		echo "Warning: Limine files not found. ISO may not be bootable."; \
-		LIMINE_DIR=""; \
-	fi; \
-	rm -rf iso_root; \
-	mkdir -p iso_root/boot iso_root/boot/limine iso_root/EFI/BOOT; \
-	cp $(KERNEL) iso_root/boot/; \
-	cp userspace/initrd.tar iso_root/boot/; \
-	cp limine.conf iso_root/boot/limine/; \
-	if [ -n "$$LIMINE_DIR" ]; then \
-		cp "$$LIMINE_DIR/limine-bios.sys" iso_root/boot/limine/ 2>/dev/null || true; \
-		cp "$$LIMINE_DIR/limine-bios-cd.bin" iso_root/boot/limine/ 2>/dev/null || true; \
-		cp "$$LIMINE_DIR/limine-uefi-cd.bin" iso_root/boot/limine/ 2>/dev/null || true; \
-		cp "$$LIMINE_DIR/BOOTX64.EFI" iso_root/EFI/BOOT/ 2>/dev/null || true; \
-	fi; \
-	xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
+	@echo "Setting up directory structure..."
+	@rm -rf iso_root
+	@mkdir -p iso_root/boot iso_root/boot/limine iso_root/EFI/BOOT
+	@echo "Copying kernel and userspace..."
+	@cp $(KERNEL) iso_root/boot/
+	@cp userspace/build/initrd.tar iso_root/boot/
+	@cp limine.conf iso_root/boot/limine/
+	@echo "Checking for Limine bootloader files..."
+	@[ -f boot/limine/bin/limine-bios.sys ] && echo "Found local Limine files" || echo "No local Limine found"
+	@cp boot/limine/bin/limine-bios.sys iso_root/boot/limine/ 2>/dev/null || echo "No limine-bios.sys found"
+	@cp boot/limine/bin/limine-bios-cd.bin iso_root/boot/limine/ 2>/dev/null || echo "No limine-bios-cd.bin found"
+	@cp boot/limine/bin/limine-uefi-cd.bin iso_root/boot/limine/ 2>/dev/null || echo "No limine-uefi-cd.bin found"
+	@cp boot/limine/bin/BOOTX64.EFI iso_root/EFI/BOOT/ 2>/dev/null || echo "No BOOTX64.EFI found"
+	@echo "Creating ISO with xorriso..."
+	@xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o lux9.iso 2>/dev/null || true; \
-	if [ -n "$$LIMINE_DIR" ] && [ -f "$$LIMINE_DIR/limine" ]; then \
-		"$$LIMINE_DIR/limine" bios-install lux9.iso 2>/dev/null || true; \
-	elif command -v limine >/dev/null 2>&1; then \
-		limine bios-install lux9.iso 2>/dev/null || true; \
-	fi; \
-	rm -rf iso_root; \
+		iso_root -o lux9.iso
+	@echo "Installing boot loader..."
+	@[ -f boot/limine/bin/limine ] && boot/limine/bin/limine bios-install lux9.iso 2>/dev/null || \
+	( command -v limine >/dev/null 2>&1 && limine bios-install lux9.iso 2>/dev/null || echo "Could not install boot loader" )
+	@rm -rf iso_root
 	@echo "✓ Created lux9.iso"
 
 run: $(KERNEL)
@@ -143,3 +133,16 @@ run: $(KERNEL)
 direct-run: $(KERNEL)
 	@which qemu-system-x86_64 > /dev/null || (echo "Error: qemu-system-x86_64 not found. Please install qemu package." && exit 1)
 	qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL) -no-reboot -display none -serial stdio
+
+help:
+	@echo "Lux9 Build System (GNUmakefile):"
+	@echo "  make          - Build kernel only"
+	@echo "  make all      - Build kernel only"
+	@echo "  make iso      - Build complete bootable ISO (RECOMMENDED)"
+	@echo "  make clean    - Clean all build artifacts"
+	@echo "  make run      - Run kernel in QEMU (with logging)"
+	@echo "  make direct-run - Run kernel in QEMU (direct stdio)"
+	@echo "  make help     - Show this help message"
+	@echo ""
+	@echo "Note: The Makefile in root directory provides additional targets"
+	@echo "Run 'make -f Makefile help' for more detailed build options"

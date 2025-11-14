@@ -8,11 +8,11 @@ BUILD_DIR := build
 ISO_DIR := $(BUILD_DIR)/iso
 
 # Boot loader (requires limine)
-LIMINE_DIR := /home/scott/Repo/limine-c-template-x86-64/limine
-LIMINE_BIOS := $(LIMINE_DIR)/limine-bios.sys
-LIMINE_BIOS_CD := $(LIMINE_DIR)/limine-bios-cd.bin
-LIMINE_UEFI_CD := $(LIMINE_DIR)/limine-uefi-cd.bin
-BOOTX64_EFI := $(LIMINE_DIR)/BOOTX64.EFI
+LIMINE_DIR := ../boot/limine
+LIMINE_BIOS := $(LIMINE_DIR)/bin/limine-bios.sys
+LIMINE_BIOS_CD := $(LIMINE_DIR)/bin/limine-bios-cd.bin
+LIMINE_UEFI_CD := $(LIMINE_DIR)/bin/limine-uefi-cd.bin
+BOOTX64_EFI := $(LIMINE_DIR)/bin/BOOTX64.EFI
 
 # ISO tools
 XORRISO := xorriso
@@ -27,8 +27,12 @@ all: lux9.iso
 # Create bootable ISO
 lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_CD) $(BOOTX64_EFI)
 	@echo "Creating bootable ISO: $@"
+	@echo "Creating ISO directory structure..."
 	@rm -rf $(ISO_DIR)
-	@mkdir -p $(ISO_DIR)/{boot/limine,EFI/BOOT}
+	@mkdir -p $(ISO_DIR)
+	@mkdir -p $(ISO_DIR)/boot/limine
+	@mkdir -p $(ISO_DIR)/EFI/BOOT
+	@echo "Directory structure created"
 	
 	# Copy kernel and initrd
 	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
@@ -55,7 +59,7 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 		$(ISO_DIR) -o $@
 	
 	# Install boot loader
-	@/home/scott/Repo/limine/limine bios-install $@ 2>/dev/null || true
+	@$(LIMINE_DIR)/bin/limine bios-install $@ 2>/dev/null || true
 	
 	@echo "OS image created: $@"
 	@ls -lh $@
