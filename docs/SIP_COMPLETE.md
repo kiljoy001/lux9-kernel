@@ -1,33 +1,51 @@
-# SIP Kernel Infrastructure - COMPLETE
+# SIP Kernel Infrastructure - STATUS UPDATE REQUIRED
 
-## Summary
+**DOCUMENT STATUS**: This document appears to be outdated and requires comprehensive review.
 
-All critical kernel components for Software Isolated Process (SIP) userspace drivers have been implemented and successfully integrated into the Lux9 microkernel.
+**PREVIOUS CLAIM**: "100% COMPLETE" - This was based on earlier development state.
 
-## Implementation Status: ✅ 100% COMPLETE
+**CURRENT REALITY**: See `docs/serious-bugs.md` for actual status.
 
-### Completed Devices (4/4)
+## Historical Context
 
-| Device | Purpose | Lines | Character | Status |
-|--------|---------|-------|-----------|--------|
-| `/dev/mem` | MMIO access | 270 | `m` | ✅ DONE |
-| `/dev/irq` | Interrupt delivery | 436 | `I` | ✅ DONE |
-| `/dev/dma` | DMA buffers | 363 | `D` | ✅ DONE |
-| `/dev/pci` | Device enumeration | 463 | `P` | ✅ DONE |
+This document described SIP (Software Isolated Process) infrastructure that was claimed complete in an earlier development phase. The kernel components described may have been implemented but are not currently accessible due to system-level blockers.
 
-**Total:** 1,532 lines of kernel code
+## Current Blockers
 
-## Architecture Overview
+**System Init Issues**:
+- All syscall stubs return failure (-1)
+- Cannot execute userspace programs or servers
+- Even if SIP devices exist, they cannot be accessed
 
-```
-┌─────────────────────────────────────────────────────┐
-│ Userspace AHCI Driver (Go)                          │
-│                                                      │
-│ 1. Find AHCI controller:                            │
-│    cat /dev/pci/bus | grep AHCI                    │
-│    → "0000:00:1f.2 vendor=0x8086 device=0x2922"    │
-│                                                      │
-│ 2. Get BAR address:                                 │
+**Hardware Foundation Issues**:
+- Interrupt system not initialized (irqinit empty stub)
+- PCI system returns immediately without discovery
+- Modern hardware invisible to kernel
+
+## Reality Check
+
+While kernel-level device implementation may exist, the **user accessibility** is completely blocked by:
+
+1. **No working syscalls** - Userspace cannot interact with kernel
+2. **No hardware interrupts** - Modern devices cannot signal kernel  
+3. **No PCI enumeration** - Devices not discoverable
+
+## Updated Assessment Needed
+
+This document requires complete revision to reflect:
+- Current system init status
+- Actual user accessibility of claimed devices
+- Integration with 9P protocol status
+- Hardware foundation requirements
+
+## Next Steps
+
+1. **Verify current status** of claimed SIP devices
+2. **Update documentation** to reflect actual accessibility
+3. **Integrate with serious-bugs.md** findings
+4. **Revise development priorities** based on current blockers
+
+**Recommendation**: Treat this document as historical context and rely on `docs/serious-bugs.md` for current status.
 │    cat /dev/pci/0000:00:1f.2/ctl                   │
 │    → "bar5: 0xfebf1000 4096"                       │
 │                                                      │

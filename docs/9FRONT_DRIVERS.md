@@ -1,11 +1,19 @@
 # 9front Device Driver Integration for Lux9
 
-## Current Status
-✅ **YES - 9front has excellent storage device drivers we can use!**
+## CURRENT REALITY: BLOCKED BY SYSTEM INIT
 
-## Available 9front Storage Drivers
+**Status**: While 9front has excellent storage drivers, **current system init issues prevent any driver access**.
 
-### PC Architecture Drivers:
+**System Init Blockers**:
+- ❌ All syscall stubs return failure (fork, exec, mount, open, exit, printf)
+- ❌ Cannot execute userspace programs or servers  
+- ❌ No device access possible through userspace
+
+## Historical Context: Available 9front Drivers
+
+**Note**: This document describes potential driver integration that is **currently inaccessible** due to system init issues.
+
+### PC Architecture Drivers (Historical Reference):
 - **`sdide.c`** - IDE/ATAPI driver (Legacy IDE support)
 - **`sdiahci.c`** - AHCI SATA driver (Modern SATA support)  
 - **`sdvirtio.c`** - Virtio block driver (Virtualization)
@@ -14,20 +22,53 @@
 - **`sdmv50xx.c`** - Mylex AcceleRAID 600 driver
 - **`sd53c8xx.c`** - SCSI 53C8xx driver
 
-## Lux9 Driver Infrastructure
+## Current Lux9 Device Status
 
-### Current Device Support:
-1. **`rootdevtab`** - Root filesystem (initrd)
+### Existing Devices (Theoretical Access):
+1. **`rootdevtab`** - Root filesystem (initrd) 
 2. **`consdevtab`** - Console device
-3. **`mntdevtab`** - Mount device
+3. **`mntdevtab`** - Mount device  
 4. **`procdevtab`** - Process filesystem
 
-### Device Interface:
-Lux9 already uses the 9front `Dev` structure interface:
-```c
-struct Dev {
-    int dc;                          /* Device character */
-    char* name;                      /* Device name */
+**Reality**: None accessible due to syscall stub failures.
+
+### SIP Devices (If Implemented):
+- `/dev/mem` - MMIO access
+- `/dev/irq` - Interrupt delivery  
+- `/dev/dma` - DMA buffers
+- `/dev/pci` - Device enumeration
+
+**Reality**: Cannot verify accessibility due to system init blockers.
+
+## Path Forward
+
+**Phase 1: System Init Recovery** (Required First)
+- Implement working syscall stubs
+- Enable userspace program execution
+- Verify basic device access
+
+**Phase 2: Driver Integration** (After System Init)
+- Port 9front storage drivers
+- Implement block device interface
+- Enable persistent storage
+
+**Phase 3: Hardware Testing** (Future)
+- Real hardware testing
+- Virtual machine validation  
+- Performance optimization
+
+## Conclusion
+
+While **9front storage drivers provide excellent potential for Lux9**, the current **system init crisis blocks all progress**. 
+
+**Priority Order**:
+1. **Fix syscalls first** (1-2 days)
+2. **Verify device access** (1 day)  
+3. **Then pursue driver integration** (4-7 weeks as originally estimated)
+
+**Timeline**: Driver integration remains 4-7 weeks once system init is resolved, but this is meaningless until basic userspace execution is possible.
+
+**Recommendation**: Focus on system init recovery before considering any driver development.
     void (*reset)(void);            /* Hardware reset */
     void (*init)(void);             /* Initialization */
     void (*shutdown)(void);         /* Shutdown */

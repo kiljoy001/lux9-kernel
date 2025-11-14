@@ -38,6 +38,10 @@ dbghex(char *label, uvlong value)
 extern uintptr limine_hhdm_offset;
 /* Saved HHDM offset - defined in globals.c, survives CR3 switch */
 extern uintptr saved_limine_hhdm_offset;
+/* Page table protection exclusion data - defined in main.c */
+extern uintptr protected_page_tables_base;
+extern uintptr protected_page_tables_end;
+
 extern char kend[];
 extern uintptr initrd_physaddr;
 extern usize initrd_size;
@@ -965,7 +969,17 @@ kernelro(void)
 
 	/* Now we can modify PTEs - our page tables are writable! */
 	uintptr text_pages = 0, noexec_pages = 0;
+
+	/* CRITICAL: Exclude page table regions to prevent memory allocation crashes */
+	print("kernelro: protecting text section, excluding page tables 0x%lx-0x%lx\n",
+	      protected_page_tables_base, protected_page_tables_end);
+
 	for(va = KZERO; va < kernel_end; va += psz){
+		/* Skip page table regions - keep them writable for memory allocation */
+		if(protected_page_tables_base && protected_page_tables_end &&
+		   va >= protected_page_tables_base && va < protected_page_tables_end){
+			continue;
+		}
 		psz = PGLSZ(0);
 		pte = mmuwalk(active_pml4, va, 0, 0);
 		if(pte == nil){

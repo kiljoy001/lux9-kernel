@@ -20,11 +20,6 @@
 Conf conf;
 int idle_spin;
 
-/* Page table protection exclusion data for kernelro() */
-int panic_debug = 1;  /* Already exists */
-uintptr protected_page_tables_base = 0;  /* Will store active page table base */
-uintptr protected_page_tables_end = 0;   /* Will store computed end address */
-
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
 extern uintptr saved_limine_hhdm_offset;
@@ -38,68 +33,68 @@ confinit(void)
 	ulong kpages;
 
 	if(p = getconf("service")){
-	if(strcmp(p, "cpu") == 0)
-		cpuserver = 1;
-	else if(strcmp(p,"terminal") == 0)
-		cpuserver = 0;
+		if(strcmp(p, "cpu") == 0)
+			cpuserver = 1;
+		else if(strcmp(p,"terminal") == 0)
+			cpuserver = 0;
 	}
 
 	if(p = getconf("*kernelpercent"))
-	userpcnt = 100 - strtol(p, 0, 0);
+		userpcnt = 100 - strtol(p, 0, 0);
 	else
-	userpcnt = 0;
+		userpcnt = 0;
 
 	conf.npage = 0;
 	for(i=0; i<nelem(conf.mem); i++)
-	conf.npage += conf.mem[i].npage;
+		conf.npage += conf.mem[i].npage;
 
 	conf.nproc = 100 + ((conf.npage*BY2PG)/MB)*5;
 	if(cpuserver)
-	conf.nproc *= 3;
+		conf.nproc *= 3;
 	if(conf.nproc > 4000)
-	conf.nproc = 4000;
+		conf.nproc = 4000;
 	/* Temporary: limit to 100 procs for early boot debugging */
 	if(conf.nproc > 100)
-	conf.nproc = 100;
+		conf.nproc = 100;
 	conf.nimage = 200;
 	conf.nswap = conf.nproc*80;
 	conf.nswppo = 4096;
 
 	if(cpuserver) {
-	if(userpcnt < 10)
-		userpcnt = 70;
-	kpages = conf.npage - (conf.npage*userpcnt)/100;
-	conf.nimage = conf.nproc;
+		if(userpcnt < 10)
+			userpcnt = 70;
+		kpages = conf.npage - (conf.npage*userpcnt)/100;
+		conf.nimage = conf.nproc;
 	} else {
-	if(userpcnt < 10) {
-		if(conf.npage*BY2PG < 16*MB)
-			userpcnt = 50;
-		else
-			userpcnt = 60;
-	}
-	kpages = conf.npage - (conf.npage*userpcnt)/100;
+		if(userpcnt < 10) {
+			if(conf.npage*BY2PG < 16*MB)
+				userpcnt = 50;
+			else
+				userpcnt = 60;
+		}
+		kpages = conf.npage - (conf.npage*userpcnt)/100;
 
-	/*
-	 * Make sure terminals with low memory get at least
-	 * 4MB on the first Image chunk allocation.
-	 */
-	if(conf.npage*BY2PG < 16*MB)
-		imagmem->minarena = 4*MB;
+		/*
+		 * Make sure terminals with low memory get at least
+		 * 4MB on the first Image chunk allocation.
+		 */
+		if(conf.npage*BY2PG < 16*MB)
+			imagmem->minarena = 4*MB;
 	}
 
 	/*
 	 * can't go past the end of virtual memory.
 	 */
 	if(kpages > ((uintptr)-KZERO)/BY2PG)
-	kpages = ((uintptr)-KZERO)/BY2PG;
+		kpages = ((uintptr)-KZERO)/BY2PG;
 
 	/* Ensure reasonable memory allocation for userspace */
 	if(conf.npage > 0) {
-	/* Make sure we leave at least 30% of memory for userspace */
-	ulong min_upages = conf.npage * 30 / 100;
-	if(conf.npage - kpages < min_upages) {
-		kpages = conf.npage - min_upages;
-	}
+		/* Make sure we leave at least 30% of memory for userspace */
+		ulong min_upages = conf.npage * 30 / 100;
+		if(conf.npage - kpages < min_upages) {
+			kpages = conf.npage - min_upages;
+		}
 	}
 	
 	conf.upages = conf.npage - kpages;
@@ -116,9 +111,9 @@ confinit(void)
 	 */
 	kpages *= BY2PG;
 	kpages -= conf.nproc*sizeof(Proc*)
-	+ conf.nimage*sizeof(Image)
-	+ conf.nswap
-	+ conf.nswppo*sizeof(Page*);
+		+ conf.nimage*sizeof(Image)
+		+ conf.nswap
+		+ conf.nswppo*sizeof(Page*);
 	mainmem->maxsize = kpages;
 
 	/*
@@ -127,9 +122,9 @@ confinit(void)
 	 */
 	imagmem->maxsize = kpages - (kpages/10);
 	if(p = getconf("*imagemaxmb")){
-	imagmem->maxsize = strtol(p, nil, 0)*MB;
-	if(imagmem->maxsize > mainmem->maxsize)
-		imagmem->maxsize = mainmem->maxsize;
+		imagmem->maxsize = strtol(p, nil, 0)*MB;
+		if(imagmem->maxsize > mainmem->maxsize)
+			imagmem->maxsize = mainmem->maxsize;
 	}
 }
 
@@ -207,158 +202,121 @@ main_after_cr3(void)
 	exchangeinit();
 	uartputs("BOOT: exchangeinit complete\n", 29);
 
-
 	uartputs("main_after_cr3: calling trapinit\n", 35);
 	trapinit();
 	uartputs("main_after_cr3: calling mathinit\n", 35);
 	mathinit();
 	if(i8237alloc != nil)
-	i8237alloc();
+		i8237alloc();
 	uartputs("main_after_cr3: calling pcicfginit\n", 37);
 	pcicfginit();
 	uartputs("main_after_cr3: calling bootscreeninit\n", 41);
 	bootscreeninit();
-uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
-fbconsoleinit();  /* Initialize framebuffer console */
-	cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
+	uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
+	fbconsoleinit();  /* Initialize framebuffer console */
+	uartputs("main_after_cr3: calling printinit\n", 36);
+	printinit();
+
+	/* NOW print() should work - printinit() re-initialized it for new stack */
+	print("BOOT: printinit complete - serial console ready\n");
 	cpuidprint();
-
-	print("BOOT: capturing page table information for kernelro() exclusion...\n");
-	protected_page_tables_base = (uintptr)getcr3();
-	/* Estimate page table size: 4 levels * 512 entries * 8 bytes each = ~64KB per CPU */
-	/* For single CPU system, estimate 128KB total for safety */
-	protected_page_tables_end = protected_page_tables_base + 128*1024;
-	print("BOOT: page tables 0x%lx - 0x%lx will be excluded from kernelro()\n", 
-	      protected_page_tables_base, protected_page_tables_end);
-
-	print("BOOT: setting up minimal configuration environment\n");
-	
-	/* Note: *debug is now handled by global panic_debug variable, no need for ksetenv here */
-	print("BOOT: deferring full environment setup until after chandevreset()\n");
-	print("BOOT: after config setup - getconf(\"*debug\") = %s\n", (getconf("*debug") == nil) ? "NIL" : "SET");
-
 	print("BOOT: about to call mmuinit\n");
 	mmuinit();
 	print("BOOT: mmuinit complete - runtime page tables live\n");
-
-	/* Debug: check if IDT is still valid after mmuinit */
-	{
-		extern Segdesc temp_idt[];
-		print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
-		else
-			print("OK: IDT[0x46] still valid after mmuinit\n");
-	}
-
 	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
 	if(arch->intrinit) {
-	print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
-	arch->intrinit();
-	print("BOOT: arch->intrinit returned successfully\n");
-
-	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
-	{
-		extern Segdesc temp_idt[];
-		print("DEBUG: Checking IDT[0x46] AFTER arch->intrinit:\n");
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] CORRUPTED by arch->intrinit!\n");
-		else
-			print("OK: IDT[0x46] still valid after arch->intrinit\n");
-	}
-
+		print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
+		arch->intrinit();
+		print("BOOT: arch->intrinit returned successfully\n");
 	} else {
-	print("WARNING: arch->intrinit is nil\n");
+		print("WARNING: arch->intrinit is nil\n");
 	}
 	print("BOOT: calling timersinit\n");
 	timersinit();
 	print("BOOT: timersinit complete\n");
 	print("BOOT: calling arch->clockenable\n");
 	if(arch->clockenable)
-	arch->clockenable();
+		arch->clockenable();
 	print("BOOT: arch->clockenable complete\n");
 	print("BOOT: calling procinit0\n");
 	procinit0();
 	print("BOOT: procinit0 complete - process table ready\n");
-
-	print("BOOT: calling initseg\n");
 	initseg();
-	print("BOOT: initseg complete\n");
-
 	links();
-	print("BOOT: links complete\n");
-	
-	/* Initialize I/O port allocation after links() */
-	print("BOOT: calling iomapinit\n");
-	iomapinit(0xFFFF);  
-	print("BOOT: iomapinit complete\n");
-	
-	/* Reset and initialize all devices before environment setup */
-	print("BOOT: calling chandevreset\n");
-	chandevreset();   
-	print("BOOT: chandevreset complete\n");
-
+	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
+	chandevreset();
 	print("BOOT: device reset sequence finished\n");
 
-	print("BOOT: calling pageinit\n");
+	/* NOTE: initrd_register() is now called in init0() after chandevinit(),
+	 * because the initrd is loaded in proc0 which runs after main() */
+
+	preallocpages();
 	pageinit();
-	print("BOOT: pageinit complete\n");
 
-	print("BOOT: calling printinit\n");
-	printinit();
-	print("BOOT: printinit complete - print queues initialized\n");
+	/* Initialize run queues to ensure clean state */
+	extern Schedq runq[];
+	extern int Nrq;
+	for(int i = 0; i < 22; i++){  /* Nrq = 22 */
+		runq[i].head = nil;
+		runq[i].tail = nil;
+		runq[i].n = 0;
+	}
 
-	print("BOOT: entering userinit\n");
 	userinit();
-	print("BOOT: userinit called successfully - proceeding to scheduler\n");
+	print("BOOT: userinit scheduled *init* kernel process\n");
 	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
 	schedinit();
 }
 
-/**
- * Perform final boot-time setup and transfer proc0 to user mode.
- *
- * Registers any initrd files with the device root (if present), ensures the
- * environment is configured, runs a Pebble SIP test, starts the alarm kernel
- * process, computes and logs proc0's initial user stack frame, prepares and
- * clears FPU state, raises interrupt level, and finally enters user mode by
- * calling touser() with the prepared stack frame.
- */
 void
 init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
-	iprint("BOOT[init0]: calling chandevinit\n");
 	chandevinit();
-	iprint("BOOT[init0]: chandevinit returned\n");
-	randominit();
-	iprint("BOOT[init0]: randominit complete\n");
+	print("BOOT[init0]: chandevinit complete\n");
+
+	/* Register initrd files with devroot - must be after chandevinit */
+	extern struct initrd_file *initrd_root;
+	extern void initrd_register(void);
+	if(initrd_root != nil) {
+		print("BOOT[init0]: registering initrd files with devroot\n");
+		initrd_register();
+		print("BOOT[init0]: initrd files registered\n");
+	} else {
+		print("BOOT[init0]: WARNING - no initrd files to register\n");
+	}
 
 	if(!waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
 		ksetenv("terminal", buf, 0);
 		ksetenv("cputype", "amd64", 0);
-		ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
+		if(cpuserver)
+			ksetenv("service", "cpu", 0);
+		else
+			ksetenv("service", "terminal", 0);
 		setconfenv();
+		print("BOOT[init0]: environment configured\n");
 		poperror();
-		print("BOOT[init0]: environment setup completed\n");
 	}
-
+	pebble_sip_issue_test();
+	print("BOOT[init0]: starting alarm kproc\n");
 	kproc("alarm", alarmkproc, 0);
+	print("BOOT[init0]: alarm kproc scheduled\n");
 
+	print("BOOT[init0]: computing user stack frame\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	sp[3] = sp[2] = nil;
-	strcpy(sp[1] = (char*)&sp[4], "boot");
-	sp[0] = nil;
+	print("BOOT[init0]: initial sp computed: %#p\n", sp);
+	print("BOOT[init0]: USTKTOP=%#llux sizeof(Tos)=%lld\n", USTKTOP, (long long)sizeof(Tos));
+	print("BOOT[init0]: stack frame already seeded in proc0\n");
 
+	print("BOOT[init0]: preparing to disable interrupts\n");
 	splhi();
+	print("BOOT[init0]: fpukexit(nil) begin\n");
 	fpukexit(nil);
-	print("BOOT[init0]: transferring control to user mode\n");
+	print("BOOT[init0]: fpukexit(nil) done\n");
+	print("BOOT[init0]: entering user mode with initcode\n");
+	print("BOOT[init0]: calling touser(%#p)\n", sp);
 	touser(sp);
 }
 
@@ -372,39 +330,6 @@ main(void)
 	trapinit0();
 	ioinit();
 	i8250console();
-
-	/* Debug: check if trapinit0() actually initialized the IDT */
-	{
-		extern Segdesc temp_idt[];
-		extern void sidt(void*);
-		uintptr idtr[2];
-
-		/* Read the IDTR register */
-		sidt(&((ushort*)&idtr[1])[-1]);
-		uintptr idt_base = idtr[1];
-		ushort idt_limit = ((ushort*)&idtr[1])[-1];
-
-		print("DEBUG: Checking IDT after trapinit0:\n");
-		print("  temp_idt addr: %#p\n", temp_idt);
-		print("  IDTR base: %#lux\n", idt_base);
-		print("  IDTR limit: %d\n", idt_limit);
-
-		if(idt_base != (uintptr)temp_idt){
-			print("ERROR: IDTR pointing to WRONG address!\n");
-			print("  Expected: %#p\n", temp_idt);
-			print("  Actual: %#lux\n", idt_base);
-		} else {
-			print("OK: IDTR points to temp_idt\n");
-		}
-
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
-		else
-			print("OK: IDT[0x46] is initialized\n");
-	}
-
 	quotefmtinstall();
 	screeninit();
 	print("\nLux9\n");
@@ -412,26 +337,26 @@ main(void)
 	/* Stash initrd pointers; parsing deferred until proc0 when allocators are ready */
 	extern struct limine_module_request *limine_module;
 	if(limine_module && limine_module->response && limine_module->response->module_count > 0) {
-	struct limine_file *initrd = limine_module->response->modules[0];
-	if(initrd && initrd->address){
-		uintptr addr = (uintptr)initrd->address;
-		if(addr >= saved_limine_hhdm_offset){
-			initrd_physaddr = addr - saved_limine_hhdm_offset;
-			initrd_base = initrd->address;
-		}else{
-			initrd_physaddr = addr;
-			initrd_base = (void*)(addr + saved_limine_hhdm_offset);
+		struct limine_file *initrd = limine_module->response->modules[0];
+		if(initrd && initrd->address){
+			uintptr addr = (uintptr)initrd->address;
+			if(addr >= saved_limine_hhdm_offset){
+				initrd_physaddr = addr - saved_limine_hhdm_offset;
+				initrd_base = initrd->address;
+			}else{
+				initrd_physaddr = addr;
+				initrd_base = (void*)(addr + saved_limine_hhdm_offset);
+			}
+			initrd_size = initrd->size;
+			print("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
 		}
-		initrd_size = initrd->size;
-		print("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
-	}
 	}
 
 	meminit0();
 
 	archinit();
 	if(arch->clockinit){
-	arch->clockinit();
+		arch->clockinit();
 	}
 	meminit();
 	ramdiskinit();
@@ -439,11 +364,13 @@ main(void)
 	pebbleinit();
 	pebble_enabled = 1;
 	if((p = getconf("pebble")) != nil)
-	pebble_enabled = *p != '0';
+		pebble_enabled = *p != '0';
 	if((p = getconf("pebbledebug")) != nil && *p != '0')
-	pebble_debug = 1;
+		pebble_debug = 1;
 	if(pebble_enabled)
-	print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
+		print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
+	printinit();
+	print("BOOT: printinit complete - serial console ready\n");
 
 	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
 	 * because memory coordination needs it during CR3 switch */
@@ -453,9 +380,6 @@ main(void)
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();
 	print("BOOT: memory coordination system initialized\n");
-
-	/* Save framebuffer info BEFORE switching page tables */
-	save_framebuffer_info();
 
 	/* Switch to our own page tables - REQUIRED for user space!
 	/* NOTE: This must happen AFTER setuppagetables() to avoid memory map conflicts.
@@ -482,9 +406,9 @@ rebootjump(uintptr entry, uintptr code, ulong size)
 	*mmuwalk(m->pml4, 0, 2, 0) = *mmuwalk(m->pml4, KZERO, 2, 0);
 
 	if((pte = mmuwalk(m->pml4, REBOOTADDR, 1, 0)) != nil)
-	*pte &= ~PTENOEXEC;
+		*pte &= ~PTENOEXEC;
 	if((pte = mmuwalk(m->pml4, REBOOTADDR, 0, 0)) != nil)
-	*pte &= ~PTENOEXEC;
+		*pte &= ~PTENOEXEC;
 
 	mmuflushtlb(PADDR(m->pml4));
 
@@ -506,7 +430,7 @@ exit(int)
 	splhi();
 
 	if(m->machno)
-	rebootjump(0, 0, 0);
+		rebootjump(0, 0, 0);
 
 	/* clear secrets */
 	zeroprivatepages();
@@ -528,8 +452,8 @@ reboot(void *entry, void *code, ulong size)
 	 * boot processor and we look at it at start up.
 	 */
 	while(m->machno != 0){
-	procwired(up, 0);
-	sched();
+		procwired(up, 0);
+		sched();
 	}
 	cpushutdown();
 	delay(1000);
@@ -559,8 +483,8 @@ procsetup(Proc *p)
 	/* clear debug registers */
 	memset(p->dr, 0, sizeof(p->dr));
 	if(m->dr7 != 0){
-	m->dr7 = 0;
-	putdr7(0);
+		m->dr7 = 0;
+		putdr7(0);
 	}
 }
 
@@ -574,12 +498,12 @@ void
 procrestore(Proc *p)
 {
 	if(p->dr[7] != 0){
-	m->dr7 = p->dr[7];
-	putdr(p->dr);
+		m->dr7 = p->dr[7];
+		putdr(p->dr);
 	}
 	
 	if(p->vmx != nil)
-	vmxprocrestore(p);
+		vmxprocrestore(p);
 
 	fpuprocrestore(p);
 }
@@ -588,11 +512,11 @@ void
 procsave(Proc *p)
 {
 	if(m->dr7 != 0){
-	m->dr7 = 0;
-	putdr7(0);
+		m->dr7 = 0;
+		putdr7(0);
 	}
 	if(p->state == Moribund)
-	p->dr[7] = 0;
+		p->dr[7] = 0;
 
 	fpuprocsave(p);
 
