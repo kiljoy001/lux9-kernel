@@ -3,8 +3,10 @@
 #include	"mem.h"
 
 #include	"fns.h"
+#include	"debugcon.h"
 #include	"hhdm.h"
 #include	"borrowchecker.h"
+#include <stddef.h>
 
 extern void uartputs(char*, int);
 
@@ -77,7 +79,7 @@ is_hhdm_va(uintptr va)
 	if(saved_limine_hhdm_offset == 0 || va < saved_limine_hhdm_offset)
 		return 0;
 	ensure_phys_range();
-	return hhdm_phys(va) < max_physaddr;
+	return hhdm_phys((void*)va) < max_physaddr;
 }
 
 /*
@@ -145,6 +147,18 @@ taskswitch(uintptr stack)
 }
 
 static void kernelro(void);
+extern void main_after_cr3(void);
+extern char cpu0data_start[];
+extern char cpu0data_end[];
+
+static void
+dump_transition_pte(const char *label, uintptr va)
+{
+	uartputs("  PTE(", 6);
+	uartputs((char*)label, strlen(label));
+	uartputs("): ", 3);
+	dbghex("", dbg_getpte(va));
+}
 
 uintptr
 dbg_getpte(uintptr va)
@@ -164,6 +178,11 @@ dbg_getpte(uintptr va)
  */
 
 /* Helper: allocate and zero a page table from reserved pool */
+enum {
+	PT_POOL_TABLES = 512,
+	PT_ENTRIES_PER_TABLE = 512,
+};
+
 static u64int *next_pt = nil;
 static int pt_count = 0;
 static Lock allocptlock;
@@ -172,7 +191,7 @@ static u64int*
 alloc_pt(void)
 {
 	extern u64int cpu0pt_pool[];  /* Reserved in linker.ld */
-	u64int *pt;
+	u64int *pt = nil;
 	int i;
 
 	lock(&allocptlock);
@@ -180,19 +199,26 @@ alloc_pt(void)
 		next_pt = cpu0pt_pool;  /* Start of PT pool */
 		uartputs("alloc_pt: initialized pool\n", 27);
 	}
-	if(pt_count >= 512)
-		panic("alloc_pt: cpu0pt_pool exhausted");
-
-	pt = next_pt;
-	next_pt += 512;  /* Each PT is 512 entries (4KB) */
-	pt_count++;
+	if(pt_count < PT_POOL_TABLES){
+		pt = next_pt;
+		next_pt += PT_ENTRIES_PER_TABLE;  /* Each PT is 512 entries (4KB) */
+		pt_count++;
+	}
 	unlock(&allocptlock);
 
+	if(pt == nil){
+		pt = rampage();
+		if(pt == nil)
+			panic("alloc_pt: rampage returned nil");
+		uartputs("alloc_pt: pool exhausted, using rampage\n", 41);
+	} else {
+		uartputs("alloc_pt: allocated page table\n", 31);
+	}
+
 	/* Zero the page table */
-	for(i = 0; i < 512; i++)
+	for(i = 0; i < PT_ENTRIES_PER_TABLE; i++)
 		pt[i] = 0;
 
-	uartputs("alloc_pt: allocated page table\n", 31);
 	return pt;
 }
 
@@ -209,9 +235,11 @@ virt2phys(void *virt)
 	if(va >= KZERO)
 		return (va - KZERO) + limine_kernel_phys_base;
 
-	/* VMAP addresses - simple subtraction like 9front */
 	if(va >= VMAP)
 		return va - VMAP;
+
+	if(is_hhdm_va(va))
+		return hhdm_phys((void*)va);
 
 	/* Already physical */
 	return va;
@@ -226,50 +254,23 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 	u64int pml4_idx, pdp_idx, pd_idx;
 	u64int *pdp, *pd;
 	u64int pdp_phys, pd_phys;
-
-	dbghex("map_range_2mb: virt_start (before align) = ", virt_start);
+	u64int orig_size = size;
+	u64int page_count = 0;
 
 	virt_start &= ~0x1FFFFFULL;  /* Align to 2MB */
 	phys_start &= ~0x1FFFFFULL;
 	size = (size + 0x1FFFFF) & ~0x1FFFFFULL;
 
-	dbghex("map_range_2mb: virt_start (after align) = ", virt_start);
-
 	virt_end = virt_start + size;
-
-	/* Special check: always print for debugging */
-	if(virt_start == 0xffffffffffe00000ULL){
-		uartputs("!!! EXACT MATCH 0xffffffffffe00000 !!!\n", 40);
-		if(virt_end == 0){
-			uartputs("!!! virt_end == 0, WRAPAROUND CONFIRMED !!!\n", 45);
-		}
-	}
 
 	/* Handle address space wrap: if virt_end wrapped to a small value, we're mapping to end of address space */
 	int wraps = (virt_end < virt_start);
-	if(wraps){
-		uartputs("map_range_2mb: *** WRAPAROUND DETECTED! ***\n", 44);
-	}
-
-	/* Debug first iteration */
-	uartputs("map_range_2mb: about to enter loop\n", 35);
-	int first_iter = 1;
 
 	for(virt = virt_start, phys = phys_start; wraps ? (virt >= virt_start) : (virt < virt_end); virt += 2*MiB, phys += 2*MiB) {
-		if(first_iter){
-			first_iter = 0;
-			dbghex("map_range_2mb: virt (loop var) = ", virt);
-		}
-
 		/* Calculate indices */
 		pml4_idx = (virt >> 39) & 0x1FF;
 		pdp_idx = (virt >> 30) & 0x1FF;
 		pd_idx = (virt >> 21) & 0x1FF;
-
-		if(first_iter == 0){
-			dbghex("map_range_2mb: pml4_idx = ", pml4_idx);
-			first_iter = -1;
-		}
 
 		/* Get or create PDP */
 		if((pml4[pml4_idx] & PTEVALID) == 0) {
@@ -293,16 +294,19 @@ map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u
 
 		/* Map 2MB page directly in PD */
 		pd[pd_idx] = phys | perms;  /* perms should include PTESIZE */
+		page_count++;
 	}
 
-	/* Debug: verify PML4 entries were actually set */
-	uartputs("map_range_2mb: checking PML4 after mapping\n", 43);
-	for(int idx = 0; idx < 512; idx++){
-		if(pml4[idx] & PTEVALID){
-			uartputs("  PML4 entry is valid\n", 24);
-			break;
-		}
-	}
+	/* Print single summary line */
+	uartputs("map_range_2mb: mapped ", 22);
+	dbghex("", orig_size);
+	uartputs(" bytes (", 8);
+	dbghex("", page_count);
+	uartputs(" x 2MB pages) phys ", 19);
+	dbghex("", phys_start);
+	uartputs(" -> virt ", 9);
+	dbghex("", virt_start);
+	uartputs("\n", 1);
 }
 
 /* Map a virtual address range to physical with given permissions */
@@ -386,6 +390,14 @@ pre_init_memory_system(void)
 	
 	uartputs("pre_init_memory_system: complete\n", 33);
 }
+/**
+ * Prepare kernel page tables, establish HHDM and kernel mappings, then switch CR3 and continue boot.
+ *
+ * Initializes the kernel's PML4, maps the kernel image at KZERO and into the Higher Half Direct Map (HHDM),
+ * constructs 2MB HHDM mappings covering actual physical memory, ensures the memory subsystem is ready for
+ * the CR3 switch, performs the CR3 switch to the newly prepared page tables, updates the kernel MMU state,
+ * and transfers control to main_after_cr3. This function does not return on success.
+ */
 void
 setuppagetables(void)
 {
@@ -426,29 +438,54 @@ setuppagetables(void)
 	extern char ttext[], etext[], kend[];  /* Kernel boundaries from linker */
 
 	u64int kernel_phys = limine_kernel_phys_base;  /* Keep at Limine load address */
-	uintptr kernel_size = (uintptr)kend - KZERO;  /* Size of kernel in memory */
+	uintptr kernel_map_size = (uintptr)kend - KZERO;  /* Entire ELF span up to kend */
 
 	uartputs("setuppagetables: using kernel at Limine load address\n", 53);
 	dbghex("  kernel physical (Limine): ", kernel_phys);
-	dbghex("  kernel size: ", kernel_size);
+	dbghex("  kernel map size: ", kernel_map_size);
+	u64int kernel_phys_end = kernel_phys + kernel_map_size;
+	uintptr cpu0_data_va = (uintptr)cpu0data_start;
+	uintptr cpu0_data_size = (uintptr)cpu0data_end - cpu0_data_va;
+	uartputs("setuppagetables: cpu0_data region\n", 34);
+	dbghex("  cpu0_data start: ", cpu0_data_va);
+	dbghex("  cpu0_data size: ", cpu0_data_size);
 
 	/* Map kernel at KZERO to actual Limine load address */
 	uartputs("setuppagetables: mapping KZERO to Limine load address\n", 52);
 
-	/* Map kernel image directly */
-	map_range(pml4, KZERO, kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	/* Extend mapping to include all global data that may not be covered by kend */
+	extern char etext[];
+	uintptr required_map_size = (uintptr)etext - KZERO;
+	if (required_map_size > kernel_map_size) {
+		uartputs("setuppagetables: extending kernel mapping for global data\n", 57);
+		dbghex("  original map size: ", kernel_map_size);
+		dbghex("  required map size: ", required_map_size);
+		kernel_map_size = required_map_size;
+		kernel_phys_end = kernel_phys + kernel_map_size;
+	}
+
+	/* Map full kernel image directly */
+	map_range(pml4, KZERO, kernel_phys, kernel_map_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	uartputs("setuppagetables: KZERO mapped to kernel image\n", 47);
 
-	/* Mirror kernel image into HHDM for memory functions */
+	/* Mirror full kernel image into HHDM for memory functions */
 	uartputs("setuppagetables: mirroring kernel in HHDM\n", 43);
-	map_range(pml4, kaddr(kernel_phys), kernel_phys, kernel_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+	map_range(pml4, (u64int)kaddr((uintptr)kernel_phys), kernel_phys, kernel_map_size, PTEVALID | PTEWRITE | PTEGLOBAL);
 	uartputs("setuppagetables: kernel mapping complete\n", 42);
 	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
-	/* Ensure conf.mem is populated */
-	uartputs("setuppagetables: calling ensure_phys_range\n", 45);
-	ensure_phys_range();
-	uartputs("setuppagetables: ensure_phys_range complete\n", 45);
+	/* Set max_physaddr from MemMin (already computed from Limine memory map)
+	 * Don't use ensure_phys_range() yet - conf.mem isn't populated until meminit0() */
+	extern u64int MemMin;
+	if(MemMin > 0)
+		max_physaddr = MemMin;
+	else
+		max_physaddr = 64*MiB;  /* Safe fallback if MemMin not set */
+	if(kernel_phys_end > max_physaddr)
+		max_physaddr = kernel_phys_end;
+
+	uartputs("setuppagetables: max_physaddr set from MemMin\n", 47);
+	dbghex("  max_physaddr: ", max_physaddr);
 
 	/* NOTE: We do NOT map high memory (>2GB physical) at KZERO because:
 	 * 1. KZERO only has 2GB of virtual address space before wrapping
@@ -466,17 +503,15 @@ setuppagetables(void)
 	u64int hhdm_start = saved_limine_hhdm_offset;
 	u64int hhdm_end = hhdm_start + max_physaddr;
 	
-	/* Map entire HHDM range using large pages where possible */
-	for(u64int va = hhdm_start; va < hhdm_end; va += PGLSZ(3)) {
-		u64int pa = va - hhdm_start;
-		u64int size = PGLSZ(3);
+	/* Map only the actual physical memory we have, not a huge range */
+	/* Map in 2MB chunks to avoid excessive page table allocation */
+	for(u64int pa = 0; pa < max_physaddr; pa += PGLSZ(2)) {
+		u64int va = hhdm_start + pa;
+		u64int size = PGLSZ(2);  /* 2MB chunks */
 		if(pa + size > max_physaddr) size = max_physaddr - pa;
 		
-		if(size >= PGLSZ(3)) {
-			map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-		} else {
-			map_range(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTEACCESSED);
-		}
+		/* Create 2MB mappings where possible for efficiency */
+		map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
 	}
 	uartputs("setuppagetables: HHDM mapping complete\n", 42);
 
@@ -499,6 +534,15 @@ setuppagetables(void)
 	if(pml4[511] & PTEVALID)
 		uartputs("  PML4[511] (KZERO) is valid\n", 30);
 	uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
+	uintptr saved_pml4 = (uintptr)m->pml4;
+	m->pml4 = pml4;
+	uintptr current_sp;
+	__asm__ volatile("mov %%rsp, %0" : "=r"(current_sp));
+	dump_transition_pte("setuppagetables", (uintptr)setuppagetables);
+	dump_transition_pte("uartputs", (uintptr)uartputs);
+	dump_transition_pte("stack", current_sp);
+	dump_transition_pte("main_after_cr3", (uintptr)main_after_cr3);
+	m->pml4 = (uintptr*)saved_pml4;
 
 	/* Simplified CR3 switch - HHDM ensures accessibility */
 	uartputs("setuppagetables: preparing simple CR3 switch\n", 50);
@@ -516,6 +560,11 @@ setuppagetables(void)
 
 	/* Simple, direct CR3 switch - HHDM ensures both old and new code are accessible */
 	uartputs("setuppagetables: switching to kernel page tables\n", 50);
+	dbghex("setuppagetables: new CR3 ", pml4_phys);
+	dbghex("setuppagetables: pml4 virt ", (uintptr)pml4);
+	debugcon_print("DBG switching CR3 to ");
+	debugcon_hex(pml4_phys);
+	debugcon_putc('\n');
 	__asm__ volatile(
 		"mov %0, %%cr3" 
 		: : "r"(pml4_phys) 
@@ -534,6 +583,16 @@ setuppagetables(void)
 	panic("setuppagetables: main_after_cr3 returned unexpectedly");
 }
 
+/**
+ * Initialize per-CPU MMU and CPU state required for kernel operation on this processor.
+ *
+ * Performs processor-local setup needed before switching to kernel page tables and user/syscall transitions.
+ * This includes allocating and initializing the TSS, installing and loading the GDT and IDT, loading the TSS,
+ * initializing task-switch state, configuring model-specific registers used for syscall handling (EFER, STAR, LSTAR, SFMASK),
+ * and setting FS/GS base registers.
+ *
+ * If TSS allocation fails, the function will panic.
+ */
 void
 mmuinit(void)
 {
@@ -549,6 +608,7 @@ mmuinit(void)
 		kernelro();
 
 	m->tss = mallocz(sizeof(Tss), 1);
+	print("DEBUG: TSS allocated at %p\n", m->tss);
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
 	m->tss->iomap = 0xDFFF;
@@ -567,6 +627,12 @@ mmuinit(void)
 	 * than Intels in this regard).  Under VMware it pays off
 	 * a factor of about 10 to 100.
 	 */
+	/* Ensure m->gdt is valid - using static allocation for bootstrap */
+	if (m->gdt == 0) {
+		static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));
+		m->gdt = dynamic_gdt;
+	}
+	
 	memmove(m->gdt, gdt, sizeof gdt);
 
 	x = (uintptr)m->tss;
@@ -575,31 +641,61 @@ mmuinit(void)
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;
 
+	print("DEBUG: Loading GDT\n");
 	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
-	loadptr(sizeof(Segdesc)*512-1, (uintptr)IDTADDR, lidt);
+	/* IDT already set up by trapinit0() - don't reload from uninitialized IDTADDR */
+	print("DEBUG: Setting up task switch\n");
 	taskswitch((uintptr)m + MACHSIZE);
+	print("DEBUG: Loading TSS\n");
 	ltr(TSSSEL);
+	print("DEBUG: Setting up MSRs\n");
 
+	print("DEBUG: Setting up MSRs\n");
 	wrmsr(FSbase, 0ull);
-	wrmsr(GSbase, (uvlong)&machp[m->machno]);
-	wrmsr(KernelGSbase, 0ull);
+	print("DEBUG: Set FSbase\n");
+	wrmsr(GSbase, 0ull);	/* user-mode GS base unused until user TLS */
+	print("DEBUG: Set GSbase (user)\n");
+	wrmsr(KernelGSbase, (uvlong)&machp[m->machno]);	/* kernel GS sees Mach* slot */
+	print("DEBUG: Set KernelGSbase (kernel Mach slot)\n");
 
 	/* enable syscall extension */
+	print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
+	
+	/* WORKAROUND: Fix NULL GDT pointer issue */
+	if (m->gdt == NULL) {
+		print("WORKAROUND: m->gdt is NULL, using dynamic allocation\n");
+		/* Allocate GDT dynamically instead of using fixed address */
+		static Segdesc dynamic_gdt[NGDT];
+		m->gdt = dynamic_gdt;
+		print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
+	}
+	
+	print("DEBUG[mmuinit]: About to read EFER MSR\n");
 	rdmsr(Efer, &v);
+	print("DEBUG[mmuinit]: Read EFER MSR, value=%#llux\n", v);
 	v |= 1ull;
+	print("DEBUG[mmuinit]: About to write EFER MSR\n");
 	wrmsr(Efer, v);
+	print("DEBUG[mmuinit]: Wrote EFER MSR\n");
 	
 	// Debug print for EFER
 	dbghex("EFER set to: ", v);
 
+	print("DEBUG: Setting up syscall MSRs\n");
 	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
+	print("DEBUG: Set STAR MSR\n");
 	wrmsr(Lstar, (uvlong)syscallentry);
+	print("DEBUG: Set LSTAR MSR\n");
 	wrmsr(Sfmask, 0x200);
+	print("DEBUG: Set SFMASK MSR\n");
 	
 	// Debug print for STAR
 	uvlong star_val;
+	print("DEBUG: About to read STAR MSR\n");
 	rdmsr(Star, &star_val);
+	print("DEBUG: Read STAR MSR\n");
 	dbghex("STAR set to: ", star_val);
+	print("DEBUG: mmuinit completed successfully\n");
 }
 
 /*
@@ -688,40 +784,48 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 	extern uintptr hhdm_base;
 
 	flags = PTEWRITE|PTEVALID;
-	/* Check if this is a user/kmap address that needs process tracking
-	 * Exclude HHDM addresses which are kernel direct-map and don't need up */
-	if(va < VMAP && (va < hhdm_base || va >= hhdm_base + (256ULL*GiB))){
-		if(up == nil)
-			panic("mmucreate: up nil va=%#p", va);
-		if((p = mmualloc()) == nil)
-			return nil;
-		p->index = index;
-		p->level = level;
-		page = p->page;
-		memset(page, 0, PTSZ);
-		if(va < USTKTOP){
-			flags |= PTEUSER;
-			if(level == PML4E){
-				if((p->next = up->mmuhead) == nil)
-					up->mmutail = p;
-				up->mmuhead = p;
-				m->mmumap[index/MAPBITS] |= 1ull<<(index%MAPBITS);
-			}else{
-				if(up->mmutail != nil)
-					up->mmutail->next = p;
-				up->mmutail = p;
-			}
-			up->mmucount++;
+	/* Check if this is a user address that requires a process context.
+	 * User addresses are < USTKTOP.
+	 * Kernel addresses include: >= KZERO, HHDM range (vmap uses HHDM for device MMIO).
+	 * The kmap region (USTKTOP to KZERO, outside HHDM) also requires up. */
+	if(va < VMAP && !is_hhdm_va(va)){
+		if(up == nil){
+			/* Early boot: no process context yet, allocate from global pool */
+			page = rampage();
+			if(page == nil)
+				return nil;
+			memset(page, 0, PTSZ);
 		}else{
-			if(level == PML4E){
-				up->kmaphead = p;
-				up->kmaptail = p;
+			if((p = mmualloc()) == nil)
+				return nil;
+			p->index = index;
+			p->level = level;
+			page = p->page;
+			memset(page, 0, PTSZ);
+			if(va < USTKTOP){
+				flags |= PTEUSER;
+				if(level == PML4E){
+					if((p->next = up->mmuhead) == nil)
+						up->mmutail = p;
+					up->mmuhead = p;
+					m->mmumap[index/MAPBITS] |= 1ull<<(index%MAPBITS);
+				}else{
+					if(up->mmutail != nil)
+						up->mmutail->next = p;
+					up->mmutail = p;
+				}
+				up->mmucount++;
 			}else{
-				if(up->kmaptail != nil)
-					up->kmaptail->next = p;
-				up->kmaptail = p;
+				if(level == PML4E){
+					up->kmaphead = p;
+					up->kmaptail = p;
+				}else{
+					if(up->kmaptail != nil)
+						up->kmaptail->next = p;
+					up->kmaptail = p;
+				}
+				up->kmapcount++;
 			}
-			up->kmapcount++;
 		}
 	}else{
 		page = rampage();
@@ -1159,22 +1263,28 @@ vmap(uvlong pa, vlong size)
 {
 	uintptr va;
 	int o;
+	uvlong mapend;
 
-	/* Validate size */
-	if(size <= 0){
+	if(pa < BY2PG || size <= 0 || -pa < size){
 		print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
 
-	/*
-	 * All physical addresses map through HHDM, including PCI MMIO regions.
-	 * The HHDM maps the entire physical address space.
-	 */
-	if(pa < BY2PG){
-		print("vmap: invalid low pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
+	/* If range fits in physical RAM, use HHDM mapping (already established) */
+	mapend = pa + size;
+	if(mapend >= pa){
+		ensure_phys_range();
+		if(mapend <= max_physaddr)
+			return hhdm_virt(pa);
+	}
+
+	/* Otherwise fall back to explicit VMAP mapping */
+	if(mapend < pa || mapend > VMAPSIZE){
+		print("vmap pa=%llux size=%lld exceeds VMAP capacity pc=%#p\n", pa, size, getcallerpc(&pa));
 		return nil;
 	}
-	va = (uintptr)hhdm_virt(pa);
+
+	va = pa + VMAP;
 
 	/*
 	 * might be asking for less than a page.

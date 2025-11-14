@@ -29,6 +29,7 @@ SECTIONS
     /* Bootstrap data and kernel sections start after first page */
     . = 0xffffffff80001000;
     .cpu0_data : {
+        cpu0data_start = .;
         . = 0x200;   /* CONFADDR at KZERO+0x1200 */
         confaddr = .;
         . += 0x1000;
@@ -76,6 +77,7 @@ SECTIONS
         stack_top = .;
 
         end = .;
+        cpu0data_end = .;
     } :data
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));

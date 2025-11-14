@@ -30,7 +30,7 @@
 
 #define	MAXMACH		128			/* max # cpus system can run */
 
-#define KSTACK		(8*KiB)			/* Size of Proc kernel stack */
+#define KSTACK		(16*KiB)		/* Size of Proc kernel stack */
 
 /*
  * Time
@@ -74,8 +74,8 @@
 #define CPU0PD0		(KZERO+0x15000ull)		/* KZERO */
 #define CPU0PD1		(KZERO+0x16000ull)		/* KZERO+1GB */
 
-#define	CPU0GDT		(KZERO+0x217000ull)		/* bootstrap processor GDT (after 2MB pt_pool) */
-#define	CPU0MACH	(KZERO+0x218000ull)		/* Mach for bootstrap processor (after pt_pool+gdt) */
+#define	CPU0GDT		(KZERO+0x217000ull)		/* bootstrap processor GDT (UNUSED - using dynamic allocation) */
+#define	CPU0MACH	(KZERO+0x218000ull)		/* Mach for bootstrap processor (UNUSED - using dynamic allocation) */
 #define CPU0END		(CPU0MACH+MACHSIZE)
 
 #define	MACHSIZE	(2*KSTACK)

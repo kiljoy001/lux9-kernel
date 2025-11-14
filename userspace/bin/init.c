@@ -73,6 +73,8 @@ start_server(const char *path, const char *arg)
 static void
 emergency_shell(void)
 {
+	static char *shell_argv[] = { "/bin/sh", NULL };
+
 	printf("\n");
 	printf("========================================\n");
 	printf("   EMERGENCY SHELL - System Recovery\n");
@@ -82,7 +84,7 @@ emergency_shell(void)
 	printf("You are now in a minimal shell.\n");
 	printf("\n");
 
-	exec("/bin/sh", NULL);
+	exec("/bin/sh", shell_argv);
 	panic("cannot exec emergency shell");
 }
 
@@ -92,6 +94,8 @@ main(int argc, char *argv[])
 	char *rootdev;
 	int fs_pid;
 	int fd;
+	char *init_args[] = { "/sbin/init", NULL };
+	char *shell_args[] = { "/bin/sh", NULL };
 
 	(void)argc;
 	(void)argv;
@@ -159,10 +163,10 @@ main(int argc, char *argv[])
 
 	/* Step 7: Execute real init or shell */
 	printf("init: attempting to exec /sbin/init...\n");
-	exec("/sbin/init", NULL);
+	exec("/sbin/init", init_args);
 
 	printf("init: /sbin/init not found, trying /bin/sh...\n");
-	exec("/bin/sh", NULL);
+	exec("/bin/sh", shell_args);
 
 	/* If we get here, nothing worked */
 	panic("init: no shell available");

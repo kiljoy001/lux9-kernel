@@ -9,6 +9,7 @@
 
 extern void	(*consdebug)(void);
 extern void	(*screenputs)(char*, int);
+extern Uart*	consuart;
 
 /* Global debug flag for panic handling - defined in 9front-pc64/main.c */
 extern int panic_debug;
@@ -17,6 +18,14 @@ Queue*	serialoq;		/* serial console output */
 Queue*	kprintoq;		/* console output, for /dev/kprint */
 ulong	kprintinuse;		/* test and set whether /dev/kprint is open */
 int	iprintscreenputs = 1;
+
+/* Configurable kprint queue size: min 128KB, max 2MB, default 128KB */
+enum {
+	KPRINTQ_MIN = 128*1024,		/* 128KB minimum */
+	KPRINTQ_MAX = 2*1024*1024,	/* 2MB maximum */
+	KPRINTQ_DEFAULT = 128*1024,	/* 128KB default */
+};
+ulong	kprintqsize = KPRINTQ_DEFAULT;
 
 int	panicking;
 
@@ -52,9 +61,112 @@ Cmdtab drivermsg[] =
 	CMchdev,	"chdev",	0,
 };
 
+static void	serialoqkick(void*);
+static void	kprintoqkick(void*);
+
+/**
+ * Set kprint queue buffer size from boot parameter.
+ * Usage: kprintqsize=512k or kprintqsize=1m
+ * Enforces min 128KB, max 2MB limits.
+ */
+void
+setkprintqsize(char *val)
+{
+	ulong size;
+	char *p;
+
+	if(val == nil)
+		return;
+
+	size = strtoul(val, &p, 0);
+	if(p != nil && *p != '\0'){
+		/* Handle k/K/m/M suffix */
+		if(*p == 'k' || *p == 'K')
+			size *= 1024;
+		else if(*p == 'm' || *p == 'M')
+			size *= 1024*1024;
+	}
+
+	/* Clamp to valid range */
+	if(size < KPRINTQ_MIN)
+		size = KPRINTQ_MIN;
+	if(size > KPRINTQ_MAX)
+		size = KPRINTQ_MAX;
+
+	kprintqsize = size;
+}
+
 void
 printinit(void)
 {
+	char msg[128];
+
+	if(kprintoq == nil){
+		/* Clamp buffer size to valid range */
+		if(kprintqsize < KPRINTQ_MIN)
+			kprintqsize = KPRINTQ_MIN;
+		if(kprintqsize > KPRINTQ_MAX)
+			kprintqsize = KPRINTQ_MAX;
+
+		kprintoq = qopen(kprintqsize, Qcoalesce, kprintoqkick, nil);
+		if(kprintoq == nil){
+			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 85);
+		} else {
+			snprint(msg, sizeof(msg), "printinit: kprintoq initialized (%lud KB buffer)\n", kprintqsize/1024);
+			uartputs(msg, strlen(msg));
+			qsetnoblock_early(kprintoq, 1);
+		}
+	}
+
+	if(serialoq == nil){
+		if(consuart == nil){
+			uartputs("printinit: INFO - consuart nil, skipping serial queue\n", 58);
+		} else {
+			serialoq = qopen(4*1024, 0, serialoqkick, nil);
+			if(serialoq == nil){
+				uartputs("printinit: ERROR - qopen for serialoq failed - memory allocation may not be ready\n", 69);
+			} else {
+				uartputs("printinit: serialoq initialized successfully\n", 44);
+				qsetnoblock_early(serialoq, 1);
+			}
+		}
+	}
+
+	/*
+	 * Dump any buffered boot messages through the newly
+	 * initialised console path so late screens/UARTs gain context.
+	 */
+	if(kmesg.n > 0)
+		uartputs(kmesg.buf, kmesg.n);
+	uartputs("printinit: initialization complete\n", 35);
+}
+
+static void
+serialoqkick(void*)
+{
+	char buf[PRINTSIZE];
+	int n;
+
+	if(serialoq == nil)
+		return;
+
+	while((n = qconsume(serialoq, buf, sizeof(buf))) > 0)
+		uartputs(buf, n);
+}
+
+static void
+kprintoqkick(void*)
+{
+	char buf[PRINTSIZE];
+	int n;
+
+	if(kprintoq == nil)
+		return;
+
+	while((n = qconsume(kprintoq, buf, sizeof(buf))) > 0){
+		if(screenputs != nil)
+			screenputs(buf, n);
+	}
 }
 
 int
@@ -483,7 +595,6 @@ static void
 consinit(void)
 {
 	todinit();
-	randominit();
 }
 
 static Chan*
@@ -516,7 +627,13 @@ consopen(Chan *c, int omode)
 			error(Einuse);
 		}
 		if(kprintoq == nil){
-			kprintoq = qopen(8*1024, Qcoalesce, 0, 0);
+			/* Clamp buffer size to valid range */
+			if(kprintqsize < KPRINTQ_MIN)
+				kprintqsize = KPRINTQ_MIN;
+			if(kprintqsize > KPRINTQ_MAX)
+				kprintqsize = KPRINTQ_MAX;
+
+			kprintoq = qopen(kprintqsize, Qcoalesce, 0, 0);
 			if(kprintoq == nil){
 				c->flag &= ~COPEN;
 				error(Enomem);

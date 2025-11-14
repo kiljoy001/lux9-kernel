@@ -1,166 +1,153 @@
-# Serious bugs identified
+# Serious bugs identified - UPDATED STATUS
 
-This report lists serious defects discovered in the repository.
+This report lists critical defects discovered in the repository. **NEW DIRECTION**: Focus on crypto-first architecture instead of traditional hardware drivers.
 
-*[Updated: Fixed kernelro() page table corruption that prevented boot progress]*
+## Strategic Shift: Crypto-First Architecture
 
-## Fixed Bugs:
+**Rationale**: Instead of implementing hardware drivers first (AHCI, USB, etc.), we're pivoting to a revolutionary crypto-backed filesystem approach where:
+- Crypto operations are file I/O (write→read pattern)
+- All system data encrypted in RAM via borrow checking + pebble budgeting  
+- Drive storage acts as mass cache (backwards from traditional OS)
+- Hardware drivers will come later via NetBSD rump servers
 
-**✅ BOOT PROGRESS FIXED: kernelro() page table corruption**
-- **Issue**: `kernelro()` was accidentally making page tables read-only when protecting kernel text, breaking memory allocation and causing immediate crashes after `mmuinit()`
-- **Fix**: Implemented page table exclusion range tracking and timing, preventing corruption while maintaining security
-- **Result**: Boot now progresses from kernelro crash to graphics initialization phase
-- **Location**: `kernel/9front-pc64/main.c`, `kernel/9front-pc64/mmu.c`
+## FIXED - Crypto Server Foundation
 
----
+1. **Go 9P Server Protocol Issues** - RESOLVED AS DEPRECATED
+   - **Previous Issue**: Messages exceed `msize`, malformed strings crash parser, allocation failures
+   - **Reason**: Switching to C-based crypto server using standard 9P
+   - **New Status**: Use proven NetBSD rump server for hardware when needed, C server for crypto
+   - **Files**: `userspace/go-servers/p9/` - Will be refactored to C
+   - **Priority**: NO LONGER CRITICAL
 
-## Remaining Bugs:
+2. **MemFS Walk/Read Issues** - RESOLVED AS DEPRECATED  
+   - **Previous Issue**: Walk ignores paths, Read disregards offsets
+   - **Reason**: Building custom crypto filesystem, not using Go-based services
+   - **New Status**: Focus on write→read crypto file operations in C
+   - **Files**: `userspace/go-servers/memfs/` - Not needed for crypto-first approach
+   - **Priority**: NO LONGER CRITICAL
 
-### **TIER 1: System Init (SHOWSTOPPERS)**
+## NEW PRIORITY - Crypto Server Implementation
 
-1. **❌ System Init Completely Broken** - `fork()`, `exec()`, `mount()`, `open()`, `exit()`, `printf()` all stubbed. **Blocks userspace boot entirely.**【F:userspace/bin/syscalls.c†L6-L47】
+3. **Supercop Integration Critical**
+   - **Issue**: Need battle-tested crypto foundation before building crypto server
+   - **Location**: `crypto-standards/supercop/` 
+   - **Action Required**: 
+     - [ ] Integrate core algorithms (SHA256, AES-GCM, Ed25519, randombytes)
+     - [ ] Create crypto wrapper library for unified interface
+     - [ ] Performance testing and memory safety audit
+   - **Priority**: Phase 1 critical
+   - **Dependencies**: None
 
-2. **❌ init calls exec with a null argv vector** - `exec("/sbin/init", NULL)` dereferences null pointer. **Even working exec would fail.**【F:userspace/bin/init.c†L149-L156】
+4. **9P Crypto Server Development**
+   - **Issue**: Need file-based crypto interface using write→read pattern
+   - **Location**: NEW - Create `kernel/crypto/` directory
+   - **Action Required**:
+     - [ ] Create basic 9P server with crypto file operations
+     - [ ] Implement file types: hash, encrypt, decrypt, random, sign
+     - [ ] Process isolation for crypto operations
+     - [ ] Example: `echo "data" > /secure/crypto/hash/sha256` then `cat /secure/crypto/hash/sha256`
+   - **Priority**: Phase 1 critical
+   - **Dependencies**: Requires supercop integration (#3)
 
-### **TIER 2: 9P Protocol Security & Reliability**
+5. **Borrow Lock + Pebble Integration**
+   - **Issue**: Need process isolation and resource accounting for crypto operations
+   - **Location**: `kernel/9front-port/lock_borrow.c`, `kernel/pebble.c`
+   - **Action Required**:
+     - [ ] File access control via borrow checker for crypto files
+     - [ ] Exclusive/shared access permissions for crypto operations
+     - [ ] Resource costing and budget checking for crypto usage
+     - [ ] Security model validation and audit trail
+   - **Priority**: Phase 1 high
+   - **Dependencies**: Requires working crypto server (#4)
 
-3. **❌ 9P message sizes corrupted by signed char decode** - `msgbuf` char array sign-extends bytes ≥0x80, corrupting large messages. **Protocol stream corruption.**【F:userspace/servers/ext4fs/ext4fs.c†L28-L31】【F:userspace/servers/ext4fs/ext4fs.c†L634-L640】
+## REMAINING CRITICAL - Kernel Stability Issues
 
-4. **❌ Server assumes read(2) returns entire message** - Header/payload reads break on short reads (legal on pipes/sockets). **Random disconnections.**【F:userspace/servers/ext4fs/ext4fs.c†L630-L640】
+6. **Random Number Generator Corruption** - STILL CRITICAL
+   - **Issue**: `randomseed` scribbles over own lock, corrupting synchronization primitives
+   - **Location**: `kernel/9front-port/random.c:71-108`
+   - **Impact**: Race conditions, system instability, potential deadlocks
+   - **Fix**: `randomseed()` seeds `rs->chacha` directly and leaves surrounding `QLock` intact
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
 
-5. **❌ Replies written with unchecked write(2)** - Short writes silently truncate, corrupting protocol stream. **Protocol desynchronization.**【F:userspace/servers/ext4fs/ext4fs.c†L665-L667】
+7. **Page-Table Pool Race Conditions** - STILL CRITICAL  
+   - **Issue**: Unsynchronized PT allocation can overflow on SMP systems, memory corruption
+   - **Location**: `kernel/9front-pc64/mmu.c:165-185`
+   - **Impact**: Memory corruption, system crashes on multiprocessor systems
+   - **Fix**: Guard pool with `allocptlock` and tighten exhaustion test to trip at 512 tables
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
 
-6. **❌ Tflush unsupported** - No `case Tflush:` branch, returns `Rerror` instead of `Rflush`. **Protocol violation.**【F:userspace/go-servers/p9/server.go†L208-L295】
+8. **Memory Management Issues** - STILL CRITICAL
+   - **Issues**: Pool allocation bugs, formatting problems, memory leaks
+   - **Location**: Multiple files in `kernel/9front-pc64/globals.c`
+   - **Impact**: Memory corruption, resource leaks, system instability
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
 
-7. **❌ Twstat unimplemented** - Dispatcher drops Twstat requests through default case. **Metadata updates impossible.**【F:userspace/go-servers/p9/server.go†L208-L295】
+## DEFERRED - Hardware Driver Bugs (Lower Priority)
 
-8. **❌ writeString truncates long names silently** - `len(s)` → `uint16` causes wraparound at 65,536 bytes. **Stream desync.**【F:userspace/go-servers/p9/protocol.go†L149-L155】
+**Strategic Decision**: Hardware driver bugs deferred to Phase 4+ after crypto foundation complete.
 
-9. **❌ Replies can exceed negotiated msize** - `writeMsg` never checks response size fits within `s.msize`. **Protocol violation.**【F:userspace/go-servers/p9/server.go†L153-L205】
+**Reason**: Crypto-first approach prioritizes secure filesystem foundation over hardware drivers.
 
-10. **❌ Malformed strings crash Go 9P parser** - `readString` error returns ignored, truncated frames corrupt parsing. **Server panics.**【F:userspace/go-servers/p9/server.go†L103-L133】【F:userspace/go-servers/p9/protocol.go†L137-L152】
+**Future Approach**: Use NetBSD rump servers for hardware when needed - proven, POSIX-compatible drivers.
 
-11. **❌ Twrite parsing trusts unvalidated lengths** - `data[16:16+fc.Count]` without bounds check. **Buffer overflow vulnerability.**【F:userspace/go-servers/p9/server.go†L140-L145】
+**Deferred Issues Include**:
+- PCI configuration space unreachable
+- Device reset hooks are inert stubs  
+- Interrupt controllers never initialized
+- Architecture-specific devices cannot be registered
 
-12. **❌ Tcreate parsing blindly indexes buffer** - Reads `r.data[0:4]` without validating 5 bytes remain. **Panic on malformed frames.**【F:userspace/go-servers/p9/server.go†L129-L134】
+## Implementation Strategy
 
-### **TIER 3: Filesystem Operations**
+### New Priority Order:
+1. **Phase 1 (Weeks 1-8)**: Crypto server foundation
+   - Fix kernel stability issues (#6, #7, #8)
+   - Implement supercop integration (#3)  
+   - Build basic 9P crypto server (#4)
+   - Add borrow lock + pebble integration (#5)
 
-13. **❌ Tremove unlinks from root with NULL name** - Hardcodes `EXT2_ROOT_INO`, passes null filename. **File removal fails outside root.**【F:userspace/servers/ext4fs/ext4fs.c†L600-L604】
+2. **Phase 2 (Weeks 9-14)**: Security enhancement
+   - RAM encryption for all crypto data
+   - Advanced security features (cold boot protection, audit trails)
+   - Complete process isolation
 
-14. **❌ Directory reads treat offset as entry index** - `dirread_callback` ignores caller offset, causes duplicates/skips. **Broken seek behavior.**【F:userspace/servers/ext4fs/ext4fs.c†L260-L314】
+3. **Phase 3 (Weeks 15-20)**: Filesystem integration
+   - RAM-primary filesystem with `/secure/` mount
+   - Hybrid storage model with drive as cache
+   - RC shell integration
 
-15. **❌ Open mode tracking rejects auxiliary flags** - Stores raw mode, compares to `OWRITE`/`ORDWR`. **Denies `ORDWR|OTRUNC` etc.**【F:userspace/servers/ext4fs/ext4fs.c†L240-L257】【F:userspace/servers/ext4fs/ext4fs.c†L409-L417】
+4. **Phase 4 (Weeks 21-26)**: Advanced features
+   - Synthetic files and translator chains
+   - System integration and optimization
+   - Hardware drivers via NetBSD rump servers
 
-16. **❌ rattach fabricates qid on inode read failure** - Ignores `ext2fs_read_inode` errors, returns garbage. **Bogus success responses.**【F:userspace/servers/ext4fs/ext4fs.c†L165-L176】
+### Success Criteria for Phase 1:
+- [ ] Kernel stability issues resolved (#6, #7, #8)
+- [ ] Working crypto operations: `echo "data" > /secure/crypto/hash/sha256` → `cat /secure/crypto/hash/sha256`
+- [ ] Borrow checking prevents unauthorized crypto access
+- [ ] Pebble budgets limit and account for crypto resource usage
+- [ ] System stable under load testing
 
-17. **❌ Inode numbers truncated by %u format** - `ext2_ino_t` is 64-bit, `%u` truncates high bits. **Duplicate stat names.**【F:userspace/servers/ext4fs/ext4fs.c†L132-L136】
+## Rationale for Strategic Pivot
 
-18. **❌ Directory creation removes link it created** - After `ext2fs_mkdir`, unconditionally unlinks `tx->tcreate.name`. **New directories unreachable.**【F:userspace/servers/ext4fs/ext4fs.c†L552-L568】
+**Why Crypto-First Over Hardware-First**:
 
-19. **❌ rcreate leaks inodes on error paths** - No `ext2fs_inode_alloc_stats2(..., -1, ...)` on failures. **Resource leak.**【F:userspace/servers/ext4fs/ext4fs.c†L525-L556】
+1. **Unique Value Proposition**: First crypto-backed filesystem with Plan 9 philosophy
+2. **Faster Implementation**: No hardware complexity, focus on software innovation
+3. **Research Impact**: Novel architecture with academic publication potential
+4. **Security Foundation**: Everything can build on encrypted, isolated base
+5. **Market Differentiation**: No competitor has crypto-backed file operations
+6. **Hardware Later**: NetBSD rump servers provide proven drivers when ready
 
-20. **❌ Zero-length reads reported as OOM** - `malloc(tx->tread.count)` treats NULL as fatal for `count==0`. **Legitimate requests fail.**【F:userspace/servers/ext4fs/ext4fs.c†L341-L399】
+**This strategic pivot creates a unique competitive advantage while leveraging proven cryptographic libraries (Supercop + NIST standards) and established Plan 9 principles.**
 
-21. **❌ ropen trusts inode read without error check** - Fabricates qid from uninitialized memory on failure. **Garbage success responses.**【F:userspace/servers/ext4fs/ext4fs.c†L240-L257】
+## Files Updated by This Change
 
-22. **❌ Stat marshalling crashes on allocation failure** - Never checks `strdup` results, dereferences NULL. **Server crashes instead of error.**【F:userspace/servers/ext4fs/ext4fs.c†L132-L138】【F:userspace/servers/ext4fs/ext4fs.c†L341-L399】
+- **NEW**: `docs/IMPLEMENTATION_PLAN_CRYPTO_FILESYSTEM.md` - Complete implementation roadmap
+- **UPDATED**: `docs/serious-bugs.md` - This document with new priorities
+- **FUTURE**: `kernel/crypto/` - Will contain crypto server implementation
+- **FUTURE**: `userspace/go-servers/p9/` - Will be refactored or deprecated
 
-23. **❌ MemFS Walk ignores path elements** - Always returns current fid qid regardless of `names`. **Clients can't traverse tree.**【F:userspace/go-servers/memfs/memfs.go†L45-L57】
-
-24. **❌ MemFS Read disregards offsets** - Always returns greeting string, clients loop forever. **Never see EOF.**【F:userspace/go-servers/memfs/memfs.go†L75-L77】
-
-### **TIER 4: Hardware Foundation**
-
-25. **❌ Interrupt controllers never initialized** - `irqinit` empty stub, PIC/APIC never setup. **All external interrupts masked.**【F:kernel/9front-pc64/globals.c†L360-L367】【F:kernel/9front-pc64/trap.c†L75-L83】
-
-26. **❌ PCI configuration space unreachable** - `pcicfginit` returns immediately, bus undiscovered. **Modern hardware invisible.**【F:kernel/9front-pc64/globals.c†L372-L376】【F:kernel/9front-pc64/main.c†L380-L385】
-
-27. **❌ Serial console output silently discarded** - `uartputs` stub ignores arguments. **Nothing reaches UART.**【F:kernel/9front-pc64/globals.c†L123-L130】
-
-28. **❌ Device reset hooks are inert stubs** - `chandevreset` calls no-op helpers. **Devices never register.**【F:kernel/9front-port/chan.c†L147-L177】
-
-29. **❌ Path sanitisation completely disabled** - `cleanname` returns input unchanged. **Directory traversal possible.**【F:kernel/9front-pc64/globals.c†L102-L105】
-
-30. **❌ Delay helpers spin for zero time** - `microdelay` and `delay` empty stubs. **Hardware races immediate.**【F:kernel/9front-pc64/globals.c†L124-L131】
-
-### **TIER 5: Additional System Issues**
-
-31. **❌ Random generator scribbles over own lock** - `randomseed` passes wrong struct to `setupChachastate`. **Lock corruption.**【F:kernel/9front-port/random.c†L71-L108】
-
-32. **❌ fscheck treats fatal errors as success** - Accumulates return values directly, negative means clean. **False clean reports.**【F:userspace/bin/fscheck.c†L152-L167】【F:userspace/bin/fscheck.c†L245-L268】
-
-33. **❌ fscheck block bitmap pass is no-op** - Loop never inspects/records inconsistencies. **Can't detect corruption.**【F:userspace/bin/fscheck.c†L47-L73】
-
-34. **❌ fscheck superblock errors treated as success** - Negative accumulator misreported as clean. **Filesystem "clean" when broken.**【F:userspace/bin/fscheck.c†L158-L267】
-
----
-
-## **✅ SIGNIFICANT FIXES ACHIEVED:**
-
-### **Fixed: Page Ownership System (Bug #33)**
-- **Status**: `pageowninit()` now properly allocates `pageownpool.pages` with `xalloc()`
-- **Impact**: Pebble system can now function, borrow checker operational
-- **Location**: `kernel/9front-port/pageown.c†L44-L52`
-
-### **Fixed: Borrow Checker Data Structures (Bugs #19, #28, #20)**
-- **Status**: Proper hash table with `BorrowBucket` array, correct `SharedBorrower` linked list
-- **Impact**: Memory safety system no longer corrupted, proper Rust-style borrowing
-- **Location**: `kernel/borrowchecker.c†42-59`, `kernel/borrowchecker.c†125`, `kernel/borrowchecker.c†280-285`
-
-### **Fixed: Memory Management (Bugs #46, #47)**
-- **Status**: Pool headers track sizes, `poolrealloc` copies correct amounts, alignment honored
-- **Impact**: Memory allocation now safe and properly aligned
-- **Location**: `kernel/9front-pc64/globals.c†64-73`, `kernel/9front-pc64/globals.c†58-61`
-
-### **Fixed: Time System (Bugs #44, #45)**
-- **Status**: `fastticks()` returns real hardware ticks, `µs()` converts properly
-- **Impact**: Kernel timekeeping now functional
-- **Location**: `kernel/9front-port/fastticks.c`
-
-### **Fixed: Format System (Bugs #55, #56, #57)**
-- **Status**: `fmtinstall`, `fmtstrinit`, `fmtprint` properly implemented
-- **Impact**: Debug output and syscall tracing functional
-- **Location**: `kernel/libc9/` implementations
-
-### **Fixed: Architecture Device Registration (Bug #48)**
-- **Status**: `devarch.c` ports 9front arch device, `addarchfile` publishes handlers
-- **Impact**: Architecture-specific devices accessible
-- **Location**: `kernel/9front-pc64/devarch.c`
-
-### **Fixed: Pager System (Bug #51)**
-- **Status**: `kickpager` now wakes `swapalloc.r` pager thread
-- **Impact**: Memory pressure handling functional
-- **Location**: `kernel/9front-port/page.c†120-168`
-
-### **Fixed: Page Table Protection (Bug #61)**
-- **Status**: Timing issues resolved, memory management corrected
-- **Impact**: Boot progresses further, page table corruption prevented
-- **Location**: `kernel/9front-pc64/mmu.c†165-185`
-
----
-
-## **Impact Assessment:**
-
-**Critical Infrastructure**: ✅ **Much More Stable**
-- Borrow checker operational (revolutionary pebble system ready)
-- Page ownership functional (exchange system can work)
-- Memory management safe (allocation/alignment proper)
-- Time system functional (kernel statistics work)
-
-**Userspace Boot**: ❌ **Still Blocked**  
-- System init syscalls remain stubbed
-- Cannot test userspace programs or servers
-- Blocks all userspace testing and development
-
-**9P Protocol**: ❌ **Security & Reliability Issues**
-- Message corruption vulnerabilities
-- Protocol violations (Tflush, Twstat)
-- Buffer overflow possibilities
-- Stream desynchronization issues
-
-**Hardware Access**: ❌ **Limited**
-- Interrupt system not initialized
-- PCI bus not accessible  
-- Modern devices invisible
-- Serial console non-functional
+The crypto-first direction represents a fundamental shift toward software innovation over hardware compatibility, positioning Lux9 as a leader in secure operating system research.

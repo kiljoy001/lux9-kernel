@@ -28,7 +28,7 @@ check_superblock(ext2_filsys fs)
 	if(fs->super->s_magic != EXT2_SUPER_MAGIC) {
 		printf("FAILED\n");
 		fprintf(stderr, "Invalid superblock magic\n");
-		return -1;
+		return 1;
 	}
 
 	if(verbose) {
@@ -49,6 +49,7 @@ check_block_bitmap(ext2_filsys fs)
 	errcode_t err;
 	blk64_t i;
 	int errors = 0;
+	blk64_t total_blocks, counted_used, expected_used;
 
 	if(verbose)
 		printf("Checking block bitmap... ");
@@ -57,18 +58,29 @@ check_block_bitmap(ext2_filsys fs)
 	if(err) {
 		printf("FAILED\n");
 		fprintf(stderr, "Cannot read bitmaps: %s\n", error_message(err));
-		return -1;
+		return 1;
 	}
 
-	/* Verify block bitmap consistency */
-	for(i = fs->super->s_first_data_block; i < ext2fs_blocks_count(fs->super); i++) {
-		if(ext2fs_test_block_bitmap2(fs->block_map, i)) {
-			/* Block marked as used */
+	total_blocks = ext2fs_blocks_count(fs->super);
+	counted_used = 0;
+
+	for(i = fs->super->s_first_data_block; i < total_blocks; i++) {
+		if(ext2fs_test_block_bitmap2(fs->block_map, i))
+			counted_used++;
+	}
+
+	expected_used = total_blocks - ext2fs_free_blocks_count(fs->super);
+	if(counted_used != expected_used) {
+		errors++;
+		if(verbose) {
+			printf("\n  Block bitmap mismatch: counted %llu used blocks, super reports %llu\n",
+				(unsigned long long)counted_used,
+				(unsigned long long)expected_used);
 		}
 	}
 
 	if(verbose)
-		printf("OK\n");
+		printf("OK (%d errors)\n", errors);
 
 	return errors;
 }
@@ -121,7 +133,7 @@ check_directory_structure(ext2_filsys fs)
 	if(err) {
 		printf("FAILED\n");
 		fprintf(stderr, "Cannot open inode scan: %s\n", error_message(err));
-		return -1;
+		return 1;
 	}
 
 	while(1) {
@@ -152,12 +164,13 @@ static int
 check_filesystem(ext2_filsys fs)
 {
 	int total_errors = 0;
+	int err;
 
 	printf("Checking filesystem on %s\n", fs->device_name);
 
-	total_errors += check_superblock(fs);
-	if(total_errors > 0)
-		return total_errors;
+	err = check_superblock(fs);
+	if(err)
+		return err;
 
 	total_errors += check_block_bitmap(fs);
 	total_errors += check_inode_bitmap(fs);

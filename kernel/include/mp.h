@@ -3,7 +3,7 @@
  */
 typedef struct {			/* floating pointer */
 	uchar	signature[4];		/* "_MP_" */
-	long	physaddr;		/* physical address of MP configuration table */
+	u32int	physaddr;		/* physical address of MP configuration table */
 	uchar	length;			/* 1 */
 	uchar	specrev;		/* [14] */
 	uchar	checksum;		/* all bytes must add up to 0 */
@@ -20,10 +20,10 @@ typedef struct {			/* configuration table header */
 	uchar	version;		/* [14] */
 	uchar	checksum;		/* all bytes must add up to 0 */
 	uchar	product[20];		/* product id */
-	ulong	oemtable;		/* OEM table pointer */
+	u32int	oemtable;		/* OEM table pointer */
 	ushort	oemlength;		/* OEM table length */
 	ushort	entry;			/* entry count */
-	ulong	lapicbase;		/* address of local APIC */
+	u32int	lapicbase;		/* address of local APIC */
 	ushort	xlength;		/* extended table length */
 	uchar	xchecksum;		/* extended table checksum */
 	uchar	reserved;
@@ -37,7 +37,7 @@ typedef struct {			/* processor table entry */
 	uchar	version;		/* local APIC verison */
 	uchar	flags;			/* CPU flags */
 	uchar	signature[4];		/* CPU signature */
-	ulong	feature;		/* feature flags from CPUID instruction */
+	u32int	feature;		/* feature flags from CPUID instruction */
 	uchar	reserved[8];
 } PCMPprocessor;
 
@@ -56,7 +56,7 @@ typedef struct {			/* I/O APIC table entry */
 	uchar	apicno;			/* I/O APIC id */
 	uchar	version;		/* I/O APIC version */
 	uchar	flags;			/* I/O APIC flags */
-	ulong	addr;			/* I/O APIC address */
+	u32int	addr;			/* I/O APIC address */
 } PCMPioapic;
 
 #define PCMPioapicsz		(1+1+1+1+4)
@@ -78,8 +78,8 @@ typedef struct {			/* system address space mapping entry */
 	uchar	length;			/* of this entry (20) */
 	uchar	busno;			/* bus id */
 	uchar	addrtype;
-	ulong	addrbase[2];
-	ulong	addrlength[2];
+	u32int	addrbase[2];
+	u32int	addrlength[2];
 } PCMPsasm;
 
 #define PCMPsasmsz		(1+1+1+1+8+8)
@@ -100,7 +100,7 @@ typedef struct {			/* compatibility bus address space modifier entry */
 	uchar	length;			/* of this entry (8) */
 	uchar	busno;			/* bus id */
 	uchar	modifier;		/* address modifier */
-	ulong	range;			/* predefined range list */
+	u32int	range;			/* predefined range list */
 } PCMPcbasm;
 
 #define PCMPcbasmsz		(1+1+1+1+4)
@@ -179,7 +179,7 @@ typedef struct Apic {
 	ulong	paddr;
 	int	flags;			/* PcmpBP|PcmpEN */
 
-	Lock;				/* I/O APIC: register access */
+	Lock lock;				/* I/O APIC: register access */
 	int	mre;			/* I/O APIC: maximum redirection entry */
 	int	gsibase;		/* I/O APIC: global system interrupt base (acpi) */
 

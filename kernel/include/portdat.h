@@ -59,6 +59,8 @@ typedef int    Devgen(Chan*, char*, Dirtab*, int, int, Dir*);
 #pragma incomplete Mntcache
 #pragma incomplete Mntrpc
 
+#include "lock_dag.h"
+
 #include "pebble.h"
 #pragma incomplete Queue
 #pragma incomplete Timers
@@ -687,6 +689,22 @@ struct Proc
 {
 	Label	sched;		/* known to l.s */
 
+	union {
+		Timer	timer;	/* Timer state for tsleep/realtime */
+		struct {
+			Lock	tlock;
+			int	tmode;
+			vlong	tns;
+			void	(*tf)(Ureg*, Timer*);
+			void	*ta;
+			Mach	*tactive;
+			Timers	*tt;
+			Tval	tticks;
+			Tval	twhen;
+			Timer	*tnext;
+		};
+	};
+
 	Mach	*mach;		/* machine running this proc */
 	char	*text;
 	char	*user;
@@ -727,8 +745,9 @@ struct Proc
 	int	insyscall;
 	ulong	time[6];	/* User, Sys, Real; child U, S, R */
 
-	/* Borrow checker */
+	/* Borrow checker / lock DAG */
 	uintptr		waiting_for_key;
+	struct LockDagContext lockdag;
 
 	uvlong	kentry;		/* Kernel entry time stamp (for profiling) */
 	/*
@@ -762,17 +781,6 @@ struct Proc
 	uintptr	rendval;	/* Value for rendezvous */
 	Proc	*rendhash;	/* Hash list for tag values */
 
-	/* Timer fields */
-	int	tmode;		/* Timer mode */
-	vlong	tns;		/* Timer nanoseconds */
-	void	(*tf)(Ureg*, Timer*);	/* Timer function */
-	void	*ta;		/* Timer argument */
-	Timers	*tt;		/* Timers queue */
-	Timer	*tnext;		/* Next timer */
-	Tval	tticks;		/* Timer ticks */
-	Tval	twhen;		/* Timer when */
-	Mach	*tactive;	/* Timer active on */
-	Lock	tlock;		/* Timer lock */
 	Rendez	*trend;
 	int	(*tfn)(void*);
 	void	(*kpfun)(void*);

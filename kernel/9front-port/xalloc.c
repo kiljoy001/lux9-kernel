@@ -10,6 +10,40 @@ extern uintptr limine_hhdm_offset;
 /* Flag to indicate xinit() has completed (for early-boot allocators) */
 int xinit_done = 0;
 
+/* Bootstrap allocation for early boot systems */
+static uchar bootstrap_pool[8192];  /* Simple 8KB bootstrap pool */
+static ulong bootstrap_offset = 0;
+
+/**
+ * Allocate a small aligned block from the early-boot bootstrap pool.
+ *
+ * Allocates `size` bytes from the internal 8KB bootstrap pool and returns
+ * an 8-byte-aligned pointer into that pool. If there is not enough space
+ * remaining, returns `nil`.
+ *
+ * @param size Number of bytes requested.
+ * @returns Pointer to the start of the allocated, 8-byte-aligned region within
+ *          the bootstrap pool, or `nil` if allocation fails due to insufficient space.
+ */
+void*
+bootstrap_alloc(ulong size)
+{
+	ulong aligned_size;
+	
+	/* Align to 8-byte boundary */
+	aligned_size = (size + 7) & ~7;
+	
+	/* Check if we have enough space */
+	if (bootstrap_offset + aligned_size > sizeof(bootstrap_pool)) {
+		return nil;
+	}
+	
+	/* Return the allocated space */
+	void *ptr = &bootstrap_pool[bootstrap_offset];
+	bootstrap_offset += aligned_size;
+	return ptr;
+}
+
 /* -------------------------------------------------------------------------
  * XALLOC configuration
  * -------------------------------------------------------------------------
@@ -83,13 +117,13 @@ xinit(void)
 	kpages = conf.npage - conf.upages;
 // 	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);  // TEST PRINT - CRASHES DURING EARLY BOOT
 // 	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);  // TEST PRINT - CRASHES DURING EARLY BOOT
-// 	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);  // TEMPORARILY DISABLED - crashes during early boot before print init
+	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
 
 	for(i=0; i<nelem(conf.mem); i++){
 		cm = &conf.mem[i];
 		/* Only print first few entries to avoid verbose output */
 		if(i < 2) {
-// 			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n",  // TEMPORARILY DISABLED - crashes during early boot before print init
+			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n", i, cm->base, cm->npage);
 // 				i, cm->base, cm->npage);
 		} else if(i == 2) {
 // 			print("xinit: ... (showing first 2 entries only)\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
@@ -205,26 +239,24 @@ xallocz(ulong size, int zero)
 				xlists.flist = h;
 			}
 			iunlock(&xlists.lk);
-	/* TEST 2A: Track allocation success */
-	xalloc_successes++;
 			p->magix = Magichole;
 			p->size = size;
 			if(zero)
 				memset(p->data, 0, orig_size);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
+			/* TEST 2A: Track allocation success */
+			xalloc_successes++;
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
-	/* TEST 2A: Track allocation success */
-	xalloc_successes++;
+
 	/* TEST 2A: Track allocation failure */
 	xalloc_failures++;
 	xalloc_last_failure_size = orig_size;
 	print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures, orig_size, getcallerpc(&orig_size));
-
 	return nil;
 }
 

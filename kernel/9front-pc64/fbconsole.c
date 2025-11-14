@@ -11,6 +11,16 @@
 
 extern struct limine_framebuffer_request *limine_framebuffer;
 
+/* Saved framebuffer info from Limine (before CR3 switch) */
+static struct {
+	uintptr fb_phys_addr;
+	u64int width;
+	u64int height;
+	u64int pitch;
+	u16int bpp;
+	int valid;
+} saved_fb_info;
+
 static struct {
 	uchar *addr;
 	u64int width;
@@ -223,66 +233,99 @@ static uchar font8x16[95][16] = {
 extern void (*screenputs)(char*, int);
 extern void uartputs(char*, int);
 
+/* Call this BEFORE switching to kernel page tables to save framebuffer info */
 void
-fbconsoleinit(void)
+save_framebuffer_info(void)
 {
 	struct limine_framebuffer_response *fb_response;
 	struct limine_framebuffer *framebuffer;
+	uintptr fbaddr;
 	extern uintptr saved_limine_hhdm_offset;
 
-	uartputs("fbconsole: HHDM mappings incomplete, skipping framebuffer console\n", 68);
-	return;
+	saved_fb_info.valid = 0;
 
-	uartputs("fbconsoleinit: starting\n", 24);
-
-	if(limine_framebuffer == nil){
-		uartputs("fbconsole: limine_framebuffer is nil\n", 38);
-		return;
-	}
-
-	if(limine_framebuffer->response == nil){
-		uartputs("fbconsole: no framebuffer response\n", 36);
+	if(limine_framebuffer == nil || limine_framebuffer->response == nil){
+		uartputs("save_framebuffer_info: no framebuffer available\n", 49);
 		return;
 	}
 
 	fb_response = limine_framebuffer->response;
-	print("fbconsole: response pointer=%#p\n", fb_response);
-	if((uintptr)fb_response < 0xFFFF800000000000ULL)
-		fb_response = (struct limine_framebuffer_response*)((uintptr)fb_response + saved_limine_hhdm_offset);
-	print("fbconsole: response mapped=%#p\n", fb_response);
 	if(fb_response->framebuffer_count == 0){
-		uartputs("fbconsole: no framebuffers\n", 28);
+		uartputs("save_framebuffer_info: no framebuffers\n", 40);
 		return;
 	}
 
 	framebuffer = fb_response->framebuffers[0];
-	print("fbconsole: raw framebuffer ptr=%#p\n", framebuffer);
+	fbaddr = (uintptr)framebuffer->address;
 
-	/* Framebuffer address might be a physical address,  map it through HHDM */
-	uintptr fbaddr = (uintptr)framebuffer->address;
+	/* Limine may give us a virtual address in its HHDM space - convert to physical */
+	if(fbaddr >= saved_limine_hhdm_offset){
+		fbaddr -= saved_limine_hhdm_offset;
+		uartputs("save_framebuffer_info: converted HHDM virtual to physical\n", 59);
+	}
 
-	/* If address looks like a physical address (below kernel space), add HHDM offset */
-	if(fbaddr < 0xFFFF800000000000ULL)
-		fbaddr += saved_limine_hhdm_offset;
+	saved_fb_info.fb_phys_addr = fbaddr;
+	saved_fb_info.width = framebuffer->width;
+	saved_fb_info.height = framebuffer->height;
+	saved_fb_info.pitch = framebuffer->pitch;
+	saved_fb_info.bpp = framebuffer->bpp;
+	saved_fb_info.valid = 1;
 
-	fb.addr = (uchar*)fbaddr;
-	fb.width = framebuffer->width;
-	fb.height = framebuffer->height;
-	fb.pitch = framebuffer->pitch;
-	fb.bpp = framebuffer->bpp;
+	uartputs("save_framebuffer_info: saved\n", 30);
+}
+
+void
+fbconsoleinit(void)
+{
+	extern uintptr saved_limine_hhdm_offset;
+	uintptr fbaddr;
+
+	uartputs("fbconsoleinit: starting\n", 24);
+
+	if(!saved_fb_info.valid){
+		uartputs("fbconsole: no saved framebuffer info\n", 38);
+		return;
+	}
+
+	uartputs("fbconsole: using saved framebuffer info\n", 41);
+
+	/* Map physical framebuffer address using vmap (for MMIO) */
+	fbaddr = saved_fb_info.fb_phys_addr;
+
+	char msg[128];
+	snprint(msg, sizeof(msg), "fbconsole: phys_addr=0x%llx width=%llu height=%llu pitch=%llu bpp=%u\n",
+		(unsigned long long)fbaddr, saved_fb_info.width, saved_fb_info.height, saved_fb_info.pitch, saved_fb_info.bpp);
+	uartputs(msg, strlen(msg));
+
+	/* Use vmap to create mapping for MMIO framebuffer */
+	uintptr size = saved_fb_info.pitch * saved_fb_info.height;
+	fb.addr = vmap(fbaddr, size);
+	if(fb.addr == nil){
+		uartputs("fbconsole: ERROR - vmap failed for framebuffer\n", 49);
+		return;
+	}
+	snprint(msg, sizeof(msg), "fbconsole: vmap(0x%llx, 0x%llx) = %p\n",
+		(unsigned long long)fbaddr, (unsigned long long)size, fb.addr);
+	uartputs(msg, strlen(msg));
+
+	fb.width = saved_fb_info.width;
+	fb.height = saved_fb_info.height;
+	fb.pitch = saved_fb_info.pitch;
+	fb.bpp = saved_fb_info.bpp;
 	fb.x = 0;
 	fb.y = 0;
 	fb.fg = 0xFFFFFF;  /* White */
 	fb.bg = 0x000000;  /* Black */
 	fb.initialized = 1;
 
-	print("fbconsole: %llux%llu@%u bpp=%u\n", fb.width, fb.height, fb.bpp, fb.pitch);
+	uartputs("fbconsole: framebuffer initialized, clearing screen\n", 53);
 
 	/* Clear screen */
 	memset(fb.addr, 0, fb.pitch * fb.height);
 
 	/* Hook into screenputs */
 	screenputs = fbconsolescreenputs;
+	uartputs("fbconsole: screen output enabled\n", 34);
 }
 
 static void

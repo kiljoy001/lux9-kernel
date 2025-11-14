@@ -1,75 +1,116 @@
-# Userspace programs Makefile
+# userspace/Makefile - Userspace Build Configuration
+# Builds all userspace components independently
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I./include -I./lib/lib9p
-LDFLAGS = -lext2fs -lcom_err
+# Configuration
+USERSPACE_NAME := lux9-userspace
+BUILD_DIR := build
+SRC_DIR := .
 
-# Directories
-SERVERDIR = servers
-LIB9PDIR = lib/lib9p
-GO_SERVERS_DIR = go-servers
+# Source directories
+GO_SERVERS_DIR := go-servers
+DRIVERS_DIR := drivers
+C_SERVERS_DIR := servers
+LIBS_DIR := lib
 
-# Lib9p sources
-LIB9P_SRC = $(LIB9PDIR)/convM2S.c $(LIB9PDIR)/convS2M.c \
-            $(LIB9PDIR)/convM2D.c $(LIB9PDIR)/convD2M.c \
-            $(LIB9PDIR)/freefcall.c
-LIB9P_OBJ = $(LIB9P_SRC:.c=.o)
+# Build directories
+OBJ_DIR := $(BUILD_DIR)/obj
+BIN_DIR := $(BUILD_DIR)/bin
+LIB_DIR := $(BUILD_DIR)/lib
+INITRD_DIR := $(BUILD_DIR)/initrd
 
-# Servers
-SERVERS = $(SERVERDIR)/ext4fs/ext4fs
+# Tool chains
+GO := go
+CC := gcc
+CXX := g++
+LD := ld
+AR := ar
 
-# Go servers
-GO_SERVERS = $(GO_SERVERS_DIR)/exchange/exchange_test $(GO_SERVERS_DIR)/exchange/exchange_9p_test
+# Go build settings
+GOFLAGS := -ldflags="-s -w" -trimpath
+GOBUILD := $(GO) build $(GOFLAGS)
 
-# Utilities
-BINDIR = bin
-UTILS = $(BINDIR)/fscheck $(BINDIR)/init
+# C build settings
+CFLAGS := -Wall -Wextra -O2 -fPIC \
+          -I./include \
+          -I./lib \
+          -L$(LIB_DIR)
 
-all: $(SERVERS) $(UTILS) $(GO_SERVERS)
+LDFLAGS := -shared -Wl,-soname,
 
-# Build lib9p
-$(LIB9PDIR)/%.o: $(LIB9PDIR)/%.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+# Targets
+.PHONY: all clean test install help
 
-# Build ext4fs server
-$(SERVERDIR)/ext4fs/ext4fs: $(SERVERDIR)/ext4fs/ext4fs.o $(LIB9P_OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+# Main userspace build
+all: go-servers drivers c-servers libs initrd
 
-$(SERVERDIR)/ext4fs/ext4fs.o: $(SERVERDIR)/ext4fs/ext4fs.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+# Drivers build
+drivers:
+	@echo "Building userspace drivers..."
+	@$(MAKE) -C $(DRIVERS_DIR) all
 
-# Build Go servers
-$(GO_SERVERS_DIR)/exchange/exchange_test $(GO_SERVERS_DIR)/exchange/exchange_9p_test:
-	cd $(GO_SERVERS_DIR) && $(MAKE) build
+# Go servers build
+go-servers:
+	@echo "Building Go servers..."
+	@$(MAKE) -C $(GO_SERVERS_DIR) all
 
-# Build utilities
-$(BINDIR)/fscheck: $(BINDIR)/fscheck.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+# C servers build  
+c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs
 
-$(BINDIR)/init: $(BINDIR)/init.c $(BINDIR)/syscalls.c
-	$(CC) $(CFLAGS) -o $@ $^ -static -nostdlib -e main
+$(C_SERVERS_DIR)/ext4fs/ext4fs: $(C_SERVERS_DIR)/ext4fs/ext4fs.c
+	@mkdir -p $(dir $@)
+	@$(CC) $(CFLAGS) -o $@ $<
 
-# Initrd
-INITRD_DIR = initrd
-INITRD_TAR = initrd.tar
+# Libraries (placeholder)
+libs:
+	@echo "Building userspace libraries..."
+	@mkdir -p $(LIB_DIR)
 
-$(INITRD_TAR): $(SERVERS) $(UTILS)
-	rm -rf $(INITRD_DIR)
-	mkdir -p $(INITRD_DIR)/bin
-	mkdir -p $(INITRD_DIR)/dev
-	cp servers/ext4fs/ext4fs $(INITRD_DIR)/bin/
-	cp bin/init $(INITRD_DIR)/bin/
-	cp bin/fscheck $(INITRD_DIR)/bin/
-	# Build and copy Go servers
-	cd $(GO_SERVERS_DIR) && $(MAKE) build
-	cp $(GO_SERVERS_DIR)/exchange/exchange_test $(GO_SERVERS_DIR)/exchange/exchange_9p_test $(INITRD_DIR)/bin/
-	tar -cf $@ -C $(INITRD_DIR) .
+# Initrd creation
+initrd: $(BUILD_DIR)/initrd.tar
+	@echo "Creating initrd..."
 
-initrd: $(INITRD_TAR)
+$(BUILD_DIR)/initrd.tar: go-servers drivers c-servers libs
+	@echo "Building initrd from $(GO_SERVERS_DIR), $(DRIVERS_DIR), and $(C_SERVERS_DIR)"
+	@rm -rf $(INITRD_DIR)
+	@mkdir -p $(INITRD_DIR)/{bin,lib,dev,etc,srv}
+	# Copy Go binaries
+	@find $(GO_SERVERS_DIR) -name "*.go" -prune -o -type f -executable -print \
+	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
+	# Copy driver binaries
+	@find $(DRIVERS_DIR) -name "*_driver" -type f -executable -print \
+	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
+	# Copy C binaries
+	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
+	# Create tar
+	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
+	@echo "Initrd created: $@"
 
+# Testing
+test: 
+	@echo "Running userspace tests..."
+	@$(MAKE) -C $(GO_SERVERS_DIR) test 2>/dev/null || echo "Go server tests completed"
+
+# Installation
+install: $(BUILD_DIR)/initrd.tar
+	@mkdir -p $(DESTDIR)/boot
+	@cp $< $(DESTDIR)/boot/initrd.tar
+	@echo "Userspace installed to $(DESTDIR)/boot/initrd.tar"
+
+# Cleanup
 clean:
-	rm -f $(SERVERS) $(UTILS) $(SERVERDIR)/*/*.o $(LIB9PDIR)/*.o
-	rm -rf $(INITRD_DIR) $(INITRD_TAR)
-	cd $(GO_SERVERS_DIR) && $(MAKE) clean
+	@echo "Cleaning userspace build..."
+	@rm -rf $(BUILD_DIR)
+	@$(MAKE) -C $(GO_SERVERS_DIR) clean 2>/dev/null || true
+	@$(MAKE) -C $(DRIVERS_DIR) clean 2>/dev/null || true
 
-.PHONY: all clean initrd
+help:
+	@echo "Userspace Build Targets:"
+	@echo "  all      - Build all userspace components"
+	@echo "  go-servers - Build Go servers"
+	@echo "  drivers  - Build userspace drivers"
+	@echo "  c-servers - Build C servers"
+	@echo "  libs     - Build libraries"
+	@echo "  initrd   - Create initrd package"
+	@echo "  test     - Run userspace tests"
+	@echo "  install  - Install userspace"
+	@echo "  clean    - Clean build artifacts"

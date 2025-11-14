@@ -181,7 +181,7 @@ sched(void)
 		 * Delay the sched until the process gives up the locks
 		 * it is holding.  This avoids dumb lock loops.
 		 * But do sched eventually.  This avoids a missing unlock
-		 * from hanging the entire kernel. 
+		 * from hanging the entire kernel.
 		 * But don't reschedule procs holding palloc or procalloc.
 		 * Those are far too important to be holding while asleep.
 		 *
@@ -217,7 +217,6 @@ sched(void)
 	up->state = Running;
 	mmuswitch(up);
 	gotolabel(&up->sched);
-	/* gotolabel returned - process yielded, go back to top of sched() */
 }
 
 int
@@ -491,7 +490,8 @@ ready(Proc *p)
 	if(queueproc(&runq[pri], p) < 0){
 		iprint("ready %s %lud %s pc %p\n",
 			p->text, p->pid, statename[p->state], getcallerpc(&p));
-	} else {
+	}
+	{
 		void (*pt)(Proc*, int, vlong);
 		pt = proctrace;
 		if(pt != nil)
@@ -632,7 +632,6 @@ runproc(void)
 	int i;
 	void (*pt)(Proc*, int, vlong);
 
-
 	start = perfticks();
 
 	/* cooperative scheduling until the clock ticks */
@@ -729,9 +728,6 @@ newproc(void)
 			return nil;
 		}
 		p = (Proc*)(b + KSTACK);
-		/* Debug: verify p is not in runq range */
-		if((uintptr)p >= (uintptr)runq && (uintptr)p < (uintptr)(runq + Nrq)){
-		}
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
 	}
@@ -1217,7 +1213,7 @@ postnotepg(ulong noteid, char *msg, int flag)
 
 /* keep some broken processes around */
 static struct {
-	Lock;
+	Lock lock;
 	int	n;
 	Proc	*p[4];
 } broken;
@@ -1690,10 +1686,6 @@ kproc(char *name, void (*func)(void *), void *arg)
 
 	procpriority(p, PriKproc, 0);
 
-	/* Verify kp is still 1 before calling ready */
-	if(p->kp != 1){
-	}
-
 	ready(p);
 }
 
@@ -1746,6 +1738,8 @@ procctl(void)
 _Noreturn void
 error(char *err)
 {
+	if(up == nil)
+		panic("error(%s) with no user process (caller=%#p)", err, getcallerpc(&err));
 	spllo();
 
 	assert(up->nerrlab < NERR);

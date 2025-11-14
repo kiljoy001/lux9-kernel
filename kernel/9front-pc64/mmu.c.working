@@ -532,7 +532,11 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 	MMU *p;
 
 	flags = PTEWRITE|PTEVALID;
-	if(va < VMAP){
+	/* Check if this is a user address that requires a process context.
+	 * User addresses are < USTKTOP.
+	 * Kernel addresses include: >= KZERO, HHDM range (vmap uses HHDM for device MMIO).
+	 * The kmap region (USTKTOP to KZERO, outside HHDM) also requires up. */
+	if(va < VMAP && !is_hhdm_va(va)){
 		if(up == nil)
 			panic("mmucreate: up nil va=%#p", va);
 		if((p = mmualloc()) == nil)

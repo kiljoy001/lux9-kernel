@@ -28,7 +28,7 @@ bootargsinit(void)
 	struct limine_memmap_response *memmap_response;
 	struct limine_memmap_entry *entry;
 	u64int i, max_addr;
-	extern u32int MemMin;
+	extern u64int MemMin;
 
 	/* Parse Limine kernel address response */
 	if(limine_kernel_address && limine_kernel_address->response) {
@@ -53,32 +53,43 @@ bootargsinit(void)
 
 	/* Initialize MemMin from Limine memory map
 	 * MemMin indicates the end of the initially mapped physical memory
-	 * With Limine HHDM, all physical memory is mapped, so we set MemMin
-	 * to the highest usable physical address (limited to 4GB for cankaddr) */
+	 * We only consider usable RAM (type 0) to avoid trying to pre-map
+	 * enormous MMIO regions at high physical addresses.
+	 * Cap at 128GB to avoid exhausting page tables during early boot. */
+	extern void uartputs(char*, int);
 	max_addr = 0;
+	uartputs("bootargsinit: checking limine_memmap\n", 38);
 	if(limine_memmap && limine_memmap->response) {
 		memmap_response = limine_memmap->response;
+		uartputs("bootargsinit: memmap response valid\n", 37);
 		for(i = 0; i < memmap_response->entry_count; i++) {
 			entry = memmap_response->entries[i];
-			/* Only count usable memory (type 0 = LIMINE_MEMMAP_USABLE) */
-			if(entry->type == 0) {
+			/* Only consider usable RAM (type 0) for initial mapping
+			 * MMIO regions will be mapped on-demand via vmap() */
+			if(entry->type == 0) {  /* LIMINE_MEMMAP_USABLE */
 				u64int end = entry->base + entry->length;
 				if(end > max_addr)
 					max_addr = end;
 			}
 		}
+	} else {
+		uartputs("bootargsinit: ERROR - memmap is NULL!\n", 39);
 	}
 
-	/* Limit to 4GB since cankaddr() can't handle more */
-	if(max_addr > 4ULL*1024*1024*1024)
-		max_addr = 4ULL*1024*1024*1024;
+	/* Set MemMin - cap at 128GB to avoid exhausting page tables during boot
+	 * Additional memory can be mapped on demand later */
+	if(max_addr == 0) {
+		uartputs("bootargsinit: WARNING - max_addr is 0, using fallback\n", 56);
+		max_addr = 4ULL*1024*1024*1024;  /* 4GB fallback */
+	}
 
-	/* Set MemMin - use the actual max RAM address we found
-	 * Don't try to compute kernel end here since PADDR() might not work yet */
-	if(max_addr == 0)
-		max_addr = 64*1024*1024;  /* Fallback: 64MB minimum */
+	/* Cap at 128GB */
+	if(max_addr > 128ULL*1024*1024*1024) {
+		max_addr = 128ULL*1024*1024*1024;
+	}
 
-	MemMin = (u32int)max_addr;
+	MemMin = max_addr;
+	uartputs("bootargsinit: MemMin set\n", 26);
 }
 
 /* meminit0() provided by memory_9front.c - it handles memory discovery */

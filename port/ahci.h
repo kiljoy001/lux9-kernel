@@ -319,13 +319,19 @@ enum {
 };
 
 typedef struct {
-	QLock;
-	Rendez;
+	QLock qlock;
+	Rendez rendez;
 	uchar	flag;
 	Sfis	sfis;
 	Afis	fis;
 	Alist	*list;
 	Actab	*ctab;
+	
+	/* 9front compatibility members */
+	uchar	feat;		/* feature flags */
+	uchar	udma;		/* UDMA mode */
+	uchar	physshift;	/* physical shift */
+	uchar	physalign;	/* physical alignment */
 } Aportm;
 
 typedef struct {

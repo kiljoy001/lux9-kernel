@@ -31,12 +31,32 @@ static int
 is_valid_tar(struct tar_header *hdr)
 {
 	/* Check magic */
-	if(memcmp(hdr->magic, "ustar", 5) != 0)
+	if(memcmp(hdr->magic, "ustar", 5) != 0) {
+		print("initrd: invalid magic\n");
 		return 0;
+	}
+	
+	/* Check version */
+	if(hdr->version[0] != '0' && hdr->version[0] != ' ') {
+		print("initrd: invalid version\n");
+		return 0;
+	}
 
 	/* Check if name is not empty */
-	if(hdr->name[0] == '\0')
+	if(hdr->name[0] == '\0') {
+		print("initrd: empty name\n");
 		return 0;
+	}
+	
+	/* Check if size field looks reasonable */
+	/* Basic check: should be all octal digits or spaces */
+	int i;
+	for(i = 0; i < 12 && hdr->size[i] != '\0'; i++) {
+		if(hdr->size[i] != ' ' && (hdr->size[i] < '0' || hdr->size[i] > '7')) {
+			print("initrd: invalid size field\n");
+			return 0;
+		}
+	}
 
 	return 1;
 }
@@ -81,10 +101,21 @@ initrd_init(void *addr, usize len)
 	printhex("initrd end offset ", (uvlong)len);
 
 	/* Parse TAR archive */
-	while(offset < len) {
+	int entry_count = 0;
+	const int MAX_ENTRIES = 1000;
+	
+	while(offset < len && entry_count < MAX_ENTRIES) {
 		hdr = (struct tar_header*)((u8int*)addr + offset);
 		printhex("header @ ", (uvlong)(uintptr)hdr);
 		printhex("offset ", (uvlong)offset);
+		printhex("entry_count ", (uvlong)entry_count);
+		
+		/* Basic safety check */
+		if((u8int*)hdr < (u8int*)addr || (u8int*)hdr >= (u8int*)addr + len) {
+			print("initrd: invalid header pointer\n");
+			break;
+		}
+		
 		uvlong word0;
 		memmove(&word0, hdr, sizeof word0);
 		printhex("hdr word0 ", word0);
@@ -99,20 +130,21 @@ initrd_init(void *addr, usize len)
 			break;
 		}
 
-	/* Get file size */
-	size = parse_octal(hdr->size, sizeof(hdr->size));
-	printhex("size parsed ", (uvlong)size);
-	printhex("malloc request ", (uvlong)sizeof(struct initrd_file));
+		/* Get file size */
+		size = parse_octal(hdr->size, sizeof(hdr->size));
+		printhex("size parsed ", (uvlong)size);
+		printhex("malloc request ", (uvlong)sizeof(struct initrd_file));
 
-	/* Only handle regular files */
-	if(hdr->typeflag == '0' || hdr->typeflag == '\0') {
-		/* Allocate file entry */
-		file = malloc(sizeof(struct initrd_file));
-		printhex("malloc returned ", (uvlong)(uintptr)file);
-		if(file == nil) {
-		print("initrd: out of memory\n");
-		return;
-		}
+		/* Only handle regular files */
+		if(hdr->typeflag == '0' || hdr->typeflag == '\0') {
+			/* Allocate file entry */
+			file = malloc(sizeof(struct initrd_file));
+			printhex("malloc returned ", (uvlong)(uintptr)file);
+			if(file == nil) {
+				print("initrd: out of memory, continuing anyway\n");
+				/* Continue to next entry rather than stopping */
+				goto skip_entry;
+			}
 
 			/* Copy name */
 			memmove(file->name, hdr->name, sizeof(hdr->name));
@@ -139,10 +171,23 @@ initrd_init(void *addr, usize len)
 			print("initrd: found file\n");
 		}
 
+	skip_entry:
 		/* Move to next file (512-byte aligned) */
 		offset += 512;  /* Header */
-		offset += (size + 511) & ~511;  /* Data (rounded up to 512) */
+		if(size > 0) {
+			usize aligned_size = (size + 511) & ~511;  /* Data (rounded up to 512) */
+			if(offset + aligned_size < offset) {  /* Check for overflow */
+				print("initrd: size overflow detected\n");
+				break;
+			}
+			offset += aligned_size;
+		}
+		entry_count++;
 		print("initrd: entry processed\n");
+	}
+	
+	if(entry_count >= MAX_ENTRIES) {
+		print("initrd: maximum entry count reached\n");
 	}
 
 	print("initrd: loaded successfully\n");

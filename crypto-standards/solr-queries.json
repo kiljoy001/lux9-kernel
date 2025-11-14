@@ -1,0 +1,12 @@
+{
+  "FIPS 140-3 self-tests": "fips_self_tests_ss:*",
+  "Quantum-resistant algorithms": "cnsa_quantum_resistant_ss:*",
+  "AES requirements": "algorithms_ss:AES*",
+  "Key zeroization": "fips_zeroization_ss:*",
+  "Security Level 3": "security_levels_ss:*Level*3*",
+  "2025 transition": "cnsa_timeline_s:*2025*",
+  "Test vectors": "has_test_vectors_b:true",
+  "SHA-3 requirements": "algorithms_ss:SHA3* OR algorithms_ss:SHA-3*",
+  "ML-KEM (Kyber)": "algorithms_ss:ML-KEM* OR algorithms_ss:Kyber*",
+  "ML-DSA (Dilithium)": "algorithms_ss:ML-DSA* OR algorithms_ss:Dilithium*"
+}

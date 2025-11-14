@@ -20,6 +20,18 @@ extern uvlong touser_target_sp;
 extern uvlong touser_target_flags;
 extern uvlong touser_attempt_count;
 
+int intret_debug_stage = 0;
+
+void asm_debug_print(int n)
+{
+	print("%d", n);
+}
+
+void asm_debug_print_hex(unsigned long n)
+{
+	print("[%p]", n);
+}
+
 static void debugexc(Ureg*, void*);
 static void debugbpt(Ureg*, void*);
 static void faultamd64(Ureg*, void*);
@@ -41,12 +53,16 @@ trapinit0(void)
 {
 	u32int d1, v;
 	uintptr vaddr;
-	Segdesc *idt;
+	Segdesc *idt, *idt_start;
 	uintptr ptr[2];
 
+	uartputs("trapinit0: ENTRY - initializing IDT\n", 40);
 	/* Use temp_idt in BSS instead of fixed IDTADDR until page tables are set up */
 	idt = temp_idt;
+	idt_start = idt;
 	vaddr = (uintptr)vectortable;
+	uartputs("trapinit0: initialized\n", 24);
+
 	for(v = 0; v < 256; v++){
 		d1 = (vaddr & 0xFFFF0000)|SEGP;
 		switch(v){
@@ -73,9 +89,12 @@ trapinit0(void)
 
 		vaddr += 6;
 	}
+
+	uartputs("trapinit0: loop complete, loading IDT\n", 39);
 	((ushort*)&ptr[1])[-1] = sizeof(Segdesc)*512-1;
 	ptr[1] = (uintptr)temp_idt;  /* Use temp_idt address */
 	lidt(&((ushort*)&ptr[1])[-1]);
+	uartputs("trapinit0: DONE\n", 17);
 }
 
 void
@@ -149,8 +168,16 @@ void
 trap(Ureg *ureg)
 {
 	int vno, user;
+	static int trap_count = 0;
 
 	vno = ureg->type;
+	/* Debug print disabled - can cause QEMU iothread issues from interrupt context
+	if(trap_count < 5) {
+		print("trap: vno=%d pc=%p cs=%#x ss=%#x error=%#x\n",
+		      vno, ureg->pc, (unsigned int)ureg->cs, (unsigned int)ureg->ss, (unsigned int)ureg->error);
+		trap_count++;
+	}
+	*/
 	user = kenter(ureg);
 	if(user && pebble_enabled)
 		pebble_auto_verify(up, ureg);
@@ -199,14 +226,18 @@ trap(Ureg *ureg)
 		panic("unknown trap/intr: %d", vno);
 	}
 out:
+	intret_debug_stage = 1;
 	splhi();
+	intret_debug_stage = 2;
 	if(user){
 		if(up->procctl || up->nnote)
 			donotify(ureg);
 		kexit(ureg);
 	}
+	intret_debug_stage = 3;
 	if(vno != VectorCNA)
 		fpukexit(ureg);
+	intret_debug_stage = 4;
 }
 
 void
@@ -686,24 +717,24 @@ setregisters(Ureg* ureg, char* pureg, char* uva, int n)
 void
 kprocchild(Proc *p, void (*entry)(void))
 {
-	uintptr *sp;
+	Ureg *ureg;
 
 	/*
-	 * gotolabel will: load sp, write PC to *sp, ret (pop *sp and jump, sp += 8).
-	 * After gotolabel's ret, rsp will be sp + 8.
-	 * We need linkproc return address at sp + 8 so entry's ret will find it.
-	 *
-	 * Layout:
-	 * p - 16: scratch space for gotolabel's PC write (gets consumed by ret)
-	 * p - 8: linkproc return address (entry's ret will pop this)
+	 * Set up stack with a Ureg so forkret's iretq works correctly.
+	 * Add 2*BY2WD to account for return PC and trap's argument (ur).
 	 */
-	p->sched.sp = (uintptr)p - 16;         /* gotolabel writes PC here, rets (rsp becomes p - 8) */
-	p->sched.bp = 0;
-	p->sched.pc = (uintptr)entry;
+	p->sched.sp = (uintptr)p - (sizeof(Ureg)+2*BY2WD);
+	p->sched.pc = (uintptr)forkret;
 
-	/* Put linkproc at p - 8, which is where rsp will be after gotolabel's ret */
-	sp = (uintptr*)((uintptr)p - 8);
-	*sp = (uintptr)linkproc;
+	/* Initialize Ureg with proper kernel context */
+	ureg = (Ureg*)(p->sched.sp+2*BY2WD);
+	memset(ureg, 0, sizeof(Ureg));
+
+	ureg->pc = (uintptr)entry;      /* Entry point (linkproc) */
+	ureg->cs = KESEL;               /* Kernel code segment */
+	ureg->flags = 0x200;            /* IF=1 (interrupts enabled) */
+	ureg->sp = (uintptr)p;          /* Stack pointer */
+	ureg->ss = KDSEL;               /* Kernel data segment */
 }
 
 void

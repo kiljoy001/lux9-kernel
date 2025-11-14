@@ -2,6 +2,7 @@ package p9
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -56,6 +57,29 @@ func NewServer(fs FileServer) *Server {
 		fs:    fs,
 		msize: 8192,
 	}
+}
+
+const maxStringLen = (1 << 16) - 1
+
+func requireLen(data []byte, need int, ctx string) error {
+	if len(data) < need {
+		return fmt.Errorf("malformed %s: need %d bytes, have %d", ctx, need, len(data))
+	}
+	return nil
+}
+
+func writeFull(w io.Writer, buf []byte) error {
+	for len(buf) > 0 {
+		n, err := w.Write(buf)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("short write")
+		}
+		buf = buf[n:]
+	}
+	return nil
 }
 
 // Serve handles 9P protocol on the given reader/writer

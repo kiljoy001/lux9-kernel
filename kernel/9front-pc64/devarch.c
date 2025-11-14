@@ -60,7 +60,7 @@ static PCArch* knownarch[] = {
  * Add a file to the #P listing.  Once added, you can't delete it.
  * You can't add a file with the same name as one already there,
  * and you get a pointer to the Dirtab entry so you can do things
- * like change the Qid version.  Changing the Qid path is disallowed.
+ * * like change the Qid version.  Changing the Qid path is disallowed.
  */
 Dirtab*
 addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn)
@@ -352,7 +352,7 @@ cmpswap386(long *addr, long old, long new)
  * On VMware, it's safe (and a huge win) to set this to nop.
  * Aux/vmware does this via the #P/archctl file.
  */
-void (*coherence)(void) = nop;
+extern void (*coherence)(void);
 
 int (*cmpswap)(long*, long, long) = cmpswap386;
 
@@ -507,15 +507,20 @@ cpuidprint(void)
 int
 cpuidentify(void)
 {
-	int family, model;
+	int family, model, i;
 	X86type *t, *tab;
 	ulong regs[4];
 	uintptr cr4;
 
 	cpuid(Highstdfunc, 0, regs);
-	memmove(m->cpuidid,   &regs[1], BY2WD);	/* bx */
-	memmove(m->cpuidid+4, &regs[3], BY2WD);	/* dx */
-	memmove(m->cpuidid+8, &regs[2], BY2WD);	/* cx */
+	/* CPUID result order: EAX, EBX, ECX, EDX */
+	/* Vendor string order: EBX, EDX, ECX */
+	for(i = 0; i < 4; i++)
+		m->cpuidid[i] = (regs[1] >> (i*8)) & 0xFF;
+	for(i = 0; i < 4; i++)
+		m->cpuidid[4+i] = (regs[3] >> (i*8)) & 0xFF;
+	for(i = 0; i < 4; i++)
+		m->cpuidid[8+i] = (regs[2] >> (i*8)) & 0xFF;
 	m->cpuidid[12] = '\0';
 
 	cpuid(Procsig, 0, regs);
@@ -941,14 +946,15 @@ pcmspecialclose(int a)
 void
 timerset(Tval x)
 {
-	print("timerset: ENTRY (x=%lld), arch=%#p, arch->timerset=%#p\n", x, arch, arch->timerset);
+	/* Debug prints disabled - can cause QEMU iothread issues from interrupt context */
+	/* print("timerset: ENTRY (x=%lld), arch=%#p, arch->timerset=%#p\n", x, arch, arch->timerset); */
 	if(arch->timerset == nil) {
-		print("timerset: ERROR - arch->timerset is nil!\n");
+		/* print("timerset: ERROR - arch->timerset is nil!\n"); */
 		return;
 	}
-	print("timerset: calling arch->timerset\n");
+	/* print("timerset: calling arch->timerset\n"); */
 	(*arch->timerset)(x);
-	print("timerset: arch->timerset returned\n");
+	/* print("timerset: arch->timerset returned\n"); */
 }
 
 /*
@@ -1111,7 +1117,7 @@ setupwatchpts(Proc *pr, Watchpt *wp, int nwp)
 		default:
 			error(m->havewatchpt8 ? "length must be 1,2,4,8" : "length must be 1,2,4");
 		}
-		if((p->addr & p->len - 1) != 0)
+		if((p->addr & (p->len - 1)) != 0)
 			error("address must be aligned according to length");
 	}
 	
@@ -1132,7 +1138,7 @@ setupwatchpts(Proc *pr, Watchpt *wp, int nwp)
 			case 8: cfg |= 8; break;
 			default: continue;
 		}
-		pr->dr[7] |= cfg << 16 + 4 * i;
-		pr->dr[7] |= 1 << 2 * i + 1;
+		pr->dr[7] |= cfg << (16 + 4 * i);
+		pr->dr[7] |= 1 << (2 * i + 1);
 	}
 }

@@ -11,7 +11,7 @@
 #include "error.h"
 
 /* Memory constants defined in memory_9front.c */
-extern u32int MemMin;		/* set by l.s */
+extern u64int MemMin;		/* set by bootargsinit() */
 
 extern uvlong rdtsc(void);
 
@@ -284,8 +284,9 @@ char *conffile = "";
 /* Memory pool reset */
 
 /* VMX (virtualization) stubs */
-void vmxshutdown(void) {}
-void vmxprocrestore(Proc *p) { (void)p; }
+/* Now implemented in devvmx.c */
+//void vmxshutdown(void) {}
+//void vmxprocrestore(Proc *p) { (void)p; }
 
 /* RAM page allocation - provided by memory_9front.c */
 
@@ -314,6 +315,9 @@ void links(void) {}
 void ramdiskinit(void) {}
 
 /* Coherence function pointer - implementation in l.S */
+extern void coherence_impl(void);
+void (*coherence)(void) = coherence_impl;
+
 /* Additional global function pointers and buffers */
 void (*fprestore)(FPsave*) = nil;
 void (*fpsave)(FPsave*) = nil;

@@ -1188,6 +1188,7 @@ poolalloc(Pool *p, ulong n)
 {
 	void *v;
 
+	/* Debug removed - iprint may be causing hangs */
 	p->lock(p);
 	paranoia {
 		poolcheckl(p);
@@ -1475,10 +1476,15 @@ memmark(void *v, int sig, ulong size)
 {
 	uchar *p, *ep;
 	ulong *lp, *elp;
+	ulong words;
+
 	lp = v;
-	elp = lp+size/4;
-	while(lp < elp)
-		*lp++ = (sig<<24) ^ ((uintptr)lp-(uintptr)v);
+	words = size / sizeof(*lp);
+	elp = lp + words;
+	while(lp < elp){
+		uintptr offset = (uintptr)((uchar*)lp - (uchar*)v);
+		*lp++ = (sig<<24) ^ offset;
+	}
 	p = (uchar*)lp;
 	ep = (uchar*)v+size;
 	while(p<ep)

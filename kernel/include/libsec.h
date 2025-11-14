@@ -49,7 +49,7 @@ void	aes_xts_decrypt(AESstate *tweak, AESstate *ecb, uvlong sectorNumber, uchar 
 typedef struct AESGCMstate AESGCMstate;
 struct AESGCMstate
 {
-	AESstate;
+	AESstate state;
 
 	ulong	H[4];
 	ulong	M[16][256][4];
@@ -511,7 +511,7 @@ typedef struct ECpoint{
 
 typedef ECpoint ECpub;
 typedef struct ECpriv{
-	ECpoint;
+	ECpoint point;
 	mpint *d;
 } ECpriv;
 

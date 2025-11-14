@@ -17,7 +17,7 @@ enum {
 	KB = 1024,
 };
 
-u32int	MemMin;		/* set by bootargsinit() from Limine memory map */
+u64int	MemMin;		/* set by bootargsinit() from Limine memory map - full 64-bit for modern systems */
 
 void*
 rampage(void)
@@ -31,20 +31,12 @@ rampage(void)
 	/*
 	 * Allocate from the map directly to make page tables.
 	 */
-	print("rampage: called from pc=%#p\n", getcallerpc(&pa));
-	print("rampage: calling memmapalloc for MemRAM\n");
-	extern void memmapdump(void);
-	memmapdump();  /* Show what's in the memory map */
 	pa = memmapalloc(-1, BY2PG, BY2PG, MemRAM);
-	print("rampage: memmapalloc returned pa=%#p\n", pa);
 	if(pa == -1) {
-		print("rampage: memmapalloc failed (returned -1)\n");
 		panic("rampage: out of memory\n");
 	}
 	cka = cankaddr(pa);
-	print("rampage: cankaddr(%#p) returned %#p\n", pa, cka);
 	if(cka == 0) {
-		print("rampage: cankaddr returned 0\n");
 		panic("rampage: out of memory\n");
 	}
 	return KADDR(pa);
@@ -203,6 +195,8 @@ sigsearch(char* signature, int size)
 	uintptr p;
 	void *r;
 
+	print("sigsearch: looking for '%s' (size=%d)\n", signature, size);
+
 	/*
 	 * Search for the data structure:
 	 * 1) within the first KiB of the Extended BIOS Data Area (EBDA), or
@@ -212,17 +206,36 @@ sigsearch(char* signature, int size)
 	 *    (but will actually check 0xe0000 to 0xfffff).
 	 */
 	if((p = ebdaseg()) != 0){
-		if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil)
+		print("sigsearch: checking EBDA at phys=%#lux virt=%#p\n", p, KADDR(p));
+		if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
+			print("sigsearch: FOUND in EBDA at %#p\n", r);
 			return r;
+		}
+	}else{
+		print("sigsearch: EBDA not found (ebdaseg returned 0)\n");
 	}
-	if((r = sigscan(KADDR(convmemsize()), 1*KB, signature, size, 16)) != nil)
+
+	p = convmemsize();
+	print("sigsearch: checking convmem at phys=%#lux virt=%#p\n", p, KADDR(p));
+	if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
+		print("sigsearch: FOUND in convmem at %#p\n", r);
 		return r;
+	}
 
 	/* hack for virtualbox: look in KiB below 0xa0000 */
-	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil)
+	print("sigsearch: checking 0xA0000-1KB area\n");
+	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil){
+		print("sigsearch: FOUND in 0xA0000 area at %#p\n", r);
 		return r;
+	}
 
-	return sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
+	print("sigsearch: checking BIOS ROM 0xE0000-0xFFFFF\n");
+	r = sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
+	if(r != nil)
+		print("sigsearch: FOUND in BIOS ROM at %#p\n", r);
+	else
+		print("sigsearch: NOT FOUND anywhere!\n");
+	return r;
 }
 
 void*
@@ -364,16 +377,12 @@ liminescan(void)
 	struct limine_memmap_entry *entry;
 	uvlong base, size, i;
 
-	print("liminescan: starting\n");
-
 	/* Check if Limine memory map is available */
 	if(limine_memmap == nil || limine_memmap->response == nil) {
-		print("liminescan: limine_memmap=%#p or response is nil\n", limine_memmap);
 		return -1;
 	}
 
 	memmap_response = limine_memmap->response;
-	print("liminescan: found %llud memory map entries\n", (uvlong)memmap_response->entry_count);
 
 	/* Iterate through Limine memory map entries */
 	for(i = 0; i < memmap_response->entry_count; i++) {
@@ -396,11 +405,7 @@ liminescan(void)
 		 */
 		switch(entry->type){
 		case 0:  /* LIMINE_MEMMAP_USABLE */
-			print("liminescan: adding MemRAM base=%#llux size=%#llux\n", base, size);
 			memmapadd(base, size, MemRAM);
-			print("liminescan: after memmapadd, checking if it's there...\n");
-			extern void memmapdump(void);
-			memmapdump();
 			break;
 		case 2:  /* LIMINE_MEMMAP_ACPI_RECLAIMABLE */
 		case 3:  /* LIMINE_MEMMAP_ACPI_NVS */
@@ -568,6 +573,7 @@ void
 meminit0(void)
 {
 	extern char end[];
+	extern char cpu0data_end[];
 
 	/* CRITICAL: Zero the memmap allocator structure
 	 * It's in .cpu0_data (not BSS), so it's not zeroed by boot code */
@@ -592,7 +598,7 @@ meminit0(void)
 	/*
 	 * Memory below CPU0END is reserved for the kernel.
 	 */
-	memreserve(0, PADDR(CPU0END));
+	memreserve(0, PADDR(cpu0data_end));
 
 	/*
 	 * Addresses below 16MB default to be upper
@@ -652,10 +658,15 @@ memreserve(uintptr pa, uintptr size)
 	memmapadd(pa, size, MemReserved);
 }
 
-/*
- * Finalize the memory map:
- *  (re-)map the upper memory blocks
- *  allocate all usable ram to the conf.mem[] banks
+/**
+ * Finalize the system memory map and populate conf.mem[] with usable RAM banks.
+ *
+ * Scans the memory map for regions marked usable RAM, reserves each region
+ * into the allocator, and records the resulting base address and page count
+ * in conf.mem[]. Regions of size zero or beyond the conf.mem[] capacity are
+ * skipped. Allocation prefers page-aligned placement and will retry without
+ * alignment if alignment fails. Upper Memory Block (UMB) mapping is not
+ * performed here; UMB exclusions are applied before populating conf.mem[].
  */
 void
 meminit(void)
@@ -687,10 +698,15 @@ meminit(void)
 			continue;
 		}
 		cm->base = memmapalloc(base, size, BY2PG, MemRAM);
-		print("meminit: memmapalloc returned base=%#p\n", cm->base);
+		print("meminit: memmapalloc(%#p, %#p, BY2PG, MemRAM) returned base=%#p\n", base, size, cm->base);
 		if(cm->base == -1) {
-			print("meminit: memmapalloc failed, skipping\n");
-			continue;
+			print("meminit: memmapalloc failed, trying without alignment\n");
+			cm->base = memmapalloc(base, size, 0, MemRAM);
+			print("meminit: retry with no alignment returned base=%#p\n", cm->base);
+			if(cm->base == -1) {
+				print("meminit: memmapalloc failed, skipping\n");
+				continue;
+			}
 		}
 		base = cm->base;
 		cm->npage = size/BY2PG;

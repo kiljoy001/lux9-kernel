@@ -28,7 +28,7 @@ struct Mntcache
 	int		dev;
 	int		type;
 
-	QLock;
+	QLock qlock;
 	Proc		*locked;
 	ulong		nlocked;
 
@@ -46,7 +46,7 @@ struct Mntcache
 typedef struct Cache Cache;
 struct Cache
 {
-	Lock;
+	Lock lock;
 	Mntcache	*alloc;
 	Mntcache	*head;
 	Mntcache	*tail;

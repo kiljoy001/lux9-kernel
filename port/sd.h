@@ -75,7 +75,7 @@ struct SDev {
 	char	name[8];
 	SDev*	next;
 
-	QLock;				/* enable/disable */
+	QLock	qlock;				/* enable/disable */
 	int	enabled;
 	int	nunit;			/* Number of units */
 	QLock	unitlock;		/* `Loading' of units */

@@ -159,7 +159,8 @@ lapictimerinit(void)
 	a = &lapictimer[m->machno];
 	a->tdx = 0;
 Retry:
-	lapicw(LapicTIMER, ApicIMASK|LapicCLKIN|LapicONESHOT|(VectorPIC+IrqTIMER));
+	/* Don't mask during calibration - some QEMU versions won't count if masked */
+	lapicw(LapicTIMER, LapicCLKIN|LapicONESHOT|(VectorPIC+IrqTIMER));
 	lapicw(LapicTDCR, lapictdxtab[a->tdx]);
 
 	x = fastticks(&hz);
@@ -341,14 +342,14 @@ ioapicrdtr(Apic* apic, int sel, int* hi, int* lo)
 	iowin = apic->addr+(0x10/sizeof(ulong));
 	sel = IoapicRDT + 2*sel;
 
-	lock(apic);
+	lock(&apic->lock);
 	*apic->addr = sel+1;
 	if(hi)
 		*hi = *iowin;
 	*apic->addr = sel;
 	if(lo)
 		*lo = *iowin;
-	unlock(apic);
+	unlock(&apic->lock);
 }
 
 void
@@ -359,12 +360,12 @@ ioapicrdtw(Apic* apic, int sel, int hi, int lo)
 	iowin = apic->addr+(0x10/sizeof(ulong));
 	sel = IoapicRDT + 2*sel;
 
-	lock(apic);
+	lock(&apic->lock);
 	*apic->addr = sel+1;
 	*iowin = hi;
 	*apic->addr = sel;
 	*iowin = lo;
-	unlock(apic);
+	unlock(&apic->lock);
 }
 
 void
@@ -380,13 +381,13 @@ ioapicinit(Apic* apic, int apicno)
 	 * Make sure interrupts are all masked off for now.
 	 */
 	iowin = apic->addr+(0x10/sizeof(ulong));
-	lock(apic);
+	lock(&apic->lock);
 	*apic->addr = IoapicVER;
 	apic->mre = (*iowin>>16) & 0xFF;
 
 	*apic->addr = IoapicID;
 	*iowin = apicno<<24;
-	unlock(apic);
+	unlock(&apic->lock);
 
 	hi = 0;
 	lo = ApicIMASK;

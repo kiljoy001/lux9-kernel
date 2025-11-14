@@ -47,7 +47,6 @@ struct Lock
 struct Label
 {
 	uintptr	sp;
-	uintptr	bp;
 	uintptr	pc;
 };
 
@@ -253,7 +252,7 @@ struct Mach
 typedef void KMap;
 #define	VA(k)		((void*)k)
 
-extern u32int MemMin;
+extern u64int MemMin;
 
 struct Active
 {

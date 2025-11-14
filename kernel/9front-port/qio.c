@@ -11,9 +11,11 @@
  *  IO queues
  */
 typedef struct Queue	Queue;
+
+extern int xinit_done;
 struct Queue
 {
-	Lock;
+	Lock lock;
 
 	int	state;
 	int	dlen;		/* data length in bytes */
@@ -725,6 +727,9 @@ qopen(int limit, int msg, void (*kick)(void*), void *arg)
 	if(q == nil)
 		return nil;
 
+	/* Initialize the Lock (memset to zero all fields including anonymous Lock) */
+	memset(q, 0, sizeof(Queue));
+
 	q->dlen = 0;
 	q->wp = q->rp = 0;
 	q->limit = q->inilim = limit;
@@ -746,6 +751,9 @@ qbypass(void (*bypass)(void*, Block*), void *arg)
 	q = malloc(sizeof(Queue));
 	if(q == nil)
 		return nil;
+
+	/* Initialize the Lock */
+	memset(q, 0, sizeof(Queue));
 
 	q->dlen = 0;
 	q->wp = q->rp = 0;
@@ -1343,7 +1351,22 @@ qsetlimit(Queue *q, int limit)
 void
 qnoblock(Queue *q, int onoff)
 {
+	if(!xinit_done){
+		/*
+		 * Early boot callers (e.g. printinit before xinit())
+		 * run before scheduler/locking is fully operational.
+		 * Avoid spinning on q->Lock by setting the flag directly.
+		 */
+		q->noblock = onoff;
+		return;
+	}
 	ilock(q);
 	q->noblock = onoff;
 	iunlock_consumer(q);
+}
+
+void
+qsetnoblock_early(Queue *q, int onoff)
+{
+	q->noblock = onoff;
 }

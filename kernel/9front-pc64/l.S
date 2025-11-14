@@ -1,5 +1,6 @@
 /* 9front l.s converted to GAS syntax for x86_64 */
 #include "mem.h"
+#include "ureg.h"
 .code64
 .section .data
 .align 8
@@ -79,6 +80,11 @@ putcr0:
 .global getcr2
 getcr2:
     movq %cr2, %rax
+    ret
+
+.global putcr2
+putcr2:
+    movq %rdi, %cr2
     ret
 
 .global getcr3
@@ -172,6 +178,11 @@ lidt:
     lidt (%rdi)
     ret
 
+.global sidt
+sidt:
+    sidt (%rdi)
+    ret
+
 .global ltr
 ltr:
     ltr %di
@@ -258,11 +269,10 @@ coherence_impl:
 
 .global setlabel
 setlabel:
-    movq %rsp, 0(%rdi)
-    movq %rbp, 8(%rdi)
-    movq (%rsp), %rax
-    movq %rax, 16(%rdi)
-    xorl %eax, %eax
+    movq %rsp, 0(%rdi)         /* Save SP at offset 0 */
+    movq (%rsp), %rax          /* Get return address from stack */
+    movq %rax, 8(%rdi)         /* Save PC at offset 8 */
+    xorl %eax, %eax            /* Return 0 */
     ret
 
 .global _peekinst
@@ -387,38 +397,10 @@ invlpg:
 
 .global gotolabel
 gotolabel:
-    push %rdi
-    mov $'G', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rdi
-
-    movq 0(%rdi), %rsp
-
-    push %rax
-    mov $'H', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movq 8(%rdi), %rbp
-
-    push %rax
-    mov $'I', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movq 16(%rdi), %rax
-    movq %rax, (%rsp)
-
-    push %rax
-    mov $'J', %al
-    mov $0x3F8, %dx
-    outb %al, %dx
-    pop %rax
-
-    movl $1, %eax
+    movq 0(%rdi), %rsp         /* Restore SP from offset 0 */
+    movq 8(%rdi), %rax         /* Load PC from offset 8 */
+    movq %rax, (%rsp)          /* Place PC on stack as return address */
+    movl $1, %eax              /* Return 1 */
     ret
 
 /* -----------------------------------------------------------------------
@@ -474,6 +456,14 @@ touser_sp_msg:
     .string "touser: jumping to user mode with SP=%#llux\n"
 touser_iret_msg:
     .string "touser: about to IRETQ to userspace\n"
+_debug_vec_msg:
+    .string "_intrcommon: Vector = %#llx\n"
+_debug_rip_msg:
+    .string "_intrcommon: RIP = %#llx\n"
+_debug_cs_msg:
+    .string "_intrcommon: CS = %#x\n"
+_debug_rflags_msg:
+    .string "_intrcommon: RFLAGS = %#llx\n"
 
 .global syscallentry
 syscallentry:
@@ -553,22 +543,22 @@ _strayintr:
 
 .global _strayintrx
 _strayintrx:
-    xchgq %rax, (%rsp)
-    jmp _intrcommon
-
+    xchgq %rax, (%rsp)     /* Swap RAX with error code, like 9front */
 _intrcommon:
     movzbq (%rax), %rax
     xchgq %rax, (%rsp)
     subq $24, %rsp
+
+    /* Check CS like 9front does */
     cmpw $KESEL, 48(%rsp)
     je _intrnested
 
+    /* Coming from user mode - need to set up kernel context */
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
-
     swapgs
-    movq %gs:0, %r15
-    movq 16(%r15), %r14
+    movq %gs:0, %r15        /* Load m into r15 */
+    movq 16(%r15), %r14     /* Load up into r14 */
 
 _intrnested:
     pushq %r13
@@ -609,7 +599,7 @@ _intrestore:
     popq %r12
     popq %r13
 
-    cmpq $KESEL, 48(%rsp)
+    cmpq $KESEL, 48(%rsp)    /* CS at offset 48, like 9front */
     je _iretnested
 
     swapgs
@@ -617,7 +607,7 @@ _intrestore:
     movq 0(%rsp), %r14
 
 _iretnested:
-    addq $32, %rsp
+    addq $40, %rsp   /* Skip to hardware frame */
     iretq
 
 .global putdr
@@ -640,6 +630,20 @@ putdr3: movq %rsi, %dr3; ret
 .global putdr7
 putdr7:
     movq %rdi, %dr7
+    ret
+
+.global putdr01236
+putdr01236:
+    movq 0(%rdi), %rax
+    movq %rax, %dr0
+    movq 8(%rdi), %rax
+    movq %rax, %dr1
+    movq 16(%rdi), %rax
+    movq %rax, %dr2
+    movq 24(%rdi), %rax
+    movq %rax, %dr3
+    movq 48(%rdi), %rax
+    movq %rax, %dr6
     ret
 
 .global cmpswap486
@@ -684,7 +688,7 @@ vectortable:
     .byte 0x0d        /* general protection error */
     call _strayintrx
     .byte 0x0e        /* page fault */
-    call _strayintr
+    call _strayintrx
     .byte 0x0f
     call _strayintr
     .byte 0x10        /* coprocessor error */
@@ -1221,4 +1225,160 @@ rdrandbuf:
     incq %r8
     loop 5b
 6:
+    ret
+
+/* VMX instructions */
+.global vmxon
+.global vmxoff
+.global vmclear
+.global vmptrld
+.global vmlaunch
+.global vmread
+.global vmwrite
+.global invept
+.global invvpid
+
+/* VMXON - Enable VMX operation */
+vmxon:
+    movq %rdi, %rax          /* PA of VMXON region */
+    .byte 0xf3, 0x0f, 0xc7, 0x30  /* VMXON (%rax) */
+    setc %al                 /* Set AL to 1 if carry flag set (error) */
+    movzx %al, %rax          /* Zero extend AL to RAX */
+    ret
+
+/* VMXOFF - Leave VMX operation */
+vmxoff:
+    .byte 0x0f, 0x01, 0xc4   /* VMXOFF */
+    xorq %rax, %rax          /* Return 0 for success */
+    ret
+
+/* VMCLEAR - Clear VMCS */
+vmclear:
+    movq %rdi, %rax          /* PA of VMCS region */
+    .byte 0x66, 0x0f, 0xc7, 0x30  /* VMCLEAR (%rax) */
+    setc %al                 /* Set AL to 1 if carry flag set (error) */
+    movzx %al, %rax          /* Zero extend AL to RAX */
+    ret
+
+/* VMPTRLD - Load VMCS pointer */
+vmptrld:
+    movq %rdi, %rax          /* PA of VMCS region */
+    .byte 0x0f, 0xc7, 0x30   /* VMPTRLD (%rax) */
+    setc %al                 /* Set AL to 1 if carry flag set (error) */
+    movzx %al, %rax          /* Zero extend AL to RAX */
+    ret
+
+/* VMLAUNCH - Launch virtual machine */
+vmlaunch:
+    pushq %rbp
+    movq %rsp, %rbp
+    /* Save Ureg structure from first argument */
+    movq %rdi, %r8
+    /* Launch type in second argument */
+    movl %esi, %edx
+    
+    /* Check launch type */
+    testl %edx, %edx
+    jz 1f
+    
+    /* VMRESUME */
+    movq UREG_RAX(%r8), %rax
+    movq UREG_RBX(%r8), %rbx
+    movq UREG_RCX(%r8), %rcx
+    movq UREG_RDX(%r8), %rdx
+    movq UREG_RSI(%r8), %rsi
+    movq UREG_RDI(%r8), %rdi
+    movq UREG_RBP(%r8), %rbp
+    movq UREG_R8(%r8), %r8
+    movq UREG_R9(%r8), %r9
+    movq UREG_R10(%r8), %r10
+    movq UREG_R11(%r8), %r11
+    movq UREG_R12(%r8), %r12
+    movq UREG_R13(%r8), %r13
+    movq UREG_R14(%r8), %r14
+    movq UREG_R15(%r8), %r15
+    movq UREG_RSP(%r8), %rsp
+    movq UREG_RIP(%r8), %rbp
+    pushq %rbp               /* Push RIP */
+    movq UREG_EFL(%r8), %rbp
+    pushq %rbp               /* Push RFLAGS */
+    .byte 0x0f, 0x01, 0xc3   /* VMRESUME */
+    jmp 2f
+    
+1:  /* VMLAUNCH */
+    movq UREG_RAX(%r8), %rax
+    movq UREG_RBX(%r8), %rbx
+    movq UREG_RCX(%r8), %rcx
+    movq UREG_RDX(%r8), %rdx
+    movq UREG_RSI(%r8), %rsi
+    movq UREG_RDI(%r8), %rdi
+    movq UREG_RBP(%r8), %rbp
+    /* Note: r8 is used for Ureg pointer, so skip */
+    movq UREG_R9(%r8), %r9
+    movq UREG_R10(%r8), %r10
+    movq UREG_R11(%r8), %r11
+    movq UREG_R12(%r8), %r12
+    movq UREG_R13(%r8), %r13
+    movq UREG_R14(%r8), %r14
+    movq UREG_R15(%r8), %r15
+    movq UREG_RSP(%r8), %rsp
+    movq UREG_RIP(%r8), %rbp
+    pushq %rbp               /* Push RIP */
+    movq UREG_EFL(%r8), %rbp
+    pushq %rbp               /* Push RFLAGS */
+    .byte 0x0f, 0x01, 0xc2   /* VMLAUNCH */
+    
+2:  /* Error return */
+    popq %rbp
+    popq %rbp
+    movq %rbp, %rsp
+    popq %rbp
+    movq $1, %rax           /* Return error */
+    ret
+
+/* VMREAD - Read VMCS field */
+vmread:
+    movl %edi, %eax          /* VMCS field encoding */
+    movq %rsi, %rdx          /* Destination pointer */
+    .byte 0x0f, 0x78, 0xc0   /* VMREAD EAX, RAX */
+    setc %cl                 /* Set CL to 1 if carry flag set (error) */
+    movq %rax, (%rdx)        /* Store result */
+    movzx %cl, %rax          /* Zero extend CL to RAX */
+    ret
+
+/* VMWRITE - Write VMCS field */
+vmwrite:
+    movl %edi, %eax          /* VMCS field encoding */
+    movq %rsi, %rdx          /* Value to write */
+    .byte 0x0f, 0x79, 0xc2   /* VMWRITE RDX, EAX */
+    setc %al                 /* Set AL to 1 if carry flag set (error) */
+    movzx %al, %rax          /* Zero extend AL to RAX */
+    ret
+
+/* INVEPT - Invalidate EP TBL */
+invept:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $16, %rsp
+    movl %edi, %eax          /* INVEPT type */
+    movq %rsi, 8(%rsp)       /* GPA */
+    movq %rdx, (%rsp)        /* Reserved */
+    .byte 0x66, 0x0f, 0x38, 0x80, 0x0c, 0x24  /* INVEPT %eax, (%rsp) */
+    setc %al
+    movzx %al, %rax
+    leave
+    ret
+
+/* INVVPID - Invalidate VP ID */
+invvpid:
+    pushq %rbp
+    movq %rsp, %rbp
+    subq $16, %rsp
+    movl %edi, %eax          /* INVVPID type */
+    movq %rsi, 8(%rsp)       /* VPID */
+    movq %rdx, (%rsp)        /* Linear address */
+    .byte 0x66, 0x0f, 0x38, 0x81, 0x0c, 0x24  /* INVVPID %eax, (%rsp) */
+    setc %al
+    movzx %al, %rax
+    leave
     ret

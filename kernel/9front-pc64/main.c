@@ -207,6 +207,7 @@ main_after_cr3(void)
 	exchangeinit();
 	uartputs("BOOT: exchangeinit complete\n", 29);
 
+
 	uartputs("main_after_cr3: calling trapinit\n", 35);
 	trapinit();
 	uartputs("main_after_cr3: calling mathinit\n", 35);
@@ -217,13 +218,9 @@ main_after_cr3(void)
 	pcicfginit();
 	uartputs("main_after_cr3: calling bootscreeninit\n", 41);
 	bootscreeninit();
-	uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
-	fbconsoleinit();  /* Initialize framebuffer console */
-	uartputs("main_after_cr3: calling printinit\n", 36);
-	printinit();
-
-	/* NOW print() should work - printinit() re-initialized it for new stack */
-	print("BOOT: printinit complete - serial console ready\n");
+uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
+fbconsoleinit();  /* Initialize framebuffer console */
+	cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
 	cpuidprint();
 
 	print("BOOT: capturing page table information for kernelro() exclusion...\n");
@@ -244,11 +241,36 @@ main_after_cr3(void)
 	mmuinit();
 	print("BOOT: mmuinit complete - runtime page tables live\n");
 
+	/* Debug: check if IDT is still valid after mmuinit */
+	{
+		extern Segdesc temp_idt[];
+		print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
+		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
+			print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
+		else
+			print("OK: IDT[0x46] still valid after mmuinit\n");
+	}
+
 	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
 	if(arch->intrinit) {
 	print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
 	arch->intrinit();
 	print("BOOT: arch->intrinit returned successfully\n");
+
+	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
+	{
+		extern Segdesc temp_idt[];
+		print("DEBUG: Checking IDT[0x46] AFTER arch->intrinit:\n");
+		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
+			print("ERROR: IDT[0x46] CORRUPTED by arch->intrinit!\n");
+		else
+			print("OK: IDT[0x46] still valid after arch->intrinit\n");
+	}
+
 	} else {
 	print("WARNING: arch->intrinit is nil\n");
 	}
@@ -262,72 +284,81 @@ main_after_cr3(void)
 	print("BOOT: calling procinit0\n");
 	procinit0();
 	print("BOOT: procinit0 complete - process table ready\n");
+
+	print("BOOT: calling initseg\n");
 	initseg();
+	print("BOOT: initseg complete\n");
+
 	links();
-	iomapinit(0xFFFF);  /* Initialize I/O port allocation after links() */
-	chandevreset();
+	print("BOOT: links complete\n");
+	
+	/* Initialize I/O port allocation after links() */
+	print("BOOT: calling iomapinit\n");
+	iomapinit(0xFFFF);  
+	print("BOOT: iomapinit complete\n");
+	
+	/* Reset and initialize all devices before environment setup */
+	print("BOOT: calling chandevreset\n");
+	chandevreset();   
+	print("BOOT: chandevreset complete\n");
+
 	print("BOOT: device reset sequence finished\n");
-	
-	/* DEFERRED: Now that devices are initialized, set up the full environment */
-	print("BOOT: setting up full environment after device initialization...\n");
-	char buf[2*KNAMELEN];
-	snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
-	ksetenv("terminal", buf, 0);
-	ksetenv("cputype", "amd64", 0);
-	if(cpuserver)
-		ksetenv("service", "cpu", 0);
-	else
-		ksetenv("service", "terminal", 0);
-	print("BOOT: environment setup complete\n");
-	
+
+	print("BOOT: calling pageinit\n");
+	pageinit();
+	print("BOOT: pageinit complete\n");
+
+	print("BOOT: calling printinit\n");
+	printinit();
+	print("BOOT: printinit complete - print queues initialized\n");
+
+	print("BOOT: entering userinit\n");
 	userinit();
-	print("BOOT: userinit scheduled *init* kernel process\n");
+	print("BOOT: userinit called successfully - proceeding to scheduler\n");
 	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
 	schedinit();
 }
 
+/**
+ * Perform final boot-time setup and transfer proc0 to user mode.
+ *
+ * Registers any initrd files with the device root (if present), ensures the
+ * environment is configured, runs a Pebble SIP test, starts the alarm kernel
+ * process, computes and logs proc0's initial user stack frame, prepares and
+ * clears FPU state, raises interrupt level, and finally enters user mode by
+ * calling touser() with the prepared stack frame.
+ */
 void
 init0(void)
 {
-	char **sp;
+	char buf[2*KNAMELEN], **sp;
 
+	iprint("BOOT[init0]: calling chandevinit\n");
 	chandevinit();
-	print("BOOT[init0]: chandevinit complete\n");
-
-	/* Register initrd files with devroot - must be after chandevinit */
-	extern struct initrd_file *initrd_root;
-	extern void initrd_register(void);
-	if(initrd_root != nil) {
-		print("BOOT[init0]: registering initrd files with devroot\n");
-		initrd_register();
-		print("BOOT[init0]: initrd files registered\n");
-	} else {
-		print("BOOT[init0]: WARNING - no initrd files to register\n");
-	}
+	iprint("BOOT[init0]: chandevinit returned\n");
+	randominit();
+	iprint("BOOT[init0]: randominit complete\n");
 
 	if(!waserror()){
-		/* Configuration environment already set up in main_after_cr3() */
-		print("BOOT[init0]: environment already configured\n");
+		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+		ksetenv("terminal", buf, 0);
+		ksetenv("cputype", "amd64", 0);
+		ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
+		setconfenv();
 		poperror();
+		print("BOOT[init0]: environment setup completed\n");
 	}
-	pebble_sip_issue_test();
-	print("BOOT[init0]: starting alarm kproc\n");
+
 	kproc("alarm", alarmkproc, 0);
-	print("BOOT[init0]: alarm kproc scheduled\n");
 
-	print("BOOT[init0]: computing user stack frame\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	print("BOOT[init0]: initial sp computed: %#p\n", sp);
-	print("BOOT[init0]: USTKTOP=%#llux sizeof(Tos)=%lld\n", USTKTOP, (long long)sizeof(Tos));
-	print("BOOT[init0]: stack frame already seeded in proc0\n");
+	sp[3] = sp[2] = nil;
+	strcpy(sp[1] = (char*)&sp[4], "boot");
+	sp[0] = nil;
 
-	print("BOOT[init0]: preparing to disable interrupts\n");
 	splhi();
-	print("BOOT[init0]: fpukexit(nil) begin\n");
 	fpukexit(nil);
-	print("BOOT[init0]: fpukexit(nil) done\n");
-	print("BOOT[init0]: entering user mode with initcode\n");
-	print("BOOT[init0]: calling touser(%#p)\n", sp);
+	print("BOOT[init0]: transferring control to user mode\n");
 	touser(sp);
 }
 
@@ -341,6 +372,39 @@ main(void)
 	trapinit0();
 	ioinit();
 	i8250console();
+
+	/* Debug: check if trapinit0() actually initialized the IDT */
+	{
+		extern Segdesc temp_idt[];
+		extern void sidt(void*);
+		uintptr idtr[2];
+
+		/* Read the IDTR register */
+		sidt(&((ushort*)&idtr[1])[-1]);
+		uintptr idt_base = idtr[1];
+		ushort idt_limit = ((ushort*)&idtr[1])[-1];
+
+		print("DEBUG: Checking IDT after trapinit0:\n");
+		print("  temp_idt addr: %#p\n", temp_idt);
+		print("  IDTR base: %#lux\n", idt_base);
+		print("  IDTR limit: %d\n", idt_limit);
+
+		if(idt_base != (uintptr)temp_idt){
+			print("ERROR: IDTR pointing to WRONG address!\n");
+			print("  Expected: %#p\n", temp_idt);
+			print("  Actual: %#lux\n", idt_base);
+		} else {
+			print("OK: IDTR points to temp_idt\n");
+		}
+
+		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
+			print("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
+		else
+			print("OK: IDT[0x46] is initialized\n");
+	}
+
 	quotefmtinstall();
 	screeninit();
 	print("\nLux9\n");
@@ -380,8 +444,6 @@ main(void)
 	pebble_debug = 1;
 	if(pebble_enabled)
 	print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
-	printinit();
-	print("BOOT: printinit complete - serial console ready\n");
 
 	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
 	 * because memory coordination needs it during CR3 switch */
@@ -391,6 +453,9 @@ main(void)
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();
 	print("BOOT: memory coordination system initialized\n");
+
+	/* Save framebuffer info BEFORE switching page tables */
+	save_framebuffer_info();
 
 	/* Switch to our own page tables - REQUIRED for user space!
 	/* NOTE: This must happen AFTER setuppagetables() to avoid memory map conflicts.

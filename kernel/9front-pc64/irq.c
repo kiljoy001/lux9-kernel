@@ -8,6 +8,8 @@
 #include "ureg.h"
 #include "error.h"
 
+extern int intret_debug_stage;
+
 static Lock vctllock;
 static Vctl *vclock, *vctl[256];
 
@@ -33,6 +35,10 @@ intrtime(Mach*, int vno)
 	m->perf.inintr += diff;
 	if(up == nil && m->perf.inidle > diff)
 		m->perf.inidle -= diff;
+
+	/* Skip timing histogram if CPU frequency unknown */
+	if(m->cpumhz == 0)
+		return;
 
 	diff /= m->cpumhz*100;		/* quantum = 100µsec */
 	if(diff >= Ntimevec)
@@ -64,6 +70,7 @@ irqhandled(Ureg *ureg, int vno)
 			ctl->eoi(vno);
 		intrtime(m, vno);
 		preempted(ctl == vclock);
+		intret_debug_stage = 99;
 		return 1;
 	}
 
@@ -198,8 +205,10 @@ Unlockandfree:
 			pv = &vclock->next;
 		v->next = *pv;
 	}
-	if(strcmp(name, "clock") == 0)
+	if(strcmp(name, "clock") == 0) {
 		vclock = v;
+		print("intrenable: registered clock at vno=%d irq=%d\n", v->vno, v->irq);
+	}
 	*pv = v;
 	if(v->enable != nil){
 		coherence();
