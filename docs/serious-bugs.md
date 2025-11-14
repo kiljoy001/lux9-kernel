@@ -1,65 +1,153 @@
-# Serious bugs identified
+# Serious bugs identified - UPDATED STATUS
 
-This report lists twenty serious defects discovered in the repository.
+This report lists critical defects discovered in the repository. **NEW DIRECTION**: Focus on crypto-first architecture instead of traditional hardware drivers.
 
-1. **`Tremove` unlinks from the filesystem root with a NULL name.** The `rremove` handler hardcodes `EXT2_ROOT_INO` and passes a null filename to `ext2fs_unlink`, so it never removes the intended directory entry and fails for anything outside the root directory.【F:userspace/servers/ext4fs/ext4fs.c†L600-L604】 *(Fixed: `rremove` now tracks each fid’s parent/name and refuses to remove the root, so `ext2fs_unlink` receives the correct directory context; see `userspace/servers/ext4fs/ext4fs.c:734`.)*
-2. **Directory reads treat the 9P offset as an entry index instead of the byte cookie.** `dirread_callback` only skips a fixed number of entries and ignores the caller-supplied offset, causing clients to see duplicate or skipped directory entries and preventing correct `seek` behaviour.【F:userspace/servers/ext4fs/ext4fs.c†L260-L314】 *(Fixed: the directory iterator now compares each record’s byte range with `ctx->offset` and resumes at the proper cookie; see `dirread_callback` in `userspace/servers/ext4fs/ext4fs.c:373`.)*
-3. **9P message sizes are decoded through signed `char` values.** `msgbuf` is a `char` array, so reconstructing the little-endian length by shifting `msgbuf[i]` sign-extends bytes ≥0x80, corrupting the computed size for large messages.【F:userspace/servers/ext4fs/ext4fs.c†L28-L31】【F:userspace/servers/ext4fs/ext4fs.c†L634-L640】 *(Fixed: the header parser now casts every byte to `uint8_t` before shifting; see `serve()` in `userspace/servers/ext4fs/ext4fs.c:788`.)*
-4. **The server assumes `read(2)` returns an entire 9P message in one call.** Both the header and payload reads break the connection whenever the kernel delivers a short read, which is legal on pipes and sockets.【F:userspace/servers/ext4fs/ext4fs.c†L630-L640】 *(Fixed: `read_full` pulls until the requested length is satisfied, and all header/body reads go through it; see `userspace/servers/ext4fs/ext4fs.c:26-52`.)*
-5. **Replies are written with a single unchecked `write(2)`.** Any short write silently truncates the reply, corrupting the protocol stream.【F:userspace/servers/ext4fs/ext4fs.c†L665-L667】 *(Fixed: `write_full` mirrors the read helper and retries until the entire buffer is flushed; see `userspace/servers/ext4fs/ext4fs.c:54-80`.)*
-6. **Open mode tracking rejects writable fids that include auxiliary flags.** The server stores the raw open mode and later compares it to `OWRITE`/`ORDWR`, so clients that requested `ORDWR|OTRUNC` or `OWRITE|ORCLOSE` are incorrectly denied writes.【F:userspace/servers/ext4fs/ext4fs.c†L240-L257】【F:userspace/servers/ext4fs/ext4fs.c†L409-L417】 *(Fixed: both `ropen` and `rcreate` mask the incoming mode with `0x3` before saving it, so accessory bits no longer block writes; see `userspace/servers/ext4fs/ext4fs.c:409` and `userspace/servers/ext4fs/ext4fs.c:606`.)*
-7. **`rattach` ignores failures when reading the root inode.** If `ext2fs_read_inode` fails the code still fabricates a `qid` from uninitialised memory, returning garbage to the client instead of an error.【F:userspace/servers/ext4fs/ext4fs.c†L165-L176】 *(Fixed: `rattach` drops the fid and returns `Rerror` when the root inode read fails; see `userspace/servers/ext4fs/ext4fs.c:233-265`.)*
-8. **Inode numbers are formatted with `%u`.** `ext2_ino_t` is 64-bit on ext4, so `snprintf(namebuf, "%u", ino)` truncates high bits and can generate duplicate stat names.【F:userspace/servers/ext4fs/ext4fs.c†L132-L136】 *(Fixed: `ino2stat` now uses `PRIu64` and casts via `uint64_t`; see `userspace/servers/ext4fs/ext4fs.c:112`.)*
-9. **Directory creation removes the link it just created.** After calling `ext2fs_mkdir`, `rcreate` unconditionally unlinks `tx->tcreate.name`, leaving the new directory unreachable from its parent.【F:userspace/servers/ext4fs/ext4fs.c†L552-L568】 *(Fixed: the unlink path only runs when `rcreate` unwinds after an error; successful creates leave the entry intact; see `userspace/servers/ext4fs/ext4fs.c:659-704`.)*
-10. **`rcreate` leaks reserved inodes on error paths.** When `ext2fs_write_new_inode` or `ext2fs_link` fails, the freshly allocated inode is left in use because the code never calls `ext2fs_inode_alloc_stats2(..., -1, ...)` to free it.【F:userspace/servers/ext4fs/ext4fs.c†L525-L556】 *(Fixed: the error epilogue now calls `ext2fs_inode_alloc_stats2(..., -1, ...)` whenever accounting was recorded; see `userspace/servers/ext4fs/ext4fs.c:712-720`.)*
-11. **Twrite parsing trusts unvalidated lengths.** `readMsg` slices `data[16:16+fc.Count]` without checking the buffer length, so a malicious client can panic the server via an oversized count.【F:userspace/go-servers/p9/server.go†L140-L145】
-12. **Tcreate parsing blindly indexes the residual buffer.** After reading the file name, the code reads `r.data[0:4]` and `r.data[4]` without confirming at least five bytes remain, leading to panics on malformed frames.【F:userspace/go-servers/p9/server.go†L129-L134】
-13. **Responses are emitted with a single unchecked `Write`.** `writeMsg` never retries partial writes, so a short write corrupts the 9P stream.【F:userspace/go-servers/p9/server.go†L200-L205】
-14. **Tflush is unsupported.** The dispatcher lacks a `case Tflush:` branch, so clients attempting to cancel in-flight operations receive `Rerror` rather than the mandated `Rflush`.【F:userspace/go-servers/p9/server.go†L208-L295】
-15. **Twstat is also unimplemented.** The dispatcher drops Twstat requests through the default case, preventing metadata updates and violating the protocol.【F:userspace/go-servers/p9/server.go†L208-L295】
-16. **`writeString` truncates names silently.** Casting `len(s)` to `uint16` without validation causes strings ≥65 536 bytes to wrap and desynchronise the stream instead of returning an error.【F:userspace/go-servers/p9/protocol.go†L149-L155】
-17. **MemFS `Walk` ignores the requested path elements.** It always returns the current fid’s `qid` regardless of `names`, so clients can never traverse the tree.【F:userspace/go-servers/memfs/memfs.go†L45-L57】
-18. **MemFS `Read` disregards offsets.** The handler always returns the greeting string, so clients reading past the first chunk loop forever because they never see EOF.【F:userspace/go-servers/memfs/memfs.go†L75-L77】
-19. **The borrow checker’s hash table has the wrong element type.** `BorrowPool` declares `owners` as `struct BorrowOwner*`, but the implementation treats it as an array of `BorrowBucket` structs with `head` pointers, leading to out-of-bounds writes and crashes once the table is used.【F:kernel/include/borrowchecker.h†L38-L44】【F:kernel/borrowchecker.c†L16-L36】 *(Fixed: `kernel/include/borrowchecker.h` and `borrowinit()` now allocate a proper `BorrowBucket` array, so lookups walk well-typed chains.)*
-20. **Shared borrows are not tracked per borrower.** `borrow_borrow_shared` only increments a counter, and `borrow_return_shared` never consults the `borrower` argument, so any process can drop another task’s borrow and violate Rust-style exclusivity guarantees.【F:kernel/borrowchecker.c†L201-L302】 *(Fixed: every borrow inserts a `SharedBorrower` node and returns remove their node, enforcing borrower-specific semantics; see `kernel/borrowchecker.c:232-381`.)*
-21. **`init` calls `exec` with a null argv vector.** Both fallbacks invoke `exec("/sbin/init", NULL)` and `exec("/bin/sh", NULL)`, dereferencing a null pointer inside the syscall shim instead of passing a valid argument array, so even a working `exec` implementation would fail immediately.【F:userspace/bin/init.c†L149-L156】 *(Fixed: `init` now builds real argv arrays before each `exec`, so the syscall bridge receives a proper pointer list; see `userspace/bin/init.c:99-169`.)*
-22. **All of `init`’s process management stubs return failure.** The placeholder `fork()` always returns `-1`, preventing the filesystem server from ever starting.【F:userspace/bin/syscalls.c†L7-L11】 *(Fixed: `init` now links against the Plan 9 syscall bridge (`userspace/lib/syscall.c` + `userspace/lib/syscall_amd64.S`), so `fork`, `wait`, etc. make real kernel syscalls.)*
-23. **`exec` is hardwired to fail.** The stubbed implementation just returns `-1`, so even if `fork` succeeded no program can ever be executed.【F:userspace/bin/syscalls.c†L13-L20】 *(Fixed alongside #22; `exec()` now forwards directly to the kernel in `userspace/lib/syscall.c`.)*
-24. **Mounting the root filesystem is impossible.** The `mount` stub ignores its arguments and returns `-1`, forcing `init` into the emergency shell path on every boot.【F:userspace/bin/syscalls.c†L22-L30】 *(Fixed: the syscall bridge wires `mount()` to the kernel implementation; see `userspace/lib/syscall.c:111-119`.)*
-25. **Basic file I/O stubs also fail unconditionally.** `open` always returns `-1`, so even after a successful mount `init` reports that `/etc/fstab` is missing.【F:userspace/bin/syscalls.c†L32-L39】 *(Fixed: `open`, `read`, `write`, etc. are real wrappers now; see `userspace/lib/syscall.c:70-103`.)*
-26. **`exit` spins forever.** The stub just loops, so any userspace task that tries to exit will hang instead of terminating.【F:userspace/bin/syscalls.c†L41-L47】 *(Fixed: `exit()` now issues the `EXITS` syscall and never returns; see `userspace/lib/syscall.c:58-65`.)*
-27. **`printf` ignores every format specifier.** The stub drops `%s` and `%d` without consuming arguments, so none of the diagnostic output in `init` (or other programs) actually reports runtime state.【F:userspace/bin/syscalls.c†L90-L107】 *(Fixed: the minimal console helpers in `userspace/bin/syscalls.c` now implement `%s`, `%d`, `%u`, `%x`, `%p`, and `%%`, writing via the real `write(2)` syscall.)*
-28. **`BorrowOwner` lacks the list linkage the implementation assumes.** The header omits a `next` pointer, yet the C file treats each bucket as a linked list, corrupting the allocator the first time a second owner is inserted.【F:kernel/include/borrowchecker.h†L17-L35】【F:kernel/borrowchecker.c†L67-L90】 *(Fixed: `struct BorrowOwner` now exposes the `next` link used by the hash buckets.)*
-29. **Ownership statistics underflow on every release.** `borrow_release` decrements `borrowpool.nowners`, but reacquiring a freed entry never increments it again, so the counter eventually wraps negative.【F:kernel/borrowchecker.c†L88-L154】 *(Fixed: `create_owner()` bumps `nowners` whenever a descriptor is inserted and both release paths remove the entry before decrementing.)*
-30. **Borrow-aware locks start life with garbage lock state.** `borrow_lock_init` only records the key and never zeroes the embedded `Lock`, so freshly allocated `BorrowLock`s can arrive with the spin bit already set and deadlock their first caller.【F:kernel/include/lock_borrow.h†L12-L18】【F:kernel/9front-port/lock_borrow.c†L46-L52】 *(Fixed: `borrow_lock_init()` memset’s the wrapper before assigning the key; see `kernel/9front-port/lock_borrow.c:38-45`.)*
-31. **`borrow_lock` ignores failures from the borrow checker.** It calls `borrow_acquire` and discards the result, so `borrow_acquire` returning `BORROW_EALREADY` leaves the kernel believing the resource is still owned by the previous holder even though the mutex was taken.【F:kernel/9front-port/lock_borrow.c†L55-L75】【F:kernel/borrowchecker.c†L93-L122】 *(Fixed: `borrow_lock()` now checks the error code and panics after unlocking if acquisition fails; see `kernel/9front-port/lock_borrow.c:63-87`.)*
-32. **`borrow_unlock` drops the mutex even when release fails.** If `borrow_release` reports outstanding borrows, the wrapper ignores the error and still calls `unlock`, violating the exclusivity contract it is meant to enforce.【F:kernel/9front-port/lock_borrow.c†L77-L84】【F:kernel/borrowchecker.c†L124-L156】 *(Fixed: `borrow_unlock()` panics on release failure instead of silently unlocking; see `kernel/9front-port/lock_borrow.c:89-104`.)*
-33. **Page ownership tracking is permanently disabled.** `pageowninit` sets `pageownpool.pages = nil` and never allocates descriptors later, so every `pa2owner` lookup returns `nil` and all ownership/borrow APIs bail out with `POWN_EINVAL`.【F:kernel/9front-port/pageown.c†L32-L70】 *(Fixed: `pageowninit()` allocates descriptor storage and the pageown wrappers use the working borrow checker APIs; see `kernel/9front-port/pageown.c:34-134`.)*
-34. **Any process can drop another task’s shared page borrow.** `pageown_return_shared` only checks that `shared_count > 0`, ignoring the `borrower` argument entirely, so hostile processes can revoke someone else’s read mapping.【F:kernel/9front-port/pageown.c†L278-L307】 *(Fixed: `pageown_return_shared()` delegates to `borrow_return_shared()`, which removes the specific borrower entry; see `kernel/9front-port/pageown.c:103-134`.)*
-35. **Killing a borrower leaks the shared-borrow counter.** `pageown_cleanup_process` zeroes `shared_count` when tearing down an owner but never decrements `pageownpool.nshared`, so the aggregate statistics drift upward forever.【F:kernel/9front-port/pageown.c†L438-L456】 *(Fixed: `pageown_cleanup_process()` calls `borrow_cleanup_process()`, which updates `nshared`/`nmut` as it removes borrowers; see `kernel/borrowchecker.c:513-585`.)*
-36. **The random number generator scribbles over its own lock.** `randomseed` passes the enclosing struct to `setupChachastate` instead of the embedded `Chachastate`, overwriting the `QLock` fields and making future `randomread` calls race or crash.【F:kernel/9front-port/random.c†L71-L108】 *(Fixed: `randomseed()` seeds `rs->chacha` directly and leaves the surrounding `QLock` intact; see `kernel/9front-port/random.c:45-108`.)*
-37. **`fscheck` treats fatal superblock errors as success.** If `check_superblock` returns `-1`, the accumulator stays negative, causing the tool to print “Filesystem is clean” and exit 0 even though the superblock was unreadable.【F:userspace/bin/fscheck.c†L152-L167】【F:userspace/bin/fscheck.c†L245-L268】 *(Fixed: each pass now returns non-negative counts and `check_filesystem()` aborts as soon as the superblock test reports an error; see `userspace/bin/fscheck.c:23-168`.)*
-38. **Zero-length reads are reported as out-of-memory.** Both directory and file reads call `malloc(tx->tread.count)` and treat a `NULL` return as fatal, so a legitimate `count == 0` request yields `Rerror` instead of an empty reply.【F:userspace/servers/ext4fs/ext4fs.c†L341-L399】 *(Fixed: `rread()` now short-circuits with an empty reply whenever `count == 0`, bypassing any allocation; see `userspace/servers/ext4fs/ext4fs.c:436-511`.)*
-39. **`ropen` trusts `ext2fs_read_inode` without checking errors.** If libext2fs fails, the server still fabricates a `qid` from uninitialised stack data and returns success to the client.【F:userspace/servers/ext4fs/ext4fs.c†L240-L257】 *(Fixed: `ropen()` validates `ext2fs_read_inode()` and returns `Rerror` on failure before touching the fid; see `userspace/servers/ext4fs/ext4fs.c:349-369`.)*
-40. **`fscheck`’s block bitmap pass is a complete no-op.** The loop over every block never inspects or records inconsistencies, so the utility cannot catch any allocation bitmap corruption.【F:userspace/bin/fscheck.c†L47-L73】 *(Fixed: `check_block_bitmap()` now counts used blocks from the bitmap and compares the result to the superblock’s free-block tally, reporting mismatches as real errors; see `userspace/bin/fscheck.c:47-105`.)*
-41. **Borrow counters only ever increase.** Both shared and mutable borrow paths increment `borrow_count`, but `pageown_return_shared` and `pageown_return_mut` never decrement it, so page descriptors rapidly overflow their statistics and suggest live borrows that no longer exist.【F:kernel/9front-port/pageown.c†L208-L310】 *(Fixed: the borrow checker decrements the shared/mutable counters in the return helpers, and the page ownership wrappers simply call into those routines; see `kernel/borrowchecker.c:333-420` and `kernel/9front-port/pageown.c:103-162`.)*
-42. **`fscheck` treats fatal errors as success.** The checker accumulates return values directly, so any routine that reports `-1` leaves the total negative; the final `errors > 0` gate then misreports the run as clean and returns 0 even when every pass failed.【F:userspace/bin/fscheck.c†L158-L267】 *(Fixed: pass functions now return positive counts, so the accumulator never goes negative and `main()` correctly reports failure; see `userspace/bin/fscheck.c:152-222`.)*
-43. **Serial console output is silently discarded.** The platform `uartputs` routine is a stub that ignores its arguments, so nothing ever reaches the UART or buffered console queues.【F:kernel/9front-pc64/globals.c†L123-L130】 *(Fixed: `kernel/9front-pc64/uart.c` brings up the 16550, hooks `screenputs`, and `uartputs()` now drains every byte once initialization completes.)*
-44. **Kernel timekeeping never advances.** `fastticks` always returns 0, so the TOD code sees no delta between successive calls and the system clock, scheduler statistics, and timeout logic all freeze.【F:kernel/9front-pc64/globals.c†L129-L142】 *(Fixed: `kernel/9front-port/fastticks.c` now calls the 9front `arch->fastclock` hook, so fastticks returns real hardware ticks.)*
-45. **Microsecond timestamps are permanently zero.** The µs helper just returns 0, breaking any code that relies on monotonic microsecond measurements or timeout conversions.【F:kernel/9front-pc64/globals.c†L139-L142】 *(Fixed alongside bug #44; `µs()` now converts the genuine fast clock ticks to microseconds.)*
-46. **`poolrealloc` copies past the end of allocations.** It blindly `memmove`s `size` bytes from the old pointer without knowing the original allocation size, so growing a buffer reads off the end of the old block and corrupts memory.【F:kernel/9front-pc64/globals.c†L64-L73】 *(Fixed: pool headers now track the requested size, and `poolrealloc` copies only the minimum of old and new lengths.)*
-47. **Aligned pool allocations ignore the requested alignment.** `poolallocalign` simply calls `xalloc` and drops the `align` argument, so callers that require cache-line or hardware-mandated alignment end up with misaligned buffers.【F:kernel/9front-pc64/globals.c†L58-L61】 *(Fixed: pool allocations maintain per-block headers and honour alignment, offset, and span constraints.)*
-48. **Architecture-specific devices can never be registered.** `addarchfile` immediately returns `nil` without storing the handlers, so attempts such as `iomapinit` to expose `/dev/ioalloc` silently fail.【F:kernel/9front-pc64/globals.c†L152-L156】 *(Fixed: `kernel/9front-pc64/devarch.c` now ports 9front’s arch device, so `addarchfile` publishes files under `#P` and `archinit` wires up the real PC arch hooks.)*
-49. **Path sanitisation is completely disabled.** `cleanname` just returns its input pointer, leaving `..` and redundant separators intact and letting callers traverse outside of the intended namespace.【F:kernel/9front-pc64/globals.c†L102-L105】
-50. **Delay helpers spin for zero time.** Both `microdelay` and `delay` are empty stubs, so drivers that rely on hardware-settling delays or retry backoff race the device immediately and tend to fail.【F:kernel/9front-pc64/globals.c†L124-L131】
-51. **The pager is never kicked on low-memory conditions.** `kickpager` is a no-op, so `newpage`’s attempt to wake the pager thread during shortages does nothing and callers loop forever waiting for relief.【F:kernel/9front-pc64/globals.c†L147-L151】【F:kernel/9front-port/page.c†L120-L168】 *(Fixed: `kickpager` now wakes `swapalloc.r` so the pager thread runs as soon as memory pressure is detected.)*
-52. **Interrupt controllers are never initialised.** `irqinit` is an empty stub, so the PIC/APIC setup never runs and all external interrupts stay masked.【F:kernel/9front-pc64/globals.c†L360-L367】【F:kernel/9front-pc64/trap.c†L75-L83】 *(Fixed: 9front’s MP/APIC stack now lives under `kernel/9front-pc64/` so `archinit` maps LAPIC/IOAPIC, `irqinit` publishes `/dev/irqalloc`, and real `pcmpinit`/`lapic` bring the controllers online.)*
-53. **PCI configuration space is unreachable.** `pcicfginit` immediately returns, leaving the PCI bus undiscovered and all PCI devices invisible to the kernel.【F:kernel/9front-pc64/globals.c†L372-L376】【F:kernel/9front-pc64/main.c†L380-L385】
-54. **Device reset hooks are replaced with inert stubs.** `chandevreset` calls local no-op helpers for the console, mount, and proc drivers, so none of those subsystems ever register their devices or queues.【F:kernel/9front-port/chan.c†L147-L177】
-55. **Formatters are never registered.** `fmtinstall` ignores the request, so modules that expect `%F`, `%D`, or other custom verbs fail to print meaningful diagnostics.【F:kernel/9front-pc64/globals.c†L132-L142】 *(Fixed: 9front’s full `fmt.c`/`fmtlock.c` now live in `kernel/libc9/`, so `fmtinstall` registers handlers properly.)*
-56. **`fmtstrinit` leaves `Fmt` structures uninitialised.** It just returns 0, so callers like `syscallfmt` operate on empty buffers and panic once they start formatting.【F:kernel/9front-pc64/globals.c†L493-L496】【F:kernel/9front-port/syscallfmt.c†L69-L145】 *(Fixed: `kernel/libc9/vsmprint.c` provides 9front’s allocator-backed implementation.)*
-57. **`fmtprint` drops all formatted output.** The stub returns 0 without touching the target buffer, erasing syscall trace logging and any other formatted strings built via `Fmt`.【F:kernel/9front-pc64/globals.c†L493-L496】【F:kernel/9front-port/syscallfmt.c†L69-L361】 *(Fixed: `kernel/libc9/fmtprint.c` now matches 9front and routes through `dofmt` while preserving the caller’s `va_list`.)*
-58. **Replies can exceed the negotiated `msize`.** `writeMsg` never checks whether the encoded response fits within `s.msize`, so large reads or stats generate oversized frames that violate the protocol and desynchronise the client.【F:userspace/go-servers/p9/server.go†L153-L205】
-59. **Malformed strings desynchronise the Go 9P parser.** Every `readString` call in `readMsg` ignores its error return, so truncated frames leave partially consumed buffers that throw subsequent field parsing and panics the server.【F:userspace/go-servers/p9/server.go†L103-L133】【F:userspace/go-servers/p9/protocol.go†L137-L152】
-60. **Stat marshalling crashes on allocation failure.** `ino2stat` never checks the four `strdup` results; if any return `NULL`, `convD2M` later dereferences them and the server dies instead of reporting `Rerror`.【F:userspace/servers/ext4fs/ext4fs.c†L132-L138】【F:userspace/servers/ext4fs/ext4fs.c†L341-L399】
-61. **Page-table pool is unsynchronised and can overflow.** `alloc_pt` advanced static `next_pt` / `pt_count` without any locking, so concurrent callers on SMP boxes trample each other and overrun the 512-table reserve before the panic check fires.【F:kernel/9front-pc64/mmu.c†L165-L185】 *(Fixed: guarded the pool with `allocptlock` and tightened the exhaustion test to trip at 512 tables even under contention.)*
+## Strategic Shift: Crypto-First Architecture
+
+**Rationale**: Instead of implementing hardware drivers first (AHCI, USB, etc.), we're pivoting to a revolutionary crypto-backed filesystem approach where:
+- Crypto operations are file I/O (write→read pattern)
+- All system data encrypted in RAM via borrow checking + pebble budgeting  
+- Drive storage acts as mass cache (backwards from traditional OS)
+- Hardware drivers will come later via NetBSD rump servers
+
+## FIXED - Crypto Server Foundation
+
+1. **Go 9P Server Protocol Issues** - RESOLVED AS DEPRECATED
+   - **Previous Issue**: Messages exceed `msize`, malformed strings crash parser, allocation failures
+   - **Reason**: Switching to C-based crypto server using standard 9P
+   - **New Status**: Use proven NetBSD rump server for hardware when needed, C server for crypto
+   - **Files**: `userspace/go-servers/p9/` - Will be refactored to C
+   - **Priority**: NO LONGER CRITICAL
+
+2. **MemFS Walk/Read Issues** - RESOLVED AS DEPRECATED  
+   - **Previous Issue**: Walk ignores paths, Read disregards offsets
+   - **Reason**: Building custom crypto filesystem, not using Go-based services
+   - **New Status**: Focus on write→read crypto file operations in C
+   - **Files**: `userspace/go-servers/memfs/` - Not needed for crypto-first approach
+   - **Priority**: NO LONGER CRITICAL
+
+## NEW PRIORITY - Crypto Server Implementation
+
+3. **Supercop Integration Critical**
+   - **Issue**: Need battle-tested crypto foundation before building crypto server
+   - **Location**: `crypto-standards/supercop/` 
+   - **Action Required**: 
+     - [ ] Integrate core algorithms (SHA256, AES-GCM, Ed25519, randombytes)
+     - [ ] Create crypto wrapper library for unified interface
+     - [ ] Performance testing and memory safety audit
+   - **Priority**: Phase 1 critical
+   - **Dependencies**: None
+
+4. **9P Crypto Server Development**
+   - **Issue**: Need file-based crypto interface using write→read pattern
+   - **Location**: NEW - Create `kernel/crypto/` directory
+   - **Action Required**:
+     - [ ] Create basic 9P server with crypto file operations
+     - [ ] Implement file types: hash, encrypt, decrypt, random, sign
+     - [ ] Process isolation for crypto operations
+     - [ ] Example: `echo "data" > /secure/crypto/hash/sha256` then `cat /secure/crypto/hash/sha256`
+   - **Priority**: Phase 1 critical
+   - **Dependencies**: Requires supercop integration (#3)
+
+5. **Borrow Lock + Pebble Integration**
+   - **Issue**: Need process isolation and resource accounting for crypto operations
+   - **Location**: `kernel/9front-port/lock_borrow.c`, `kernel/pebble.c`
+   - **Action Required**:
+     - [ ] File access control via borrow checker for crypto files
+     - [ ] Exclusive/shared access permissions for crypto operations
+     - [ ] Resource costing and budget checking for crypto usage
+     - [ ] Security model validation and audit trail
+   - **Priority**: Phase 1 high
+   - **Dependencies**: Requires working crypto server (#4)
+
+## REMAINING CRITICAL - Kernel Stability Issues
+
+6. **Random Number Generator Corruption** - STILL CRITICAL
+   - **Issue**: `randomseed` scribbles over own lock, corrupting synchronization primitives
+   - **Location**: `kernel/9front-port/random.c:71-108`
+   - **Impact**: Race conditions, system instability, potential deadlocks
+   - **Fix**: `randomseed()` seeds `rs->chacha` directly and leaves surrounding `QLock` intact
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
+
+7. **Page-Table Pool Race Conditions** - STILL CRITICAL  
+   - **Issue**: Unsynchronized PT allocation can overflow on SMP systems, memory corruption
+   - **Location**: `kernel/9front-pc64/mmu.c:165-185`
+   - **Impact**: Memory corruption, system crashes on multiprocessor systems
+   - **Fix**: Guard pool with `allocptlock` and tighten exhaustion test to trip at 512 tables
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
+
+8. **Memory Management Issues** - STILL CRITICAL
+   - **Issues**: Pool allocation bugs, formatting problems, memory leaks
+   - **Location**: Multiple files in `kernel/9front-pc64/globals.c`
+   - **Impact**: Memory corruption, resource leaks, system instability
+   - **Priority**: Kernel stability - must fix before crypto server
+   - **Dependencies**: None
+
+## DEFERRED - Hardware Driver Bugs (Lower Priority)
+
+**Strategic Decision**: Hardware driver bugs deferred to Phase 4+ after crypto foundation complete.
+
+**Reason**: Crypto-first approach prioritizes secure filesystem foundation over hardware drivers.
+
+**Future Approach**: Use NetBSD rump servers for hardware when needed - proven, POSIX-compatible drivers.
+
+**Deferred Issues Include**:
+- PCI configuration space unreachable
+- Device reset hooks are inert stubs  
+- Interrupt controllers never initialized
+- Architecture-specific devices cannot be registered
+
+## Implementation Strategy
+
+### New Priority Order:
+1. **Phase 1 (Weeks 1-8)**: Crypto server foundation
+   - Fix kernel stability issues (#6, #7, #8)
+   - Implement supercop integration (#3)  
+   - Build basic 9P crypto server (#4)
+   - Add borrow lock + pebble integration (#5)
+
+2. **Phase 2 (Weeks 9-14)**: Security enhancement
+   - RAM encryption for all crypto data
+   - Advanced security features (cold boot protection, audit trails)
+   - Complete process isolation
+
+3. **Phase 3 (Weeks 15-20)**: Filesystem integration
+   - RAM-primary filesystem with `/secure/` mount
+   - Hybrid storage model with drive as cache
+   - RC shell integration
+
+4. **Phase 4 (Weeks 21-26)**: Advanced features
+   - Synthetic files and translator chains
+   - System integration and optimization
+   - Hardware drivers via NetBSD rump servers
+
+### Success Criteria for Phase 1:
+- [ ] Kernel stability issues resolved (#6, #7, #8)
+- [ ] Working crypto operations: `echo "data" > /secure/crypto/hash/sha256` → `cat /secure/crypto/hash/sha256`
+- [ ] Borrow checking prevents unauthorized crypto access
+- [ ] Pebble budgets limit and account for crypto resource usage
+- [ ] System stable under load testing
+
+## Rationale for Strategic Pivot
+
+**Why Crypto-First Over Hardware-First**:
+
+1. **Unique Value Proposition**: First crypto-backed filesystem with Plan 9 philosophy
+2. **Faster Implementation**: No hardware complexity, focus on software innovation
+3. **Research Impact**: Novel architecture with academic publication potential
+4. **Security Foundation**: Everything can build on encrypted, isolated base
+5. **Market Differentiation**: No competitor has crypto-backed file operations
+6. **Hardware Later**: NetBSD rump servers provide proven drivers when ready
+
+**This strategic pivot creates a unique competitive advantage while leveraging proven cryptographic libraries (Supercop + NIST standards) and established Plan 9 principles.**
+
+## Files Updated by This Change
+
+- **NEW**: `docs/IMPLEMENTATION_PLAN_CRYPTO_FILESYSTEM.md` - Complete implementation roadmap
+- **UPDATED**: `docs/serious-bugs.md` - This document with new priorities
+- **FUTURE**: `kernel/crypto/` - Will contain crypto server implementation
+- **FUTURE**: `userspace/go-servers/p9/` - Will be refactored or deprecated
+
+The crypto-first direction represents a fundamental shift toward software innovation over hardware compatibility, positioning Lux9 as a leader in secure operating system research.

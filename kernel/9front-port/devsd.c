@@ -78,13 +78,13 @@ sdunmountdrivers(void)
 static long
 sd9pread(Chan *mntchan, void *buf, long n, vlong offset)
 {
-	return devread(mntchan, buf, n, offset);
+	return devtab[mntchan->type]->read(mntchan, buf, n, offset);
 }
 
 static long
 sd9pwrite(Chan *mntchan, void *buf, long n, vlong offset)
 {
-	return devwrite(mntchan, buf, n, offset);
+	return devtab[mntchan->type]->write(mntchan, buf, n, offset);
 }
 
 static void

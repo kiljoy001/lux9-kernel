@@ -1,0 +1,1088 @@
+{
+  "database_version": "2.0",
+  "total_algorithms": 185,
+  "algorithms": {
+    "symmetric_ciphers": {
+      "aes_128": {
+        "name": "AES-128",
+        "tier": 1,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aes_192": {
+        "name": "AES-192",
+        "tier": 1,
+        "key_size": 192,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aes_256": {
+        "name": "AES-256",
+        "tier": 1,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "3des": {
+        "name": "3DES",
+        "tier": 2,
+        "key_size": 168,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "camellia_128": {
+        "name": "Camellia-128",
+        "tier": 2,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "camellia_192": {
+        "name": "Camellia-192",
+        "tier": 2,
+        "key_size": 192,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "camellia_256": {
+        "name": "Camellia-256",
+        "tier": 2,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "blowfish": {
+        "name": "Blowfish",
+        "tier": 3,
+        "key_size": 448,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "twofish": {
+        "name": "Twofish",
+        "tier": 2,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "serpent": {
+        "name": "Serpent",
+        "tier": 2,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "cast5": {
+        "name": "CAST5",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "cast6": {
+        "name": "CAST6",
+        "tier": 3,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "idea": {
+        "name": "IDEA",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "rc2": {
+        "name": "RC2",
+        "tier": 4,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "rc5": {
+        "name": "RC5",
+        "tier": 4,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "rc6": {
+        "name": "RC6",
+        "tier": 3,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria_128": {
+        "name": "ARIA-128",
+        "tier": 2,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria_192": {
+        "name": "ARIA-192",
+        "tier": 2,
+        "key_size": 192,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria_256": {
+        "name": "ARIA-256",
+        "tier": 2,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "seed": {
+        "name": "SEED",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      }
+    },
+    "stream_ciphers": {
+      "chacha20": {
+        "name": "ChaCha20",
+        "tier": 1,
+        "key_size": 256,
+        "category": "stream_cipher"
+      },
+      "salsa20": {
+        "name": "Salsa20",
+        "tier": 2,
+        "key_size": 256,
+        "category": "stream_cipher"
+      },
+      "rc4": {
+        "name": "RC4",
+        "tier": 4,
+        "key_size": 256,
+        "category": "stream_cipher"
+      },
+      "rabbit": {
+        "name": "Rabbit",
+        "tier": 3,
+        "key_size": 128,
+        "category": "stream_cipher"
+      },
+      "hc128": {
+        "name": "HC-128",
+        "tier": 3,
+        "key_size": 128,
+        "category": "stream_cipher"
+      },
+      "hc256": {
+        "name": "HC-256",
+        "tier": 3,
+        "key_size": 256,
+        "category": "stream_cipher"
+      },
+      "sosemanuk": {
+        "name": "Sosemanuk",
+        "tier": 3,
+        "key_size": 256,
+        "category": "stream_cipher"
+      },
+      "grain128a": {
+        "name": "Grain-128a",
+        "tier": 3,
+        "key_size": 128,
+        "category": "stream_cipher"
+      },
+      "trivium": {
+        "name": "Trivium",
+        "tier": 3,
+        "key_size": 80,
+        "category": "stream_cipher"
+      },
+      "xsalsa20": {
+        "name": "XSalsa20",
+        "tier": 2,
+        "key_size": 256,
+        "category": "stream_cipher"
+      }
+    },
+    "hash_functions": {
+      "sha256": {
+        "name": "SHA-256",
+        "tier": 1,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "sha512": {
+        "name": "SHA-512",
+        "tier": 1,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "sha3_256": {
+        "name": "SHA3-256",
+        "tier": 1,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "sha3_512": {
+        "name": "SHA3-512",
+        "tier": 1,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "sha224": {
+        "name": "SHA-224",
+        "tier": 1,
+        "output_size": 224,
+        "category": "hash_function"
+      },
+      "sha384": {
+        "name": "SHA-384",
+        "tier": 1,
+        "output_size": 384,
+        "category": "hash_function"
+      },
+      "sha3_224": {
+        "name": "SHA3-224",
+        "tier": 1,
+        "output_size": 224,
+        "category": "hash_function"
+      },
+      "sha3_384": {
+        "name": "SHA3-384",
+        "tier": 1,
+        "output_size": 384,
+        "category": "hash_function"
+      },
+      "blake2b": {
+        "name": "BLAKE2b",
+        "tier": 2,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "blake2s": {
+        "name": "BLAKE2s",
+        "tier": 2,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "blake3": {
+        "name": "BLAKE3",
+        "tier": 2,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "sha1": {
+        "name": "SHA-1",
+        "tier": 4,
+        "output_size": 160,
+        "category": "hash_function"
+      },
+      "md5": {
+        "name": "MD5",
+        "tier": 4,
+        "output_size": 128,
+        "category": "hash_function"
+      },
+      "ripemd160": {
+        "name": "RIPEMD-160",
+        "tier": 3,
+        "output_size": 160,
+        "category": "hash_function"
+      },
+      "whirlpool": {
+        "name": "Whirlpool",
+        "tier": 3,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "shake128": {
+        "name": "SHAKE128",
+        "tier": 2,
+        "output_size": 128,
+        "category": "hash_function"
+      },
+      "shake256": {
+        "name": "SHAKE256",
+        "tier": 2,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "keccak256": {
+        "name": "Keccak-256",
+        "tier": 2,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "keccak512": {
+        "name": "Keccak-512",
+        "tier": 2,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "skein256": {
+        "name": "Skein-256",
+        "tier": 3,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "skein512": {
+        "name": "Skein-512",
+        "tier": 3,
+        "output_size": 512,
+        "category": "hash_function"
+      },
+      "skein1024": {
+        "name": "Skein-1024",
+        "tier": 3,
+        "output_size": 1024,
+        "category": "hash_function"
+      },
+      "md4": {
+        "name": "MD4",
+        "tier": 4,
+        "output_size": 128,
+        "category": "hash_function"
+      },
+      "sm3": {
+        "name": "SM3",
+        "tier": 2,
+        "output_size": 256,
+        "category": "hash_function"
+      },
+      "gost_hash": {
+        "name": "GOST-Hash",
+        "tier": 3,
+        "output_size": 256,
+        "category": "hash_function"
+      }
+    },
+    "mac_algorithms": {
+      "hmac_sha256": {
+        "name": "HMAC-SHA256",
+        "tier": 1,
+        "category": "mac"
+      },
+      "hmac_sha512": {
+        "name": "HMAC-SHA512",
+        "tier": 1,
+        "category": "mac"
+      },
+      "poly1305": {
+        "name": "Poly1305",
+        "tier": 1,
+        "category": "mac"
+      },
+      "cmac_aes": {
+        "name": "CMAC-AES",
+        "tier": 1,
+        "category": "mac"
+      },
+      "gmac": {
+        "name": "GMAC",
+        "tier": 1,
+        "category": "mac"
+      },
+      "hmac_sha1": {
+        "name": "HMAC-SHA1",
+        "tier": 3,
+        "category": "mac"
+      },
+      "hmac_sha3_256": {
+        "name": "HMAC-SHA3-256",
+        "tier": 2,
+        "category": "mac"
+      },
+      "hmac_sha3_512": {
+        "name": "HMAC-SHA3-512",
+        "tier": 2,
+        "category": "mac"
+      },
+      "siphash": {
+        "name": "SipHash",
+        "tier": 2,
+        "category": "mac"
+      },
+      "kmac128": {
+        "name": "KMAC128",
+        "tier": 2,
+        "category": "mac"
+      },
+      "kmac256": {
+        "name": "KMAC256",
+        "tier": 2,
+        "category": "mac"
+      },
+      "hmac_sha224": {
+        "name": "HMAC-SHA224",
+        "tier": 2,
+        "category": "mac"
+      },
+      "hmac_sha384": {
+        "name": "HMAC-SHA384",
+        "tier": 1,
+        "category": "mac"
+      },
+      "cmac_aes128": {
+        "name": "CMAC-AES128",
+        "tier": 1,
+        "category": "mac"
+      },
+      "cmac_aes256": {
+        "name": "CMAC-AES256",
+        "tier": 1,
+        "category": "mac"
+      }
+    },
+    "authenticated_encryption": {
+      "aes_128_gcm": {
+        "name": "AES-128-GCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes_256_gcm": {
+        "name": "AES-256-GCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "chacha20_poly1305": {
+        "name": "ChaCha20-Poly1305",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes_128_ccm": {
+        "name": "AES-128-CCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes_256_ccm": {
+        "name": "AES-256-CCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes_128_ocb": {
+        "name": "AES-128-OCB",
+        "tier": 2,
+        "category": "authenticated_encryption"
+      },
+      "aes_256_ocb": {
+        "name": "AES-256-OCB",
+        "tier": 2,
+        "category": "authenticated_encryption"
+      },
+      "aes_128_eax": {
+        "name": "AES-128-EAX",
+        "tier": 3,
+        "category": "authenticated_encryption"
+      },
+      "aes_256_eax": {
+        "name": "AES-256-EAX",
+        "tier": 3,
+        "category": "authenticated_encryption"
+      },
+      "xchacha20_poly1305": {
+        "name": "XChaCha20-Poly1305",
+        "tier": 2,
+        "category": "authenticated_encryption"
+      },
+      "aes128_ccm": {
+        "name": "AES-128-CCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes256_ccm": {
+        "name": "AES-256-CCM",
+        "tier": 1,
+        "category": "authenticated_encryption"
+      },
+      "aes128_ocb": {
+        "name": "AES-128-OCB",
+        "tier": 2,
+        "category": "authenticated_encryption"
+      },
+      "aes256_ocb": {
+        "name": "AES-256-OCB",
+        "tier": 2,
+        "category": "authenticated_encryption"
+      },
+      "aes128_eax": {
+        "name": "AES-128-EAX",
+        "tier": 3,
+        "category": "authenticated_encryption"
+      },
+      "aes256_eax": {
+        "name": "AES-256-EAX",
+        "tier": 3,
+        "category": "authenticated_encryption"
+      }
+    },
+    "key_exchange": {
+      "ecdh_p256": {
+        "name": "ECDH-P256",
+        "tier": 1,
+        "category": "key_exchange"
+      },
+      "ecdh_p384": {
+        "name": "ECDH-P384",
+        "tier": 1,
+        "category": "key_exchange"
+      },
+      "ecdh_p521": {
+        "name": "ECDH-P521",
+        "tier": 1,
+        "category": "key_exchange"
+      },
+      "x25519": {
+        "name": "X25519",
+        "tier": 1,
+        "category": "key_exchange"
+      },
+      "x448": {
+        "name": "X448",
+        "tier": 2,
+        "category": "key_exchange"
+      },
+      "dh2048": {
+        "name": "DH-2048",
+        "tier": 2,
+        "category": "key_exchange"
+      },
+      "dh3072": {
+        "name": "DH-3072",
+        "tier": 2,
+        "category": "key_exchange"
+      },
+      "dh4096": {
+        "name": "DH-4096",
+        "tier": 2,
+        "category": "key_exchange"
+      },
+      "dh1024": {
+        "name": "DH-1024",
+        "tier": 4,
+        "category": "key_exchange"
+      }
+    },
+    "digital_signatures": {
+      "ecdsa_p256": {
+        "name": "ECDSA-P256",
+        "tier": 1,
+        "category": "signature"
+      },
+      "ecdsa_p384": {
+        "name": "ECDSA-P384",
+        "tier": 1,
+        "category": "signature"
+      },
+      "ecdsa_p521": {
+        "name": "ECDSA-P521",
+        "tier": 1,
+        "category": "signature"
+      },
+      "ed25519": {
+        "name": "Ed25519",
+        "tier": 1,
+        "category": "signature"
+      },
+      "ed448": {
+        "name": "Ed448",
+        "tier": 2,
+        "category": "signature"
+      },
+      "rsa_2048": {
+        "name": "RSA-2048",
+        "tier": 2,
+        "category": "signature"
+      },
+      "rsa_3072": {
+        "name": "RSA-3072",
+        "tier": 2,
+        "category": "signature"
+      },
+      "rsa_4096": {
+        "name": "RSA-4096",
+        "tier": 2,
+        "category": "signature"
+      },
+      "dsa_2048": {
+        "name": "DSA-2048",
+        "tier": 3,
+        "category": "signature"
+      },
+      "dsa_3072": {
+        "name": "DSA-3072",
+        "tier": 3,
+        "category": "signature"
+      },
+      "rsa1024": {
+        "name": "RSA-1024",
+        "tier": 4,
+        "category": "signature"
+      },
+      "rsa2048": {
+        "name": "RSA-2048",
+        "tier": 2,
+        "category": "signature"
+      },
+      "rsa3072": {
+        "name": "RSA-3072",
+        "tier": 2,
+        "category": "signature"
+      },
+      "rsa4096": {
+        "name": "RSA-4096",
+        "tier": 2,
+        "category": "signature"
+      },
+      "dsa1024": {
+        "name": "DSA-1024",
+        "tier": 4,
+        "category": "signature"
+      },
+      "dsa2048": {
+        "name": "DSA-2048",
+        "tier": 3,
+        "category": "signature"
+      },
+      "dsa3072": {
+        "name": "DSA-3072",
+        "tier": 3,
+        "category": "signature"
+      }
+    },
+    "post_quantum": {
+      "ml_kem_512": {
+        "name": "ML-KEM-512",
+        "tier": 1,
+        "category": "post_quantum_kem"
+      },
+      "ml_kem_768": {
+        "name": "ML-KEM-768",
+        "tier": 1,
+        "category": "post_quantum_kem"
+      },
+      "ml_kem_1024": {
+        "name": "ML-KEM-1024",
+        "tier": 1,
+        "category": "post_quantum_kem"
+      },
+      "ml_dsa_44": {
+        "name": "ML-DSA-44",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "ml_dsa_65": {
+        "name": "ML-DSA-65",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "ml_dsa_87": {
+        "name": "ML-DSA-87",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_128s": {
+        "name": "SLH-DSA-128s",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_128f": {
+        "name": "SLH-DSA-128f",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_192s": {
+        "name": "SLH-DSA-192s",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_192f": {
+        "name": "SLH-DSA-192f",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_256s": {
+        "name": "SLH-DSA-256s",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "slh_dsa_256f": {
+        "name": "SLH-DSA-256f",
+        "tier": 1,
+        "category": "post_quantum_signature"
+      },
+      "falcon_512": {
+        "name": "Falcon-512",
+        "tier": 2,
+        "category": "post_quantum_signature"
+      },
+      "falcon_1024": {
+        "name": "Falcon-1024",
+        "tier": 2,
+        "category": "post_quantum_signature"
+      },
+      "classic_mceliece": {
+        "name": "Classic-McEliece",
+        "tier": 3,
+        "category": "post_quantum_kem"
+      },
+      "bike": {
+        "name": "BIKE",
+        "tier": 3,
+        "category": "post_quantum_kem"
+      },
+      "hqc": {
+        "name": "HQC",
+        "tier": 3,
+        "category": "post_quantum_kem"
+      }
+    },
+    "key_derivation": {
+      "pbkdf2": {
+        "name": "PBKDF2",
+        "tier": 1,
+        "category": "kdf"
+      },
+      "hkdf": {
+        "name": "HKDF",
+        "tier": 1,
+        "category": "kdf"
+      },
+      "scrypt": {
+        "name": "scrypt",
+        "tier": 1,
+        "category": "password_hash"
+      },
+      "argon2i": {
+        "name": "Argon2i",
+        "tier": 1,
+        "category": "password_hash"
+      },
+      "argon2d": {
+        "name": "Argon2d",
+        "tier": 1,
+        "category": "password_hash"
+      },
+      "argon2id": {
+        "name": "Argon2id",
+        "tier": 1,
+        "category": "password_hash"
+      },
+      "bcrypt": {
+        "name": "bcrypt",
+        "tier": 2,
+        "category": "password_hash"
+      },
+      "kdf_sp800_108": {
+        "name": "KDF-SP800-108",
+        "tier": 2,
+        "category": "kdf"
+      },
+      "kdf_sp800_56c": {
+        "name": "KDF-SP800-56C",
+        "tier": 2,
+        "category": "kdf"
+      },
+      "pbkdf2_sha256": {
+        "name": "PBKDF2-SHA256",
+        "tier": 1,
+        "category": "kdf"
+      },
+      "pbkdf2_sha512": {
+        "name": "PBKDF2-SHA512",
+        "tier": 1,
+        "category": "kdf"
+      },
+      "hkdf_sha256": {
+        "name": "HKDF-SHA256",
+        "tier": 1,
+        "category": "kdf"
+      },
+      "hkdf_sha512": {
+        "name": "HKDF-SHA512",
+        "tier": 1,
+        "category": "kdf"
+      }
+    },
+    "random_generators": {
+      "ctr_drbg": {
+        "name": "CTR-DRBG",
+        "tier": 1,
+        "category": "rng"
+      },
+      "hash_drbg": {
+        "name": "Hash-DRBG",
+        "tier": 1,
+        "category": "rng"
+      },
+      "hmac_drbg": {
+        "name": "HMAC-DRBG",
+        "tier": 1,
+        "category": "rng"
+      },
+      "fortuna": {
+        "name": "Fortuna",
+        "tier": 2,
+        "category": "rng"
+      },
+      "yarrow": {
+        "name": "Yarrow",
+        "tier": 3,
+        "category": "rng"
+      }
+    },
+    "fhe": {
+      "bfv": {
+        "name": "BFV",
+        "tier": 1,
+        "category": "fhe",
+        "library": "SEAL"
+      },
+      "bgv": {
+        "name": "BGV",
+        "tier": 1,
+        "category": "fhe",
+        "library": "HElib"
+      },
+      "ckks": {
+        "name": "CKKS",
+        "tier": 1,
+        "category": "fhe",
+        "library": "SEAL"
+      },
+      "tfhe": {
+        "name": "TFHE",
+        "tier": 1,
+        "category": "fhe",
+        "library": "TFHE-rs"
+      },
+      "fhew": {
+        "name": "FHEW",
+        "tier": 2,
+        "category": "fhe",
+        "library": "OpenFHE"
+      },
+      "paillier": {
+        "name": "Paillier",
+        "tier": 2,
+        "category": "partial_he"
+      }
+    },
+    "zk_proofs": {
+      "groth16": {
+        "name": "Groth16",
+        "tier": 1,
+        "category": "zksnark",
+        "library": "arkworks"
+      },
+      "plonk": {
+        "name": "PLONK",
+        "tier": 1,
+        "category": "zksnark",
+        "library": "gnark"
+      },
+      "bulletproofs": {
+        "name": "Bulletproofs",
+        "tier": 1,
+        "category": "range_proof",
+        "library": "bulletproofs"
+      },
+      "halo2": {
+        "name": "Halo2",
+        "tier": 1,
+        "category": "zksnark",
+        "library": "halo2"
+      },
+      "stark": {
+        "name": "STARK",
+        "tier": 1,
+        "category": "zkstark",
+        "library": "winterfell"
+      },
+      "marlin": {
+        "name": "Marlin",
+        "tier": 2,
+        "category": "zksnark",
+        "library": "arkworks"
+      },
+      "sonic": {
+        "name": "Sonic",
+        "tier": 2,
+        "category": "zksnark",
+        "library": "sonic"
+      },
+      "aurora": {
+        "name": "Aurora",
+        "tier": 2,
+        "category": "zksnark",
+        "library": "libiop"
+      }
+    },
+    "privacy": {
+      "ring_signature": {
+        "name": "Ring Signature",
+        "tier": 1,
+        "category": "privacy",
+        "library": "monero"
+      },
+      "blind_signature": {
+        "name": "Blind Signature",
+        "tier": 1,
+        "category": "privacy",
+        "library": "custom"
+      },
+      "ringct": {
+        "name": "RingCT",
+        "tier": 1,
+        "category": "privacy",
+        "library": "monero"
+      },
+      "linkable_ring": {
+        "name": "LSAG",
+        "tier": 2,
+        "category": "privacy",
+        "library": "custom"
+      }
+    },
+    "advanced_signatures": {
+      "bls_aggregate": {
+        "name": "BLS Aggregation",
+        "tier": 1,
+        "category": "signature",
+        "library": "blst"
+      },
+      "threshold_ecdsa": {
+        "name": "Threshold ECDSA",
+        "tier": 1,
+        "category": "threshold",
+        "library": "tss"
+      },
+      "threshold_bls": {
+        "name": "Threshold BLS",
+        "tier": 1,
+        "category": "threshold",
+        "library": "threshold-crypto"
+      },
+      "vrf": {
+        "name": "VRF",
+        "tier": 1,
+        "category": "randomness",
+        "library": "vrf"
+      },
+      "vdf": {
+        "name": "VDF",
+        "tier": 2,
+        "category": "delay",
+        "library": "vdf"
+      }
+    },
+    "block_ciphers": {
+      "des": {
+        "name": "DES",
+        "tier": 4,
+        "key_size": 56,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "3des_ede": {
+        "name": "3DES-EDE",
+        "tier": 3,
+        "key_size": 168,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "blowfish": {
+        "name": "Blowfish",
+        "tier": 3,
+        "key_size": 448,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "cast128": {
+        "name": "CAST-128",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "cast256": {
+        "name": "CAST-256",
+        "tier": 3,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "rc2": {
+        "name": "RC2",
+        "tier": 4,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "rc5": {
+        "name": "RC5",
+        "tier": 4,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "rc6": {
+        "name": "RC6",
+        "tier": 3,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "idea": {
+        "name": "IDEA",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 64,
+        "category": "block_cipher"
+      },
+      "seed": {
+        "name": "SEED",
+        "tier": 3,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria128": {
+        "name": "ARIA-128",
+        "tier": 2,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria192": {
+        "name": "ARIA-192",
+        "tier": 2,
+        "key_size": 192,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "aria256": {
+        "name": "ARIA-256",
+        "tier": 2,
+        "key_size": 256,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "sm4": {
+        "name": "SM4",
+        "tier": 2,
+        "key_size": 128,
+        "block_size": 128,
+        "category": "block_cipher"
+      },
+      "gost": {
+        "name": "GOST",
+        "tier": 3,
+        "key_size": 256,
+        "block_size": 64,
+        "category": "block_cipher"
+      }
+    }
+  }
+}
