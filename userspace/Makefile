@@ -8,6 +8,7 @@ SRC_DIR := .
 
 # Source directories
 GO_SERVERS_DIR := go-servers
+DRIVERS_DIR := drivers
 C_SERVERS_DIR := servers
 LIBS_DIR := lib
 
@@ -40,7 +41,12 @@ LDFLAGS := -shared -Wl,-soname,
 .PHONY: all clean test install help
 
 # Main userspace build
-all: go-servers c-servers libs initrd
+all: go-servers drivers c-servers libs initrd
+
+# Drivers build
+drivers:
+	@echo "Building userspace drivers..."
+	@$(MAKE) -C $(DRIVERS_DIR) all
 
 # Go servers build
 go-servers:
@@ -63,12 +69,15 @@ libs:
 initrd: $(BUILD_DIR)/initrd.tar
 	@echo "Creating initrd..."
 
-$(BUILD_DIR)/initrd.tar: go-servers c-servers libs
-	@echo "Building initrd from $(GO_SERVERS_DIR) and $(C_SERVERS_DIR)"
+$(BUILD_DIR)/initrd.tar: go-servers drivers c-servers libs
+	@echo "Building initrd from $(GO_SERVERS_DIR), $(DRIVERS_DIR), and $(C_SERVERS_DIR)"
 	@rm -rf $(INITRD_DIR)
-	@mkdir -p $(INITRD_DIR)/{bin,lib,dev,etc}
+	@mkdir -p $(INITRD_DIR)/{bin,lib,dev,etc,srv}
 	# Copy Go binaries
 	@find $(GO_SERVERS_DIR) -name "*.go" -prune -o -type f -executable -print \
+	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
+	# Copy driver binaries
+	@find $(DRIVERS_DIR) -name "*_driver" -type f -executable -print \
 	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
 	# Copy C binaries
 	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
@@ -92,11 +101,13 @@ clean:
 	@echo "Cleaning userspace build..."
 	@rm -rf $(BUILD_DIR)
 	@$(MAKE) -C $(GO_SERVERS_DIR) clean 2>/dev/null || true
+	@$(MAKE) -C $(DRIVERS_DIR) clean 2>/dev/null || true
 
 help:
 	@echo "Userspace Build Targets:"
 	@echo "  all      - Build all userspace components"
 	@echo "  go-servers - Build Go servers"
+	@echo "  drivers  - Build userspace drivers"
 	@echo "  c-servers - Build C servers"
 	@echo "  libs     - Build libraries"
 	@echo "  initrd   - Create initrd package"

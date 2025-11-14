@@ -5,13 +5,14 @@
 CONFIG_DIR := config
 KERNEL_DIR := kernel
 USERSPACE_DIR := userspace
+DRIVERS_DIR := userspace/drivers
 OS_DIR := os
 SCRIPTS_DIR := scripts
 BUILD_DIR := build
 OUTPUT_DIR := output
 
 # Build targets
-.PHONY: all kernel userspace os clean test dev ci help
+.PHONY: all kernel userspace drivers os clean test dev ci help
 
 # Default target
 all: os
@@ -25,8 +26,12 @@ userspace:
 	@echo "Building userspace..."
 	@$(MAKE) -C $(USERSPACE_DIR) all
 
+drivers:
+	@echo "Building userspace drivers..."
+	@$(MAKE) -C $(DRIVERS_DIR) all
+
 # Combined OS build
-os: kernel userspace
+os: kernel userspace drivers
 	@echo "Integrating into complete OS..."
 	@$(MAKE) -C $(OS_DIR) all
 
