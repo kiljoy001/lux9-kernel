@@ -1356,6 +1356,11 @@ namec(char *aname, int amode, int omode, ulong perm)
 	case '#':
 		print("namec: case '#' - processing device path\n");
 		nomount = 1;
+		/* Safety check for NULL up pointer */
+		if(up == nil) {
+			print("namec: ERROR - up is NULL during device path processing\n");
+			error("process not initialized");
+		}
 		up->genbuf[0] = '\0';
 		n = 0;
 		print("namec: collecting device name\n");

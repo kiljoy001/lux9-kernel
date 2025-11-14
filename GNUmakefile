@@ -99,23 +99,47 @@ test-build:
 
 iso: $(KERNEL) userspace/initrd.tar
 	@echo "Creating ISO image..."
-	rm -rf iso_root
-	mkdir -p iso_root/boot iso_root/boot/limine iso_root/EFI/BOOT
-	cp $(KERNEL) iso_root/boot/
-	cp userspace/initrd.tar iso_root/boot/
-	cp limine.conf iso_root/boot/limine/
-	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-bios.sys iso_root/boot/limine/
-	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-bios-cd.bin iso_root/boot/limine/
-	cp /home/scott/Repo/limine-c-template-x86-64/limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp /home/scott/Repo/limine-c-template-x86-64/limine/BOOTX64.EFI iso_root/EFI/BOOT/
+	@# Check for required tools
+	@which xorriso > /dev/null || (echo "Error: xorriso not found. Please install xorriso package." && exit 1)
+	@# Use local limine if available, otherwise try system limine
+	@if [ -d "boot/limine" ] && [ -f "boot/limine/limine-bios.sys" ]; then \
+		LIMINE_DIR="boot/limine"; \
+	elif [ -d "/usr/local/share/limine" ]; then \
+		LIMINE_DIR="/usr/local/share/limine"; \
+	elif [ -d "/usr/share/limine" ]; then \
+		LIMINE_DIR="/usr/share/limine"; \
+	else \
+		echo "Warning: Limine files not found. ISO may not be bootable."; \
+		LIMINE_DIR=""; \
+	fi; \
+	rm -rf iso_root; \
+	mkdir -p iso_root/boot iso_root/boot/limine iso_root/EFI/BOOT; \
+	cp $(KERNEL) iso_root/boot/; \
+	cp userspace/initrd.tar iso_root/boot/; \
+	cp limine.conf iso_root/boot/limine/; \
+	if [ -n "$$LIMINE_DIR" ]; then \
+		cp "$$LIMINE_DIR/limine-bios.sys" iso_root/boot/limine/ 2>/dev/null || true; \
+		cp "$$LIMINE_DIR/limine-bios-cd.bin" iso_root/boot/limine/ 2>/dev/null || true; \
+		cp "$$LIMINE_DIR/limine-uefi-cd.bin" iso_root/boot/limine/ 2>/dev/null || true; \
+		cp "$$LIMINE_DIR/BOOTX64.EFI" iso_root/EFI/BOOT/ 2>/dev/null || true; \
+	fi; \
 	xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o lux9.iso 2>/dev/null
-	-/home/scott/Repo/limine/limine bios-install lux9.iso 2>/dev/null || true
-	rm -rf iso_root
+		iso_root -o lux9.iso 2>/dev/null || true; \
+	if [ -n "$$LIMINE_DIR" ] && [ -f "$$LIMINE_DIR/limine" ]; then \
+		"$$LIMINE_DIR/limine" bios-install lux9.iso 2>/dev/null || true; \
+	elif command -v limine >/dev/null 2>&1; then \
+		limine bios-install lux9.iso 2>/dev/null || true; \
+	fi; \
+	rm -rf iso_root; \
 	@echo "✓ Created lux9.iso"
 
-run: iso
-	/home/scott/Repo/gnumach/qemu-9.1.0-x64-install/bin/qemu-system-x86_64 -M q35 -m 2G -cdrom lux9.iso -boot d -serial file:qemu.log -no-reboot -display none
+run: $(KERNEL)
+	@which qemu-system-x86_64 > /dev/null || (echo "Error: qemu-system-x86_64 not found. Please install qemu package." && exit 1)
+	qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL) -no-reboot -display none -serial file:qemu.log
+
+direct-run: $(KERNEL)
+	@which qemu-system-x86_64 > /dev/null || (echo "Error: qemu-system-x86_64 not found. Please install qemu package." && exit 1)
+	qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL) -no-reboot -display none -serial stdio

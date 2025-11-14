@@ -27,6 +27,15 @@ struct Dirlist
 static Dirtab rootdir[Nrootfiles] = {
 	"#/",		{Qdir, 0, QTDIR},	0,		DMDIR|0555,
 	"boot",	{Qboot, 0, QTDIR},	0,		DMDIR|0555,
+	"bin",		{0, 0, QTDIR},	0,		DMDIR|0555,
+	"dev",		{0, 0, QTDIR},	0,		DMDIR|0555,
+	"env",		{0, 0, QTDIR},	0,		DMDIR|0555,
+	"fd",		{0, 0, QTDIR},	0,		DMDIR|0555,
+	"net",		{0, 0, QTDIR},	0,		DMDIR|0555,
+	"net.alt",	{0, 0, QTDIR},	0,		DMDIR|0555,
+	"proc",	{0, 0, QTDIR},	0,		DMDIR|0555,
+	"root",	{0, 0, QTDIR},	0,		DMDIR|0555,
+	"srv",		{0, 0, QTDIR},	0,		DMDIR|0555,
 };
 static uchar *rootdata[Nrootfiles];
 static Dirlist rootlist = 
@@ -34,7 +43,7 @@ static Dirlist rootlist =
 	0,
 	rootdir,
 	rootdata,
-	2,
+	12,
 	Nrootfiles
 };
 
@@ -109,17 +118,7 @@ addrootdir(char *name)
 void
 rootreset_impl(void)
 {
-
-	addrootdir("bin");
-	addrootdir("dev");
-	addrootdir("env");
-	addrootdir("fd");
-	addrootdir("net");
-	addrootdir("net.alt");
-	addrootdir("proc");
-	addrootdir("root");
-	addrootdir("srv");
-
+	/* Directories are pre-initialized in rootdir array */
 }
 
 /* Wrapper for devtab - not currently used but kept for compatibility */
@@ -249,7 +248,7 @@ print("[%d] kaddr %.8ulx base %.8ulx offset %ld (%.8ulx), n %d %.8ulx %.8ulx %.8
 		((ulong*)(data+offset))[0],
 		((ulong*)(data+offset))[1],
 		((ulong*)(data+offset))[2]);
-#endif asdf
+#endif
 	memmove(buf, data+offset, n);
 	return n;
 }
@@ -280,4 +279,3 @@ Dev rootdevtab = {
 	devremove,
 	devwstat,
 };
-
