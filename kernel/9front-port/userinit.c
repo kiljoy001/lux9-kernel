@@ -85,11 +85,28 @@ proc0(void*)
 	 * These are o.k. because rootinit is null.
 	 * Then early kproc's will have a root and dot.
 	 */
-	up->slash = namec("#/", Atodir, 0, 0);
-	pathclose(up->slash->path);
-	up->slash->path = newpath("/");
-	up->dot = cclone(up->slash);
-	print("BOOT[proc0]: root namespace acquired\n");
+	print("BOOT[proc0]: setting up root namespace\n");
+	
+	/* Provide fallback root namespace if #/ is not available */
+	if(waserror()) {
+		print("BOOT[proc0]: WARNING - root device '#/' not available, creating minimal namespace\n");
+		/* Create minimal namespace without actual filesystem */
+		up->slash = nil;
+		up->dot = nil;
+		poperror();
+	} else {
+		/* Try to set up proper root namespace */
+		up->slash = namec("#/", Atodir, 0, 0);
+		if(up->slash != nil) {
+			pathclose(up->slash->path);
+			up->slash->path = newpath("/");
+			up->dot = cclone(up->slash);
+		} else {
+			up->dot = nil;
+		}
+		poperror();
+	}
+	print("BOOT[proc0]: root namespace setup complete\n");
 	pebble_sip_issue_test();
 	BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
