@@ -477,11 +477,23 @@ retry:
 	
 	if(imagealloc.nidle > conf.nimage
 	|| (i = newimage(pages)) == nil) {
+		/* Check if we have any idle images before attempting reclamation */
+		int had_idle = (imagealloc.nidle > 0);
 		unlock(&imagealloc);
-		if(imagealloc.nidle == 0)
+		
+		/* If no idle images, we can't free anything */
+		if(!had_idle)
 			error(Enomem);
-		if(imagereclaim(0) == 0)
+			
+		/* Try to reclaim memory - this may temporarily hold locks */
+		if(imagereclaim(0) == 0) {
 			freebroken();		/* can use the memory */
+		}
+		
+		/* Brief pause to allow other processes to make progress */
+		if(retry_count > 3)
+			tsleep(&imagealloc, return0, nil, 10);
+		
 		goto retry;
 	}
 	i->type = c->type;
