@@ -1353,27 +1353,23 @@ namec(char *aname, int amode, int omode, ulong perm)
 		incref(c);
 		break;
 	
-	case '#':
-		print("namec: case '#' - processing device path\n");
+case '#':
 		nomount = 1;
-		/* Safety check for NULL up pointer */
-		if(up == nil) {
-			print("namec: ERROR - up is NULL during device path processing\n");
-			error("process not initialized");
-		}
+		print("DEBUG[namec]: up=%p, &up->genbuf=%p\n", up, &up->genbuf);
 		up->genbuf[0] = '\0';
 		n = 0;
-		print("namec: collecting device name\n");
 		while(*name != '\0' && (*name != '/' || n < 2)){
-			print("namec: processing char '%c', n=%d\n", *name, n);
-			if(n >= sizeof(up->genbuf)-1) {
-				print("namec: filename error\n");
+			if(n >= sizeof(up->genbuf)-1)
 				error(Efilename);
-			}
+			print("DEBUG[namec]: storing char '%c' at up->genbuf[%d] = %p\n", 
+			      *name, n, &up->genbuf[n]);
 			up->genbuf[n++] = *name++;
 		}
+		print("DEBUG[namec]: setting null terminator at up->genbuf[%d] = %p\n", 
+		      n, &up->genbuf[n]);
 		up->genbuf[n] = '\0';
 		print("namec: collected device name '%s'\n", up->genbuf);
+		print("DEBUG[namec]: calling chartorune on up->genbuf+1 = %p\n", up->genbuf+1);
 		n = chartorune(&r, up->genbuf+1)+1;
 		print("namec: chartorune returned n=%d, r='%C'\n", n, r);
 		t = devno(r, 1);
@@ -1387,6 +1383,8 @@ namec(char *aname, int amode, int omode, ulong perm)
 			error(Enoattach);
 		}
 		
+		print("DEBUG[namec]: pre-attach: n=%d, up->genbuf+n = %p\n", n, up->genbuf+n);
+		print("DEBUG[namec]: trying to access *(up->genbuf+n) = '%c'\n", *(up->genbuf+n));
 		print("namec: calling devtab[%d]->attach(%s)\n", t, up->genbuf+n);
 		c = devtab[t]->attach(up->genbuf+n);
 		print("namec: attach returned c=%p\n", c);
