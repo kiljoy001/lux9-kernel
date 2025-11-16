@@ -126,10 +126,12 @@ rlock(RWLock *q)
 {
 	Proc *p;
 
+	iprint("rlock: %p enter pc=%p\n", &q->use, getcallerpc(&q));
 	lock(&q->use);
 	if(q->writer == 0 && q->head == nil){
 		/* no writer, go for it */
 		q->readers++;
+		iprint("rlock: %p immediate succeed\n", &q->use);
 		unlock(&q->use);
 		return;
 	}
@@ -145,6 +147,7 @@ rlock(RWLock *q)
 	up->state = QueueingR;
 	unlock(&q->use);
 	sched();
+	iprint("rlock: %p woke up\n", &q->use);
 }
 
 void
@@ -152,10 +155,12 @@ runlock(RWLock *q)
 {
 	Proc *p;
 
+	iprint("runlock: %p enter pc=%p\n", &q->use, getcallerpc(&q));
 	lock(&q->use);
 	p = q->head;
 	if(--(q->readers) > 0 || p == nil){
 		unlock(&q->use);
+		iprint("runlock: %p released (readers>0)\n", &q->use);
 		return;
 	}
 
@@ -169,6 +174,7 @@ runlock(RWLock *q)
 	q->writer = 1;
 	unlock(&q->use);
 	ready(p);
+	iprint("runlock: %p passed to writer\n", &q->use);
 }
 
 void

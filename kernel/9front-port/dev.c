@@ -66,6 +66,7 @@ devallowed(Pgrp *pgrp, int r)
 {
 	int t, w, b;
 
+	iprint("devallowed: enter pgrp=%p r=%d\n", pgrp, r);
 	t = devno(r, 1);
 	if(t == -1)
 		return 0;
@@ -80,13 +81,17 @@ devallowed(Pgrp *pgrp, int r)
 	if(up == nil){
 	}
 	rlock(&pgrp->ns);
+	iprint("devallowed: acquired ns lock=%p\n", &pgrp->ns.use);
 	if(waserror()){
+		iprint("devallowed: error, runlock\n");
 		runlock(&pgrp->ns);
+		iprint("devallowed: released ns lock (error)\n");
 		nexterror();
 	}
 	b = !(pgrp->notallowed[t/w] & 1<<t%w);
 	poperror();
 	runlock(&pgrp->ns);
+	iprint("devallowed: released ns lock\n");
 	return b;
 }
 
