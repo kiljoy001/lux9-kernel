@@ -42,6 +42,25 @@
 #include <libc.h>
 #include <pool.h>
 
+extern void early_iprint(char *fmt, ...);
+extern void uartputs(char*, int);
+
+#define POOLALLOC_TRACE_THRESHOLD (4*1024)
+#define POOLTRACE_THRESHOLD       (16*1024)
+
+static void
+pooltrace(const char *fmt, ...)
+{
+	char buf[128];
+	va_list v;
+	int n;
+
+	va_start(v, fmt);
+	n = vseprint(buf, buf+sizeof buf, fmt, v) - buf;
+	va_end(v);
+	uartputs(buf, n);
+}
+
 typedef struct Alloc	Alloc;
 typedef struct Arena	Arena;
 typedef struct Bhdr	Bhdr;
@@ -562,8 +581,13 @@ poolnewarena(Pool *p, ulong asize)
 	Arena *ap, *lastap;
 	Alloc *b;
 
+	if(asize >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolnewarena enter p=%p asize=%lud cursize=%lud max=%lud\n",
+			p, asize, (ulong)p->cursize, (ulong)p->maxsize);
 	LOG(p, "newarena %lud\n", asize);
 	if(asize > p->maxsize || p->cursize > p->maxsize - asize) {
+		if(asize >= POOLALLOC_TRACE_THRESHOLD)
+			early_iprint("poolnewarena: exceeds max\n");
 		if(poolcompactl(p) == 0){
 			LOG(p, "pool too big: %llud+%lud > %llud\n",
 				(uvlong)p->cursize, asize, (uvlong)p->maxsize);
@@ -573,9 +597,13 @@ poolnewarena(Pool *p, ulong asize)
 	}
 
 	if((a = p->alloc(asize)) == nil) {
+		if(asize >= POOLALLOC_TRACE_THRESHOLD)
+			pooltrace("poolnewarena: alloc(%lud) failed\n", asize);
 		/* assume errstr set by p->alloc */
 		return;
 	}
+	if(asize >= POOLTRACE_THRESHOLD)
+		pooltrace("poolnewarena: alloc(%lud) success\n", asize);
 
 	p->cursize += asize;
 
@@ -611,6 +639,33 @@ poolnewarena(Pool *p, ulong asize)
 		arenamerge(p, a, a->aup);
 	if(a->down)
 		arenamerge(p, a->down, a);
+	if(asize >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolnewarena exit asize=%lud\n", asize);
+}
+
+static int
+poolgrowarena(Pool *p, ulong bsize)
+{
+	ulong asize, minsize;
+
+	asize = bsize2asize(p, bsize);
+	minsize = bsize + p->quantum;
+	if(minsize < bsize)
+		minsize = bsize;
+
+	while(asize >= minsize){
+		if(bsize >= POOLALLOC_TRACE_THRESHOLD)
+			pooltrace("poolgrowarena: attempting asize=%lud\n", asize);
+		poolnewarena(p, asize);
+		if(treelookupgt(p->freeroot, bsize) != nil)
+			return 1;
+		if(asize == minsize)
+			break;
+		asize /= 2;
+		if(asize < minsize)
+			asize = minsize;
+	}
+	return 0;
 }
 
 /* blockresize: grow a block to encompass space past its end, possibly by */
@@ -943,6 +998,8 @@ poolallocl(Pool *p, ulong dsize)
 	Free *fb;
 	Alloc *ab;
 
+	if(dsize >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolallocl start p=%p dsize=%lud\n", p, dsize);
 	if(dsize >= 0x80000000UL){	/* for sanity, overflow */
 		werrstr("invalid allocation size");
 		return nil;
@@ -952,10 +1009,19 @@ poolallocl(Pool *p, ulong dsize)
 
 	fb = treelookupgt(p->freeroot, bsize);
 	if(fb == nil) {
+		if(dsize >= POOLALLOC_TRACE_THRESHOLD)
+			pooltrace("poolallocl: need new arena asize=%lud\n", bsize2asize(p, bsize));
 		poolnewarena(p, bsize2asize(p, bsize));
 		if((fb = treelookupgt(p->freeroot, bsize)) == nil) {
-			/* assume poolnewarena failed and set %r */
-			return nil;
+			if(!poolgrowarena(p, bsize)){
+				if(dsize >= POOLALLOC_TRACE_THRESHOLD)
+					pooltrace("poolallocl: still no block for dsize=%lud\n", dsize);
+				/* assume poolnewarena failed and set %r */
+				return nil;
+			}
+			fb = treelookupgt(p->freeroot, bsize);
+			if(fb == nil)
+				return nil;
 		}
 	}
 
@@ -964,6 +1030,8 @@ poolallocl(Pool *p, ulong dsize)
 	antagonism {
 		memset(B2D(p, ab), 0xDF, dsize);
 	}
+	if(dsize >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolallocl success p=%p dsize=%lud block=%p size=%lud\n", p, dsize, ab, ab->size);
 	return B2D(p, ab);
 }
 
@@ -1188,7 +1256,8 @@ poolalloc(Pool *p, ulong n)
 {
 	void *v;
 
-	/* Debug removed - iprint may be causing hangs */
+	if(n >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolalloc enter p=%p n=%lud\n", p, n);
 	p->lock(p);
 	paranoia {
 		poolcheckl(p);
@@ -1206,6 +1275,8 @@ poolalloc(Pool *p, ulong n)
 	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
 	LOG(p, "poolalloc %p %lud = %p\n", p, n, v);
 	p->unlock(p);
+	if(n >= POOLALLOC_TRACE_THRESHOLD)
+		pooltrace("poolalloc exit p=%p n=%lud v=%p\n", p, n, v);
 	return v;
 }
 

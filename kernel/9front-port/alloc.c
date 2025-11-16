@@ -11,6 +11,23 @@ static void ppanic(Pool*, char*, ...);
 static void plock(Pool*);
 static void punlock(Pool*);
 
+extern void uartputs(char*, int);
+
+#define MALLOC_TRACE_THRESHOLD (4*1024)
+
+static void
+malloctrace(const char *fmt, ...)
+{
+	va_list v;
+	char buf[128];
+	int n;
+
+	va_start(v, fmt);
+	n = vseprint(buf, buf+sizeof buf, fmt, v) - buf;
+	va_end(v);
+	uartputs(buf, n);
+}
+
 typedef struct Private	Private;
 struct Private {
 	Lock		lk;
@@ -208,6 +225,7 @@ smalloc(ulong size)
 		v = (ulong*)v+Npadlong;
 		setmalloctag(v, getcallerpc(&size));
 	}
+	memset(v, 0, size);
 	return v;
 }
 
@@ -216,7 +234,11 @@ malloc(ulong size)
 {
 	void *v;
 
+	if(size >= MALLOC_TRACE_THRESHOLD)
+		malloctrace("malloc: request size=%lud\n", size);
 	v = poolalloc(mainmem, size+Npadlong*sizeof(ulong));
+	if(size >= MALLOC_TRACE_THRESHOLD)
+		malloctrace("malloc: poolalloc returned raw=%p\n", v);
 	if(v == nil)
 		return nil;
 	if(Npadlong){
@@ -224,6 +246,9 @@ malloc(ulong size)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
+	memset(v, 0, size);
+	if(size >= MALLOC_TRACE_THRESHOLD)
+		malloctrace("malloc: returning %p\n", v);
 	return v;
 }
 
@@ -241,7 +266,7 @@ mallocz(ulong size, int clr)
 		setrealloctag(v, 0);
 	}
 	if(clr)
-		return v;
+		memset(v, 0, size);
 	return v;
 }
 
@@ -258,6 +283,7 @@ mallocalign(ulong size, ulong align, long offset, ulong span)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
+	memset(v, 0, size);
 	return v;
 }
 
@@ -310,6 +336,7 @@ secalloc(ulong size)
 		setmalloctag(v, getcallerpc(&size));
 		setrealloctag(v, 0);
 	}
+	memset(v, 0, size);
 	return v;
 }
 

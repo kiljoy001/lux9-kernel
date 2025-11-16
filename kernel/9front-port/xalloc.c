@@ -44,6 +44,21 @@ bootstrap_alloc(ulong size)
 	return ptr;
 }
 
+extern void uartputs(char*, int);
+
+static void
+xtrace(const char *fmt, ...)
+{
+	char buf[160];
+	va_list v;
+	int n;
+
+	va_start(v, fmt);
+	n = vseprint(buf, buf+sizeof buf, fmt, v) - buf;
+	va_end(v);
+	uartputs(buf, n);
+}
+
 /* -------------------------------------------------------------------------
  * XALLOC configuration
  * -------------------------------------------------------------------------
@@ -201,6 +216,8 @@ xallocz(ulong size, int zero)
 	ulong orig_size = size;
 	ulong overhead;
 
+	if(size >= 4096)
+		xtrace("xallocz start size=%lud zero=%d\n", size, zero);
 	/* Calculate overhead */
 	overhead = BY2V + offsetof(Xhdr, data[0]);
 	
@@ -222,10 +239,12 @@ xallocz(ulong size, int zero)
 	
 	/* Only print for large allocations to reduce verbose output */
 	if (size > 64*1024) {
-		print("xallocz: adjusted size %lud bytes\n", size);
+		xtrace("xallocz: adjusted size %lud bytes\n", size);
 	}
 
 	ilock(&xlists.lk);
+	if(size >= 4096)
+		xtrace("xallocz: locked size=%lud\n", size);
 
 	l = &xlists.table;
 	for(h = *l; h; h = h->link) {
@@ -247,11 +266,15 @@ xallocz(ulong size, int zero)
 				panic("xallocz: zeroed block not cleared");
 			/* TEST 2A: Track allocation success */
 			xalloc_successes++;
+			if(size >= 4096)
+				xtrace("xallocz success size=%lud addr=%p\n", size, p);
 			return p->data;
 		}
 		l = &h->link;
 	}
 	iunlock(&xlists.lk);
+	if(size >= 4096)
+		xtrace("xallocz failure size=%lud\n", size);
 
 	/* TEST 2A: Track allocation failure */
 	xalloc_failures++;

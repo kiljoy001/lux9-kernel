@@ -37,6 +37,7 @@ newpgrp(void)
 	p = malloc(sizeof(Pgrp));
 	if(p == nil)
 		error(Enomem);
+	memset(p, 0, sizeof(*p));
 	p->ref = 1;
 	return p;
 }
@@ -49,6 +50,7 @@ newrgrp(void)
 	r = malloc(sizeof(Rgrp));
 	if(r == nil)
 		error(Enomem);
+	memset(r, 0, sizeof(*r));
 	r->ref = 1;
 	return r;
 }
