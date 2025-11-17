@@ -42,7 +42,7 @@ struct Lock
 	Mach	*m;
 	ushort	isilock;
 	long	lockcycles;
-};
+} __attribute__((aligned(64)));
 
 struct Label
 {
@@ -64,7 +64,7 @@ struct FPssestate
 	uchar	st[128];		/* shared 64-bit media and x87 regs */
 	uchar	xmm[256];		/* 128-bit media regs */
 	uchar	ign[96];		/* reserved, ignored */
-};
+} __attribute__((aligned(64)));
 
 struct FPavxstate
 {
@@ -146,7 +146,7 @@ struct MMU
 	void	*alloc;		/* original allocation base for page tables */
 	int	index;
 	int	level;
-};
+} __attribute__((aligned(64)));
 
 /*
  *  MMU stuff in proc
@@ -180,7 +180,7 @@ typedef struct {
 	u32int	ist[14];
 	u16int	_92_[5];
 	u16int	iomap;
-} Tss;
+} Tss __attribute__((aligned(64)));
 
 struct Mach
 {
@@ -244,7 +244,7 @@ struct Mach
 	u64int	mmumap[4];		/* bitmap of pml4 entries for zapping */
 
 	uintptr	stack[1];
-};
+} __attribute__((aligned(64)));
 
 /*
  * KMap the structure

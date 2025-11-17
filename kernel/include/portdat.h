@@ -360,7 +360,7 @@ struct Page
 #define needtxtflush(p)	((p)->txtflush[m->machno>>5] & (1 << (m->machno&0x1F)))
 #define donetxtflush(p)	((p)->txtflush[m->machno>>5] &= ~(1 << (m->machno&0x1F)))
 #endif
-};
+} __attribute__((aligned(64)));
 
 struct Swapalloc
 {
@@ -817,6 +817,7 @@ struct Proc
 	int	affinity;	/* machno this process last ran on */
 	ulong	cpu;		/* cpu average */
 	ulong	lastupdate;
+	uchar	*kstack;	/* base of kernel stack allocation */
 
 	Edf	*edf;		/* if non-null, real-time proc, edf contains scheduling params */
 	int	trace;		/* process being traced? */
@@ -852,9 +853,14 @@ struct Proc
 	/* SIP/HIP capabilities - see docs/SIP_DEV_PLAN.md */
 	ulong	capabilities;	/* Capability bitmap for hardware access */
 
+	/* Temporary storage for devwalk unwind */
+	Walkqid	*walkq;
+	Chan	*walkclone;
+	int	walkalloc;
+
 	/* Pebble resource tracking */
 	PebbleState	pebble;
-};
+} __attribute__((aligned(64)));
 
 enum
 {

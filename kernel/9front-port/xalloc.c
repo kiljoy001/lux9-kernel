@@ -18,29 +18,55 @@ static ulong bootstrap_offset = 0;
  * Allocate a small aligned block from the early-boot bootstrap pool.
  *
  * Allocates `size` bytes from the internal 8KB bootstrap pool and returns
- * an 8-byte-aligned pointer into that pool. If there is not enough space
+ * a cache-line-aligned pointer into that pool. If there is not enough space
  * remaining, returns `nil`.
  *
  * @param size Number of bytes requested.
- * @returns Pointer to the start of the allocated, 8-byte-aligned region within
+ * @returns Pointer to the start of the allocated, cache-line-aligned region within
  *          the bootstrap pool, or `nil` if allocation fails due to insufficient space.
  */
 void*
 bootstrap_alloc(ulong size)
 {
+	return bootstrap_alloc_aligned(size, 64);  /* Default to cache-line alignment */
+}
+
+/**
+ * Allocate a small aligned block from the early-boot bootstrap pool with specified alignment.
+ *
+ * Allocates `size` bytes from the internal 8KB bootstrap pool and returns
+ * an aligned pointer into that pool. If there is not enough space
+ * remaining, returns `nil`.
+ *
+ * @param size Number of bytes requested.
+ * @param alignment Alignment requirement (must be power of 2).
+ * @returns Pointer to the start of the allocated, aligned region within
+ *          the bootstrap pool, or `nil` if allocation fails due to insufficient space.
+ */
+void*
+bootstrap_alloc_aligned(ulong size, ulong alignment)
+{
 	ulong aligned_size;
+	ulong aligned_offset;
 	
-	/* Align to 8-byte boundary */
-	aligned_size = (size + 7) & ~7;
+	/* Validate alignment - must be power of 2 and reasonable */
+	if (alignment == 0 || (alignment & (alignment - 1)) != 0 || alignment > 1024)
+		return nil;
+	
+	/* Align the size to the requested boundary */
+	aligned_size = (size + alignment - 1) & ~(alignment - 1);
+	
+	/* Align the offset to the requested boundary */
+	aligned_offset = (bootstrap_offset + alignment - 1) & ~(alignment - 1);
 	
 	/* Check if we have enough space */
-	if (bootstrap_offset + aligned_size > sizeof(bootstrap_pool)) {
+	if (aligned_offset + aligned_size > sizeof(bootstrap_pool)) {
 		return nil;
 	}
 	
 	/* Return the allocated space */
-	void *ptr = &bootstrap_pool[bootstrap_offset];
-	bootstrap_offset += aligned_size;
+	void *ptr = &bootstrap_pool[aligned_offset];
+	bootstrap_offset = aligned_offset + aligned_size;
 	return ptr;
 }
 

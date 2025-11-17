@@ -425,6 +425,7 @@ int		xmerge(void*, void*);
 void*		xspanalloc(ulong, int, ulong);
 void		xsummary(void);
 void*		bootstrap_alloc(ulong size);
+void*		bootstrap_alloc_aligned(ulong size, ulong alignment);
 void		yield(void);
 Page*		fillpage(Page*, int);
 void		zeroprivatepages(void);
