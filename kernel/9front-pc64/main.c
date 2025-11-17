@@ -334,7 +334,10 @@ init0(void)
 	randominit();
 	iprint("BOOT[init0]: randominit complete\n");
 
-	if(!waserror()){
+	/* DEFER: Environment setup moved to after successful boot
+	 * This avoids early crashes in ksetenv/namec/devwalk */
+	print("BOOT[init0]: deferring environment setup until userspace\n");
+	if(0 && !waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
 		ksetenv("terminal", buf, 0);
 		ksetenv("cputype", "amd64", 0);

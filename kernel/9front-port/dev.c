@@ -243,6 +243,8 @@ devclone(Chan *c)
 Walkqid*
 devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen *gen)
 {
+	/* Stack canaries to detect corruption */
+	volatile uintptr canary_top = 0xDEADBEEFCAFEBABEULL;
 	volatile int alloc;
 	int i, j;
 	Walkqid *volatile wq;
@@ -251,9 +253,20 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 	volatile int savedalloc;
 	char *n;
 	Dir dir;
+	volatile uintptr canary_bottom = 0xFEEDFACEDEADC0DEULL;
 
 	if(nname > 0)
 		isdir(c);
+
+	/* Check canaries */
+	if(canary_top != 0xDEADBEEFCAFEBABEULL){
+		iprint("devwalk: TOP canary corrupted BEFORE walk! %#p\n", (void*)canary_top);
+		panic("stack corruption detected");
+	}
+	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
+		iprint("devwalk: BOTTOM canary corrupted BEFORE walk! %#p\n", (void*)canary_bottom);
+		panic("stack corruption detected");
+	}
 
 	alloc = (nc == nil);
 	wq = smalloc(sizeof(Walkqid)+(nname-1)*sizeof(Qid));
@@ -273,6 +286,15 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 		up->walkalloc = alloc;
 	}
 	if(waserror()){
+		/* Check canaries in error handler */
+		if(canary_top != 0xDEADBEEFCAFEBABEULL){
+			iprint("devwalk: TOP canary corrupted in ERROR handler! %#p\n", (void*)canary_top);
+			panic("stack corruption detected in error path");
+		}
+		if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
+			iprint("devwalk: BOTTOM canary corrupted in ERROR handler! %#p\n", (void*)canary_bottom);
+			panic("stack corruption detected in error path");
+		}
 		Walkqid *cwq = up != nil && up->walkq != nil ? up->walkq : wq;
 		Chan *clone = up != nil ? up->walkclone : (wq != nil ? wq->clone : nil);
 		int calloc = up != nil ? up->walkalloc : alloc;
@@ -364,6 +386,15 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 	 */
 
 Done:
+	/* Check canaries before Done */
+	if(canary_top != 0xDEADBEEFCAFEBABEULL){
+		iprint("devwalk: TOP canary corrupted at Done! %#p\n", (void*)canary_top);
+		panic("stack corruption detected at Done");
+	}
+	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
+		iprint("devwalk: BOTTOM canary corrupted at Done! %#p\n", (void*)canary_bottom);
+		panic("stack corruption detected at Done");
+	}
 	poperror();
 	Walkqid *retq = wq;
 	if(up != nil){
@@ -388,6 +419,15 @@ Done:
 		}else if(retq->clone != nil){
 			retq->clone->type = c->type;
 		}
+	}
+	/* Check canaries before return */
+	if(canary_top != 0xDEADBEEFCAFEBABEULL){
+		iprint("devwalk: TOP canary corrupted before return! %#p\n", (void*)canary_top);
+		panic("stack corruption detected before return");
+	}
+	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
+		iprint("devwalk: BOTTOM canary corrupted before return! %#p\n", (void*)canary_bottom);
+		panic("stack corruption detected before return");
 	}
 	return retq;
 }
