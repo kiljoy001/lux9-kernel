@@ -526,3 +526,15 @@ void		putcr3(u64int);  /* Set CR3 register (page directory base) */
 void		devregistry_init(void);
 void		pci_framework_init(void);
 int		pci_framework_enumerate(void);
+
+/* Phase 4b: Benchmarking functions */
+void		benchmark_init(void);
+void		benchmark_enable(void);
+void		benchmark_disable(void);
+void		benchmark_boot_start(void);
+void		benchmark_boot_stage(int);
+void		benchmark_boot_end(void);
+void		benchmark_print_summary(void);
+int		validate_all(void);
+uvlong		rdtsc(void);
+

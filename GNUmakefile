@@ -32,6 +32,7 @@ BORROW_C := kernel/borrowchecker.c
 LOCKDAG_C := kernel/lock_dag.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
+BENCHMARK_C := kernel/benchmark.c
 
 # SD/FIS support files already included by wildcard above
 
@@ -49,8 +50,9 @@ BORROW_O := $(BORROW_C:.c=.o)
 LOCKDAG_O := $(LOCKDAG_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
+BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
 
 .PHONY: all clean count iso run help
 
