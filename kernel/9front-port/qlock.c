@@ -55,6 +55,7 @@ qlock(QLock *q)
 
 	pc = getcallerpc(&q);
 
+	iprint("qlock: enter q=%p caller=%p\n", q, pc);
 	lock(&q->use);
 	if(!q->locked) {
 		q->pc = pc;
@@ -75,6 +76,7 @@ qlock(QLock *q)
 	up->qpc = pc;
 	up->state = Queueing;
 	unlock(&q->use);
+	iprint("qlock: blocking on q=%p caller=%p\n", q, pc);
 	sched();
 }
 

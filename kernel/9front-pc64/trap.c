@@ -32,6 +32,15 @@ void asm_debug_print_hex(unsigned long n)
 	print("[%p]", n);
 }
 
+uvlong	intr_frame_addr;
+uvlong	intr_frame_saved_sp;
+uvlong	intr_frame_saved_ss;
+uvlong	intr_frame_saved_cs;
+uvlong	intr_frame_saved_flags;
+uvlong	intr_frame_before;
+uvlong	intr_frame_relocated;
+uvlong	intr_frame_r14;
+
 static void debugexc(Ureg*, void*);
 static void debugbpt(Ureg*, void*);
 static void faultamd64(Ureg*, void*);
@@ -169,6 +178,7 @@ trap(Ureg *ureg)
 {
 	int vno, user;
 	static int trap_count = 0;
+	static int trapdebug = 0;
 
 	vno = ureg->type;
 	/* Debug print disabled - can cause QEMU iothread issues from interrupt context
@@ -178,7 +188,20 @@ trap(Ureg *ureg)
 		trap_count++;
 	}
 	*/
+	if(trapdebug < 8 && up != nil){
+		iprint("trap entry: vno=%d ureg=%p up=%p kstack=%p-%#p sp=%#p relocated=%llud\n",
+			vno, ureg, up, up->kstack, up->kstack != nil ? up->kstack+KSTACK : nil,
+			ureg->sp, intr_frame_relocated);
+		iprint("trap frame snapshot: before=%#llux frame=%#p saved_sp=%#llux saved_ss=%#llux saved_cs=%#llux flags=%#llux r14=%#llux\n",
+			intr_frame_before, (void*)intr_frame_addr, intr_frame_saved_sp,
+			intr_frame_saved_ss, intr_frame_saved_cs,
+			intr_frame_saved_flags, intr_frame_r14);
+	}
 	user = kenter(ureg);
+	if(user && trapdebug < 8){
+		iprint("trap kenter ok: up=%p ureg=%p sp=%#p\n", up, ureg, ureg->sp);
+		trapdebug++;
+	}
 	if(user && pebble_enabled)
 		pebble_auto_verify(up, ureg);
 	if(vno != VectorCNA)

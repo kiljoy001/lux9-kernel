@@ -104,6 +104,7 @@ int
 kenter(Ureg *ureg)
 {
 	int user;
+	static int kenterdebug;
 
 	user = userureg(ureg);
 	if(user){
@@ -119,9 +120,17 @@ kenter(Ureg *ureg)
 			/* stack grows up */
 			rem = (int)((up!=nil? (uintptr)up: (uintptr)m + MACHSIZE) - (uintptr)ureg);
 		}
-		if(rem < 256)
+		if(kenterdebug < 8 && up != nil){
+			iprint("kenter: up=%p kstack=%p-%#p ureg=%p sp=%#p rem=%d\n",
+				up, up->kstack, up->kstack!=nil?up->kstack+KSTACK:nil, ureg, ureg->sp, rem);
+		}
+		if(rem < 256){
+			iprint("kenter panic: up=%p kstack=%p-%#p ureg=%p sp=%#p rem=%d pc=%#p\n",
+				up, up->kstack, up->kstack!=nil?up->kstack+KSTACK:nil, ureg, ureg->sp, rem, ureg->pc);
 			panic("kenter: %d stack bytes left, up %#p ureg %#p at pc %#p",
 				rem, up, ureg, ureg->pc);
+		}
+		kenterdebug++;
 	}
 	return user;
 }
@@ -725,17 +734,19 @@ newproc(void)
 			iprint("newproc: conf.nproc exhausted\n");
 			return nil;
 		}
-		b = malloc(KSTACK+sizeof(Proc));
+		b = xalloc(KSTACK+sizeof(Proc));
 		if(b == nil){
 			unlock(&procalloc);
 			iprint("newproc: malloc failed\n");
 			return nil;
 		}
+		memset(b, 0, KSTACK+sizeof(Proc));
 		iprint("newproc: malloc returned %p\n", b);
 		p = (Proc*)(b + KSTACK);
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
 		iprint("newproc: new proc idx=%d addr=%p\n", p->index, p);
+		p->kstack = (uchar*)b;
 	}
 	assert(p->state == Dead);
 	procalloc.free = p->qnext;

@@ -93,6 +93,7 @@ Segdesc gdt[NGDT] =
 [KDSEG]		DATASEGM(0),		/* kernel data */
 [UE32SEG]	EXEC32SEGM(3),		/* user code 32 bit*/
 [UDSEG]		DATA32SEGM(3),		/* user data/stack 32 bit */
+[UD64SEG]	DATASEGM(3),		/* user data/stack 64 bit */
 [UESEG]		EXECSEGM(3),		/* user code 64 bit */
 };
 

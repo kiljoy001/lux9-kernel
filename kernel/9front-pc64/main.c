@@ -357,6 +357,9 @@ init0(void)
 	splhi();
 	fpukexit(nil);
 	print("BOOT[init0]: transferring control to user mode\n");
+	print("BOOT[init0]: DEBUG: m=%#p m->proc=%#p up=%#p\n", m, m->proc, up);
+	if(m->proc == nil)
+		panic("BOOT[init0]: m->proc is NULL before touser()!");
 	touser(sp);
 }
 

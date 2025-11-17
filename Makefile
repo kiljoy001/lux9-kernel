@@ -61,6 +61,21 @@ test-userspace:
 test-integration:
 	@$(SCRIPTS_DIR)/test.sh integration
 
+# Phase 1 Validation Tests
+validate: check-alignments check-asserts audit-pointers validate-phase1
+
+check-alignments:
+	bash scripts/check_alignment.sh
+
+check-asserts:
+	bash scripts/check_static_asserts.sh
+
+audit-pointers:
+	bash scripts/audit_pointer_arithmetic.sh
+
+validate-phase1:
+	bash scripts/validate_phase1.sh
+
 # Cleanup
 clean:
 	@$(MAKE) -C $(KERNEL_DIR) clean
