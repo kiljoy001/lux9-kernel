@@ -109,7 +109,7 @@
 #define	SELECTOR(i, t, p)	(((i)<<3) | (t) | (p))
 
 #define	NULLSEL	SELECTOR(NULLSEG, SELGDT, 0)
-#define KDSEL	NULLSEL
+#define KDSEL	SELECTOR(KDSEG, SELGDT, 0)  /* Kernel data segment - must be valid for SS in IRETQ */
 #define	KESEL	SELECTOR(KESEG, SELGDT, 0)
 #define	UESEL	SELECTOR(UESEG, SELGDT, 3)
 #define	UDSEL	SELECTOR(UDSEG, SELGDT, 3)

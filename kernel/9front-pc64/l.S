@@ -498,7 +498,10 @@ syscallentry:
     pushq $0                    /* error code */
     pushq $64                   /* trap number (VectorSYSCALL) */
 
-    subq $136, %rsp             /* space for Ureg (minus saved items) */
+    /* Allocate 144 bytes: 136 for Ureg + 8 for alignment padding
+     * Total stack: 56 (7 pushes) + 144 = 200 bytes
+     * 200 % 16 = 8 (correct alignment before call) */
+    subq $144, %rsp             /* space for Ureg + alignment padding */
 
     /* Save all general purpose registers for potential noteret path
      * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
@@ -587,7 +590,38 @@ halt_trap_up_not_kernel:
 .global syscallret
 syscallret:
 forkret:
-    jmp noteret  /* Use IRETQ path for all returns */
+    /* Syscall-specific return path (different stack layout than trap path) */
+    popq %rax                   /* discard saved pointer */
+
+    popq %rax
+    popq %rbx
+    popq %rcx
+    popq %rdx
+    popq %rsi
+    popq %rdi
+    popq %rbp
+    popq %r8
+    popq %r9
+    popq %r10
+    popq %r11
+    popq %r12
+    popq %r13
+
+    /* After popping 14 quads, we're at offset 112. CS is at offset 152, so 152-112 = 40 */
+    cmpq $KESEL, 40(%rsp)
+    je _syscall_iretnested
+
+    swapgs
+    movq 8(%rsp), %r15
+    movq 0(%rsp), %r14
+
+_syscall_iretnested:
+    /* Syscall frame: Skip r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes
+     * But we also need to pop r14 and r15 for userspace returns (already done above for kernel)
+     * For kernel-to-kernel returns (no swapgs), just skip: r14 (8) + r15 (8) + segmentregs (8) + type (8) + error (8) = 40 bytes
+     * Wait - actually after all pops we're at offset 112 (r14), need to get to offset 144 (pc) = skip 32 bytes */
+    addq $32, %rsp   /* Skip to hardware frame: r14+r15+segs(8)+type+error = 32 bytes */
+    iretq
 
 .global _strayintr
 _strayintr:
@@ -720,7 +754,8 @@ _intrestore:
     movq 0(%rsp), %r14
 
 _iretnested:
-    addq $40, %rsp   /* Skip to hardware frame */
+    /* Trap frame: Skip r14 (8) + r15 (8) + unused (8) + trap (8) + return addr (8) = 40 bytes */
+    addq $40, %rsp   /* Skip to hardware frame for trap (RIP, CS, RFLAGS, RSP, SS) */
     iretq
 
 .global putdr
