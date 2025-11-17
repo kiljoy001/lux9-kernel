@@ -4,6 +4,9 @@
 #include	"dat.h"
 #include	"fns.h"
 #include <error.h>
+#include "pci.h"
+#include "devregistry.h"
+#include "pciframework.h"
 
 enum
 {
@@ -151,6 +154,19 @@ chandevreset(void)
 {
 	int i;
 
+	/* Initialize device registry and PCI framework for Phase 2 */
+	devregistry_init();
+	pci_framework_init();
+	
+	/* Register standard PCI drivers */
+	pci_framework_register_driver(&ahci_driver);
+	pci_framework_register_driver(&ide_driver);
+	pci_framework_register_driver(&usb_driver);
+	pci_framework_register_driver(&ethernet_driver);
+	
+	/* Enumerate PCI devices */
+	pci_framework_enumerate();
+	
 	todinit();	/* avoid later reentry causing infinite recursion */
 	for(i=0; devtab[i] != nil; i++)
 		devtab[i]->reset();

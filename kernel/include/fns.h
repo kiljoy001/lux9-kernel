@@ -521,3 +521,8 @@ void	procfork(Proc*);  /* Fork process state */
 uintptr*	mmuwalk(uintptr*, uintptr, int, int);  /* Walk page table */
 u64int		getcr3(void);  /* Get CR3 register (page directory base) */
 void		putcr3(u64int);  /* Set CR3 register (page directory base) */
+
+/* Device registry and PCI framework functions */
+void		devregistry_init(void);
+void		pci_framework_init(void);
+int		pci_framework_enumerate(void);
