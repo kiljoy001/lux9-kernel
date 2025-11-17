@@ -243,8 +243,12 @@ devclone(Chan *c)
 Walkqid*
 devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen *gen)
 {
-	int i, j, alloc;
-	Walkqid *wq;
+	volatile int alloc;
+	int i, j;
+	Walkqid *volatile wq;
+	Walkqid *volatile savedwq;
+	Chan *volatile savedclone;
+	volatile int savedalloc;
 	char *n;
 	Dir dir;
 
@@ -253,17 +257,55 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 
 	alloc = (nc == nil);
 	wq = smalloc(sizeof(Walkqid)+(nname-1)*sizeof(Qid));
+	wq->clone = nc;
+	iprint("devwalk: start alloc=%d nc=%p wq=%p caller=%#p\n",
+		alloc, nc, wq, getcallerpc(&c));
+	savedwq = up != nil ? up->walkq : nil;
+	savedclone = up != nil ? up->walkclone : nil;
+	savedalloc = up != nil ? up->walkalloc : 0;
+	iprint("devwalk: saved state: savedwq=%p savedclone=%p savedalloc=%d\n",
+		savedwq, savedclone, savedalloc);
+	if(up != nil){
+		iprint("devwalk: setting up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
+			wq, nc, alloc);
+		up->walkq = wq;
+		up->walkclone = nc;
+		up->walkalloc = alloc;
+	}
 	if(waserror()){
-		if(alloc && wq->clone != nil)
-			cclose(wq->clone);
-		free(wq);
+		Walkqid *cwq = up != nil && up->walkq != nil ? up->walkq : wq;
+		Chan *clone = up != nil ? up->walkclone : (wq != nil ? wq->clone : nil);
+		int calloc = up != nil ? up->walkalloc : alloc;
+		if(up != nil){
+			iprint("devwalk: error - up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
+				up->walkq, up->walkclone, up->walkalloc);
+		}
+		iprint("devwalk: error - wq=%p alloc=%d\n", wq, alloc);
+		iprint("devwalk: error - computed: cwq=%p clone=%p calloc=%d\n",
+			cwq, clone, calloc);
+		iprint("devwalk: error - saved: wq=%p clone=%p alloc=%d caller=%#p\n",
+			savedwq, savedclone, savedalloc, getcallerpc(&c));
+		if(calloc && clone != nil)
+			cclose(clone);
+		if(up != nil){
+			iprint("devwalk: error - restoring up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
+				savedwq, savedclone, savedalloc);
+			up->walkq = savedwq;
+			up->walkclone = savedclone;
+			up->walkalloc = savedalloc;
+		}
+		free(cwq);
 		return nil;
 	}
 	if(alloc){
 		nc = devclone(c);
 		nc->type = 0;	/* device doesn't know about this channel yet */
+		wq->clone = nc;
+		if(up != nil){
+			up->walkclone = nc;
+			up->walkalloc = alloc;
+		}
 	}
-	wq->clone = nc;
 
 	for(j=0; j<nname; j++){
 		if(!(nc->qid.type&QTDIR)){
@@ -320,17 +362,34 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 	 * If we didn't process all nname entries succesfully, we drop
 	 * the cloned channel and return just the Qids of the walks.
 	 */
+
 Done:
 	poperror();
-	if(wq->nqid < nname){
-		if(alloc)
-			cclose(wq->clone);
-		wq->clone = nil;
-	}else if(wq->clone != nil){
-		/* attach cloned channel to same device */
-		wq->clone->type = c->type;
+	Walkqid *retq = wq;
+	if(up != nil){
+		retq = up->walkq;
+		if(retq != nil){
+			if(retq->nqid < nname){
+				if(up->walkalloc && retq->clone != nil)
+					cclose(retq->clone);
+				retq->clone = nil;
+			}else if(retq->clone != nil){
+				retq->clone->type = c->type;
+			}
+		}
+		up->walkq = savedwq;
+		up->walkclone = savedclone;
+		up->walkalloc = savedalloc;
+	}else if(retq != nil){
+		if(retq->nqid < nname){
+			if(alloc && retq->clone != nil)
+				cclose(retq->clone);
+			retq->clone = nil;
+		}else if(retq->clone != nil){
+			retq->clone->type = c->type;
+		}
 	}
-	return wq;
+	return retq;
 }
 
 int

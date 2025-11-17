@@ -128,6 +128,8 @@ kstrdup(char **p, char *s)
 	char *t, *prev;
 
 	n = strlen(s);
+	iprint("kstrdup: copying n=%d from %p to slot %p caller=%#p\n",
+		n, s, p != nil ? *p : nil, getcallerpc(&p));
 	/* if it's a user, we can wait for memory; if not, something's very wrong */
 	if(up != nil)
 		t = smalloc(n+1);
@@ -246,8 +248,11 @@ newpath(char *s)
 	memmove(p->s, s, i+1);
 	p->ref = 1;
 
+	iprint("newpath: created p=%p p->s=%p (allocated) path='%s' caller=%#p\n",
+		p, p->s, s, getcallerpc(&s));
+
 	/*
-	 * Cannot use newpath for arbitrary names because the mtpt 
+	 * Cannot use newpath for arbitrary names because the mtpt
 	 * array will not be populated correctly.  The names #/ and / are
 	 * allowed, but other names with / in them draw warnings.
 	 */
@@ -293,10 +298,27 @@ pathclose(Path *p)
 
 	if(p == nil || decref(p))
 		return;
+	iprint("pathclose: p=%p p->s=%p p->len=%d path='%s' caller=%#p\n",
+		p, p->s, p->len, p->s ? p->s : "<nil>", getcallerpc(&p));
+
+	/* Check if p->s looks like it might be in the Proc structure */
+	if(p->s != nil && up != nil) {
+		uintptr ps = (uintptr)p->s;
+		uintptr upstart = (uintptr)up;
+		uintptr upend = upstart + sizeof(Proc);
+		if(ps >= upstart && ps < upend) {
+			iprint("pathclose: WARNING p->s=%p is inside Proc structure [%p-%p]\n",
+				p->s, (void*)upstart, (void*)upend);
+			iprint("pathclose: up=%p up->genbuf=%p offset=%ld\n",
+				up, up->genbuf, ps - upstart);
+		}
+	}
+
 	for(i=0; i<p->mlen; i++)
 		if(p->mtpt[i] != nil)
 			cclose(p->mtpt[i]);
 	free(p->mtpt);
+	iprint("pathclose: about to free p->s=%p\n", p->s);
 	free(p->s);
 	free(p);
 }
@@ -360,6 +382,8 @@ addelem(Path *p, char *s, Chan *from)
 		a += PATHSLOP;
 		t = smalloc(a);
 		memmove(t, p->s, p->len+1);
+		iprint("addelem: reallocated p->s from %p to %p for '%s' caller=%#p\n",
+			p->s, t, s, getcallerpc(&p));
 		free(p->s);
 		p->s = t;
 		p->alen = a;
@@ -369,6 +393,8 @@ addelem(Path *p, char *s, Chan *from)
 		p->s[p->len++] = '/';
 	memmove(p->s+p->len, s, i+1);
 	p->len += i;
+	iprint("addelem: p=%p p->s=%p added '%s' -> '%s' caller=%#p\n",
+		p, p->s, s, p->s, getcallerpc(&p));
 	if(isdotdot(s)){
 		fixdotdotname(p);
 		if(p->mlen > 1 && (c = p->mtpt[--p->mlen]) != nil){
@@ -393,6 +419,13 @@ addelem(Path *p, char *s, Chan *from)
 void
 chanfree(Chan *c)
 {
+	iprint("chanfree: c=%p path=%p srvname=%p caller=%#p\n",
+		c, c->path, c->srvname, getcallerpc(&c));
+	if(c->path != nil) {
+		iprint("chanfree: c->path->s=%p path='%s'\n",
+			c->path->s, c->path->s ? c->path->s : "<nil>");
+	}
+
 	c->flag = CFREE;
 
 	if(c->dirrock != nil){
@@ -418,10 +451,12 @@ chanfree(Chan *c)
 		c->mchan = nil;
 	}
 	if(c->srvname != nil){
+		iprint("chanfree: about to free srvname=%p\n", c->srvname);
 		free(c->srvname);
 		c->srvname = nil;
 	}
 
+	iprint("chanfree: calling pathclose(c->path=%p)\n", c->path);
 	pathclose(c->path);
 	c->path = nil;
 
@@ -521,6 +556,7 @@ closeproc(void *)
 void
 cclose(Chan *c)
 {
+	iprint("cclose: enter c=%p caller=%#p\n", c, getcallerpc(&c));
 	if(c == nil || c->ref < 1 || c->flag&CFREE)
 		panic("cclose %#p", getcallerpc(&c));
 
@@ -860,8 +896,11 @@ cclone(Chan *c)
 		error("clone failed");
 	nc = wq->clone;
 	free(wq);
-	if((nc->path = c->path) != nil)
+	if((nc->path = c->path) != nil) {
+		iprint("cclone: nc=%p inheriting path=%p (s=%p '%s') from c=%p caller=%#p\n",
+			nc, c->path, c->path->s, c->path->s, c, getcallerpc(&c));
 		incref(c->path);
+	}
 	return nc;
 }
 
@@ -1734,6 +1773,8 @@ validname0(char *aname, int slashok, int dup, uintptr pc)
 	if(dup){
 		n = ename-name;
 		s = smalloc(n+1);
+		iprint("validname0: dup copy n=%d src=%p dst=%p caller=%#p\n",
+			n, name, s, pc);
 		memmove(s, name, n);
 		s[n] = 0;
 		aname = s;
