@@ -1044,6 +1044,7 @@ walk(Chan **cp, char **names, int nnames, int nomount, int *nerror)
 				*nerror = nhave;
 			pathclose(path);
 			cclose(c);
+			*cp = nil;
 			kstrcpy(up->errstr, Enotdir, ERRMAX);
 			putmhead(mh);
 			return -1;
@@ -1088,6 +1089,7 @@ walk(Chan **cp, char **names, int nnames, int nomount, int *nerror)
 			}
 			if(wq == nil){
 				cclose(c);
+				*cp = nil;
 				pathclose(path);
 				if(nerror)
 					*nerror = nhave+1;
@@ -1119,6 +1121,7 @@ walk(Chan **cp, char **names, int nnames, int nomount, int *nerror)
 			if(nc == nil){	/* no mount points along path */
 				if(wq->clone == nil){
 					cclose(c);
+					*cp = nil;
 					pathclose(path);
 					if(wq->nqid == 0 || (wq->qid[wq->nqid-1].type&QTDIR) != 0){
 						if(nerror)
@@ -1129,7 +1132,8 @@ walk(Chan **cp, char **names, int nnames, int nomount, int *nerror)
 							*nerror = nhave+wq->nqid;
 						kstrcpy(up->errstr, Enotdir, ERRMAX);
 					}
-					free(wq);
+				Walkqid *wq_to_free = wq;
+				free(wq_to_free);
 					putmhead(mh);
 					return -1;
 				}
@@ -1154,7 +1158,8 @@ walk(Chan **cp, char **names, int nnames, int nomount, int *nerror)
 		c = nc;
 		putmhead(mh);
 		mh = nmh;
-		free(wq);
+		Walkqid *wq_to_free = wq;
+		free(wq_to_free);
 	}
 	putmhead(mh);
 	c = cunique(c);
@@ -1445,7 +1450,8 @@ case '#':
 	e.nelems = 0;
 	e.nerror = 0;
 	if(waserror()){
-		cclose(c);
+		if(c != nil)
+			cclose(c);
 		free(e.name);
 		free(e.elems);
 		/*

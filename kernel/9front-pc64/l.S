@@ -23,6 +23,7 @@ touser_attempt_count:
 .section .text
 
 .extern pebble_red_blue_exit
+.extern up
 
 /* CPU I/O port access */
 .global inb
@@ -408,7 +409,10 @@ gotolabel:
  * --------------------------------------------------------------------- */
 .global touser
 touser:
-    swapgs
+    /* NOTE: Do NOT swapgs here! GS must remain pointing to Mach structure
+     * so that interrupts and syscalls from userspace can access it.
+     * The swapgs in syscallentry/trap handlers will handle the swap.
+     * swapgs */
 
     /* Debug: print the user stack pointer we're about to use */
     pushq %rax
@@ -464,14 +468,27 @@ _debug_cs_msg:
     .string "_intrcommon: CS = %#x\n"
 _debug_rflags_msg:
     .string "_intrcommon: RFLAGS = %#llx\n"
+_debug_syscallentry_msg:
+    .string "syscallentry: up=%#p ureg=%#p rsp=%#p\n"
 
 .global syscallentry
 syscallentry:
     swapgs
     movq %gs:0, %rax            /* m */
     movq 16(%rax), %rbx         /* up */
+
+    /* DEBUG: Check if up is valid before using it */
+    testq %rbx, %rbx
+    jz halt_up_null             /* if NULL, halt with code 0xDEAD0001 */
+    testq %rbx, %rbx            /* test sign bit */
+    jns halt_up_not_kernel      /* if bit 63 not set, halt with code 0xDEAD0002 */
+
     movq %rsp, %r13             /* save user stack */
     movq %rbx, %rsp             /* switch to kernel stack */
+
+    /* DEBUG: Verify RSP actually switched to kernel address */
+    testq %rsp, %rsp            /* test sign bit */
+    jns halt_rsp_not_kernel     /* if bit 63 not set, halt with code 0xDEAD0003 */
 
     pushq $UD64SEL              /* ss - 64-bit user data segment */
     pushq %r13                  /* user sp */
@@ -515,6 +532,43 @@ syscallentry:
     jnz noteret                 /* if set, use IRETQ path */
 
     /* Fall through to syscallret (which also uses IRETQ) */
+
+halt_up_null:
+    movq $0xDEAD0001, %rax
+    cli
+    hlt
+    jmp halt_up_null
+
+halt_up_not_kernel:
+    movq $0xDEAD0002, %rax
+    cli
+    hlt
+    jmp halt_up_not_kernel
+
+halt_rsp_not_kernel:
+    movq $0xDEAD0003, %rax
+    cli
+    hlt
+    jmp halt_rsp_not_kernel
+
+halt_trap_m_null:
+    movq $0xDEAD1001, %rax
+    cli
+    hlt
+    jmp halt_trap_m_null
+
+halt_trap_up_null:
+    movq $0xDEAD1002, %rax
+    cli
+    hlt
+    jmp halt_trap_up_null
+
+halt_trap_up_not_kernel:
+    movq $0xDEAD1003, %rax
+    cli
+    hlt
+    jmp halt_trap_up_not_kernel
+
     jmp syscallret
 
 /* NOTE: We use IRETQ for all returns instead of the faster SYSRET instruction.
@@ -551,20 +605,45 @@ _intrcommon:
 
     /* Check CS like 9front does */
     cmpw $KESEL, 48(%rsp)
-    je _intrnested
+    je 1f
 
     /* Coming from user mode - need to set up kernel context */
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
     swapgs
     movq %gs:0, %r15        /* Load m into r15 */
+
+    /* DEBUG: Check m is valid - COMMENTED OUT TO SEE PANIC
+    testq %r15, %r15
+    jz halt_trap_m_null
+    */
+
     movq 16(%r15), %r14     /* Load up into r14 */
 
+    /* DEBUG: Check up is valid - COMMENTED OUT TO TEST
+    testq %r14, %r14
+    jz halt_trap_up_null
+    testq %r14, %r14
+    jns halt_trap_up_not_kernel
+    */
+
+    /* DEBUG: If we get here, m was valid. Store r14 value at a known location */
+    movq %r14, intr_frame_r14(%rip)
+
+    jmp 2f
+
+1:
+    /* Kernel-mode trap - GS already points at Mach */
+    movq %gs:0, %r15
+    movq 16(%r15), %r14
+
+2:
+
 _intrnested:
-    pushq %r13
-    pushq %r12
-    pushq %r11
-    pushq %r10
+	pushq %r13
+	pushq %r12
+	pushq %r11
+	pushq %r10
     pushq %r9
     pushq %r8
     pushq %rbp
@@ -572,12 +651,46 @@ _intrnested:
     pushq %rsi
     pushq %rdx
     pushq %rcx
-    pushq %rbx
-    pushq %rax
+	pushq %rbx
+	pushq %rax
 
-    movq %rsp, %rdi
-    pushq %rsp                  /* preserve stack slot for notifier */
-    call trap
+	/* Relocate Ureg to kernel stack if hardware left us on user stack */
+	movq %rsp, %rax             /* current Ureg pointer */
+	leaq intr_frame_before(%rip), %rdx
+	movq %rax, (%rdx)
+	xorq %rdx, %rdx
+	movq %rdx, intr_frame_relocated(%rip)
+	movq %r14, intr_frame_r14(%rip)
+	testq %rax, %rax
+	js 1f
+	testq %r14, %r14
+	je 1f
+	/* dst = up - (UREG_SIZE + 16) */
+	movq %r14, %rdx
+	subq $(UREG_SIZE+16), %rdx
+	movq %rdx, %rdi
+	movq %rax, %rsi
+	movq %rdx, %rsp
+	movq $(UREG_SIZE/8), %rcx
+	cld
+	rep movsq
+	movq %rsp, %rax
+	movq $1, intr_frame_relocated(%rip)
+1:
+	leaq intr_frame_addr(%rip), %rdx
+	movq %rax, (%rdx)
+	movq 0xA0(%rax), %rdx        /* flags */
+	movq %rdx, intr_frame_saved_flags(%rip)
+	movq 0xA8(%rax), %rdx        /* saved SP */
+	movq %rdx, intr_frame_saved_sp(%rip)
+	movq 0xB0(%rax), %rdx        /* saved SS */
+	movq %rdx, intr_frame_saved_ss(%rip)
+	movq 0x98(%rax), %rdx        /* saved CS */
+	movq %rdx, intr_frame_saved_cs(%rip)
+
+	movq %rax, %rdi
+	pushq %rax                  /* preserve stack slot for notifier */
+	call trap
     jmp _intrestore
 
 .global noteret
