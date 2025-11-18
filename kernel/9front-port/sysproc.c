@@ -12,6 +12,24 @@
 
 #include	<a.out.h>
 
+typedef struct SyscallVaList {
+	unsigned int gp_offset;
+	unsigned int fp_offset;
+	void *overflow_arg_area;
+	void *reg_save_area;
+} SyscallVaList;
+
+static void
+syscall_vainit(va_list vl, uchar *raw)
+{
+	SyscallVaList *impl = (SyscallVaList*)vl;
+	/* Force everything to be read from the overflow area */
+	impl->gp_offset = 6 * sizeof(uintptr);
+	impl->fp_offset = 8 * sizeof(double);
+	impl->overflow_arg_area = raw;
+	impl->reg_save_area = nil;
+}
+
 uintptr
 sysr1(va_list)
 {
@@ -345,15 +363,16 @@ sysexec(va_list list)
 	print("sysexec: started, list=%p\n", list);
 
 	args = elem = nil;
-
-	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
-	{
-		static char *fake_argv[] = { "/boot/init", nil };
-		print("sysexec: USING HARDCODED PATH /boot/init with fake argv\n");
-		file0 = validnamedup("/boot/init", 1);
-		argp0 = fake_argv;
-		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
-	}
+	file0 = va_arg(list, char*);
+	print("sysexec: raw file argument %p -> '%s'\n", file0, file0);
+	validaddr((uintptr)file0, 1, 0);
+	argp0 = va_arg(list, char**);
+	evenaddr((uintptr)argp0);
+	validaddr((uintptr)argp0, 2*BY2WD, 0);
+	if(*argp0 == nil)
+		error(Ebadarg);
+	file0 = validnamedup(file0, 1);
+	print("sysexec: validated file '%s', argp0=%p\n", file0, argp0);
 
 	print("EXEC: attempting to execute '%s'\n", file0);
 	print("EXEC: about to call waserror()\n");
@@ -395,20 +414,27 @@ sysexec(va_list list)
 			magic = beswal(u.ehdr.exec.magic);
 			print("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic, AOUT_MAGIC, S_MAGIC);
 			if(magic == AOUT_MAGIC) {
+				print("EXEC: magic matches AOUT_MAGIC\n");
 				if(magic & HDR_MAGIC) {
+					print("EXEC: has HDR_MAGIC, checking header size n=%d sizeof(u.ehdr)=%d\n", n, (int)sizeof(u.ehdr));
 					if(n < sizeof(u.ehdr))
-						error(Ebadexec);
+						error("exec: header too small for expansion");
 					entry = beswav(u.ehdr.hdr[0]);
 					text = UTZERO+sizeof(u.ehdr);
+					print("EXEC: expanded header: entry=%#llux text=%#llux\n", entry, text);
 				} else {
 					entry = beswal(u.ehdr.exec.entry);
 					text = UTZERO+sizeof(Exec);
+					print("EXEC: basic header: entry=%#llux text=%#llux\n", entry, text);
 				}
+				print("EXEC: checking entry < text: entry=%#llux text=%#llux\n", entry, text);
 				if(entry < text)
-					error(Ebadexec);
+					error("exec: entry point before text segment");
 				text += beswal(u.ehdr.exec.text);
+				print("EXEC: after adding text size: text=%#llux entry=%#llux USTKTOP-USTKSIZE=%#llux\n",
+				      text, entry, (uvlong)(USTKTOP-USTKSIZE));
 				if(text <= entry || text >= (USTKTOP-USTKSIZE))
-					error(Ebadexec);
+					error("exec: invalid text segment range");
 
 				switch(magic){
 				case S_MAGIC:	/* 2MB segment alignment for amd64 */
@@ -1641,10 +1667,14 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 		validaddr((uintptr)args, sizeof(Sargs), 0);
 
 		up->s = *args;
+		va_list syscall_args;
+		syscall_vainit(syscall_args, up->s.args);
 		up->scallnr = scallnr;
 
 		if(up->procctl == Proc_tracesyscall){
-			syscallfmt(scallnr, userpc(), *(va_list *)up->s.args);
+			va_list trace_args;
+			syscall_vainit(trace_args, up->s.args);
+			syscallfmt(scallnr, userpc(), trace_args);
 			splhi();
 			up->procctl = Proc_stopme;
 			procctl();
@@ -1657,7 +1687,7 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 		}
 		up->psstate = sysctab[scallnr];
 		print("dosyscall: calling syscall handler\n");
-		ret = systab[scallnr](*(va_list *)up->s.args);
+		ret = systab[scallnr](syscall_args);
 		print("dosyscall: syscall handler returned %#llux\n", ret);
 		poperror();
 		if(scallnr == NOTED){
@@ -1685,7 +1715,9 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 	*retp = ret;
 	if(up->procctl == Proc_tracesyscall){
 		todget(nil, &stopns);
-		sysretfmt(scallnr, *(va_list *)up->s.args, ret, startns, stopns);
+		va_list ret_args;
+		syscall_vainit(ret_args, up->s.args);
+		sysretfmt(scallnr, ret_args, ret, startns, stopns);
 		splhi();
 		up->procctl = Proc_stopme;
 		procctl();

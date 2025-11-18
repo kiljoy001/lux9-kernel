@@ -1,24 +1,24 @@
 /* initcode.S - First userspace code
  * This code executes in the first userspace process created by the kernel.
- * Its job is to exec /bin/init
+ * Its job is to exec /boot/init
  */
 
 .section .text
 .global _start
 
 _start:
-	/* Build the string "/bin/init\0" on the stack */
+	/* Build the string "/boot/init\0" on the stack */
 	mov $0, %rax
 	push %rax              /* null terminator */
 
-	mov $0x74696e69, %rax  /* "init" (little-endian) */
+	mov $0x00007469, %rax  /* "it\0" */
 	push %rax
 
-	mov $0x6e69622f, %rax  /* "/bin" (little-endian) */
+	mov $0x6e692f746f6f622f, %rax  /* "/boot/in" */
 	push %rax
 
-	/* rsp now points to the start of "/bin/init\0" */
-	mov %rsp, %rbx         /* rbx = pointer to "/bin/init" string */
+	/* rsp now points to the start of the string */
+	mov %rsp, %rbx         /* rbx = pointer */
 
 	/* Build argv array: [pointer_to_string, NULL] */
 	sub $16, %rsp          /* Space for 2 pointers */
