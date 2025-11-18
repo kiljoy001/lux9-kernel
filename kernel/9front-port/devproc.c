@@ -1389,7 +1389,7 @@ procctlclosefiles(Proc *p, int all, int fd)
 	if(f == nil)
 		error(Eprocdied);
 
-	incref(f);
+	incref(&f->ref);
 	lock(&f->lock);
 	while(fd <= f->maxfd){
 		c = f->fd[fd];

@@ -200,20 +200,22 @@ putseg(Segment *s)
 		 *  the segment would be freed from under us.
 		 */
 		lock(i);
-		if(decref(s) != 0){
+	if(decref((Ref*)&s->ref) != 0){
 			unlock(i);
 			return;
 		}
 		if(i->s == s)
 			i->s = nil;
 		putimage(i);
-	} else if(decref(s) != 0)
+	} else if(decref((Ref*)&s->ref) != 0)
 		return;
 
 	assert(s->sema.prev == &s->sema);
 	assert(s->sema.next == &s->sema);
 
 	if(s->mapsize > 0){
+		print("putseg: s=%p type=%#x map=%p mapsize=%d map0=%p\n",
+			s, s->type, s->map, s->mapsize, s->map != nil ? s->map[0] : nil);
 		Pte **pte, **emap;
 		Page *fh, *ft;
 		ulong np;
@@ -223,10 +225,18 @@ putseg(Segment *s)
 
 		emap = &s->map[s->mapsize];
 		for(pte = s->map; pte < emap; pte++){
+			print("putseg detail: s=%p idx=%ld pte=%p\n",
+				s, (long)(pte - s->map), *pte);
 			Page **pg, **pe, *entry;
 
-			if(*pte == nil)
+			if(*pte == nil){
 				continue;
+			}
+			if((uintptr)(*pte) == PG_ONSWAP){
+				print("putseg: idx=%ld has PG_ONSWAP marker, skipping\n",
+					(long)(pte - s->map));
+				continue;
+			}
 			pg = (*pte)->first;
 			pe = (*pte)->last;
 			while(pg <= pe){
@@ -340,7 +350,7 @@ dupseg(Segment **seg, int segno, int share)
 		n->image = s->image;
 		n->fstart = s->fstart;
 		n->flen = s->flen;
-		incref(s->image);
+		incref((Ref*)&s->image->ref);
 		break;
 	}
 	for(i = 0; i < s->mapsize; i++){
@@ -353,6 +363,8 @@ dupseg(Segment **seg, int segno, int share)
 				error(Enomem);
 			}
 			n->map[i] = ptecpy(pte, s->map[i]);
+			print("dupseg assign: src=%p dst=%p idx=%d pte=%p\n",
+				s, n, i, n->map[i]);
 		}
 	}
 	n->used = s->used;
@@ -365,7 +377,7 @@ dupseg(Segment **seg, int segno, int share)
 	return n;
 
 sameseg:
-	incref(s);
+	incref((Ref*)&s->ref);
 
 	/* For shared segments, pages are automatically tracked via newpage() */
 	/* Borrow checker will enforce exclusive/shared access automatically */
@@ -464,7 +476,7 @@ retry:
 	 */
 	for(i = ihash(c->qid.path); i != nil; i = i->hash){
 		if(eqchantdqid(c, i->type, i->dev, i->qid, 0)){
-			incref(i);
+			incref((Ref*)&i->ref);
 			goto found;
 		}
 	}
@@ -569,7 +581,7 @@ putimage(Image *i)
 	Chan *c;
 	long r;
 
-	r = decref(i);
+	r = decref((Ref*)&i->ref);
 	if(i->notext){
 		unlock(i);
 		return;
@@ -634,7 +646,7 @@ imagereclaim(ulong pages)
 		i = imagealloc.idle;
 		if(i == nil)
 			break;
-		incref(i);
+		incref((Ref*)&i->ref);
 		unlock(&imagealloc);
 		
 		np += pagereclaim(i);
@@ -1084,7 +1096,7 @@ txt2data(Segment *s)
 	ps->fstart = s->fstart;
 	ps->flen = s->flen;
 	ps->flushme = 1;
-	incref(s->image);
+	incref((Ref*)&s->image->ref);
 	return ps;
 }
 
@@ -1098,7 +1110,7 @@ data2txt(Segment *s)
 	lock(i);
 	if((ps = i->s) != nil && ps->flen == s->flen){
 		assert(ps->image == i);
-		incref(ps);	
+		incref((Ref*)&ps->ref);	
 		unlock(i);
 		return ps;
 	}
@@ -1113,7 +1125,7 @@ data2txt(Segment *s)
 	ps->flushme = 1;
 	if(i->s == nil)
 		i->s = ps;
-	incref(i);
+	incref((Ref*)&i->ref);
 	unlock(i);
 	poperror();
 	return ps;
@@ -1171,7 +1183,7 @@ segmentioproc(void *arg)
 	if(sno == NSEG)
 		panic("segmentkproc");
 	sio->p = up;
-	incref(sio->s);
+	incref((Ref*)&sio->s->ref);
 	up->seg[sno] = sio->s;
 	qunlock(&up->seglock);
 
@@ -1185,7 +1197,7 @@ segmentioproc(void *arg)
 			if(sio->s != nil && up->seg[sno] != sio->s){
 				Segment *tmp;
 				qlock(&up->seglock);
-				incref(sio->s);
+				incref((Ref*)&sio->s->ref);
 				tmp = up->seg[sno];
 				up->seg[sno] = sio->s;
 				putseg(tmp);

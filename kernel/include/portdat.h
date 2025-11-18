@@ -434,8 +434,8 @@ struct Sema
 
 struct Segment
 {
-	long ref;
 	QLock qlock;
+	long ref;
 	int	type;		/* segment type */
 	ulong	size;		/* size in pages */
 
@@ -490,8 +490,8 @@ enum
 
 struct Image
 {
-	long ref;
 	Lock lock;
+	long ref;
 
 	long	pgref;			/* number of cached pages (pgref <= ref) */
 
@@ -554,8 +554,8 @@ struct Egrp
 
 struct Fgrp
 {
-	long ref;
 	Lock lock;
+	Ref	ref;
 	Chan	**fd;
 	uchar	*flag;			/* per file-descriptor flags (CCEXEC) */
 	int	nfd;			/* number allocated */

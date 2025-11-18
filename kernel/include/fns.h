@@ -229,7 +229,7 @@ int		newfd(Chan*, int);
 Mhead*		newmhead(Chan*);
 Mount*		newmount(Chan*, int, char*);
 Image*		newimage(ulong);
-Page*		newpage(uintptr, QLock*);
+Page*		newpage(uintptr, Segment*);
 Path*		newpath(char*);
 Pgrp*		newpgrp(void);
 Rgrp*		newrgrp(void);
@@ -537,4 +537,3 @@ void		benchmark_boot_end(void);
 void		benchmark_print_summary(void);
 int		validate_all(void);
 uvlong		rdtsc(void);
-

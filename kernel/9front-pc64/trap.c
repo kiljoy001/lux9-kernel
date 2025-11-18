@@ -614,9 +614,13 @@ syscall(Ureg* ureg)
 	 * so arguments start at SP+0, not SP+8 */
 	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
 
+	print("syscall: dosyscall returned, ax=%#llux\n", ureg->ax);
+
 	/* if we delayed sched because we held a lock, sched now */
-	if(up->delaysched)
+	if(up->delaysched) {
+		print("syscall: calling sched() for delaysched\n");
 		sched();
+	}
 
 	/* Initialize stack slot to 0 for fast SYSRET path
 	 * TODO: donotify/noteret disabled - up->nnote appears to be uninitialized
@@ -624,8 +628,11 @@ syscall(Ureg* ureg)
 	 * Proc structure initialization before enabling notifications. */
 	((void**)ureg)[-1] = nil;
 
+	print("syscall: calling kexit\n");
 	kexit(ureg);
+	print("syscall: calling fpukexit\n");
 	fpukexit(ureg);
+	print("syscall: returning to assembly (will IRETQ)\n");
 }
 
 Ureg*

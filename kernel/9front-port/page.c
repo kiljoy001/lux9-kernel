@@ -215,7 +215,7 @@ pagereclaim(Image *i)
 			putimage(i);
 			goto Done;
 		}
-		decref(i);
+		decref((Ref*)&i->ref);
 	}
 	unlock(i);
 Done:
@@ -230,10 +230,14 @@ ispages(void*)
 }
 
 Page*
-newpage(uintptr va, QLock *locked)
+newpage(uintptr va, Segment *seg)
 {
 	Page *p, **l;
 	int color;
+	QLock *locked = nil;
+
+	if(seg != nil)
+		locked = &seg->qlock;
 
 	print("newpage: va=%p locked=%p\n", va, locked);
 	print("newpage: palloc.freecount=%lud\n", palloc.freecount);
@@ -394,7 +398,7 @@ cachepage(Page *p, Image *i)
 	p->image = i;
 	p->next = *h;
 	*h = p;
-	incref(i);
+	incref((Ref*)&i->ref);
 	i->pgref++;
 done:
 	unlock(i);

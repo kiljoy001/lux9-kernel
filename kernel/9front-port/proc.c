@@ -2031,7 +2031,7 @@ pidadd(long pid)
 	if(pid > 0){
 		i = pidlookup(pid);
 		if(i != nil)
-			incref(i);
+			incref((Ref*)&i->ref);
 		return i;
 	}
 Again:
@@ -2044,7 +2044,7 @@ Again:
 	for(e = &i[1<<PIDSHIFT]; i < e; i++){
 		while((o = i->pid) <= 0){
 			if(cmpswap(&i->pid, o, pid)){
-				incref(i);
+				incref((Ref*)&i->ref);
 				return i;
 			}
 		}
@@ -2060,7 +2060,7 @@ Again:
 static void
 piddel(Pid *i)
 {
-	if(decref(i))
+	if(decref((Ref*)&i->ref))
 		return;
 	i->pid = -1;	/* freed */
 }
@@ -2137,7 +2137,7 @@ pidalloc(Proc *p)
 	i->procindex = p->index;
 
 	if(p->noteid == 0){
-		incref(i);
+		incref((Ref*)&i->ref);
 		p->noteid = i->pid;
 	} else
 		pidadd(p->noteid);

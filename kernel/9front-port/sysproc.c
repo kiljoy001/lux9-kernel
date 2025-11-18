@@ -231,8 +231,8 @@ sysrfork(va_list list)
 			p->fgrp = dupfgrp(nil);
 	}
 	else {
-		p->fgrp = up->fgrp;
-		incref(up->fgrp);
+			p->fgrp = up->fgrp;
+			incref(&up->fgrp->ref);
 	}
 
 	/* Process groups */
@@ -599,11 +599,18 @@ sysexec(va_list list)
 		nexterror();
 	}
 	s = up->seg[SSEG];
+	print("EXEC: current stack segment base=%#llx top=%#llx size=%lud\n",
+		s != nil ? (unsigned long long)s->base : 0ULL,
+		s != nil ? (unsigned long long)s->top : 0ULL,
+		s != nil ? s->size : 0UL);
 	do {
-		tstk = s->top;
+		tstk = s->base;
 		if(tstk <= USTKSIZE)
 			error(Enovmem);
 	} while((s = isoverlap(tstk-USTKSIZE, USTKSIZE)) != nil);
+	print("EXEC: allocating temporary stack segment at [%#llx, %#llx)\n",
+		(unsigned long long)(tstk-USTKSIZE),
+		(unsigned long long)tstk);
 	up->seg[ESEG] = newseg(SG_STACK | SG_NOEXEC, tstk-USTKSIZE, USTKSIZE/BY2PG);
 	qunlock(&up->seglock);
 
@@ -678,7 +685,7 @@ sysexec(va_list list)
 	img = attachimage(tc, (PGROUND(text)+PGROUND(data))>>PGSHIFT);
 	if((ts = img->s) != nil && ts->flen == text){
 		assert(ts->image == img);
-		incref(ts);
+			incref((Ref*)&ts->ref);
 		putimage(img);
 	} else {
 		if(waserror()){
@@ -728,7 +735,7 @@ sysexec(va_list list)
 	s->image = img;
 	s->fstart = text;
 	s->flen = data;
-	incref(img);
+	incref((Ref*)&img->ref);
 	up->seg[DSEG] = s;
 
 	/* BSS. Zero fill on demand */
@@ -739,11 +746,11 @@ sysexec(va_list list)
 	 */
 	s = up->seg[ESEG];
 	up->seg[ESEG] = nil;
-	qlock(s);
+	qlock(&s->qlock);
 	s->base = USTKTOP-USTKSIZE;
 	s->top = USTKTOP;
 	relocateseg(s, USTKTOP-tstk);
-	qunlock(s);
+	qunlock(&s->qlock);
 	up->seg[SSEG] = s;
 	qunlock(&up->seglock);
 	poperror();	/* seglock */
@@ -1122,11 +1129,11 @@ syssegdetach(va_list list)
 
 	for(i = 0; i < NSEG; i++)
 		if((s = up->seg[i]) != nil) {
-			qlock(s);
+			qlock(&s->qlock);
 			if((addr >= s->base && addr < s->top) ||
 			   (s->top == s->base && addr == s->base))
 				goto found;
-			qunlock(s);
+			qunlock(&s->qlock);
 		}
 
 	error(Ebadarg);
@@ -1136,10 +1143,10 @@ found:
 	 * Check we are not detaching the initial stack segment.
 	 */
 	if(s == up->seg[SSEG]){
-		qunlock(s);
+		qunlock(&s->qlock);
 		error(Ebadarg);
 	}
-	qunlock(s);
+	qunlock(&s->qlock);
 	up->seg[i] = nil;
 	putseg(s);
 	qunlock(&up->seglock);
@@ -1167,15 +1174,15 @@ syssegfree(va_list list)
 	to &= ~(BY2PG-1);
 	from = PGROUND(from);
 	if(from >= to) {
-		qunlock(s);
+		qunlock(&s->qlock);
 		return 0;
 	}
 	if(to > s->top) {
-		qunlock(s);
+		qunlock(&s->qlock);
 		error(Ebadarg);
 	}
 	mfreeseg(s, from, (to - from) / BY2PG);
-	qunlock(s);
+	qunlock(&s->qlock);
 	flushmmu();
 	return 0;
 }

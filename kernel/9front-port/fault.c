@@ -79,7 +79,7 @@ retry:
 		vaddr = addr;
 		ask = BY2PG;
 	}
-	qunlock(s);
+	qunlock(&s->qlock);
 
 	c = image->c;
 	if(waserror()) {
@@ -144,7 +144,7 @@ retry:
 	}
 	poperror();
 
-	qlock(s);
+	qlock(&s->qlock);
 	/*
 	 *  race, another proc may have gotten here first
 	 *  (and the pager may have run on that page) while
@@ -162,13 +162,16 @@ fixfault(Segment *s, uintptr addr, int read)
 	uintptr soff, mmuphys;
 	Page **pg, *old, *new;
 
+	print("fixfault: entry addr=%#llx type=%#x\n",
+		(unsigned long long)addr, s->type);
+
 	addr &= ~(BY2PG-1);
 	soff = addr-s->base;
 	pte = &s->map[soff/PTEMAPMEM];
 	if((etp = *pte) == nil){
 		etp = ptealloc();
 		if(etp == nil){
-			qunlock(s);
+			qunlock(&s->qlock);
 			if(!waserror()){
 				resrcwait("no memory for ptealloc");
 				poperror();
@@ -176,6 +179,8 @@ fixfault(Segment *s, uintptr addr, int read)
 			return -1;
 		}
 		*pte = etp;
+		print("ptealloc assign: s=%p idx=%ld pte=%p\n",
+			s, (long)(pte - s->map), etp);
 	}
 
 	pg = &etp->pages[(soff&(PTEMAPMEM-1))/BY2PG];
@@ -200,10 +205,15 @@ fixfault(Segment *s, uintptr addr, int read)
 	case SG_BSS:
 	case SG_SHARED:			/* fill on demand */
 	case SG_STACK:
+		print("fixfault: stack/bss addr=%#llx seg=%p type=%#x pg=%p\n",
+			(unsigned long long)addr, s, s->type, *pg);
 		if(*pg == nil) {
 			new = newpage(addr, s);
-			if(new == nil)
+			if(new == nil){
+				print("fixfault: newpage returned nil for addr=%#llx\n",
+					(unsigned long long)addr);
 				return -1;
+			}
 			*pg = fillpage(new, (s->type&SG_TYPE)==SG_STACK? 0xfe: 0);
 			s->used++;
 		}
@@ -253,7 +263,7 @@ fixfault(Segment *s, uintptr addr, int read)
 		mmuphys |= PTENOEXEC;
 #endif
 
-	qunlock(s);
+	qunlock(&s->qlock);
 
 	putmmu(addr, mmuphys, *pg);
 
@@ -293,7 +303,7 @@ mapphys(Segment *s, uintptr addr, int attr)
 	else
 		mmuphys |= PTECACHED;
 
-	qunlock(s);
+	qunlock(&s->qlock);
 
 	putmmu(addr, mmuphys, &pg);
 }
@@ -331,6 +341,8 @@ fault(uintptr addr, uintptr pc, int read)
 			up->insyscall = ins;
 			return -1;
 		}
+		print("fault: addr=%#llx seg=%p type=%#x base=%#p top=%#p\n",
+			(unsigned long long)addr, s, s->type, (void*)s->base, (void*)s->top);
 
 		attr = s->type;
 		if((attr & SG_TYPE) == SG_PHYSICAL)
@@ -339,7 +351,7 @@ fault(uintptr addr, uintptr pc, int read)
 		if((attr & SG_FAULT) != 0
 		|| read? ((attr & SG_NOEXEC) != 0 || s->flushme == 0) && (addr & -BY2PG) == (pc & -BY2PG):
 			 (attr & SG_RONLY) != 0) {
-			qunlock(s);
+			qunlock(&s->qlock);
 			up->psstate = sps;
 			up->insyscall = ins;
 			if(up->kp && up->nerrlab)	/* for segio */
@@ -499,7 +511,7 @@ checkpages(void)
 	for(sp=up->seg, ep=&up->seg[NSEG]; sp<ep; sp++){
 		if((s = *sp) == nil)
 			continue;
-		qlock(s);
+		qlock(&s->qlock);
 		if(s->mapsize > 0){
 			for(addr=s->base; addr<s->top; addr+=BY2PG){
 				off = addr - s->base;
@@ -511,6 +523,6 @@ checkpages(void)
 				checkmmu(addr, pg->pa);
 			}
 		}
-		qunlock(s);
+		qunlock(&s->qlock);
 	}
 }

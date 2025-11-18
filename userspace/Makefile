@@ -11,6 +11,7 @@ GO_SERVERS_DIR := go-servers
 DRIVERS_DIR := drivers
 C_SERVERS_DIR := servers
 LIBS_DIR := lib
+APP_BIN_DIR := bin
 
 # Build directories
 OBJ_DIR := $(BUILD_DIR)/obj
@@ -26,8 +27,8 @@ LD := ld
 AR := ar
 
 # Go build settings
-GOFLAGS := -ldflags="-s -w" -trimpath
-GOBUILD := $(GO) build $(GOFLAGS)
+GO_BUILD_FLAGS := -trimpath -gcflags="all=-N -l"
+GOBUILD := $(GO) build $(GO_BUILD_FLAGS)
 
 # C build settings
 CFLAGS := -Wall -Wextra -O2 -fPIC \
@@ -41,7 +42,16 @@ LDFLAGS := -shared -Wl,-soname,
 .PHONY: all clean test install help
 
 # Main userspace build
-all: go-servers drivers c-servers libs initrd
+all: init-bin go-servers drivers c-servers libs initrd
+
+init-bin: $(BIN_DIR)/init-go
+
+$(BIN_DIR)/init-go: $(APP_BIN_DIR)/init.go | $(BIN_DIR)
+	@echo "Building Go init program with debug symbols..."
+	@GOOS=plan9 GOARCH=amd64 $(GO) build $(GO_BUILD_FLAGS) -o $@ $<
+
+$(BIN_DIR):
+	@mkdir -p $(BIN_DIR)
 
 # Drivers build
 drivers:
@@ -66,13 +76,13 @@ libs:
 	@mkdir -p $(LIB_DIR)
 
 # Initrd creation
-initrd: $(BUILD_DIR)/initrd.tar
+initrd: init-bin $(BUILD_DIR)/initrd.tar
 	@echo "Creating initrd..."
 
-$(BUILD_DIR)/initrd.tar: go-servers drivers c-servers libs
+$(BUILD_DIR)/initrd.tar: init-bin go-servers drivers c-servers libs
 	@echo "Building initrd from $(GO_SERVERS_DIR), $(DRIVERS_DIR), and $(C_SERVERS_DIR)"
 	@rm -rf $(INITRD_DIR)
-	@mkdir -p $(INITRD_DIR)/{bin,lib,dev,etc,srv}
+	@mkdir -p $(INITRD_DIR)/bin $(INITRD_DIR)/lib $(INITRD_DIR)/dev $(INITRD_DIR)/etc $(INITRD_DIR)/srv
 	# Copy Go binaries
 	@find $(GO_SERVERS_DIR) -name "*.go" -prune -o -type f -executable -print \
 	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
@@ -81,6 +91,8 @@ $(BUILD_DIR)/initrd.tar: go-servers drivers c-servers libs
 	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
 	# Copy C binaries
 	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
+	# Copy init program
+	@cp $(BIN_DIR)/init-go $(INITRD_DIR)/bin/init
 	# Create tar
 	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
 	@echo "Initrd created: $@"
