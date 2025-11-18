@@ -348,9 +348,9 @@ sysexec(va_list list)
 
 	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
 	{
-		static char *fake_argv[] = { "/boot/init", nil };
-		print("sysexec: USING HARDCODED PATH /boot/init with fake argv\n");
-		file0 = validnamedup("/boot/init", 1);
+		static char *fake_argv[] = { "/bin/init", nil };
+		print("sysexec: USING HARDCODED PATH /bin/init with fake argv\n");
+		file0 = validnamedup("/bin/init", 1);
 		argp0 = fake_argv;
 		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
 	}
