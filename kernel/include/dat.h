@@ -46,8 +46,14 @@ struct Lock
 
 struct Label
 {
-	uintptr	sp;
-	uintptr	pc;
+	uintptr	sp;       /* offset 0 */
+	uintptr	pc;       /* offset 8 */
+	uintptr	rbp;      /* offset 16 - frame pointer for local variables */
+	uintptr	rbx;      /* offset 24 - callee-saved */
+	uintptr	r12;      /* offset 32 - callee-saved */
+	uintptr	r13;      /* offset 40 - callee-saved */
+	uintptr	r14;      /* offset 48 - callee-saved */
+	uintptr	r15;      /* offset 56 - callee-saved */
 };
 
 struct FPssestate

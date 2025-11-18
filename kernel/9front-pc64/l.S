@@ -273,6 +273,12 @@ setlabel:
     movq %rsp, 0(%rdi)         /* Save SP at offset 0 */
     movq (%rsp), %rax          /* Get return address from stack */
     movq %rax, 8(%rdi)         /* Save PC at offset 8 */
+    movq %rbp, 16(%rdi)        /* Save RBP at offset 16 - CRITICAL for local variable access */
+    movq %rbx, 24(%rdi)        /* Save RBX at offset 24 */
+    movq %r12, 32(%rdi)        /* Save R12 at offset 32 */
+    movq %r13, 40(%rdi)        /* Save R13 at offset 40 */
+    movq %r14, 48(%rdi)        /* Save R14 at offset 48 */
+    movq %r15, 56(%rdi)        /* Save R15 at offset 56 */
     xorl %eax, %eax            /* Return 0 */
     ret
 
@@ -400,6 +406,12 @@ invlpg:
 gotolabel:
     movq 0(%rdi), %rsp         /* Restore SP from offset 0 */
     movq 8(%rdi), %rax         /* Load PC from offset 8 */
+    movq 16(%rdi), %rbp        /* Restore RBP from offset 16 - CRITICAL for local variables */
+    movq 24(%rdi), %rbx        /* Restore RBX from offset 24 */
+    movq 32(%rdi), %r12        /* Restore R12 from offset 32 */
+    movq 40(%rdi), %r13        /* Restore R13 from offset 40 */
+    movq 48(%rdi), %r14        /* Restore R14 from offset 48 */
+    movq 56(%rdi), %r15        /* Restore R15 from offset 56 */
     movq %rax, (%rsp)          /* Place PC on stack as return address */
     movl $1, %eax              /* Return 1 */
     ret

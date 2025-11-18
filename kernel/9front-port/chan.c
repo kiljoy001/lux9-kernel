@@ -573,8 +573,18 @@ void
 cclose(Chan *c)
 {
 	iprint("cclose: enter c=%p caller=%#p\n", c, getcallerpc(&c));
-	if(c == nil || c->ref < 1 || c->flag&CFREE)
+	if(c == nil) {
+		iprint("cclose: ERROR - c is nil!\n");
 		panic("cclose %#p", getcallerpc(&c));
+	}
+	if(c->ref < 1) {
+		iprint("cclose: ERROR - c->ref=%d (should be >= 1)\n", c->ref);
+		panic("cclose %#p", getcallerpc(&c));
+	}
+	if(c->flag & CFREE) {
+		iprint("cclose: ERROR - c->flag=%#x has CFREE set!\n", c->flag);
+		panic("cclose %#p", getcallerpc(&c));
+	}
 
 	if(decref(c))
 		return;
@@ -1363,9 +1373,11 @@ namec(char *aname, int amode, int omode, ulong perm)
 		error("empty file name");
 	aname = validnamedup(aname, 1);
 	if(waserror()){
+		print("namec: OUTER ERROR HANDLER: aname=%p\n", aname);
 		free(aname);
 		nexterror();
 	}
+	print("namec: outer waserror set, nerrlab=%d\n", up->nerrlab);
 	name = aname;
 	
 	if(aname[0] == '\0') {
@@ -1411,8 +1423,9 @@ namec(char *aname, int amode, int omode, ulong perm)
 		print("namec: case '/' - using up->slash\n");
 		c = up->slash;
 		incref(c);
+		print("namec: after '/' case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
-	
+
 case '#':
 		nomount = 1;
 		print("DEBUG[namec]: up=%p, &up->genbuf=%p\n", up, &up->genbuf);
@@ -1448,15 +1461,17 @@ case '#':
 		print("namec: calling devtab[%d]->attach(%s)\n", t, up->genbuf+n);
 		c = devtab[t]->attach(up->genbuf+n);
 		print("namec: attach returned c=%p\n", c);
+		print("namec: after '#' case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
 
 	default:
 		print("namec: default case - using up->dot\n");
 		c = up->dot;
 		incref(c);
+		print("namec: after default case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
 	}
-	print("namec: device lookup complete, c=%p\n", c);
+	print("namec: device lookup complete, &c=%p c=%p\n", &c, c);
 
 	e.aname = aname;
 	e.prefix = name - aname;
@@ -1465,9 +1480,13 @@ case '#':
 	e.off = nil;
 	e.nelems = 0;
 	e.nerror = 0;
+	print("namec: about to set inner waserror, nerrlab=%d\n", up->nerrlab);
 	if(waserror()){
-		if(c != nil)
+		print("namec: INNER ERROR HANDLER TRIGGERED: nerrlab=%d &c=%p c=%p\n", up->nerrlab, &c, c);
+		if(c != nil) {
+			print("namec: INNER ERROR HANDLER: c->ref=%ld (should be valid)\n", c->ref);
 			cclose(c);
+		}
 		free(e.name);
 		free(e.elems);
 		/*
@@ -1507,7 +1526,9 @@ case '#':
 		e.nelems--;
 	}
 
+	print("namec: BEFORE walk(): &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 	if(walk(&c, e.elems, e.nelems, nomount, &e.nerror) < 0){
+		print("namec: walk() FAILED, &c=%p c=%p\n", &c, c);
 		if(e.nerror < 0 || e.nerror > e.nelems){
 			print("namec %s walk error nerror=%d\n", aname, e.nerror);
 			e.nerror = 0;

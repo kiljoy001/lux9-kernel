@@ -348,14 +348,15 @@ sysexec(va_list list)
 
 	/* TEMPORARY: Hardcode path and argv to bypass argument extraction bug */
 	{
-		static char *fake_argv[] = { "/bin/init", nil };
-		print("sysexec: USING HARDCODED PATH /bin/init with fake argv\n");
-		file0 = validnamedup("/bin/init", 1);
+		static char *fake_argv[] = { "/boot/init", nil };
+		print("sysexec: USING HARDCODED PATH /boot/init with fake argv\n");
+		file0 = validnamedup("/boot/init", 1);
 		argp0 = fake_argv;
 		print("sysexec: file0='%s' argp0=%p\n", file0, argp0);
 	}
 
 	print("EXEC: attempting to execute '%s'\n", file0);
+	print("EXEC: about to call waserror()\n");
 
 	if(waserror()){
 		print("EXEC: failed with error '%s'\n", up->errstr);
@@ -367,10 +368,13 @@ sysexec(va_list list)
 			pexit(up->errstr, 1);
 		nexterror();
 	}
+	print("EXEC: waserror() returned\n");
 	align = BY2PG-1;
+	print("EXEC: set align=%d\n", align);
 	indir = 0;
 	is_elf = 0;
 	file = file0;
+	print("EXEC: entering main loop with file='%s'\n", file);
 	for(;;){
 		print("EXEC: opening file '%s'\n", file);
 		tc = namec(file, Aopen, OEXEC, 0);
@@ -383,8 +387,13 @@ sysexec(va_list list)
 			kstrdup(&elem, up->genbuf);
 
 		n = devtab[tc->type]->read(tc, u.buf, sizeof(u.buf), 0);
+		print("EXEC: read %d bytes from file\n", n);
+		print("EXEC: first 16 bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+		      u.buf[0], u.buf[1], u.buf[2], u.buf[3], u.buf[4], u.buf[5], u.buf[6], u.buf[7],
+		      u.buf[8], u.buf[9], u.buf[10], u.buf[11], u.buf[12], u.buf[13], u.buf[14], u.buf[15]);
 		if(n >= sizeof(Exec)) {
 			magic = beswal(u.ehdr.exec.magic);
+			print("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic, AOUT_MAGIC, S_MAGIC);
 			if(magic == AOUT_MAGIC) {
 				if(magic & HDR_MAGIC) {
 					if(n < sizeof(u.ehdr))
