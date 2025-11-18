@@ -600,7 +600,7 @@ sysexec(va_list list)
 	}
 	s = up->seg[SSEG];
 	do {
-		tstk = s->base;
+		tstk = s->top;
 		if(tstk <= USTKSIZE)
 			error(Enovmem);
 	} while((s = isoverlap(tstk-USTKSIZE, USTKSIZE)) != nil);
