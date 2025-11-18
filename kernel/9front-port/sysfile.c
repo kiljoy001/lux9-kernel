@@ -16,7 +16,7 @@ unlockfgrp(Fgrp *f)
 
 	ex = f->exceed;
 	f->exceed = 0;
-	unlock(f);
+	unlock(&f->lock);
 	if(ex)
 		pprint("warning: process exceeds %d file descriptors\n", ex);
 }
@@ -89,7 +89,7 @@ newfd(Chan *c, int mode)
 	Fgrp *f;
 
 	f = up->fgrp;
-	lock(f);
+	lock(&f->lock);
 	fd = findfreefd(f, 0);
 	if(fd < 0){
 		unlockfgrp(f);
@@ -115,7 +115,7 @@ newfd2(int fd[2], Chan *c[2])
 	Fgrp *f;
 
 	f = up->fgrp;
-	lock(f);
+	lock(&f->lock);
 	fd[0] = findfreefd(f, 0);
 	if(fd[0] < 0){
 		unlockfgrp(f);
@@ -144,14 +144,14 @@ fdtochan(int fd, int mode, int chkmnt, int iref)
 
 	f = up->fgrp;
 
-	lock(f);
+	lock(&f->lock);
 	if(fd<0 || f->nfd<=fd || (c = f->fd[fd])==nil) {
-		unlock(f);
+		unlock(&f->lock);
 		error(Ebadfd);
 	}
 	if(iref)
 		incref(c);
-	unlock(f);
+	unlock(&f->lock);
 
 	if(chkmnt && (c->flag&CMSG)) {
 		if(iref)
@@ -255,7 +255,7 @@ sysdup(va_list list)
 	c = fdtochan(fd, -1, 0, 1);
 	fd = va_arg(list, int);
 	if(fd != -1){
-		lock(f);
+		lock(&f->lock);
 		if(fd<0 || growfd(f, fd)<0) {
 			unlockfgrp(f);
 			cclose(c);
@@ -313,10 +313,10 @@ fdclose(int fd, int flag)
 	Chan *c;
 	Fgrp *f = up->fgrp;
 
-	lock(f);
+	lock(&f->lock);
 	c = fd <= f->maxfd ? f->fd[fd] : nil;
 	if(c == nil || (flag != 0 && ((f->flag[fd]|c->flag)&flag) == 0)){
-		unlock(f);
+		unlock(&f->lock);
 		return;
 	}
 	f->fd[fd] = nil;
@@ -324,7 +324,7 @@ fdclose(int fd, int flag)
 		while(fd > 0 && f->fd[fd] == nil)
 			f->maxfd = --fd;
 	}
-	unlock(f);
+	unlock(&f->lock);
 	cclose(c);
 }
 

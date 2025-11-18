@@ -679,6 +679,7 @@ newmhead(Chan *from)
 	mh = malloc(sizeof(Mhead));
 	if(mh == nil)
 		error(Enomem);
+	memset(mh, 0, sizeof(*mh));  /* Zero all fields including lock */
 	mh->ref = 1;
 	mh->from = from;
 	incref(from);

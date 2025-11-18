@@ -444,6 +444,7 @@ newegrp(void)
 	eg = malloc(sizeof(Egrp));
 	if(eg == nil)
 		error(Enomem);
+	memset(eg, 0, sizeof(*eg));  /* Zero all fields including rwlock */
 	eg->ref = 1;
 	return eg;
 }
