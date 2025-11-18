@@ -498,10 +498,11 @@ syscallentry:
     pushq $0                    /* error code */
     pushq $64                   /* trap number (VectorSYSCALL) */
 
-    /* Allocate 144 bytes: 136 for Ureg + 8 for alignment padding
-     * Total stack: 56 (7 pushes) + 144 = 200 bytes
-     * 200 % 16 = 8 (correct alignment before call) */
-    subq $144, %rsp             /* space for Ureg + alignment padding */
+    /* Allocate 136 bytes: 128 for Ureg fields (ax-gs) + 8 for alignment padding
+     * Hardware frame (type-ss) already pushed: 56 bytes
+     * Total stack: 56 (7 pushes) + 136 = 192 bytes
+     * 192 % 16 = 0 (correct alignment before call) */
+    subq $136, %rsp             /* space for Ureg registers + alignment padding */
 
     /* Save all general purpose registers for potential noteret path
      * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
@@ -518,8 +519,14 @@ syscallentry:
     movq %r11, 88(%rsp)         /* ureg->r11 (offset 80, rflags saved by syscall) */
     movq %r12, 96(%rsp)         /* ureg->r12 (offset 88) */
     movq %r13, 104(%rsp)        /* ureg->r13 (offset 96) */
-    movq %r14, 120(%rsp)        /* save previous RUSER (ureg->r14, offset 112) */
-    movq %r15, 128(%rsp)        /* save previous RMACH (ureg->r15, offset 120) */
+    movq %r14, 112(%rsp)        /* save previous RUSER (ureg->r14, offset 104) */
+    movq %r15, 120(%rsp)        /* save previous RMACH (ureg->r15, offset 112) */
+
+    /* Save segment registers (ureg->ds, es, fs, gs at offsets 120-127) */
+    movw %ds, 128(%rsp)         /* ureg->ds (offset 120) */
+    movw %es, 130(%rsp)         /* ureg->es (offset 122) */
+    movw %fs, 132(%rsp)         /* ureg->fs (offset 124) */
+    movw %gs, 134(%rsp)         /* ureg->gs (offset 126) */
 
     movq %rax, %r15             /* update RMACH */
     movq 16(%rax), %r14         /* update RUSER = up */
