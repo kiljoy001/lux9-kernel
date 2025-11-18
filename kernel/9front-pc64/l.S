@@ -607,8 +607,8 @@ forkret:
     popq %r12
     popq %r13
 
-    /* After popping 14 quads, we're at offset 112. CS is at offset 152, so 152-112 = 40 */
-    cmpq $KESEL, 40(%rsp)
+    /* After popping 14 quads, RSP points to r14. CS is at r14+48 */
+    cmpq $KESEL, 48(%rsp)
     je _syscall_iretnested
 
     swapgs
@@ -616,11 +616,9 @@ forkret:
     movq 0(%rsp), %r14
 
 _syscall_iretnested:
-    /* Syscall frame: Skip r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes
-     * But we also need to pop r14 and r15 for userspace returns (already done above for kernel)
-     * For kernel-to-kernel returns (no swapgs), just skip: r14 (8) + r15 (8) + segmentregs (8) + type (8) + error (8) = 40 bytes
-     * Wait - actually after all pops we're at offset 112 (r14), need to get to offset 144 (pc) = skip 32 bytes */
-    addq $32, %rsp   /* Skip to hardware frame: r14+r15+segs(8)+type+error = 32 bytes */
+    /* Skip from r14 to pc (start of hardware frame):
+     * r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes */
+    addq $40, %rsp   /* Skip to hardware frame (pc, cs, flags, sp, ss) */
     iretq
 
 .global _strayintr
