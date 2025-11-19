@@ -94,15 +94,20 @@ pageinit(void)
 			p->pa = cm->base+j*BY2PG;
 			if(cankaddr(p->pa) == 0){
 				skipped_unmapped++;
+				p++;
 				continue;
 			}
 			void *kva = KADDR(p->pa);
 			if(kva == nil || kva == (void*)-BY2PG){
 				skipped_poison++;
+				p++;
 				continue;
 			}
 			p->color = color;
 			color = (color+1)%NCOLOR;
+			/* Note: Physical page memory will be zeroed by fillpage() in newpage()
+			 * when actually allocated. Don't zero here as HHDM may not cover all
+			 * physical memory regions at this early boot stage. */
 			*t = p, t = &p->next;
 			palloc.freecount++;
 			p++;
@@ -310,6 +315,11 @@ newpage(uintptr va, Segment *seg)
 	print("newpage: calling inittxtflush\n");
 	inittxtflush(p);
 	print("newpage: inittxtflush complete\n");
+
+	/* Zero physical page memory to prevent garbage data */
+	print("newpage: zeroing physical page memory\n");
+	fillpage(p, 0);
+	print("newpage: physical page zeroed\n");
 
 	/* Automatically acquire ownership for the current process */
 	/* With HHDM, use the HHDM virtual address instead of user VA */

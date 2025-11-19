@@ -287,7 +287,7 @@ xallocz(ulong size, int zero)
 			p->magix = Magichole;
 			p->size = size;
 			if(zero)
-				memset(p->data, 0, orig_size);
+				memset(p->data, 0, size - overhead);
 			if(zero && *(ulong*)p->data != 0)
 				panic("xallocz: zeroed block not cleared");
 			/* TEST 2A: Track allocation success */

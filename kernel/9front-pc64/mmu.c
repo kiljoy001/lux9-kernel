@@ -831,6 +831,7 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
 		memset(page, 0, PTSZ);
 	}
 	table[index] = PADDR(page) | flags;
+	mfence();  /* Memory barrier to ensure PTE write is visible before use */
 	print("mmucreate: va=%#p level=%d index=%d flags=%#llux entry=%#llux page=%#p\n",
 		va, level, index, (uvlong)flags, (uvlong)table[index], page);
 	return page;
