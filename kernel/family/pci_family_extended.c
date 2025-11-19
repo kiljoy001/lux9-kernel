@@ -1,0 +1,1 @@
+pci_family_ops_extended = pci_family_ops_extended
