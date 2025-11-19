@@ -109,6 +109,7 @@ trapinit0(void)
 void
 trapinit(void)
 {
+	print("trapinit: ENTRY\n");
 	irqinit();
 
 	nmienable();
@@ -117,11 +118,15 @@ trapinit(void)
 	 * Special traps.
 	 * Syscall() is called directly without going through trap().
 	 */
+	print("trapinit: registering trap handlers\n");
 	trapenable(VectorDE, debugexc, 0, "debugexc");
 	trapenable(VectorBPT, debugbpt, 0, "debugpt");
 	trapenable(VectorPF, faultamd64, 0, "faultamd64");
+	print("trapinit: registered faultamd64 for VectorPF=%d\n", VectorPF);
 	trapenable(Vector2F, doublefault, 0, "doublefault");
 	trapenable(Vector15, unexpected, 0, "unexpected");
+
+	print("trapinit: EXIT\n");
 }
 
 static char* excname[32] = {
@@ -179,29 +184,19 @@ trap(Ureg *ureg)
 	int vno, user;
 	static int trap_count = 0;
 	static int trapdebug = 0;
+	static int post_exec_trap = 0;
 
 	vno = ureg->type;
-	/* Debug print disabled - can cause QEMU iothread issues from interrupt context
-	if(trap_count < 5) {
-		print("trap: vno=%d pc=%p cs=%#x ss=%#x error=%#x\n",
-		      vno, ureg->pc, (unsigned int)ureg->cs, (unsigned int)ureg->ss, (unsigned int)ureg->error);
-		trap_count++;
+
+	/* Minimal trap debug - only first 3 and every 100th */
+	if(post_exec_trap < 3 || post_exec_trap % 100 == 0){
+		iprint("TRAP[%d]: vno=%d pc=%#p cs=%#x\n",
+		       post_exec_trap, vno, ureg->pc, (uint)ureg->cs);
 	}
-	*/
-	if(trapdebug < 8 && up != nil){
-		iprint("trap entry: vno=%d ureg=%p up=%p kstack=%p-%#p sp=%#p relocated=%llud\n",
-			vno, ureg, up, up->kstack, up->kstack != nil ? up->kstack+KSTACK : nil,
-			ureg->sp, intr_frame_relocated);
-		iprint("trap frame snapshot: before=%#llux frame=%#p saved_sp=%#llux saved_ss=%#llux saved_cs=%#llux flags=%#llux r14=%#llux\n",
-			intr_frame_before, (void*)intr_frame_addr, intr_frame_saved_sp,
-			intr_frame_saved_ss, intr_frame_saved_cs,
-			intr_frame_saved_flags, intr_frame_r14);
-	}
+	post_exec_trap++;
+	(void)trap_count;
+	(void)trapdebug;
 	user = kenter(ureg);
-	if(user && trapdebug < 8){
-		iprint("trap kenter ok: up=%p ureg=%p sp=%#p\n", up, ureg, ureg->sp);
-		trapdebug++;
-	}
 	if(user && pebble_enabled)
 		pebble_auto_verify(up, ureg);
 	if(vno != VectorCNA)
@@ -451,39 +446,18 @@ static void
 faultamd64(Ureg* ureg, void*)
 {
 	uintptr addr;
-	int read, user, present, reserved;
-	char *accesstype, *faulttype;
+	int read, user;
+	static int fault_count = 0;
 
 	addr = getcr2();
 	read = !(ureg->error & 2);
 	user = userureg(ureg);
-	present = ureg->error & 1;  /* 1=protection, 0=not-present */
-	reserved = ureg->error & 8; /* 1=reserved bit set */
 
-	/* Human-readable explanations */
-	accesstype = read ? "READ" : "WRITE";
-	if(reserved)
-		faulttype = "RESERVED BIT VIOLATION";
-	else if(present)
-		faulttype = "PROTECTION VIOLATION";
-	else
-		faulttype = "PAGE NOT PRESENT";
-
-	print("\n========== PAGE FAULT ==========\n");
-	print("  Fault Type: %s\n", faulttype);
-	print("  Access Type: %s\n", accesstype);
-	print("  Fault Addr: 0x%llux\n", (uvlong)addr);
-	print("  Instruction: 0x%llux\n", (uvlong)ureg->pc);
-	print("  Privilege:  %s (CPL=%d)\n", user ? "USER MODE" : "KERNEL MODE",
-	      (int)(ureg->cs & 3));
-	print("  Error Code: 0x%x (", (int)ureg->error);
-	if(ureg->error & 1) print("P");
-	if(ureg->error & 2) print("W");
-	if(ureg->error & 4) print("U");
-	if(ureg->error & 8) print("R");
-	if(ureg->error & 16) print("I");
-	print(")\n");
-	print("================================\n\n");
+	/* Minimal debug - just show fault number, address, and mode */
+	fault_count++;
+	if(fault_count <= 5 || fault_count % 100 == 0)
+		print("fault[%d]: addr=%#p pc=%#p %s %s\n", fault_count, addr, ureg->pc,
+		      user ? "user" : "kern", read ? "R" : "W");
 	if(!user){
 		extern void _peekinst(void);
 
@@ -582,57 +556,36 @@ syscall(Ureg* ureg)
 	if(scallnr < nelem(syscallnames) && syscallnames[scallnr] != nil)
 		scname = syscallnames[scallnr];
 
-	print("SYSCALL: %s (#%ld) from PC=%#llux SP=%#llux\n",
-	      scname, scallnr, ureg->pc, ureg->sp);
-
-	/* Debug: Read actual bytes from user stack */
-	{
-		extern int okaddr(uintptr, ulong, int);
-		print("syscall: user_sp=%#llux (validating...)\n", ureg->sp);
-		if(okaddr(ureg->sp, 32, 0)) {
-			/* Read as bytes to see raw data */
-			volatile unsigned char *bytes = (volatile unsigned char*)ureg->sp;
-			print("syscall: Raw bytes at user stack:\n");
-			print("  [0-7]:  %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			      bytes[0], bytes[1], bytes[2], bytes[3],
-			      bytes[4], bytes[5], bytes[6], bytes[7]);
-			print("  [8-15]: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			      bytes[8], bytes[9], bytes[10], bytes[11],
-			      bytes[12], bytes[13], bytes[14], bytes[15]);
-
-			/* Also print as pointers */
-			volatile uintptr *ustack = (volatile uintptr*)ureg->sp;
-			print("syscall: Interpreted as pointers:\n");
-			print("  user[0] = %#llux\n", (unsigned long long)ustack[0]);
-			print("  user[1] = %#llux\n", (unsigned long long)ustack[1]);
-		} else {
-			print("syscall: CANNOT validate user stack!\n");
-		}
-	}
+	/* Print syscall entry for first few and every 100th */
+	if(syscall_count <= 5 || syscall_count % 100 == 0)
+		print("SYSCALL[%d]: %s (#%ld) pc=%#p\n", syscall_count, scname, scallnr, ureg->pc);
 
 	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
 	 * so arguments start at SP+0, not SP+8 */
 	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
 
-	print("syscall: dosyscall returned, ax=%#llux\n", ureg->ax);
+	/* Debug: after dosyscall */
+	print("syscall: dosyscall returned, delaysched=%d\n", up->delaysched);
 
 	/* if we delayed sched because we held a lock, sched now */
-	if(up->delaysched) {
-		print("syscall: calling sched() for delaysched\n");
+	if(up->delaysched){
+		print("syscall: calling sched()\n");
 		sched();
+		print("syscall: sched() returned\n");
 	}
 
-	/* Initialize stack slot to 0 for fast SYSRET path
-	 * TODO: donotify/noteret disabled - up->nnote appears to be uninitialized
-	 * causing donotify to hang on first syscall. Need to investigate proper
-	 * Proc structure initialization before enabling notifications. */
+	/* Debug: print return address after EXEC */
+	if(scallnr == 7) {  /* EXEC */
+		extern Mach *m;
+		print("EXEC return: pc=%#p sp=%#p cs=%#x\n", ureg->pc, ureg->sp, (uint)ureg->cs);
+		print("EXEC pre-kexit: pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
+	}
+
+	/* Initialize stack slot to 0 for fast SYSRET path */
 	((void**)ureg)[-1] = nil;
 
-	print("syscall: calling kexit\n");
 	kexit(ureg);
-	print("syscall: calling fpukexit\n");
 	fpukexit(ureg);
-	print("syscall: returning to assembly (will IRETQ)\n");
 }
 
 Ureg*
@@ -713,6 +666,12 @@ execregs(uintptr entry, ulong ssize, ulong nargs)
 	ureg->cs = UESEL;
 	ureg->ss = UD64SEL;
 	ureg->r14 = ureg->r15 = 0;	/* extern user registers */
+
+	print("execregs: entry=%#p sp=%#p cs=%#x ss=%#x flags=%#llux\n",
+	      entry, ureg->sp, ureg->cs, ureg->ss, ureg->flags);
+	print("execregs: ureg=%#p ureg->pc=%#p UESEL=%#x UD64SEL=%#x\n",
+	      ureg, ureg->pc, UESEL, UD64SEL);
+
 	return (uintptr)USTKTOP-sizeof(Tos);		/* address of kernel/user shared data */
 }
 

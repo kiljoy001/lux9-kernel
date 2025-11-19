@@ -1093,6 +1093,9 @@ mmuzap(void)
 				pte[x] = 0;
 		}
 	}
+
+	/* Flush TLB by reloading CR3 - read and write same value */
+	putcr3(getcr3());
 }
 
 static void
@@ -1120,10 +1123,12 @@ flushmmu(void)
 {
 	int x;
 
+	print("flushmmu: called, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
 	x = splhi();
 	up->newtlb = 1;
 	mmuswitch(up);
 	splx(x);
+	print("flushmmu: done, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
 }
 
 void

@@ -51,8 +51,10 @@ irqhandled(Ureg *ureg, int vno)
 {
 	Vctl *ctl, *v;
 	int i;
+	static int irqhandled_debug = 0;
 
 	ctl = vctl[vno];
+
 	if(ctl != nil){
 		if(vno < VectorPIC){
 			ctl->f(ureg, ctl->a);

@@ -180,6 +180,7 @@ void		kprocchild(Proc*, void (*)(void));
 void		linkproc(void);
 extern void	(*kproftimer)(uintptr);
 void		ksetenv(char*, char*, int);
+int		kopen(char*, int);
 void		kstrcpy(char*, char*, int);
 void		kstrdup(char**, char*);
 void		lock(Lock*);

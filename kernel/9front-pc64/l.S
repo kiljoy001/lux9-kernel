@@ -548,12 +548,11 @@ syscallentry:
 
     /* Return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
      * If noteret is set, jump directly to noteret.
-     * Otherwise fall through to syscallret (both use IRETQ). */
+     * Otherwise jump to syscallret (both use IRETQ). */
     movq (%rsp), %rax           /* load stack slot */
     testq %rax, %rax            /* check if noteret address is set */
     jnz noteret                 /* if set, use IRETQ path */
-
-    /* Fall through to syscallret (which also uses IRETQ) */
+    jmp syscallret              /* normal return via IRETQ */
 
 halt_up_null:
     movq $0xDEAD0001, %rax
@@ -638,7 +637,33 @@ _syscall_iretnested:
     /* Skip from r14 to pc (start of hardware frame):
      * r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes */
     addq $40, %rsp   /* Skip to hardware frame (pc, cs, flags, sp, ss) */
+
+    /* Debug: print iretq frame values */
+    pushq %rdi
+    pushq %rsi
+    pushq %rax
+
+    /* Frame is now at rsp+24: pc, cs, flags, sp, ss */
+    movq 24(%rsp), %rsi         /* pc */
+    movq 32(%rsp), %rdx         /* cs */
+    movq 40(%rsp), %rcx         /* flags */
+    movq 48(%rsp), %r8          /* sp */
+    movq 56(%rsp), %r9          /* ss */
+    leaq _iretq_debug_msg(%rip), %rdi
+    xorq %rax, %rax
+    call iprint
+
+    popq %rax
+    popq %rsi
+    popq %rdi
+
     iretq
+
+.section .rodata
+_iretq_debug_msg:
+    .string "IRETQ: pc=%#p cs=%#llx flags=%#llx sp=%#p ss=%#llx\n"
+
+.text
 
 .global _strayintr
 _strayintr:

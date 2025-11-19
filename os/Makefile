@@ -2,7 +2,7 @@
 # Combines kernel and userspace into complete OS
 
 # Configuration
-KERNEL_BINARY := ../kernel/lux9.elf
+KERNEL_BINARY := ../lux9.elf
 USERSPACE_INITRD := ../userspace/build/initrd.tar
 BUILD_DIR := build
 ISO_DIR := $(BUILD_DIR)/iso

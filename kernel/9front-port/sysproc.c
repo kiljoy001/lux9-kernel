@@ -353,7 +353,7 @@ sysexec(va_list list)
 	char *a, *e, *charp, *file;
 	int i, n, indir, is_elf;
 	ulong magic, ssize, nargs, nbytes;
-	uintptr entry, text, data, bss, adata, abss, ebss, tstk, align;
+	uintptr entry, text, data, bss, adata, abss, ebss, tstk, align, file_offset;
 	Segment *s, *ts;
 	Image *img;
 	Tos *tos;
@@ -392,6 +392,7 @@ sysexec(va_list list)
 	print("EXEC: set align=%d\n", align);
 	indir = 0;
 	is_elf = 0;
+	file_offset = 0;
 	file = file0;
 	print("EXEC: entering main loop with file='%s'\n", file);
 	for(;;){
@@ -459,6 +460,7 @@ sysexec(va_list list)
 				Elf64_Phdr phdr;
 				int i;
 				uintptr minva = ~0ULL, maxva_file = 0, maxva_mem = 0;
+				uintptr elf_file_offset = 0;  /* File offset of first LOAD segment */
 
 				print("EXEC: detected ELF binary\n");
 
@@ -480,14 +482,18 @@ sysexec(va_list list)
 					devtab[tc->type]->read(tc, &phdr, sizeof(phdr),
 					                       ehdr->e_phoff + i * sizeof(phdr));
 					if(phdr.p_type == PT_LOAD) {
-						if(phdr.p_vaddr < minva)
+						if(phdr.p_vaddr < minva) {
 							minva = phdr.p_vaddr;
+							elf_file_offset = phdr.p_offset;
+						}
 						if(phdr.p_vaddr + phdr.p_filesz > maxva_file)
 							maxva_file = phdr.p_vaddr + phdr.p_filesz;
 						if(phdr.p_vaddr + phdr.p_memsz > maxva_mem)
 							maxva_mem = phdr.p_vaddr + phdr.p_memsz;
 					}
 				}
+
+				print("EXEC: ELF file offset = %#llux\n", (uvlong)elf_file_offset);
 
 				print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
 				print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
@@ -507,6 +513,7 @@ sysexec(va_list list)
 				/* ELF binaries use page alignment */
 				align = BY2PG - 1;
 				is_elf = 1;
+				file_offset = elf_file_offset;
 				break; /* for binary */
 			}
 		}
@@ -695,8 +702,10 @@ sysexec(va_list list)
 		ts = newseg(SG_TEXT | SG_RONLY, UTZERO, PGROUND(text)>>PGSHIFT);
 		ts->flushme = 1;
 		ts->image = img;
-		ts->fstart = 0;
+		ts->fstart = file_offset;
 		ts->flen = text;
+		print("EXEC: text segment fstart=%#llux flen=%#llux\n",
+		      (uvlong)ts->fstart, (uvlong)ts->flen);
 		img->s = ts;
 		unlock(img);
 		poperror();

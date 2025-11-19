@@ -244,12 +244,14 @@ newpage(uintptr va, Segment *seg)
 	if(seg != nil)
 		locked = &seg->qlock;
 
-	print("newpage: va=%p locked=%p\n", va, locked);
-	print("newpage: palloc.freecount=%lud\n", palloc.freecount);
+	/* Minimal debug - just show VA and free count */
+	static int newpage_count = 0;
+	newpage_count++;
+	if(newpage_count <= 5 || newpage_count % 100 == 0)
+		print("newpage[%d]: va=%p free=%lud\n", newpage_count, va, palloc.freecount);
+
 	lock(&palloc);
-	print("newpage: acquired lock, checking ispages\n");
 	while(!ispages(nil)){
-		print("newpage: no pages available, waiting\n");
 		unlock(&palloc);
 		if(locked)
 			qunlock(locked);
@@ -280,59 +282,40 @@ newpage(uintptr va, Segment *seg)
 		lock(&palloc);
 	}
 
-	print("newpage: passed ispages check\n");
 	/* First try for our colour */
-	print("newpage: calling getpgcolor\n");
 	color = getpgcolor(va);
-	print("newpage: color=%d palloc.head=%p\n", color, palloc.head);
 	l = &palloc.head;
-	print("newpage: searching for page with color=%d\n", color);
 	for(p = *l; p != nil; p = p->next){
 		if(p->color == color)
 			break;
 		l = &p->next;
 	}
-	print("newpage: search complete, p=%p\n", p);
 
 	if(p == nil) {
-		print("newpage: color not found, using first page\n");
 		l = &palloc.head;
 		p = *l;
-		print("newpage: first page p=%p\n", p);
 	}
 
-	print("newpage: unlinking page from free list\n");
 	*l = p->next;
 	p->next = nil;
 	palloc.freecount--;
 	unlock(&palloc);
-	print("newpage: unlocked palloc\n");
 
-	print("newpage: setting page fields p=%p pa=%p\n", p, p->pa);
 	p->ref = 1;
 	p->va = va;
 	p->modref = 0;
-	print("newpage: calling inittxtflush\n");
 	inittxtflush(p);
-	print("newpage: inittxtflush complete\n");
 
 	/* Zero physical page memory to prevent garbage data */
-	print("newpage: zeroing physical page memory\n");
 	fillpage(p, 0);
-	print("newpage: physical page zeroed\n");
 
 	/* Automatically acquire ownership for the current process */
-	/* With HHDM, use the HHDM virtual address instead of user VA */
-	/* RE-ENABLED for debugging */
 	if(up != nil && p->pa != 0) {
 		extern uintptr saved_limine_hhdm_offset;
 		uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
-		print("newpage: calling pageown_acquire pa=%p hhdm_va=%p\n", p->pa, hhdm_va);
 		pageown_acquire(up, p->pa, hhdm_va);
-		print("newpage: pageown_acquire complete\n");
 	}
 
-	print("newpage: returning page %p\n", p);
 	return p;
 }
 

@@ -109,6 +109,29 @@ newfd(Chan *c, int mode)
 	return fd;
 }
 
+/*
+ * kopen - open a file from kernel context
+ * Used to set up initial file descriptors for init process
+ */
+int
+kopen(char *name, int mode)
+{
+	int fd;
+	Chan *c;
+
+	openmode(mode);	/* error check only */
+	c = namec(name, Aopen, mode, 0);
+	if(waserror()){
+		cclose(c);
+		nexterror();
+	}
+	fd = newfd(c, mode);
+	if(fd < 0)
+		error(Enofd);
+	poperror();
+	return fd;
+}
+
 static int
 newfd2(int fd[2], Chan *c[2])
 {
@@ -757,9 +780,12 @@ write(int fd, void *buf, long len, vlong *offp)
 	long m, n;
 	vlong off;
 
+	print("write: fd=%d buf=%p len=%ld\n", fd, buf, len);
 	validaddr((uintptr)buf, len, 0);
+	print("write: validaddr passed\n");
 	n = 0;
 	c = fdtochan(fd, OWRITE, 1, 1);
+	print("write: fdtochan returned c=%p type=%d\n", c, c ? c->type : -1);
 	if(waserror()) {
 		if(offp == nil){
 			lock(c);
@@ -823,11 +849,19 @@ syspwrite(va_list list)
 	buf = va_arg(list, void*);
 	len = va_arg(list, long);
 	off = va_arg(list, vlong);
+
+	/* Debug: print PWRITE arguments */
+	print("syspwrite: fd=%d buf=%p len=%ld off=%lld\n", fd, buf, len, off);
+
 	if(off != ~0ULL)
 		offp = &off;
 	else
 		offp = nil;
-	return (uintptr)write(fd, buf, len, offp);
+	{
+		long ret = write(fd, buf, len, offp);
+		print("syspwrite: write returned %ld\n", ret);
+		return (uintptr)ret;
+	}
 }
 
 static vlong

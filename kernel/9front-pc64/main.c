@@ -331,6 +331,19 @@ init0(void)
 	iprint("BOOT[init0]: calling chandevinit\n");
 	chandevinit();
 	iprint("BOOT[init0]: chandevinit returned\n");
+
+	/*
+	 * Open console for stdin, stdout, stderr
+	 * Use #c/cons directly since /dev not bound yet
+	 */
+	if(waserror())
+		panic("init0: cannot open console: %r");
+	kopen("#c/cons", OREAD);	/* fd 0 - stdin */
+	kopen("#c/cons", OWRITE);	/* fd 1 - stdout */
+	kopen("#c/cons", OWRITE);	/* fd 2 - stderr */
+	poperror();
+	print("BOOT[init0]: console fds opened (0, 1, 2)\n");
+
 	randominit();
 	iprint("BOOT[init0]: randominit complete\n");
 

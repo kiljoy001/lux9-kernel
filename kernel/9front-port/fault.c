@@ -49,6 +49,8 @@ retry:
 	if(loadrec == nil) {	/* from a text/data image */
 		daddr = s->fstart+soff;
 		image = s->image;
+		print("pio: soff=%#llux fstart=%#llux daddr=%#llux flen=%#llux\n",
+		      (uvlong)soff, (uvlong)s->fstart, (uvlong)daddr, (uvlong)s->flen);
 		new = lookpage(image, daddr);
 		if(new != nil) {
 			*p = new;
@@ -101,6 +103,14 @@ retry:
 			error(Eshort);
 		if(n < BY2PG)
 			memset((uchar*)VA(k)+n, 0, BY2PG-n);
+		/* Debug: print first bytes loaded */
+		{
+			uchar *data = (uchar*)VA(k);
+			print("pio: read %d bytes from offset %#llux, first 16: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			      n, (uvlong)daddr,
+			      data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+			      data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15]);
+		}
 		kunmap(k);
 		settxtflush(new, s->flushme);
 		cachepage(new, image);
