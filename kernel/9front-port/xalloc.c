@@ -5,9 +5,7 @@
 #include "fns.h"
 
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
-extern uintptr limine_hhdm_offset;
-
-/* Flag to indicate xinit() has completed (for early-boot allocators) */
+extern uintptr saved_limine_hhdm_offset;
 int xinit_done = 0;
 
 /* Bootstrap allocation for early boot systems */
@@ -218,11 +216,11 @@ xspanalloc(ulong size, int align, ulong span)
 		if(t > 0) {
 			/* xhole expects physical addr, but 'a' is virtual HHDM addr
 			 * Convert back to physical: vaddr - HHDM_offset */
-			xhole(a - limine_hhdm_offset, t);
+			xhole(a - saved_limine_hhdm_offset, t);
 		}
 		t = a + span - v;
 		if(t > 0) {
-			xhole((v+size+align) - limine_hhdm_offset, t);
+			xhole((v+size+align) - get_hhdm_offset(), t);
 		}
 	}
 	else
@@ -326,7 +324,7 @@ xfree(void *p)
 		panic("xfree(%#p) %#ux != %#lux", p, Magichole, x->magix);
 	}
 	/* x is already a virtual HHDM address, convert to physical for xhole */
-	xhole((uintptr)x - limine_hhdm_offset, x->size);
+	xhole((uintptr)x - saved_limine_hhdm_offset, x->size);
 }
 
 int
@@ -381,7 +379,7 @@ xhole(uintptr addr, uintptr size)
 
 	/* Convert physical address to virtual HHDM address
 	 * Now holes track virtual addresses in the HHDM region */
-	vaddr = addr + limine_hhdm_offset;
+	vaddr = addr + get_hhdm_offset();
 	top = vaddr + size;
 
 	ilock(&xlists.lk);
