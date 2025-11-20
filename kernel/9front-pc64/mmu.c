@@ -605,7 +605,9 @@ mmuinit(void)
 		kernelro();
 
 	m->tss = mallocz(sizeof(Tss), 1);
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: TSS allocated at %p\n", m->tss);
+	*/
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
 	m->tss->iomap = 0xDFFF;
@@ -638,25 +640,40 @@ mmuinit(void)
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;
 
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Loading GDT\n");
+	*/
 	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
-	/* IDT already set up by trapinit0() - don't reload from uninitialized IDTADDR */
+	/* IDT already set up by trapinit0() - don't reload from uninitialized IDT */
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Setting up task switch\n");
+	*/
 	taskswitch((uintptr)m + MACHSIZE);
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Loading TSS\n");
+	*/
 	ltr(TSSSEL);
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Setting up MSRs\n");
-
 	print("DEBUG: Setting up MSRs\n");
+	*/
 	wrmsr(FSbase, 0ull);
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Set FSbase\n");
+	*/
 	wrmsr(GSbase, 0ull);	/* user-mode GS base unused until user TLS */
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Set GSbase (user)\n");
+	*/
 	wrmsr(KernelGSbase, (uvlong)&machp[m->machno]);	/* kernel GS sees Mach* slot */
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Set KernelGSbase (kernel Mach slot)\n");
+	*/
 
 	/* enable syscall extension */
+	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
+	*/
 	
 	/* WORKAROUND: Fix NULL GDT pointer issue */
 	if (m->gdt == NULL) {
