@@ -15,7 +15,6 @@ extern Uart*	consuart;
 extern int panic_debug;
 
 Queue*	serialoq;		/* serial console output */
-Queue*	kprintoq;		/* console output, for /dev/kprint */
 ulong	kprintinuse;		/* test and set whether /dev/kprint is open */
 int	iprintscreenputs = 1;
 
@@ -62,8 +61,6 @@ Cmdtab drivermsg[] =
 };
 
 static void	serialoqkick(void*);
-static void	kprintoqkick(void*);
-
 /**
  * Set kprint queue buffer size from boot parameter.
  * Usage: kprintqsize=512k or kprintqsize=1m
@@ -101,23 +98,6 @@ printinit(void)
 {
 	char msg[128];
 
-	if(kprintoq == nil){
-		/* Clamp buffer size to valid range */
-		if(kprintqsize < KPRINTQ_MIN)
-			kprintqsize = KPRINTQ_MIN;
-		if(kprintqsize > KPRINTQ_MAX)
-			kprintqsize = KPRINTQ_MAX;
-
-		kprintoq = qopen(kprintqsize, Qcoalesce, kprintoqkick, nil);
-		if(kprintoq == nil){
-			uartputs("printinit: ERROR - qopen for kprintoq failed - memory allocation may not be ready\n", 85);
-		} else {
-			snprint(msg, sizeof(msg), "printinit: kprintoq initialized (%lud KB buffer)\n", kprintqsize/1024);
-			uartputs(msg, strlen(msg));
-			qsetnoblock_early(kprintoq, 1);
-		}
-	}
-
 	if(serialoq == nil){
 		if(consuart == nil){
 			uartputs("printinit: INFO - consuart nil, skipping serial queue\n", 58);
@@ -131,6 +111,12 @@ printinit(void)
 			}
 		}
 	}
+
+	/*
+	 * Initialize pointer ring buffer for lock-free pprint
+	 */
+	prbuf_init();
+	uartputs("printinit: prbuf initialized\n", 29);
 
 	/*
 	 * Dump any buffered boot messages through the newly
@@ -152,21 +138,6 @@ serialoqkick(void*)
 
 	while((n = qconsume(serialoq, buf, sizeof(buf))) > 0)
 		uartputs(buf, n);
-}
-
-static void
-kprintoqkick(void*)
-{
-	char buf[PRINTSIZE];
-	int n;
-
-	if(kprintoq == nil)
-		return;
-
-	while((n = qconsume(kprintoq, buf, sizeof(buf))) > 0){
-		if(screenputs != nil)
-			screenputs(buf, n);
-	}
 }
 
 int
@@ -304,6 +275,19 @@ putstrn0(char *str, int n, int usewrite)
 	kmesgputs(out, len);
 
 	/*
+	 *  Prefer the lock-free pointer ring buffer once the consumer thread
+	 *  is alive. If enqueue fails (buffer temporarily full) fall back to
+	 *  direct, synchronous output to preserve visibility.
+	 */
+	if(prbuf_ready()){
+		while(prbuf_print(out, len) != len)
+			delay(1);
+		if(clean != str)
+			free(clean);
+		return;
+	}
+
+	/*
 	 *  if someone is reading /dev/kprint,
 	 *  put the message there.
 	 *  if not and there's an attached bit mapped display,
@@ -313,9 +297,7 @@ putstrn0(char *str, int n, int usewrite)
 	 *  put the message there.
 	 */
 	wq = usewrite && islo() ? qwrite : qiwrite;
-	if(kprintoq != nil && !qisclosed(kprintoq))
-		(*wq)(kprintoq, out, len);
-	else if(screenputs != nil)
+	if(screenputs != nil)
 		screenputs(out, len);
 
 	if(serialoq == nil){
@@ -359,7 +341,12 @@ print(char *fmt, ...)
 	va_start(arg, fmt);
 	n = vseprint(buf, buf+sizeof(buf), fmt, arg) - buf;
 	va_end(arg);
-	putstrn(buf, n);
+	if(prbuf_ready()){
+        while(prbuf_print(buf, n) != n)
+            delay(1);
+	} else {
+		putstrn(buf, n);
+	}
 
 	return n;
 }
@@ -397,12 +384,17 @@ iprint(char *fmt, ...)
 	va_start(arg, fmt);
 	n = vseprint(buf, buf+sizeof(buf), fmt, arg) - buf;
 	va_end(arg);
-	locked = iprintcanlock(&iprintlock);
-	if(screenputs != nil && iprintscreenputs)
-		screenputs(buf, n);
-	uartputs(buf, n);
-	if(locked)
-		unlock(&iprintlock);
+	if(prbuf_ready()){
+        while(prbuf_print(buf, n) != n)
+            delay(1);
+	} else {
+		locked = iprintcanlock(&iprintlock);
+		if(screenputs != nil && iprintscreenputs)
+			screenputs(buf, n);
+		uartputs(buf, n);
+		if(locked)
+			unlock(&iprintlock);
+	}
 	splx(s);
 
 	return n;
@@ -414,8 +406,6 @@ panic(char *fmt, ...)
 	int s;
 	va_list arg;
 	char buf[PRINTSIZE];
-
-	kprintoq = nil;	/* don't try to write to /dev/kprint */
 
 	if(panicking)
 		for(;;);
@@ -493,14 +483,11 @@ pprint(char *fmt, ...)
 	n = vseprint(buf+n, buf+sizeof(buf), fmt, arg) - buf;
 	va_end(arg);
 
-	if(waserror())
-		return 0;
-	devtab[c->type]->write(c, buf, n, c->offset);
-	poperror();
-
-	lock(c);
-	c->offset += n;
-	unlock(c);
+	/*
+	 * Use lock-free ring buffer instead of direct device write
+	 * This eliminates the channel lock deadlock issue
+	 */
+	prbuf_print(buf, n);
 
 	return n;
 }
@@ -626,21 +613,7 @@ consopen(Chan *c, int omode)
 			c->flag &= ~COPEN;
 			error(Einuse);
 		}
-		if(kprintoq == nil){
-			/* Clamp buffer size to valid range */
-			if(kprintqsize < KPRINTQ_MIN)
-				kprintqsize = KPRINTQ_MIN;
-			if(kprintqsize > KPRINTQ_MAX)
-				kprintqsize = KPRINTQ_MAX;
-
-			kprintoq = qopen(kprintqsize, Qcoalesce, 0, 0);
-			if(kprintoq == nil){
-				c->flag &= ~COPEN;
-				error(Enomem);
-			}
-			qnoblock(kprintoq, 1);
-		}else
-			qreopen(kprintoq);
+		prbuf_kprint_open();
 		c->iounit = qiomaxatomic;
 		break;
 	}
@@ -655,7 +628,7 @@ consclose(Chan *c)
 	case Qkprint:
 		if(c->flag & COPEN){
 			kprintinuse = 0;
-			qhangup(kprintoq, nil);
+			prbuf_kprint_close();
 		}
 		break;
 	}
@@ -715,7 +688,7 @@ consread(Chan *c, void *buf, long n, vlong off)
 		return n;
 		
 	case Qkprint:
-		return qread(kprintoq, buf, n);
+		return prbuf_kprint_read(buf, n);
 
 	case Qpid:
 		return readnum((ulong)offset, buf, n, up->pid, NUMSIZE);

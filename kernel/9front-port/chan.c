@@ -8,6 +8,12 @@
 #include "devregistry.h"
 #include "pciframework.h"
 
+/* Forward declarations for functions used before definition */
+Chan* cclone(Chan *c);
+char* skipslash(char *name);
+char* validnamedup(char *aname, int slashok);
+void* smalloc(ulong size);
+
 enum
 {
 	PATHSLOP	= 20,
@@ -221,6 +227,9 @@ newchan(void)
 	if(c->fid == 0)
 		c->fid = ++chanalloc.fid;
 	unlock(&chanalloc);
+
+	/* Initialize the embedded Lock */
+	memset(&c->lock, 0, sizeof(Lock));
 
 	/* if you get an error before associating with a dev,
 	   close calls rootclose, a nop */
@@ -476,6 +485,9 @@ chanfree(Chan *c)
 	pathclose(c->path);
 	c->path = nil;
 
+	/* Clear the embedded Lock before putting back on free list */
+	memset(&c->lock, 0, sizeof(Lock));
+
 	lock(&chanalloc);
 	c->next = chanalloc.free;
 	chanalloc.free = c;
@@ -541,7 +553,7 @@ closeproc(void *)
 		if(c == nil) {
 			qlock(&clunkq.q);
 			if(!waserror()) {
-				tsleep(&clunkq.r, clunkwork, nil, 500);
+				tsleep(&clunkq.r, nil, nil, 500);
 				poperror();
 			}
 			c = closechandeq();
@@ -572,19 +584,12 @@ closeproc(void *)
 void
 cclose(Chan *c)
 {
-	iprint("cclose: enter c=%p caller=%#p\n", c, getcallerpc(&c));
-	if(c == nil) {
-		iprint("cclose: ERROR - c is nil!\n");
+	if(c == nil)
 		panic("cclose %#p", getcallerpc(&c));
-	}
-	if(c->ref < 1) {
-		iprint("cclose: ERROR - c->ref=%d (should be >= 1)\n", c->ref);
-		panic("cclose %#p", getcallerpc(&c));
-	}
-	if(c->flag & CFREE) {
-		iprint("cclose: ERROR - c->flag=%#x has CFREE set!\n", c->flag);
-		panic("cclose %#p", getcallerpc(&c));
-	}
+	if(c->ref < 1)
+		panic("cclose ref %#p", getcallerpc(&c));
+	if(c->flag & CFREE)
+		panic("cclose cfree %#p", getcallerpc(&c));
 
 	if(decref(c))
 		return;
@@ -1337,6 +1342,9 @@ namelenerror(char *aname, int len, char *err)
 	}				
 	snprint(up->errstr, ERRMAX, "%s: %#q", err, up->genbuf);
 	nexterror();
+
+	for(;;)			/* should not return */
+		;
 }
 
 /*
