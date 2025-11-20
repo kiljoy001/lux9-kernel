@@ -257,6 +257,7 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
 	{
 		extern Segdesc temp_idt[];
+		/* DEBUG: Reduced verbose IDT checking
 		print("DEBUG: Checking IDT[0x46] AFTER arch->intrinit:\n");
 		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
 		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
@@ -264,6 +265,7 @@ fbconsoleinit();  /* Initialize framebuffer console */
 			print("ERROR: IDT[0x46] CORRUPTED by arch->intrinit!\n");
 		else
 			print("OK: IDT[0x46] still valid after arch->intrinit\n");
+		*/
 	}
 
 	} else {
@@ -425,6 +427,7 @@ main(void)
 		uintptr idt_base = idtr[1];
 		ushort idt_limit = ((ushort*)&idtr[1])[-1];
 
+		/* DEBUG: Reduced verbose IDT checking
 		print("DEBUG: Checking IDT after trapinit0:\n");
 		print("  temp_idt addr: %#p\n", temp_idt);
 		print("  IDTR base: %#lux\n", idt_base);
@@ -444,6 +447,7 @@ main(void)
 			print("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
 		else
 			print("OK: IDT[0x46] is initialized\n");
+		*/
 	}
 
 	quotefmtinstall();
