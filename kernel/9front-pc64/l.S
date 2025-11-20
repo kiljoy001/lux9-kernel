@@ -638,24 +638,26 @@ _syscall_iretnested:
      * r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes */
     addq $40, %rsp   /* Skip to hardware frame (pc, cs, flags, sp, ss) */
 
-    /* Debug: print iretq frame values */
+    /* Debug: print iretq frame values - DISABLED */
+    /* 
     pushq %rdi
     pushq %rsi
     pushq %rax
 
     /* Frame is now at rsp+24: pc, cs, flags, sp, ss */
-    movq 24(%rsp), %rsi         /* pc */
-    movq 32(%rsp), %rdx         /* cs */
-    movq 40(%rsp), %rcx         /* flags */
-    movq 48(%rsp), %r8          /* sp */
-    movq 56(%rsp), %r9          /* ss */
-    leaq _iretq_debug_msg(%rip), %rdi
-    xorq %rax, %rax
-    call iprint
+    /* movq 24(%rsp), %rsi         /* pc */
+    /* movq 32(%rsp), %rdx         /* cs */
+    /* movq 40(%rsp), %rcx         /* flags */
+    /* movq 48(%rsp), %r8          /* sp */
+    /* movq 56(%rsp), %r9          /* ss */
+    /* leaq _iretq_debug_msg(%rip), %rdi
+    /* xorq %rax, %rax
+    /* call iprint
 
-    popq %rax
-    popq %rsi
-    popq %rdi
+    /* popq %rax
+    /* popq %rsi
+    /* popq %rdi
+    */
 
     iretq
 

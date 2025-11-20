@@ -557,15 +557,19 @@ syscall(Ureg* ureg)
 		scname = syscallnames[scallnr];
 
 	/* Print syscall entry for first few and every 100th */
+	/* DEBUG: Disabled verbose syscall tracing
 	if(syscall_count <= 5 || syscall_count % 100 == 0)
 		print("SYSCALL[%d]: %s (#%ld) pc=%#p\n", syscall_count, scname, scallnr, ureg->pc);
+	*/
 
 	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
 	 * so arguments start at SP+0, not SP+8 */
 	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
 
 	/* Debug: after dosyscall */
+	/* DEBUG: Disabled verbose syscall return tracing
 	print("syscall: dosyscall returned, delaysched=%d\n", up->delaysched);
+	*/
 
 	/* if we delayed sched because we held a lock, sched now */
 	if(up->delaysched){

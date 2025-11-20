@@ -271,17 +271,25 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	}
 	print("BOOT: calling timersinit\n");
 	timersinit();
+	/* DEBUG: Reduced verbose boot printing
 	print("BOOT: timersinit complete\n");
+	*/
 	print("BOOT: calling arch->clockenable\n");
 	if(arch->clockenable)
 		arch->clockenable();
+	/* DEBUG: Reduced verbose boot printing
 	print("BOOT: arch->clockenable complete\n");
+	*/
 	
 	/* Enable interrupts globally after clock is set up */
 	if(arch->intron) {
+		/* DEBUG: Reduced verbose boot printing
 		print("BOOT: enabling interrupts via arch->intron\n");
+		*/
 		arch->intron();
+		/* DEBUG: Reduced verbose boot printing
 		print("BOOT: interrupts enabled\n");
+		*/
 	} else {
 		print("BOOT: WARNING - arch->intron is NULL\n");
 	}
