@@ -274,8 +274,18 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	print("BOOT: timersinit complete\n");
 	print("BOOT: calling arch->clockenable\n");
 	if(arch->clockenable)
-	arch->clockenable();
+		arch->clockenable();
 	print("BOOT: arch->clockenable complete\n");
+	
+	/* Enable interrupts globally after clock is set up */
+	if(arch->intron) {
+		print("BOOT: enabling interrupts via arch->intron\n");
+		arch->intron();
+		print("BOOT: interrupts enabled\n");
+	} else {
+		print("BOOT: WARNING - arch->intron is NULL\n");
+	}
+	
 	print("BOOT: calling procinit0\n");
 	procinit0();
 	print("BOOT: procinit0 complete - process table ready\n");
@@ -364,6 +374,12 @@ init0(void)
 	*/
 
 	kproc("alarm", alarmkproc, 0);
+
+	/*
+	 * Start the pointer ring buffer consumer thread
+	 * This handles lock-free output from pprint
+	 */
+	prbuf_start_consumer();
 
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
 	sp[3] = sp[2] = nil;
