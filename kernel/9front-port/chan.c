@@ -1437,21 +1437,33 @@ namec(char *aname, int amode, int omode, ulong perm)
 
 case '#':
 		nomount = 1;
-		print("DEBUG[namec]: up=%p, &up->genbuf=%p\n", up, &up->genbuf);
+		/*
+		 * DEBUG: Disabled verbose namec tracing
+		 * print("DEBUG[namec]: up=%p, &up->genbuf=%p\n", up, &up->genbuf);
+		 */
 		up->genbuf[0] = '\0';
 		n = 0;
 		while(*name != '\0' && (*name != '/' || n < 2)){
 			if(n >= sizeof(up->genbuf)-1)
 				error(Efilename);
-			print("DEBUG[namec]: storing char '%c' at up->genbuf[%d] = %p\n", 
-			      *name, n, &up->genbuf[n]);
+			/*
+			 * DEBUG: Disabled verbose namec tracing
+			 * print("DEBUG[namec]: storing char '%c' at up->genbuf[%d] = %p\n", 
+			 *       *name, n, &up->genbuf[n]);
+			 */
 			up->genbuf[n++] = *name++;
 		}
-		print("DEBUG[namec]: setting null terminator at up->genbuf[%d] = %p\n", 
-		      n, &up->genbuf[n]);
+		/*
+		 * DEBUG: Disabled verbose namec tracing
+		 * print("DEBUG[namec]: setting null terminator at up->genbuf[%d] = %p\n", 
+		 *       n, &up->genbuf[n]);
+		 */
 		up->genbuf[n] = '\0';
 		print("namec: collected device name '%s'\n", up->genbuf);
-		print("DEBUG[namec]: calling chartorune on up->genbuf+1 = %p\n", up->genbuf+1);
+		/*
+		 * DEBUG: Disabled verbose namec tracing
+		 * print("DEBUG[namec]: calling chartorune on up->genbuf+1 = %p\n", up->genbuf+1);
+		 */
 		n = chartorune(&r, up->genbuf+1)+1;
 		print("namec: chartorune returned n=%d, r='%C'\n", n, r);
 		t = devno(r, 1);
@@ -1465,8 +1477,11 @@ case '#':
 			error(Enoattach);
 		}
 		
-		print("DEBUG[namec]: pre-attach: n=%d, up->genbuf+n = %p\n", n, up->genbuf+n);
-		print("DEBUG[namec]: trying to access *(up->genbuf+n) = '%c'\n", *(up->genbuf+n));
+		/*
+		 * DEBUG: Disabled verbose namec tracing
+		 * print("DEBUG[namec]: pre-attach: n=%d, up->genbuf+n = %p\n", n, up->genbuf+n);
+		 * print("DEBUG[namec]: trying to access *(up->genbuf+n) = '%c'\n", *(up->genbuf+n));
+		 */
 		print("namec: calling devtab[%d]->attach(%s)\n", t, up->genbuf+n);
 		c = devtab[t]->attach(up->genbuf+n);
 		print("namec: attach returned c=%p\n", c);

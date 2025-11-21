@@ -675,7 +675,10 @@ meminit(void)
 	Confmem *cm;
 	int cmidx = 0;
 
-	print("meminit: ENTRY\n");
+	/*
+	 * DEBUG: Disabled verbose meminit tracing
+	 * print("meminit: ENTRY\n");
+	 */
 	umbexclude();
 	/* Skip UMB mapping - using HHDM for all physical memory access */
 	/* for(base = memmapnext(-1, MemUMB); base != -1; base = memmapnext(base, MemUMB)){
@@ -685,8 +688,11 @@ meminit(void)
 	} */
 
 	cm = &conf.mem[0];
-	for(base = memmapnext(-1, MemRAM); base != -1; base = memmapnext(base, MemRAM)){
-		print("meminit: found MemRAM at base=%#p\n", base);
+		for(base = memmapnext(-1, MemRAM); base != -1; base = memmapnext(base, MemRAM)){
+			/*
+			 * DEBUG: Disabled verbose meminit tracing
+			 * print("meminit: found MemRAM at base=%#p\n", base);
+			 */
 		size = memmapsize(base, BY2PG) & ~(BY2PG-1);
 		print("meminit: size=%#llux (%llu pages)\n", (uvlong)size, (uvlong)(size/BY2PG));
 		if(size == 0) {

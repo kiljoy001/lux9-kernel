@@ -354,6 +354,7 @@ sysexec(va_list list)
 	int i, n, indir, is_elf;
 	ulong magic, ssize, nargs, nbytes;
 	uintptr entry, text, data, bss, adata, abss, ebss, tstk, align, file_offset;
+	int text_writable = 0;
 	Segment *s, *ts;
 	Image *img;
 	Tos *tos;
@@ -461,6 +462,10 @@ sysexec(va_list list)
 				int i;
 				uintptr minva = ~0ULL, maxva_file = 0, maxva_mem = 0;
 				uintptr elf_file_offset = 0;  /* File offset of first LOAD segment */
+				uintptr text_start = ~0ULL, text_end = 0;
+				uintptr data_start = ~0ULL;
+				uintptr data_file_end = 0;
+				uintptr data_mem_end = 0;
 
 				print("EXEC: detected ELF binary\n");
 
@@ -490,6 +495,21 @@ sysexec(va_list list)
 							maxva_file = phdr.p_vaddr + phdr.p_filesz;
 						if(phdr.p_vaddr + phdr.p_memsz > maxva_mem)
 							maxva_mem = phdr.p_vaddr + phdr.p_memsz;
+						if(phdr.p_flags & PF_X){
+							if(phdr.p_vaddr < text_start)
+								text_start = phdr.p_vaddr;
+							if(phdr.p_vaddr + phdr.p_filesz > text_end)
+								text_end = phdr.p_vaddr + phdr.p_filesz;
+							if(phdr.p_flags & PF_W)
+								text_writable = 1;
+						} else if(phdr.p_flags & PF_W){
+							if(phdr.p_vaddr < data_start)
+								data_start = phdr.p_vaddr;
+							if(phdr.p_vaddr + phdr.p_filesz > data_file_end)
+								data_file_end = phdr.p_vaddr + phdr.p_filesz;
+							if(phdr.p_vaddr + phdr.p_memsz > data_mem_end)
+								data_mem_end = phdr.p_vaddr + phdr.p_memsz;
+						}
 					}
 				}
 
@@ -498,17 +518,29 @@ sysexec(va_list list)
 				print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
 				print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
 
-				/* For Plan 9 exec compatibility:
-				 * - Treat all file-backed data as combined text+data
-				 * - BSS is the difference between memsz and filesz
-				 * Note: ELF addresses are absolute, but exec code expects
-				 * sizes relative to UTZERO, so we subtract minva */
-				text = maxva_file - minva;
-				data = 0;  /* Already included in text */
-				bss = maxva_mem - maxva_file;
+				if(text_start == ~0ULL){
+					text_start = minva;
+					text_end = maxva_file;
+				}
+				if(text_end < text_start)
+					text_end = text_start;
+				text = text_end > minva ? text_end - minva : 0;
 
-				print("EXEC: Computed text=%#llux data=%#llux bss=%#llux\n",
-				      text, data, bss);
+				if(data_start != ~0ULL){
+					if(data_file_end < data_start)
+						data_file_end = data_start;
+					if(data_mem_end < data_file_end)
+						data_mem_end = data_file_end;
+					if(data_start < minva)
+						data_start = minva;
+					data = data_file_end > data_start ? data_file_end - data_start : 0;
+				} else
+					data = 0;
+
+				bss = maxva_mem > maxva_file ? maxva_mem - maxva_file : 0;
+
+				print("EXEC: computed segments: text=%#llux data=%#llux bss=%#llux (text_writable=%d)\n",
+				      text, data, bss, text_writable);
 
 				/* ELF binaries use page alignment */
 				align = BY2PG - 1;
@@ -699,7 +731,12 @@ sysexec(va_list list)
 			putimage(img);
 			nexterror();
 		}
-		ts = newseg(SG_TEXT | SG_RONLY, UTZERO, PGROUND(text)>>PGSHIFT);
+		{
+			int text_attr = SG_TEXT;
+			if(!text_writable)
+				text_attr |= SG_RONLY;
+			ts = newseg(text_attr, UTZERO, PGROUND(text)>>PGSHIFT);
+		}
 		ts->flushme = 1;
 		ts->image = img;
 		ts->fstart = file_offset;
@@ -738,14 +775,32 @@ sysexec(va_list list)
 	/* Text. Shared. */
 	assert(ts->ref > 0);
 	up->seg[TSEG] = ts;
+#ifdef DEBUG
+	print("EXEC: mapped text segment base=%#llx size=%lud bytes (writable=%d)\n",
+		(unsigned long long)up->seg[TSEG]->base,
+		(unsigned long long)(up->seg[TSEG]->size*BY2PG),
+		text_writable);
+#endif
 
 	/* Data. Shared. */
+	if(data > 0){
 	s = newseg(SG_DATA, adata, PGROUND(data)>>PGSHIFT);
-	s->image = img;
-	s->fstart = text;
-	s->flen = data;
-	incref((Ref*)&img->ref);
-	up->seg[DSEG] = s;
+		s->image = img;
+		s->fstart = text;
+		s->flen = data;
+		incref((Ref*)&img->ref);
+		up->seg[DSEG] = s;
+#ifdef DEBUG
+		print("EXEC: mapped data segment base=%#llx size=%lud bytes\n",
+			(unsigned long long)s->base,
+			(unsigned long long)(s->size*BY2PG));
+#endif
+	} else {
+		up->seg[DSEG] = nil;
+#ifdef DEBUG
+		print("EXEC: skipping data segment (size 0)\n");
+#endif
+	}
 
 	/* BSS. Zero fill on demand */
 	up->seg[BSEG] = newseg(SG_BSS, abss, (ebss - abss)>>PGSHIFT);
@@ -1671,7 +1726,10 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 	uintptr ret;
 	int s;
 
-	print("dosyscall: entered, scallnr=%ld\n", scallnr);
+	/*
+	 * DEBUG: Disabled verbose syscall tracing
+	 * print("dosyscall: entered, scallnr=%ld\n", scallnr);
+	 */
 
 	m->syscall++;
 
@@ -1702,9 +1760,15 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 			error(Ebadarg);
 		}
 		up->psstate = sysctab[scallnr];
-		print("dosyscall: calling syscall handler\n");
+		/*
+		 * DEBUG: Disabled verbose syscall tracing
+		 * print("dosyscall: calling syscall handler\n");
+		 */
 		ret = systab[scallnr](syscall_args);
-		print("dosyscall: syscall handler returned %#llux\n", ret);
+		/*
+		 * DEBUG: Disabled verbose syscall tracing
+		 * print("dosyscall: syscall handler returned %#llux\n", ret);
+		 */
 		poperror();
 		if(scallnr == NOTED){
 			/* special case: noted() changes the ureg, return without setting *retp */
