@@ -310,7 +310,9 @@ void links(void) {}
 /* Ramdisk */
 /* Ramdisk - create robust root filesystem */
 void ramdiskinit(void) {
+	/* DEBUG: Disabled verbose ramdiskinit tracing
 	print("ramdiskinit: initializing root filesystem\n");
+	*/
 	
 	/* Ensure basic directory structure exists */
 	/* The root directory structure is pre-defined in devroot.c */
@@ -319,7 +321,9 @@ void ramdiskinit(void) {
 	/* Add essential files the system expects */
 	/* This is a minimal but functional root filesystem */
 	
+	/* DEBUG: Disabled verbose ramdiskinit tracing
 	print("ramdiskinit: root filesystem ready with basic structure\n");
+	*/
 }
 
 /* Coherence function pointer - implementation in l.S */

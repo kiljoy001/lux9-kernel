@@ -146,10 +146,12 @@ memmapzero(void)
 	/* Zero the entire mapalloc structure to ensure clean state
 	 * This is critical because mapalloc is in .cpu0_data (not BSS)
 	 * and won't be zeroed by boot code */
+	/* DEBUG: Disabled verbose memmapzero tracing
 	print("memmapzero: &mapalloc=%#p sizeof=%d n=%d m=%d\n",
 	      &mapalloc, (int)sizeof(mapalloc), mapalloc.n, mapalloc.m);
 	memset(&mapalloc, 0, sizeof(mapalloc));
 	print("memmapzero: after memset n=%d m=%d\n", mapalloc.n, mapalloc.m);
+	*/
 }
 
 void
