@@ -29,14 +29,33 @@ get_kernel_param(const char *key)
 	/* For now, hardcoded - TODO: syscall to get cmdline */
 	static char value[64];
 
-	/* Example cmdline: "root=hd0:0 verbose" */
-	/* Hardcode for now */
+	/* Example cmdline: "root=hd0:0 init_tests=1" */
 	if(strcmp(key, "root") == 0) {
 		strcpy(value, "hd0:0");
 		return value;
 	}
+	if(strcmp(key, "init_tests") == 0) {
+		const char *env = getenv("INIT_TESTS");
+		if(env != NULL && *env != '\0'){
+			strncpy(value, env, sizeof(value)-1);
+			value[sizeof(value)-1] = '\0';
+			return value;
+		}
+		return NULL;
+	}
 
 	return NULL;
+}
+
+static int
+should_run_tests(void)
+{
+	const char *flag = get_kernel_param("init_tests");
+	if(flag == NULL)
+		return 0;
+	if(strcmp(flag, "1") == 0 || strcmp(flag, "true") == 0 || strcmp(flag, "on") == 0)
+		return 1;
+	return 0;
 }
 
 static int
@@ -106,13 +125,57 @@ main(int argc, char *argv[])
 	printf("\n");
 
 	/* Step 1: Determine root device */
+	printf("init: determining root device...\n");
 	rootdev = get_kernel_param("root");
+	printf("init: get_kernel_param returned: %s\n", rootdev ? rootdev : "(null)");
 	if(!rootdev) {
 		printf("init: no root= parameter, using default\n");
 		rootdev = "hd0:0";
 	}
-
+	
 	printf("init: root device is %s\n", rootdev);
+	
+	/* Debug: Try to list available devices */
+	printf("init: DEBUG - attempting to list /dev contents...\n");
+	int devfd = open("/dev", 0);
+	if(devfd >= 0) {
+		printf("init: DEBUG - /dev opened successfully\n");
+		close(devfd);
+	} else {
+		printf("init: DEBUG - failed to open /dev: %r\n");
+	}
+
+	/* Test ramdisk functionality */
+	printf("init: Testing ramdisk device...\n");
+	int ramfd = open("/dev/ram", 0);
+	if(ramfd >= 0) {
+		printf("init: ramdisk device opened successfully\n");
+		char test_data[] = "Hello, Lux9 ramdisk!";
+		int write_result = write(ramfd, test_data, sizeof(test_data)-1);
+		if(write_result > 0) {
+			printf("init: wrote %d bytes to ramdisk\n", write_result);
+			// Seek back to beginning
+			seek(ramfd, 0, 0);
+			char read_buffer[100];
+			int read_result = read(ramfd, read_buffer, sizeof(test_data)-1);
+			if(read_result > 0) {
+				read_buffer[read_result] = '\0';
+				printf("init: read from ramdisk: \"%s\"\n", read_buffer);
+				if(strcmp(read_buffer, test_data) == 0) {
+					printf("init: ramdisk read/write test PASSED\n");
+				} else {
+					printf("init: ramdisk read/write test FAILED (data mismatch)\n");
+				}
+			} else {
+				printf("init: failed to read from ramdisk: %r\n");
+			}
+		} else {
+			printf("init: failed to write to ramdisk: %r\n");
+		}
+		close(ramfd);
+	} else {
+		printf("init: ramdisk device not available: %r\n");
+	}
 
 	/* Step 2: Start filesystem server */
 	fs_pid = start_server("/bin/ext4fs", rootdev);
@@ -149,17 +212,13 @@ main(int argc, char *argv[])
 
 	/* TODO: devfs, procfs, etc. */
 
-	/* Step 6: Run exchange tests */
-	printf("init: running simple test...\n");
-	start_server("/bin/simple_test", NULL);
-	
-	/* Uncomment these lines to run the exchange tests instead
-	printf("init: running original exchange test...\n");
-	start_server("/bin/exchange_test", NULL);
-	
-	printf("init: running 9P exchange test...\n");
-	start_server("/bin/exchange_9p_test", NULL);
-	*/
+	/* Optional: Run syscall/exchange tests only when init_tests=1 */
+	if(should_run_tests()){
+		printf("init: running syscall/exchange tests...\n");
+		start_server("/bin/simple_test", NULL);
+		/* give the console time to drain test output */
+		sleep_ms(100);
+	}
 
 	/* Step 7: Execute real init or shell */
 	printf("init: attempting to exec /sbin/init...\n");

@@ -102,8 +102,8 @@ extern int unmount(const char *path, const char *spec);
 extern void* brk(void *addr);
 
 /* Sleep and timing */
-extern void sleep(int seconds);
-extern void sleep_ms(int ms);
+extern void sleep(int ms);  /* Sleep for ms milliseconds */
+extern void sleep_ms(int ms);  /* Sleep for ms milliseconds (alias for sleep) */
 extern int alarm(int seconds);
 
 /* Strings and I/O */

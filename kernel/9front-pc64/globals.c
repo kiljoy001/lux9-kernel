@@ -126,6 +126,7 @@ extern Dev memdevtab;
 extern Dev irqdevtab;
 extern Dev dmadevtab;
 extern Dev pcidevtab;
+extern Dev ramdevtab;
 
 
 Dev *devtab[] = {
@@ -137,6 +138,7 @@ Dev *devtab[] = {
 	&procdevtab,
 	&exchdevtab,
 	&memdevtab,
+	&ramdevtab,
 	&irqdevtab,
 	&dmadevtab,
 	&pcidevtab,
