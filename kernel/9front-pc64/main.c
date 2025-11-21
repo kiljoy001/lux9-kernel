@@ -195,7 +195,6 @@ main_after_cr3(void)
 	uartputs("main_after_cr3: ENTERED\n", 24);
 
 	/* Skip print() until we've reinitialized - it was set up with old stack */
-	uartputs("BOOT: switched to kernel-managed page tables\n", 46);
 
 	uartputs("main_after_cr3: calling xinit\n", 31);
 	xinit();
@@ -203,7 +202,6 @@ main_after_cr3(void)
 	pageowninit();
 	uartputs("main_after_cr3: calling exchangeinit\n", 38);
 	exchangeinit();
-	uartputs("BOOT: exchangeinit complete\n", 29);
 
 
 	uartputs("main_after_cr3: calling trapinit\n", 35);
@@ -221,20 +219,13 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
 	cpuidprint();
 
-	print("BOOT: getconf(\"*debug\") = %s\n", (getconf("*debug") == nil) ? "NIL" : "SET");
-	print("BOOT: cpuserver = %d, conf.monitor = %d\n", cpuserver, conf.monitor);
 
 	/* FIX: Move configuration environment setup earlier to prevent reboot */
 	/* FIX: Set only the most critical variable early, defer the rest until devices are ready */
-	print("BOOT: setting up minimal configuration environment\n");
 	
 	/* Note: *debug is now handled by global panic_debug variable, no need for ksetenv here */
-	print("BOOT: deferring full environment setup until after chandevreset()\n");
-	print("BOOT: after config setup - getconf(\"*debug\") = %s\n", (getconf("*debug") == nil) ? "NIL" : "SET");
 
-	print("BOOT: about to call mmuinit\n");
 	mmuinit();
-	print("BOOT: mmuinit complete - runtime page tables live\n");
 
 	/* Debug: check if IDT is still valid after mmuinit */
 	{
@@ -248,11 +239,8 @@ fbconsoleinit();  /* Initialize framebuffer console */
 			print("OK: IDT[0x46] still valid after mmuinit\n");
 	}
 
-	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
 	if(arch->intrinit) {
-	print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
 	arch->intrinit();
-	print("BOOT: arch->intrinit returned successfully\n");
 
 	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
 	{
@@ -271,66 +259,42 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	} else {
 	print("WARNING: arch->intrinit is nil\n");
 	}
-	print("BOOT: calling timersinit\n");
 	timersinit();
 	/* DEBUG: Reduced verbose boot printing
-	print("BOOT: timersinit complete\n");
 	*/
-	print("BOOT: calling arch->clockenable\n");
 	if(arch->clockenable)
 		arch->clockenable();
 	/* DEBUG: Reduced verbose boot printing
-	print("BOOT: arch->clockenable complete\n");
 	*/
 	
 	/* Enable interrupts globally after clock is set up */
 	if(arch->intron) {
 		/* DEBUG: Reduced verbose boot printing
-		print("BOOT: enabling interrupts via arch->intron\n");
 		*/
 		arch->intron();
 		/* DEBUG: Reduced verbose boot printing
-		print("BOOT: interrupts enabled\n");
 		*/
 	} else {
-		print("BOOT: WARNING - arch->intron is NULL\n");
 	}
 	
-	print("BOOT: calling procinit0\n");
 	procinit0();
-	print("BOOT: procinit0 complete - process table ready\n");
 
-	print("BOOT: calling initseg\n");
 	initseg();
-	print("BOOT: initseg complete\n");
 
 	links();
-	print("BOOT: links complete\n");
 	
 	/* Initialize I/O port allocation after links() */
-	print("BOOT: calling iomapinit\n");
 	iomapinit(0xFFFF);  
-	print("BOOT: iomapinit complete\n");
 	
 	/* Reset and initialize all devices before environment setup */
-	print("BOOT: calling chandevreset\n");
 	chandevreset();   
-	print("BOOT: chandevreset complete\n");
 
-	print("BOOT: device reset sequence finished\n");
 
-	print("BOOT: calling pageinit\n");
 	pageinit();
-	print("BOOT: pageinit complete\n");
 
-	print("BOOT: calling printinit\n");
 	printinit();
-	print("BOOT: printinit complete - print queues initialized\n");
 
-	print("BOOT: entering userinit\n");
 	userinit();
-	print("BOOT: userinit called successfully - proceeding to scheduler\n");
-	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
 	schedinit();
 }
 
@@ -348,9 +312,7 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
-	iprint("BOOT[init0]: calling chandevinit\n");
 	chandevinit();
-	iprint("BOOT[init0]: chandevinit returned\n");
 
 	/*
 	 * Open console for stdin, stdout, stderr
@@ -362,13 +324,10 @@ init0(void)
 	kopen("#c/cons", OWRITE);	/* fd 1 - stdout */
 	kopen("#c/cons", OWRITE);	/* fd 2 - stderr */
 	poperror();
-	print("BOOT[init0]: console fds opened (0, 1, 2)\n");
 
 	randominit();
-	iprint("BOOT[init0]: randominit complete\n");
 
 	/* Setup environment variables - currently disabled due to devenv issues */
-	print("BOOT[init0]: environment setup skipped (devenv needs debugging)\n");
 	/* TODO: Fix devenv create path then enable:
 	if(!waserror()){
 		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
@@ -398,8 +357,6 @@ init0(void)
 
 	splhi();
 	fpukexit(nil);
-	print("BOOT[init0]: transferring control to user mode\n");
-	print("BOOT[init0]: DEBUG: m=%#p m->proc=%#p up=%#p\n", m, m->proc, up);
 	if(m->proc == nil)
 		panic("BOOT[init0]: m->proc is NULL before touser()!");
 	touser(sp);
@@ -493,11 +450,9 @@ main(void)
 	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
 	 * because memory coordination needs it during CR3 switch */
 	borrowinit();
-	print("BOOT: borrow checker initialized\n");
 
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();
-	print("BOOT: memory coordination system initialized\n");
 
 	/* Save framebuffer info BEFORE switching page tables */
 	save_framebuffer_info();
