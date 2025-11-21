@@ -295,7 +295,7 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 
 	userinit();
-	schedinit();
+	init0();
 }
 
 /**

@@ -696,12 +696,15 @@ mmuinit(void)
 	dbghex("EFER set to: ", v);
 
 	print("DEBUG: Setting up syscall MSRs\n");
-	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
-	print("DEBUG: Set STAR MSR\n");
-	wrmsr(Lstar, (uvlong)syscallentry);
-	print("DEBUG: Set LSTAR MSR\n");
-	wrmsr(Sfmask, 0x200);
-	print("DEBUG: Set SFMASK MSR\n");
+	/* We use IRETQ for all returns instead of the faster SYSRET instruction.
+	 * This is because our GDT layout (inherited from 9front) is incompatible with SYSRET.
+	 * Commenting out STAR MSR setup to avoid conflicts with IRETQ path. */
+	/* wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32)); */
+	print("DEBUG: Skipped STAR MSR setup to avoid conflicts with IRETQ\n");
+	/* wrmsr(Lstar, (uvlong)syscallentry); */
+	print("DEBUG: Skipped LSTAR MSR setup\n");
+	/* wrmsr(Sfmask, 0x200); */
+	print("DEBUG: Skipped SFMASK MSR setup\n");
 	
 	// Debug print for STAR
 	uvlong star_val;
