@@ -22,7 +22,7 @@ squidboy(Apic* apic)
 	apic->online = 1;
 	lapicinit(apic);
 	lapiconline();
-	timersinit();
+	/* Timer setup moved to first kproc entry to avoid early interrupts */
 	schedinit();
 }
 

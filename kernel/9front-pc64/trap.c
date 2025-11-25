@@ -73,27 +73,39 @@ trapinit0(void)
 	uartputs("trapinit0: initialized\n", 24);
 
 	for(v = 0; v < 256; v++){
-		/* Clear bits 16-18 of vaddr to ensure IST=0 (bits 0-2 of high word) */
-		d1 = (vaddr & 0xFFF8FFFF)|SEGP;
-		switch(v){
-		case VectorBPT:
-			d1 |= SEGPL(3)|SEGIG;
-			break;
+		uintptr vec;
+		u32int d0, flags;
 
-		case VectorSYSCALL:
-			d1 |= SEGPL(3)|SEGIG;
-			break;
+		/* Get vector handler address */
+		vec = vaddr;
 
-		default:
-			d1 |= SEGPL(0)|SEGIG;
-			break;
+		/* Build flags: SEGP | SEGIG | SEGPL(dpl) with IST implicitly 0 */
+		flags = SEGP | SEGIG;
+		if(v == VectorBPT || v == VectorSYSCALL)
+			flags |= SEGPL(3);
+		else
+			flags |= SEGPL(0);
+
+		/* Build d0: offset[15:0] | selector[31:16] */
+		d0 = (vec & 0xFFFF) | (KESEL << 16);
+
+		/* Build d1: offset[31:16] in upper half, flags[15:0] in lower half */
+		d1 = (((vec >> 16) & 0xFFFF) << 16) | flags;
+
+		/* Debug: show IDT setup for timer interrupt */
+		if(v == 32){
+			char buf[128];
+			int n;
+			n = snprint(buf, sizeof(buf), "IDT[32]: vec=%#p d0=%#x d1=%#x IST=%d\n",
+				(void*)vec, d0, d1, d1 & 0x7);
+			uartputs(buf, n);
 		}
 
-		idt->d0 = (vaddr & 0xFFFF)|(KESEL<<16);
+		idt->d0 = d0;
 		idt->d1 = d1;
 		idt++;
 
-		idt->d0 = (vaddr >> 32);
+		idt->d0 = (vec >> 32);
 		idt->d1 = 0;
 		idt++;
 

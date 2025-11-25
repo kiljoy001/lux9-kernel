@@ -45,13 +45,20 @@ proc0(void*)
 	KMap *k;
 	Page *p;
 
+	/* Initialize logging and hardware timers on a known stack with IF masked */
+	static int clockarmed;
+	prbuf_start_consumer();
+	if(!clockarmed){
+		timersinit();	/* program timers; interrupts still masked */
+		if(arch->clockenable)
+			arch->clockenable();
+		if(arch->intron)
+			arch->intron();
+		clockarmed = 1;
+	}
+
 	iprint("proc0: ENTRY\n");
 	BOOTPRINT("proc0: ENTRY\n");
-	iprint("proc0: about to call spllo\n");
-	BOOTPRINT("proc0: about to call spllo\n");
-	spllo();
-	iprint("proc0: spllo returned\n");
-	BOOTPRINT("proc0: spllo returned\n");
 
 	iprint("proc0: about to call waserror\n");
 	if(waserror())

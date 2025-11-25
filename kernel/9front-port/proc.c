@@ -62,23 +62,13 @@ static void pidfree(Proc*);
  */
 _Noreturn void
 schedinit(void)
-{
-	Edf *e;
-	static int clockarmed;
+	{
+		Edf *e;
 
-	setlabel(&m->sched);
-	/* Arm the timer/interrupt controller once the scheduler stack is ready */
-	if(!clockarmed){
-		timersinit();
-		if(arch->clockenable)
-			arch->clockenable();
-		if(arch->intron)
-			arch->intron();
-		clockarmed = 1;
-	}
-	if(up != nil) {
-		if((e = up->edf) != nil && (e->flags & Admitted))
-			edfrecord(up);
+		setlabel(&m->sched);
+		if(up != nil) {
+			if((e = up->edf) != nil && (e->flags & Admitted))
+				edfrecord(up);
 		m->proc = nil;
 		switch(up->state) {
 		default:
@@ -1645,7 +1635,6 @@ procflushothers(void)
 void
 linkproc(void)
 {
-	spllo();
 	(*up->kpfun)(up->kparg);
 	pexit("kproc exiting", 0);
 }

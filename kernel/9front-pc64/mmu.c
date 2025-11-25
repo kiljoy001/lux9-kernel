@@ -611,11 +611,7 @@ mmuinit(void)
 	if(m->tss == nil)
 		panic("mmuinit: no memory for Tss");
 	m->tss->iomap = 0xDFFF;
-	for(i=0; i<14; i+=2){
-		x = (uintptr)m + MACHSIZE;
-		m->tss->ist[i] = x;
-		m->tss->ist[i+1] = x>>32;
-	}
+	/* Leave IST slots zeroed so traps stay on the current stack unless explicitly requested */
 
 	/*
 	 * We used to keep the GDT in the Mach structure, but it

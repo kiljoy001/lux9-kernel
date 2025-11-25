@@ -241,6 +241,12 @@ fbconsoleinit();  /* Initialize framebuffer console */
 			print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
 		else
 			print("OK: IDT[0x46] still valid after mmuinit\n");
+
+		/* Check timer interrupt IDT entry (vector 32) */
+		print("DEBUG: Checking IDT[32] (timer):\n");
+		print("  IDT[32*2].d0 = %#lux\n", temp_idt[32*2].d0);
+		print("  IDT[32*2].d1 = %#lux\n", temp_idt[32*2].d1);
+		print("  IST field = %d (bits 0-2 of d1)\n", (int)(temp_idt[32*2].d1 & 0x7));
 	}
 
 	if(arch->intrinit) {
@@ -282,13 +288,12 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 
 	userinit();
-
-	/* Start prbuf consumer after proc system is initialized */
-	prbuf_start_consumer();
-	print("main: prbuf consumer started\n");
 	/* Debug: show scheduler state before entering schedinit */
 	extern ulong runvec;
 	extern int nrdy;
+	/* Pre-initialize timers with interrupts masked; actual enable happens in proc0 */
+	splhi();
+	timersinit();
 	iprint("DEBUG: before schedinit runvec=%#lux nrdy=%d\n", runvec, nrdy);
 	schedinit();
 }
@@ -339,12 +344,6 @@ init0(void)
 	*/
 
 	kproc("alarm", alarmkproc, 0);
-
-	/*
-	 * Start the pointer ring buffer consumer thread
-	 * This handles lock-free output from pprint
-	 */
-	prbuf_start_consumer();
 
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
 	sp[3] = sp[2] = nil;
