@@ -122,6 +122,7 @@ maptable(uvlong pa)
 		if(pa == tblpa[i])
 			return;
 	}
+	print("maptable: mapping ACPI table at phys %#llux\n", pa);
 	tblpa[ntblpa++] = pa;
 
 	memreserve(pa, 8);
@@ -180,17 +181,71 @@ maptables(void)
 	}
 }
 
+/* Re-map ACPI tables after CR3 switch
+ * Called from main_after_cr3() to restore ACPI table mappings
+ * that were lost during page table switch */
+void
+acpi_remap_tables(void)
+{
+	int i;
+	uvlong pa;
+	u32int l;
+	Tbl *t;
+
+	print("acpi_remap: remapping %d ACPI tables after CR3 switch\n", ntblmap);
+
+	/* Re-map each ACPI table using the physical addresses we saved */
+	for(i = 0; i < ntblpa && i < ntblmap; i++){
+		pa = tblpa[i];
+		print("acpi_remap: table %d at phys %#llux\n", i, pa);
+
+		/* First map just the header to get the length */
+		if((t = vmap(pa, 8)) == nil){
+			print("acpi_remap: WARNING: failed to vmap table %d header\n", i);
+			continue;
+		}
+		l = get32(t->len);
+		vunmap(t, 8);
+
+		/* Now map the full table */
+		if((t = vmap(pa, l)) == nil){
+			print("acpi_remap: WARNING: failed to vmap table %d (len=%d)\n", i, l);
+			continue;
+		}
+
+		/* Update the pointer in tblmap */
+		tblmap[i] = t;
+		print("acpi_remap: table %d remapped to virt %p\n", i, t);
+	}
+	print("acpi_remap: complete\n");
+}
+
 static Tbl*
 findtable(char sig[4])
 {
 	Tbl *t;
 	int i;
 
+	print("findtable: searching for [%c%c%c%c], ntblmap=%d\n",
+		sig[0], sig[1], sig[2], sig[3], ntblmap);
+	print("findtable: ntblpa=%d (physical addresses mapped during archinit)\n", ntblpa);
 	for(i=0; i<ntblmap; i++){
+		print("findtable: checking tblmap[%d]=%p\n", i, tblmap[i]);
 		t = tblmap[i];
-		if(memcmp(t->sig, sig, 4) == 0)
+		if(t == nil){
+			print("findtable: tblmap[%d] is nil, skipping\n", i);
+			continue;
+		}
+		print("findtable: checking table %d, sig=[%c%c%c%c]\n",
+			i, t->sig[0], t->sig[1], t->sig[2], t->sig[3]);
+		if(memcmp(t->sig, sig, 4) == 0){
+			print("findtable: found [%c%c%c%c]\n",
+				sig[0], sig[1], sig[2], sig[3]);
 			return t;
+		}
 	}
+	print("findtable: [%c%c%c%c] not found\n",
+		sig[0], sig[1], sig[2], sig[3]);
 	return nil;
 }
 
@@ -560,24 +615,39 @@ acpiinit(void)
 	ulong lapicbase;
 	int machno, i, c;
 
+	print("acpiinit: ENTRY\n");
+	print("acpiinit: calling amlinit\n");
 	amlinit();
+	print("acpiinit: amlinit complete\n");
 
 	/* load DSDT */
+	print("acpiinit: loading DSDT\n");
 	if((t = findtable("DSDT")) != nil){
+		print("acpiinit: DSDT found, rev=%d, len=%d\n", t->rev, tbldlen(t));
 		amlintmask = (~0ULL) >> (t->rev <= 1)*32;
+		print("acpiinit: calling amlload for DSDT\n");
 		amlload(t->data, tbldlen(t));
+		print("acpiinit: amlload returned\n");
+	} else {
+		print("acpiinit: DSDT not found\n");
 	}
+	print("acpiinit: DSDT loaded\n");
 
 	/* load SSDT, there can be multiple tables */
+	print("acpiinit: loading SSDT tables\n");
 	for(i=0; i<ntblmap; i++){
 		t = tblmap[i];
 		if(memcmp(t->sig, "SSDT", 4) == 0)
 			amlload(t->data, tbldlen(t));
 	}
+	print("acpiinit: SSDT tables loaded\n");
 
 	/* set APIC mode */
+	print("acpiinit: setting APIC mode\n");
 	amleval(amlwalk(amlroot, "_PIC"), "i", 1, nil);
+	print("acpiinit: APIC mode set\n");
 
+	print("acpiinit: finding APIC table\n");
 	t = findtable("APIC");
 	if(t == nil)
 		panic("acpiinit: no MADT (APIC) table");

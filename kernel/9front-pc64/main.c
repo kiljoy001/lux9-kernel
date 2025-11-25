@@ -249,8 +249,19 @@ fbconsoleinit();  /* Initialize framebuffer console */
 		print("  IST field = %d (bits 0-2 of d1)\n", (int)(temp_idt[32*2].d1 & 0x7));
 	}
 
+	print("DEBUG: About to call arch->intrinit\n");
+
+	/* Re-map ACPI tables after CR3 switch (if ACPI is being used) */
+	extern PCArch archacpi;
+	if(arch == &archacpi){
+		extern void acpi_remap_tables(void);
+		print("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
+		acpi_remap_tables();
+	}
+
 	if(arch->intrinit) {
-	arch->intrinit();
+		print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
+		arch->intrinit();
 
 	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
 	{
