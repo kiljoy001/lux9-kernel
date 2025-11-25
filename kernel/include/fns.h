@@ -165,6 +165,7 @@ int		ioreserve(ulong, ulong, ulong, char*);
 int		ioreservewin(ulong, ulong, ulong, ulong, char*);
 int		iounused(ulong, ulong);
 int		iprint(char*, ...);
+int		iprint_intr(char*, ...);
 void		isdir(Chan*);
 int		iseve(void);
 int		islo(void);

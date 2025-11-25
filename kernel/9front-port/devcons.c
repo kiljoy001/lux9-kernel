@@ -403,6 +403,29 @@ iprint(char *fmt, ...)
 	return n;
 }
 
+/*
+ * iprint_intr: Interrupt-safe print for use from interrupt handlers
+ * Safe to call from interrupt context - NO locks, NO malloc, NO framebuffer
+ * Only outputs to UART to avoid stack overflow from recursive calls
+ */
+int
+iprint_intr(char *fmt, ...)
+{
+	int n;
+	va_list arg;
+	char buf[PRINTSIZE];
+	extern void uartputs(char*, int);
+
+	/* Format the message - this is safe, uses local stack */
+	va_start(arg, fmt);
+	n = vseprint(buf, buf+sizeof(buf), fmt, arg) - buf;
+	va_end(arg);
+
+	/* Direct UART output only - NO locks, NO framebuffer, NO malloc */
+	uartputs(buf, n);
+	return n;
+}
+
 _Noreturn void
 panic(char *fmt, ...)
 {

@@ -483,6 +483,10 @@ touser_sp_msg:
     .string "touser: jumping to user mode with SP=%#llux\n"
 touser_iret_msg:
     .string "touser: about to IRETQ to userspace\n"
+spllo_before_sti:
+    .string "spllo: before sti\n"
+spllo_after_sti:
+    .string "spllo: after sti\n"
 _debug_vec_msg:
     .string "_intrcommon: Vector = %#llx\n"
 _debug_rip_msg:

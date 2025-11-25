@@ -130,10 +130,8 @@ kenter(Ureg *ureg)
 			/* stack grows up */
 			rem = (int)((up!=nil? (uintptr)up: (uintptr)m + MACHSIZE) - (uintptr)ureg);
 		}
-		/* Disable debug output to avoid hang during interrupt handling */
+		/* Stack overflow - panic immediately */
 		if(rem < 256){
-			iprint("kenter panic: up=%p kstack=%p-%#p ureg=%p sp=%#p rem=%d pc=%#p\n",
-				up, up->kstack, up->kstack!=nil?up->kstack+KSTACK:nil, ureg, ureg->sp, rem, ureg->pc);
 			panic("kenter: %d stack bytes left, up %#p ureg %#p at pc %#p",
 				rem, up, ureg, ureg->pc);
 		}
@@ -231,8 +229,11 @@ sched(void)
 	up->mach = MACHP(m->machno);
 	up->affinity = m->machno;
 	up->state = Running;
+	/* Critical section: disable interrupts during context switch */
+	splhi();
 	mmuswitch(up);
 	gotolabel(&up->sched);
+	/* Note: splx() not called here because gotolabel() never returns to this point */
 }
 
 int
@@ -272,23 +273,15 @@ hzsched(void)
 void
 preempted(int clockintr)
 {
-	iprint("preempted: clockintr=%d up=%p\n", clockintr, up);
-	if(up == nil || up->state != Running || active.exiting){
-		iprint("preempted: early return (up=%p state=%d exiting=%d)\n",
-			up, up?up->state:-1, active.exiting);
+	if(up == nil || up->state != Running || active.exiting)
 		return;
-	}
 	if(!clockintr){
-		iprint("preempted: not clockintr\n");
 		if(!anyhigher())
 			return;
 		m->readied = nil;	/* avoid cooperative scheduling */
 		sched();
 	} else if(up->delaysched){
-		iprint("preempted: clockintr && delaysched, calling sched\n");
 		sched();		/* quantum ended or we held a lock */
-	} else {
-		iprint("preempted: clockintr but no delaysched\n");
 	}
 }
 

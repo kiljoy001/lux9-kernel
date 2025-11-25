@@ -51,11 +51,8 @@ irqhandled(Ureg *ureg, int vno)
 {
 	Vctl *ctl, *v;
 	int i;
-	static int irqhandled_debug = 0;
 
-	iprint("irqhandled: vno=%d\n", vno);
 	ctl = vctl[vno];
-	iprint("irqhandled: ctl=%p vclock=%p\n", ctl, vclock);
 
 	if(ctl != nil){
 		if(vno < VectorPIC){
@@ -73,9 +70,7 @@ irqhandled(Ureg *ureg, int vno)
 		if(ctl->eoi != nil)
 			ctl->eoi(vno);
 		intrtime(m, vno);
-		iprint("irqhandled: before preempted, clockintr=%d\n", ctl == vclock);
 		preempted(ctl == vclock);
-		iprint("irqhandled: after preempted\n");
 		intret_debug_stage = 99;
 		return 1;
 	}

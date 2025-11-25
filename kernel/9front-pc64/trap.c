@@ -73,7 +73,8 @@ trapinit0(void)
 	uartputs("trapinit0: initialized\n", 24);
 
 	for(v = 0; v < 256; v++){
-		d1 = (vaddr & 0xFFFF0000)|SEGP;
+		/* Clear bits 16-18 of vaddr to ensure IST=0 (bits 0-2 of high word) */
+		d1 = (vaddr & 0xFFF8FFFF)|SEGP;
 		switch(v){
 		case VectorBPT:
 			d1 |= SEGPL(3)|SEGIG;
@@ -188,11 +189,6 @@ trap(Ureg *ureg)
 
 	vno = ureg->type;
 
-	/* Minimal trap debug - only first 3 and every 100th */
-	if(post_exec_trap < 3 || post_exec_trap % 100 == 0){
-		iprint("TRAP[%d]: vno=%d pc=%#p cs=%#x\n",
-		       post_exec_trap, vno, ureg->pc, (uint)ureg->cs);
-	}
 	post_exec_trap++;
 	(void)trap_count;
 	(void)trapdebug;
@@ -203,11 +199,6 @@ trap(Ureg *ureg)
 		fpukenter(ureg);
 
 	if(!irqhandled(ureg, vno) && (!user || !usertrap(vno))){
-		if((vno == VectorGPF || vno == VectorPF) && touser_attempt_count != 0){
-			iprint("touser state: attempts=%llud pc=%#llux sp=%#llux flags=%#llux\n",
-				touser_attempt_count, touser_target_pc,
-				touser_target_sp, touser_target_flags);
-		}
 		if(!user){
 			void (*pc)(void);
 
