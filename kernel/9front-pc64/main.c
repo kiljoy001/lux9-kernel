@@ -263,23 +263,6 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	} else {
 	print("WARNING: arch->intrinit is nil\n");
 	}
-	timersinit();
-	/* DEBUG: Reduced verbose boot printing
-	*/
-	if(arch->clockenable)
-		arch->clockenable();
-	/* DEBUG: Reduced verbose boot printing
-	*/
-	
-	/* Enable interrupts globally after clock is set up */
-	if(arch->intron) {
-		/* DEBUG: Reduced verbose boot printing
-		*/
-		arch->intron();
-		/* DEBUG: Reduced verbose boot printing
-		*/
-	} else {
-	}
 	
 	procinit0();
 

@@ -661,13 +661,13 @@ mmuinit(void)
 	/* DEBUG: Reduced verbose mmuinit printing
 	print("DEBUG: Set FSbase\n");
 	*/
-	wrmsr(GSbase, 0ull);	/* user-mode GS base unused until user TLS */
+	wrmsr(GSbase, (uvlong)&machp[m->machno]);	/* kernel GS points to Mach* slot */
 	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Set GSbase (user)\n");
+	print("DEBUG: Set GSbase (kernel Mach slot)\n");
 	*/
-	wrmsr(KernelGSbase, (uvlong)&machp[m->machno]);	/* kernel GS sees Mach* slot */
+	wrmsr(KernelGSbase, 0ull);	/* user-mode GS base unused until user TLS */
 	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Set KernelGSbase (kernel Mach slot)\n");
+	print("DEBUG: Set KernelGSbase (user)\n");
 	*/
 
 	/* enable syscall extension */
