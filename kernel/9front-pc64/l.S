@@ -456,7 +456,7 @@ touser:
      * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
     pushq $UD64SEL              /* SS - user data segment */
     pushq %r12                  /* RSP - user stack pointer */
-    pushq $0x202                /* RFLAGS - interrupts enabled */
+    pushq $0x002                /* RFLAGS - interrupts disabled */
     pushq $UESEL                /* CS - user code segment */
     pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
 

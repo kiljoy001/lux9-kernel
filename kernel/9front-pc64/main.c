@@ -262,6 +262,8 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	if(arch->intrinit) {
 		print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
 		arch->intrinit();
+		extern void uartputs(char*, int);
+		uartputs("DEBUG: arch->intrinit complete\n", 33);
 
 	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
 	{
@@ -282,29 +284,38 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	}
 	
 	procinit0();
+	uartputs("DEBUG: procinit0 complete\n", 28);
 
 	initseg();
+	uartputs("DEBUG: initseg complete\n", 26);
 
 	links();
+	uartputs("DEBUG: links complete\n", 24);
 	
 	/* Initialize I/O port allocation after links() */
 	iomapinit(0xFFFF);  
+	uartputs("DEBUG: iomapinit complete\n", 29);
 	
 	/* Reset and initialize all devices before environment setup */
 	chandevreset();   
+	uartputs("DEBUG: chandevreset complete\n", 32);
 
 
 	pageinit();
+	uartputs("DEBUG: pageinit complete\n", 27);
 
 	printinit();
+	uartputs("DEBUG: printinit complete\n", 28);
 
 	userinit();
+	uartputs("DEBUG: userinit complete\n", 28);
 	/* Debug: show scheduler state before entering schedinit */
 	extern ulong runvec;
 	extern int nrdy;
 	/* Pre-initialize timers with interrupts masked; actual enable happens in proc0 */
 	splhi();
 	timersinit();
+	uartputs("DEBUG: timersinit complete\n", 29);
 	iprint("DEBUG: before schedinit runvec=%#lux nrdy=%d\n", runvec, nrdy);
 	schedinit();
 }
