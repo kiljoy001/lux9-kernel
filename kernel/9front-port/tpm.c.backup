@@ -1,0 +1,557 @@
+/*
+ * TPM Device Driver
+ * Provides kernel-level TPM hardware access for both TPM 1.2 and TPM 2.0
+ */
+
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "error.h"
+#include <string.h>
+
+#include "../include/io.h"
+#include "../include/ureg.h"
+#include "../include/family/family.h"
+#include "../include/pci.h"
+#include "../include/tpm.h"
+
+/* TPM Command Header Structure */
+typedef struct {
+    uint16_t tag;           /* TPM_TAG_RQU_COMMAND or TPM_TAG_RQU_AUTH1_COMMAND */
+    uint32_t param_size;    /* Total size of command including header */
+    uint32_t command_code;  /* TPM command code */
+} TPMCommandHeader;
+
+/* TPM Response Header Structure */
+typedef struct {
+    uint16_t tag;           /* TPM_TAG_RSP_COMMAND or TPM_TAG_RSP_AUTH1_COMMAND */
+    uint32_t param_size;    /* Total size of response including header */
+    uint32_t return_code;   /* TPM return code */
+} TPMResponseHeader;
+
+/* Macro equivalent to countof */
+#define TPM_SIZEOF_ARRAY(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+/* Global TPM state */
+static TPMContext* tpm_ctx = nil;
+static int tpm_initialized = 0;
+static int tpm_detected = 0;
+
+/* TPM hardware base address (from ACPI or PCI discovery) */
+static uintptr_t tpm_base_address = 0;
+static int tpm_access_method = 0;  /* 0=unknown, 1=memory-mapped, 2=io-port */
+
+/* TPM FIFO access (for memory-mapped TPMs) */
+static void tpm_write8(uintptr_t addr, uint8_t value);
+static void tpm_write32(uintptr_t addr, uint32_t value);
+static uint8_t tpm_read8(uintptr_t addr);
+static uint32_t tpm_read32(uintptr_t addr);
+
+/* TPM command transmission */
+static int tpm_transmit_command(uint8_t* cmd, int cmd_len, uint8_t* resp, int* resp_len);
+static int tpm_wait_for_status(uint32_t status_bit, int timeout_ms);
+static int tpm_check_locality(int locality);
+
+/* Hardware detection */
+static int tpm_detect_via_acpi(void);
+static int tpm_detect_via_pci(void);
+
+/* TPM initialization and startup */
+static int tpm_startup_tpm1_2(void);
+static int tpm_startup_tpm2_0(void);
+static int tpm_selftest(void);
+
+/*
+ * Initialize TPM hardware and set up kernel interface
+ */
+int
+tpm_init(void)
+{
+    int ret = 0;
+
+    if (tpm_initialized)
+        return 0;
+
+    print("TPM: Initializing TPM hardware...\n");
+
+    /* Allocate TPM context */
+    tpm_ctx = malloc(sizeof(TPMContext));
+    if (tpm_ctx == nil) {
+        print("TPM: Failed to allocate TPM context\n");
+        return -1;
+    }
+
+    memset(tpm_ctx, 0, sizeof(TPMContext));
+
+    /* Detect TPM hardware via ACPI first */
+    ret = tpm_detect_via_acpi();
+    if (ret < 0) {
+        /* Try PCI detection as fallback */
+        ret = tpm_detect_via_pci();
+    }
+
+    if (ret < 0) {
+        print("TPM: No TPM hardware detected\n");
+        free(tpm_ctx);
+        tpm_ctx = nil;
+        return -1;
+    }
+
+    print("TPM: Hardware detected via %s\n", 
+          tpm_access_method == 1 ? "ACPI" : "PCI");
+    print("TPM: Base address: 0x%p\n", (void*)tpm_base_address);
+
+    /* Open TPM device (if available as /dev/tpm0) */
+    tpm_ctx->fd = -1;
+    tpm_ctx->locality = 0;
+    tpm_ctx->version = TPM_2_0;  /* Default to 2.0, will be detected properly */
+
+    /* For ACPI-discovered TPMs, we use memory-mapped I/O */
+    if (tpm_access_method == 1) {
+        print("TPM: Using memory-mapped I/O at 0x%p\n", (void*)tpm_base_address);
+        
+        /* Check if TPM responds */
+        tpm_write32(tpm_base_address + 0x00, 0x5A5A5A5A); /* Test write */
+        uint32_t test = tpm_read32(tpm_base_address + 0x00);
+        if (test != 0x5A5A5A5A) {
+            print("TPM: Hardware not responding at base address\n");
+            free(tpm_ctx);
+            tpm_ctx = nil;
+            return -1;
+        }
+    }
+
+    /* TPM startup sequence */
+    if (tpm_ctx->version == TPM_1_2) {
+        ret = tpm_startup_tpm1_2();
+    } else {
+        ret = tpm_startup_tpm2_0();
+    }
+
+    if (ret < 0) {
+        print("TPM: Startup failed\n");
+        free(tpm_ctx);
+        tpm_ctx = nil;
+        return -1;
+    }
+
+    /* Run self-test */
+    ret = tpm_selftest();
+    if (ret < 0) {
+        print("TPM: Self-test failed\n");
+        free(tpm_ctx);
+        tpm_ctx = nil;
+        return -1;
+    }
+
+    print("TPM: Initialization complete\n");
+    tpm_initialized = 1;
+    tpm_detected = 1;
+
+    return 0;
+}
+
+/*
+ * Detect TPM via ACPI tables
+ * TPM 2.0 uses "TCPA" table signature, TPM 2.0 uses "TPM2"
+ */
+static int
+tpm_detect_via_acpi(void)
+{
+    /* This would typically parse ACPI tables
+     * For now, we'll try known addresses for common TPM implementations */
+    
+    /* Try common memory-mapped TPM addresses */
+    uintptr_t common_addresses[] = {
+        0xFED70000,  /* Common Intel TPM address */
+        0xFED40000,  /* Alternative Intel TPM address */
+        0xFEE00000,  /* Some AMD TPM implementations */
+        0xFED60000,  /* Platform-specific */
+    };
+
+    int i;
+    for (i = 0; i < TPM_SIZEOF_ARRAY(common_addresses); i++) {
+        uintptr_t addr = common_addresses[i];
+        
+        /* Check for TPM identification registers */
+        uint32_t rid = tpm_read32(addr + 0x00);
+        uint32_t vid = tpm_read32(addr + 0x04) & 0xFFFF;
+        
+        /* Check for Intel TPM (VID should be 0x8086) */
+        if (vid == 0x8086 || rid != 0x5A5A5A5A) {
+            print("TPM: Potential Intel TPM found at 0x%p (VID: 0x%04X)\n", 
+                  (void*)addr, vid);
+            
+            /* Detect version by reading capability register */
+            uint32_t cap = tpm_read32(addr + 0x18);
+            if (cap & 0x00000001) {
+                /* TPM 2.0 detected */
+                tpm_ctx->version = TPM_2_0;
+            } else {
+                /* TPM 1.2 detected */
+                tpm_ctx->version = TPM_1_2;
+            }
+            
+            tpm_base_address = addr;
+            tpm_access_method = 1;  /* Memory-mapped */
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+/*
+ * Detect TPM via PCI scanning
+ * Look for TPM devices on PCI bus (class code 0x0C, subclass 0x05)
+ */
+static int
+tpm_detect_via_pci(void)
+{
+    /* Use PCI family interface to scan for TPM devices */
+    PCIDev* dev;
+    
+    /* This would iterate through PCI devices looking for:
+     * - Vendor ID: 0x1050 (Infineon), 0x8086 (Intel), 0x1022 (AMD)
+     * - Device class: 0x0C (Base System Peripherals)
+     * - Device subclass: 0x05 (TPM)
+     */
+    
+    /* For now, return -1 as PCI detection requires PCI family integration */
+    return -1;
+}
+
+/*
+ * TPM 1.2 Startup
+ */
+static int
+tpm_startup_tpm1_2(void)
+{
+    uint8_t cmd[12];
+    uint8_t resp[64];
+    int cmd_len = sizeof(cmd);
+    int resp_len = sizeof(resp);
+    
+    /* Build TPM 1.2 Startup command */
+    TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+    hdr->tag = TPM_TAG_RQU_COMMAND;
+    hdr->param_size = cmd_len;
+    hdr->command_code = TPM_ORD_Startup;
+    
+    /* TPM 1.2 Startup subcommand */
+    uint16_t* subcmd = (uint16_t*)(cmd + sizeof(TPMCommandHeader));
+    *subcmd = 0x0001;  /* TPM_ST_CLEAR */
+    
+    return tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+}
+
+/*
+ * TPM 2.0 Startup
+ */
+static int
+tpm_startup_tpm2_0(void)
+{
+    uint8_t cmd[16];
+    uint8_t resp[64];
+    int cmd_len = sizeof(cmd);
+    int resp_len = sizeof(resp);
+    
+    /* Build TPM 2.0 Startup command */
+    TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+    hdr->tag = TPM_TAG_RQU_COMMAND;
+    hdr->param_size = cmd_len;
+    hdr->command_code = TPM2_CC_Startup;
+    
+    /* TPM 2.0 Startup subcommand */
+    uint16_t* subcmd = (uint16_t*)(cmd + sizeof(TPMCommandHeader));
+    *subcmd = TPM2_SU_CLEAR;
+    
+    return tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+}
+
+/*
+ * TPM Self-Test
+ */
+static int
+tpm_selftest(void)
+{
+    if (tpm_ctx->version == TPM_1_2) {
+        /* TPM 1.2 ContinueSelfTest */
+        uint8_t cmd[10];
+        uint8_t resp[64];
+        int cmd_len = sizeof(cmd);
+        int resp_len = sizeof(resp);
+        
+        TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+        hdr->tag = TPM_TAG_RQU_COMMAND;
+        hdr->param_size = cmd_len;
+        hdr->command_code = TPM_ORD_ContinueSelfTest;
+        
+        return tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+    } else {
+        /* TPM 2.0 SelfTest */
+        uint8_t cmd[10];
+        uint8_t resp[64];
+        int cmd_len = sizeof(cmd);
+        int resp_len = sizeof(resp);
+        
+        TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+        hdr->tag = TPM_TAG_RQU_COMMAND;
+        hdr->param_size = cmd_len;
+        hdr->command_code = TPM2_CC_SelfTest;
+        
+        return tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+    }
+}
+
+/*
+ * TPM GetRandom
+ */
+int
+tpm_get_random(TPMContext* ctx, uint8_t* buffer, int len)
+{
+    if (!tpm_initialized || tpm_ctx == nil)
+        return -1;
+
+    if (len <= 0 || buffer == nil)
+        return -1;
+
+    uint8_t cmd[16];
+    uint8_t resp[2048];
+    int cmd_len = sizeof(cmd);
+    int resp_len = sizeof(resp);
+    
+    /* Build GetRandom command */
+    TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+    hdr->tag = TPM_TAG_RQU_COMMAND;
+    hdr->param_size = cmd_len;
+    hdr->command_code = (tpm_ctx->version == TPM_1_2) ? 
+                       TPM_ORD_GetRandom : TPM2_CC_GetRandom;
+    
+    uint16_t* rand_len = (uint16_t*)(cmd + sizeof(TPMCommandHeader));
+    *rand_len = (uint16_t)len;
+    
+    int ret = tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+    if (ret < 0)
+        return -1;
+    
+    /* Extract random data from response */
+    TPMResponseHeader* resp_hdr = (TPMResponseHeader*)resp;
+    if (resp_hdr->return_code != TPM_SUCCESS)
+        return -1;
+    
+    int actual_len = resp_len - sizeof(TPMResponseHeader);
+    if (actual_len > len)
+        actual_len = len;
+    
+    memcpy(buffer, resp + sizeof(TPMResponseHeader), actual_len);
+    return actual_len;
+}
+
+/*
+ * TPM GetCapability
+ */
+int
+tpm_get_capability(uint32_t capability, uint32_t property)
+{
+    if (!tpm_initialized || tpm_ctx == nil)
+        return -1;
+
+    uint8_t cmd[20];
+    uint8_t resp[256];
+    int cmd_len = sizeof(cmd);
+    int resp_len = sizeof(resp);
+    
+    /* Build GetCapability command */
+    TPMCommandHeader* hdr = (TPMCommandHeader*)cmd;
+    hdr->tag = TPM_TAG_RQU_COMMAND;
+    hdr->param_size = cmd_len;
+    hdr->command_code = TPM2_CC_GetCapability;
+    
+    uint32_t* cap = (uint32_t*)(cmd + sizeof(TPMCommandHeader));
+    *cap = capability;
+    
+    uint32_t* prop = (uint32_t*)(cmd + sizeof(TPMCommandHeader) + 4);
+    *prop = property;
+    
+    uint32_t* prop_count = (uint32_t*)(cmd + sizeof(TPMCommandHeader) + 8);
+    *prop_count = 1;
+    
+    return tpm_transmit_command(cmd, cmd_len, resp, &resp_len);
+}
+
+/*
+ * Transmit TPM command
+ */
+static int
+tpm_transmit_command(uint8_t* cmd, int cmd_len, uint8_t* resp, int* resp_len)
+{
+    if (tpm_access_method == 1) {
+        /* Memory-mapped TPM access */
+        return tpm_transmit_mmio(cmd, cmd_len, resp, resp_len);
+    } else if (tpm_ctx->fd >= 0) {
+        /* File descriptor based access (/dev/tpm0) */
+        return tpm_transmit_fd(cmd, cmd_len, resp, resp_len);
+    }
+    
+    return -1;
+}
+
+/*
+ * Transmit TPM command with context
+ */
+int
+tpm_transmit(TPMContext* ctx, uint8_t* cmd, size_t cmd_len, uint8_t* response, size_t* resp_len)
+static int
+tpm_transmit_mmio(uint8_t* cmd, int cmd_len, uint8_t* resp, int* resp_len)
+{
+    uintptr_t fifo_base = tpm_base_address + 0x24;  /* FIFO Data Register */
+    
+    /* Wait for TPM to be ready */
+    if (tpm_wait_for_status(0x00000008, 1000) < 0) {  /* STS_READY */
+        print("TPM: Timeout waiting for ready state\n");
+        return -1;
+    }
+    
+    /* Write command to FIFO */
+    int i;
+    for (i = 0; i < cmd_len; i++) {
+        tpm_write8(fifo_base, cmd[i]);
+    }
+    
+    /* Set GO bit to start processing */
+    uint32_t status = tpm_read32(tpm_base_address + 0x18);  /* Status Register */
+    status |= 0x00000020;  /* GO bit */
+    tpm_write32(tpm_base_address + 0x18, status);
+    
+    /* Wait for completion */
+    if (tpm_wait_for_status(0x00000010, 5000) < 0) {  /* STS_DATA_AVAILABLE */
+        print("TPM: Timeout waiting for response\n");
+        return -1;
+    }
+    
+    /* Read response */
+    int bytes_read = 0;
+    status = tpm_read32(tpm_base_address + 0x18);
+    
+    /* Read response header first to determine length */
+    uint8_t header[6];
+    for (i = 0; i < 6 && i < *resp_len; i++) {
+        header[i] = tpm_read8(fifo_base);
+        bytes_read++;
+    }
+    
+    TPMResponseHeader* resp_hdr = (TPMResponseHeader*)header;
+    int expected_len = resp_hdr->param_size;
+    
+    /* Read remaining response data */
+    for (i = bytes_read; i < expected_len && i < *resp_len; i++) {
+        resp[i] = tpm_read8(fifo_base);
+        bytes_read++;
+    }
+    
+    /* Clear data available status */
+    status |= 0x00000010;  /* STS_DATA_AVAILABLE */
+    tpm_write32(tpm_base_address + 0x18, status);
+    
+    *resp_len = bytes_read;
+    return 0;
+}
+
+/*
+ * File descriptor based TPM access (for /dev/tpm0)
+ */
+static int
+tpm_transmit_fd(uint8_t* cmd, int cmd_len, uint8_t* resp, int* resp_len)
+{
+    int ret = write(tpm_ctx->fd, cmd, cmd_len);
+    if (ret != cmd_len) {
+        print("TPM: Failed to write command: %d\n", ret);
+        return -1;
+    }
+    
+    ret = read(tpm_ctx->fd, resp, *resp_len);
+    if (ret <= 0) {
+        print("TPM: Failed to read response: %d\n", ret);
+        return -1;
+    }
+    
+    *resp_len = ret;
+    return 0;
+}
+
+/*
+ * Wait for TPM status bit
+ */
+static int
+tpm_wait_for_status(uint32_t status_bit, int timeout_ms)
+{
+    int elapsed = 0;
+    uint32_t status;
+    
+    while (elapsed < timeout_ms) {
+        status = tpm_read32(tpm_base_address + 0x18);  /* Status Register */
+        if (status & status_bit)
+            return 0;
+        
+        /* Sleep for 1ms */
+        tsleep(&up->sleep, return true, 1);
+        elapsed++;
+    }
+    
+    return -1;
+}
+
+/*
+ * Memory-mapped I/O functions
+ */
+static void
+tpm_write8(uintptr_t addr, uint8_t value)
+{
+    *(volatile uint8_t*)addr = value;
+}
+
+static void
+tpm_write32(uintptr_t addr, uint32_t value)
+{
+    *(volatile uint32_t*)addr = value;
+}
+
+static uint8_t
+tpm_read8(uintptr_t addr)
+{
+    return *(volatile uint8_t*)addr;
+}
+
+static uint32_t
+tpm_read32(uintptr_t addr)
+{
+    return *(volatile uint32_t*)addr;
+}
+
+/*
+ * Export TPM functions for other kernel modules
+ */
+void
+tpminit(void)
+{
+    tpm_init();
+}
+
+int
+tpm_random(uint8_t* buf, int len)
+{
+    return tpm_get_random(0, buf, len);
+}
+
+int
+tpm_get_tpm_context(TPMContext** ctx)
+{
+    if (tpm_initialized && tpm_ctx) {
+        *ctx = tpm_ctx;
+        return 0;
+    }
+    return -1;
+}

@@ -6,6 +6,9 @@
 #include "io.h"
 #include "ureg.h"
 
+/* Provide a definition for kprintoq so linkers looking for /dev/kprint queue succeed */
+Queue *kprintoq;
+
 static char*
 getline(void)
 {
@@ -34,6 +37,7 @@ talkrdb(Ureg *ureg)
 {
 	uchar *a;
 	char *p, *req;
+	static Queue *kprintoq_stub;  /* fallback if /dev/kprint queue absent */
 
 	if(consuart == nil)
 		return;
@@ -46,6 +50,12 @@ talkrdb(Ureg *ureg)
 			consuart->phys->enable(consuart, 0);
 		serialoq = nil;
 	}
+	/*
+	 * Older kernels provided a kprintoq queue; if it's absent, keep a stub
+	 * to satisfy the symbol and allow rdb to continue.
+	 */
+	if(kprintoq == nil)
+		kprintoq = kprintoq_stub;
 	kprintoq = nil;		/* turn off /dev/kprint if active */
 
 	iprint("Edebugger reset\n");

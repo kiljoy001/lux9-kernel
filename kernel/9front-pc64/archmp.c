@@ -301,6 +301,7 @@ pcmpinit(void)
 	print("pcmpinit: pcmp=%#p\n", pcmp);
 	if(pcmp == nil) {
 		extern PCArch archgeneric;
+		extern int acpiinit(void);
 		extern PCArch *arch;
 		print("pcmpinit: WARNING - pcmp is nil, MP not found\n");
 		print("pcmpinit: Falling back to i8259 (PIC mode)\n");

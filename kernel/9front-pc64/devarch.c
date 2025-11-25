@@ -48,9 +48,11 @@ void (*_pcmspecialclose)(int);
 extern int cpuserver;
 extern PCArch archgeneric;
 extern PCArch archmp;
+extern PCArch archacpi;
 
 PCArch *arch = &archgeneric;
 static PCArch* knownarch[] = {
+	&archacpi,
 	&archmp,
 	&archgeneric,
 	nil,
@@ -872,15 +874,23 @@ void
 archinit(void)
 {
 	PCArch **p;
+	int found = 0;
 
-	arch = knownarch[0];
+	arch = &archgeneric;  /* safe default fallback */
+	print("archinit: default fallback arch = %s\n", arch->id);
 	for(p = knownarch; *p != nil; p++){
+		print("archinit: trying %s\n", (*p)->id);
 		if((*p)->ident != nil && (*p)->ident() == 0){
 			arch = *p;
+			found = 1;
+			print("archinit: selected arch = %s\n", arch->id);
 			break;
 		}
 	}
-	if(arch != knownarch[0]){
+	if(!found)
+		print("archinit: no arch identified, using fallback generic\n");
+	print("archinit: final arch = %s\n", arch->id);
+	if(arch != &archgeneric){
 		if(arch->id == nil)
 			arch->id = knownarch[0]->id;
 		if(arch->reset == nil)

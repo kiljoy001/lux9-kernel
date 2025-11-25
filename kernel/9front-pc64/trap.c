@@ -710,24 +710,13 @@ setregisters(Ureg* ureg, char* pureg, char* uva, int n)
 void
 kprocchild(Proc *p, void (*entry)(void))
 {
-	Ureg *ureg;
-
 	/*
-	 * Set up stack with a Ureg so forkret's iretq works correctly.
-	 * Add 2*BY2WD to account for return PC and trap's argument (ur).
+	 * gotolabel() needs a word on the stack in
+	 * which to place the return PC used to jump
+	 * to linkproc().
 	 */
-	p->sched.sp = (uintptr)p - (sizeof(Ureg)+2*BY2WD);
-	p->sched.pc = (uintptr)forkret;
-
-	/* Initialize Ureg with proper kernel context */
-	ureg = (Ureg*)(p->sched.sp+2*BY2WD);
-	memset(ureg, 0, sizeof(Ureg));
-
-	ureg->pc = (uintptr)entry;      /* Entry point (linkproc) */
-	ureg->cs = KESEL;               /* Kernel code segment */
-	ureg->flags = 0x200;            /* IF=1 (interrupts enabled) */
-	ureg->sp = (uintptr)p;          /* Stack pointer */
-	ureg->ss = KDSEL;               /* Kernel data segment */
+	p->sched.pc = (uintptr)entry;
+	p->sched.sp = (uintptr)p - BY2WD;
 }
 
 void

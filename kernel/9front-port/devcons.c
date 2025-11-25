@@ -376,27 +376,30 @@ iprintcanlock(Lock *l)
 int
 iprint(char *fmt, ...)
 {
-	int n, s, locked;
+	int n, locked;
 	va_list arg;
 	char buf[PRINTSIZE];
+	extern void uartputs(char*, int);
+	static int iprint_depth = 0;
 
-	s = splhi();
+	/* Detect and prevent re-entrant iprint calls */
+	iprint_depth++;
+	if(iprint_depth > 1){
+		uartputs("[iprint re-entry detected]\n", 27);
+		iprint_depth--;
+		return 0;
+	}
+
+	/* NO splhi/splx - keep interrupt state unchanged to avoid issues */
 	va_start(arg, fmt);
 	n = vseprint(buf, buf+sizeof(buf), fmt, arg) - buf;
 	va_end(arg);
-	if(prbuf_ready()){
-        while(prbuf_print(buf, n) != n)
-            delay(1);
-	} else {
-		locked = iprintcanlock(&iprintlock);
-		if(screenputs != nil && iprintscreenputs)
-			screenputs(buf, n);
-		uartputs(buf, n);
-		if(locked)
-			unlock(&iprintlock);
-	}
-	splx(s);
+	/* Direct uart output with NO locks to avoid infinite recursion (unlock calls print) */
+	if(screenputs != nil && iprintscreenputs)
+		screenputs(buf, n);
+	uartputs(buf, n);
 
+	iprint_depth--;
 	return n;
 }
 
@@ -424,9 +427,9 @@ panic(char *fmt, ...)
 	va_start(arg, fmt);
 	vseprint(buf+strlen(buf), buf+sizeof(buf), fmt, arg);
 	va_end(arg);
-	/* Emit panic to both iprint (interrupt-safe) and print for visibility */
-	iprint("%s\n", buf);
-	print("%s\n", buf);
+	/* Use uartputs directly to avoid re-entrancy issues in critical panic path */
+	uartputs(buf, strlen(buf));
+	uartputs("\n", 1);
 	if(consdebug)
 		(*consdebug)();
 	splx(s);

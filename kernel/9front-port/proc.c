@@ -65,7 +65,9 @@ schedinit(void)
 {
 	Edf *e;
 
+	iprint("schedinit: ENTRY up=%p\n", up);
 	setlabel(&m->sched);
+	iprint("schedinit: setlabel done\n");
 	if(up != nil) {
 		if((e = up->edf) != nil && (e->flags & Admitted))
 			edfrecord(up);
@@ -95,6 +97,7 @@ schedinit(void)
 		up = nil;
 	}
 out:
+	iprint("schedinit: entering scheduler loop\n");
 	for(;;){
 		sched();
 	}
@@ -120,10 +123,7 @@ kenter(Ureg *ureg)
 			/* stack grows up */
 			rem = (int)((up!=nil? (uintptr)up: (uintptr)m + MACHSIZE) - (uintptr)ureg);
 		}
-		if(kenterdebug < 8 && up != nil){
-			iprint("kenter: up=%p kstack=%p-%#p ureg=%p sp=%#p rem=%d\n",
-				up, up->kstack, up->kstack!=nil?up->kstack+KSTACK:nil, ureg, ureg->sp, rem);
-		}
+		/* Disable debug output to avoid hang during interrupt handling */
 		if(rem < 256){
 			iprint("kenter panic: up=%p kstack=%p-%#p ureg=%p sp=%#p rem=%d pc=%#p\n",
 				up, up->kstack, up->kstack!=nil?up->kstack+KSTACK:nil, ureg, ureg->sp, rem, ureg->pc);
@@ -178,6 +178,11 @@ void
 sched(void)
 {
 	int s;
+	static int sched_count = 0;
+
+	if(sched_count < 5) {
+		iprint("sched: call #%d up=%p\n", sched_count++, up);
+	}
 
 	if(m->ilockdepth)
 		panic("cpu%d: ilockdepth %d, last lock %#p at %#p",
@@ -216,15 +221,20 @@ sched(void)
 		splx(s);
 		return;
 	}
+	if(sched_count <= 5) iprint("sched: calling runproc\n");
 	up = runproc();
+	if(sched_count <= 5) iprint("sched: runproc returned %p\n", up);
 	if(up != m->readied)
 		m->schedticks = m->ticks + HZ/10;
 	m->readied = nil;
 	m->proc = up;
+	if(sched_count <= 5) iprint("sched: about to set up->mach\n");
 	up->mach = MACHP(m->machno);
 	up->affinity = m->machno;
 	up->state = Running;
+	if(sched_count <= 5) iprint("sched: calling mmuswitch\n");
 	mmuswitch(up);
+	if(sched_count <= 5) iprint("sched: calling gotolabel\n");
 	gotolabel(&up->sched);
 }
 
@@ -265,15 +275,24 @@ hzsched(void)
 void
 preempted(int clockintr)
 {
-	if(up == nil || up->state != Running || active.exiting)
+	iprint("preempted: clockintr=%d up=%p\n", clockintr, up);
+	if(up == nil || up->state != Running || active.exiting){
+		iprint("preempted: early return (up=%p state=%d exiting=%d)\n",
+			up, up?up->state:-1, active.exiting);
 		return;
+	}
 	if(!clockintr){
+		iprint("preempted: not clockintr\n");
 		if(!anyhigher())
 			return;
 		m->readied = nil;	/* avoid cooperative scheduling */
 		sched();
-	} else if(up->delaysched)
+	} else if(up->delaysched){
+		iprint("preempted: clockintr && delaysched, calling sched\n");
 		sched();		/* quantum ended or we held a lock */
+	} else {
+		iprint("preempted: clockintr but no delaysched\n");
+	}
 }
 
 /*

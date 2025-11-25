@@ -1,0 +1,2 @@
+CPPFLAGS+=-DRUMPUSER_CONFIG=yes
+CPPFLAGS+=-I/home/scott/Repo/lux9-kernel/obj/tooldir/autoconf

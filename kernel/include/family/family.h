@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stddef.h>
 #include "dat.h"
 
 /* Family type identifiers */

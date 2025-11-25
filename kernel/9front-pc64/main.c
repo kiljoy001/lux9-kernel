@@ -227,6 +227,10 @@ fbconsoleinit();  /* Initialize framebuffer console */
 
 	mmuinit();
 
+	/* Initialize r15 to point to Mach structure after mmuinit sets up GS */
+	__asm__ volatile("movq %0, %%r15" : : "r"(m) : "r15");
+	print("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
+
 	/* Debug: check if IDT is still valid after mmuinit */
 	{
 		extern Segdesc temp_idt[];
@@ -295,7 +299,15 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 
 	userinit();
-	init0();
+
+	/* Start prbuf consumer after proc system is initialized */
+	prbuf_start_consumer();
+	print("main: prbuf consumer started\n");
+	/* Debug: show scheduler state before entering schedinit */
+	extern ulong runvec;
+	extern int nrdy;
+	iprint("DEBUG: before schedinit runvec=%#lux nrdy=%d\n", runvec, nrdy);
+	schedinit();
 }
 
 /**
@@ -312,6 +324,7 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
+	iprint("init0: ENTRY up=%p pid=%d\n", up, up ? up->pid : -1);
 	chandevinit();
 
 	/*

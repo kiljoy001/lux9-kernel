@@ -20,11 +20,13 @@ PORT_DIR := ../kernel/9front-port
 PC64_DIR := ../kernel/9front-pc64
 LIBC_DIR := ../kernel/libc9
 PORT_DIR := ../kernel/9front-port
+AML_DIR := ../kernel/aml
 
 # Source organization
 PORT_C := $(wildcard $(PORT_DIR)/*.c)
 PC64_C := $(wildcard $(PC64_DIR)/*.c)
 LIBC_C := $(wildcard $(LIBC_DIR)/*.c)
+AML_C := $(wildcard $(AML_DIR)/*.c)
 ASM_S := $(wildcard $(PC64_DIR)/*.S)
 
 # Additional sources
@@ -44,8 +46,9 @@ LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
 PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
 FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o pebble.o
+AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(AML_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
 
 # Compiler flags - Optimized for Plan 9 compatibility
 CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
@@ -61,6 +64,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
           -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
           -mno-red-zone \
           -I$(INCLUDE_DIR) \
+          -I../include \
           -I../port \
           -I.. \
           -D_PLAN9_SOURCE \
@@ -90,6 +94,10 @@ $(KERNEL_BINARY): $(ALL_O)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: $(PC64_DIR)/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: $(AML_DIR)/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

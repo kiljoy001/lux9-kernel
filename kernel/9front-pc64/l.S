@@ -240,9 +240,20 @@ splhi:
 
 .global spllo
 spllo:
+_spllo:
     pushfq
-    pop %rax
+    popq %rax
+   testq $0x200, %rax  /* Test Interrupt Flag */
+    jnz _alreadylo      /* If already enabled, skip */
+
+    /* About to enable interrupts */
     sti
+
+    /* Add a nop to ensure we can handle any immediate interrupt */
+    nop
+    nop
+
+_alreadylo:
     ret
 
 .global splx
