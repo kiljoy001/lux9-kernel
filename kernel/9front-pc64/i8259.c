@@ -34,14 +34,14 @@ i8259init(void)
 {
 	int x;
 
-	print("i8259init: ENTRY\n");
-	print("i8259init: calling ioalloc for Int0ctl\n");
+	uartputs("i8259init: ENTRY\n", 20);
+	uartputs("i8259init: calling ioalloc for Int0ctl\n", 39);
 	ioalloc(Int0ctl, 2, 0, "i8259.0");
-	print("i8259init: calling ioalloc for Int1ctl\n");
+	uartputs("i8259init: calling ioalloc for Int1ctl\n", 39);
 	ioalloc(Int1ctl, 2, 0, "i8259.1");
-	print("i8259init: calling ilock\n");
+	uartputs("i8259init: calling ilock\n", 25);
 	ilock(&i8259lock);
-	print("i8259init: ilock acquired\n");
+	uartputs("i8259init: ilock acquired\n", 28);
 
 	/*
 	 *  Set up the first 8259 interrupt processor.
@@ -100,10 +100,14 @@ i8259init(void)
 			if(inb(Elcr1) == 0x20)
 				i8259elcr = x;
 			outb(Elcr1, x & 0xFF);
-			print("ELCR: %4.4uX\n", i8259elcr);
+			char buf[32];
+			int n = snprint(buf, sizeof buf, "ELCR: %4.4uX\n", i8259elcr);
+			uartputs(buf, n);
 		}
 	}
+	uartputs("i8259init: calling iunlock\n", 28);
 	iunlock(&i8259lock);
+	uartputs("i8259init: iunlock returned, EXIT\n", 36);
 }
 
 int
@@ -234,4 +238,3 @@ i8259off(void)
 	outb(Int0aux, 0xFF);
 	outb(Int1aux, 0xFF);
 }
-
