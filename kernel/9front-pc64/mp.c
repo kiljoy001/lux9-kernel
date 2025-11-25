@@ -167,10 +167,11 @@ mpinit(void)
 
 	/*
 	 * These interrupts are local to the processor
-	 * and do not appear in the I/O APIC so it is OK
-	 * to set them now.
+	 * and do not appear in the I/O APIC.
+	 *
+	 * NOTE: Clock interrupt enable is deferred until after schedinit()
+	 * to ensure a valid process stack exists when the timer fires.
 	 */
-	intrenable(IrqTIMER, lapicclock, 0, BUSUNKNOWN, "clock");
 	intrenable(IrqERROR, lapicerror, 0, BUSUNKNOWN, "lapicerror");
 	intrenable(IrqSPURIOUS, lapicspurious, 0, BUSUNKNOWN, "lapicspurious");
 	lapiconline();
@@ -211,6 +212,16 @@ mpinit(void)
 	 */
 	if(m->cpuidfamily == 3 || conf.nmach > 1)
 		conf.copymode = 1;
+}
+
+/*
+ * Enable clock interrupt after scheduler initialization.
+ * Must be called after schedinit() to ensure valid process stack.
+ */
+void
+mpclockenable(void)
+{
+	intrenable(IrqTIMER, lapicclock, 0, BUSUNKNOWN, "clock");
 }
 
 static int

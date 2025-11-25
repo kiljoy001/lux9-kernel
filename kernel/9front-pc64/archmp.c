@@ -404,6 +404,7 @@ PCArch archmp = {
 .intron=	lapicintron,
 .introff=	lapicintroff,
 .clockinit=	i8253init,
+.clockenable=	mpclockenable,
 .fastclock=	i8253read,
 .timerset=	lapictimerset,
 };

@@ -223,17 +223,14 @@ sigsearch(char* signature, int size)
 	}
 
 	/* hack for virtualbox: look in KiB below 0xa0000 */
-	/* DEBUG: Disabled verbose sigsearch tracing */
-	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil){
-	/* DEBUG: Disabled verbose sigsearch tracing */
+	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil)
 		return r;
-	}
 
-	/* DEBUG: Disabled verbose sigsearch tracing
+	/* Scan BIOS ROM range (0xE0000 to 0xFFFFF) - this is where _MP_ is usually found */
 	r = sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
 	if(r != nil)
 		return r;
-	*/
+
 	return nil;
 }
 

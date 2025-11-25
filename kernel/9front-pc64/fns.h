@@ -77,6 +77,7 @@ void	invlpg(uintptr);
 void	ioinit(void);
 int	iprint(char*, ...);
 int	isaconfig(char*, int, ISAConf*);
+void	mpclockenable(void);
 void*	kaddr(uintptr);
 KMap*	kmap(Page*);
 void	kunmap(KMap*);

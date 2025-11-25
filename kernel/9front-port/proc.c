@@ -1635,6 +1635,19 @@ procflushothers(void)
 void
 linkproc(void)
 {
+	static int clockenabled;
+	extern PCArch *arch;
+
+	/*
+	 * Safe point: we're on up->kstack with up/m->proc set.
+	 * Enable clock interrupt now that we have a valid process stack.
+	 */
+	if(!clockenabled){
+		if(arch->clockenable != nil)
+			arch->clockenable();
+		clockenabled = 1;
+	}
+	spllo();
 	(*up->kpfun)(up->kparg);
 	pexit("kproc exiting", 0);
 }

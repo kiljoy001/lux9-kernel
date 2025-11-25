@@ -45,17 +45,8 @@ proc0(void*)
 	KMap *k;
 	Page *p;
 
-	/* Initialize logging and hardware timers on a known stack with IF masked */
-	static int clockarmed;
+	/* Start logging now that we're on a real stack; clock already armed */
 	prbuf_start_consumer();
-	if(!clockarmed){
-		timersinit();	/* program timers; interrupts still masked */
-		if(arch->clockenable)
-			arch->clockenable();
-		if(arch->intron)
-			arch->intron();
-		clockarmed = 1;
-	}
 
 	iprint("proc0: ENTRY\n");
 	BOOTPRINT("proc0: ENTRY\n");
