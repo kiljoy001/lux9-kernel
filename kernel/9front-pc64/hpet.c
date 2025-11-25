@@ -59,7 +59,12 @@ hpetcpufreq(void)
 	uvlong a, b;
 	int loops;
 
-	ilock(&hpet);
+	/*
+	 * NOTE: No lock needed here since this is called during early boot
+	 * before other processors start, and before the scheduler is initialized.
+	 * Using ilock() at this point would hang since interrupt handling
+	 * isn't fully set up yet.
+	 */
 	for(loops = 1000;;loops += 1000){
 		cycles(&a);
 		x = hpet.mmio[Ctrlo];
@@ -69,7 +74,6 @@ hpetcpufreq(void)
 		if(y >= hpet.freq/HZ || loops >= 1000000)
 			break;
 	}
-	iunlock(&hpet);
 
 	if(m->havetsc && b > a){
 		b -= a;
