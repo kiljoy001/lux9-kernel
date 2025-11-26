@@ -5,6 +5,8 @@
 #include "fns.h"
 #include "io.h"
 
+extern PCArch *arch;
+
 /*
  *  8253 timer
  */
@@ -162,6 +164,7 @@ void
 i8253init(void)
 {
 	uvlong cpufreq;
+	extern int vm_is_virtual(void);
 
 	if(m->machno != 0){
 		m->cpuhz = MACHP(0)->cpuhz;
@@ -176,7 +179,15 @@ i8253init(void)
 
 	i8253reset();
 
-	cpufreq = i8253cpufreq();
+	/* In VMs, skip CPU frequency calibration and use a safe default */
+	if(vm_is_virtual()){
+		print("i8253init: VM detected, using default CPU frequency\n");
+		/* Use 2 GHz as reasonable default for VMs */
+		cpufreq = 2000000000ULL;
+		m->delaylcycles = 10;  /* conservative default */
+	} else {
+		cpufreq = i8253cpufreq();
+	}
 
 	m->loopconst = (cpufreq/1000)/m->delaylcycles;	/* delayloop()'s for 1 ms */
 	m->cpuhz = cpufreq;
@@ -187,6 +198,17 @@ i8253init(void)
 	m->cpumhz = (cpufreq+500000)/1000000L;
 	if(m->cpumhz == 0)
 		m->cpumhz = 1;
+
+	print("i8253init: CPU %lldMHz (cpuhz=%lld)\n", m->cpumhz, m->cpuhz);
+
+	/* Now that cpuhz is measured, prefer TSC for fastticks when allowed. */
+	/* But in VMs, stick with i8253 PIT since cpuhz may not be reliable */
+	if(!vm_is_virtual() && m->havetsc && getconf("*notsc") == nil && m->cpuhz != 0){
+		print("i8253init: switching to TSC-based fastticks\n");
+		arch->fastclock = tscticks;
+	} else {
+		print("i8253init: keeping i8253-based fastticks (VM or no TSC)\n");
+	}
 }
 
 void

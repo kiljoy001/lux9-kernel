@@ -16,6 +16,7 @@
 #include	"initrd.h"
 #include	"../../limine.h"
 #include	"sdhw.h"
+#include	"vmdetect.h"
 
 Conf conf;
 int idle_spin;
@@ -427,6 +428,11 @@ main(void)
 	quotefmtinstall();
 	screeninit();
 	print("\nLux9\n");
+
+	/* Detect VM early - before any problematic operations */
+	vm_detect();
+	vm_apply_workarounds();
+
 	cpuidentify();
 	/* Stash initrd pointers; parsing deferred until proc0 when allocators are ready */
 	extern struct limine_module_request *limine_module;
