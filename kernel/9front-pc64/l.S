@@ -704,7 +704,8 @@ _intrcommon:
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
     swapgs
-    movq %gs:0, %r15        /* Load m into r15 */
+    /* WORKAROUND: KVM doesn't virtualize GS base - use global m */
+    movq m(%rip), %r15      /* Load m into r15 from global variable */
 
     /* DEBUG: Check m is valid - COMMENTED OUT TO SEE PANIC
     testq %r15, %r15
@@ -727,7 +728,9 @@ _intrcommon:
 
 1:
     /* Kernel-mode trap - GS already points at Mach */
-    movq %gs:0, %r15
+    /* WORKAROUND: KVM doesn't properly virtualize GS base MSR, so use global m */
+    /* TODO: Check if we can use GS on bare metal for better performance */
+    movq m(%rip), %r15      /* Use global m pointer instead of %gs:0 */
     movq 16(%r15), %r14
 
 2:

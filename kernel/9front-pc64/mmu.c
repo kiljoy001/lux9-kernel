@@ -126,18 +126,28 @@ loadptr(u16int lim, uintptr off, void (*load)(void*))
 }
 
 static void
-taskswitch(uintptr stack)
+taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc (address of Proc struct)
 {
 	Tss *tss;
+	Proc *p = (Proc*)proc_struct_addr;
+	uintptr kstack_top; // The actual top of the kernel stack for CPU pushes
 
 	tss = m->tss;
 	if(tss != nil){
-		tss->rsp0[0] = (u32int)stack;
-		tss->rsp0[1] = stack >> 32;
-		tss->rsp1[0] = (u32int)stack;
-		tss->rsp1[1] = stack >> 32;
-		tss->rsp2[0] = (u32int)stack;
-		tss->rsp2[1] = stack >> 32;
+		if(p == nil || p->kstack == nil) { // For initial boot or m's stack
+			kstack_top = (uintptr)m + MACHSIZE; // Initial bootstrap stack
+		} else {
+			// Stack grows down from p->kstack + KSTACK.
+			// The CPU will push onto this.
+			kstack_top = (uintptr)p->kstack + KSTACK; 
+		}
+
+		tss->rsp0[0] = (u32int)kstack_top;
+		tss->rsp0[1] = kstack_top >> 32;
+		tss->rsp1[0] = (u32int)kstack_top; // Also update RSP1, RSP2 for consistency (if used)
+		tss->rsp1[1] = kstack_top >> 32;
+		tss->rsp2[0] = (u32int)kstack_top;
+		tss->rsp2[1] = kstack_top >> 32;
 	}
 	/* For now, skip TLB flush during first process switch - we're using same page tables */
 	/* mmuflushtlb(PADDR(m->pml4)); */
@@ -654,17 +664,8 @@ mmuinit(void)
 	print("DEBUG: Setting up MSRs\n");
 	*/
 	wrmsr(FSbase, 0ull);
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Set FSbase\n");
-	*/
 	wrmsr(GSbase, (uvlong)&machp[m->machno]);	/* kernel GS points to Mach* slot */
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Set GSbase (kernel Mach slot)\n");
-	*/
 	wrmsr(KernelGSbase, 0ull);	/* user-mode GS base unused until user TLS */
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Set KernelGSbase (user)\n");
-	*/
 
 	/* enable syscall extension */
 	/* DEBUG: Reduced verbose mmuinit printing
@@ -681,12 +682,17 @@ mmuinit(void)
 	}
 	
 	print("DEBUG[mmuinit]: About to read EFER MSR\n");
+	v = 0;  /* Initialize to zero before rdmsr */
 	rdmsr(Efer, &v);
 	print("DEBUG[mmuinit]: Read EFER MSR, value=%#llux\n", v);
-	v |= 1ull;
+
+	/* TEMPORARY: Skip EFER write on KVM - it already has correct value from bootloader */
+	print("DEBUG[mmuinit]: Skipping EFER MSR write (already set by bootloader)\n");
+	/* v |= 1ull;
 	print("DEBUG[mmuinit]: About to write EFER MSR\n");
 	wrmsr(Efer, v);
 	print("DEBUG[mmuinit]: Wrote EFER MSR\n");
+	*/
 	
 	// Debug print for EFER
 	dbghex("EFER set to: ", v);
