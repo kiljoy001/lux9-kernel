@@ -21,6 +21,7 @@ enum DeviceFamily {
     FAMILY_SPI = 4,
     FAMILY_DMA = 5,
     FAMILY_IRQ = 6,
+    FAMILY_SECURE_ELEMENT = 7,  /* TPM, secure enclaves, etc. */
     FAMILY_MAX
 };
 
@@ -31,6 +32,11 @@ enum DeviceFamily {
 #define FAMILY_CAP_EVENTS              (1 << 3)
 #define FAMILY_CAP_MULTI_DEVICE        (1 << 4)
 #define FAMILY_CAP_PERSISTENT_NAMES    (1 << 5)
+#define FAMILY_CAP_CRYPTO              (1 << 6)  /* Cryptographic operations */
+#define FAMILY_CAP_RANDOM              (1 << 7)  /* Hardware random number generation */
+#define FAMILY_CAP_ATTESTATION         (1 << 8)  /* Device attestation/measurement */
+#define FAMILY_CAP_SECURE_STORAGE      (1 << 9)  /* Secure storage (TPM sealed data) */
+#define DEFAULT_CHANNELS_PER_FAMILY    1048576UL
 
 /* Channel states */
 enum ChannelState {
@@ -79,6 +85,8 @@ struct ChannelManager;
 struct ResourcePool;
 struct EventSystem;
 struct TransactionManager;
+struct Process;
+enum EventType;
 
 // Opaque handle for pebble integration
 typedef struct PebbleHandle PebbleHandle;
@@ -89,6 +97,7 @@ struct FamilyExchangePage {
     enum DeviceFamily family_type;
     uint16_t family_version;
     char family_name[32];
+    uint32_t capabilities_mask;
     
     /* System integration */
     struct PebbleHandle* family_white_token;  /* Family-wide authentication */
@@ -120,9 +129,9 @@ struct FamilyExchangePage {
         uint64_t total_channels_created;
         uint64_t active_channels;
         uint64_t peak_channels;
-        uint64_t total_operations;
-        uint64_t error_count;
-        uint64_t memory_usage_bytes;
+    uint64_t total_operations;
+    uint64_t error_count;
+    uint64_t memory_usage_bytes;
     } stats;
     
     /* Locking */
@@ -140,6 +149,14 @@ struct FamilyOps {
     int (*family_shutdown)(struct FamilyExchangePage* family);
     int (*family_suspend)(struct FamilyExchangePage* family);
     int (*family_resume)(struct FamilyExchangePage* family);
+    
+    /* 9P Interface Hooks (Congruent Router Support) */
+    Walkqid* (*walk)(struct FamilyExchangePage* family, Chan* c, Chan* nc, char** name, int nname);
+    int (*stat)(struct FamilyExchangePage* family, Chan* c, uchar* dp, int n);
+    Chan* (*open)(struct FamilyExchangePage* family, Chan* c, int omode);
+    void (*close)(struct FamilyExchangePage* family, Chan* c);
+    long (*read)(struct FamilyExchangePage* family, Chan* c, void* buf, long n, vlong off);
+    long (*write)(struct FamilyExchangePage* family, Chan* c, void* buf, long n, vlong off);
     
     /* Device discovery and management */
     int (*scan_devices)(struct FamilyExchangePage* family);
@@ -176,7 +193,17 @@ struct FamilyOps {
 struct FamilyRegistry {
     struct FamilyExchangePage* families[FAMILY_MAX];
     Lock registry_lock;
+    Lock lock; /* legacy alias */
     int family_count;
+};
+
+/* System-wide channel statistics */
+struct ChannelStats {
+    uint64_t total_channels_allocated;
+    uint64_t peak_channels;
+    uint64_t total_memory_usage;
+    uint64_t total_operations;
+    uint64_t error_count;
 };
 
 /* Core family API */

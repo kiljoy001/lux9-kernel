@@ -121,8 +121,12 @@ mpinit(void)
 	Apic *apic;
 	char *cp;
 
+	print("mpinit: ENTRY fastclock=%p cpuhz=%llud havetsc=%d\n",
+		arch->fastclock, m->cpuhz, m->havetsc);
+
 	i8259init();
 	syncclock();
+	print("mpinit: after syncclock cpuhz=%llud tscticks=%llud\n", m->cpuhz, m->tscticks);
 
 	if(getconf("*apicdebug")){
 		Bus *b;
@@ -164,6 +168,7 @@ mpinit(void)
 	apic->online = 1;
 
 	lapicinit(apic);
+	print("mpinit: lapicinit complete\n");
 
 	/*
 	 * These interrupts are local to the processor

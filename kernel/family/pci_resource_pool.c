@@ -18,6 +18,37 @@
 #include "exchange.h"
 #include <error.h>
 
+/* Pebble granularity for resource calculations */
+#ifndef PEBBLE_GRANULARITY
+#define PEBBLE_GRANULARITY 4096  /* 4KB pages */
+#endif
+
+/* Stub implementations for missing helper functions */
+static Proc* current_process(void) { return up; }
+static uint64_t now(void) { return fastticks(nil); }
+static int exchange_prepare_pci_bar(uint64_t channel_id, uint8_t bar_num, PebbleHandle* token, ExchangeHandle* handle) { *handle = 0; return 0; }
+static void exchange_cleanup(ExchangeHandle handle) { if (handle) exchange_cancel(handle); }
+static PebbleHandle* pebble_create_white(void* ctx, char* desc, size_t size) { return nil; }
+static struct PCIChannel* lookup_pci_channel(struct FamilyExchangePage* family, uint64_t channel_id) { return nil; }
+static void* upamalloc(uintptr addr, size_t size, size_t align) { return xspanalloc(size, (int)align, 0); }
+static int exchange_prepare_pci_dma(uint64_t channel_id, uintptr paddr, size_t size, PebbleHandle* token, ExchangeHandle* handle) { *handle = 0; return 0; }
+
+/* Resource pool statistics */
+struct ResourcePoolStats {
+    uint32_t used_bars, max_bars;
+    uint32_t used_irqs, max_irqs;
+    uint32_t used_dmas, max_dmas;
+    uint64_t total_bar_allocations;
+    uint64_t total_irq_allocations;
+    uint64_t total_dma_allocations;
+    uint64_t total_bar_bytes;
+    uint64_t total_dma_bytes;
+    uint32_t peak_concurrent_bars;
+    uint32_t peak_concurrent_irqs;
+    uint32_t peak_concurrent_dmas;
+    uint64_t allocation_failures;
+};
+
 /* Resource pool types */
 enum PCIResourceType {
     PCI_RESOURCE_BAR = 1,
@@ -74,26 +105,26 @@ struct PCIIrqResource {
 
 /* DMA resource descriptor */
 struct PCIDmaResource {
-    uint64_t dma_id;                   // 64-bit resource ID
-    uint64_t physical_address;          // Physical DMA address
-    uint64_t size;                      // Size of DMA region
-    uint32_t alignment;                 // Alignment requirements
-    bool is coherent;                   // Cache-coherent DMA
-    bool is_active;                    // Resource currently in use
-    
-    // Channel binding
-    uint64_t bound_channel_id;          // Channel that owns this DMA
-    struct PCIChannel* bound_channel;   // Direct channel reference
-    
-    // Exchange page for zero-copy DMA
-    struct ExchangeHandle* exchange_handle; // Exchange page handle
-    PebbleHandle* dma_white_token;     // Authorization token for DMA access
-    
-    // DMA tracking
-    struct Proc* owning_process;       // Process that allocated this DMA
-    uint64_t allocated_at;             // Allocation timestamp
-    uint64_t bytes_transferred;        // Total bytes transferred
-    uint32_t transfer_count;            // Number of DMA transfers
+    uint64_t dma_id;                    /* 64-bit resource ID */
+    uint64_t physical_address;          /* Physical DMA address */
+    uint64_t size;                      /* Size of DMA region */
+    uint32_t alignment;                 /* Alignment requirements */
+    int is_coherent;                    /* Cache-coherent DMA */
+    int is_active;                      /* Resource currently in use */
+
+    /* Channel binding */
+    uint64_t bound_channel_id;          /* Channel that owns this DMA */
+    struct PCIChannel* bound_channel;   /* Direct channel reference */
+
+    /* Exchange page for zero-copy DMA */
+    struct ExchangeHandle* exchange_handle; /* Exchange page handle */
+    PebbleHandle* dma_white_token;      /* Authorization token for DMA access */
+
+    /* DMA tracking */
+    struct Proc* owning_process;        /* Process that allocated this DMA */
+    uint64_t allocated_at;              /* Allocation timestamp */
+    uint64_t bytes_transferred;         /* Total bytes transferred */
+    uint32_t transfer_count;            /* Number of DMA transfers */
 };
 
 /* PCI Resource Pool Manager */
@@ -367,10 +398,10 @@ allocate_pci_irq_resource(struct FamilyExchangePage* family, struct PCIDeviceDes
     /* Initialize IRQ resource */
     struct PCIIrqResource* irq = &pool->irq_resources[free_slot];
     memset(irq, 0, sizeof(struct PCIIrqResource));
-    
+
     irq->irq_id = pool->next_irq_id++;
     irq->irq_vector = irq_vector;
-    irq->irq_line = device->irq_line;  // Use device's IRQ line
+    irq->irq_line = irq_vector;  /* Use IRQ vector as line */
     irq->trigger_type = trigger_type;
     irq->polarity = polarity;
     irq->is_msi = device->capabilities.has_msi || device->capabilities.has_msix;

@@ -755,6 +755,13 @@ acpiinit(void)
 	/*
 	 * Ininitalize local APIC and start application processors.
 	 */
+	if(arch->clockinit) { // Use the global 'arch' pointer
+		print("acpiinit: calling arch->clockinit()\n");
+		arch->clockinit();
+		print("acpiinit: arch->clockinit() complete\n");
+	} else {
+		print("acpiinit: WARNING: arch->clockinit is nil, skipping clock init\n");
+	}
 	mpinit();
 }
 
@@ -879,7 +886,12 @@ identify(void)
 		archacpi.clockinit = hpetinit;
 		archacpi.fastclock = hpetread;
 	}
-	if(m->havetsc && getconf("*notsc") == nil)
+	/*
+	 * Only switch to TSC-based fastclock if we already know its frequency.
+	 * On this port i8253init (clockinit) computes m->cpuhz; without it
+	 * fastticks would report hz=0 and todsetfreq would panic.
+	 */
+	if(m->havetsc && getconf("*notsc") == nil && m->cpuhz != 0)
 		archacpi.fastclock = tscticks;
 
 	return 0;

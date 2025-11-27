@@ -11,7 +11,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "error.h"
-#include <string.h>
+#include "crypto.h"
 
 #include "../include/family/family.h"
 #include "../include/tpm.h"
@@ -112,18 +112,23 @@ tpm_family_init(struct FamilyExchangePage* family)
     family->family_specific_ctx = ctx;
 
     /* Try to initialize TPM hardware */
-    ret = tpminit();  /* This calls our kernel TPM driver */
+    ret = tpm_init();  /* This calls our kernel TPM driver */
     if (ret < 0) {
         print("TPM Family: Hardware initialization failed, using software fallback\n");
         ctx->tpm_available = 0;
+        ctx->tpm_ctx = nil;
     } else {
         print("TPM Family: TPM hardware initialized successfully\n");
         ctx->tpm_available = 1;
-        
-        /* Get TPM context from kernel */
-        if (tpm_get_tpm_context((void**)&ctx->tpm_ctx) != 0) {
-            print("TPM Family: Failed to get TPM context\n");
+
+        /* Allocate TPM context */
+        ctx->tpm_ctx = malloc(sizeof(TPMContext));
+        if (ctx->tpm_ctx == nil) {
+            print("TPM Family: Failed to allocate TPM context\n");
             ctx->tpm_available = 0;
+        } else {
+            memset(ctx->tpm_ctx, 0, sizeof(TPMContext));
+            ctx->tpm_ctx->hardware_available = 1;
         }
     }
 
@@ -146,7 +151,13 @@ tpm_family_init(struct FamilyExchangePage* family)
 
     family->family_version = 1;
     family->state = FAMILY_READY;
-    
+
+    /* Initialize TPM-backed crypto key storage */
+    crypto_tpm_key_init();
+
+    /* Rotate HMAC key on boot for fresh key each boot */
+    crypto_tpm_rotate_hmac_key();
+
     print("TPM Family: Initialization complete\n");
     return FAMILY_OK;
 }
@@ -205,7 +216,7 @@ tpm_family_allocate_channel(struct FamilyExchangePage* family, void* device_id,
     /* Generate channel ID */
     ctx->channel_mgr.next_channel_id++;
     tpm_channel->channel_id = ctx->channel_mgr.next_channel_id;
-    ctx->channels[ctx->channel_mgr.channel_count] = tpm_channel;
+    ctx->channel_mgr.channels[ctx->channel_mgr.channel_count] = tpm_channel;
     ctx->channel_mgr.channel_count++;
     
     *channel_id = tpm_channel->channel_id;
@@ -228,10 +239,10 @@ tpm_family_release_channel(struct FamilyExchangePage* family, uint64_t channel_i
     
     /* Find and remove channel */
     for (i = 0; i < ctx->channel_mgr.channel_count; i++) {
-        TPMChannel* channel = ctx->channels[i];
+        TPMChannel* channel = ctx->channel_mgr.channels[i];
         if (channel->channel_id == channel_id) {
             free(channel);
-            ctx->channels[i] = ctx->channels[ctx->channel_mgr.channel_count - 1];
+            ctx->channel_mgr.channels[i] = ctx->channel_mgr.channels[ctx->channel_mgr.channel_count - 1];
             ctx->channel_mgr.channel_count--;
             
             family->stats.active_channels--;
@@ -320,10 +331,10 @@ tpm_family_shutdown(struct FamilyExchangePage* family)
     int i;
     
     print("TPM Family: Shutting down...\n");
-    
+
     /* Release all channels */
     for (i = 0; i < ctx->channel_mgr.channel_count; i++) {
-        free(ctx->channels[i]);
+        free(ctx->channel_mgr.channels[i]);
     }
     
     free(ctx);
@@ -441,7 +452,7 @@ secure_element_get_random(uint8_t* buffer, int len)
     
     if (ctx->tpm_available && (ctx->capabilities & FAMILY_CAP_RANDOM)) {
         /* Use hardware RNG via TPM */
-        return tpm_get_random(ctx->tpm_ctx, buffer, len);
+        return tpm_get_random(buffer, len);
     }
     
     /* Software fallback */
@@ -451,7 +462,7 @@ secure_element_get_random(uint8_t* buffer, int len)
     for (i = 0; i < len; i += sizeof(tmp)) {
         /* Use kernel entropy pool as fallback */
         int bytes_to_generate = (len - i) > sizeof(tmp) ? sizeof(tmp) : (len - i);
-        int ret = tpm_get_random(ctx->tpm_ctx, tmp, bytes_to_generate);
+        int ret = tpm_get_random(tmp, bytes_to_generate);
         if (ret > 0) {
             memcpy(buffer + i, tmp, ret);
             bytes_generated += ret;
@@ -467,16 +478,35 @@ secure_element_get_random(uint8_t* buffer, int len)
 int
 secure_element_hmac(uint64_t channel_id, const uint8_t* data, size_t len, uint8_t* hmac_out)
 {
-    /* For now, this would interface with the TPM driver directly */
-    /* In a full implementation, this would use the channel_id to look up the TPM channel */
-    /* and use the real TPM hardware for HMAC computation */
-    
+    TPMFamilyContext* ctx;
+    struct FamilyExchangePage* family = secure_element_family_get();
+    size_t hmac_len = 32;  /* SHA256 output */
+    int i;
+
+    if (family == nil || family->family_specific_ctx == nil) {
+        return -1;
+    }
+
+    ctx = family->family_specific_ctx;
+
     print("Secure Element: HMAC requested for channel 0x%llx\n", (unsigned long long)channel_id);
-    
-    /* Software fallback for now */
-    unsigned int md_len;
-    HMAC(EVP_sha256(), "default-key", 12, data, len, hmac_out, &md_len);
-    return md_len;
+
+    /* Use TPM 2.0 HMAC if available */
+    if (ctx->tpm_available && ctx->tpm_ctx && ctx->detected_version == TPM_2_0) {
+        if (tpm20_hmac(ctx->tpm_ctx, ctx->tpm_ctx->hmac_key_handle,
+                      (uint8_t*)data, len, hmac_out, &hmac_len) == 0) {
+            return (int)hmac_len;
+        }
+    }
+
+    /* Software fallback - use TPM-backed HMAC-SHA256 from kernel crypto */
+    if (crypto_tpm_hmac_sha256(hmac_out, (const uint8_t*)data, len) == 0) {
+        print("Secure Element: Used crypto_tpm_hmac_sha256\n");
+        return 32;
+    }
+
+    print("Secure Element: HMAC failed\n");
+    return -1;
 }
 
 /*
@@ -501,23 +531,35 @@ secure_element_attest(uint64_t channel_id, uint8_t* attestation_data, size_t* da
         return -1;  /* Not implemented yet */
     }
     
-    /* Software fallback attestation */
-    uint64_t timestamp = getnanoseconds();
-    
+    /* Software fallback attestation using SHA256 */
+    uint64_t timestamp = fastticks(nil);
+    uint8_t hash[32];
+
+    /* Build attestation structure:
+     * Bytes 0-7:   Magic "SEATT" + padding
+     * Bytes 8-15:  Timestamp
+     * Bytes 16-47: SHA256 hash of the attestation data
+     */
     attestation_data[0] = 'S';
     attestation_data[1] = 'E';
     attestation_data[2] = 'A';
     attestation_data[3] = 'T';
     attestation_data[4] = 'T';
+    attestation_data[5] = 0;
+    attestation_data[6] = 0;
+    attestation_data[7] = 0;
     memcpy(&attestation_data[8], &timestamp, sizeof(timestamp));
-    
-    /* Hash the attestation data */
-    uint8_t hash[32];
-    unsigned int md_len;
-    HMAC(EVP_sha256(), "attestation-key", 16, attestation_data, 512, hash, &md_len);
+
+    /* Hash the entire attestation structure using SHA256 */
+    if (crypto_sha256(hash, attestation_data, 512) != 0) {
+        print("Secure Element: SHA256 failed for attestation\n");
+        return -1;
+    }
+
+    /* Include the hash in the attestation */
     memcpy(&attestation_data[16], hash, 32);
-    
+
     *data_size = 64;
-    print("Secure Element: Software attestation generated\n");
+    print("Secure Element: Software attestation generated (SHA256)\n");
     return 0;
 }

@@ -17,19 +17,65 @@
 struct FamilyRegistry family_registry;
 Lock family_registry_lock;
 Lock global_channel_id_lock;
+static uint64_t global_next_channel_id;
+
+/* Global stats */
+static Lock global_stats_lock;
+static struct ChannelStats global_channel_stats;
+
+/* static void lock_init(Lock* l) { memset(l, 0, sizeof(Lock)); } - Moved to stubs.c */
+
+/* Optional subsystem stub implementations */
+void
+init_resource_pool(struct FamilyExchangePage* family)
+{
+    /* Resource pool initialization handled by family-specific code */
+    family->resource_pool = nil;
+}
+
+void
+init_event_system(struct FamilyExchangePage* family)
+{
+    /* Event system initialization handled by family-specific code */
+    family->event_system = nil;
+}
+
+void
+init_transaction_manager(struct FamilyExchangePage* family)
+{
+    /* Transaction manager initialization handled by family-specific code */
+    family->tx_mgr = nil;
+}
+
+void
+cleanup_family_resources(struct FamilyExchangePage* family)
+{
+    /* Cleanup handled by family-specific shutdown */
+    if(family){
+        family->resource_pool = nil;
+        family->event_system = nil;
+        family->tx_mgr = nil;
+    }
+}
 
 /* Initialize family system */
 void
 family_init(void)
 {
-    lock(&family_registry.lock);
+    lock_init(&family_registry.registry_lock);
+    lock_init(&global_channel_id_lock);
+    lock_init(&global_stats_lock);
+
+    memset(&global_channel_stats, 0, sizeof(global_channel_stats));
+
+    lock(&family_registry.registry_lock);
     // Initialize all family slots as NULL
     for (int i = 0; i < FAMILY_MAX; i++) {
         family_registry.families[i] = NULL;
     }
     
     family_registry.family_count = 0;
-    unlock(&family_registry.lock);
+    unlock(&family_registry.registry_lock);
     
     /* Initialize global channel ID generator */
     lock(&global_channel_id_lock);
@@ -53,15 +99,8 @@ family_register(enum DeviceFamily family_type, struct FamilyOps* ops, char* name
             }
             break;
         case FAMILY_USB:
-            if (struct USBFamilyOps) {
-                return -1;  /* Not implemented yet */
-            }
-            break;
         case FAMILY_I2C:
-            if (struct I2CFamilyOps) {
-                return -1;  /* Not implemented yet */
-            }
-            break;
+            return -1;  /* Not implemented yet */
         default:
             return -1;  // Invalid family type
     }
@@ -110,16 +149,16 @@ family_register(enum DeviceFamily family_type, struct FamilyOps* ops, char* name
     
     /* Configure channel limits */
     if (ops->configure_channel_limits) {
-        ops->configure_channel_limits(family);
+        ops->configure_channel_limits(family, family->max_channels);
     }
     
     /* Add to registry */
-    lock(&family_registry.lock);
+    lock(&family_registry.registry_lock);
     family_registry.families[family_type] = family;
     family_registry.family_count++;
     
-    print("%s: registered %s family\n", family->family_name);
-    unlock(&family_registry.lock);
+    print("%s: registered %s family\n", family->family_name, name);
+    unlock(&family_registry.registry_lock);
     
     return 0;
 }
@@ -132,11 +171,11 @@ family_unregister(enum DeviceFamily family_type)
         return -1;  // Invalid family type
     }
     
-    lock(&family_registry.lock);
+    lock(&family_registry.registry_lock);
     
     struct FamilyExchangePage* family = family_registry.families[family_type];
     if (!family) {
-        unlock(&family_registry.lock);
+        unlock(&family_registry.registry_lock);
         return -2;  // Family not registered
     }
     
@@ -152,9 +191,9 @@ family_unregister(enum DeviceFamily family_type)
     family_registry.families[family_type] = NULL;
     family_registry.family_count--;
     
-    print("%s: unregistered %s family\n", family_type_to_string(family_type));
+    print("%s: unregistered %s family\n", family_type_to_string(family_type), family_type_to_string(family_type));
     
-    unlock(&family_registry.lock);
+    unlock(&family_registry.registry_lock);
     
     return 0;
 }
@@ -166,13 +205,13 @@ family_lookup(enum DeviceFamily family_type)
     if (family_type >= FAMILY_MAX) {
         return NULL;  // Invalid family type
     }
-    
-    lock(&family_registry.lock);
-    
+
+    lock(&family_registry.registry_lock);
+
     struct FamilyExchangePage* family = family_registry.families[family_type];
-    
-    unlock(&family_registry.lock);
-    
+
+    unlock(&family_registry.registry_lock);
+
     return family;
 }
 
@@ -186,12 +225,6 @@ generate_channel_id(void)
     
     id = global_next_channel_id++;
     
-    if (id == 1) {  /* Rollback avoidance */
-        id = global_next_id_id++;
-        global_next_channel_id_id++;
-        global_next_channel_id_id++;
-    }
-    
     unlock(&global_channel_id_lock);
     
     return id;
@@ -199,14 +232,12 @@ generate_channel_id(void)
 
 /* Validate channel access permissions */
 int
-validate_channel_permissions(uint32_t requested, struct Process* owner, struct DeviceDescriptor* device)
+validate_channel_permissions(uint32_t requested, uint32_t granted)
 {
-    if (requested == 0) {
+    if (requested == 0)
         return -1;  // Invalid permissions
-    }
-    
-    /* In kernel code that has direct access, all permissions are valid */
-    // In the future, this would involve pebble token validation
+    if ((requested & ~granted) != 0)
+        return -1;  // Request exceeds granted mask
     return 0;
 }
 
@@ -222,11 +253,8 @@ update_channel_stats(struct FamilyExchangePage* family)
     stats->total_channels_allocated += 1;
     
     if (family) {
-        if (family->stats.active_channels > 0) {
-            stats->peak_channels_count = family->stats.peak_channels > stats->peak_channels_count ? 
-                                          family->stats.peak_channels : 
-                                          family->stats.peak_channels_count;
-        }
+        if (family->stats.active_channels > 0 && family->stats.peak_channels > stats->peak_channels)
+            stats->peak_channels = family->stats.peak_channels;
         stats->total_memory_usage += family->stats.memory_usage_bytes;
     }
     
@@ -248,30 +276,66 @@ family_stats(enum DeviceFamily family_type)
     print("  Channels: %d / %d (active/allocated)\n", 
            family->stats.active_channels, family->max_channels);
     
-    print("  Memory Usage: %d bytes\n", family->stats.memory_usage_bytes);
+    print("  Memory Usage: %lld bytes\n", family->stats.memory_usage_bytes);
     print("  Operations: %lld total\n", family->stats.total_operations);
     print("  Errors: %lld\n", family->stats.error_count);
     print("  Peak Channels: %d\n", family->stats.peak_channels);
 }
 
 /* Helper function to handle global channel statistics */
-static Lock global_stats_lock;
-static struct ChannelStats global_channel_stats;
-
 void
 setup_global_channel_stats(void)
 {
     memset(&global_channel_stats, 0, sizeof(global_channel_stats));
     global_channel_stats.total_channels_allocated = 0;
-    global_channel_stats.peak_channels_count = 0;
+    global_channel_stats.peak_channels = 0;
     global_channel_stats.total_memory_usage = 0;
     global_channel_stats.total_operations = 0;
     global_channel_stats.error_count = 0;
-    global_channel_stats.peak_channels_count = 0;
-    
-    lock_init(&global_stats_lock);
+    global_channel_stats.peak_channels = 0;
 }
 
-/* Helper function to handle channel ID generation */
-static Lock global_channel_id_lock;
-static uint64_t global_next_channel_id;
+/* Convert family type to string */
+const char*
+family_type_to_string(enum DeviceFamily type)
+{
+    switch(type){
+    case FAMILY_NONE:
+        return "NONE";
+    case FAMILY_PCI:
+        return "PCI";
+    case FAMILY_USB:
+        return "USB";
+    case FAMILY_I2C:
+        return "I2C";
+    case FAMILY_SPI:
+        return "SPI";
+    case FAMILY_DMA:
+        return "DMA";
+    case FAMILY_IRQ:
+        return "IRQ";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+/* Convert string to family type */
+enum DeviceFamily
+string_to_family_type(const char* name)
+{
+    if(!name)
+        return FAMILY_NONE;
+    if(strcmp(name, "PCI") == 0)
+        return FAMILY_PCI;
+    if(strcmp(name, "USB") == 0)
+        return FAMILY_USB;
+    if(strcmp(name, "I2C") == 0)
+        return FAMILY_I2C;
+    if(strcmp(name, "SPI") == 0)
+        return FAMILY_SPI;
+    if(strcmp(name, "DMA") == 0)
+        return FAMILY_DMA;
+    if(strcmp(name, "IRQ") == 0)
+        return FAMILY_IRQ;
+    return FAMILY_NONE;
+}

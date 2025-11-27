@@ -458,7 +458,8 @@ main(void)
 	if(arch->clockinit){
 	arch->clockinit();
 	}
-	meminit();
+
+	meminit(); // CRITICAL: Populates conf.mem and initializes palloc
 	ramdiskinit();
 	confinit();
 	pebbleinit();
@@ -471,8 +472,7 @@ main(void)
 	print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
 
 	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
-	 * because memory coordination needs it during CR3 switch */
-	borrowinit();
+	 * because memory coordination needs it during CR3 switch */	borrowinit();
 
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();

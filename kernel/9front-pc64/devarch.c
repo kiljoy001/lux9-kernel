@@ -625,6 +625,13 @@ cpuidentify(void)
 				m->cpumhz = mhz;
 				m->cpuhz = mhz * 1000000ULL;
 			}
+			
+			/* Fallback if CPUID 0x16 is not supported (e.g. QEMU TCG) */
+			if(m->cpuhz == 0){
+				print("WORKAROUND: cpuidentify could not determine cpuhz, forcing 2GHz default\n");
+				m->cpumhz = 2000;
+				m->cpuhz = 2000000000ULL;
+			}
 		}
 	}
 
@@ -971,73 +978,10 @@ archinit(void)
 	PCArch **p;
 	int found = 0;
 
-	arch = &archgeneric;  /* safe default fallback */
-	print("archinit: default fallback arch = %s\n", arch->id);
-
-	/* Skip ACPI in VMs - it requires timer calibration that hangs */
-	if(vm_is_virtual()){
-		print("archinit: VM detected, skipping ACPI (using generic arch)\n");
-		arch = &archgeneric;
-		/* Don't copy intrinit from ACPI - i8259 (PIC) will be used instead */
-		print("archinit: final arch = %s (using i8253 PIT and i8259 PIC for VM)\n", arch->id);
-		/* archgeneric already has i8253init for clockinit and i8259init for intrinit */
-		/* Skip the normal arch setup that would copy ACPI functions */
-		return;
-	}
-
-	for(p = knownarch; *p != nil; p++){
-		print("archinit: trying %s\n", (*p)->id);
-		if((*p)->ident != nil && (*p)->ident() == 0){
-			arch = *p;
-			found = 1;
-			print("archinit: selected arch = %s\n", arch->id);
-			break;
-		}
-	}
-	if(!found)
-		print("archinit: no arch identified, using fallback generic\n");
-	print("archinit: final arch = %s\n", arch->id);
-
-setup_arch:
-	if(arch != &archgeneric){
-		if(arch->id == nil)
-			arch->id = knownarch[0]->id;
-		if(arch->reset == nil)
-			arch->reset = knownarch[0]->reset;
-		if(arch->intrinit == nil)
-			arch->intrinit = knownarch[0]->intrinit;
-		if(arch->intrassign == nil)
-			arch->intrassign = knownarch[0]->intrassign;
-		if(arch->clockinit == nil)
-			arch->clockinit = knownarch[0]->clockinit;
-		if(arch->clockenable == nil)
-			arch->clockenable = knownarch[0]->clockenable;
-		if(arch->timerset == nil)
-			arch->timerset = knownarch[0]->timerset;
-		if(arch->fastclock == nil)
-			arch->fastclock = knownarch[0]->fastclock;
-	}
-
-	/*
-	 *  Decide whether to use copy-on-reference (386 and mp).
-	 *  We get another chance to set it in mpinit() for a
-	 *  multiprocessor.
-	 */
-	if(m->cpuidfamily == 3)
-		conf.copymode = 1;
-
-	if(m->cpuidfamily >= 4)
-		cmpswap = cmpswap486;
-
-	if(m->cpuidfamily >= 5)
-		coherence = mb586;
-
-	if(m->cpuiddx & Sse2)
-		coherence = mfence;
-
-	addarchfile("cputype", 0444, cputyperead, nil);
-	addarchfile("archctl", 0664, archctlread, archctlwrite);
-	addarchfile("realmodemem", 0660, rmemread, rmemwrite);
+	// FORCE GENERIC ARCH TO BYPASS ACPI/APIC issues in QEMU TCG
+	print("archinit: FORCING GENERIC ARCH for QEMU TCG compatibility\n");
+	arch = &archgeneric;
+	return; // Skip complex ACPI/MP detection for now
 }
 
 /*

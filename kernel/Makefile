@@ -34,7 +34,7 @@ BORROW_C := ../kernel/borrowchecker.c
 LOCKDAG_C := ../kernel/lock_dag.c
 PEBBLE_C := ../kernel/pebble.c
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
-FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c
+FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
@@ -45,10 +45,12 @@ BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C))
 LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
 PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
-FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o pebble.o
+FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(AML_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
+# AML_O removed temporarily to fix build
+# $(AML_O)
 
 # Compiler flags - Optimized for Plan 9 compatibility
 CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
@@ -114,6 +116,10 @@ $(KERNEL_BINARY): $(ALL_O)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: ../real_drivers/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+pebble_family.o: family/pebble.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

@@ -18,9 +18,12 @@
 #include "exchange.h"
 #include <error.h>
 
+void lock_init(Lock* l);
+
 /* PCI channel resource structures */
 struct PCIChannelBarResource {
     uint8_t bar_number;              /* Which BAR (0-5) */
+    uint32_t base_address;           /* Physical base address */
     ExchangeHandle exchange_handle; /* Exchange page handle for BAR memory */
     uintptr virtual_address;         /* Mapped virtual address if mapped */
     size_t mapped_size;              /* Current mapped size */
@@ -44,91 +47,109 @@ struct PCIChannelDmaResource {
     struct PCIDeviceDescriptor* device;
 };
 
-/* PCI channel structure */
-struct PCIChannel {
-    /* Base channel information */
-    uint64_t channel_id;              /* 64-bit unique channel ID */
-    char channel_name[64];             /* Human readable name */
-    struct FamilyExchangePage* family; /* Back-reference to family */
-    
-    /* Device binding */
-    struct PCIDeviceDescriptor* bound_device;  /* Which device this controls */
-    struct PCIAddress pci_address;               /* Quick access */
-    
-    /* Security and permissions */
-    uint32_t permissions_mask;          /* Allowed operations */
-    struct PebbleHandle* white_token;    /* Authentication token */
-    struct PebbleHandle* white_token_family; /* Family auth token */
-    struct Process* owner_process;      /* Process that owns this channel */
-    
-    /* Resource associations */
-    struct {
-        struct PCIChannelBarResource* bars[6]; /* Up to 8 BAR resources */
-        struct PCIChannelIrqResource* irqs[8]; /* Up to 8 IRQ resources */
-        struct PCIChannelDmaResource* dmas[4]; /* Up to 4 DMA resources */
-        int bar_count, irq_count, dma_count;
-    } resources;
-    
-    /* Channel state */
-    enum ChannelState state;            /* Current channel state */
-    uint64_t created_at;               /* Creation timestamp */
-    uint64_t last_operation;          /* Last operation timestamp */
-    uint64_t operation_count;          /* Number of operations performed */
-    
-    /* Transaction support */
-    struct {
-        bool config_transaction_active;
-        uint64_t current_transaction_id;
-        void* transaction_state;        /* Transaction-specific state */
-    } transaction_state;
-    
-    /* BAR mapping context */
-    struct {
-        uintptr bar_addresses[6];      /* Virtual addresses for mapped BARs */
-        size_t bar_sizes[6];           /* Size of each BAR mapping */
-        bool bar_mapped[6];            /* Whether each BAR is mapped */
-    } mapping_ctx;
-    
-    /* Driver context */
-    void* driver_context;             /* Driver-specific context */
-    
-    /* Statistics */
-    struct {
-        uint64_t reads, writes;
-        uint64_t config_space_access;
-        uint64_t bar_access;
-        uint64_t irq_notifications;
-    } stats;
-    
-    /* Linking (for channel management) */
-    struct PCIChannel* next;
-    struct PCIChannel* prev;
-};
+/* Note: PCIChannel and PCIChannelManager structures are defined in pci_family_ops.h */
 
-/* PCI channel manager */
-struct PCIChannelManager {
-    struct PCIChannel* channels[MAX_CHANNELS_PER_PCI_FAMILY];
-    ChannelID_64 channel_ids[MAX_CHANNELS_PER_PCI_FAMILY];  /* Fast lookup by ID */
-    struct PCIChannel* free_channels; /* Free list for allocation */
-    
-    uint64_t next_channel_id;           /* Next channel ID to allocate */
-    uint32_t max_channels;             /* Maximum configurable channels */
-    uint32_t channel_count;            /* Number of allocated channels */
-    
-    Lock channel_lock;                  /* Protect channel pool */
-    
+/* Missing constants */
+#define MAX_CHANNELS_PER_PCI_FAMILY 256
+#define MAX_PERSISTENT_NAMES 128
+#define PERSISTENT_NAME_LENGTH 64
+
+/* Extended channel manager with additional features */
+struct PCIEChannelManager {
+    struct PCIChannelManager* base;      /* Base manager from header */
+    struct PCIFamilyContext* family_ctx; /* Reference to family context */
+    uint32_t max_channels;               /* Maximum configurable channels */
+    uint32_t channel_count;              /* Number of allocated channels */
+    uint64_t next_channel_id;            /* Next channel ID to allocate */
+    struct PCIChannel* channels;         /* Channel pool array */
+    struct PCIChannel** channel_ids;     /* Fast ID lookup table */
+    struct PCIChannel* free_channels;    /* Free list */
+    Lock channel_lock;                   /* Protect channel pool */
+
     /* Persistent naming */
     struct {
         struct PersistentName* names[MAX_PERSISTENT_NAMES];
         int name_count;
     } name_registry;
-    
+
     /* Allocation strategies */
     int (*allocate_by_address)(struct PCIDeviceDescriptor* dev, uint64_t* channel_id);
     int (*allocate_by_name)(char* device_name, uint64_t* channel_id);
     int (*allocate_auto)(struct PCIDeviceDescriptor* dev, void* criteria, uint64_t* channel_id);
-} pci_channel_allocators[4];
 };
+
+/* Global channel ID lock */
+static Lock global_channel_id_lock;
+
+/* External references */
+extern struct FamilyExchangePage* global_pci_family;
+
+/* Forward declarations */
+uint32_t device_can_access_flags(struct PCIDeviceDescriptor* dev);
+
+/* Stub implementations for missing helper functions */
+static struct PCIDeviceDescriptor* pci_discover_device(uint8_t bus, uint8_t dev, uint8_t func) { return nil; }
+static int validate_channel_operation_permission(Proc* proc, struct PCIChannel* ch) { return 0; }
+static void cleanup_pci_bar_resource(struct PCIChannelBarResource* res) { if (res) { /* cleanup */ } }
+static void cleanup_pci_irq_resource(struct PCIChannelIrqResource* res) { if (res) { /* cleanup */ } }
+static void cleanup_pci_dma_resource(struct PCIChannelDmaResource* res) { if (res) { /* cleanup */ } }
+static uint32_t get_max_channels_for_memory(uint32_t max_channels) { return MAX_CHANNELS_PER_PCI_FAMILY; }
+static uint32_t get_max_channels_for_device_count(uint32_t device_count) { return device_count * 4; }
+static int min(int a, int b) { return a < b ? a : b; }
+static int exchange_prepare_pages(uintptr vaddr, size_t size, ExchangeHandle* handle, int prot) { *handle = exchange_prepare(vaddr); return (*handle != 0) ? 0 : -1; }
+static void exchange_unmap(ExchangeHandle handle) { exchange_cancel(handle); }
+/* static void lock_init(Lock* l) { memset(l, 0, sizeof(Lock)); } - Moved to stubs.c */
+static Proc* current_process(void) { return up; }
+
+/* Helper function to convert channel state to string */
+static const char*
+channel_state_to_string(enum ChannelState state)
+{
+    switch (state) {
+    case CHANNEL_INACTIVE: return "inactive";
+    case CHANNEL_ACTIVE: return "active";
+    case CHANNEL_ERROR: return "error";
+    case CHANNEL_SUSPENDED: return "suspended";
+    default: return "unknown";
+    }
+}
+
+/* Device selection criteria for auto-allocation */
+struct PCIDeviceCriteria {
+    uint8_t class_code;
+    uint8_t subclass_code;
+    uint16_t vendor_id;
+    uint16_t device_id;
+    int has_pcie;
+    int has_msi;
+    uint32_t class_match_weight;
+    uint32_t vendor_match_weight;
+    uint32_t device_match_weight;
+    uint32_t capability_match_weight;
+};
+
+/* BAR information structure */
+struct PCIBarInfo {
+    uint8_t bar_number;
+    uint32_t base_address;
+    uint64_t size;
+    uint32_t type;
+    int is_64bit;
+    int is_prefetchable;
+    int is_io;
+    int is_memory;
+    int is_mapped;
+    int is_valid;
+    uintptr virtual_address;
+    size_t mapped_size;
+};
+
+/* Memory protection constants */
+#ifndef PROT_READ
+#define PROT_READ  0x1
+#define PROT_WRITE 0x2
+#define PROT_EXEC  0x4
+#endif
 
 /* Persistent device names */
 struct PersistentName {
@@ -162,22 +183,28 @@ generate_pci_channel_id(void)
 }
 
 /* Find PCI channel by ID (O(1) lookup) */
-static struct PCIChannel*
-lookup_pci_channel_by_id(struct PCIChannelManager* mgr, uint64_t channel_id)
+struct PCIChannel*
+lookup_channel_by_id(struct FamilyExchangePage* family, uint64_t channel_id)
 {
-    if (!mgr || channel_id == 0 || channel_id >= mgr->max_channels) {
+    if (!family || !family->channel_mgr) {
         return NULL;
     }
-    
-    if (mgr->channel_ids[channel_id] == NULL) {
-        return NULL;  // Not found
+
+    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_mgr;
+
+    if (channel_id == 0 || channel_id >= mgr->max_channels) {
+        return NULL;
     }
-    
+
+    if (mgr->channel_ids[channel_id] == NULL) {
+        return NULL;  /* Not found */
+    }
+
     return mgr->channel_ids[channel_id];
 }
 
 /* Find free channel */
-static struct PCIChannel*
+struct PCIChannel*
 allocate_pci_channel_struct(struct FamilyExchangePage* family, uint64_t channel_id, 
                            struct PCIDeviceDescriptor* device, uint32_t permissions)
 {
@@ -216,10 +243,9 @@ allocate_pci_channel_struct(struct FamilyExchangePage* family, uint64_t channel_
     channel->bound_device = device;
     channel->pci_address = device->address;
     channel->permissions_mask = permissions;
-    channel->owner_process = current_process;
     channel->state = CHANNEL_ACTIVE;
-    channel->created_at = now;
-    channel->last_operation = now;
+    channel->created_at = fastticks(nil);
+    channel->last_operation = fastticks(nil);
     
     /* Set default name */
     snprint(channel->channel_name, sizeof(channel->channel_name), 
@@ -241,7 +267,7 @@ allocate_pci_channel_struct(struct FamilyExchangePage* family, uint64_t channel_
 }
 
 /* Release PCI channel structure */
-static void
+void
 free_pci_channel_struct(struct PCIChannel* channel)
 {
     struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)channel->family->channel_mgr;
@@ -359,7 +385,7 @@ static int
 pci_allocate_channel_by_name(struct FamilyExchangePage* family, char* device_name, 
                               uint32_t permissions, uint64_t* channel_id)
 {
-    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_manager;
+    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_mgr;
     
     /* Look up device by name */
     struct PersistentName* name_entry = NULL;
@@ -415,7 +441,7 @@ pci_allocate_channel_auto(struct FamilyExchangePage* family, void* device_criter
                             uint32_t permissions, uint64_t* channel_id)
 {
     struct PCIDeviceCriteria* criteria = (struct PCIDeviceCriteria*)device_criteria;
-    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_manager;
+    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_mgr;
     struct PCIDeviceDescriptor* best_device = NULL;
     int best_score = -1;
     
@@ -486,7 +512,7 @@ pci_allocate_channel_auto(struct FamilyExchangePage* family, void* device_criter
 static int
 pci_release_channel(struct FamilyExchangePage* family, uint64_t channel_id)
 {
-    struct PCIChannel* channel = lookup_pci_channel_by_id(family->channel_mgr, channel_id);
+    struct PCIChannel* channel = lookup_channel_by_id(family, channel_id);
     
     if (!channel) {
         return -2;  // Channel not found
@@ -572,7 +598,7 @@ setup_pci_channel_manager(struct FamilyExchangePage* family)
 static int
 pci_configure_channel_limits(struct FamilyExchangePage* family)
 {
-    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_manager;
+    struct PCIEChannelManager* mgr = (struct PCIEChannelManager*)family->channel_mgr;
     
     if (!mgr) {
         return -1;
@@ -580,7 +606,7 @@ pci_configure_channel_limits(struct FamilyExchangePage* family)
     
     /* Dynamic limit adjustment based on system resources */
     uint32_t max_mem_channels = get_max_channels_for_memory(mgr->max_channels);
-    uint32_t max_dev_channels = get_max_channels_for_device_count(mgr->family_ctx->device_registry.total_devices);
+    uint32_t max_dev_channels = get_max_channels_for_device_count(mgr->family_ctx->topology.total_devices);
     uint32_t hard_limit = mgr->max_channels;
     
     uint32_t new_limit = min(min(max_mem_channels, max_dev_channels), hard_limit);
@@ -643,11 +669,11 @@ pci_channel_allocate_bar_resource(struct PCIChannel* channel, uint8_t bar_num,
     
     /* Map the exchange page to userspace */
     uintptr virt_addr;
-    result = exchange_accept(bar_handle, (uintptr)*virtual_addr, 
-                              PROT_READ|PROT_WRITE, channel->white_token);
+    result = exchange_accept(bar_handle, (uintptr)*virtual_addr,
+                              PROT_READ|PROT_WRITE);
     if (result != 0) {
         exchange_cancel(bar_handle);
-        return -6;  // Mapping failed
+        return -6;  /* Mapping failed */
     }
     
     /* Record allocation */
@@ -674,7 +700,7 @@ pci_channel_allocate_bar_resource(struct PCIChannel* channel, uint8_t bar_num,
     channel->mapping_ctx.bar_addresses[bar_num] = virt_addr;
     channel->mapping_ctx.bar_sizes[bar_num] = size;
     channel->mapping_ctx.bar_mapped[bar_num] = true;
-    channel->last_operation = now();
+    channel->last_operation = fastticks(nil);
     channel->stats.bar_access++;
     
     if (virtual_addr) {
@@ -716,7 +742,7 @@ pci_channel_release_bar_resource(struct PCIChannel* channel, uint8_t bar_num)
     channel->resources.bars[bar_num] = NULL;
     channel->resources.bar_count--;
     
-    channel->last_operation = now();
+    channel->last_operation = fastticks(nil);
     channel->stats.bar_access++;
     
     free(bar_res);
@@ -773,8 +799,8 @@ update_pci_channel_stats(struct PCIChannel* channel)
         return;
     }
     
-    channel->stats.operation_count++;
-    channel->last_operation = now();
+    channel->operation_count++;
+    channel->last_operation = fastticks(nil);
 }
 
 /* Channel statistics and debugging */
@@ -787,7 +813,7 @@ pci_print_channel_info(uint64_t channel_id)
         return;
     }
     
-    struct PCIChannel* channel = lookup_pci_channel_by_id(family->channel_mgr, channel_id);
+    struct PCIChannel* channel = lookup_channel_by_id(family, channel_id);
     
     if (!channel) {
         print("PCI: Channel %lld not found\n", (long long)channel_id);
@@ -831,7 +857,7 @@ pci_print_channel_info(uint64_t channel_id)
     }
     
     print("  Statistics:\n");
-    print("  Operations:    %ld\n", channel->stats.operation_count);
+    print("  Operations:    %ld\n", channel->operation_count);
     print("  Config Access:  %ld\n", channel->stats.config_space_access);
     print("  BAR Access:    %ld\n", channel->stats.bar_access);
     print("  IRQ Notified: %ld\n", channel->stats.irq_notifications);
@@ -839,4 +865,35 @@ pci_print_channel_info(uint64_t channel_id)
     print("  Timing:\n");
     print("  Created:       %T\n", channel->created_at);
     print("  Last Op:       %T\n", channel->last_operation);
+}
+
+/* Cleanup resources helper */
+void
+cleanup_pci_channel_resources(struct PCIChannel* channel)
+{
+    if (!channel) return;
+    
+    for (int i = 0; i < 6; i++) {
+        if (channel->resources.bars[i]) {
+            cleanup_pci_bar_resource(channel->resources.bars[i]);
+            free(channel->resources.bars[i]);
+            channel->resources.bars[i] = NULL;
+        }
+    }
+    
+    for (int i = 0; i < 8; i++) {
+        if (channel->resources.irqs[i]) {
+            cleanup_pci_irq_resource(channel->resources.irqs[i]);
+            free(channel->resources.irqs[i]);
+            channel->resources.irqs[i] = NULL;
+        }
+    }
+    
+    for (int i = 0; i < 4; i++) {
+        if (channel->resources.dmas[i]) {
+            cleanup_pci_dma_resource(channel->resources.dmas[i]);
+            free(channel->resources.dmas[i]);
+            channel->resources.dmas[i] = NULL;
+        }
+    }
 }

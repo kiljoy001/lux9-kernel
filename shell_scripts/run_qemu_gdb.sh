@@ -32,6 +32,8 @@ echo "Starting QEMU with GDB remote debugging..."
 "$QEMU_BIN" \
   -M q35 \
   -m 2G \
+  -accel kvm \
+  -cpu host \
   -cdrom lux9.iso \
   -boot d \
   -display gtk \

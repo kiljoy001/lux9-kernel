@@ -14,8 +14,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../include/ureg.h"
-/* #include "../include/family/family.h"  // Removed to avoid conflicts */
-/* #include "../include/tpm.h"  // Removed to avoid conflicts */
+#include "../include/tpm.h"
 
 /* Global TPM state */
 static int tpm_initialized = 0;
@@ -309,7 +308,7 @@ tpm_get_tpm_context(void** ctx)
  * Enhanced TPM command transmission
  */
 int
-tpm_transmit(void* ctx, uint8_t* cmd, size_t cmd_len, uint8_t* resp, size_t* resp_len)
+tpm_transmit(TPMContext* ctx, uint8_t* cmd, size_t cmd_len, uint8_t* resp, size_t* resp_len)
 {
     if (!tpm_initialized || !cmd || !resp || !resp_len) {
         return -1;
@@ -337,15 +336,25 @@ tpm_transmit(void* ctx, uint8_t* cmd, size_t cmd_len, uint8_t* resp, size_t* res
 }
 
 /*
- * Secure element family initialization
+ * TPM initialization stub
  */
-void
-secure_element_init(void)
+int
+tpm_init(void)
 {
-    print("Secure Element: Initializing secure element family with TPM support...\n");
-    
-    /* For now, just log the status without full family registration */
-    /* Full implementation would register with the family system */
-    print("Secure Element: TPM family initialized (%s mode)\n", 
-          tpm_hardware_available ? "hardware" : "software");
+    print("TPM: Initializing TPM hardware...\n");
+    /* TODO: Implement actual TPM hardware detection and initialization */
+    return -1;  /* Hardware not available for now */
+}
+
+/*
+ * TPM 2.0 HMAC operation stub
+ */
+int
+tpm20_hmac(TPMContext* ctx, uint32_t key_handle, uint8_t* data, size_t data_len,
+           uint8_t* hmac_out, size_t* hmac_out_len)
+{
+    USED(ctx, key_handle, data, data_len, hmac_out, hmac_out_len);
+    print("TPM: tpm20_hmac called (not implemented)\n");
+    /* TODO: Implement TPM 2.0 HMAC command */
+    return -1;
 }

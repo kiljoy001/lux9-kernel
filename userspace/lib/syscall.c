@@ -255,6 +255,20 @@ int pebble_black_alloc(unsigned long size, void **handle) {
 }
 
 /**
+ * Prepare a page for exchange (userspace wrapper).
+ */
+ExchangeHandle exchange_prepare(unsigned long vaddr) {
+    return (ExchangeHandle)syscall1(VMEXCHANGE, vaddr);
+}
+
+/**
+ * Accept an exchange page (userspace wrapper).
+ */
+int exchange_accept(ExchangeHandle handle, unsigned long dest_vaddr, int prot) {
+    return (int)syscall3(VMLEND_SHARED, handle, dest_vaddr, prot);
+}
+
+/**
  * Free a previously allocated Pebble black buffer handle.
  *
  * @param handle Pointer to the handle returned by pebble_black_alloc.

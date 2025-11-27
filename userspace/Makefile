@@ -34,6 +34,7 @@ GOBUILD := $(GO) build $(GO_BUILD_FLAGS)
 CFLAGS := -Wall -Wextra -O2 -fPIC \
           -I./include \
           -I./lib \
+          -I../../kernel/include \
           -L$(LIB_DIR)
 
 LDFLAGS := -shared -Wl,-soname,

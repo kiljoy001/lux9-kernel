@@ -24,3 +24,7 @@ unsigned long sleep(unsigned long ms);
 void* pebble_issue_white(unsigned long size);
 int pebble_black_alloc(unsigned long size, void **handle);
 int pebble_black_free(void *handle);
+
+typedef unsigned long ExchangeHandle;
+ExchangeHandle exchange_prepare(unsigned long vaddr);
+int exchange_accept(ExchangeHandle handle, unsigned long dest_vaddr, int prot);

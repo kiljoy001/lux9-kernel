@@ -164,6 +164,8 @@ Retry:
 	lapicw(LapicTDCR, lapictdxtab[a->tdx]);
 
 	x = fastticks(&hz);
+	print("lapictimerinit: fastticks source=%p hz=%llud cpuhz=%llud havetsc=%d\n",
+		arch->fastclock, hz, m->cpuhz, m->havetsc);
 	x += hz/10;
 	lapicw(LapicTICR, 0xffffffff);
 	do{

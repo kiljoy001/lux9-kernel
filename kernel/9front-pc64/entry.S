@@ -145,8 +145,13 @@ _start:
     /* Clear direction flag for string operations */
     cld
 
+    /* Step 00: Write '0' to VGA text mode (0xB8000) to show we started */
+    mov $0xB8000, %rdi
+    movw $0x0730, (%rdi)    /* '0' in white on black */
+
     /* Step 01: Zero BSS section */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0731, (%rdi)    /* '1' in white on black */
 
     lea bss_start(%rip), %rdi
     lea bss_end(%rip), %rcx
@@ -155,14 +160,16 @@ _start:
     rep stosb
 
     /* Step 02: Set up kernel stack */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0732, (%rdi)    /* '2' in white on black */
 
     lea stack_top(%rip), %rsp
     and $~0xF, %rsp
     xor %rbp, %rbp
 
     /* Step 03: Initialize UART */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0733, (%rdi)    /* '3' in white on black */
 
     /* Disable interrupts on UART */
     movw $0x3F9, %dx
@@ -198,10 +205,12 @@ _start:
     outb %al, %dx
 
     /* Step 04: UART initialized */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0734, (%rdi)    /* '4' in white on black */
 
     /* Step 05: Map .cpu0_data section in page tables */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0735, (%rdi)    /* '5' in white on black */
 
     /* Get current CR3 (Limine's PML4) */
     mov %cr3, %rax
@@ -220,7 +229,8 @@ _start:
      */
 
     /* Step 06: Set up GS base for CPU-local data */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0736, (%rdi)    /* '6' in white on black */
 
     movl $0xC0000101, %ecx
     movl $0x80018000, %eax
@@ -228,13 +238,15 @@ _start:
     wrmsr
 
     /* Step 07: About to call main */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0737, (%rdi)    /* '7' in white on black */
 
     /* Call 9front kernel main */
     call main
 
     /* Step 08: main returned (should not happen) */
-    movw $0x3F8, %dx
+    mov $0xB8000, %rdi
+    movw $0x0438, (%rdi)    /* '8' in RED (error) */
 
     /* If main returns, halt */
 .Lhang:

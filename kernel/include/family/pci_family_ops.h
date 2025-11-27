@@ -8,7 +8,39 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include "family.h"
+
+/* PCI constants */
+#define PCI_FAMILY_TYPE           FAMILY_PCI
+#define MAX_PCI_DEVICES 1024                /* Maximum devices we can track */
+#define MAX_PCI_BARS 64
+#define MAX_PCI_IRQS 64
+#define MAX_PCI_DMAS 64
+#define MAX_PCI_BARS_PER_CHANNEL 6
+#define MAX_PCI_IRQS_PER_CHANNEL 8
+#define MAX_PCI_DMAS_PER_CHANNEL 4
+#define PCI_CONFIG_SPACE_SIZE 256              /* Standard PCI config space size */
+#define PCIExtended_CONFIG_SPACE_SIZE 4096    /* Extended config space size */
+#define PCIBAR_COUNT 6                         /* Number of PCI BARs per device */
+#define MAX_PCI_DOMAINS 256                     /* Maximum PCI domains supported */
+
+/* Forward declarations for types referenced in the API */
+struct PCIBusTopology;
+struct PCIBarResource;
+struct PCIIrqResource;
+struct PCIDmaResource;
+struct PCIChannelBarResource;
+struct PCIChannelIrqResource;
+struct PCIChannelDmaResource;
+struct PCIChannelManager;
+struct ExchangeHandle;
+struct PCIResourcePool;
+
+/* PCI family capability flags (distinct from base family caps) */
+#define PCIFAMILY_CAP_PCIE_SUPPORT    0x0100
+#define PCIFAMILY_CAP_MSI_SUPPORT     0x0200
+#define PCIFAMILY_CAP_MSIX_SUPPORT    0x0400
 
 /* PCI device identification structure */
 struct PCIAddress {
@@ -85,6 +117,15 @@ struct PCIDeviceDescriptor {
     struct PebbleHandle* driver_white_token; /* Driver's authorization token */
 };
 
+struct PCIChannelManager {
+    uint64_t next_channel_id;
+    uint32_t max_channels;
+    struct PCIChannel* channel_pool;
+    struct PCIChannel** channel_table;
+    Lock channel_lock;
+    struct FamilyExchangePage* family;
+};
+
 /* PCI family context */
 struct PCIFamilyContext {
     /* PCI topology information */
@@ -108,12 +149,7 @@ struct PCIFamilyContext {
     } device_registry;
     
     /* Resource management */
-    struct {
-        struct PCIBarResource* bars[MAX_PCI_BARS];     /* Available BAR regions */
-        struct PCIIrqResource* irqs[MAX_PCI_IRQS];     /* Available IRQ lines */
-        struct PCIDmaResource* dmas[MAX_PCI_DMAS];   /* Available DMA regions */
-        uint32_t resource_counts[4];                      /* Usage tracking */
-    } resource_pool;
+    struct PCIResourcePool* resource_pool;  /* PCI resource pool manager */
     
     /* Configuration space access */
     struct {
@@ -151,6 +187,7 @@ struct PCIChannel {
     /* Base channel information (family manager handles this) */
     uint64_t channel_id;              /* Base channel identifier */
     char channel_name[64];             /* User-friendly name */
+    struct PCIChannelManager* channel_manager; /* Manager owning this channel */
     
     /* PCI-specific binding */
     struct PCIDeviceDescriptor* bound_device;  /* Which device this controls */
@@ -178,13 +215,33 @@ struct PCIChannel {
     /* BAR mapping context */
     struct {
         uintptr bar_mappings[6];      /* Virtual addresses for mapped BARs */
+        uintptr bar_addresses[6];     /* Alias for bar_mappings */
         size_t bar_sizes[6];           /* Size of each BAR mapping */
         bool bar_mapped[6];            /* Whether each BAR is mapped */
     } mapping_ctx;
+
+    /* Additional fields for channel management */
+    struct FamilyExchangePage* family;  /* Back-reference to family */
+    enum ChannelState state;            /* Current channel state */
+    uint64_t created_at;                /* Creation timestamp */
+    uint64_t last_operation;            /* Last operation timestamp */
+    uint64_t operation_count;           /* Number of operations */
+    struct Proc* owner_process;         /* Process that owns this channel */
+    struct PCIChannel* next;            /* For free list */
+
+    /* Channel statistics */
+    struct {
+        uint64_t reads, writes;
+        uint64_t config_space_access;
+        uint64_t bar_access;
+        uint64_t irq_notifications;
+    } stats;
 };
 
-/* PCI family operation functions */
-struct PCIFamilyOps : public FamilyOps {
+/* PCI family operation functions (C-friendly wrapper around FamilyOps) */
+struct PCIFamilyOps {
+    struct FamilyOps base;
+    
     /* PCI-specific implementations of base operations */
     int (*enable_device)(void* device, void* channel);
     int (*disable_device)(void* device, void* channel);
@@ -241,13 +298,33 @@ int pci_config_write8(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset, ui
 int pci_config_write16(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset, uint16_t data);
 int pci_config_write32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset, uint32_t data);
 
+/* PCI constants */
+#define PCI_FAMILY_TYPE           FAMILY_PCI
+#define MAX_PCI_DEVICES 1024                /* Maximum devices we can track */
+#define MAX_PCI_BARS 64
+#define MAX_PCI_IRQS 64
+#define MAX_PCI_DMAS 64
+#define MAX_PCI_BARS_PER_CHANNEL 6
+#define MAX_PCI_IRQS_PER_CHANNEL 8
+#define MAX_PCI_DMAS_PER_CHANNEL 4
+#define PCI_CONFIG_SPACE_SIZE 256              /* Standard PCI config space size */
+#define PCIExtended_CONFIG_SPACE_SIZE 4096    /* Extended config space size */
+#define PCIBAR_COUNT 6                         /* Number of PCI BARs per device */
+#define MAX_PCI_DOMAINS 256                     /* Maximum PCI domains supported */
+
 /* Constants */
 #define MAX_PCI_DEVICES 1024                /* Maximum devices we can track */
 #define PCI_CONFIG_SPACE_SIZE 256              /* Standard PCI config space size */
 #define PCIExtended_CONFIG_SPACE_SIZE 4096    /* Extended config space size */
 #define PCIBAR_COUNT 6                         /* Number of PCI BARs per device */
 #define MAX_PCI_DOMAINS 256                     /* Maximum PCI domains supported */
-
+#define MAX_PCI_BARS 64
+#define MAX_PCI_IRQS 64
+#define MAX_PCI_DMAS 64
+#define MAX_PCI_BARS_PER_CHANNEL 6
+#define MAX_PCI_IRQS_PER_CHANNEL 8
+#define MAX_PCI_DMAS_PER_CHANNEL 4
+#define PCI_FAMILY_TYPE           FAMILY_PCI
 /* PCI standard IDs */
 #define PCI_STANDARD_ID_VENDOR 0x0000
 #define PCI_STANDARD_ID_DEVICE 0x0000
