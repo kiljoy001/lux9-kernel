@@ -13,6 +13,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismat
            -m64 -march=x86-64 -mcmodel=kernel \
            -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
            -Ikernel/include \
+           -Ikernel/crypto \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
@@ -28,6 +29,8 @@ PORT_C := $(wildcard kernel/9front-port/*.c)
 PC64_C := $(wildcard kernel/9front-pc64/*.c)
 LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
+FAMILY_C := $(wildcard kernel/family/*.c)
+CRYPTO_C := $(wildcard kernel/crypto/*.c)
 BORROW_C := kernel/borrowchecker.c
 LOCKDAG_C := kernel/lock_dag.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
@@ -37,12 +40,14 @@ BENCHMARK_C := kernel/benchmark.c
 # SD/FIS support files already included by wildcard above
 
 # Assembly files
-ASM_S := kernel/9front-pc64/l.S kernel/9front-pc64/entry.S
+ASM_S := kernel/9front-pc64/l.S kernel/9front-pc64/entry.S kernel/crypto/hwcrypto.S
 
 # Object files
 PORT_O := $(PORT_C:.c=.o)
 PC64_O := $(PC64_C:.c=.o)
 LIBC_O := $(LIBC_C:.c=.o)
+FAMILY_O := $(FAMILY_C:.c=.o)
+CRYPTO_O := $(CRYPTO_C:.c=.o)
 ASM_O := $(ASM_S:.S=.o)
 
 MEMDRAW_O := $(MEMDRAW_C:.c=.o)
@@ -52,7 +57,7 @@ REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
 
 .PHONY: all clean count iso run help
 

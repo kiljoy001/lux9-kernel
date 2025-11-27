@@ -19,8 +19,35 @@
 /* Include sphlib SHA256 */
 #include "sph_sha2.h"
 
+/* External symbols from assembly */
+extern void sha256_transform_hw(uint32_t state[8], const uint8_t block[64], uint32_t nblocks);
+
+/*
+ * Check if hardware SHA extensions are available
+ */
+int
+crypto_hw_sha_available(void)
+{
+    /* Access current CPU's Mach structure */
+    extern Mach *m;
+    return m->havesha;
+}
+
+/*
+ * Check if hardware AES-NI is available
+ */
+int
+crypto_hw_aes_available(void)
+{
+    /* Access current CPU's Mach structure */
+    extern Mach *m;
+    return m->haveaes;
+}
+
 /*
  * SHA256 hash function
+ *
+ * Uses hardware SHA extensions if available, falls back to software.
  */
 int
 crypto_sha256(uint8_t *out, const uint8_t *data, size_t len)
@@ -31,6 +58,43 @@ crypto_sha256(uint8_t *out, const uint8_t *data, size_t len)
         return -1;
     }
 
+    /* Hardware acceleration path */
+    if (crypto_hw_sha_available() && len >= 64) {
+        /* Use hardware for full blocks, software for remainder */
+        uint32_t state[8] = {
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        };
+
+        size_t full_blocks = len / 64;
+        size_t remainder = len % 64;
+
+        /* Process full blocks with hardware */
+        if (full_blocks > 0) {
+            sha256_transform_hw(state, data, full_blocks);
+        }
+
+        /* Process remainder with software */
+        if (remainder > 0 || len == 0) {
+            sph_sha256_init(&ctx);
+            /* Copy hardware state to software context */
+            memcpy(ctx.val, state, sizeof(state));
+            ctx.count = full_blocks * 64;
+            /* Process remaining bytes */
+            sph_sha256(&ctx, data + (full_blocks * 64), remainder);
+            sph_sha256_close(&ctx, out);
+        } else {
+            /* All data processed by hardware, finalize manually */
+            sph_sha256_init(&ctx);
+            memcpy(ctx.val, state, sizeof(state));
+            ctx.count = len;
+            sph_sha256_close(&ctx, out);
+        }
+
+        return 0;
+    }
+
+    /* Software fallback */
     sph_sha256_init(&ctx);
     sph_sha256(&ctx, data, len);
     sph_sha256_close(&ctx, out);
@@ -134,6 +198,19 @@ crypto_tpm_key_init(void)
     memset(&tpm_key_state, 0, sizeof(tpm_key_state));
 
     print("Crypto: Initializing TPM-backed key storage...\n");
+
+    /* Report hardware acceleration status */
+    if (crypto_hw_sha_available()) {
+        print("Crypto: SHA extensions available (hardware accelerated)\n");
+    } else {
+        print("Crypto: Using software SHA256\n");
+    }
+
+    if (crypto_hw_aes_available()) {
+        print("Crypto: AES-NI available (hardware accelerated)\n");
+    } else {
+        print("Crypto: Using software AES\n");
+    }
 
     /* Try to get random key from TPM */
     ret = tpm_get_random(random_key, CRYPTO_HMAC_KEY_BYTES);

@@ -233,6 +233,9 @@ struct Mach
 	char	havepge;
 	char	havewatchpt8;
 	char	havenx;
+	char	haveaes;	/* AES-NI instructions available */
+	char	havesha;	/* SHA extensions available */
+	char	havepclmul;	/* PCLMULQDQ instruction available */
 
 	int	fpstate;		/* FPU state for interrupts */
 	FPalloc	*fpsave;
@@ -298,9 +301,12 @@ enum {
 	Xsaves = 1<<3,
 
 	/* cx */
+	Pclmulqdq = 1<<1,	/* PCLMULQDQ instruction */
 	Monitor	= 1<<3,
+	Aes	= 1<<25,	/* AES-NI instructions */
 	Xsave = 1<<26,
 	Avx	= 1<<28,
+	Rdrnd	= 1<<30,	/* RDRAND instruction */
 
 	/* dx */
 	Fpuonchip = 1<<0,
@@ -323,7 +329,6 @@ enum {
 	Fxsr	= 1<<24,	/* have SSE FXSAVE/FXRSTOR */
 	Sse	= 1<<25,	/* thus sfence instr. */
 	Sse2	= 1<<26,	/* thus mfence & lfence instr.s */
-	Rdrnd	= 1<<30,	/* RDRAND support bit */
 };
 
 enum {						/* MSRs */

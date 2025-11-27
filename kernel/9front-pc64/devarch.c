@@ -512,7 +512,7 @@ cpuidentify(void)
 {
 	int family, model, i;
 	X86type *t, *tab;
-	ulong regs[4];
+	u32int regs[4];  /* CRITICAL: Must be u32int to match cpuid() assembly */
 	uintptr cr4;
 
 	print("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
@@ -618,12 +618,13 @@ cpuidentify(void)
 		 * sensible value before the PIT/HPET calibration runs.
 		 */
 		if(m->cpuhz == 0){
-			ulong regs16[4] = {0};
+			u32int regs16[4] = {0};  /* Fixed: was ulong, must be u32int */
 			cpuid(0x16, 0, regs16);
-			if(regs16[0] != 0){			/* EBX: core clock in MHz */
+			if(regs16[0] != 0){			/* EAX: core clock in MHz */
 				uvlong mhz = regs16[0];
 				m->cpumhz = mhz;
 				m->cpuhz = mhz * 1000000ULL;
+				print("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
 			}
 			
 			/* Fallback if CPUID 0x16 is not supported (e.g. QEMU TCG) */
@@ -775,6 +776,32 @@ cpuidentify(void)
 		hwrandbuf = rdrandbuf;
 	else
 		hwrandbuf = nil;
+
+	/* Detect crypto hardware acceleration */
+	print("cpuidentify: checking crypto acceleration\n");
+	m->haveaes = 0;
+	m->havesha = 0;
+	m->havepclmul = 0;
+
+	if(m->cpuidcx & Aes){
+		m->haveaes = 1;
+		print("cpuidentify: AES-NI detected\n");
+	}
+
+	if(m->cpuidcx & Pclmulqdq){
+		m->havepclmul = 1;
+		print("cpuidentify: PCLMULQDQ detected\n");
+	}
+
+	/* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
+	cpuid(0, 0, regs);  /* Get max standard level */
+	if(regs[0] >= 7){
+		cpuid(7, 0, regs);  /* Extended features */
+		if(regs[1] & (1<<29)){  /* EBX bit 29 */
+			m->havesha = 1;
+			print("cpuidentify: SHA extensions detected\n");
+		}
+	}
 	
 	if(sizeof(uintptr) == 8) {
 		/* 8-byte watchpoints are supported in Long Mode */

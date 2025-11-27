@@ -308,6 +308,12 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 	uartputs("DEBUG: printinit complete\n", 28);
 
+	/* Initialize crypto subsystem early for testing */
+	extern int crypto_tpm_key_init(void);
+	print("=== Initializing Crypto Subsystem ===\n");
+	crypto_tpm_key_init();
+	print("=== Crypto Subsystem Initialized ===\n");
+
 	userinit();
 	uartputs("DEBUG: userinit complete\n", 28);
 	/* Debug: show scheduler state before entering schedinit */

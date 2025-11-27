@@ -62,3 +62,19 @@ int crypto_tpm_rotate_hmac_key(void);
 
 /* TPM-backed HMAC using sealed key */
 int crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len);
+
+/*
+ * Hardware crypto acceleration
+ *
+ * These functions use CPU instructions (SHA extensions, AES-NI) when available,
+ * falling back to software implementations otherwise.
+ */
+
+/* Check if hardware SHA is available */
+int crypto_hw_sha_available(void);
+
+/* Check if hardware AES is available */
+int crypto_hw_aes_available(void);
+
+/* Hardware-accelerated SHA256 transform (internal use) */
+void sha256_transform_hw(uint32_t state[8], const uint8_t block[64], uint32_t nblocks);
