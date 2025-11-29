@@ -33,6 +33,13 @@ extern int pebble_debug;
 /* Capability flags */
 #define PEBBLE_CAP_BLACK   (1<<0)
 #define PEBBLE_CAP_ACTIVE  (1<<1)
+#define PEBBLE_CAP_DEVICE	(1<<2)
+#define PEBBLE_CAP_IOPORT	(1<<3)
+#define PEBBLE_CAP_NET		(1<<4)
+#define PEBBLE_CAP_IRQ		(1<<5)
+#define PEBBLE_CAP_DMA		(1<<6)
+#define PEBBLE_CAP_PCI		(1<<7)
+#define PEBBLE_CAP_FS		(1<<8)
 
 /* White token structure - opaque to user */
 typedef struct PebbleWhite {

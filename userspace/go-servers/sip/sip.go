@@ -138,6 +138,7 @@ type BaseServer struct {
 	startTime   int64
 	ctx         context.Context
 	cancel      context.CancelFunc
+	session     *KernelSession
 }
 
 // NewBaseServer creates a new base server
@@ -155,6 +156,18 @@ func (s *BaseServer) Initialize(ctx context.Context, config *ServerConfig) error
 	s.config = config
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.updateHealth(HealthStarting, "Initializing", nil)
+
+	// Check if running in SIP environment
+	if _, err := os.Stat("/dev/sip/clone"); err == nil {
+		// We are in Lux9 with SIP support
+		if err := s.RegisterWithKernel(); err != nil {
+			return fmt.Errorf("failed to register with kernel: %v", err)
+		}
+		log.Printf("SIP: Registered as server %d", s.session.id)
+	} else {
+		log.Printf("SIP: Running in standalone mode (no kernel support detected)")
+	}
+
 	return nil
 }
 

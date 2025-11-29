@@ -128,6 +128,8 @@ extern Dev dmadevtab;
 extern Dev pcidevtab;
 extern Dev familydevtab;
 extern Dev ramdevtab;
+extern Dev sipdevtab;
+extern Dev pebbledevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -139,6 +141,8 @@ Dev *devtab[] = {
 	&exchdevtab,
 	&memdevtab,
 	&ramdevtab,
+	&sipdevtab,
+	&pebbledevtab,
 	&irqdevtab,
 	&dmadevtab,
 	&pcidevtab,

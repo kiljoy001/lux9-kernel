@@ -4,34 +4,104 @@
 #include	"dat.h"
 #include	"fns.h"
 #include <error.h>
+#include "pebble.h"
+
+extern char* getconf(char*);
 
 enum
 {
 	Qdir = 0,
 	Qram,
+	Qsecureram,
 };
 
 static Dirtab ramdir[] = {
 	".",		{Qdir, 0, QTDIR},	0,	DMDIR|0555,
 	"ram",		{Qram},			0,	0666,
+	"secureram",	{Qsecureram},		0,	0600,
 };
 
 /* Ramdisk data - simple in-memory buffer */
 static uchar *ramdisk_data;
 static ulong ramdisk_size = 64*1024*1024; /* 64MB default */
 
+/* Secure Ramdisk Structure */
+typedef struct SecureRamdisk {
+	uchar	*data;
+	ulong	size;
+	int	encrypt;
+	uchar	key[32];
+	void	*pebble_handle;
+} SecureRamdisk;
+
+static SecureRamdisk secure_rd;
+
 static void
 ramreset(void)
 {
-	/* Allocate ramdisk memory */
+	char *conf;
+	void *handle;
+	PebbleBlack *pb;
+	int i;
+
+	/* 1. Setup Standard Ramdisk */
 	ramdisk_data = xalloc(ramdisk_size);
 	if(ramdisk_data == nil)
 		panic("ramdisk: cannot allocate memory");
 	
-	/* Initialize to zero */
 	memset(ramdisk_data, 0, ramdisk_size);
-	
 	print("ramdisk: %lud MB allocated at %p\n", ramdisk_size/(1024*1024), ramdisk_data);
+
+	/* 2. Setup Secure Ramdisk */
+	secure_rd.size = 0;
+	secure_rd.data = nil;
+	secure_rd.encrypt = 1; /* Default to encrypted */
+
+	/* Check kernel config for secure ramdisk size */
+	if((conf = getconf("secure.ramdisk.size")) != nil)
+		secure_rd.size = strtoul(conf, 0, 0);
+	
+	/* Parse size suffix (M/G) if needed, but strtoul usually just takes number. 
+	   Assuming bytes or we might need simple parsing. 
+	   For now assuming standard byte input or relying on strtoul handling basic numbers. 
+	   Actually, typical Plan 9 getconf strings might be "64M". strtoul stops at 'M'.
+	   Let's add basic suffix handling. */
+	if(conf != nil) {
+		char *p = conf;
+		while(*p >= '0' && *p <= '9') p++;
+		if(*p == 'M' || *p == 'm') secure_rd.size *= 1024*1024;
+		else if(*p == 'G' || *p == 'g') secure_rd.size *= 1024*1024*1024;
+		else if(*p == 'K' || *p == 'k') secure_rd.size *= 1024;
+	}
+
+	if(secure_rd.size > 0){
+		/* Try to allocate using Pebble Black (Secure, Non-swappable) */
+		if(pebble_black_alloc(secure_rd.size, &handle) == 0){
+			/* Allocation successful, lookup address */
+			PebbleState *ps = pebble_state();
+			if(ps && (pb = pebble_lookup_black(ps, handle)) != nil){
+				secure_rd.data = pb->addr;
+				secure_rd.pebble_handle = handle;
+				print("ramdisk: secure ramdisk %lud bytes allocated via Pebble at %p\n", secure_rd.size, secure_rd.data);
+			} else {
+				print("ramdisk: pebble lookup failed for secure ramdisk\n");
+				/* Fallback or fail? Let's fail safe. */
+				secure_rd.size = 0;
+			}
+		} else {
+			print("ramdisk: pebble allocation failed for secure ramdisk\n");
+			secure_rd.size = 0;
+		}
+	}
+
+	/* Initialize Encryption Key */
+	if(secure_rd.size > 0){
+		for(i = 0; i < 32; i++)
+			secure_rd.key[i] = nrand(256);
+		
+		/* Zero out the secure memory initially */
+		memset(secure_rd.data, 0, secure_rd.size);
+	}
 }
 
 static void
@@ -72,6 +142,16 @@ ramclose(Chan *c)
 	USED(c);
 }
 
+/* Simple XOR encryption helper */
+static void
+secure_crypt(uchar *buf, long n, vlong off, uchar *key)
+{
+	long i;
+	for(i = 0; i < n; i++){
+		buf[i] ^= key[(off + i) % 32];
+	}
+}
+
 static long
 ramread(Chan *c, void *va, long n, vlong off)
 {
@@ -92,6 +172,27 @@ ramread(Chan *c, void *va, long n, vlong off)
 		memmove(va, ramdisk_data + off, n);
 		return n;
 
+	case Qsecureram:
+		if(secure_rd.data == nil)
+			error(Eio); /* Not initialized */
+
+		/* Bounds checking */
+		if(off < 0)
+			error(Ebadarg);
+		if(off >= secure_rd.size)
+			return 0;
+		if(off + n > secure_rd.size)
+			n = secure_rd.size - off;
+		
+		/* Copy data from secure ramdisk */
+		memmove(va, secure_rd.data + off, n);
+
+		/* Decrypt in place (in the user buffer va) if encryption enabled */
+		if(secure_rd.encrypt){
+			secure_crypt(va, n, off, secure_rd.key);
+		}
+		return n;
+
 	default:
 		error(Egreg);
 		return 0;
@@ -101,6 +202,8 @@ ramread(Chan *c, void *va, long n, vlong off)
 static long
 ramwrite(Chan *c, void *va, long n, vlong off)
 {
+	uchar *tmpbuf;
+
 	switch((ulong)c->qid.path){
 	case Qdir:
 		error(Eperm);
@@ -117,6 +220,40 @@ ramwrite(Chan *c, void *va, long n, vlong off)
 		
 		/* Copy data to ramdisk */
 		memmove(ramdisk_data + off, va, n);
+		return n;
+
+	case Qsecureram:
+		if(secure_rd.data == nil)
+			error(Eio);
+
+		/* Bounds checking */
+		if(off < 0)
+			error(Ebadarg);
+		if(off >= secure_rd.size)
+			error(Eio);
+		if(off + n > secure_rd.size)
+			n = secure_rd.size - off;
+
+		/* For write, we need to encrypt BEFORE writing to secure memory.
+		 * We shouldn't modify 'va' in place as it belongs to caller/user.
+		 * So we need a temp buffer. */
+		
+		/* Direct write if no encryption */
+		if(!secure_rd.encrypt){
+			memmove(secure_rd.data + off, va, n);
+			return n;
+		}
+
+		/* Encrypt via temp buffer */
+		tmpbuf = smalloc(n);
+		if(tmpbuf == nil)
+			error(Enomem);
+		
+		memmove(tmpbuf, va, n);
+		secure_crypt(tmpbuf, n, off, secure_rd.key);
+		memmove(secure_rd.data + off, tmpbuf, n);
+		free(tmpbuf);
+		
 		return n;
 
 	default:
