@@ -217,7 +217,8 @@ main_after_cr3(void)
 	bootscreeninit();
 uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
 fbconsoleinit();  /* Initialize framebuffer console */
-	cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
+	if(cpuidentify_done == 0)
+		cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
 	cpuidprint();
 
 
@@ -390,6 +391,7 @@ void
 main(void)
 {
 	char *p;
+	extern void uartprintf(char*, ...);  /* Formatted UART output before prbuf is ready */
 
 	mach0init();
 	bootargsinit();
@@ -409,37 +411,38 @@ main(void)
 		ushort idt_limit = ((ushort*)&idtr[1])[-1];
 
 		/* DEBUG: Reduced verbose IDT checking
-		print("DEBUG: Checking IDT after trapinit0:\n");
-		print("  temp_idt addr: %#p\n", temp_idt);
-		print("  IDTR base: %#lux\n", idt_base);
-		print("  IDTR limit: %d\n", idt_limit);
+		uartprintf("DEBUG: Checking IDT after trapinit0:\n");
+		uartprintf("  temp_idt addr: %#p\n", temp_idt);
+		uartprintf("  IDTR base: %#lux\n", idt_base);
+		uartprintf("  IDTR limit: %d\n", idt_limit);
 
 		if(idt_base != (uintptr)temp_idt){
-			print("ERROR: IDTR pointing to WRONG address!\n");
-			print("  Expected: %#p\n", temp_idt);
-			print("  Actual: %#lux\n", idt_base);
+			uartprintf("ERROR: IDTR pointing to WRONG address!\n");
+			uartprintf("  Expected: %#p\n", temp_idt);
+			uartprintf("  Actual: %#lux\n", idt_base);
 		} else {
-			print("OK: IDTR points to temp_idt\n");
+			uartprintf("OK: IDTR points to temp_idt\n");
 		}
 
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+		uartprintf("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+		uartprintf("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
 		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
+			uartprintf("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
 		else
-			print("OK: IDT[0x46] is initialized\n");
+			uartprintf("OK: IDT[0x46] is initialized\n");
 		*/
 	}
 
 	quotefmtinstall();
 	screeninit();
-	print("\nLux9\n");
+	uartprintf("\nLux9\n");
 
 	/* Detect VM early - before any problematic operations */
 	vm_detect();
 	vm_apply_workarounds();
 
 	cpuidentify();
+	uartprintf("main: cpuidentify() returned\n");
 	/* Stash initrd pointers; parsing deferred until proc0 when allocators are ready */
 	extern struct limine_module_request *limine_module;
 	if(limine_module && limine_module->response && limine_module->response->module_count > 0) {
@@ -454,7 +457,7 @@ main(void)
 			initrd_base = (void*)(addr + saved_limine_hhdm_offset);
 		}
 		initrd_size = initrd->size;
-		print("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
+		uartprintf("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
 	}
 	}
 
@@ -466,7 +469,6 @@ main(void)
 	}
 
 	meminit(); // CRITICAL: Populates conf.mem and initializes palloc
-	ramdiskinit();
 	confinit();
 	pebbleinit();
 	pebble_enabled = 1;
@@ -475,7 +477,7 @@ main(void)
 	if((p = getconf("pebbledebug")) != nil && *p != '0')
 	pebble_debug = 1;
 	if(pebble_enabled)
-	print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
+	uartprintf("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
 
 	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
 	 * because memory coordination needs it during CR3 switch */	borrowinit();

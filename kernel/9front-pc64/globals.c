@@ -310,24 +310,8 @@ void links(void) {}
 
 /* Memory initialization functions provided by memory_9front.c */
 
-/* Ramdisk */
-/* Ramdisk - create robust root filesystem */
-void ramdiskinit(void) {
-	/* DEBUG: Disabled verbose ramdiskinit tracing
-	print("ramdiskinit: initializing root filesystem\n");
-	*/
-	
-	/* Ensure basic directory structure exists */
-	/* The root directory structure is pre-defined in devroot.c */
-	/* We just need to make sure devroot is properly initialized */
-	
-	/* Add essential files the system expects */
-	/* This is a minimal but functional root filesystem */
-	
-	/* DEBUG: Disabled verbose ramdiskinit tracing
-	print("ramdiskinit: root filesystem ready with basic structure\n");
-	*/
-}
+/* NOTE: ramdiskinit() removed - initrd is properly parsed in proc0 via initrd_init()
+ * See kernel/9front-port/userinit.c:59-71 and kernel/9front-pc64/initrd.c */
 
 /* Coherence function pointer - implementation in l.S */
 extern void coherence_impl(void);

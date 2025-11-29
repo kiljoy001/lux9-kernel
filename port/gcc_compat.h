@@ -7,11 +7,11 @@
 #define _GCC_COMPAT_H_
 
 /* Standard C headers */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <unistd.h>
 #include <time.h>
 

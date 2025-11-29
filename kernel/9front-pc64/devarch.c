@@ -8,6 +8,20 @@
 #include "ureg.h"
 #include <error.h>
 
+/* Helper for formatted UART output (used before print buffer is ready) */
+void
+uartprintf(char *fmt, ...)
+{
+	char buf[256];
+	va_list arg;
+	int n;
+
+	va_start(arg, fmt);
+	n = vsnprint(buf, sizeof(buf), fmt, arg);
+	va_end(arg);
+	uartputs(buf, n);
+}
+
 enum {
 	Qdir = 0,
 	Qiob,
@@ -491,6 +505,8 @@ cpuidprint(void)
 		m->cpuidax, m->cpuidcx, m->cpuiddx);
 }
 
+int cpuidentify_done;
+
 /*
  *  figure out:
  *	- cpu type
@@ -515,11 +531,11 @@ cpuidentify(void)
 	u32int regs[4];  /* CRITICAL: Must be u32int to match cpuid() assembly */
 	uintptr cr4;
 
-	print("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
+	uartprintf("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
 	/* Zero regs array to ensure clean state */
 	regs[0] = regs[1] = regs[2] = regs[3] = 0;
 	cpuid(Highstdfunc, 0, regs);
-	print("cpuidentify: after highstdfunc\n");
+	uartprintf("cpuidentify: after highstdfunc\n");
 	/* CPUID result order: EAX, EBX, ECX, EDX */
 	/* Vendor string order: EBX, EDX, ECX */
 	for(i = 0; i < 4; i++)
@@ -530,27 +546,27 @@ cpuidentify(void)
 		m->cpuidid[8+i] = (regs[2] >> (i*8)) & 0xFF;
 	m->cpuidid[12] = '\0';
 
-	print("cpuidentify: calling cpuid(Procsig=%d, 0, regs)\n", Procsig);
+	uartprintf("cpuidentify: calling cpuid(Procsig=%d, 0, regs)\n", Procsig);
 	/* Zero regs before CPUID */
 	regs[0] = regs[1] = regs[2] = regs[3] = 0;
 	cpuid(Procsig, 0, regs);
-	print("cpuidentify: cpuid returned: EAX=%#lx EBX=%#lx ECX=%#lx EDX=%#lx\n",
+	uartprintf("cpuidentify: cpuid returned: EAX=%#lx EBX=%#lx ECX=%#lx EDX=%#lx\n",
 		(unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
-	print("cpuidentify: addresses: &m->cpuidax=%p &m->cpuidcx=%p &m->cpuiddx=%p\n",
+	uartprintf("cpuidentify: addresses: &m->cpuidax=%p &m->cpuidcx=%p &m->cpuiddx=%p\n",
 		&m->cpuidax, &m->cpuidcx, &m->cpuiddx);
 	m->cpuidax = regs[0];
 	m->cpuidcx = regs[2];
 	m->cpuiddx = regs[3];
-	print("cpuidentify: stored cpuidax=%#lx cpuidcx=%#lx cpuiddx=%#lx\n",
+	uartprintf("cpuidentify: stored cpuidax=%#lx cpuidcx=%#lx cpuiddx=%#lx\n",
 		(unsigned long)m->cpuidax, (unsigned long)m->cpuidcx, (unsigned long)m->cpuiddx);
 
 	/* WORKAROUND: x86-64 mandates TSC, but QEMU+KVM may not report it in CPUID.
 	 * If we're running in 64-bit mode and TSC isn't reported, force it. */
 	if(sizeof(uintptr) == 8 && !(m->cpuiddx & Tsc)){
-		print("WORKAROUND: CPUID didn't report TSC (EDX=%#lx), forcing it (x86-64 requirement)\n",
+		uartprintf("WORKAROUND: CPUID didn't report TSC (EDX=%#lx), forcing it (x86-64 requirement)\n",
 			(unsigned long)m->cpuiddx);
 		m->cpuiddx |= Tsc | Cpumsr;  /* Force TSC and MSR support */
-		print("WORKAROUND: Corrected cpuiddx=%#lx\n", (unsigned long)m->cpuiddx);
+		uartprintf("WORKAROUND: Corrected cpuiddx=%#lx\n", (unsigned long)m->cpuiddx);
 	}
 
 	m->cpuidfamily = m->cpuidax >> 8 & 0xf;
@@ -599,17 +615,17 @@ cpuidentify(void)
 	/*
 	 *  if there is one, set tsc to a known value
 	 */
-	print("cpuidentify: checking TSC\n");
-	print("cpuidentify: m->cpuiddx = %#x, Tsc bit = %#x\n", m->cpuiddx, Tsc);
-	print("cpuidentify: m->cpuiddx & Tsc = %#x (should be non-zero if TSC present)\n", m->cpuiddx & Tsc);
+	uartprintf("cpuidentify: checking TSC\n");
+	uartprintf("cpuidentify: m->cpuiddx = %#x, Tsc bit = %#x\n", m->cpuiddx, Tsc);
+	uartprintf("cpuidentify: m->cpuiddx & Tsc = %#x (should be non-zero if TSC present)\n", m->cpuiddx & Tsc);
 	if(m->cpuiddx & Tsc){
 		m->havetsc = 1;
 		cycles = _cycles;
-		print("cpuidentify: TSC found, checking MSR\n");
+		uartprintf("cpuidentify: TSC found, checking MSR\n");
 		if(m->cpuiddx & Cpumsr){
-			print("cpuidentify: writing MSR 0x10\n");
+			uartprintf("cpuidentify: writing MSR 0x10\n");
 			wrmsr(0x10, 0);
-			print("cpuidentify: MSR 0x10 written\n");
+			uartprintf("cpuidentify: MSR 0x10 written\n");
 		}
 
 		/*
@@ -624,12 +640,12 @@ cpuidentify(void)
 				uvlong mhz = regs16[0];
 				m->cpumhz = mhz;
 				m->cpuhz = mhz * 1000000ULL;
-				print("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
+				uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
 			}
 			
 			/* Fallback if CPUID 0x16 is not supported (e.g. QEMU TCG) */
 			if(m->cpuhz == 0){
-				print("WORKAROUND: cpuidentify could not determine cpuhz, forcing 2GHz default\n");
+				uartprintf("WORKAROUND: cpuidentify could not determine cpuhz, forcing 2GHz default\n");
 				m->cpumhz = 2000;
 				m->cpuhz = 2000000000ULL;
 			}
@@ -641,33 +657,33 @@ cpuidentify(void)
 	 * are supported enable them in CR4 and clear any other set extensions.
 	 * If machine check was enabled clear out any lingering status.
 	 */
-	print("cpuidentify: checking CR4 features\n");
+	uartprintf("cpuidentify: checking CR4 features\n");
 	if(m->cpuiddx & (Pge|Mce|Pse)){
 		vlong mca, mct;
 
-		print("cpuidentify: getting CR4\n");
+		uartprintf("cpuidentify: getting CR4\n");
 		cr4 = getcr4();
-		print("cpuidentify: CR4 = %#p\n", cr4);
+		uartprintf("cpuidentify: CR4 = %#p\n", cr4);
 
-		print("cpuidentify: checking PSE (cpuiddx & Pse = %d)\n", !!(m->cpuiddx & Pse));
+		uartprintf("cpuidentify: checking PSE (cpuiddx & Pse = %d)\n", !!(m->cpuiddx & Pse));
 		if(m->cpuiddx & Pse)
 			cr4 |= 0x10;		/* page size extensions */
 
-		print("cpuidentify: checking MCE (cpuiddx & Mce = %d)\n", !!(m->cpuiddx & Mce));
-		print("cpuidentify: calling getconf(*nomce)\n");
+		uartprintf("cpuidentify: checking MCE (cpuiddx & Mce = %d)\n", !!(m->cpuiddx & Mce));
+		uartprintf("cpuidentify: calling getconf(*nomce)\n");
 		char *nomce = getconf("*nomce");
-		print("cpuidentify: getconf returned %p\n", nomce);
+		uartprintf("cpuidentify: getconf returned %p\n", nomce);
 		if((m->cpuiddx & Mce) != 0 && nomce == nil){
-			print("cpuidentify: MCE enabled, checking MCA\n");
-			print("cpuidentify: cpuiddx & Mca = %d\n", !!(m->cpuiddx & Mca));
+			uartprintf("cpuidentify: MCE enabled, checking MCA\n");
+			uartprintf("cpuidentify: cpuiddx & Mca = %d\n", !!(m->cpuiddx & Mca));
 			if((m->cpuiddx & Mca) != 0){
 				vlong cap;
 				int bank;
 
-				print("cpuidentify: MCA supported, reading MSR 0x179\n");
+				uartprintf("cpuidentify: MCA supported, reading MSR 0x179\n");
 				cap = 0;
 				rdmsr(0x179, &cap);
-				print("cpuidentify: MSR 0x179 = %#llx, banks = %d\n", cap, (int)(cap & 0xFF));
+				uartprintf("cpuidentify: MSR 0x179 = %#llx, banks = %d\n", cap, (int)(cap & 0xFF));
 
 				if(cap & 0x100)
 					wrmsr(0x17B, ~0ULL);	/* enable all mca features */
@@ -688,16 +704,16 @@ cpuidentify(void)
 				wrmsr(0x401, 0);
 			}
 			else if(family == 5){
-				print("cpuidentify: family 5, reading legacy MCE MSRs\n");
+				uartprintf("cpuidentify: family 5, reading legacy MCE MSRs\n");
 				rdmsr(0x00, &mca);
 				rdmsr(0x01, &mct);
 			}
 			else {
-				print("cpuidentify: MCE but no MCA, family = %d\n", family);
+				uartprintf("cpuidentify: MCE but no MCA, family = %d\n", family);
 			}
-			print("cpuidentify: enabling CR4.MCE\n");
+			uartprintf("cpuidentify: enabling CR4.MCE\n");
 			cr4 |= 0x40;		/* machine check enable */
-			print("cpuidentify: CR4.MCE enabled\n");
+			uartprintf("cpuidentify: CR4.MCE enabled\n");
 		}
 
 		/*
@@ -715,60 +731,60 @@ cpuidentify(void)
 		 * the PGE bit in CR4, writing to CR3, and then
 		 * restoring the PGE bit.
 		 */
-		print("cpuidentify: checking PGE\n");
+		uartprintf("cpuidentify: checking PGE\n");
 		if(m->cpuiddx & Pge){
-			print("cpuidentify: PGE supported, enabling\n");
+			uartprintf("cpuidentify: PGE supported, enabling\n");
 			cr4 |= 0x80;		/* page global enable bit */
 			m->havepge = 1;
 		}
-		print("cpuidentify: writing CR4 = %#p\n", cr4);
+		uartprintf("cpuidentify: writing CR4 = %#p\n", cr4);
 		putcr4(cr4);
-		print("cpuidentify: CR4 written successfully\n");
+		uartprintf("cpuidentify: CR4 written successfully\n");
 
-		print("cpuidentify: checking for legacy MCE\n");
+		uartprintf("cpuidentify: checking for legacy MCE\n");
 		if((m->cpuiddx & (Mca|Mce)) == Mce){
-			print("cpuidentify: reading legacy MSR 0x01\n");
+			uartprintf("cpuidentify: reading legacy MSR 0x01\n");
 			rdmsr(0x01, &mct);
-			print("cpuidentify: legacy MSR read complete\n");
+			uartprintf("cpuidentify: legacy MSR read complete\n");
 		}
 	}
 
-	print("cpuidentify: done with CR4 setup\n");
+	uartprintf("cpuidentify: done with CR4 setup\n");
 
 #ifdef PATWC
 	/* IA32_PAT write combining */
-	print("cpuidentify: checking PAT\n");
+	uartprintf("cpuidentify: checking PAT\n");
 	if((m->cpuiddx & Pat) != 0){
 		vlong pat;
 
-		print("cpuidentify: PAT supported, configuring WC\n");
-		print("cpuidentify: reading PAT MSR 0x277\n");
+		uartprintf("cpuidentify: PAT supported, configuring WC\n");
+		uartprintf("cpuidentify: reading PAT MSR 0x277\n");
 		if(rdmsr(0x277, &pat) != -1){
-			print("cpuidentify: PAT MSR read successful, value = %#llx\n", pat);
+			uartprintf("cpuidentify: PAT MSR read successful, value = %#llx\n", pat);
 			vlong newpat = pat;
 			newpat &= ~(255LL<<(PATWC*8));
 			newpat |= 1LL<<(PATWC*8);	/* WC */
-			print("cpuidentify: old PAT = %#llx, new PAT = %#llx\n", pat, newpat);
-			print("cpuidentify: writing PAT MSR (skipping for now due to KVM issues)\n");
+			uartprintf("cpuidentify: old PAT = %#llx, new PAT = %#llx\n", pat, newpat);
+			uartprintf("cpuidentify: writing PAT MSR (skipping for now due to KVM issues)\n");
 			// TEMPORARY: Skip PAT write on KVM as it causes triple fault
 			// wrmsr(0x277, newpat);
-			print("cpuidentify: PAT configuration skipped\n");
+			uartprintf("cpuidentify: PAT configuration skipped\n");
 		} else {
-			print("cpuidentify: PAT MSR read failed\n");
+			uartprintf("cpuidentify: PAT MSR read failed\n");
 		}
 	}
 #endif
 
-	print("cpuidentify: checking MTRR\n");
-	print("cpuidentify: cpuiddx & Mtrr = %d\n", !!(m->cpuiddx & Mtrr));
+	uartprintf("cpuidentify: checking MTRR\n");
+	uartprintf("cpuidentify: cpuiddx & Mtrr = %d\n", !!(m->cpuiddx & Mtrr));
 	if((m->cpuiddx & Mtrr) != 0){
-		print("cpuidentify: checking getconf(*nomtrr)\n");
+		uartprintf("cpuidentify: checking getconf(*nomtrr)\n");
 		char *nomtrr = getconf("*nomtrr");
-		print("cpuidentify: getconf(*nomtrr) = %p\n", nomtrr);
+		uartprintf("cpuidentify: getconf(*nomtrr) = %p\n", nomtrr);
 		if(nomtrr == nil){
-			print("cpuidentify: calling mtrrsync\n");
+			uartprintf("cpuidentify: calling mtrrsync\n");
 			mtrrsync();
-			print("cpuidentify: mtrrsync done\n");
+			uartprintf("cpuidentify: mtrrsync done\n");
 		}
 	}
 
@@ -778,19 +794,19 @@ cpuidentify(void)
 		hwrandbuf = nil;
 
 	/* Detect crypto hardware acceleration */
-	print("cpuidentify: checking crypto acceleration\n");
+	uartprintf("cpuidentify: checking crypto acceleration\n");
 	m->haveaes = 0;
 	m->havesha = 0;
 	m->havepclmul = 0;
 
 	if(m->cpuidcx & Aes){
 		m->haveaes = 1;
-		print("cpuidentify: AES-NI detected\n");
+		uartprintf("cpuidentify: AES-NI detected\n");
 	}
 
 	if(m->cpuidcx & Pclmulqdq){
 		m->havepclmul = 1;
-		print("cpuidentify: PCLMULQDQ detected\n");
+		uartprintf("cpuidentify: PCLMULQDQ detected\n");
 	}
 
 	/* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
@@ -799,7 +815,7 @@ cpuidentify(void)
 		cpuid(7, 0, regs);  /* Extended features */
 		if(regs[1] & (1<<29)){  /* EBX bit 29 */
 			m->havesha = 1;
-			print("cpuidentify: SHA extensions detected\n");
+			uartprintf("cpuidentify: SHA extensions detected\n");
 		}
 	}
 	
@@ -836,8 +852,11 @@ cpuidentify(void)
 		}
 	}
 
-	fpuinit();
+	uartprintf("cpuidentify: SKIPPING fpuinit for debugging\n");
+	// fpuinit();  // TEMPORARY: Disabled to debug hang
+	uartprintf("cpuidentify: exiting cpuidentify\n");
 
+	cpuidentify_done = 1;
 	return t->family;
 }
 

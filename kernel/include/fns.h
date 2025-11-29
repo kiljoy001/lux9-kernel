@@ -335,7 +335,6 @@ void		qnoblock(Queue*, int);
 void		qsetnoblock_early(Queue*, int);
 void		randominit(void);
 ulong		randomread(void*, ulong);
-void		ramdiskinit(void);
 void		rdb(void);
 long		readblist(Block*, uchar*, long, ulong);
 int		readnum(ulong, char*, ulong, ulong, int);

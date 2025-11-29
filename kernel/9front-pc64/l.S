@@ -794,31 +794,37 @@ noteret:
 _intrestore:
     popq %rax                   /* discard saved pointer */
 
-    popq %rax
-    popq %rbx
-    popq %rcx
-    popq %rdx
-    popq %rsi
-    popq %rdi
-    popq %rbp
-    popq %r8
-    popq %r9
-    popq %r10
-    popq %r11
-    popq %r12
-    popq %r13
+	    popq %rax
+	    popq %rbx
+	    popq %rcx
+	    popq %rdx
+	    popq %rsi
+	    popq %rdi
+	    popq %rbp
+	    popq %r8
+	    popq %r9
+	    popq %r10
+	    popq %r11
+	    popq %r12
+	    popq %r13
 
-    cmpq $KESEL, 48(%rsp)    /* CS at offset 48, like 9front */
-    je _iretnested
+	    /* Decide return frame layout based on CPL in saved CS */
+	    /* After the register pops, %rsp points at: [error?][RIP][CS][RFLAGS][RSP?][SS?] */
+	    movq 16(%rsp), %rax          /* saved CS is always at +16 when an error code is present */
+	    testb $3, %al
+	    jz _iretkernel               /* CPL=0 -> no privilege change, no SS/RSP pushed */
 
-    swapgs
-    movq 8(%rsp), %r15
-    movq 0(%rsp), %r14
+	    /* User->kernel trap: restore r14/r15 we stashed over SS/RSP and swap GS back */
+	    swapgs
+	    movq 8(%rsp), %r15           /* r15 was stored over old RSP on entry */
+	    movq 0(%rsp), %r14           /* r14 was stored over old SS on entry */
+	    addq $48, %rsp               /* error + RIP + CS + RFLAGS + RSP + SS */
+	    iretq
 
-_iretnested:
-    /* Trap frame: Skip r14 (8) + r15 (8) + unused (8) + trap (8) + return addr (8) = 40 bytes */
-    addq $40, %rsp   /* Skip to hardware frame for trap (RIP, CS, RFLAGS, RSP, SS) */
-    iretq
+_iretkernel:
+	    /* Kernel trap: hardware frame does not include SS/RSP */
+	    addq $32, %rsp               /* error + RIP + CS + RFLAGS */
+	    iretq
 
 .global putdr
 putdr:

@@ -14,6 +14,7 @@ extern void	(*coherence)(void);
 void	cpuid(int, int, ulong regs[]);
 void	fpuinit(void);
 int	cpuidentify(void);
+extern int	cpuidentify_done;
 void	cpuidprint(void);
 extern void	(*cycles)(uvlong*);
 void	delay(int);
