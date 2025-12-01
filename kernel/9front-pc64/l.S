@@ -454,7 +454,7 @@ touser:
 
     /* Build IRETQ frame on current kernel stack:
      * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
-    pushq $UD64SEL              /* SS - user data segment */
+    pushq $UDSEL                /* SS - user data segment (0x23) */
     pushq %r12                  /* RSP - user stack pointer */
     pushq $0x002                /* RFLAGS - interrupts disabled */
     pushq $UESEL                /* CS - user code segment */
@@ -517,7 +517,7 @@ syscallentry:
     testq %rsp, %rsp            /* test sign bit */
     jns halt_rsp_not_kernel     /* if bit 63 not set, halt with code 0xDEAD0003 */
 
-    pushq $UD64SEL              /* ss - 64-bit user data segment */
+    pushq $UDSEL                /* ss - user data segment */
     pushq %r13                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */

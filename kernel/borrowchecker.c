@@ -12,13 +12,25 @@
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
-extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
+extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */ 
 #include "fns.h"
 #include "borrowchecker.h"
 #include "lock_dag.h"
+#include "hhdm.h"
+#include "pebble.h"
 
 /* Global borrow pool */
 struct BorrowPool borrowpool;
+
+/* Helper to get random nonce */
+static u64int
+get_random_nonce(void)
+{
+	/* In real implementation, use HWRNG or similar */
+	static u64int nonce_counter = 0x123456789ABC;
+	nonce_counter = nonce_counter * 6364136223846793005ULL + 1;
+	return nonce_counter ^ (u64int)rdtsc();
+}
 
 /**
  * Initialize the global borrow pool and allocate its bucket table using the bootstrap allocator.
@@ -38,7 +50,7 @@ borrowinit(void)
 	if (borrowpool.owners == nil) {
 		panic("borrowinit: failed to allocate hash table");
 	}
-	print("borrowinit: using bootstrap_alloc hash table (%lu buckets)\n", borrowpool.nbuckets);
+	print("borrowinit: using bootstrap_alloc hash table (%%lu buckets)\n", borrowpool.nbuckets);
 
 	for (i = 0; i < borrowpool.nbuckets; i++) {
 		borrowpool.owners[i].head = nil;
@@ -120,6 +132,11 @@ create_owner(uintptr key)
 	owner->acquired_ns = 0;
 	owner->borrow_deadline_ns = 0;
 	owner->borrow_count = 0;
+	
+	/* Initialize Capability Key (v2.0) */
+	owner->key_cap.gen = 1; /* Start at gen 1 */
+	owner->key_cap.nonce = get_random_nonce();
+
 	owner->next = borrowpool.owners[hash].head;
 	borrowpool.owners[hash].head = owner;
 
@@ -155,6 +172,11 @@ borrow_acquire(Proc *p, uintptr key)
 	owner->owner = p;
 	owner->state = BORROW_EXCLUSIVE;
 	owner->acquired_ns = todget(nil, nil);
+	
+	/* Rotate capability key on new acquisition */
+	owner->key_cap.gen++;
+	owner->key_cap.nonce = get_random_nonce();
+
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
@@ -229,7 +251,7 @@ borrow_release(Proc *p, uintptr key)
 	return BORROW_OK;
 }
 
-/* Transfer ownership from one process to another */
+/* Transfer ownership from one process to another (Low-level) */
 enum BorrowError
 borrow_transfer(Proc *from, Proc *to, uintptr key)
 {
@@ -258,6 +280,71 @@ borrow_transfer(Proc *from, Proc *to, uintptr key)
 
 	owner->owner = to;
 	owner->acquired_ns = todget(nil, nil);
+	
+	/* Rotate capability key on transfer to prevent sender from retaining access */
+	owner->key_cap.gen++;
+	owner->key_cap.nonce = get_random_nonce();
+
+	iunlock(&borrowpool.lock);
+	return BORROW_OK;
+}
+
+/**
+ * Broker Algorithm Transfer (v2.0)
+ * Implements the atomic transition with Two-Factor Authorization.
+ *
+ * @param sender Sending process (must own the resource)
+ * @param receiver Receiving process
+ * @param phys_addr Physical address (key) of the page/resource
+ * @param cap Capability key provided by sender
+ * @returns BORROW_OK on success, error code otherwise.
+ */
+enum BorrowError
+borrow_broker_transfer(Proc *sender, Proc *receiver, uintptr phys_addr, struct IdentKey cap)
+{
+	struct BorrowOwner *owner;
+
+	if (sender == nil || receiver == nil) {
+		return BORROW_EINVAL;
+	}
+
+	ilock(&borrowpool.lock);
+	owner = find_owner(phys_addr);
+	
+	/* 4. Authorization Check */
+	/* Check 1: Ledger Existence */
+	if (owner == nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTFOUND;
+	}
+
+	/* Check 2: Ownership */
+	if (owner->owner != sender) {
+		iunlock(&borrowpool.lock);
+		return BORROW_ENOTOWNER; /* -E_PERM */
+	}
+
+	/* Check 3: Capability Match (Two-Factor) */
+	if (owner->key_cap.gen != cap.gen || owner->key_cap.nonce != cap.nonce) {
+		iunlock(&borrowpool.lock);
+		/* Security violation: Bad capability */
+		return BORROW_EINVAL; /* -E_BAD_CAP */
+	}
+
+	/* Check 4: Exclusivity (borrow logic) */
+	if (owner->shared_count > 0 || owner->mut_borrower != nil) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
+
+	/* 5. The Transfer (Effect) */
+	owner->owner = receiver;
+	owner->acquired_ns = todget(nil, nil);
+	
+	/* Rotate key for receiver */
+	owner->key_cap.gen++;
+	owner->key_cap.nonce = get_random_nonce();
+
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
 }
@@ -437,9 +524,9 @@ borrow_return_shared(Proc *borrower, uintptr key)
 				prev->next = sb->next;
 			}
 			/* Only free if allocated with xalloc after xinit */
-					if (sb->alloc_source == ALLOC_XALLOC) {
-						xfree(sb);
-					}
+							if (sb->alloc_source == ALLOC_XALLOC) {
+								xfree(sb);
+							}
 
 			own->shared_count--;
 			if (own->shared_count == 0) {
@@ -621,13 +708,13 @@ borrow_cleanup_process(Proc *p)
 						xfree(sb);
 					}
 				}
-				owner->shared_list = nil;
-				owner->owner = nil;
-				owner->state = BORROW_FREE;
-				owner->shared_count = 0;
-				owner->mut_borrower = nil;
-				borrowpool.nowners--;
-				cleaned++;
+			owner->shared_list = nil;
+			owner->owner = nil;
+			owner->state = BORROW_FREE;
+			owner->shared_count = 0;
+			owner->mut_borrower = nil;
+			borrowpool.nowners--;
+			cleaned++;
 			}
 
 			if (owner->mut_borrower == p) {
@@ -687,7 +774,7 @@ borrow_cleanup_process(Proc *p)
 	iunlock(&borrowpool.lock);
 
 	if (cleaned > 0) {
-		print("borrow: cleaned %d resources for pid %d\n", cleaned, p->pid);
+		print("borrow: cleaned %%d resources for pid %%d\n", cleaned, p->pid);
 	}
 }
 
@@ -990,7 +1077,7 @@ memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner o
 		range = bootstrap_alloc(sizeof(struct MemoryRange));
 	}
 	if (range == nil) {
-		print("memory_range_add_discovered: allocation failed for range [%#p-%#p]\n",
+		print("memory_range_add_discovered: allocation failed for range [%%#p-%%#p]\n",
 		      start, end);
 		return;
 	}
@@ -1007,7 +1094,7 @@ memory_range_add_discovered(uintptr start, uintptr end, enum BorrowSystemOwner o
 
 	iunlock(&range_lock);
 
-	print("memory_range_add_discovered: [%#p-%#p] owner=%d (dynamic)\n", start, end, owner);
+	print("memory_range_add_discovered: [%%#p-%%#p] owner=%%d (dynamic)\n", start, end, owner);
 }
 
 /**
@@ -1044,14 +1131,14 @@ memory_range_remove(uintptr start, uintptr end)
 			}
 
 			iunlock(&range_lock);
-			print("memory_range_remove: [%#p-%#p] removed\n", start, end);
+			print("memory_range_remove: [%%#p-%%#p] removed\n", start, end);
 			return;
 		}
 		prev = range;
 	}
 
 	iunlock(&range_lock);
-	print("memory_range_remove: [%#p-%#p] not found\n", start, end);
+	print("memory_range_remove: [%%#p-%%#p] not found\n", start, end);
 }
 
 /**
@@ -1071,13 +1158,13 @@ memory_range_dump(void)
 
 	print("=== Memory Range Tracking ===\n");
 	for (range = range_list; range != nil; range = range->next) {
-		print("  [%#p-%#p] owner=%s size=%#p\n",
+		print("  [%%#p-%%#p] owner=%%s size=%%#p\n",
 		      range->start, range->end,
 		      range->owner == OWNER_BOOTLOADER ? "BOOTLOADER" : "KERNEL",
 		      range->end - range->start);
 		count++;
 	}
-	print("Total: %d ranges\n", count);
+	print("Total: %%d ranges\n", count);
 	print("Mode: BOOTSTRAP ALLOCATION (early boot)\n");
 
 	iunlock(&range_lock);
@@ -1294,7 +1381,7 @@ transfer_bootloader_to_kernel(void)
 	mem_coord.state = MEMORY_KERNEL_ACTIVE;
 	mem_coord.current_owner = OWNER_KERNEL;
 
-	print("transfer_bootloader_to_kernel: ownership transferred (BOOTLOADER → KERNEL)\n");
+	print("transfer_bootloader_to_kernel: ownership transferred (BOOTLOADER \u2192 KERNEL)\n");
 }
 
 /* Establish memory ownership zones using range-based tracking (STATIC) */
@@ -1323,7 +1410,7 @@ establish_memory_ownership_zones(void)
 
 	mem_coord.state = MEMORY_COORDINATED;
 
-	print("establish_memory_ownership_zones: zones established (static, %d ranges)\n",
+	print("establish_memory_ownership_zones: zones established (static, %%d ranges)\n",
 	      4);
 }
 
@@ -1363,11 +1450,11 @@ establish_memory_ownership_zones_dynamic(void)
 		if (start >= conf.mem[i].kbase && start < conf.mem[i].klimit) {
 			/* Kernel memory */
 			memory_range_add_discovered(start, region_end, OWNER_KERNEL);
-			print("  Kernel region [%#p-%#p] size=%#p\n",
+			print("  Kernel region [%%#p-%%#p] size=%%#p\n",
 			      start, region_end, region_end - start);
 		} else {
 			/* User/free memory - not tracked initially */
-			print("  User/free region [%#p-%#p] size=%#p (not tracked)\n",
+			print("  User/free region [%%#p-%%#p] size=%%#p (not tracked)\n",
 			      start, region_end, region_end - start);
 		}
 	}
@@ -1388,7 +1475,7 @@ validate_memory_coordination_ready(void)
 
 	/* Check we're in coordinated state */
 	if (mem_coord.state != MEMORY_COORDINATED && mem_coord.state != MEMORY_KERNEL_ACTIVE) {
-		print("validate_memory_coordination_ready: wrong state %d\n", mem_coord.state);
+		print("validate_memory_coordination_ready: wrong state %%d\n", mem_coord.state);
 		return 0;
 	}
 
@@ -1433,7 +1520,7 @@ post_cr3_memory_system_operational(void)
 
 	/* Verify coordination state is accessible */
 	if (mem_coord.state != MEMORY_KERNEL_ACTIVE) {
-		print("post_cr3_memory_system_operational: unexpected state %d\n", mem_coord.state);
+		print("post_cr3_memory_system_operational: unexpected state %%d\n", mem_coord.state);
 		return 0;
 	}
 

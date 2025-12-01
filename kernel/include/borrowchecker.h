@@ -13,6 +13,12 @@ enum BorrowState {
 	BORROW_MUT_LENT,          /* Owner lent resource as mutable, blocked */
 };
 
+/* Authorization Key */
+struct IdentKey {
+	u64int gen;   /* Monotonic Generation Counter */
+	u64int nonce; /* Hardware RNG Secret */
+};
+
 /* System-level owners for boot coordination */
 enum BorrowSystemOwner {
 	OWNER_BOOTLOADER = 0,     /* Limine bootloader owns the resource */
@@ -40,6 +46,7 @@ struct MemoryRange {
 struct BorrowOwner {
 	/* Resource identification */
 	uintptr	key;			/* Unique key for the resource (e.g., address) */
+	struct IdentKey key_cap; /* Authorization Capability */
 
 	/* Core ownership */
 	Proc	*owner;			/* Original owner process */

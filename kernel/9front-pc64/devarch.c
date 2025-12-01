@@ -628,34 +628,57 @@ cpuidentify(void)
 			uartprintf("cpuidentify: MSR 0x10 written\n");
 		}
 
-		/*
-		 * If the core reports a base frequency (CPUID leaf 0x16),
-		 * use it as an initial cpuhz guess so fastticks has a
-		 * sensible value before the PIT/HPET calibration runs.
-		 */
-		if(m->cpuhz == 0){
-			u32int regs16[4] = {0};  /* Fixed: was ulong, must be u32int */
-			cpuid(0x16, 0, regs16);
-			if(regs16[0] != 0){			/* EAX: core clock in MHz */
-				uvlong mhz = regs16[0];
-				m->cpumhz = mhz;
-				m->cpuhz = mhz * 1000000ULL;
-				uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
+			/*
+			 * Try to establish a sane cpuhz before PIT/HPET calibration:
+			 *  - CPUID.15H (TSC/crystal ratio) if available
+			 *  - CPUID.16H nominal MHz
+			 *  - fallback to 2GHz default
+			 */
+			if(m->cpuhz == 0){
+				u32int regs15[4] = {0};
+				cpuid(0x15, 0, regs15);
+				if(regs15[0] != 0 && regs15[1] != 0 && regs15[2] != 0){
+					uvlong crystal = regs15[2];
+					uvlong num = regs15[1];
+					uvlong den = regs15[0];
+					uvlong tsc_hz = (crystal * num) / den;
+					if(tsc_hz != 0){
+						m->cpuhz = tsc_hz;
+						m->cpumhz = tsc_hz / 1000000ULL;
+						uartprintf("cpuidentify: CPUID 0x15 reports %llud Hz\n", tsc_hz);
+					}
+				}
 			}
-			
-			/* Fallback if CPUID 0x16 is not supported (e.g. QEMU TCG) */
+			if(m->cpuhz == 0){
+				u32int regs16[4] = {0};
+				cpuid(0x16, 0, regs16);
+				if(regs16[0] != 0){			/* EAX: core clock in MHz */
+					uvlong mhz = regs16[0];
+					m->cpumhz = mhz;
+					m->cpuhz = mhz * 1000000ULL;
+					uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
+				}
+			}
 			if(m->cpuhz == 0){
 				uartprintf("WORKAROUND: cpuidentify could not determine cpuhz, forcing 2GHz default\n");
 				m->cpumhz = 2000;
 				m->cpuhz = 2000000000ULL;
 			}
-		}
+	}
+
+	/*
+	 * KVM Workaround: MCE/MCA MSR writes can cause GPF on some configurations.
+	 * If running under KVM, disable MCE support to be safe.
+	 */
+	if (vm_info.type == VM_KVM || vm_info.skip_msr_writes) {
+		uartprintf("cpuidentify: KVM/VM detected, skipping MCE/MCA init to prevent GPF\n");
+		m->cpuiddx &= ~Mce;
+		m->cpuiddx &= ~Mca;
 	}
 
 	/*
 	 * If machine check exception, page size extensions or page global bit
 	 * are supported enable them in CR4 and clear any other set extensions.
-	 * If machine check was enabled clear out any lingering status.
 	 */
 	uartprintf("cpuidentify: checking CR4 features\n");
 	if(m->cpuiddx & (Pge|Mce|Pse)){
@@ -819,26 +842,37 @@ cpuidentify(void)
 		}
 	}
 	
-	if(sizeof(uintptr) == 8) {
-		/* 8-byte watchpoints are supported in Long Mode */
-		m->havewatchpt8 = 1;
+		if(sizeof(uintptr) == 8) {
+			/* 8-byte watchpoints are supported in Long Mode */
+			m->havewatchpt8 = 1;
 
-		/* check and enable NX bit */
-		cpuid(Highextfunc, 0, regs);
-		if(regs[0] >= Procextfeat){
-			cpuid(Procextfeat, 0, regs);
-			if((regs[3] & (1<<20)) != 0){
-				vlong efer;
+			/* check and enable NX bit */
+			cpuid(Highextfunc, 0, regs);
+			if(regs[0] >= Procextfeat){
+				cpuid(Procextfeat, 0, regs);
+					if((regs[3] & (1<<20)) != 0){
+						vlong efer;
 
-				/* enable no-execute feature */
-				if(rdmsr(Efer, &efer) != -1){
-					efer |= 1ull<<11;
-					if(wrmsr(Efer, efer) != -1)
-						m->havenx = 1;
+						/* read current EFER; mark NX if already set */
+						if(rdmsr(Efer, &efer) != -1){
+							if(efer & (1ull<<11)){
+								m->havenx = 1;
+							}else{
+								/* try to set NXE; log failures */
+								efer |= 1ull<<11;
+								if(wrmsr(Efer, efer) != -1){
+									m->havenx = 1;
+									uartprintf("cpuidentify: NXE set successfully\n");
+								}else{
+									uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
+								}
+							}
+						}else{
+							uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
+						}
+					}
 				}
-			}
-		}
-	} else if(strcmp(m->cpuidid, "GenuineIntel") == 0){
+		} else if(strcmp(m->cpuidid, "GenuineIntel") == 0){
 		/* some random CPUs that support 8-byte watchpoints */
 		if(family == 15 && (model == 3 || model == 4 || model == 6)
 		|| family == 6 && (model == 15 || model == 23 || model == 28))

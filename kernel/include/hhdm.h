@@ -6,6 +6,8 @@
 /* Global HHDM base offset - set during early boot */
 extern uintptr hhdm_base;
 
+#define USER_MAX     0x00007FFFFFFFFFFFULL
+
 /* Convert physical address to HHDM virtual address */
 static inline void* hhdm_virt(uintptr pa) {
     return (void*)(hhdm_base + pa);

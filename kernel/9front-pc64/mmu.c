@@ -82,7 +82,8 @@ is_hhdm_va(uintptr va)
  * Simple segment descriptors with no translation.
  */
 #define	EXECSEGM(p) 	{ 0, SEGL|SEGP|SEGPL(p)|SEGEXEC }
-#define	DATASEGM(p) 	{ 0, SEGB|SEGG|SEGP|SEGPL(p)|SEGDATA|SEGW }
+#define	DATASEGM(p) 	{ 0xFFFF, SEGB|SEGG|(0xF<<16)|SEGP|SEGPL(p)|SEGDATA|SEGW }
+#define	DATA64SEGM(p) 	{ 0, SEGP|SEGPL(p)|SEGDATA|SEGW } /* 64-bit Data: L=0, B=0, Limit ignored */
 #define	EXEC32SEGM(p) 	{ 0xFFFF, SEGG|SEGD|(0xF<<16)|SEGP|SEGPL(p)|SEGEXEC|SEGR }
 #define	DATA32SEGM(p) 	{ 0xFFFF, SEGB|SEGG|(0xF<<16)|SEGP|SEGPL(p)|SEGDATA|SEGW }
 
@@ -93,7 +94,7 @@ Segdesc gdt[NGDT] =
 [KDSEG]		DATASEGM(0),		/* kernel data */
 [UE32SEG]	EXEC32SEGM(3),		/* user code 32 bit*/
 [UDSEG]		DATA32SEGM(3),		/* user data/stack 32 bit */
-[UD64SEG]	DATASEGM(3),		/* user data/stack 64 bit */
+[UD64SEG]	DATA64SEGM(3),		/* user data/stack 64 bit */
 [UESEG]		EXECSEGM(3),		/* user code 64 bit */
 };
 
@@ -699,14 +700,11 @@ mmuinit(void)
 
 	print("DEBUG: Setting up syscall MSRs\n");
 	/* We use IRETQ for all returns instead of the faster SYSRET instruction.
-	 * This is because our GDT layout (inherited from 9front) is incompatible with SYSRET.
-	 * Commenting out STAR MSR setup to avoid conflicts with IRETQ path. */
-	/* wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32)); */
-	print("DEBUG: Skipped STAR MSR setup to avoid conflicts with IRETQ\n");
-	/* wrmsr(Lstar, (uvlong)syscallentry); */
-	print("DEBUG: Skipped LSTAR MSR setup\n");
-	/* wrmsr(Sfmask, 0x200); */
-	print("DEBUG: Skipped SFMASK MSR setup\n");
+	 * But we MUST set up MSRs for SYSCALL entry. */
+	extern void syscallentry(void);
+	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
+	wrmsr(Lstar, (uvlong)syscallentry);
+	wrmsr(Sfmask, 0x200);
 	
 	// Debug print for STAR
 	uvlong star_val;

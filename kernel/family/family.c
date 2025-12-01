@@ -62,9 +62,9 @@ cleanup_family_resources(struct FamilyExchangePage* family)
 void
 family_init(void)
 {
-    lock_init(&family_registry.registry_lock);
-    lock_init(&global_channel_id_lock);
-    lock_init(&global_stats_lock);
+    memset(&family_registry.registry_lock, 0, sizeof(Lock));
+    memset(&global_channel_id_lock, 0, sizeof(Lock));
+    memset(&global_stats_lock, 0, sizeof(Lock));
 
     memset(&global_channel_stats, 0, sizeof(global_channel_stats));
 

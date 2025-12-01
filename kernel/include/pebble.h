@@ -41,6 +41,8 @@ extern int pebble_debug;
 #define PEBBLE_CAP_PCI		(1<<7)
 #define PEBBLE_CAP_FS		(1<<8)
 
+#include "borrowchecker.h"
+
 /* White token structure - opaque to user */
 typedef struct PebbleWhite {
   u32int  token;
@@ -69,6 +71,7 @@ typedef struct PebbleBlack {
   void    *addr;
   ulong    size;
   ulong    flags;
+  struct IdentKey key; /* Authorization key */
   PebbleBlue  *blue;
   PebbleRed  *red;
   struct PebbleBlack *next;

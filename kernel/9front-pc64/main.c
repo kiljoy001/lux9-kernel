@@ -199,6 +199,10 @@ main_after_cr3(void)
 
 	uartputs("main_after_cr3: calling xinit\n", 31);
 	xinit();
+	
+	/* Transition memory tracking to dynamic allocator */
+	establish_memory_ownership_zones_dynamic();
+	
 	uartputs("main_after_cr3: calling pageowninit\n", 37);
 	pageowninit();
 	uartputs("main_after_cr3: calling exchangeinit\n", 38);
@@ -484,6 +488,9 @@ main(void)
 
 	/* Initialize memory coordination system for boot handoff */
 	boot_memory_coordination_init();
+	
+	/* Establish static kernel memory zones for early boot protection */
+	establish_memory_ownership_zones();
 
 	/* Save framebuffer info BEFORE switching page tables */
 	save_framebuffer_info();

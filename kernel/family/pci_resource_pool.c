@@ -218,7 +218,7 @@ setup_pci_resource_pool(struct FamilyExchangePage* family)
     pool->next_bar_id = 1;
     pool->next_irq_id = 1;
     pool->next_dma_id = 1;
-    lock_init(&pool->resource_lock);
+    memset(&pool->resource_lock, 0, sizeof(Lock));
     
     /* Set up pebble integration */
     pool->total_budget = PEBBLE_DEFAULT_BUDGET / 4;  // 25% of total budget for PCI resources
