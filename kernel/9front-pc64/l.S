@@ -385,10 +385,11 @@ _ldmxcsr:
 
 .global putxcr0
 putxcr0:
-    movl %esi, %eax
-    movl %edx, %edx
-    xor %ecx, %ecx
-    xsetbv
+    xor %ecx, %ecx          /* XCR number = 0 */
+    mov %rdi, %rdx          /* Copy 64-bit argument to RDX */
+    shr $32, %rdx           /* Shift right 32, EDX now has high 32 bits */
+    mov %edi, %eax          /* Copy low 32 bits to EAX */
+    xsetbv                  /* Execute XSETBV with EDX:EAX value, ECX=0 */
     ret
 
 .global _rdmsrinst
@@ -685,14 +686,25 @@ _iretq_debug_msg:
 .global _strayintr
 _strayintr:
     pushq %rax
-    movq 8(%rsp), %rax
+    /*
+     * Compute vector without dereferencing the return address.
+     * Layout of each stub in vectortable: 5-byte call + 1-byte vector.
+     * Return RIP points at the vector byte: returnaddr = vectortable + (vec*6) + 5
+     * => vec = (returnaddr - vectortable - 5) / 6
+     */
+    movq 8(%rsp), %rax          /* return address */
+    leaq vectortable(%rip), %rdx
+    subq %rdx, %rax             /* delta from table base */
+    subq $5, %rax               /* remove call length */
+    xorq %rdx, %rdx             /* clear high for div */
+    movq $6, %rcx
+    divq %rcx                   /* rax = vector */
     jmp _intrcommon
 
 .global _strayintrx
 _strayintrx:
     xchgq %rax, (%rsp)     /* Swap RAX with error code, like 9front */
 _intrcommon:
-    movzbq (%rax), %rax
     xchgq %rax, (%rsp)
     subq $24, %rsp
 

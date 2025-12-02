@@ -221,8 +221,12 @@ main_after_cr3(void)
 	bootscreeninit();
 uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
 fbconsoleinit();  /* Initialize framebuffer console */
+	uartputs("main_after_cr3: before cpuidentify check\n", 45);
 	if(cpuidentify_done == 0)
 		cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
+	uartputs("main_after_cr3: calling fpuinit\n", 33);
+	fpuinit();  /* Initialize FPU - must happen after xinit() */
+	uartputs("main_after_cr3: fpuinit returned, calling cpuidprint\n", 55);
 	cpuidprint();
 
 

@@ -850,28 +850,35 @@ cpuidentify(void)
 			cpuid(Highextfunc, 0, regs);
 			if(regs[0] >= Procextfeat){
 				cpuid(Procextfeat, 0, regs);
-					if((regs[3] & (1<<20)) != 0){
-						vlong efer;
+				if((regs[3] & (1<<20)) != 0){
+					vlong efer;
 
-						/* read current EFER; mark NX if already set */
-						if(rdmsr(Efer, &efer) != -1){
-							if(efer & (1ull<<11)){
-								m->havenx = 1;
-							}else{
-								/* try to set NXE; log failures */
-								efer |= 1ull<<11;
-								if(wrmsr(Efer, efer) != -1){
-									m->havenx = 1;
-									uartprintf("cpuidentify: NXE set successfully\n");
-								}else{
-									uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
-								}
-							}
+					/*
+					 * NX supported. If the VM layer asked us to skip
+					 * MSR writes, assume the bootloader already enabled
+					 * NXE and just record support to avoid a trap here.
+					 */
+					m->havenx = 1;
+					if(vm_info.skip_msr_writes){
+						uartprintf("cpuidentify: NX supported; skipping EFER.NXE write (vm_type=%d skip=%d)\n",
+							vm_info.type, vm_info.skip_msr_writes);
+					}else if(rdmsr(Efer, &efer) != -1){
+						if(efer & (1ull<<11)){
+							m->havenx = 1;
 						}else{
-							uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
+							efer |= 1ull<<11;
+							if(wrmsr(Efer, efer) != -1){
+								m->havenx = 1;
+								uartprintf("cpuidentify: NXE set successfully\n");
+							}else{
+								uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
+							}
 						}
+					}else{
+						uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
 					}
 				}
+			}
 		} else if(strcmp(m->cpuidid, "GenuineIntel") == 0){
 		/* some random CPUs that support 8-byte watchpoints */
 		if(family == 15 && (model == 3 || model == 4 || model == 6)
@@ -886,9 +893,7 @@ cpuidentify(void)
 		}
 	}
 
-	uartprintf("cpuidentify: SKIPPING fpuinit for debugging\n");
-	// fpuinit();  // TEMPORARY: Disabled to debug hang
-	uartprintf("cpuidentify: exiting cpuidentify\n");
+	/* FPU initialization moved to main_after_cr3() - must happen after xinit() */
 
 	cpuidentify_done = 1;
 	return t->family;
