@@ -96,9 +96,9 @@
 #define	KESEG	1	/* kernel executable */
 #define KDSEG	2	/* kernel data */
 #define UE32SEG	3	/* user executable 32bit */
-#define	UDSEG	6	/* user data/stack 32bit */
-#define	UESEG	5	/* user executable 64bit */
-#define	UD64SEG	6	/* user data/stack 64bit */
+#define	UDSEG	4	/* user data/stack 32bit */
+#define	UD64SEG	5	/* user data/stack 64bit */
+#define	UESEG	6	/* user executable 64bit */
 #define	TSSSEG	8	/* task segment (two descriptors) */
 
 #define	NGDT	10	/* number of GDT entries required */

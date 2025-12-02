@@ -450,17 +450,16 @@ touser:
     popq %rsi
     popq %rax
 
-    /* Save user SP in a register before setting up IRET frame */
-    movq %rdi, %r12             /* r12 = user SP */
-
-    /* Build IRETQ frame on current kernel stack:
-     * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
-    pushq $UDSEL                /* SS - user data segment (0x23) */
-    pushq %r12                  /* RSP - user stack pointer */
-    pushq $0x002                /* RFLAGS - interrupts disabled */
-    pushq $UESEL                /* CS - user code segment */
-    pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
-
+    	/* Save user SP in a register before setting up IRET frame */
+    	movq %rdi, %r12             /* r12 = user SP */
+    
+    	/* Build IRETQ frame on current kernel stack:
+    	 * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
+    	pushq $UD64SEL              /* SS - user data segment 64-bit (0x2B) */
+    	pushq %r12                  /* RSP - user stack pointer */
+    	pushq $0x002                /* RFLAGS - interrupts disabled */
+    	pushq $UESEL                /* CS - user code segment */
+    	pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
     /* Debug: print the IRET frame */
     pushq %rax
     pushq %rdi
