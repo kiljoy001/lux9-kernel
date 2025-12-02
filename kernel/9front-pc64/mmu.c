@@ -712,6 +712,26 @@ mmuinit(void)
 	rdmsr(Star, &star_val);
 	print("DEBUG: Read STAR MSR\n");
 	dbghex("STAR set to: ", star_val);
+
+	/* Reload data segments to KDSEL (0x10) */
+	__asm__ volatile(
+		"mov %0, %%ds\n"
+		"mov %0, %%es\n"
+		"mov %0, %%ss\n"
+		: : "r" ((u16int)KDSEL) : "memory"
+	);
+
+	/* Reload CS to KESEL (0x08) to match our GDT */
+	/* This prevents GPF on IRETQ if previous CS (from bootloader) is now invalid */
+	__asm__ volatile(
+		"pushq %0\n"
+		"leaq 1f(%%rip), %%rax\n"
+		"pushq %%rax\n"
+		"lretq\n"
+		"1:\n"
+		: : "i"(KESEL) : "rax", "memory"
+	);
+
 	print("DEBUG: mmuinit completed successfully\n");
 }
 

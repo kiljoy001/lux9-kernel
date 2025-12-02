@@ -30,7 +30,7 @@
 
 #define	MAXMACH		128			/* max # cpus system can run */
 
-#define KSTACK		(128*KiB)		/* Size of Proc kernel stack (was 16KB, increased due to deep call chains with error handling) */
+#define KSTACK		(32*KiB)		/* Size of Proc kernel stack */
 
 /*
  * Time
@@ -96,7 +96,7 @@
 #define	KESEG	1	/* kernel executable */
 #define KDSEG	2	/* kernel data */
 #define UE32SEG	3	/* user executable 32bit */
-#define	UDSEG	4	/* user data/stack 32bit */
+#define	UDSEG	6	/* user data/stack 32bit */
 #define	UESEG	5	/* user executable 64bit */
 #define	UD64SEG	6	/* user data/stack 64bit */
 #define	TSSSEG	8	/* task segment (two descriptors) */

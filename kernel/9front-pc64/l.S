@@ -824,8 +824,8 @@ _intrestore:
 
 _iretkernel:
 	    /* Kernel trap: hardware frame does not include SS/RSP */
-	    /* Test: trying $36 (between $32 and $40) */
-	    addq $36, %rsp
+	    /* Remove our stack allocations: locals(24) + vector(8) + error(8) = 40 */
+	    addq $40, %rsp
 	    iretq
 
 .global putdr
