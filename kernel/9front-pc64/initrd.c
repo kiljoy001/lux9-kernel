@@ -5,6 +5,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "initrd.h"
+#include "crypto.h"
 
 struct initrd_file *initrd_root = nil;
 void *initrd_base = nil;
@@ -95,6 +96,21 @@ initrd_init(void *addr, usize len)
 	initrd_size = len;
 	printhex("initrd addr ", (uvlong)(uintptr)addr);
 	printhex("initrd size ", (uvlong)len);
+
+	/* Verify integrity */
+	{
+		uint8_t hash[32];
+		int i;
+		print("initrd: verifying integrity...\n");
+		if(crypto_sha256(hash, addr, len) == 0){
+			print("initrd: SHA256: ");
+			for(i = 0; i < 32; i++)
+				print("%02x", hash[i]);
+			print("\n");
+		} else {
+			print("initrd: SHA256 calculation failed\n");
+		}
+	}
 
 	print("initrd: loading entries\n");
 	printhex("initrd start offset ", 0);

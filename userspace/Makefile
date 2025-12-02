@@ -65,16 +65,20 @@ go-servers:
 	@$(MAKE) -C $(GO_SERVERS_DIR) all
 
 # C servers build  
-c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs
+c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs $(C_SERVERS_DIR)/crypto/cryptosrv
 
 $(C_SERVERS_DIR)/ext4fs/ext4fs: $(C_SERVERS_DIR)/ext4fs/ext4fs.c
 	@mkdir -p $(dir $@)
 	@$(CC) $(CFLAGS) -o $@ $<
 
-# Libraries (placeholder)
+$(C_SERVERS_DIR)/crypto/cryptosrv:
+	@echo "Building Crypto Server..."
+	@$(MAKE) -C $(C_SERVERS_DIR)/crypto all
+
+# Libraries
 libs:
 	@echo "Building userspace libraries..."
-	@mkdir -p $(LIB_DIR)
+	@$(MAKE) -C libc all
 
 # Initrd creation
 initrd: init-bin $(BUILD_DIR)/initrd.tar
@@ -92,6 +96,7 @@ $(BUILD_DIR)/initrd.tar: init-bin go-servers drivers c-servers libs
 	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
 	# Copy C binaries
 	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
+	@cp $(C_SERVERS_DIR)/crypto/cryptosrv $(INITRD_DIR)/bin/ 2>/dev/null || true
 	# Copy init program
 	@cp $(BIN_DIR)/init-go $(INITRD_DIR)/bin/init
 	# Create tar
@@ -115,6 +120,8 @@ clean:
 	@rm -rf $(BUILD_DIR)
 	@$(MAKE) -C $(GO_SERVERS_DIR) clean 2>/dev/null || true
 	@$(MAKE) -C $(DRIVERS_DIR) clean 2>/dev/null || true
+	@$(MAKE) -C libc clean 2>/dev/null || true
+	@$(MAKE) -C $(C_SERVERS_DIR)/crypto clean 2>/dev/null || true
 
 help:
 	@echo "Userspace Build Targets:"
