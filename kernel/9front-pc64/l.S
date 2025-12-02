@@ -649,33 +649,38 @@ forkret:
     movq 0(%rsp), %r14
 
 _syscall_iretnested:
-    /* Skip from r14 to pc (start of hardware frame):
-     * r14 (8) + r15 (8) + segment regs (8) + type (8) + error (8) = 40 bytes */
-    addq $40, %rsp   /* Skip to hardware frame (pc, cs, flags, sp, ss) */
+	/* Prepare for SYSRETQ:
+	 * RCX = RIP (User PC) - at offset 40 (RIP)
+	 * R11 = RFLAGS - at offset 56 (RIP=0, CS=8, FLAGS=16) -> 40+16=56
+	 * RSP = User SP - at offset 64 (RIP=0, CS=8, FLAGS=16, RSP=24) -> 40+24=64
+	 */
+	movq 40(%rsp), %rcx
+	movq 56(%rsp), %r11
+	movq 64(%rsp), %rsp    /* Switch to user stack */
+	sysretq
 
-    /* Debug: print iretq frame values - DISABLED */
-    /* 
-    pushq %rdi
-    pushq %rsi
-    pushq %rax
+	/* Debug: print iretq frame values - DISABLED */
+	/* 
+	pushq %rdi
+	pushq %rsi
+	pushq %rax
 
-    /* Frame is now at rsp+24: pc, cs, flags, sp, ss */
-    /* movq 24(%rsp), %rsi         /* pc */
-    /* movq 32(%rsp), %rdx         /* cs */
-    /* movq 40(%rsp), %rcx         /* flags */
-    /* movq 48(%rsp), %r8          /* sp */
-    /* movq 56(%rsp), %r9          /* ss */
-    /* leaq _iretq_debug_msg(%rip), %rdi
-    /* xorq %rax, %rax
-    /* call iprint
+	/* Frame is now at rsp+24: pc, cs, flags, sp, ss */
+	/* movq 24(%rsp), %rsi         /* pc */
+	/* movq 32(%rsp), %rdx         /* cs */
+	/* movq 40(%rsp), %rcx         /* flags */
+	/* movq 48(%rsp), %r8          /* sp */
+	/* movq 56(%rsp), %r9          /* ss */
+	/* leaq _iretq_debug_msg(%rip), %rdi
+	/* xorq %rax, %rax
+	/* call iprint
 
-    /* popq %rax
-    /* popq %rsi
-    /* popq %rdi
-    */
+	/* popq %rax
+	/* popq %rsi
+	/* popq %rdi
+	*/
 
-    iretq
-
+	iretq
 .section .rodata
 _iretq_debug_msg:
     .string "IRETQ: pc=%#p cs=%#llx flags=%#llx sp=%#p ss=%#llx\n"

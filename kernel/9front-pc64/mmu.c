@@ -702,7 +702,7 @@ mmuinit(void)
 	/* We use IRETQ for all returns instead of the faster SYSRET instruction.
 	 * But we MUST set up MSRs for SYSCALL entry. */
 	extern void syscallentry(void);
-	wrmsr(Star, ((uvlong)UESEL << 48) | ((uvlong)KESEL << 32));
+	wrmsr(Star, ((uvlong)UDSEL << 48) | ((uvlong)KESEL << 32));
 	wrmsr(Lstar, (uvlong)syscallentry);
 	wrmsr(Sfmask, 0x200);
 	
