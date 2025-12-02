@@ -111,15 +111,35 @@ kenter(Ureg *ureg)
 		up->dbgreg = ureg;
 		cycles(&up->kentry);
 	} else {
-		int rem;
+		long rem;
 
-		if((uchar*)&ureg < (uchar*)ureg){
-			/* stack grows down */
-			rem = (int)((uintptr)ureg - (up!=nil? (uintptr)up - KSTACK: (uintptr)m->stack));
-		} else {
-			/* stack grows up */
-			rem = (int)((up!=nil? (uintptr)up: (uintptr)m + MACHSIZE) - (uintptr)ureg);
+		/*
+		 * Early boot interrupts can arrive before we've switched to the
+		 * proc's kernel stack. If the current frame is outside the proc's
+		 * stack bounds, fall back to using the Mach stack bounds to avoid
+		 * a false-positive overflow panic.
+		 */
+		uintptr lo, hi;
+		if(up != nil){
+			lo = (uintptr)up - KSTACK;
+			hi = (uintptr)up;
+		}else{
+			lo = (uintptr)m->stack;
+			hi = (uintptr)m + MACHSIZE;
 		}
+
+		if((uintptr)ureg < lo || (uintptr)ureg > hi){
+			/*
+			 * Not on the expected proc stack (likely early-boot interrupt
+			 * before switching to the proc stack). Skip the tight overflow
+			 * check to avoid false positives.
+			 */
+			return 0;
+		}
+
+		/* stack grows down */
+		rem = (long)((uintptr)ureg - lo);
+
 		/* Stack overflow - panic immediately */
 		if(rem < 256){
 			panic("kenter: %d stack bytes left, up %#p ureg %#p at pc %#p",

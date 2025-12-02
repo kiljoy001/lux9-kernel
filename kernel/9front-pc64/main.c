@@ -331,7 +331,8 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	/* Pre-initialize timers with interrupts masked; actual enable happens in proc0 */
 	splhi();
 	timersinit();
-	uartputs("DEBUG: timersinit complete\n", 29);
+	spllo();              /* Re-enable interrupts for scheduler - CRITICAL */
+	uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
 	iprint("DEBUG: before schedinit runvec=%#lux nrdy=%d\n", runvec, nrdy);
 	schedinit();
 }
