@@ -649,14 +649,25 @@ forkret:
     movq 0(%rsp), %r14
 
 _syscall_iretnested:
+	/* Restore preserved registers */
+	movq 0(%rsp), %r14
+	movq 8(%rsp), %r15
+
+	/* Restore data segments to User Selector (saved on stack) */
+	/* Necessary because SYSRET doesn't restore them, and we need DPL 3 */
+	movw 16(%rsp), %ds
+	movw 18(%rsp), %es
+
+	swapgs
+
 	/* Prepare for SYSRETQ:
-	 * RCX = RIP (User PC) - at offset 40 (RIP)
-	 * R11 = RFLAGS - at offset 56 (RIP=0, CS=8, FLAGS=16) -> 40+16=56
-	 * RSP = User SP - at offset 64 (RIP=0, CS=8, FLAGS=16, RSP=24) -> 40+24=64
+	 * RCX = RIP (User PC) - at offset 40
+	 * R11 = RFLAGS - at offset 56
+	 * RSP = User SP - at offset 64
 	 */
 	movq 40(%rsp), %rcx
 	movq 56(%rsp), %r11
-	movq 64(%rsp), %rsp    /* Switch to user stack */
+	movq 64(%rsp), %rsp
 	sysretq
 
 	/* Debug: print iretq frame values - DISABLED */
@@ -813,22 +824,21 @@ _intrestore:
 	    popq %r12
 	    popq %r13
 
-	    /* Decide return frame layout based on CPL in saved CS */
-	    /* After the register pops, %rsp points at: [error?][RIP][CS][RFLAGS][RSP?][SS?] */
-	    movq 16(%rsp), %rax          /* saved CS is always at +16 when an error code is present */
-	    testb $3, %al
-	    jz _iretkernel               /* CPL=0 -> no privilege change, no SS/RSP pushed */
+	    /* After register pops, RSP points at 24-byte locals allocation */
+	    /* Stack layout: [24 locals][vector][error][RIP][CS][RFLAGS][RSP?][SS?] */
+	    /* CS is at offset 48 (24+8+8+8) */
+	    cmpq $KESEL, 48(%rsp)
+	    je _iretnested
 
-	    /* User->kernel trap: restore r14/r15 we stashed over SS/RSP and swap GS back */
+	    /* User mode interrupt: restore R14/R15 and swap GS back */
 	    swapgs
-	    movq 8(%rsp), %r15           /* r15 was stored over old RSP on entry */
-	    movq 0(%rsp), %r14           /* r14 was stored over old SS on entry */
-	    addq $48, %rsp               /* error + RIP + CS + RFLAGS + RSP + SS */
-	    iretq
+	    movq 8(%rsp), %r15        /* r15 was stored at offset 8 */
+	    movq 0(%rsp), %r14        /* r14 was stored at offset 0 */
 
-_iretkernel:
-	    /* Kernel trap: hardware frame does not include SS/RSP */
-	    /* Remove our stack allocations: locals(24) + vector(8) + error(8) = 40 */
+_iretnested:
+	    /* Remove: 24-byte locals + vector + error = 40 bytes */
+	    /* Leave hardware frame: RIP, CS, RFLAGS, [RSP, SS] */
+	    /* IRETQ automatically handles whether RSP/SS are present based on privilege change */
 	    addq $40, %rsp
 	    iretq
 

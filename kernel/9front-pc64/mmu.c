@@ -642,7 +642,7 @@ mmuinit(void)
 	memmove(m->gdt, gdt, sizeof gdt);
 
 	x = (uintptr)m->tss;
-	m->gdt[TSSSEG+0].d0 = (x<<16)|(sizeof(Tss)-1);
+	m->gdt[TSSSEG+0].d0 = (x<<16)|0xFFFF;  /* Limit 64KB to cover I/O Map Base */
 	m->gdt[TSSSEG+0].d1 = (x&0xFF000000)|((x>>16)&0xFF)|SEGTSS|SEGPL(0)|SEGP;
 	m->gdt[TSSSEG+1].d0 = x>>32;
 	m->gdt[TSSSEG+1].d1 = 0;

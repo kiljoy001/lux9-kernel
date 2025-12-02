@@ -44,6 +44,9 @@ uart_putc(int c)
 void
 i8250console(void)
 {
+	/* Ensure IOPL is 3 to allow I/O instructions without TSS bitmap check */
+	asm volatile("pushfq; popq %%rax; orq $0x3000, %%rax; pushq %%rax; popfq" ::: "rax", "cc");
+
 	/* Disable interrupts */
 	outb(uart_base + UART_IER, 0x00);
 
