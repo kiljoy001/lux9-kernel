@@ -22,7 +22,7 @@ dbgserial(int c)
 {
 }
 
-static void
+void
 dbgserial_hex(uvlong v)
 {
 	int started, shift, nib;

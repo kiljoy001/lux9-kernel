@@ -20,7 +20,7 @@ static struct {
 	Lock	lk;  /* Named lock member instead of anonymous */
 	int	n;
 	int	m;
-	Mapent	a[256];
+	Mapent	a[1024];
 } mapalloc;
 
 static void
