@@ -198,6 +198,11 @@ func (s *BaseServer) GetConfig() *ServerConfig {
 	return s.config
 }
 
+// GetSession returns the kernel session (for accessing ExchangeIPC)
+func (s *BaseServer) GetSession() *KernelSession {
+	return s.session
+}
+
 // updateHealth updates the health status (thread-safe)
 func (s *BaseServer) updateHealth(status HealthStatus, message string, err error) {
 	s.healthMutex.Lock()

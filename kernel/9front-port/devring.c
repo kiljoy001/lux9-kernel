@@ -6,6 +6,7 @@
 #include "error.h"
 #include "ipc_ring.h"
 #include "borrowchecker.h"
+#include "pageown.h"
 #include "pebble.h"
 #include "hhdm.h"
 
@@ -32,6 +33,8 @@ struct ChannelState {
     struct IpcChannel *kmap_addr; /* Kernel mapping of Control Page */
     uintptr phys_addr;            /* Physical address of Control Page */
     Proc *owner;
+    u64int last_seqno;            /* Last seen sequence number for replay protection */
+    u64int session_id;            /* Random session ID to prevent cross-session attacks */
 };
 
 static struct ChannelState *channels[1];
@@ -102,13 +105,23 @@ ringmmap(Chan *c, void *addr, long len, ulong offset)
         cs = xalloc(sizeof(struct ChannelState));
         cs->kmap_addr = p;
         cs->owner = up;
-        
+        cs->last_seqno = 0;  /* Initialize sequence number tracking */
+
+        /* Generate random session ID for this channel */
+        /* Uses RDRAND if available, falls back to TSC-based entropy */
+        if (hwrandbuf != nil) {
+            (*hwrandbuf)(&cs->session_id, sizeof(cs->session_id));
+        } else {
+            /* Fallback: combine TSC with process address for uniqueness */
+            cs->session_id = rdtsc() ^ (u64int)(uintptr)up;
+        }
+
         /* Init Control Page */
         memset(p, 0, 4096);
         cs->kmap_addr->magic = 0x52494E47;
         cs->kmap_addr->submission.mask = RING_MASK;
         cs->kmap_addr->completion.mask = RING_MASK;
-        
+
         channels[0] = cs;
     }
     return channels[0]->kmap_addr;
@@ -140,54 +153,161 @@ ring_process_batch(struct ChannelState *cs)
     struct IpcChannel *chan = cs->kmap_addr;
     u32int head, tail;
     u64int page_handle;
-    uintptr page_phys;
+    uintptr page_phys, user_vaddr;
     struct BatchHeader *batch;
     int i, offset;
-    
+    u64int *pte;
+
     head = chan->submission.head;
     tail = chan->submission.tail;
-    
+
     while (head != tail) {
         /* 1. Get Page Handle (User VA) */
         page_handle = chan->submission.pages[head & RING_MASK];
-        
-        /* 2. Verify & Acquire (The "Flip") */
-        /* In real Lux9, we use the MMU/BorrowChecker here */
-        /* page_phys = mmu_lookup(cs->owner, page_handle); */
-        /* if (borrow_acquire(page_phys) != OK) ... error */
-        
-        /* Mocking the lookup for now: assume direct HHDM access if trusted */
-        /* WARNING: Unsafe mock. Real code needs virt_to_phys translation */
-        /* For this test, we assume page_handle is usable kernel address if shared mem */
-        /* But mostly likely we need to map it. */
-        
-        // batch = (struct BatchHeader*) hhdm_virt(page_phys);
-        
-        /* For prototyping without full MMU integration: */
-        /* We just assume the user wrote to a shared buffer we can see */
-        batch = (struct BatchHeader*)page_handle; /* UNSAFE - placeholder */
-        
-        if (batch && batch->magic == BATCH_PAGE_MAGIC) {
-            /* 3. Process Batch */
-            offset = BATCH_DATA_START;
-            for (i = 0; i < batch->num_messages; i++) {
-                if (offset + 2 > 4096) break;
-                
-                u16int msg_len = *(u16int*)((u8int*)batch + offset);
-                offset += 2;
-                
-                if (offset + msg_len > 4096) break;
-                
-                process_message((u8int*)batch + offset, msg_len);
-                offset += msg_len;
-            }
+        user_vaddr = (uintptr)page_handle;
+
+        /* 2. SECURITY: Verify & Acquire (The "Flip") */
+
+        /* Validate alignment */
+        if ((user_vaddr & (BY2PG-1)) != 0) {
+            print("ring: invalid page alignment: %#p\n", user_vaddr);
+            goto skip_page;
         }
-        
+
+        /* Translate user VA to physical address using current MMU context
+         * Note: The submitting process must be the current process (cs->owner == up)
+         * for this to work correctly. The ring buffer is per-process.
+         */
+        if (cs->owner != up) {
+            print("ring: process mismatch: owner %p != up %p\n", cs->owner, up);
+            goto skip_page;
+        }
+
+        pte = mmuwalk(m->pml4, user_vaddr, 0, 0);
+        if (pte == nil || (*pte & PTEVALID) == 0) {
+            print("ring: invalid page mapping: %#p\n", user_vaddr);
+            goto skip_page;
+        }
+
+        page_phys = PADDR(*pte);
+
+        /* SECURITY: Verify page ownership via borrow checker */
+        if (!pageown_is_owned(page_phys)) {
+            print("ring: page not owned: pa=%#p\n", page_phys);
+            goto skip_page;
+        }
+
+        if (pageown_get_owner(page_phys) != cs->owner) {
+            print("ring: page owned by different process: pa=%#p\n", page_phys);
+            goto skip_page;
+        }
+
+        /* SECURITY: Verify page can be borrowed (no active mut borrows) */
+        if (!pageown_can_borrow_shared(page_phys)) {
+            print("ring: page has active mutable borrow: pa=%#p\n", page_phys);
+            goto skip_page;
+        }
+
+        /* ANTI-TOCTOU: Unmap page from user space BEFORE accessing it
+         * This prevents user from modifying the page while kernel processes it.
+         * Critical for preventing TOCTOU attacks on batch header validation.
+         */
+        u64int saved_pte = *pte;
+        *pte = 0;  /* Atomically remove user access */
+        putcr3(getcr3());  /* Flush TLB - now user cannot access page */
+
+        /* Map to kernel via HHDM - only kernel can access now */
+        batch = (struct BatchHeader*)hhdm_virt(page_phys);
+
+        /* SECURITY: Validate batch header
+         * ANTI-TOCTOU: Copy header fields to stack to prevent user modification
+         * during validation. User can no longer access page (unmapped above).
+         */
+        u32int batch_magic = batch->magic;
+        u16int batch_num_messages = batch->num_messages;
+        u16int batch_used_bytes = batch->used_bytes;
+        u64int batch_seqno = batch->nonce;
+
+        if (batch_magic != BATCH_PAGE_MAGIC) {
+            print("ring: invalid batch magic: %#ux (expected %#ux)\n",
+                  batch_magic, BATCH_PAGE_MAGIC);
+            goto restore_page;
+        }
+
+        /* SECURITY: Bounds check num_messages */
+        if (batch_num_messages > 256) {
+            print("ring: too many messages: %ud (max 256)\n", batch_num_messages);
+            goto restore_page;
+        }
+
+        /* SECURITY: Validate used_bytes */
+        if (batch_used_bytes < BATCH_DATA_START || batch_used_bytes > 4096) {
+            print("ring: invalid used_bytes: %ud\n", batch_used_bytes);
+            goto restore_page;
+        }
+
+        /* SECURITY: Validate sequence number for replay protection */
+        /* The nonce field acts as a monotonic sequence number, NOT a cryptographic nonce */
+        if (batch_seqno <= cs->last_seqno) {
+            print("ring: replay detected: seqno %llud <= last %llud\n",
+                  batch_seqno, cs->last_seqno);
+            goto restore_page;
+        }
+        cs->last_seqno = batch_seqno;
+
+        /* 3. Process Batch
+         * ANTI-TOCTOU: Use copied values (batch_num_messages, batch_used_bytes)
+         * from stack, not from batch page. User cannot modify them anymore.
+         */
+        offset = BATCH_DATA_START;
+        for (i = 0; i < batch_num_messages; i++) {
+            /* Check we can read message length */
+            if (offset + 2 > batch_used_bytes) {
+                print("ring: message header exceeds used_bytes at offset %d\n", offset);
+                break;
+            }
+
+            /* ANTI-TOCTOU: Copy message length to stack before validation
+             * Prevents user from modifying msg_len between check and use
+             */
+            u16int msg_len = *(u16int*)((u8int*)batch + offset);
+            offset += 2;
+
+            /* SECURITY: Validate message length */
+            if (msg_len > 8192) {
+                print("ring: message too large: %ud bytes\n", msg_len);
+                break;
+            }
+
+            /* Check message data fits in batch */
+            if (offset + msg_len > batch_used_bytes) {
+                print("ring: message data exceeds used_bytes\n");
+                break;
+            }
+
+            /* Check no integer overflow */
+            if (offset + msg_len < offset) {
+                print("ring: integer overflow in message bounds\n");
+                break;
+            }
+
+            process_message((u8int*)batch + offset, msg_len);
+            offset += msg_len;
+        }
+
+restore_page:
+        /* ANTI-TOCTOU: Restore user access to page after processing
+         * Re-map the page back into user space so they can reuse it
+         */
+        *pte = saved_pte;
+        putcr3(getcr3());  /* Flush TLB to restore user access */
+
+skip_page:
         /* 4. Return to Completion Ring */
         u32int c_tail = chan->completion.tail;
         chan->completion.pages[c_tail & RING_MASK] = page_handle;
         chan->completion.tail++;
-        
+
         head++;
     }
     chan->submission.head = head;
