@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .safe-box { fill: #c8e6c9; stroke: #388e3c; stroke-width: 2; }
+      .unsafe-box { fill: #ffcdd2; stroke: #d32f2f; stroke-width: 2; }
+      .protected-box { fill: #fff9c4; stroke: #f57f17; stroke-width: 2; }
+      .attack-arrow { stroke: #d32f2f; stroke-width: 3; fill: none; marker-end: url(#attack-head); stroke-dasharray: 8,4; }
+      .defense-arrow { stroke: #388e3c; stroke-width: 3; fill: none; marker-end: url(#defense-head); }
+      .blocked { stroke: #d32f2f; stroke-width: 4; fill: none; }
+      .text { font-family: monospace; font-size: 11px; fill: #333; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .subtitle { font-family: sans-serif; font-size: 14px; font-weight: bold; fill: #333; }
+      .label { font-family: sans-serif; font-size: 10px; fill: #666; }
+      .attack-label { font-family: sans-serif; font-size: 11px; fill: #d32f2f; font-weight: bold; }
+      .defense-label { font-family: sans-serif; font-size: 11px; fill: #388e3c; font-weight: bold; }
+    </style>
+    <marker id="attack-head" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <polygon points="0 0, 12 4, 0 8" fill="#d32f2f" />
+    </marker>
+    <marker id="defense-head" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <polygon points="0 0, 12 4, 0 8" fill="#388e3c" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="30" text-anchor="middle" class="title">Lux9 Security Model: Multi-Layer Defense</text>
+
+  <!-- Layer 1: Page Ownership (Borrow Checker) -->
+  <rect x="50" y="60" width="800" height="150" class="safe-box" rx="5"/>
+  <text x="70" y="85" class="subtitle">Layer 1: Page Ownership (Rust-style Borrow Checker)</text>
+
+  <text x="70" y="110" class="label">Physical page 0x1234000:</text>
+  <rect x="250" y="95" width="120" height="30" class="protected-box" rx="3"/>
+  <text x="310" y="115" text-anchor="middle" class="text">Owner: Process A</text>
+
+  <rect x="390" y="95" width="120" height="30" class="safe-box" rx="3"/>
+  <text x="450" y="110" text-anchor="middle" class="label">State: EXCLUSIVE</text>
+  <text x="450" y="120" text-anchor="middle" class="label">No borrows</text>
+
+  <!-- Attack attempt -->
+  <rect x="540" y="95" width="120" height="30" class="unsafe-box" rx="3"/>
+  <text x="600" y="110" text-anchor="middle" class="attack-label">Process B</text>
+  <text x="600" y="120" text-anchor="middle" class="label">tries to access</text>
+
+  <path d="M 660 110 L 510 110" class="attack-arrow"/>
+  <text x="580" y="105" class="attack-label">ATTACK</text>
+
+  <!-- Defense -->
+  <line x1="500" y1="85" x2="520" y2="135" class="blocked"/>
+  <line x1="520" y1="85" x2="500" y2="135" class="blocked"/>
+  <text x="485" y="150" class="defense-label">✗ BLOCKED</text>
+
+  <text x="70" y="150" class="label">Defense: pageown_is_owned() returns false → syscall fails</text>
+  <text x="70" y="165" class="label">Protection: Hardware MMU enforces page table isolation</text>
+  <text x="70" y="180" class="label">Result: Process B cannot read/write Process A's memory</text>
+
+  <!-- Layer 2: TOCTOU Prevention -->
+  <rect x="50" y="230" width="800" height="180" class="safe-box" rx="5"/>
+  <text x="70" y="255" class="subtitle">Layer 2: TOCTOU Prevention (Time-of-Check-Time-of-Use)</text>
+
+  <!-- Timeline -->
+  <text x="70" y="285" class="label">Without protection (VULNERABLE):</text>
+  <rect x="100" y="295" width="200" height="30" class="unsafe-box" rx="3"/>
+  <text x="200" y="315" text-anchor="middle" class="text">Kernel checks num_msgs=5</text>
+
+  <rect x="320" y="295" width="200" height="30" class="unsafe-box" rx="3"/>
+  <text x="420" y="305" text-anchor="middle" class="attack-label">Attacker modifies</text>
+  <text x="420" y="318" text-anchor="middle" class="text">num_msgs=999 ⚠</text>
+
+  <rect x="540" y="295" width="200" height="30" class="unsafe-box" rx="3"/>
+  <text x="640" y="310" text-anchor="middle" class="text">Kernel uses num_msgs=999</text>
+  <text x="640" y="320" text-anchor="middle" class="attack-label">BUFFER OVERRUN!</text>
+
+  <path d="M 300 310 L 320 310" class="attack-arrow"/>
+  <path d="M 520 310 L 540 310" class="attack-arrow"/>
+
+  <!-- With protection -->
+  <text x="70" y="350" class="label">With TOCTOU protection (SECURE):</text>
+  <rect x="100" y="360" width="150" height="30" class="safe-box" rx="3"/>
+  <text x="175" y="375" text-anchor="middle" class="text">1. Unmap page</text>
+  <text x="175" y="385" text-anchor="middle" class="label">putcr3(getcr3())</text>
+
+  <rect x="270" y="360" width="150" height="30" class="safe-box" rx="3"/>
+  <text x="345" y="375" text-anchor="middle" class="text">2. Copy to stack</text>
+  <text x="345" y="385" text-anchor="middle" class="label">u16 n = batch->num</text>
+
+  <rect x="440" y="360" width="150" height="30" class="safe-box" rx="3"/>
+  <text x="515" y="375" text-anchor="middle" class="text">3. Validate copy</text>
+  <text x="515" y="385" text-anchor="middle" class="label">if (n > 256) fail</text>
+
+  <rect x="610" y="360" width="150" height="30" class="safe-box" rx="3"/>
+  <text x="685" y="375" text-anchor="middle" class="text">4. Process safely</text>
+  <text x="685" y="385" text-anchor="middle" class="label">use stack value</text>
+
+  <path d="M 250 375 L 270 375" class="defense-arrow"/>
+  <path d="M 420 375 L 440 375" class="defense-arrow"/>
+  <path d="M 590 375 L 610 375" class="defense-arrow"/>
+
+  <!-- Attack blocked -->
+  <rect x="440" y="295" width="150" height="30" class="unsafe-box" rx="3"/>
+  <text x="515" y="305" text-anchor="middle" class="attack-label">Attacker tries</text>
+  <text x="515" y="318" text-anchor="middle" class="text">Page fault! ✗</text>
+
+  <path d="M 515 325 L 515 360" class="attack-arrow"/>
+  <line x1="505" y1="350" x2="525" y2="370" class="blocked"/>
+  <line x1="525" y1="350" x2="505" y2="370" class="blocked"/>
+
+  <!-- Layer 3: Replay Protection -->
+  <rect x="50" y="430" width="800" height="140" class="safe-box" rx="5"/>
+  <text x="70" y="455" class="subtitle">Layer 3: Replay Protection</text>
+
+  <!-- Valid sequence -->
+  <text x="70" y="485" class="label">Valid sequence:</text>
+  <rect x="200" y="470" width="100" height="25" class="safe-box" rx="3"/>
+  <text x="250" y="487" text-anchor="middle" class="text">seqno=42 ✓</text>
+  <path d="M 300 483 L 330 483" class="defense-arrow"/>
+
+  <rect x="330" y="470" width="100" height="25" class="safe-box" rx="3"/>
+  <text x="380" y="487" text-anchor="middle" class="text">seqno=43 ✓</text>
+  <path d="M 430 483 L 460 483" class="defense-arrow"/>
+
+  <rect x="460" y="470" width="100" height="25" class="safe-box" rx="3"/>
+  <text x="510" y="487" text-anchor="middle" class="text">seqno=44 ✓</text>
+
+  <!-- Replay attack -->
+  <text x="70" y="525" class="label">Replay attack:</text>
+  <rect x="200" y="510" width="100" height="25" class="safe-box" rx="3"/>
+  <text x="250" y="527" text-anchor="middle" class="text">seqno=44</text>
+  <text x="250" y="505" text-anchor="middle" class="label">last_seqno</text>
+
+  <rect x="330" y="510" width="100" height="25" class="unsafe-box" rx="3"/>
+  <text x="380" y="520" text-anchor="middle" class="attack-label">seqno=42</text>
+  <text x="380" y="530" text-anchor="middle" class="label">old message</text>
+
+  <path d="M 300 523 L 330 523" class="attack-arrow"/>
+  <line x1="320" y1="510" x2="340" y2="535" class="blocked"/>
+  <line x1="340" y1="510" x2="320" y2="535" class="blocked"/>
+  <text x="350" y="505" class="defense-label">✗ BLOCKED</text>
+  <text x="350" y="550" class="label">42 ≤ 44 → rejected</text>
+
+  <!-- Session ID -->
+  <text x="500" y="525" class="label">Session isolation:</text>
+  <rect x="620" y="510" width="120" height="25" class="protected-box" rx="3"/>
+  <text x="680" y="527" text-anchor="middle" class="text">session_id (64-bit)</text>
+  <text x="620" y="550" class="label">Random per-channel, prevents cross-session attacks</text>
+
+  <!-- Layer 4: Bounds Checking -->
+  <rect x="50" y="590" width="800" height="180" class="safe-box" rx="5"/>
+  <text x="70" y="615" class="subtitle">Layer 4: Multi-Layer Bounds Checking</text>
+
+  <!-- Validation layers -->
+  <rect x="100" y="635" width="150" height="50" class="safe-box" rx="3"/>
+  <text x="175" y="650" text-anchor="middle" class="text">Header Validation</text>
+  <text x="175" y="665" text-anchor="middle" class="label">num_messages ≤ 256</text>
+  <text x="175" y="677" text-anchor="middle" class="label">used_bytes ≤ 4096</text>
+
+  <rect x="270" y="635" width="150" height="50" class="safe-box" rx="3"/>
+  <text x="345" y="650" text-anchor="middle" class="text">Message Length</text>
+  <text x="345" y="665" text-anchor="middle" class="label">msg_len ≤ 8192</text>
+  <text x="345" y="677" text-anchor="middle" class="label">offset+len ≤ used</text>
+
+  <rect x="440" y="635" width="150" height="50" class="safe-box" rx="3"/>
+  <text x="515" y="650" text-anchor="middle" class="text">Overflow Check</text>
+  <text x="515" y="665" text-anchor="middle" class="label">offset+len ≥ offset</text>
+  <text x="515" y="677" text-anchor="middle" class="label">(integer overflow)</text>
+
+  <rect x="610" y="635" width="150" height="50" class="safe-box" rx="3"/>
+  <text x="685" y="650" text-anchor="middle" class="text">Alignment</text>
+  <text x="685" y="665" text-anchor="middle" class="label">addr & 0xFFF == 0</text>
+  <text x="685" y="677" text-anchor="middle" class="label">(4KB aligned)</text>
+
+  <!-- Attack scenarios -->
+  <rect x="100" y="705" width="180" height="30" class="unsafe-box" rx="3"/>
+  <text x="190" y="720" text-anchor="middle" class="attack-label">num_messages=999</text>
+  <text x="190" y="730" text-anchor="middle" class="label">buffer overrun attempt</text>
+
+  <rect x="310" y="705" width="180" height="30" class="unsafe-box" rx="3"/>
+  <text x="400" y="720" text-anchor="middle" class="attack-label">msg_len=0xFFFFFFFF</text>
+  <text x="400" y="730" text-anchor="middle" class="label">integer overflow</text>
+
+  <rect x="520" y="705" width="180" height="30" class="unsafe-box" rx="3"/>
+  <text x="610" y="720" text-anchor="middle" class="attack-label">addr=0x12340001</text>
+  <text x="610" y="730" text-anchor="middle" class="label">misaligned access</text>
+
+  <!-- All blocked -->
+  <path d="M 190 685 L 190 705" class="attack-arrow"/>
+  <path d="M 400 685 L 400 705" class="attack-arrow"/>
+  <path d="M 610 685 L 610 705" class="attack-arrow"/>
+
+  <line x1="180" y1="695" x2="200" y2="715" class="blocked"/>
+  <line x1="200" y1="695" x2="180" y2="715" class="blocked"/>
+
+  <line x1="390" y1="695" x2="410" y2="715" class="blocked"/>
+  <line x1="410" y1="695" x2="390" y2="715" class="blocked"/>
+
+  <line x1="600" y1="695" x2="620" y2="715" class="blocked"/>
+  <line x1="620" y1="695" x2="600" y2="715" class="blocked"/>
+
+  <text x="100" y="760" class="defense-label">All attacks blocked by validation at kernel/9front-port/devring.c:238-292</text>
+</svg>

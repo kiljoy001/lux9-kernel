@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .kernel-layer { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+      .userspace-layer { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; }
+      .hardware-layer { fill: #e8f5e9; stroke: #388e3c; stroke-width: 2; }
+      .subsystem { fill: #fff; stroke: #666; stroke-width: 1.5; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .bi-arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); marker-start: url(#arrowhead-start); }
+      .text { font-family: monospace; font-size: 11px; fill: #333; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .layer-title { font-family: sans-serif; font-size: 14px; font-weight: bold; fill: #333; }
+      .label { font-family: sans-serif; font-size: 10px; fill: #666; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowhead-start" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto">
+      <polygon points="10 0, 0 3, 10 6" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="30" text-anchor="middle" class="title">Lux9 System Architecture</text>
+
+  <!-- Hardware Layer -->
+  <rect x="50" y="600" width="800" height="80" class="hardware-layer" rx="5"/>
+  <text x="70" y="625" class="layer-title">Hardware</text>
+  <rect x="100" y="640" width="100" height="30" class="subsystem" rx="3"/>
+  <text x="150" y="660" text-anchor="middle" class="label">CPU (x86_64)</text>
+  <rect x="220" y="640" width="100" height="30" class="subsystem" rx="3"/>
+  <text x="270" y="660" text-anchor="middle" class="label">Memory (MMU)</text>
+  <rect x="340" y="640" width="100" height="30" class="subsystem" rx="3"/>
+  <text x="390" y="660" text-anchor="middle" class="label">PCI Devices</text>
+  <rect x="460" y="640" width="100" height="30" class="subsystem" rx="3"/>
+  <text x="510" y="660" text-anchor="middle" class="label">APIC/IOAPIC</text>
+  <rect x="580" y="640" width="100" height="30" class="subsystem" rx="3"/>
+  <text x="630" y="660" text-anchor="middle" class="label">TPM (optional)</text>
+
+  <!-- Kernel Layer -->
+  <rect x="50" y="280" width="800" height="300" class="kernel-layer" rx="5"/>
+  <text x="70" y="305" class="layer-title">Kernel (C, 25K LOC)</text>
+
+  <!-- Core Subsystems -->
+  <text x="70" y="335" class="text">Core:</text>
+  <rect x="120" y="325" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="165" y="340" text-anchor="middle" class="label">Scheduler</text>
+  <text x="165" y="352" text-anchor="middle" class="label">proc, sleep</text>
+
+  <rect x="220" y="325" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="265" y="340" text-anchor="middle" class="label">Memory Mgmt</text>
+  <text x="265" y="352" text-anchor="middle" class="label">alloc, pmap</text>
+
+  <rect x="320" y="325" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="365" y="340" text-anchor="middle" class="label">Namespaces</text>
+  <text x="365" y="352" text-anchor="middle" class="label">chan, mnt</text>
+
+  <!-- Security Subsystems -->
+  <text x="70" y="395" class="text">Security:</text>
+  <rect x="120" y="385" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="165" y="400" text-anchor="middle" class="label">Borrow Checker</text>
+  <text x="165" y="412" text-anchor="middle" class="label">pageown</text>
+
+  <rect x="220" y="385" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="265" y="400" text-anchor="middle" class="label">TOCTOU Guard</text>
+  <text x="265" y="412" text-anchor="middle" class="label">unmap+copy</text>
+
+  <rect x="320" y="385" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="365" y="400" text-anchor="middle" class="label">Pebble</text>
+  <text x="365" y="412" text-anchor="middle" class="label">capabilities</text>
+
+  <!-- IPC Subsystems -->
+  <text x="70" y="455" class="text">IPC:</text>
+  <rect x="120" y="445" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="165" y="460" text-anchor="middle" class="label">Ring Buffer</text>
+  <text x="165" y="472" text-anchor="middle" class="label">/dev/ring</text>
+
+  <rect x="220" y="445" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="265" y="460" text-anchor="middle" class="label">Page Exchange</text>
+  <text x="265" y="472" text-anchor="middle" class="label">/dev/exchange</text>
+
+  <rect x="320" y="445" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="365" y="460" text-anchor="middle" class="label">9P Protocol</text>
+  <text x="365" y="472" text-anchor="middle" class="label">devmnt</text>
+
+  <!-- Device Subsystems -->
+  <text x="70" y="515" class="text">Devices:</text>
+  <rect x="120" y="505" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="165" y="520" text-anchor="middle" class="label">SIP Framework</text>
+  <text x="165" y="532" text-anchor="middle" class="label">/dev/sip</text>
+
+  <rect x="220" y="505" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="265" y="520" text-anchor="middle" class="label">PCI Family</text>
+  <text x="265" y="532" text-anchor="middle" class="label">multi-device</text>
+
+  <rect x="320" y="505" width="90" height="40" class="subsystem" rx="3"/>
+  <text x="365" y="520" text-anchor="middle" class="label">APIC/Timer</text>
+  <text x="365" y="532" text-anchor="middle" class="label">interrupts</text>
+
+  <!-- Right side: Syscall Interface -->
+  <rect x="470" y="320" width="360" height="250" class="subsystem" rx="5"/>
+  <text x="650" y="345" text-anchor="middle" class="text">System Call Interface</text>
+
+  <text x="490" y="375" class="label">• Process: fork, exec, wait, rfork</text>
+  <text x="490" y="395" class="label">• Memory: mmap, munmap, segattach</text>
+  <text x="490" y="415" class="label">• File I/O: open, read, write, close</text>
+  <text x="490" y="435" class="label">• IPC: pipe, mount, bind</text>
+  <text x="490" y="455" class="label">• Page Exchange: exchange_prepare/accept</text>
+  <text x="490" y="475" class="label">• Ring: ring_submit/poll</text>
+  <text x="490" y="495" class="label">• SIP: sip_register, sip_start</text>
+  <text x="490" y="515" class="label">• Borrow: pageown_acquire/release</text>
+  <text x="490" y="535" class="label">• Security: pebble_alloc, tpm_*</text>
+  <text x="490" y="555" class="label">Plan 9 compatible + Lux9 extensions</text>
+
+  <!-- Userspace Layer -->
+  <rect x="50" y="60" width="800" height="200" class="userspace-layer" rx="5"/>
+  <text x="70" y="85" class="layer-title">Userspace (Go/C)</text>
+
+  <!-- Go Servers -->
+  <text x="70" y="115" class="text">Go Servers (SIP):</text>
+  <rect x="200" y="100" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="255" y="118" text-anchor="middle" class="text">cryptosrv ✅</text>
+  <text x="255" y="133" text-anchor="middle" class="label">Blake2b</text>
+  <text x="255" y="145" text-anchor="middle" class="label">Ed25519</text>
+
+  <rect x="330" y="100" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="385" y="118" text-anchor="middle" class="text">ext4fs 🚧</text>
+  <text x="385" y="133" text-anchor="middle" class="label">File system</text>
+  <text x="385" y="145" text-anchor="middle" class="label">server</text>
+
+  <rect x="460" y="100" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="515" y="118" text-anchor="middle" class="text">drivers 📋</text>
+  <text x="515" y="133" text-anchor="middle" class="label">Device</text>
+  <text x="515" y="145" text-anchor="middle" class="label">isolation</text>
+
+  <!-- User Applications -->
+  <text x="70" y="185" class="text">Applications:</text>
+  <rect x="200" y="170" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="255" y="188" text-anchor="middle" class="text">Shell (rc)</text>
+  <text x="255" y="203" text-anchor="middle" class="label">Command</text>
+  <text x="255" y="215" text-anchor="middle" class="label">interpreter</text>
+
+  <rect x="330" y="170" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="385" y="188" text-anchor="middle" class="text">Init</text>
+  <text x="385" y="203" text-anchor="middle" class="label">Process 1</text>
+  <text x="385" y="215" text-anchor="middle" class="label">System startup</text>
+
+  <rect x="460" y="170" width="110" height="55" class="subsystem" rx="3"/>
+  <text x="515" y="188" text-anchor="middle" class="text">Utils</text>
+  <text x="515" y="203" text-anchor="middle" class="label">ls, cat, mk</text>
+  <text x="515" y="215" text-anchor="middle" class="label">Plan 9 tools</text>
+
+  <!-- Libraries -->
+  <rect x="620" y="100" width="200" height="125" class="subsystem" rx="5"/>
+  <text x="720" y="120" text-anchor="middle" class="text">Libraries</text>
+  <text x="630" y="145" class="label">• 9P client/server (Go/C)</text>
+  <text x="630" y="165" class="label">• SIP framework (Go)</text>
+  <text x="630" y="185" class="label">• libc (Plan 9 compat)</text>
+  <text x="630" y="205" class="label">• crypto (Blake2b, Ed25519)</text>
+
+  <!-- Arrows showing flow -->
+  <!-- Userspace to Kernel -->
+  <path d="M 450 260 L 450 280" class="bi-arrow"/>
+  <text x="460" y="270" class="label">syscalls</text>
+
+  <!-- Kernel to Hardware -->
+  <path d="M 450 580 L 450 600" class="bi-arrow"/>
+  <text x="460" y="590" class="label">HAL</text>
+
+  <!-- IPC flow -->
+  <path d="M 255 155 L 255 320" class="arrow"/>
+  <text x="265" y="240" class="label">9P over ring</text>
+
+  <path d="M 385 155 L 385 320" class="arrow"/>
+  <text x="395" y="240" class="label">mount/bind</text>
+</svg>
