@@ -36,6 +36,16 @@ typedef struct SecureRamdisk {
 
 static SecureRamdisk secure_rd;
 
+/* Simple XOR encryption helper */
+static void
+secure_crypt(uchar *buf, long n, vlong off, uchar *key)
+{
+	long i;
+	for(i = 0; i < n; i++){
+		buf[i] ^= key[(off + i) % 32];
+	}
+}
+
 static void
 ramreset(void)
 {
@@ -131,16 +141,6 @@ static void
 ramclose(Chan *c)
 {
 	USED(c);
-}
-
-/* Simple XOR encryption helper */
-static void
-secure_crypt(uchar *buf, long n, vlong off, uchar *key)
-{
-	long i;
-	for(i = 0; i < n; i++){
-		buf[i] ^= key[(off + i) % 32];
-	}
 }
 
 static long
