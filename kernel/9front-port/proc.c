@@ -69,7 +69,9 @@ schedinit(void)
 		if(up != nil) {
 			if((e = up->edf) != nil && (e->flags & Admitted))
 				edfrecord(up);
+		}
 		m->proc = nil;
+		if(up != nil) {
 		switch(up->state) {
 		default:
 			updatecpu(up);
@@ -95,9 +97,8 @@ schedinit(void)
 		up = nil;
 	}
 out:
-	for(;;){
+	for(;;)
 		sched();
-	}
 }
 
 int
@@ -213,14 +214,16 @@ sched(void)
 		 * in the middle of taslock when a process holds a lock
 		 * but Lock.p has not yet been initialized.
 		 */
-		if(up->nlocks)
-		if(up->state == Running)
-		if(up->delaysched < 20
-		|| palloc.lock.p == up
-		|| procalloc.lock.p == up){
-			up->delaysched++;
- 			delayedscheds++;
-			return;
+		if(up->nlocks) {
+			if(up->state == Running) {
+				if(up->delaysched < 20
+				|| palloc.lock.p == up
+				|| procalloc.lock.p == up){
+					up->delaysched++;
+		 			delayedscheds++;
+					return;
+				}
+			}
 		}
 		s = splhi();
  		up->delaysched = 0;
@@ -1658,6 +1661,7 @@ linkproc(void)
 	static int clockenabled;
 	extern PCArch *arch;
 
+	iprint("linkproc: up=%p pid=%d kpfun=%p\n", up, up ? up->pid : -1, up->kpfun);
 	/*
 	 * Safe point: we're on up->kstack with up/m->proc set.
 	 * Enable clock interrupt now that we have a valid process stack.
