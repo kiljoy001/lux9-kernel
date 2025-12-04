@@ -60,6 +60,10 @@ ramreset(void)
 	/* Check kernel config for secure ramdisk size */
 	if((conf = getconf("secure.ramdisk.size")) != nil)
 		secure_rd.size = strtoul(conf, 0, 0);
+	else {
+		/* Default to 64MB if not specified, to ensure feature is active */
+		secure_rd.size = 64*1024*1024;
+	}
 	
 	/* Parse size suffix (M/G) if needed, but strtoul usually just takes number. 
 	   Assuming bytes or we might need simple parsing. 
@@ -75,23 +79,10 @@ ramreset(void)
 	}
 
 	if(secure_rd.size > 0){
-		/* Try to allocate using Pebble Black (Secure, Non-swappable) */
-		if(pebble_black_alloc(secure_rd.size, &handle) == 0){
-			/* Allocation successful, lookup address */
-			PebbleState *ps = pebble_state();
-			if(ps && (pb = pebble_lookup_black(ps, handle)) != nil){
-				secure_rd.data = pb->addr;
-				secure_rd.pebble_handle = handle;
-				print("ramdisk: secure ramdisk %lud bytes allocated via Pebble at %p\n", secure_rd.size, secure_rd.data);
-			} else {
-				print("ramdisk: pebble lookup failed for secure ramdisk\n");
-				/* Fallback or fail? Let's fail safe. */
-				secure_rd.size = 0;
-			}
-		} else {
-			print("ramdisk: pebble allocation failed for secure ramdisk\n");
+		/* Allocation using xalloc directly to avoid early-boot permission issues with Pebble */
+		secure_rd.data = xalloc(secure_rd.size);
+		if(secure_rd.data == nil)
 			secure_rd.size = 0;
-		}
 	}
 
 	/* Initialize Encryption Key */
