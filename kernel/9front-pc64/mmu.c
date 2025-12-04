@@ -1210,10 +1210,9 @@ putmmu(uintptr va, uintptr pa, Page *)
 	x = splhi();
 	pte = getpte(va);
 	old = *pte;
-	*pte = pa | PTEACCESSED|PTEDIRTY|PTEUSER;
+	*pte = pa | PTEACCESSED|PTEDIRTY|PTEUSER|PTEWRITE|PTEVALID;
 	splx(x);
-	if(old & PTEVALID)
-		invlpg(va);
+	invlpg(va);
 }
 
 /*
