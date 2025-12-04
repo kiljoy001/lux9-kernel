@@ -504,7 +504,8 @@ _debug_syscallentry_msg:
 .global syscallentry
 syscallentry:
     swapgs
-    movq %gs:0, %rax            /* m */
+    /* WORKAROUND: KVM/QEMU might lose GS base, use global m pointer */
+    movq m(%rip), %rax          /* m */
     movq 16(%rax), %rbx         /* up */
 
     /* DEBUG: Check if up is valid before using it */
