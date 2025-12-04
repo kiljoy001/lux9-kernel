@@ -131,6 +131,7 @@ extern Dev ramdevtab;
 extern Dev sipdevtab;
 extern Dev pebbledevtab;
 extern Dev ringdevtab;
+extern Dev pipedevtab;
 
 Dev *devtab[] = {
 	&rootdevtab,
@@ -149,6 +150,7 @@ Dev *devtab[] = {
 	&dmadevtab,
 	&pcidevtab,
 	&familydevtab,
+	&pipedevtab,
 	nil,
 };
 

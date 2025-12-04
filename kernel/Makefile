@@ -33,6 +33,8 @@ ASM_S := $(wildcard $(PC64_DIR)/*.S)
 BORROW_C := ../kernel/borrowchecker.c
 LOCKDAG_C := ../kernel/lock_dag.c
 PEBBLE_C := ../kernel/pebble.c
+CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
+CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
 FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
 
@@ -44,11 +46,12 @@ ASM_O := $(patsubst $(PC64_DIR)/%.S,%.o,$(ASM_S))
 BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C))
 LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
 PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
+CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%.o,$(CRYPTO_S))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
 FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -113,6 +116,10 @@ $(KERNEL_BINARY): $(ALL_O)
 
 %.o: ../kernel/%.c
 	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: ../kernel/%.S
+	@echo "AS $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: ../real_drivers/%.c

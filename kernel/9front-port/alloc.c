@@ -156,7 +156,7 @@ punlock(Pool *p)
 
 	memmove(msg, pv->msg, sizeof msg);
 	iunlock(&pv->lk);
-	iprint("%.*s", sizeof pv->msg, msg);
+	
 }
 
 void

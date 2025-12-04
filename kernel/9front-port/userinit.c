@@ -21,6 +21,7 @@ extern struct initrd_file *initrd_root;
 extern void *initrd_base;
 extern usize initrd_size;
 extern void initrd_init(void*, usize);
+extern void initrd_register(void);
 
 uintptr dbg_getpte(uintptr);
 
@@ -46,28 +47,21 @@ proc0(void*)
 	Page *p;
 
 	/* Start logging now that we're on a real stack; clock already armed */
-	prbuf_start_consumer();
+	/* DISABLED: prbuf_start_consumer() - causes hang before scheduler starts */
+	/* prbuf_start_consumer(); */
 
-	iprint("proc0: ENTRY\n");
 	BOOTPRINT("proc0: ENTRY\n");
 
-	iprint("proc0: about to call waserror\n");
 	if(waserror())
-		panic("proc0: %s", up->errstr);
-	iprint("proc0: waserror returned 0 (no error)\n");
+		panic("proc0: init0 failed: %r");
 
-	iprint("proc0: checking initrd_base=%p, initrd_root=%p\n", initrd_base, initrd_root);
-	if(initrd_base != nil && initrd_root == nil) {
-		iprint("proc0: calling initrd_init\n");
-		BOOTPRINT("initrd: staging module\n");
+	/*
+	 * Check if we have an initrd module from Limine.
+	 * We need to register it with the device root.
+	 */
+	if(initrd_base != nil && initrd_size > 0){
 		initrd_init(initrd_base, initrd_size);
-		BOOTPRINT("BOOT[proc0]: initrd staging complete\n");
-		extern void initrd_register(void);
-		BOOTPRINT("BOOT[proc0]: registering initrd files with devroot\n");
 		initrd_register();
-		BOOTPRINT("BOOT[proc0]: initrd registration complete\n");
-	} else if(initrd_base == nil) {
-		BOOTPRINT("initrd: no initrd module present\n");
 	}
 
 	up->pgrp = newpgrp();

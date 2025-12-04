@@ -327,9 +327,7 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	uartputs("DEBUG: userinit complete\n", 28);
 
 	/* Initialize device drivers (creates closeproc kproc) */
-	iprint("main: calling chandevinit()\n");
 	chandevinit();
-	iprint("main: chandevinit() complete\n");
 
 	/* Debug: show scheduler state before entering schedinit */
 	extern ulong runvec;
@@ -339,7 +337,6 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	timersinit();
 	spllo();              /* Re-enable interrupts for scheduler - CRITICAL */
 	uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
-	iprint("DEBUG: before schedinit runvec=%#lux nrdy=%d\n", runvec, nrdy);
 	schedinit();
 }
 
@@ -357,26 +354,18 @@ init0(void)
 {
 	char buf[2*KNAMELEN], **sp;
 
-	iprint("init0: ENTRY up=%p pid=%d\n", up, up ? up->pid : -1);
-
 	/*
 	 * Open console for stdin, stdout, stderr
 	 * Use #c/cons directly since /dev not bound yet
 	 */
-	iprint("init0: about to open console\n");
 	if(waserror())
 		panic("init0: cannot open console: %r");
 	kopen("#c/cons", OREAD);	/* fd 0 - stdin */
-	iprint("init0: stdin opened\n");
 	kopen("#c/cons", OWRITE);	/* fd 1 - stdout */
-	iprint("init0: stdout opened\n");
 	kopen("#c/cons", OWRITE);	/* fd 2 - stderr */
-	iprint("init0: stderr opened\n");
 	poperror();
 
-	iprint("init0: about to call randominit()\n");
 	randominit();
-	iprint("init0: randominit() returned\n");
 
 	/* Setup environment variables - currently disabled due to devenv issues */
 	/* TODO: Fix devenv create path then enable:
@@ -393,27 +382,18 @@ init0(void)
 	}
 	*/
 
-	iprint("init0: about to create alarm kproc\n");
 	kproc("alarm", alarmkproc, 0);
-	iprint("init0: alarm kproc created\n");
 
-	iprint("init0: setting up user stack\n");
 	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
 	sp[3] = sp[2] = nil;
 	strcpy(sp[1] = (char*)&sp[4], "boot");
 	sp[0] = nil;
-	iprint("init0: user stack ready at %p\n", sp);
 
-	iprint("init0: calling splhi()\n");
 	splhi();
-	iprint("init0: calling fpukexit()\n");
 	fpukexit(nil);
-	iprint("init0: checking m->proc\n");
 	if(m->proc == nil)
 		panic("BOOT[init0]: m->proc is NULL before touser()!");
-	iprint("init0: m->proc=%p, about to call touser(sp=%p)\n", m->proc, sp);
 	touser(sp);
-	iprint("init0: ERROR - returned from touser()! This should never happen\n");
 }
 
 void

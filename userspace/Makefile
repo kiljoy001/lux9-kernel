@@ -65,7 +65,7 @@ go-servers:
 	@$(MAKE) -C $(GO_SERVERS_DIR) all
 
 # C servers build  
-c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs $(C_SERVERS_DIR)/crypto/cryptosrv
+c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs $(C_SERVERS_DIR)/crypto/cryptosrv $(BIN_DIR)/rc
 
 $(C_SERVERS_DIR)/ext4fs/ext4fs: $(C_SERVERS_DIR)/ext4fs/ext4fs.c
 	@mkdir -p $(dir $@)
@@ -74,6 +74,33 @@ $(C_SERVERS_DIR)/ext4fs/ext4fs: $(C_SERVERS_DIR)/ext4fs/ext4fs.c
 $(C_SERVERS_DIR)/crypto/cryptosrv:
 	@echo "Building Crypto Server..."
 	@$(MAKE) -C $(C_SERVERS_DIR)/crypto all
+
+# RC Shell Build
+RC_SRC_DIR := ../src/cmd/rc
+RC_OBJ_DIR := $(OBJ_DIR)/rc
+RC_SRCS := $(wildcard $(RC_SRC_DIR)/*.c)
+# Exclude unix.c, include plan9.c. syn.c is generated.
+RC_SRCS := $(filter-out $(RC_SRC_DIR)/unix.c, $(RC_SRCS))
+RC_OBJS := $(patsubst $(RC_SRC_DIR)/%.c, $(RC_OBJ_DIR)/%.o, $(RC_SRCS)) $(RC_OBJ_DIR)/syn.o
+
+$(BIN_DIR)/rc: $(RC_OBJS) | $(BIN_DIR)
+	@echo "Linking rc shell..."
+	@$(CC) $(CFLAGS) -o $@ $^ -L$(LIB_DIR) -lc
+
+$(RC_OBJ_DIR)/syn.c: $(RC_SRC_DIR)/syn.y | $(RC_OBJ_DIR)
+	@echo "Generating rc parser..."
+	@yacc -d -o $@ $<
+
+$(RC_OBJ_DIR)/syn.o: $(RC_OBJ_DIR)/syn.c
+	@echo "Compiling rc parser..."
+	@$(CC) $(CFLAGS) -DPlan9 -I$(RC_SRC_DIR) -c -o $@ $<
+
+$(RC_OBJ_DIR)/%.o: $(RC_SRC_DIR)/%.c $(RC_OBJ_DIR)/syn.c | $(RC_OBJ_DIR)
+	@echo "Compiling rc object $<..."
+	@$(CC) $(CFLAGS) -DPlan9 -I$(RC_SRC_DIR) -I$(RC_OBJ_DIR) -c -o $@ $<
+
+$(RC_OBJ_DIR):
+	@mkdir -p $(RC_OBJ_DIR)
 
 # Libraries
 libs:
@@ -97,6 +124,7 @@ $(BUILD_DIR)/initrd.tar: init-bin go-servers drivers c-servers libs
 	# Copy C binaries
 	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
 	@cp $(C_SERVERS_DIR)/crypto/cryptosrv $(INITRD_DIR)/bin/ 2>/dev/null || true
+	@cp $(BIN_DIR)/rc $(INITRD_DIR)/bin/rc 2>/dev/null || true
 	# Copy init program
 	@cp $(BIN_DIR)/init-go $(INITRD_DIR)/bin/init
 	# Create tar

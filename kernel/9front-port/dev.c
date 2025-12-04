@@ -66,32 +66,19 @@ devallowed(Pgrp *pgrp, int r)
 {
 	int t, w, b;
 
-	iprint("devallowed: enter pgrp=%p r=%d\n", pgrp, r);
 	t = devno(r, 1);
 	if(t == -1)
 		return 0;
 
 	w = sizeof(u64int) * 8;
-	if(((Lock*)&pgrp->ns)->key != 0){
-	}
-	if(((RWLock*)&pgrp->ns)->writer != 0){
-	}
-	if(((RWLock*)&pgrp->ns)->head != nil){
-	}
-	if(up == nil){
-	}
 	rlock(&pgrp->ns);
-	iprint("devallowed: acquired ns lock=%p\n", &pgrp->ns.use);
 	if(waserror()){
-		iprint("devallowed: error, runlock\n");
 		runlock(&pgrp->ns);
-		iprint("devallowed: released ns lock (error)\n");
 		nexterror();
 	}
 	b = !(pgrp->notallowed[t/w] & 1<<t%w);
 	poperror();
 	runlock(&pgrp->ns);
-	iprint("devallowed: released ns lock\n");
 	return b;
 }
 
@@ -260,27 +247,21 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 
 	/* Check canaries */
 	if(canary_top != 0xDEADBEEFCAFEBABEULL){
-		iprint("devwalk: TOP canary corrupted BEFORE walk! %#p\n", (void*)canary_top);
 		panic("stack corruption detected");
 	}
 	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
-		iprint("devwalk: BOTTOM canary corrupted BEFORE walk! %#p\n", (void*)canary_bottom);
 		panic("stack corruption detected");
 	}
 
 	alloc = (nc == nil);
 	wq = smalloc(sizeof(Walkqid)+(nname-1)*sizeof(Qid));
 	wq->clone = nc;
-	iprint("devwalk: start alloc=%d nc=%p wq=%p caller=%#p\n",
-		alloc, nc, wq, getcallerpc(&c));
+
 	savedwq = up != nil ? up->walkq : nil;
 	savedclone = up != nil ? up->walkclone : nil;
 	savedalloc = up != nil ? up->walkalloc : 0;
-	iprint("devwalk: saved state: savedwq=%p savedclone=%p savedalloc=%d\n",
-		savedwq, savedclone, savedalloc);
+
 	if(up != nil){
-		iprint("devwalk: setting up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
-			wq, nc, alloc);
 		up->walkq = wq;
 		up->walkclone = nc;
 		up->walkalloc = alloc;
@@ -288,30 +269,18 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 	if(waserror()){
 		/* Check canaries in error handler */
 		if(canary_top != 0xDEADBEEFCAFEBABEULL){
-			iprint("devwalk: TOP canary corrupted in ERROR handler! %#p\n", (void*)canary_top);
 			panic("stack corruption detected in error path");
 		}
 		if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
-			iprint("devwalk: BOTTOM canary corrupted in ERROR handler! %#p\n", (void*)canary_bottom);
 			panic("stack corruption detected in error path");
 		}
 		Walkqid *cwq = up != nil && up->walkq != nil ? up->walkq : wq;
 		Chan *clone = up != nil ? up->walkclone : (wq != nil ? wq->clone : nil);
 		int calloc = up != nil ? up->walkalloc : alloc;
-		if(up != nil){
-			iprint("devwalk: error - up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
-				up->walkq, up->walkclone, up->walkalloc);
-		}
-		iprint("devwalk: error - wq=%p alloc=%d\n", wq, alloc);
-		iprint("devwalk: error - computed: cwq=%p clone=%p calloc=%d\n",
-			cwq, clone, calloc);
-		iprint("devwalk: error - saved: wq=%p clone=%p alloc=%d caller=%#p\n",
-			savedwq, savedclone, savedalloc, getcallerpc(&c));
+
 		if(calloc && clone != nil)
 			cclose(clone);
 		if(up != nil){
-			iprint("devwalk: error - restoring up->walkq=%p up->walkclone=%p up->walkalloc=%d\n",
-				savedwq, savedclone, savedalloc);
 			up->walkq = savedwq;
 			up->walkclone = savedclone;
 			up->walkalloc = savedalloc;
@@ -388,11 +357,9 @@ devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab, int ntab, Devgen
 Done:
 	/* Check canaries before Done */
 	if(canary_top != 0xDEADBEEFCAFEBABEULL){
-		iprint("devwalk: TOP canary corrupted at Done! %#p\n", (void*)canary_top);
 		panic("stack corruption detected at Done");
 	}
 	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
-		iprint("devwalk: BOTTOM canary corrupted at Done! %#p\n", (void*)canary_bottom);
 		panic("stack corruption detected at Done");
 	}
 	poperror();
@@ -422,11 +389,9 @@ Done:
 	}
 	/* Check canaries before return */
 	if(canary_top != 0xDEADBEEFCAFEBABEULL){
-		iprint("devwalk: TOP canary corrupted before return! %#p\n", (void*)canary_top);
 		panic("stack corruption detected before return");
 	}
 	if(canary_bottom != 0xFEEDFACEDEADC0DEULL){
-		iprint("devwalk: BOTTOM canary corrupted before return! %#p\n", (void*)canary_bottom);
 		panic("stack corruption detected before return");
 	}
 	return retq;

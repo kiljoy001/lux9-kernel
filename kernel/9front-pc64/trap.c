@@ -717,9 +717,10 @@ kprocchild(Proc *p, void (*entry)(void))
 	 * gotolabel() needs a word on the stack in
 	 * which to place the return PC used to jump
 	 * to linkproc().
+	 * Stack grows down from p->kstack + KSTACK.
 	 */
 	p->sched.pc = (uintptr)entry;
-	p->sched.sp = (uintptr)p - BY2WD;
+	p->sched.sp = (uintptr)p->kstack + KSTACK - BY2WD;
 }
 
 void

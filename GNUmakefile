@@ -104,6 +104,10 @@ test-build:
 	$(CC) $(CFLAGS) -c kernel/9front-port/alloc.c -o /tmp/test.o
 	@echo "✓ Basic compilation works!"
 
+userspace/build/initrd.tar:
+	@echo "Building userspace..."
+	@$(MAKE) -C userspace initrd
+
 iso: $(KERNEL) userspace/build/initrd.tar
 	@echo "Creating ISO image..."
 	@echo "Checking for xorriso..."

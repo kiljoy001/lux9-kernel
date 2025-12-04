@@ -136,7 +136,6 @@ todset(vlong t, vlong delta, int n)
 		if(delta > 0 && n > delta)
 			n = delta;
 		if (n == 0) {
-			iprint("todset: n == 0, delta == %lld\n", delta);
 			delta = 0;
 		} else
 			delta /= n;

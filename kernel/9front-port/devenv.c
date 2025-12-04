@@ -529,14 +529,9 @@ ksetenv(char *ename, char *eval, int conf)
 	Chan *c;
 	char buf[2*KNAMELEN];
 	
-	iprint("ksetenv: ename=%s eval=%s conf=%d\n", ename, eval, conf);
 	snprint(buf, sizeof(buf), "#e%s/%s", conf?"c":"", ename);
-	iprint("ksetenv: path=%s\n", buf);
 	c = namec(buf, Acreate, OWRITE, 0666);
-	iprint("ksetenv: namec returned c=%p\n", c);
 	devtab[c->type]->write(c, eval, strlen(eval), 0);
-	iprint("ksetenv: write done c=%p\n", c);
-	iprint("ksetenv: about to cclose c=%p\n", c);
 	cclose(c);
 }
 

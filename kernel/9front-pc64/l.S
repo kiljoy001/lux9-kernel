@@ -139,9 +139,11 @@ cpuid:
 .global rdmsr
 rdmsr:
     movq %rdi, %rcx
+    movq %rsi, %r8      /* save pointer */
     rdmsr
-    shlq $32, %rdx
-    orq %rdx, %rax
+    movl %eax, 0(%r8)
+    movl %edx, 4(%r8)
+    xorq %rax, %rax     /* return 0 */
     ret
 
 .global wrmsr
@@ -437,6 +439,7 @@ touser:
      * so that interrupts and syscalls from userspace can access it.
      * The swapgs in syscallentry/trap handlers will handle the swap.
      * swapgs */
+    swapgs
 
     /* Debug: print the user stack pointer we're about to use */
     pushq %rax

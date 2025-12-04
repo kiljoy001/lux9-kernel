@@ -682,23 +682,12 @@ mmuinit(void)
 		print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
 	}
 	
-	print("DEBUG[mmuinit]: About to read EFER MSR\n");
-	v = 0;  /* Initialize to zero before rdmsr */
+	v = 0;
 	rdmsr(Efer, &v);
-	print("DEBUG[mmuinit]: Read EFER MSR, value=%#llux\n", v);
 
-	/* TEMPORARY: Skip EFER write on KVM - it already has correct value from bootloader */
-	print("DEBUG[mmuinit]: Skipping EFER MSR write (already set by bootloader)\n");
-	/* v |= 1ull;
-	print("DEBUG[mmuinit]: About to write EFER MSR\n");
+	v |= 1ull;  /* Enable SCE */
 	wrmsr(Efer, v);
-	print("DEBUG[mmuinit]: Wrote EFER MSR\n");
-	*/
 	
-	// Debug print for EFER
-	dbghex("EFER set to: ", v);
-
-	print("DEBUG: Setting up syscall MSRs\n");
 	/* We use IRETQ for all returns instead of the faster SYSRET instruction.
 	 * But we MUST set up MSRs for SYSCALL entry. */
 	extern void syscallentry(void);
@@ -706,13 +695,6 @@ mmuinit(void)
 	wrmsr(Lstar, (uvlong)syscallentry);
 	wrmsr(Sfmask, 0x200);
 	
-	// Debug print for STAR
-	uvlong star_val;
-	print("DEBUG: About to read STAR MSR\n");
-	rdmsr(Star, &star_val);
-	print("DEBUG: Read STAR MSR\n");
-	dbghex("STAR set to: ", star_val);
-
 	/* Reload data segments to KDSEL (0x10) */
 	__asm__ volatile(
 		"mov %0, %%ds\n"
@@ -731,8 +713,6 @@ mmuinit(void)
 		"1:\n"
 		: : "i"(KESEL) : "rax", "memory"
 	);
-
-	print("DEBUG: mmuinit completed successfully\n");
 }
 
 /*

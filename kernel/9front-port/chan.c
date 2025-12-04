@@ -137,8 +137,6 @@ kstrdup(char **p, char *s)
 	char *t, *prev;
 
 	n = strlen(s);
-	iprint("kstrdup: copying n=%d from %p to slot %p caller=%#p\n",
-		n, s, p != nil ? *p : nil, getcallerpc(&p));
 	/* if it's a user, we can wait for memory; if not, something's very wrong */
 	if(up != nil)
 		t = smalloc(n+1);
@@ -186,13 +184,9 @@ chandevinit(void)
 	int i;
 
 	for(i=0; devtab[i] != nil; i++){
-		iprint("chandevinit: initializing devtab[%d]=%s (%C)\n", i, devtab[i]->name, devtab[i]->dc);
 		devtab[i]->init();
-		iprint("chandevinit: finished devtab[%d]=%s\n", i, devtab[i]->name);
 	}
-	iprint("chandevinit: about to create closeproc kproc\n");
 	kproc("closeproc", closeproc, nil);
-	iprint("chandevinit: closeproc kproc created, returning\n");
 }
 
 void
@@ -273,9 +267,6 @@ newpath(char *s)
 	memmove(p->s, s, i+1);
 	p->ref = 1;
 
-	iprint("newpath: created p=%p p->s=%p (allocated) path='%s' caller=%#p\n",
-		p, p->s, s, getcallerpc(&s));
-
 	/*
 	 * Cannot use newpath for arbitrary names because the mtpt
 	 * array will not be populated correctly.  The names #/ and / are
@@ -323,8 +314,6 @@ pathclose(Path *p)
 
 	if(p == nil || decref(p))
 		return;
-	iprint("pathclose: p=%p p->s=%p p->len=%d path='%s' caller=%#p\n",
-		p, p->s, p->len, p->s ? p->s : "<nil>", getcallerpc(&p));
 
 	/* Check if p->s looks like it might be in the Proc structure */
 	if(p->s != nil && up != nil) {
@@ -332,9 +321,9 @@ pathclose(Path *p)
 		uintptr upstart = (uintptr)up;
 		uintptr upend = upstart + sizeof(Proc);
 		if(ps >= upstart && ps < upend) {
-			iprint("pathclose: WARNING p->s=%p is inside Proc structure [%p-%p]\n",
+			print("pathclose: WARNING p->s=%p is inside Proc structure [%p-%p]\n",
 				p->s, (void*)upstart, (void*)upend);
-			iprint("pathclose: up=%p up->genbuf=%p offset=%ld\n",
+			print("pathclose: up=%p up->genbuf=%p offset=%ld\n",
 				up, up->genbuf, ps - upstart);
 		}
 	}
@@ -343,7 +332,6 @@ pathclose(Path *p)
 		if(p->mtpt[i] != nil)
 			cclose(p->mtpt[i]);
 	free(p->mtpt);
-	iprint("pathclose: about to free p->s=%p\n", p->s);
 	free(p->s);
 	free(p);
 }
@@ -407,8 +395,6 @@ addelem(Path *p, char *s, Chan *from)
 		a += PATHSLOP;
 		t = smalloc(a);
 		memmove(t, p->s, p->len+1);
-		iprint("addelem: reallocated p->s from %p to %p for '%s' caller=%#p\n",
-			p->s, t, s, getcallerpc(&p));
 		free(p->s);
 		p->s = t;
 		p->alen = a;
@@ -418,8 +404,6 @@ addelem(Path *p, char *s, Chan *from)
 		p->s[p->len++] = '/';
 	memmove(p->s+p->len, s, i+1);
 	p->len += i;
-	iprint("addelem: p=%p p->s=%p added '%s' -> '%s' caller=%#p\n",
-		p, p->s, s, p->s, getcallerpc(&p));
 	if(isdotdot(s)){
 		fixdotdotname(p);
 		if(p->mlen > 1 && (c = p->mtpt[--p->mlen]) != nil){
@@ -444,13 +428,6 @@ addelem(Path *p, char *s, Chan *from)
 void
 chanfree(Chan *c)
 {
-	iprint("chanfree: c=%p path=%p srvname=%p caller=%#p\n",
-		c, c->path, c->srvname, getcallerpc(&c));
-	if(c->path != nil) {
-		iprint("chanfree: c->path->s=%p path='%s'\n",
-			c->path->s, c->path->s ? c->path->s : "<nil>");
-	}
-
 	c->flag = CFREE;
 
 	if(c->dirrock != nil){
@@ -476,12 +453,10 @@ chanfree(Chan *c)
 		c->mchan = nil;
 	}
 	if(c->srvname != nil){
-		iprint("chanfree: about to free srvname=%p\n", c->srvname);
 		free(c->srvname);
 		c->srvname = nil;
 	}
 
-	iprint("chanfree: calling pathclose(c->path=%p)\n", c->path);
 	pathclose(c->path);
 	c->path = nil;
 
@@ -929,8 +904,6 @@ cclone(Chan *c)
 	nc = wq->clone;
 	free(wq);
 	if((nc->path = c->path) != nil) {
-		iprint("cclone: nc=%p inheriting path=%p (s=%p '%s') from c=%p caller=%#p\n",
-			nc, c->path, c->path->s, c->path->s, c, getcallerpc(&c));
 		incref(c->path);
 	}
 	return nc;
@@ -1376,27 +1349,21 @@ namec(char *aname, int amode, int omode, ulong perm)
 	char *err;
 	char *name;
 
-	print("namec: looking up '%s' amode=%d omode=%d\n", aname, amode, omode);
+	/* DEBUG: print("namec: looking up '%s' amode=%d omode=%d\n", aname, amode, omode); */
 
 	if(aname[0] == '\0')
 		error("empty file name");
 	aname = validnamedup(aname, 1);
 	if(waserror()){
-		print("namec: OUTER ERROR HANDLER: aname=%p\n", aname);
 		free(aname);
 		nexterror();
 	}
-	print("namec: outer waserror set, nerrlab=%d\n", up->nerrlab);
 	name = aname;
 	
 	if(aname[0] == '\0') {
-		print("namec: empty file name error\n");
 		error("empty file name");
 	}
-	/* NOTE: Removed duplicate validnamedup call that was causing memory leak 
-	 * The first allocation is reused, preventing double allocation and memory leak */
 	name = aname;
-	print("namec: setting name = aname\n");
 
 	/*
 	 * When unmounting, the name parameter must be accessed
@@ -1407,17 +1374,14 @@ namec(char *aname, int amode, int omode, ulong perm)
 	 */
 	devunmount = 0;
 	if(amode == Aunmount){
-		print("namec: Aunmount mode\n");
 		/*
 		 * Doing any walks down the device could leak information
 		 * about the existence of files.
 		 */
 		if(name[0] == '#' && utflen(name) == 2) {
-			print("namec: setting devunmount = 1\n");
 			devunmount = 1;
 		}
 		amode = Aopen;
-		print("namec: changed amode to Aopen\n");
 	}
 
 	/*
@@ -1426,76 +1390,39 @@ namec(char *aname, int amode, int omode, ulong perm)
 	 * evaluate starting there.
 	 */
 	nomount = 0;
-	print("namec: checking name[0] = '%c'\n", name[0]);
 	switch(name[0]){
 	case '/':
-		print("namec: case '/' - using up->slash\n");
 		c = up->slash;
 		incref(c);
-		print("namec: after '/' case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
 
 case '#':
 		nomount = 1;
-		/*
-		 * DEBUG: Disabled verbose namec tracing
-		 * print("DEBUG[namec]: up=%p, &up->genbuf=%p\n", up, &up->genbuf);
-		 */
 		up->genbuf[0] = '\0';
 		n = 0;
 		while(*name != '\0' && (*name != '/' || n < 2)){
 			if(n >= sizeof(up->genbuf)-1)
 				error(Efilename);
-			/*
-			 * DEBUG: Disabled verbose namec tracing
-			 * print("DEBUG[namec]: storing char '%c' at up->genbuf[%d] = %p\n", 
-			 *       *name, n, &up->genbuf[n]);
-			 */
 			up->genbuf[n++] = *name++;
 		}
-		/*
-		 * DEBUG: Disabled verbose namec tracing
-		 * print("DEBUG[namec]: setting null terminator at up->genbuf[%d] = %p\n", 
-		 *       n, &up->genbuf[n]);
-		 */
 		up->genbuf[n] = '\0';
-		print("namec: collected device name '%s'\n", up->genbuf);
-		/*
-		 * DEBUG: Disabled verbose namec tracing
-		 * print("DEBUG[namec]: calling chartorune on up->genbuf+1 = %p\n", up->genbuf+1);
-		 */
 		n = chartorune(&r, up->genbuf+1)+1;
-		print("namec: chartorune returned n=%d, r='%C'\n", n, r);
 		t = devno(r, 1);
-		print("namec: devno returned t=%d\n", t);
 		if(t == -1) {
-			print("namec: bad sharp error\n");
 			error(Ebadsharp);
 		}
 		if(!devunmount && !devallowed(up->pgrp, r)) {
-			print("namec: no attach error\n");
 			error(Enoattach);
 		}
 		
-		/*
-		 * DEBUG: Disabled verbose namec tracing
-		 * print("DEBUG[namec]: pre-attach: n=%d, up->genbuf+n = %p\n", n, up->genbuf+n);
-		 * print("DEBUG[namec]: trying to access *(up->genbuf+n) = '%c'\n", *(up->genbuf+n));
-		 */
-		print("namec: calling devtab[%d]->attach(%s)\n", t, up->genbuf+n);
 		c = devtab[t]->attach(up->genbuf+n);
-		print("namec: attach returned c=%p\n", c);
-		print("namec: after '#' case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
 
 	default:
-		print("namec: default case - using up->dot\n");
 		c = up->dot;
 		incref(c);
-		print("namec: after default case: &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 		break;
 	}
-	print("namec: device lookup complete, &c=%p c=%p\n", &c, c);
 
 	e.aname = aname;
 	e.prefix = name - aname;
@@ -1504,11 +1431,8 @@ case '#':
 	e.off = nil;
 	e.nelems = 0;
 	e.nerror = 0;
-	print("namec: about to set inner waserror, nerrlab=%d\n", up->nerrlab);
 	if(waserror()){
-		print("namec: INNER ERROR HANDLER TRIGGERED: nerrlab=%d &c=%p c=%p\n", up->nerrlab, &c, c);
 		if(c != nil) {
-			print("namec: INNER ERROR HANDLER: c->ref=%ld (should be valid)\n", c->ref);
 			cclose(c);
 		}
 		free(e.name);
@@ -1550,9 +1474,7 @@ case '#':
 		e.nelems--;
 	}
 
-	print("namec: BEFORE walk(): &c=%p c=%p c->ref=%d\n", &c, c, c->ref);
 	if(walk(&c, e.elems, e.nelems, nomount, &e.nerror) < 0){
-		print("namec: walk() FAILED, &c=%p c=%p\n", &c, c);
 		if(e.nerror < 0 || e.nerror > e.nelems){
 			print("namec %s walk error nerror=%d\n", aname, e.nerror);
 			e.nerror = 0;
@@ -1840,8 +1762,6 @@ validname0(char *aname, int slashok, int dup, uintptr pc)
 	if(dup){
 		n = ename-name;
 		s = smalloc(n+1);
-		iprint("validname0: dup copy n=%d src=%p dst=%p caller=%#p\n",
-			n, name, s, pc);
 		memmove(s, name, n);
 		s[n] = 0;
 		aname = s;

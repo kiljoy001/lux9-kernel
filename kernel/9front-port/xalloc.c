@@ -146,7 +146,6 @@ xinit(void)
 	int i;
 	uintptr size_bytes;
 
-// 	print("xinit: starting initialization\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 	eh = &xlists.hole[Nhole-1];
 	for(h = xlists.hole; h < eh; h++)
 		h->link = h+1;
@@ -154,8 +153,6 @@ xinit(void)
 	xlists.flist = xlists.hole;
 
 	kpages = conf.npage - conf.upages;
-// 	iprint("TEST: d=%d ud=%ud lud=%lud\n", 42, 99, (ulong)67890);  // TEST PRINT - CRASHES DURING EARLY BOOT
-// 	iprint("TEST: npage=%lud upages=%lud kpages=%lud\n", (ulong)conf.npage, (ulong)conf.upages, (ulong)kpages);  // TEST PRINT - CRASHES DURING EARLY BOOT
 	print("xinit: total pages %lud, user pages %lud, kernel pages %lud\n", conf.npage, conf.upages, kpages);
 
 	for(i=0; i<nelem(conf.mem); i++){
@@ -163,9 +160,6 @@ xinit(void)
 		/* Only print first few entries to avoid verbose output */
 		if(i < 2) {
 			print("xinit: processing conf.mem[%d] base=%#p npage=%lud\n", i, cm->base, cm->npage);
-// 				i, cm->base, cm->npage);
-		} else if(i == 2) {
-// 			print("xinit: ... (showing first 2 entries only)\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 		}
 		n = cm->npage;
 		if(n > kpages)
@@ -183,10 +177,6 @@ xinit(void)
 				cm->klimit = (uintptr)-BY2PG;
 			/* cm->klimit - cm->kbase gives byte size (both have same offset applied) */
 			size_bytes = cm->klimit - cm->kbase;
-			/* Only print first few xhole calls to avoid verbose output */
-			if(i < 2) {
-// 				print("xinit: calling xhole with base=%#p size=%#p\n", cm->base, size_bytes);  // TEMPORARILY DISABLED - crashes during early boot before print init
-			}
 			xhole(cm->base, size_bytes);
 			kpages -= n;
 		}
@@ -195,7 +185,6 @@ xinit(void)
 		 * will be given to user by pageinit()
 		 */
 	}
-// 	print("xinit: initialization complete\n");  // TEMPORARILY DISABLED - crashes during early boot before print init
 
 	/* Mark xinit as complete for early-boot allocators */
 	xinit_done = 1;

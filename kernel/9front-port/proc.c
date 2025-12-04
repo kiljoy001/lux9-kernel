@@ -364,7 +364,6 @@ updatecpu(Proc *p)
 		t = (t*(D-n))/D;
 		p->cpu = 1000 - t;
 	}
-//iprint("pid %lud %s for %lud cpu %lud -> %lud\n", p->pid,p==up?"active":"inactive",n, ocpu,p->cpu);
 }
 
 /*
@@ -404,7 +403,6 @@ reprioritize(Proc *p)
 		ratio = p->basepri;
 	if(ratio < 0)
 		panic("reprioritize");
-//iprint("pid %lud cpu %lud load %d fair %d pri %d\n", p->pid, p->cpu, load, fairshare, ratio);
 	return ratio;
 }
 
@@ -746,35 +744,28 @@ newproc(void)
 	char *b;
 	Proc *p;
 
-	iprint("newproc: begin\n");
 	lock(&procalloc);
-	iprint("newproc: procalloc.nextindex=%d free=%p\n", procalloc.nextindex, procalloc.free);
 	p = procalloc.free;
 	if(p == nil){
 		if(procalloc.nextindex >= conf.nproc){
 			unlock(&procalloc);
-			iprint("newproc: conf.nproc exhausted\n");
 			return nil;
 		}
 		b = xalloc(KSTACK+sizeof(Proc));
 		if(b == nil){
 			unlock(&procalloc);
-			iprint("newproc: malloc failed\n");
 			return nil;
 		}
 		memset(b, 0, KSTACK+sizeof(Proc));
-		iprint("newproc: malloc returned %p\n", b);
 		p = (Proc*)(b + KSTACK);
 		p->index = procalloc.nextindex++;
 		procalloc.tab[p->index] = p;
-		iprint("newproc: new proc idx=%d addr=%p\n", p->index, p);
 		p->kstack = (uchar*)b;
 	}
 	assert(p->state == Dead);
 	procalloc.free = p->qnext;
 	p->qnext = nil;
 	unlock(&procalloc);
-	iprint("newproc: unlocked\n");
 
 	p->psstate = nil;
 	p->state = New;
@@ -1661,7 +1652,6 @@ linkproc(void)
 	static int clockenabled;
 	extern PCArch *arch;
 
-	iprint("linkproc: up=%p pid=%d kpfun=%p\n", up, up ? up->pid : -1, up->kpfun);
 	/*
 	 * Safe point: we're on up->kstack with up/m->proc set.
 	 * Enable clock interrupt now that we have a valid process stack.
@@ -1682,12 +1672,10 @@ kproc(char *name, void (*func)(void *), void *arg)
 	static Pgrp *kpgrp;
 	Proc *p;
 
-	iprint("kproc: start name=%s\n", name);
 	while((p = newproc()) == nil){
 		freebroken();
 		resrcwait("no procs for kproc");
 	}
-	iprint("kproc: newproc p=%p index=%d\n", p, p->index);
 
 	qlock(&p->debug);
 	if(up != nil){
@@ -1715,7 +1703,6 @@ kproc(char *name, void (*func)(void *), void *arg)
 	p->kpfun = func;
 	p->kparg = arg;
 	kprocchild(p, linkproc);
-	iprint("kproc: child context installed for %s\n", name);
 
 	kstrdup(&p->text, name);
 	kstrdup(&p->user, eve);
@@ -1737,14 +1724,12 @@ kproc(char *name, void (*func)(void *), void *arg)
 	p->pcycles = 0; /* -p->kentry */
 
 	pidalloc(p);
-	iprint("kproc: pid=%lud assigned for %s\n", p->pid, name);
 
 	qunlock(&p->debug);
 
 	procpriority(p, PriKproc, 0);
 
 	ready(p);
-	iprint("kproc: ready queued for %s\n", name);
 }
 
 /*

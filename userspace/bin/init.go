@@ -203,6 +203,8 @@ func main() {
 		path string
 		args []string
 	}{
+		{"/boot/bin/rc", []string{"/boot/bin/rc", "-i"}},
+		{"/boot/rc", []string{"/boot/rc", "-i"}},
 		{"/bin/rc", []string{"/bin/rc", "-i"}},
 		{"/bin/sh", []string{"/bin/sh", "-i"}},
 		{"/sbin/init", []string{"/sbin/init"}},
