@@ -85,19 +85,21 @@ RC_OBJS := $(patsubst $(RC_SRC_DIR)/%.c, $(RC_OBJ_DIR)/%.o, $(RC_SRCS)) $(RC_OBJ
 
 $(BIN_DIR)/rc: $(RC_OBJS) | $(BIN_DIR)
 	@echo "Linking rc shell..."
-	@$(CC) $(CFLAGS) -o $@ $^ -L$(LIB_DIR) -lc
+	@$(CC) $(CFLAGS) -nostdlib -static -o $@ $^ $(LIB_DIR)/crt0.o -L$(LIB_DIR) -lc
 
 $(RC_OBJ_DIR)/syn.c: $(RC_SRC_DIR)/syn.y | $(RC_OBJ_DIR)
 	@echo "Generating rc parser..."
 	@yacc -d -o $@ $<
+	@if [ -f y.tab.h ]; then mv y.tab.h $(RC_OBJ_DIR)/y.tab.h; fi
+	@if [ -f $(RC_OBJ_DIR)/syn.h ]; then mv $(RC_OBJ_DIR)/syn.h $(RC_OBJ_DIR)/y.tab.h; fi
 
 $(RC_OBJ_DIR)/syn.o: $(RC_OBJ_DIR)/syn.c
 	@echo "Compiling rc parser..."
-	@$(CC) $(CFLAGS) -DPlan9 -I$(RC_SRC_DIR) -c -o $@ $<
+	@$(CC) $(CFLAGS) -nostdinc -DPlan9 -I$(RC_SRC_DIR) -I/usr/lib/gcc/x86_64-linux-gnu/13/include -c -o $@ $<
 
 $(RC_OBJ_DIR)/%.o: $(RC_SRC_DIR)/%.c $(RC_OBJ_DIR)/syn.c | $(RC_OBJ_DIR)
 	@echo "Compiling rc object $<..."
-	@$(CC) $(CFLAGS) -DPlan9 -I$(RC_SRC_DIR) -I$(RC_OBJ_DIR) -c -o $@ $<
+	@$(CC) $(CFLAGS) -nostdinc -DPlan9 -I$(RC_SRC_DIR) -I$(RC_OBJ_DIR) -I/usr/lib/gcc/x86_64-linux-gnu/13/include -c -o $@ $<
 
 $(RC_OBJ_DIR):
 	@mkdir -p $(RC_OBJ_DIR)
