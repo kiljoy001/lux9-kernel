@@ -608,10 +608,6 @@ mmuinit(void)
 	vlong v;
 	int i;
 
-	/* zap double map done by l.s */
-	m->pml4[512] = 0;
-	m->pml4[0] = 0;
-
 	if(m->machno == 0)
 		kernelro();
 
@@ -664,9 +660,10 @@ mmuinit(void)
 	print("DEBUG: Setting up MSRs\n");
 	print("DEBUG: Setting up MSRs\n");
 	*/
-	wrmsr(FSbase, 0ull);
-	wrmsr(GSbase, (uvlong)&machp[m->machno]);	/* kernel GS points to Mach* slot */
-	wrmsr(KernelGSbase, 0ull);	/* user-mode GS base unused until user TLS */
+	/* KernelGSBase must always point at the per-CPU Mach* so swapgs works. */
+	wrmsr(FSbase, 0ull);			/* user TLS set later on EXEC */
+	wrmsr(GSbase, 0ull);			/* user GS unused; leave clear */
+	wrmsr(KernelGSbase, (uvlong)&machp[m->machno]);	/* swapgs restores Mach* */
 
 	/* enable syscall extension */
 	/* DEBUG: Reduced verbose mmuinit printing
@@ -1156,17 +1153,16 @@ mmuswitch(Proc *proc)
 {
 	MMU *p;
 
+	/* For kernel processes, there are no user MMU structures */
+	if(proc->kp){
+		taskswitch((uintptr)proc);
+		return;
+	}
 
 	mmuzap();
 	if(proc->newtlb){
 		mmufree(proc);
 		proc->newtlb = 0;
-	}
-
-	/* For kernel processes, there are no user MMU structures */
-	if(proc->kp){
-		taskswitch((uintptr)proc);
-		return;
 	}
 
 	if((p = proc->kmaphead) != nil){

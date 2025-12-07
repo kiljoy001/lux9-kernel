@@ -67,12 +67,14 @@ struct MMU {
     MMU *next;
     void *alloc; // Pointer to allocated memory for the page table
     uintptr *page; // Aligned pointer to the page table (points into alloc)
+    uintptr page_mock_pa; // New: Mock PA corresponding to `page`
     int index;
     int level;
 };
 
 struct Proc {
     uintptr *pml4; // Mock PML4 for this process
+    uintptr pml4_pa; // Mock physical address of PML4
     MMU *mmuhead; // Head of MMU structures
     MMU *mmutail; // Tail of MMU structures
     int mmucount;
@@ -108,10 +110,19 @@ struct Image {
 struct Mach {
     int machno;
     uintptr *pml4; // Current PML4 being used
+    uintptr pml4_pa; // Mock physical address of current CR3
     MMU *mmufree; // Free list for MMU structures
     int mmucount;
     int havenx;
     uintptr saved_limine_hhdm_offset; // Limine HHDM offset
+    /* Mock CPU state */
+    uintptr cr2;
+    uintptr cr3;
+    uintptr fs_base;
+    uintptr gs_base;
+    uintptr kernel_gs_base;
+    int in_user; /* 1=user mode, 0=kernel */
+    int tlb_flushes;
 };
 
 struct Page {
@@ -144,19 +155,30 @@ void uartputs(char *s, int len);
 void uartprintf(char *fmt, ...);
 
 // Memory allocation mocks
-// Simplistic page allocator for userspace. Replaces rampage.
 extern uintptr rampage(void); // Mock physical page allocation
-
-extern struct Page* newpage(uintptr va, struct Image *image); // Extern for newpage
-extern void free_page_mock(struct Page *p); // Extern for free_page_mock
-
 void *mallocz(size_t size, int zero);
 
+// Mock physical address mapping helpers (from kernel_mock_impl.c)
+extern void add_mock_phys_map(uintptr mock_pa, void *host_va, void *host_base);
+extern void* lookup_mock_host_va(uintptr mock_pa);
+extern void* get_host_va_from_mock_pa(uintptr mock_pa);
+extern void free_mock_phys(uintptr mock_pa);
+
 // MMU related mocks (for kaddr/paddr)
-extern void* kaddr(uintptr pa); // Extern because it's in mmu_mock.c
-extern uintptr paddr(void *v);   // Extern because it's in mmu_mock.c
-extern uintptr hhdm_virt(uintptr pa); // Extern because it's in mmu_mock.c
-extern uintptr hhdm_phys(uintptr va); // Extern because it's in mmu_mock.c
+extern void* kaddr(uintptr pa);
+extern uintptr paddr(void *v);
+extern uintptr hhdm_virt(uintptr pa);
+extern uintptr hhdm_phys(uintptr va);
+extern uintptr getcr3(void);
+extern void putcr3(uintptr val);
+extern uintptr getcr2(void);
+extern void setcr2(uintptr val);
+extern void wrmsr(uintptr msr, uintptr val);
+extern void swapgs(void);
+extern int mock_get_tlb_flushes(void);
+extern void mock_reset_tlb_flushes(void);
+extern int mock_get_in_user(void);
+extern void mock_set_mode_user(int user);
 
 // mmuwalk, mmucreate, getpte, pmap, punmap are implemented in mmu_mock.c
 extern uintptr* mmuwalk(uintptr *table, uintptr va, int level, int create);
@@ -164,12 +186,21 @@ extern uintptr* mmucreate(uintptr *table, uintptr va, int level, int index);
 extern uintptr* getpte(uintptr va);
 extern void pmap(uintptr pa, uintptr va, vlong size);
 extern void punmap(uintptr va, vlong size);
+extern void mmuzap(Proc *proc);
+extern void mmuswitch(Proc *proc);
+extern void mmufree(Proc *proc);
+extern int fault(uintptr addr, uintptr pc, int read);
+extern void enter_user(Proc *proc, uintptr pc, uintptr sp);
+extern void enter_kernel(void);
 
 // Segment mocks (from segment_mock.c)
 extern Segment* newseg(int type, uintptr base, ulong size);
 extern void putseg(Segment *s);
 extern void segpage(Segment *s, Page *p);
 
+// Page mocks (from page_mock.c)
+extern struct Page* newpage(uintptr va, struct Image *image);
+extern void free_page_mock(struct Page *p);
 
 // Lock mocks (no-op for single-threaded Valgrind test)
 #define lock(x) ((void)(x))

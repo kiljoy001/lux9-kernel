@@ -102,12 +102,18 @@ mmualloc(void)
 	p = mallocz(sizeof(MMU), 1);
 	if(p == nil)
 		return nil;
-	p->alloc = mallocz(PTSZ + BY2PG, 1);
-	if(p->alloc == nil){
+
+	/* Allocate a mock physical page and record its host VA */
+	uintptr mock_pa = rampage();
+	void *host_va = lookup_mock_host_va(mock_pa);
+	if(host_va == nil){
 		free(p);
 		return nil;
 	}
-	p->page = (uintptr*)ROUND((uintptr)p->alloc, BY2PG);
+
+	p->alloc = host_va;
+	p->page = (uintptr*)ROUND((uintptr)host_va, BY2PG);
+	p->page_mock_pa = mock_pa;
 	/* Zero the page table page to ensure clean entries */
 	memset(p->page, 0, PTSZ);
 	return p;
@@ -141,11 +147,11 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
     
     p->index = index;
     p->level = level;
-    page = p->page;
+	page = p->page;
 
-    // Mock mmuhead/mmutail for the current process (up)
-    // Assuming 'up' is the process currently having its page tables created
-    if(level == PML4E){ // Top level
+	// Mock mmuhead/mmutail for the current process (up)
+	// Assuming 'up' is the process currently having its page tables created
+	if(level == PML4E){ // Top level
         if(up->mmuhead == nil)
             up->mmutail = p;
         p->next = (MMU*)up->mmuhead; // Cast to MMU*
@@ -158,7 +164,8 @@ mmucreate(uintptr *table, uintptr va, int level, int index)
     }
     up->mmucount++;
     
-	table[index] = paddr(page) | flags; // Set PTE with physical address of new table page + flags
+	/* Store mock physical address in the PTE */
+	table[index] = p->page_mock_pa | flags;
 	
 	// uartprintf("mmucreate: va=%#llx level=%d index=%d flags=%#llx entry=%#llx page=%#p\n",
 	// 	(uvlong)va, level, index, (uvlong)flags, (uvlong)table[index], page); // Verbose debug print
@@ -175,27 +182,33 @@ mmuwalk(uintptr *table, uintptr va, int level, int create)
     // For loop for levels, highest (PML4E) down to desired 'level'
 	for(i = PML4E; i >= level; i--){
 		x = PTLX(va, i); // Get index for current level
+		uartprintf("mmuwalk: Iteration %d, va=%#llx, level_idx=%d, current_table=%#p\n",
+			i, (uvlong)va, x, table);
 		pte_val = table[x];
 
-		if(pte_val & PTEVALID){ // Entry is valid
-			if((pte_val & PTESIZE) && (i > PTE_LEVEL)) { // If it's a huge page and not at PT level
+        if(pte_val & PTEVALID){ // Entry is valid
+            if((pte_val & PTESIZE) && (i > PTE_LEVEL)) { // If it's a huge page and not at PT level
                 // Cannot walk further through huge page to get to a 4KB PTE
                 // This means the huge page itself is the target if level matches, or failure if not.
                 if (i == level) {
                     return &table[x]; // Found the entry at target level
                 }
-				return nil; // Cannot resolve 4KB PTE if huge page is mapped at higher level
+                return nil; // Cannot resolve 4KB PTE if huge page is mapped at higher level
             }
-			pte_val = PPN(pte_val); // Get physical address part
-			table = (uintptr*)hhdm_virt(pte_val); // Convert to mock HHDM virtual for access
-		} else { // Entry is not valid
-			if(!create)
-				return nil; // Don't create, return null
+            pte_val = PPN(pte_val); // Get physical address part
+            uartprintf("mmuwalk: Valid PTE, pa_part=%#llx\n", (uvlong)pte_val);
+            /* Translate mock physical to host VA to dereference the table */
+            table = (uintptr*)get_host_va_from_mock_pa(pte_val);
+            uartprintf("mmuwalk: Next_table_addr (host ptr) = %#p\n", table);
+        } else { // Entry is not valid
+            if(!create)
+                return nil; // Don't create, return null
 			
 			// Create a new page table for the next level
 			table = mmucreate(table, va, i, x);
 			if(table == nil)
 				return nil; // Creation failed
+			uartprintf("mmuwalk: Created new table (level %d, idx %d), new_table_addr=%#p\n", i, x, table);
 
             // After creation, the current 'table' now points to the newly created page table,
             // so we continue the loop, getting the index for the next iteration correctly.
@@ -243,6 +256,8 @@ pmap(uintptr pa, uintptr va, vlong size)
 		}
 		
         *pte_ptr = current_pa | flags; // Set the PTE with physical address + flags
+		uartprintf("pmap: Mapped VA=%#llx to PA=%#llx (PTE=%#llx)\n",
+			(uvlong)current_va, (uvlong)current_pa, (uvlong)*pte_ptr);
 		
 		current_pa += BY2PG;
 		current_va += BY2PG;
@@ -267,4 +282,78 @@ punmap(uintptr va, vlong size)
 		current_va += BY2PG;
 		remaining_size -= BY2PG;
 	}
+}
+
+/* Mocked mmuzap/mmuswitch/mmufree to mirror kernel behavior loosely */
+void
+mmuzap(Proc *proc)
+{
+	MMU *p;
+
+	if(proc == nil || proc->pml4 == nil)
+		return;
+
+	for(p = proc->mmuhead; p != nil; p = p->next){
+		if(p->level == PML4E)
+			proc->pml4[p->index] = 0;
+	}
+}
+
+void
+mmuswitch(Proc *proc)
+{
+	MMU *p;
+
+	if(proc == nil || proc->kp)
+		return;
+
+	mmuzap(proc);
+	for(p = proc->mmuhead; p != nil; p = p->next){
+		if(p->level == PML4E)
+			proc->pml4[p->index] = p->page_mock_pa | PTEUSER | PTEWRITE | PTEVALID;
+	}
+	m->pml4 = proc->pml4;
+	m->pml4_pa = proc->pml4_pa;
+}
+
+void
+mmufree(Proc *proc)
+{
+	MMU *p, *next;
+
+	if(proc == nil)
+		return;
+	/* Clear root PML4 entries as well */
+	mmuzap(proc);
+	for(p = proc->mmuhead; p != nil; p = next){
+		next = p->next;
+		/* Free host backing for this table and drop mock phys map */
+		if(p->page_mock_pa)
+			free_mock_phys(p->page_mock_pa);
+		free(p);
+	}
+	proc->mmuhead = proc->mmutail = nil;
+	proc->mmucount = 0;
+}
+
+/* Minimal fault handler: map a user page on demand */
+int
+fault(uintptr addr, uintptr pc, int read)
+{
+	(void)pc; (void)read;
+
+	setcr2(addr);
+	if(addr >= USTKTOP)
+		return -1;
+
+	uintptr *pte = mmuwalk(m->pml4, addr, PTE_LEVEL, 0);
+	if(pte != nil && (*pte & PTEVALID))
+		return 0;
+
+	Page *p = newpage(addr, nil);
+	if(p == nil)
+		return -1;
+	pmap(p->pa | PTEWRITE | PTEUSER, PPN(addr), BY2PG);
+	/* We keep p allocated; caller can free if desired */
+	return 0;
 }

@@ -5,7 +5,7 @@ HELGRIND = valgrind --tool=helgrind
 
 all: mmu_test
 
-mmu_test: main.c mmu_mock.c segment_mock.c page_mock.c
+mmu_test: main.c mmu_mock.c segment_mock.c page_mock.c kernel_mock_impl.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 run: mmu_test

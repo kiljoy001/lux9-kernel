@@ -22,7 +22,8 @@ free_page_mock(Page *p)
 {
     if (p) {
         // In kernel, this would involve freeing the physical page.
-        // In mock, we just free the struct.
+        if(p->pa)
+            free_mock_phys(p->pa);
         free(p);
     }
 }

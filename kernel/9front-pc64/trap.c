@@ -487,6 +487,12 @@ faultamd64(Ureg* ureg, void*)
 
 	if(fault(addr, ureg->pc, read) < 0){
 		if(!user){
+			/* If kernel touched a user VA, blame the process instead of panicking */
+			if(up != nil && addr < USTKTOP){
+				faultnote("fault", read? "read": "write", addr);
+				poperror();
+				return;
+			}
 			dumpregs(ureg);
 			panic("kernel fault: %s addr=%#p", read? "read": "write", addr);
 		}
@@ -586,6 +592,14 @@ syscall(Ureg* ureg)
 		extern Mach *m;
 		print("EXEC return: pc=%#p sp=%#p cs=%#x\n", ureg->pc, ureg->sp, (uint)ureg->cs);
 		print("EXEC pre-kexit: pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
+
+		/*
+		 * Important: keep KernelGSBase pointing at the kernel Mach*.
+		 * Only set user TLS via FS (and, if needed, user GS base),
+		 * never overwrite KernelGSBase with a user pointer.
+		 * Go runtime expects SP+16 for _privates via FS.
+		 */
+		wrmsr(0xC0000100, ureg->sp + 16); /* IA32_FS_BASE */
 	}
 
 	/* Initialize stack slot to 0 for fast SYSRET path */
