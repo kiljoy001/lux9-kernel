@@ -38,6 +38,7 @@ enum
 	Qprofile,
 	Qsyscall,
 	Qwatchpt,
+	Qhash,
 };
 
 enum
@@ -110,6 +111,7 @@ Dirtab procdir[] =
 	"profile",	{Qprofile},	0,			0400,
 	"syscall",	{Qsyscall},	0,			0400,	
 	"watchpt",	{Qwatchpt},	0,			0600,
+	"hash",		{Qhash},	64,			0400,
 };
 
 static
@@ -946,6 +948,14 @@ procread(Chan *c, void *va, long n, vlong off)
 
 	case Qnoteid:
 		return readnum(offset, va, n, p->noteid, NUMSIZE);
+
+	case Qhash:
+		if(offset >= 64)
+			return 0;
+		if(offset+n > 64)
+			n = 64 - offset;
+		memmove(va, p->text_hash + offset, n);
+		return n;
 
 	case Qppid:
 		return readnum(offset, va, n, p->parentpid, NUMSIZE);

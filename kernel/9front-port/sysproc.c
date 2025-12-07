@@ -9,6 +9,7 @@
 #include	"elf.h"
 #include	"edf.h"
 #include	"pebble.h"
+#include	"monocypher.h"
 
 #include	<a.out.h>
 
@@ -28,6 +29,22 @@ syscall_vainit(va_list vl, uchar *raw)
 	impl->fp_offset = 8 * sizeof(double);
 	impl->overflow_arg_area = raw;
 	impl->reg_save_area = nil;
+}
+
+static void
+hash_binary(Chan *tc)
+{
+	crypto_blake2b_ctx ctx;
+	u8int buf[4096];
+	long n;
+	vlong off = 0;
+
+	crypto_blake2b_init(&ctx, 64);
+	while((n = devtab[tc->type]->read(tc, buf, sizeof(buf), off)) > 0){
+		crypto_blake2b_update(&ctx, buf, n);
+		off += n;
+	}
+	crypto_blake2b_final(&ctx, up->text_hash);
 }
 
 uintptr
@@ -457,6 +474,7 @@ sysexec(va_list list)
 					align = 0xffff;
 					break;
 				}
+				hash_binary(tc);
 				break; /* for binary */
 			}
 
@@ -561,6 +579,7 @@ sysexec(va_list list)
 				align = BY2PG - 1;
 				is_elf = 1;
 				file_offset = elf_file_offset;
+				hash_binary(tc);
 				break; /* for binary */
 			}
 		}

@@ -860,6 +860,9 @@ struct Proc
 
 	/* Pebble resource tracking */
 	PebbleState	pebble;
+
+	/* Security: Hash of the running binary (Blake2b-512) */
+	uchar	text_hash[64];
 } __attribute__((aligned(64)));
 
 enum

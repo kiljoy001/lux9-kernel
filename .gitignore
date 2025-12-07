@@ -34,3 +34,9 @@ build/
 limine/
 limine-*.bin
 limine.sys
+
+# Security Keys
+root.priv
+root.pub
+services.cbor
+services.cbor.sig
