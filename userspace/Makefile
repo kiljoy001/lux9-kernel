@@ -40,16 +40,18 @@ CFLAGS := -Wall -Wextra -O2 -fPIC \
 LDFLAGS := -shared -Wl,-soname,
 
 # Targets
-.PHONY: all clean test install help
+.PHONY: all clean test install help init-asm
 
 # Main userspace build
-all: init-bin go-servers drivers c-servers libs initrd
+all: init-asm go-servers drivers c-servers libs initrd
 
-init-bin: $(BIN_DIR)/init-go
+init-asm: $(BIN_DIR)/init-asm
 
-$(BIN_DIR)/init-go: $(APP_BIN_DIR)/init.go | $(BIN_DIR)
-	@echo "Building Go init program with debug symbols..."
-	@GOOS=plan9 GOARCH=amd64 $(GO) build $(GO_BUILD_FLAGS) -o $@ $<
+$(BIN_DIR)/init-asm: bin/init_minimal.S | $(BIN_DIR)
+	@echo "Building minimal assembly init program..."
+	@mkdir -p $(OBJ_DIR) # Ensure OBJ_DIR exists for init_minimal.o
+	@$(CC) -nostdlib -static -ffreestanding -c $< -o $(OBJ_DIR)/init_minimal.o
+	@$(LD) -nostdlib -static -o $@ $(OBJ_DIR)/init_minimal.o
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -110,10 +112,10 @@ libs:
 	@$(MAKE) -C libc all
 
 # Initrd creation
-initrd: init-bin $(BUILD_DIR)/initrd.tar
+initrd: init-asm $(BUILD_DIR)/initrd.tar
 	@echo "Creating initrd..."
 
-$(BUILD_DIR)/initrd.tar: init-bin go-servers drivers c-servers libs
+$(BUILD_DIR)/initrd.tar: init-asm go-servers drivers c-servers libs
 	@echo "Building initrd from $(GO_SERVERS_DIR), $(DRIVERS_DIR), and $(C_SERVERS_DIR)"
 	@rm -rf $(INITRD_DIR)
 	@mkdir -p $(INITRD_DIR)/bin $(INITRD_DIR)/lib $(INITRD_DIR)/dev $(INITRD_DIR)/etc $(INITRD_DIR)/srv
@@ -128,7 +130,7 @@ $(BUILD_DIR)/initrd.tar: init-bin go-servers drivers c-servers libs
 	@cp $(C_SERVERS_DIR)/crypto/cryptosrv $(INITRD_DIR)/bin/ 2>/dev/null || true
 	@cp $(BIN_DIR)/rc $(INITRD_DIR)/bin/rc 2>/dev/null || true
 	# Copy init program
-	@cp $(BIN_DIR)/init-go $(INITRD_DIR)/bin/init
+	@cp $(BIN_DIR)/init-asm $(INITRD_DIR)/bin/init
 	# Create tar
 	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
 	@echo "Initrd created: $@"

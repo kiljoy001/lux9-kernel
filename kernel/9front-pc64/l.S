@@ -437,9 +437,7 @@ gotolabel:
 touser:
     /* NOTE: Do NOT swapgs here! GS must remain pointing to Mach structure
      * so that interrupts and syscalls from userspace can access it.
-     * The swapgs in syscallentry/trap handlers will handle the swap.
-     * swapgs */
-    swapgs
+     * The swapgs in syscallentry/trap handlers will handle the swap. */
 
     /* Debug: print the user stack pointer we're about to use */
     pushq %rax
