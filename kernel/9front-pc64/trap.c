@@ -572,8 +572,9 @@ syscall(Ureg* ureg)
 	*/
 
 	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
-	 * so arguments start at SP+0, not SP+8 */
-	dosyscall(scallnr, (Sargs*)(ureg->sp), (uintptr*)(&ureg->ax));
+	 * but the standard ABI (Go, 6c) leaves a slot for it.
+	 * We must skip this slot to find the arguments. */
+	dosyscall(scallnr, (Sargs*)(ureg->sp + BY2WD), (uintptr*)(&ureg->ax));
 
 	/* Debug: after dosyscall */
 	/* DEBUG: Disabled verbose syscall return tracing
