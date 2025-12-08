@@ -22,6 +22,9 @@
 #include "../../include/exchange.h"
 #include "clr_pebble_integration.h"
 
+#define CLR_DEFAULT_HEAP_SIZE (32 * 1024 * 1024) // 32MB for CLR managed heap
+#define CLR_DEFAULT_DAG_K 8                     // Default k-parameter for GHOSTDAG
+
 /* ========== CLR Tasklet Definitions ========== */
 
 typedef uint32_t tasklet_id_t;

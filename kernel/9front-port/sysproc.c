@@ -379,11 +379,11 @@ sysexec(va_list list)
 	Chan *tc;
 	Fgrp *f;
 
-	/* print("sysexec: started, list=%p\n", list); */
+	print("sysexec: started, list=%p\n", list);
 
 	args = elem = nil;
 	file0 = va_arg(list, char*);
-	/* print("sysexec: raw file argument %p -> '%s'\n", file0, file0); */
+	print("sysexec: raw file argument %p -> '%s'\n", file0, file0);
 	validaddr((uintptr)file0, 1, 0);
 	argp0 = va_arg(list, char**);
 	evenaddr((uintptr)argp0);
@@ -391,15 +391,15 @@ sysexec(va_list list)
 	if(*argp0 == nil)
 		error(Ebadarg);
 	file0 = validnamedup(file0, 1);
-	/* print("sysexec: validated file '%s', argp0=%p\n", file0, argp0); */
+	print("sysexec: validated file '%s', argp0=%p\n", file0, argp0);
 
-	/*
+	
 	print("EXEC: attempting to execute '%s'\n", file0);
 	print("EXEC: about to call waserror()\n");
-	*/
+	
 
 	if(waserror()){
-		/* print("EXEC: failed with error '%s'\n", up->errstr); */
+		print("EXEC: failed with error '%s'\n", up->errstr);
 		free(file0);
 		free(elem);
 		free(args);
@@ -408,57 +408,57 @@ sysexec(va_list list)
 			pexit(up->errstr, 1);
 		nexterror();
 	}
-	/* print("EXEC: waserror() returned\n"); */
+	print("EXEC: waserror() returned\n");
 	align = BY2PG-1;
-	/* print("EXEC: set align=%d\n", align); */
+	print("EXEC: set align=%d\n", align);
 	indir = 0;
 	is_elf = 0;
 	file_offset = 0;
 	file = file0;
-	/* print("EXEC: entering main loop with file='%s'\n", file); */
+	print("EXEC: entering main loop with file='%s'\n", file);
 	for(;;){
-		/* print("EXEC: opening file '%s'\n", file); */
+		print("EXEC: opening file '%s'\n", file);
 		tc = namec(file, Aopen, OEXEC, 0);
 		if(waserror()){
 			cclose(tc);
 			nexterror();
 		}
-		/* print("EXEC: file opened successfully\n"); */
+		print("EXEC: file opened successfully\n");
 		if(!indir)
 			kstrdup(&elem, up->genbuf);
 
 		n = devtab[tc->type]->read(tc, u.buf, sizeof(u.buf), 0);
-		/*
+		
 		print("EXEC: read %d bytes from file\n", n);
 		print("EXEC: first 16 bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 		      u.buf[0], u.buf[1], u.buf[2], u.buf[3], u.buf[4], u.buf[5], u.buf[6], u.buf[7],
 		      u.buf[8], u.buf[9], u.buf[10], u.buf[11], u.buf[12], u.buf[13], u.buf[14], u.buf[15]);
-		*/
+		
 		if(n >= sizeof(Exec)) {
 			magic = beswal(u.ehdr.exec.magic);
-			/* print("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic, AOUT_MAGIC, S_MAGIC); */
+			print("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic, AOUT_MAGIC, S_MAGIC);
 			if(magic == AOUT_MAGIC) {
-				/* print("EXEC: magic matches AOUT_MAGIC\n"); */
+				print("EXEC: magic matches AOUT_MAGIC\n");
 				if(magic & HDR_MAGIC) {
-					/* print("EXEC: has HDR_MAGIC, checking header size n=%d sizeof(u.ehdr)=%d\n", n, (int)sizeof(u.ehdr)); */
+					print("EXEC: has HDR_MAGIC, checking header size n=%d sizeof(u.ehdr)=%d\n", n, (int)sizeof(u.ehdr));
 					if(n < sizeof(u.ehdr))
 						error("exec: header too small for expansion");
 					entry = beswav(u.ehdr.hdr[0]);
 					text = UTZERO+sizeof(u.ehdr);
-					/* print("EXEC: expanded header: entry=%#llux text=%#llux\n", entry, text); */
+					print("EXEC: expanded header: entry=%#llux text=%#llux\n", entry, text);
 				} else {
 					entry = beswal(u.ehdr.exec.entry);
 					text = UTZERO+sizeof(Exec);
-					/* print("EXEC: basic header: entry=%#llux text=%#llux\n", entry, text); */
+					print("EXEC: basic header: entry=%#llux text=%#llux\n", entry, text);
 				}
-				/* print("EXEC: checking entry < text: entry=%#llux text=%#llux\n", entry, text); */
+				print("EXEC: checking entry < text: entry=%#llux text=%#llux\n", entry, text);
 				if(entry < text)
 					error("exec: entry point before text segment");
 				text += beswal(u.ehdr.exec.text);
-				/*
+				
 				print("EXEC: after adding text size: text=%#llux entry=%#llux USTKTOP-USTKSIZE=%#llux\n",
 				      text, entry, (uvlong)(USTKTOP-USTKSIZE));
-				*/
+				
 				if(text <= entry || text >= (USTKTOP-USTKSIZE))
 					error("exec: invalid text segment range");
 
@@ -492,7 +492,7 @@ sysexec(va_list list)
 				uintptr data_file_end = 0;
 				uintptr data_mem_end = 0;
 
-				/* print("EXEC: detected ELF binary\n"); */
+				print("EXEC: detected ELF binary\n");
 
 				/* Verify it's a 64-bit little-endian executable for x86_64 */
 				if(ehdr->e_ident[4] != ELFCLASS64)
@@ -505,7 +505,7 @@ sysexec(va_list list)
 					error("ELF: not x86_64");
 
 				entry = ehdr->e_entry;
-				/* print("EXEC: ELF entry point = %#llux\n", entry); */
+				print("EXEC: ELF entry point = %#llux\n", entry);
 
 				/* Find the extent of loadable segments */
 				for(i = 0; i < ehdr->e_phnum; i++) {
@@ -538,12 +538,12 @@ sysexec(va_list list)
 					}
 				}
 
-				/*
+				
 				print("EXEC: ELF file offset = %#llux\n", (uvlong)elf_file_offset);
 
 				print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
 				print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
-				*/
+				
 
 				if(text_start == ~0ULL){
 					text_start = minva;
@@ -570,10 +570,10 @@ sysexec(va_list list)
 
 				bss = maxva_mem > maxva_file ? maxva_mem - maxva_file : 0;
 
-				/*
+				
 				print("EXEC: computed segments: text=%#llux data=%#llux bss=%#llux (text_writable=%d)\n",
 				      text, data, bss, text_writable);
-				*/
+				
 
 				/* ELF binaries use page alignment */
 				align = BY2PG - 1;

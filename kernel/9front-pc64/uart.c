@@ -41,6 +41,44 @@ uart_putc(int c)
 	outb(uart_base + UART_DATA, c);
 }
 
+/* Minimal Uart implementation for devcons */
+static int
+i8250_getc(Uart *u)
+{
+	if(inb(uart_base + UART_LSR) & 0x01)
+		return inb(uart_base + UART_DATA);
+	return -1;
+}
+
+static void
+i8250_putc(Uart *u, int c)
+{
+	uart_putc(c);
+}
+
+static void
+i8250_noop(Uart *u, int i)
+{
+}
+
+static void
+i8250_kick(Uart *u)
+{
+}
+
+static PhysUart i8250phys = {
+	.name = "i8250",
+	.getc = i8250_getc,
+	.putc = i8250_putc,
+	.enable = i8250_noop,
+	.disable = (void(*)(Uart*))i8250_noop,
+	.kick = i8250_kick,
+};
+
+static Uart i8250uart = {
+	.phys = &i8250phys,
+};
+
 void
 i8250console(void)
 {
@@ -70,6 +108,10 @@ i8250console(void)
 
 	/* Hook into screenputs */
 	screenputs = uart_screenputs;
+	
+	/* Initialize global consuart for devcons */
+	extern Uart *consuart;
+	consuart = &i8250uart;
 }
 
 void

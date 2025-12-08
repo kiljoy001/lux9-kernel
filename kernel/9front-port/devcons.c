@@ -846,6 +846,10 @@ conswrite(Chan *c, void *va, long n, vlong off)
 	Cmdbuf *cb;
 	Cmdtab *ct;
 
+	/* DEBUG: trace userspace writes */
+	extern void uartputs(char*, int);
+	uartputs("DEBUG: conswrite called\n", 24);
+
 	a = va;
 	offset = off;
 

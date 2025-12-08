@@ -17,7 +17,8 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismat
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
-           -DKTZERO=0xffffffff80110000
+           -DKTZERO=0xffffffff80110000 \
+           -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer
 
 # Linker flags
 LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \

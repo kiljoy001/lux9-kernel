@@ -2,10 +2,10 @@
 # Building formally verified CLR kernel with pebble memory system
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I../../include -I../clr-implementation -I../ipc -DMACH_KERNEL -DKERNEL -fno-builtin
+CFLAGS = -Wall -Wextra -O2 -I../../include -I../clr-implementation -I../ipc -I../fruity -DMACH_KERNEL -DKERNEL -fno-builtin
 LDFLAGS = -nostdlib -static
 
-# Source files - NOW WITH PEBBLE INTEGRATION
+# Source files - NOW WITH PEBBLE INTEGRATION + FRUITY IR
 SOURCES = clr_kernel.c \
           clr_pebble_integration.c \
           ../clr-implementation/clr_runtime.c
@@ -13,13 +13,19 @@ SOURCES = clr_kernel.c \
 # Object files
 OBJECTS = $(SOURCES:.c=.o)
 
+# Fruity IR library
+FRUITY_LIB = ../fruity/fruity.a
+
 # Target
 TARGET = clr_kernel.a
 
 # Build rules
 all: $(TARGET)
 
-$(TARGET): $(OBJECTS)
+$(FRUITY_LIB):
+	$(MAKE) -C ../fruity
+
+$(TARGET): $(OBJECTS) $(FRUITY_LIB)
 	ar rcs $@ $(OBJECTS)
 
 %.o: %.c
@@ -32,6 +38,7 @@ clr_runtime.o: ../clr-implementation/clr_runtime.c ../clr-implementation/clr_run
 
 clean:
 	rm -f $(OBJECTS) $(TARGET) *.o
+	$(MAKE) -C ../fruity clean
 
 # Verification targets
 verify: $(TARGET)

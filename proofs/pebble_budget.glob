@@ -1,0 +1,209 @@
+DIGEST 4e7d22af2fbca4650b26628a29f56e08
+Fpebble_budget
+R284:300 Coq.ZArith.ZArith <> <> lib
+rec 510:520 <> PebbleState
+proj 538:549 <> black_budget
+proj 595:605 <> black_inuse
+proj 658:670 <> white_pending
+proj 727:740 <> white_verified
+R553:553 Coq.Numbers.BinNums <> Z ind
+R609:609 Coq.Numbers.BinNums <> Z ind
+R674:674 Coq.Numbers.BinNums <> Z ind
+R744:744 Coq.Numbers.BinNums <> Z ind
+ind 1015:1025 <> VerifyWhite
+constr 1074:1087 <> Verify_Success
+R1035:1035 Coq.Numbers.BinNums <> Z ind
+binder 1028:1031 <> size:6
+R1047:1057 pebble_budget <> PebbleState rec
+binder 1039:1040 <> s1:7
+binder 1042:1043 <> s2:8
+R1105:1114 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1101:1103 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R1097:1100 pebble_budget <> size:6 var
+R1273:1282 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1117:1119 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1115:1116 pebble_budget <> s2:8 var
+R1120:1127 pebble_budget <> mkPebble constr
+R1147:1158 pebble_budget <> black_budget proj
+R1143:1144 pebble_budget <> s1:7 var
+R1179:1189 pebble_budget <> black_inuse proj
+R1175:1176 pebble_budget <> s1:7 var
+R1225:1227 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R1211:1223 pebble_budget <> white_pending proj
+R1207:1208 pebble_budget <> s1:7 var
+R1228:1231 pebble_budget <> size:6 var
+R1268:1270 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R1253:1266 pebble_budget <> white_verified proj
+R1249:1250 pebble_budget <> s1:7 var
+R1283:1293 pebble_budget <> VerifyWhite:9 ind
+R1303:1304 pebble_budget <> s2:8 var
+R1300:1301 pebble_budget <> s1:7 var
+R1295:1298 pebble_budget <> size:6 var
+scheme 1015:1025 <> VerifyWhite_rect
+scheme 1015:1025 <> VerifyWhite_ind
+scheme 1015:1025 <> VerifyWhite_rec
+scheme 1015:1025 <> VerifyWhite_sind
+ind 1318:1327 <> BlackAlloc
+constr 1376:1388 <> Alloc_Success
+R1337:1337 Coq.Numbers.BinNums <> Z ind
+binder 1330:1333 <> size:11
+R1349:1359 pebble_budget <> PebbleState rec
+binder 1341:1342 <> s1:12
+binder 1344:1345 <> s2:13
+R1406:1415 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1402:1404 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R1398:1401 pebble_budget <> size:11 var
+R1439:1448 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1435:1437 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R1420:1433 pebble_budget <> white_verified proj
+R1416:1417 pebble_budget <> s1:12 var
+R1475:1484 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1467:1470 Coq.ZArith.BinInt <> ::Z_scope:x_'>='_x not
+R1453:1465 pebble_budget <> white_pending proj
+R1449:1450 pebble_budget <> s1:12 var
+R1471:1474 pebble_budget <> size:11 var
+R1510:1519 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1502:1505 Coq.ZArith.BinInt <> ::Z_scope:x_'>='_x not
+R1489:1500 pebble_budget <> black_budget proj
+R1485:1486 pebble_budget <> s1:12 var
+R1506:1509 pebble_budget <> size:11 var
+R1692:1701 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1522:1524 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1520:1521 pebble_budget <> s2:13 var
+R1525:1532 pebble_budget <> mkPebble constr
+R1565:1567 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1552:1563 pebble_budget <> black_budget proj
+R1548:1549 pebble_budget <> s1:12 var
+R1568:1571 pebble_budget <> size:11 var
+R1604:1606 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R1592:1602 pebble_budget <> black_inuse proj
+R1588:1589 pebble_budget <> s1:12 var
+R1607:1610 pebble_budget <> size:11 var
+R1645:1647 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1631:1643 pebble_budget <> white_pending proj
+R1627:1628 pebble_budget <> s1:12 var
+R1648:1651 pebble_budget <> size:11 var
+R1687:1689 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1672:1685 pebble_budget <> white_verified proj
+R1668:1669 pebble_budget <> s1:12 var
+R1702:1711 pebble_budget <> BlackAlloc:14 ind
+R1721:1722 pebble_budget <> s2:13 var
+R1718:1719 pebble_budget <> s1:12 var
+R1713:1716 pebble_budget <> size:11 var
+scheme 1318:1327 <> BlackAlloc_rect
+scheme 1318:1327 <> BlackAlloc_ind
+scheme 1318:1327 <> BlackAlloc_rec
+scheme 1318:1327 <> BlackAlloc_sind
+ind 1736:1754 <> BlackAlloc_Rollback
+constr 1803:1821 <> Alloc_Fail_Rollback
+R1764:1764 Coq.Numbers.BinNums <> Z ind
+binder 1757:1760 <> size:16
+R1776:1786 pebble_budget <> PebbleState rec
+binder 1768:1769 <> s1:17
+binder 1771:1772 <> s2:18
+R1867:1869 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1854:1865 pebble_budget <> black_budget proj
+R1850:1851 pebble_budget <> s1:17 var
+R1870:1873 pebble_budget <> size:16 var
+binder 1835:1845 <> temp_budget:21
+R1918:1920 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R1906:1916 pebble_budget <> black_inuse proj
+R1902:1903 pebble_budget <> s1:17 var
+R1921:1924 pebble_budget <> size:16 var
+binder 1888:1897 <> temp_inuse:22
+R1973:1975 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1959:1971 pebble_budget <> white_pending proj
+R1955:1956 pebble_budget <> s1:17 var
+R1976:1979 pebble_budget <> size:16 var
+binder 1939:1950 <> temp_pending:23
+R2030:2032 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R2015:2028 pebble_budget <> white_verified proj
+R2011:2012 pebble_budget <> s1:17 var
+binder 1994:2006 <> temp_verified:24
+R2192:2201 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2046:2048 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2044:2045 pebble_budget <> s2:18 var
+R2049:2056 pebble_budget <> mkPebble constr
+R2083:2085 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2072:2082 pebble_budget <> temp_budget:21 var
+R2086:2089 pebble_budget <> size:16 var
+R2116:2118 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R2106:2115 pebble_budget <> temp_inuse:22 var
+R2119:2122 pebble_budget <> size:16 var
+R2151:2153 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2139:2150 pebble_budget <> temp_pending:23 var
+R2154:2157 pebble_budget <> size:16 var
+R2187:2189 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2174:2186 pebble_budget <> temp_verified:24 var
+R2202:2220 pebble_budget <> BlackAlloc_Rollback:19 ind
+R2230:2231 pebble_budget <> s2:18 var
+R2227:2228 pebble_budget <> s1:17 var
+R2222:2225 pebble_budget <> size:16 var
+scheme 1736:1754 <> BlackAlloc_Rollback_rect
+scheme 1736:1754 <> BlackAlloc_Rollback_ind
+scheme 1736:1754 <> BlackAlloc_Rollback_rec
+scheme 1736:1754 <> BlackAlloc_Rollback_sind
+ind 2245:2253 <> BlackFree
+constr 2302:2313 <> Free_Success
+R2263:2263 Coq.Numbers.BinNums <> Z ind
+binder 2256:2259 <> size:25
+R2275:2285 pebble_budget <> PebbleState rec
+binder 2267:2268 <> s1:26
+binder 2270:2271 <> s2:27
+R2331:2340 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2327:2329 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R2323:2326 pebble_budget <> size:25 var
+R2498:2507 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2343:2345 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2341:2342 pebble_budget <> s2:27 var
+R2346:2353 pebble_budget <> mkPebble constr
+R2386:2388 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2373:2384 pebble_budget <> black_budget proj
+R2369:2370 pebble_budget <> s1:26 var
+R2389:2392 pebble_budget <> size:25 var
+R2425:2427 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R2413:2423 pebble_budget <> black_inuse proj
+R2409:2410 pebble_budget <> s1:26 var
+R2428:2431 pebble_budget <> size:25 var
+R2451:2463 pebble_budget <> white_pending proj
+R2447:2448 pebble_budget <> s1:26 var
+R2483:2496 pebble_budget <> white_verified proj
+R2479:2480 pebble_budget <> s1:26 var
+R2508:2516 pebble_budget <> BlackFree:28 ind
+R2526:2527 pebble_budget <> s2:27 var
+R2523:2524 pebble_budget <> s1:26 var
+R2518:2521 pebble_budget <> size:25 var
+scheme 2245:2253 <> BlackFree_rect
+scheme 2245:2253 <> BlackFree_ind
+scheme 2245:2253 <> BlackFree_rec
+scheme 2245:2253 <> BlackFree_sind
+def 2720:2750 <> Invariant_Physical_Conservation
+R2757:2767 pebble_budget <> PebbleState rec
+binder 2753:2753 <> s:30
+R2785:2785 Coq.Numbers.BinNums <> Z ind
+binder 2771:2781 <> initial_mem:31
+R2834:2836 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2816:2818 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2803:2814 pebble_budget <> black_budget proj
+R2800:2800 pebble_budget <> s:30 var
+R2822:2832 pebble_budget <> black_inuse proj
+R2819:2819 pebble_budget <> s:30 var
+R2837:2847 pebble_budget <> initial_mem:31 var
+prf 3033:3061 <> Alloc_Preserves_Physical_Mass
+binder 3074:3075 <> s1:32
+binder 3077:3078 <> s2:33
+binder 3080:3083 <> size:34
+binder 3085:3091 <> initial:35
+R3138:3143 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3096:3126 pebble_budget <> Invariant_Physical_Conservation def
+R3128:3129 pebble_budget <> s1:32 var
+R3131:3137 pebble_budget <> initial:35 var
+R3165:3170 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3144:3153 pebble_budget <> BlackAlloc ind
+R3155:3158 pebble_budget <> size:34 var
+R3160:3161 pebble_budget <> s1:32 var
+R3163:3164 pebble_budget <> s2:33 var
+R3171:3201 pebble_budget <> Invariant_Physical_Conservation def
+R3203:3204 pebble_budget <> s2:33 var
+R3206:3212 pebble_budget <> initial:35 var
+R3297:3327 pebble_budget <> Invariant_Physical_Conservation def

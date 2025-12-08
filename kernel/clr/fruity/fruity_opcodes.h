@@ -1,0 +1,262 @@
+/* fruity_opcodes.h - Fruity IR Opcode Definitions
+ *
+ * The "Fruity Flavors" - Opcodes mapped to Pebble colors and operations.
+ * Each opcode corresponds to explicit Pebble memory management primitives.
+ *
+ * Design Philosophy:
+ *   - LIME/VANILLA/BURN: Core reference counting via white tokens
+ *   - CHERRY/BERRY/ROLLBACK: Transactional memory (Red-Blue shadows)
+ *   - GRAPE/LEMON: Zero-copy ownership transfer
+ *   - Standard control flow: CALL, RET, JUMP, BRANCH
+ */
+
+#ifndef FRUITY_OPCODES_H
+#define FRUITY_OPCODES_H
+
+/* Fruity IR Opcode enumeration
+ *
+ * Opcodes are organized into categories:
+ *   0x000-0x0FF: Standard operations (NOP, arithmetic, etc.)
+ *   0x100-0x1FF: Pebble memory operations (LIME, VANILLA, BURN)
+ *   0x200-0x2FF: Transactional operations (CHERRY, BERRY, ROLLBACK)
+ *   0x300-0x3FF: IPC and ownership transfer (GRAPE, LEMON)
+ *   0x400-0x4FF: Control flow (CALL, RET, JUMP, BRANCH)
+ *   0x500-0x5FF: Stack and local operations
+ */
+typedef enum {
+	/* ===== Standard Operations (0x000-0x0FF) ===== */
+	FRUITY_NOP          = 0x000,  /* No operation */
+
+	/* Arithmetic */
+	FRUITY_ADD          = 0x010,  /* Add two values */
+	FRUITY_SUB          = 0x011,  /* Subtract */
+	FRUITY_MUL          = 0x012,  /* Multiply */
+	FRUITY_DIV          = 0x013,  /* Divide */
+	FRUITY_REM          = 0x014,  /* Remainder */
+	FRUITY_NEG          = 0x015,  /* Negate */
+
+	/* Bitwise */
+	FRUITY_AND          = 0x020,  /* Bitwise AND */
+	FRUITY_OR           = 0x021,  /* Bitwise OR */
+	FRUITY_XOR          = 0x022,  /* Bitwise XOR */
+	FRUITY_NOT          = 0x023,  /* Bitwise NOT */
+	FRUITY_SHL          = 0x024,  /* Shift left */
+	FRUITY_SHR          = 0x025,  /* Shift right */
+
+	/* Comparison */
+	FRUITY_CEQ          = 0x030,  /* Compare equal */
+	FRUITY_CNE          = 0x031,  /* Compare not equal */
+	FRUITY_CLT          = 0x032,  /* Compare less than */
+	FRUITY_CLE          = 0x033,  /* Compare less or equal */
+	FRUITY_CGT          = 0x034,  /* Compare greater than */
+	FRUITY_CGE          = 0x035,  /* Compare greater or equal */
+
+	/* Constants */
+	FRUITY_LDC_I4       = 0x040,  /* Load int32 constant */
+	FRUITY_LDC_I8       = 0x041,  /* Load int64 constant */
+	FRUITY_LDC_R4       = 0x042,  /* Load float32 constant */
+	FRUITY_LDC_R8       = 0x043,  /* Load float64 constant */
+	FRUITY_LDNULL       = 0x044,  /* Load null reference */
+
+	/* Conversion */
+	FRUITY_CONV_I4      = 0x050,  /* Convert to int32 */
+	FRUITY_CONV_I8      = 0x051,  /* Convert to int64 */
+	FRUITY_CONV_R4      = 0x052,  /* Convert to float32 */
+	FRUITY_CONV_R8      = 0x053,  /* Convert to float64 */
+
+	/* ===== Pebble Memory Operations (0x100-0x1FF) ===== */
+
+	/* LIME - Allocate (Black Pebble + first White Token)
+	 * Maps to: clr_object_alloc()
+	 * Source: MSIL 'newobj'
+	 * Effect: Creates Black Pebble, issues first White Token
+	 * Stack: size → obj_ref
+	 */
+	FRUITY_LIME         = 0x100,
+
+	/* VANILLA - Share reference (Issue White Token)
+	 * Maps to: clr_object_addref()
+	 * Source: MSIL 'dup' on ref, 'ldloc' on ref
+	 * Effect: Issues new White Token, increments white_count
+	 * Stack: obj_ref → obj_ref, obj_ref
+	 */
+	FRUITY_VANILLA      = 0x101,
+
+	/* BURN - Release reference (Burn White Token)
+	 * Maps to: clr_object_release()
+	 * Source: MSIL 'pop' on ref, 'stloc' overwrite
+	 * Effect: Burns White Token, decrements white_count, frees if 0
+	 * Stack: obj_ref → ∅
+	 */
+	FRUITY_BURN         = 0x102,
+
+	/* DUP - Duplicate top of stack
+	 * For value types: simple copy
+	 * For reference types: VANILLA (issue white token)
+	 * Stack: value → value, value
+	 */
+	FRUITY_DUP          = 0x103,
+
+	/* POP - Remove top of stack
+	 * For value types: simple removal
+	 * For reference types: BURN (release white token)
+	 * Stack: value → ∅
+	 */
+	FRUITY_POP          = 0x104,
+
+	/* ===== Transactional Operations (0x200-0x2FF) ===== */
+
+	/* CHERRY - Create Red snapshot (Begin transaction)
+	 * Maps to: clr_object_snapshot()
+	 * Source: [Transactional] method entry
+	 * Effect: Creates Red shadow for rollback
+	 * Stack: obj_ref → obj_ref (now has Red shadow)
+	 */
+	FRUITY_CHERRY       = 0x200,
+
+	/* BERRY - Commit transaction (Keep Blue changes)
+	 * Maps to: clr_object_commit()
+	 * Source: [Transactional] method success return
+	 * Effect: Discards Red shadow, keeps Blue changes
+	 * Stack: obj_ref → obj_ref (Red discarded)
+	 */
+	FRUITY_BERRY        = 0x201,
+
+	/* ROLLBACK - Abort transaction (Restore from Red)
+	 * Maps to: clr_object_rollback()
+	 * Source: [Transactional] exception handler
+	 * Effect: Discards Blue changes, restores from Red
+	 * Stack: obj_ref → obj_ref (Blue discarded, Red restored)
+	 */
+	FRUITY_ROLLBACK     = 0x202,
+
+	/* ===== IPC and Ownership Transfer (0x300-0x3FF) ===== */
+
+	/* GRAPE - Zero-copy IPC transfer (Exchange)
+	 * Maps to: clr_msg_prepare() + clr_msg_send()
+	 * Source: [Exchange] attributed method call
+	 * Effect: Transfers White Token to another process/tasklet
+	 * Stack: obj_ref, dest_tasklet → ∅
+	 * Note: obj_ref becomes invalid in caller after this
+	 */
+	FRUITY_GRAPE        = 0x300,
+
+	/* LEMON - Intra-process ownership transfer (Move)
+	 * Maps to: White Token handover without addref/release
+	 * Source: 'ret' with ref type, or explicit move
+	 * Effect: Transfers ownership without changing white_count
+	 * Stack: obj_ref_src → obj_ref_dst
+	 */
+	FRUITY_LEMON        = 0x301,
+
+	/* ===== Control Flow (0x400-0x4FF) ===== */
+
+	/* CALL - Function call
+	 * Stack: arg1, arg2, ..., argN → result
+	 */
+	FRUITY_CALL         = 0x400,
+
+	/* RET - Return from function
+	 * Stack: result → (caller stack)
+	 */
+	FRUITY_RET          = 0x401,
+
+	/* JUMP - Unconditional branch
+	 * Stack: (unchanged)
+	 */
+	FRUITY_JUMP         = 0x402,
+
+	/* Branch instructions */
+	FRUITY_BEQ          = 0x410,  /* Branch if equal */
+	FRUITY_BNE          = 0x411,  /* Branch if not equal */
+	FRUITY_BLT          = 0x412,  /* Branch if less than */
+	FRUITY_BLE          = 0x413,  /* Branch if less or equal */
+	FRUITY_BGT          = 0x414,  /* Branch if greater than */
+	FRUITY_BGE          = 0x415,  /* Branch if greater or equal */
+	FRUITY_BTRUE        = 0x416,  /* Branch if true */
+	FRUITY_BFALSE       = 0x417,  /* Branch if false */
+
+	/* ===== Stack and Local Operations (0x500-0x5FF) ===== */
+
+	/* LOAD_LOCAL - Load local variable
+	 * For value types: simple copy
+	 * For reference types: VANILLA (issue white token)
+	 * Stack: → value
+	 */
+	FRUITY_LOAD_LOCAL   = 0x500,
+
+	/* STORE_LOCAL - Store to local variable
+	 * For value types: simple store
+	 * For reference types: BURN old, VANILLA new (or LEMON if move)
+	 * Stack: value → ∅
+	 */
+	FRUITY_STORE_LOCAL  = 0x501,
+
+	/* LOAD_ARG - Load argument
+	 * Same semantics as LOAD_LOCAL
+	 * Stack: → value
+	 */
+	FRUITY_LOAD_ARG     = 0x502,
+
+	/* STORE_ARG - Store to argument (by-ref parameters)
+	 * Same semantics as STORE_LOCAL
+	 * Stack: value → ∅
+	 */
+	FRUITY_STORE_ARG    = 0x503,
+
+	/* LOAD_FIELD - Load object field
+	 * For reference fields: VANILLA (issue white token)
+	 * Stack: obj_ref, field_offset → value
+	 */
+	FRUITY_LOAD_FIELD   = 0x504,
+
+	/* STORE_FIELD - Store to object field
+	 * For reference fields: BURN old, VANILLA new
+	 * Stack: obj_ref, field_offset, value → ∅
+	 */
+	FRUITY_STORE_FIELD  = 0x505,
+
+	/* ===== Array Operations (0x600-0x6FF) ===== */
+
+	FRUITY_NEWARR       = 0x600,  /* New array */
+	FRUITY_LDLEN        = 0x601,  /* Load array length */
+	FRUITY_LDELEM       = 0x602,  /* Load array element */
+	FRUITY_STELEM       = 0x603,  /* Store array element */
+	FRUITY_LDELEMA      = 0x604,  /* Load element address */
+
+} fruity_opcode_t;
+
+/* Opcode metadata - used for optimization and verification */
+typedef struct {
+	fruity_opcode_t opcode;
+	const char *name;
+
+	/* Pebble effects */
+	int creates_white;    /* Issues new white token? */
+	int burns_white;      /* Burns white token? */
+	int may_free;         /* May free memory? */
+	int is_speculative;   /* Creates Red shadow? */
+
+	/* Stack effects */
+	int stack_pop;        /* Number of values popped */
+	int stack_push;       /* Number of values pushed */
+
+	/* Control flow */
+	int is_branch;        /* Is a branch instruction? */
+	int is_call;          /* Is a call instruction? */
+	int is_return;        /* Is a return instruction? */
+	int is_terminator;    /* Terminates basic block? */
+
+} fruity_opcode_metadata_t;
+
+/* Opcode metadata table (defined in fruity_ir.c) */
+extern const fruity_opcode_metadata_t fruity_opcode_table[];
+
+/* Opcode query functions */
+const char* fruity_opcode_name(fruity_opcode_t opcode);
+int fruity_opcode_creates_white(fruity_opcode_t opcode);
+int fruity_opcode_burns_white(fruity_opcode_t opcode);
+int fruity_opcode_may_free(fruity_opcode_t opcode);
+int fruity_opcode_is_terminator(fruity_opcode_t opcode);
+
+#endif /* FRUITY_OPCODES_H */
