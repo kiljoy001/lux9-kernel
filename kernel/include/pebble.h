@@ -49,6 +49,7 @@ typedef struct PebbleWhite {
   u32int  generation;
   void  *data_ptr;
   ulong  size;
+  u64int index;      /* Index in the global granule bitmap */
 } PebbleWhite;
 
 /* Blue object structure - speculative */

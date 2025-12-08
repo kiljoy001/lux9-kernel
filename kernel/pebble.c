@@ -77,9 +77,13 @@ PebbleWhite*
 pebble_issue_white(PebbleState *ps, void *data, ulong size)
 {
 	int i, idx;
+	ulong pegged_size;
 
 	if(ps == nil)
 		return nil;
+
+	/* Peg size to 8-byte quantum */
+	pegged_size = (size + 7) & ~7;
 
 	lock(&pebble_global_lock);
 	for(i = 0; i < PEBBLE_MAX_TOKENS; i++){
@@ -91,7 +95,7 @@ pebble_issue_white(PebbleState *ps, void *data, ulong size)
 		ps->whites[idx].token = PEBBLE_TOKEN_MAGIC;
 		ps->whites[idx].generation = ps->white_generation;
 		ps->whites[idx].data_ptr = data;
-		ps->whites[idx].size = size;
+		ps->whites[idx].size = pegged_size;
 		ps->white_head = (idx + 1) % PEBBLE_MAX_TOKENS;
 		unlock(&pebble_global_lock);
 		return &ps->whites[idx];

@@ -78,6 +78,48 @@ Definition Invariant_Physical_Conservation (s : PebbleState) (initial_mem : Z) :
   s.(black_budget) + s.(black_inuse) = initial_mem.
 
 (* ========================================================================= *)
+(* HELPER LEMMAS *)
+(* ========================================================================= *)
+
+(* Proves: B - S + (I + S) = B + I *)
+Lemma mass_conservation_alloc : forall b i s, b - s + (i + s) = b + i.
+Proof.
+  intros.
+  unfold Z.sub.
+  rewrite <- Z.add_assoc.
+  (* Goal: b + (-s + (i + s)) = b + i *)
+  assert (H: -s + (i + s) = i).
+  {
+    rewrite (Z.add_comm i s).
+    rewrite Z.add_assoc.
+    rewrite Z.add_opp_diag_l.
+    rewrite Z.add_0_l.
+    reflexivity.
+  }
+  rewrite H.
+  reflexivity.
+Qed.
+
+(* Proves: B + S + (I - S) = B + I *)
+Lemma mass_conservation_free : forall b i s, b + s + (i - s) = b + i.
+Proof.
+  intros.
+  unfold Z.sub.
+  rewrite <- Z.add_assoc.
+  (* Goal: b + (s + (i + -s)) = b + i *)
+  assert (H: s + (i + -s) = i).
+  {
+    rewrite (Z.add_comm i (-s)).
+    rewrite Z.add_assoc.
+    rewrite Z.add_opp_diag_r.
+    rewrite Z.add_0_l.
+    reflexivity.
+  }
+  rewrite H.
+  reflexivity.
+Qed.
+
+(* ========================================================================= *)
 (* PROOFS *)
 (* ========================================================================= *)
 
@@ -92,17 +134,7 @@ Proof.
   unfold Invariant_Physical_Conservation in *.
   simpl.
   rewrite <- Hinv.
-  
-  (* budget - size + (inuse + size) = budget + inuse *)
-  rewrite Z.sub_eq_add_neg.
-  rewrite Z.add_assoc.
-  rewrite (Z.add_comm (-size) (black_inuse s1 + size)).
-  rewrite Z.add_assoc.
-  rewrite (Z.add_comm (-size) (black_inuse s1)).
-  rewrite <- Z.add_assoc.
-  rewrite Z.add_opp_diag_r.
-  rewrite Z.add_0_r.
-  reflexivity.
+  apply mass_conservation_alloc.
 Qed.
 
 Theorem Free_Preserves_Physical_Mass :
@@ -116,17 +148,7 @@ Proof.
   unfold Invariant_Physical_Conservation in *.
   simpl.
   rewrite <- Hinv.
-  
-  (* budget + size + (inuse - size) = budget + inuse *)
-  rewrite Z.sub_eq_add_neg.
-  rewrite Z.add_assoc.
-  rewrite (Z.add_comm size (black_inuse s1 + -size)).
-  rewrite Z.add_assoc.
-  rewrite (Z.add_comm size (black_inuse s1)).
-  rewrite <- Z.add_assoc.
-  rewrite Z.add_opp_diag_l.
-  rewrite Z.add_0_r.
-  reflexivity.
+  apply mass_conservation_free.
 Qed.
 
 Theorem Rollback_Is_Identity :
@@ -136,12 +158,26 @@ Theorem Rollback_Is_Identity :
 Proof.
   intros s1 s2 size Hstep.
   inversion Hstep. subst.
-  destruct s1.
-  f_equal; simpl; try rewrite Z.sub_eq_add_neg.
-  - rewrite Z.add_assoc. rewrite (Z.add_comm (-size) size). rewrite Z.add_opp_diag_l. apply Z.add_0_r.
-  - rewrite Z.add_assoc. rewrite (Z.add_comm size (-size)). rewrite Z.add_opp_diag_l. apply Z.add_0_r.
-  - rewrite Z.add_assoc. rewrite (Z.add_comm (-size) size). rewrite Z.add_opp_diag_l. apply Z.add_0_r.
-  - rewrite Z.add_assoc. rewrite (Z.add_comm (-1) 1). rewrite Z.add_opp_diag_l. apply Z.add_0_r.
+  destruct s1 as [b i p v]. (* Explicit naming *)
+  f_equal; simpl;
+  unfold temp_budget, temp_inuse, temp_pending, temp_verified;
+  simpl.
+  - (* budget: b - size + size = b *)
+    assert (H: b - size + size = b).
+    { unfold Z.sub. rewrite <- Z.add_assoc. rewrite Z.add_opp_diag_l. rewrite Z.add_0_r. reflexivity. }
+    rewrite H. reflexivity.
+  - (* inuse: i + size - size = i *)
+    assert (H: i + size - size = i).
+    { unfold Z.sub. rewrite <- Z.add_assoc. rewrite Z.add_opp_diag_r. rewrite Z.add_0_r. reflexivity. }
+    rewrite H. reflexivity.
+  - (* pending: p - size + size = p *)
+    assert (H: p - size + size = p).
+    { unfold Z.sub. rewrite <- Z.add_assoc. rewrite Z.add_opp_diag_l. rewrite Z.add_0_r. reflexivity. }
+    rewrite H. reflexivity.
+  - (* verified: v - 1 + 1 = v *)
+    assert (H: v - 1 + 1 = v).
+    { unfold Z.sub. rewrite <- Z.add_assoc. rewrite Z.add_opp_diag_l. rewrite Z.add_0_r. reflexivity. }
+    rewrite H. reflexivity.
 Qed.
 
 Theorem Verify_Ignores_Physical_Mass :
