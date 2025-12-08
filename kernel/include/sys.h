@@ -61,5 +61,6 @@
 #define PEBBLE_WHITE_VERIFY	62
 #define PEBBLE_RED_COPY	63
 #define PEBBLE_BLUE_DISCARD	64
+#define CLR_COMPILE		65
 #define CLRDEV 'x' // Placeholder for CLR Device
 

@@ -67,6 +67,7 @@ Syscall syspebbleblackfree;
 Syscall syspebblewhiteverify;
 Syscall syspebbleredcopy;
 Syscall syspebblebluediscard;
+Syscall sysclrcompile;
 
 Syscall *systab[]={
 	[SYSR1]		sysr1,
@@ -132,6 +133,7 @@ Syscall *systab[]={
 	[PEBBLE_WHITE_VERIFY]	syspebblewhiteverify,
 	[PEBBLE_RED_COPY]	syspebbleredcopy,
 	[PEBBLE_BLUE_DISCARD]	syspebblebluediscard,
+	[CLR_COMPILE]		sysclrcompile,
 };
 
 int nsyscall = (sizeof systab/sizeof systab[0]);

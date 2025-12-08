@@ -13,6 +13,12 @@
 
 #include	<a.out.h>
 
+/* CLR compilation includes */
+#include	"../clr/fruity/fruity_ir.h"
+#include	"../clr/fruity/fruity_to_qbe.h"
+#include	"../clr/qbe/qbe_kernel_wrapper.h"
+#include	"exchange.h"
+
 typedef struct SyscallVaList {
 	unsigned int gp_offset;
 	unsigned int fp_offset;
@@ -1848,5 +1854,144 @@ dosyscall(ulong scallnr, Sargs *args, uintptr *retp)
 	splx(s);
 	up->insyscall = 0;
 	up->psstate = nil;
+	return 0;
+}
+
+/*
+ * sys_clr_compile - Compile Fruity IR to assembly via QBE
+ *
+ * Pipeline:
+ *   1. Read Fruity IR module from /dev/clr file descriptor
+ *   2. Translate Fruity IR → QBE IL (to intermediate page)
+ *   3. Compile QBE IL → Assembly (to output page)
+ *   4. Optionally copy QBE IL to debug page
+ *
+ * Arguments:
+ *   fd_fruity - File descriptor to /dev/clr (contains fruity_module_t*)
+ *   output_asm - Exchange handle for assembly output
+ *   output_qbe - Exchange handle for QBE IL debug output (0 = skip)
+ *   errorbuf - Userspace error buffer
+ *   errorbuf_size - Size of error buffer
+ *
+ * Returns:
+ *   0 on success
+ *   -1 on error (error string written to errorbuf)
+ */
+uintptr
+sysclrcompile(va_list list)
+{
+	int fd_fruity;
+	uintptr output_asm, output_qbe;
+	char *errorbuf;
+	ulong errorbuf_size;
+	Chan *c = nil;
+	fruity_module_t *module;
+	Page *intermediate_pg = nil;
+	uintptr intermediate_handle;
+	void *intermediate_va;
+	char kerrbuf[256];
+	int ret;
+
+	/* Extract arguments */
+	fd_fruity = va_arg(list, int);
+	output_asm = va_arg(list, uintptr);
+	output_qbe = va_arg(list, uintptr);
+	errorbuf = va_arg(list, char*);
+	errorbuf_size = va_arg(list, ulong);
+
+	/* Initialize kernel error buffer */
+	kerrbuf[0] = '\0';
+
+	/* Validate error buffer if provided */
+	if(errorbuf != nil)
+		validaddr((uintptr)errorbuf, errorbuf_size, 1);
+
+	/* Setup error handler for cleanup */
+	if(waserror()){
+		/* Error path: cleanup resources */
+		if(intermediate_pg != nil)
+			putpage(intermediate_pg);
+		if(c != nil)
+			cclose(c);
+
+		/* Copy error to userspace */
+		if(errorbuf != nil && kerrbuf[0] != '\0')
+			snprint(errorbuf, errorbuf_size, "%s", kerrbuf);
+
+		nexterror();
+	}
+
+	/* 1. Get Chan from file descriptor */
+	c = fdtochan(fd_fruity, OREAD, 0, 1);
+	if(c == nil){
+		snprint(kerrbuf, sizeof(kerrbuf),
+		        "invalid file descriptor: %d", fd_fruity);
+		error(Ebadarg);
+	}
+
+	/* 2. Read Fruity IR module from Chan->aux
+	 * TODO: This requires extending devclr to store fruity_module_t*
+	 * For now, we'll error out if aux is nil
+	 */
+	module = (fruity_module_t*)c->aux;
+	if(module == nil){
+		snprint(kerrbuf, sizeof(kerrbuf),
+		        "no Fruity IR module in file descriptor (devclr not ready)");
+		error(Ebadarg);
+	}
+
+	/* 3. Validate module size */
+	if(module->function_count > 1000){
+		snprint(kerrbuf, sizeof(kerrbuf),
+		        "module too large: %lu functions (max 1000)",
+		        module->function_count);
+		error(Ebadarg);
+	}
+
+	/* 4. Allocate intermediate page for QBE IL text */
+	intermediate_pg = newpage(1, nil, 0, 0);
+	if(intermediate_pg == nil){
+		snprint(kerrbuf, sizeof(kerrbuf),
+		        "failed to allocate intermediate page");
+		error(Enomem);
+	}
+
+	/* Map page to kernel virtual address */
+	intermediate_handle = intermediate_pg->pa;
+	intermediate_va = KADDR(intermediate_handle);
+
+	/* Zero the page */
+	memset(intermediate_va, 0, BY2PG);
+
+	/* 5. Translate Fruity IR → QBE IL */
+	ret = fruity_to_qbe(module, intermediate_handle, kerrbuf, sizeof(kerrbuf));
+	if(ret != 0){
+		/* Error message already in kerrbuf */
+		error("fruity_to_qbe failed");
+	}
+
+	/* 6. Optionally copy QBE IL to debug output */
+	if(output_qbe != 0){
+		void *qbe_debug_va = KADDR(output_qbe);
+		memmove(qbe_debug_va, intermediate_va, BY2PG);
+	}
+
+	/* 7. Compile QBE IL → Assembly */
+	ret = qbe_compile_page(intermediate_handle, output_asm, kerrbuf, sizeof(kerrbuf));
+	if(ret != 0){
+		/* Error message already in kerrbuf */
+		error("qbe_compile_page failed");
+	}
+
+	/* 8. Mark output page as executable (R-X)
+	 * NOTE: This is done by userspace via exchange_accept(handle, vaddr, PROT_READ|PROT_EXEC)
+	 * Kernel doesn't modify page protections directly here
+	 */
+
+	/* 9. Cleanup */
+	putpage(intermediate_pg);
+	cclose(c);
+
+	poperror();
 	return 0;
 }
