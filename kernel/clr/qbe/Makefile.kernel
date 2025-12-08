@@ -1,0 +1,49 @@
+# Makefile.kernel - Build QBE as kernel library
+#
+# Builds qbe.a for linking into Lux9 kernel
+
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -std=c99
+CFLAGS += -fno-builtin
+CFLAGS += -D_KERNEL_QBE
+
+# QBE core sources
+QBE_SRCS = \
+	alias.c \
+	cfg.c \
+	copy.c \
+	fold.c \
+	live.c \
+	load.c \
+	mem.c \
+	ssa.c \
+	parse.c \
+	rega.c \
+	spill.c
+
+# AMD64 backend
+AMD64_SRCS = \
+	amd64/isel.c \
+	amd64/emit.c
+
+# Use kernel-compatible util and exchange I/O
+UTIL_SRCS = kernel_util.c exchange_io.c qbe_kernel_wrapper.c
+
+ALL_SRCS = $(QBE_SRCS) $(AMD64_SRCS) $(UTIL_SRCS)
+OBJECTS = $(ALL_SRCS:.c=.o)
+
+TARGET = qbe.a
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	ar rcs $@ $(OBJECTS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+	rm -f amd64/*.o
+
+.PHONY: all clean

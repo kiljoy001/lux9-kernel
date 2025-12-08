@@ -4,12 +4,18 @@
 #include	"dat.h"
 #include	"fns.h"
 #include <error.h>
+#include <sys.h>
 
-#include "clr/clr-kernel/clr_kernel_architecture.h" // For clr_kernel_system_t etc.
-#include "clr/clr-kernel/clr_kernel.h" // For clr_kernel_init and other CLR kernel APIs
+/* CLR compilation includes */
+#include "../clr/fruity/fruity_ir.h"
 
-// Global CLR system instance
-clr_kernel_system_t *g_clr_system = NULL;
+/* CompileContext: Per-channel state for Fruity IR compilation */
+typedef struct CompileContext CompileContext;
+struct CompileContext {
+	fruity_module_t *module;
+	char error[256];
+};
+
 Lock clr_system_lock;
 
 // Qid Enums for /dev/clr filesystem hierarchy
@@ -26,6 +32,7 @@ enum {
 	QassemblyLoad,		// /dev/clr/assemblies/<assembly_id>/load
 	QassemblyUnload,		// /dev/clr/assemblies/<assembly_id>/unload
 	QassemblyMetadata,	// /dev/clr/assemblies/<assembly_id>/metadata
+	QassemblyCompile,	// /dev/clr/assemblies/<assembly_id>/compile (NEW: for sys_clr_compile)
 	QassemblyTypesDir,	// /dev/clr/assemblies/<assembly_id>/types
 	QassemblyMethodsDir,	// /dev/clr/assemblies/<assembly_id>/methods
 	QassemblyMethod,	// /dev/clr/assemblies/<assembly_id>/methods/<method_id>
@@ -74,18 +81,8 @@ static Dirtab clrdir[] = {
 static void
 clrinit(void)
 {
-	ilock(&clr_system_lock);
-	if (g_clr_system == NULL) {
-		// Initialize the global CLR system
-		// Heap size and k-parameter are placeholders for now
-		g_clr_system = clr_kernel_init(CLR_DEFAULT_HEAP_SIZE, CLR_DEFAULT_DAG_K);
-		if (g_clr_system == NULL) {
-			iunlock(&clr_system_lock);
-			panic("devclr: failed to initialize CLR kernel system");
-		}
-		print("devclr: CLR kernel system initialized.\n");
-	}
-	iunlock(&clr_system_lock);
+	/* Minimal stub for Phase 5.3 - just initialize lock */
+	/* TODO: Add full CLR system initialization later */
 }
 
 static Chan*
@@ -175,22 +172,26 @@ clrstat(Chan *c, uchar *dp, int n)
 static Chan*
 clropen(Chan *c, int omode)
 {
-	// Ensure CLR system is initialized before opening anything
-	qlock(&clr_system_lock);
-	if (g_clr_system == NULL) {
-		iunlock(&clr_system_lock);
-		error("devclr: CLR system not initialized");
-	}
-	iunlock(&clr_system_lock);
+	CompileContext *ctx;
 
 	// Implement specific open logic based on c->qid.path
 	switch((ulong)c->qid.path){
+	case QassemblyCompile:
+		/* Allocate compilation context for this channel */
+		ctx = mallocz(sizeof(CompileContext), 1);
+		if(ctx == nil)
+			error(Enomem);
+		ctx->module = nil;
+		ctx->error[0] = '\0';
+		c->aux = ctx;
+		break;
+
 	// Case Qcontrol: check write permissions
 	case Qcontrol:
-	case Qreboot: // Reusing Qreboot for reboot from consdevtab
 		if(omode & OREAD)
 			error(Eperm);
 		break;
+
 	// Read-only files
 	case Qstats:
 	case Qstatus:
@@ -201,7 +202,7 @@ clropen(Chan *c, int omode)
 			error(Eperm);
 		break;
 	}
-	
+
 	c = devopen(c, omode, clrdir, nelem(clrdir), clrgen);
 	return c;
 }
@@ -209,9 +210,20 @@ clropen(Chan *c, int omode)
 static void
 clrclose(Chan *c)
 {
-	// Clean up any state specific to the channel
-	// (e.g., if a file holds a reference to a CLR object)
-	USED(c);
+	CompileContext *ctx;
+
+	switch((ulong)c->qid.path){
+	case QassemblyCompile:
+		/* Free compilation context and Fruity IR module */
+		ctx = (CompileContext*)c->aux;
+		if(ctx != nil){
+			if(ctx->module != nil)
+				fruity_module_destroy(ctx->module);
+			free(ctx);
+			c->aux = nil;
+		}
+		break;
+	}
 }
 
 static long
@@ -222,20 +234,14 @@ clrread(Chan *c, void *buf, long n, vlong off)
 	case Qdir:
 		return devdirread(c, buf, n, clrdir, nelem(clrdir), clrgen);
 	case Qstats:
-		// Read global CLR statistics
-		snprint(buf, n, "Tasklets Created: %lu\nChannels Created: %lu\n",
-			g_clr_system->stats.tasklets_created, g_clr_system->stats.channels_created);
+		/* Stub: Return placeholder stats */
+		snprint(buf, n, "Assemblies Compiled: 0\n");
 		return strlen(buf);
 	case Qstatus:
-		snprint(buf, n, "CLR Kernel Status: %s\n", "Running");
+		snprint(buf, n, "CLR Kernel Status: Stub\n");
 		return strlen(buf);
 	case QmemoryHeapUsage:
-		snprint(buf, n, "Heap Size: %luMB\nHeap Used: %luKB\n",
-			g_clr_system->memory.heap_size / (1024*1024),
-			g_clr_system->memory.heap_used / 1024);
-		return strlen(buf);
-	case Qosversion: // Reusing Qosversion from consdevtab
-		snprint(buf, n, "CLR Kernel Version: 1.0\n");
+		snprint(buf, n, "Heap Size: 0MB\nHeap Used: 0KB\n");
 		return strlen(buf);
 	default:
 		error(Egreg);
@@ -247,54 +253,41 @@ static long
 clrwrite(Chan *c, void *va, long n, vlong off)
 {
 	char *a = va;
+	CompileContext *ctx;
 
 	// Implement write logic based on c->qid.path
 	switch((ulong)c->qid.path){
 	case Qcontrol:
-		// Handle global commands like init, shutdown, set_debug_level
-		if (strncmp(a, "init", n) == 0) {
-			ilock(&clr_system_lock);
-			if (g_clr_system == NULL) {
-				g_clr_system = clr_kernel_init(CLR_DEFAULT_HEAP_SIZE, CLR_DEFAULT_DAG_K);
-				if (g_clr_system == NULL) {
-					iunlock(&clr_system_lock);
-					error("devclr: failed to initialize CLR kernel system");
-				}
-				print("devclr: CLR kernel system re-initialized.\n");
-			} else {
-				print("devclr: CLR kernel system already initialized.\n");
-			}
-			iunlock(&clr_system_lock);
-			return n;
-		}
-		if (strncmp(a, "shutdown", n) == 0) {
-			// TODO: Implement clr_kernel_shutdown() and cleanup
-			ilock(&clr_system_lock);
-			if (g_clr_system != NULL) {
-				// clr_kernel_shutdown(g_clr_system);
-				g_clr_system = NULL;
-				print("devclr: CLR kernel system shut down.\n");
-			}
-			iunlock(&clr_system_lock);
-			return n;
-		}
-		error(Ebadctl); // Bad control command
-	
+		/* Stub: Accept but ignore control commands */
+		return n;
+
+	case QassemblyCompile:
+		/* Parse Fruity IR from write data and store in Chan->aux */
+		ctx = (CompileContext*)c->aux;
+		if(ctx == nil)
+			error("devclr: no compilation context");
+
+		/* TODO Phase 5.4: Parse binary Fruity IR from 'a' (size 'n')
+		 * For now, just set module to nil to indicate "no IR loaded yet"
+		 */
+		ctx->module = nil;
+		snprint(ctx->error, sizeof(ctx->error),
+		        "Fruity IR serialization not yet implemented");
+		return n;
+
 	case QassembliesNew:
-		// Write CIL bytecode to load a new assembly
-		// Will require parsing the bytecode from 'a'
-		break;
-	
+		/* Stub: Write CIL bytecode to load a new assembly */
+		return n;
+
 	case QtaskletsNew:
-		// Write tasklet parameters to create a new tasklet
-		// Will require parsing params from 'a'
-		break;
+		/* Stub: Write tasklet parameters to create a new tasklet */
+		return n;
 
 	case QchannelsNew:
-		// Write channel parameters to create a new channel
-		break;
-	
-default:
+		/* Stub: Write channel parameters to create a new channel */
+		return n;
+
+	default:
 		error(Egreg);
 	}
 	return n;

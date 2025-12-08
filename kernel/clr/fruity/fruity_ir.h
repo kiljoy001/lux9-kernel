@@ -14,7 +14,7 @@
 #define FRUITY_IR_H
 
 #include "u.h"
-#include "lib.h"
+#include "portlib.h"
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"

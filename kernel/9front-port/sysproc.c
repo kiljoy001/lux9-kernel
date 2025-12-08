@@ -1949,7 +1949,7 @@ sysclrcompile(va_list list)
 	}
 
 	/* 4. Allocate intermediate page for QBE IL text */
-	intermediate_pg = newpage(1, nil, 0, 0);
+	intermediate_pg = newpage(0, nil);
 	if(intermediate_pg == nil){
 		snprint(kerrbuf, sizeof(kerrbuf),
 		        "failed to allocate intermediate page");

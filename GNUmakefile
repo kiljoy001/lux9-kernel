@@ -37,6 +37,7 @@ LOCKDAG_C := kernel/lock_dag.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 BENCHMARK_C := kernel/benchmark.c
+CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c
 
 # SD/FIS support files already included by wildcard above
 
@@ -57,8 +58,12 @@ LOCKDAG_O := $(LOCKDAG_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
+CLR_O := $(CLR_C:.c=.o)
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O)
+# External archives
+QBE_A := kernel/clr/qbe/qbe.a
+
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(QBE_A)
 
 .PHONY: all clean count iso run help
 
@@ -79,7 +84,7 @@ $(KERNEL): $(ALL_O)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(ALL_O) $(KERNEL)
+	rm -f $(ALL_O) $(CLR_O) $(KERNEL)
 	rm -rf iso_root lux9.iso
 
 count:
