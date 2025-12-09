@@ -385,18 +385,25 @@ pebble_black_free(const UserCapability *cap)
 	// --- Release borrow checker ownership ---
 	borrow_err = borrow_release(up, (uintptr)entry.physical_address);
 	if (borrow_err != BORROW_OK) {
-		// This indicates a severe inconsistency or double-free attempt in borrow checker
-		// Log and potentially panic, but for now, report error.
-		print("PEBBLE: WARNING! borrow_release failed for %H at pa %#p: %d\n", cap->hash, entry.physical_address, borrow_err);
-		// Attempt to continue cleanup, but this is a critical state.
+		// CRITICAL: Borrow checker state inconsistent with Pebble state
+		// This indicates double-free, UAF, or severe corruption
+		// Continuing would leave system in undefined state - MUST PANIC
+		panic("pebble_black_free: FATAL - borrow_release failed for cap=%H at pa=%#p: error=%d\n"
+		      "This indicates critical state corruption (double-free/UAF).\n"
+		      "Borrow Checker and Pebble system out of sync.",
+		      cap->hash, entry.physical_address, borrow_err);
 	}
 
 	// --- Burn UserCapability via Blind Ledger ---
 	ledger_err = ledger_burn(cap, up);
 	if (ledger_err != BLIND_LEDGER_OK) {
-		// This indicates a severe inconsistency
-		print("PEBBLE: WARNING! ledger_burn failed for %H: %d\n", cap->hash, ledger_err);
-		// Attempt to continue cleanup, but this is a critical state.
+		// CRITICAL: Blind Ledger state inconsistent with Pebble state
+		// This indicates double-burn, invalid capability, or severe corruption
+		// Continuing would leave capability management in undefined state - MUST PANIC
+		panic("pebble_black_free: FATAL - ledger_burn failed for cap=%H: error=%d\n"
+		      "This indicates critical state corruption (double-burn/invalid cap).\n"
+		      "Blind Ledger and Pebble system out of sync.",
+		      cap->hash, ledger_err);
 	}
 
 	// --- Free associated Red/Blue objects and physical memory ---
