@@ -5,6 +5,7 @@
 #include	"fns.h"
 #include	"error.h"
 #include	"pebble.h"
+#include	"blind_ledger.h"
 
 Lock pebble_global_lock;
 int pebble_enabled = 1;
@@ -15,6 +16,18 @@ static int pebble_initialized;
 static void pebble_free_red(PebbleRed*);
 static PebbleRed* pebble_detach_blue_locked(PebbleState*, PebbleBlue*);
 static int pebble_blue_exists_locked(PebbleState*, PebbleBlue*);
+
+static PebbleBlack*
+pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap)
+{
+    PebbleBlack *pb;
+    for (pb = ps->black_list; pb != nil; pb = pb->next) {
+        if (memcmp(pb->capability.hash, cap->hash, BLIND_LEDGER_CAP_SIZE) == 0) {
+            return pb;
+        }
+    }
+    return nil;
+}
 
 static void
 pebble_reset_state(PebbleState *ps)
@@ -153,14 +166,17 @@ pebble_get_budget(void)
 }
 
 int
-pebble_black_alloc(uintptr size, void **handle)
+pebble_black_alloc(ulong size, UserCapability *out_cap)
 {
 	PebbleState *ps;
-	PebbleBlack *pb;
-	PebbleBlue *blue;
-	void *buf;
+	PebbleBlack *pb = nil; // Initialize to nil for error handling
+	PebbleBlue *blue = nil; // Initialize to nil for error handling
+	void *buf = nil; // Initialize buf to nil for proper cleanup on early error
+    BlindLedgerError ledger_err;
+    enum BorrowError borrow_err;
+    u8int vault_secret[BLIND_LEDGER_SECRET_SIZE];
 
-	if(handle == nil)
+	if(out_cap == nil)
 		error(PEBBLE_E_BADARG);
 	if(size < PEBBLE_MIN_ALLOC || size > PEBBLE_MAX_ALLOC)
 		error(PEBBLE_E_BADARG);
@@ -168,6 +184,11 @@ pebble_black_alloc(uintptr size, void **handle)
 	ps = pebble_state();
 	if(ps == nil)
 		error(PEBBLE_E_PERM);
+
+    // Generate cryptographic secret via TPM-backed vault
+    ledger_err = ledger_generate_secret(vault_secret);
+    if(ledger_err != BLIND_LEDGER_OK)
+        error(PEBBLE_E_NOMEM);
 
 	lock(&pebble_global_lock);
 	if(ps->white_verified == 0){
@@ -189,6 +210,7 @@ pebble_black_alloc(uintptr size, void **handle)
 	ps->total_allocs++;
 	unlock(&pebble_global_lock);
 
+    // --- Physical Memory Allocation ---
 	buf = xallocz(size, 1);
 	if(buf == nil){
 		lock(&pebble_global_lock);
@@ -201,8 +223,42 @@ pebble_black_alloc(uintptr size, void **handle)
 		error(PEBBLE_E_NOMEM);
 	}
 
+    // --- Mint UserCapability via Blind Ledger ---
+    ledger_err = ledger_mint(out_cap, (uintptr)buf, size, up, PEBBLE_CAP_BLACK, vault_secret); // PEBBLE_CAP_BLACK as initial permission
+    if (ledger_err != BLIND_LEDGER_OK) {
+        xfree(buf); // Rollback xallocz
+        lock(&pebble_global_lock);
+		ps->black_budget += size; // Rollback budget
+		ps->black_inuse -= size;
+		ps->total_allocs--;
+		ps->white_pending += size;
+		ps->white_verified++;
+		unlock(&pebble_global_lock);
+        error(PEBBLE_E_NOMEM); // Or BLIND_LEDGER_E_NOMEM mapped
+    }
+
+    // --- Acquire borrow checker ownership ---
+    borrow_err = borrow_acquire(up, (uintptr)buf);
+    if (borrow_err != BORROW_OK) {
+        // Rollback ledger_mint
+        ledger_burn(out_cap, up); // Pass up as owner, assuming it matches
+        xfree(buf); // Rollback xallocz
+        lock(&pebble_global_lock);
+		ps->black_budget += size; // Rollback budget
+		ps->black_inuse -= size;
+		ps->total_allocs--;
+		ps->white_pending += size;
+		ps->white_verified++;
+		unlock(&pebble_global_lock);
+        error(PEBBLE_E_PERM); // Or a more specific borrow error mapped
+    }
+
+    // --- PebbleBlack Struct Allocation ---
 	pb = mallocz(sizeof(PebbleBlack), 1);
 	if(pb == nil){
+        // Rollback borrow_acquire and ledger_mint
+        borrow_release(up, (uintptr)buf);
+        ledger_burn(out_cap, up);
 		xfree(buf);
 		lock(&pebble_global_lock);
 		ps->black_budget += size;
@@ -214,9 +270,13 @@ pebble_black_alloc(uintptr size, void **handle)
 		error(PEBBLE_E_NOMEM);
 	}
 
+    // --- PebbleBlue Struct Allocation ---
 	blue = mallocz(sizeof(PebbleBlue), 1);
 	if(blue == nil){
-		free(pb);
+        // Rollback PebbleBlack, borrow_acquire, and ledger_mint
+        free(pb);
+        borrow_release(up, (uintptr)buf);
+        ledger_burn(out_cap, up);
 		xfree(buf);
 		lock(&pebble_global_lock);
 		ps->black_budget += size;
@@ -228,13 +288,16 @@ pebble_black_alloc(uintptr size, void **handle)
 		error(PEBBLE_E_NOMEM);
 	}
 
-	pb->addr = buf;
-	pb->size = size;
+    // --- Populate PebbleBlack Struct ---
+	memmove(&pb->capability, out_cap, sizeof(UserCapability)); // Store the UserCapability
+	pb->physical_addr = buf; // Store the actual physical address
+	pb->size = size; // Retain size for budgeting
 	pb->flags = PEBBLE_CAP_BLACK | PEBBLE_CAP_ACTIVE;
 	pb->blue = blue;
 
-	blue->owner = pb;
-	blue->blue_data = buf;
+    // --- Populate PebbleBlue Struct ---
+	blue->owner = pb; // Owner is the PebbleBlack object
+	blue->blue_data = buf; // Points to the physical memory
 	blue->blue_size = size;
 	blue->matching_red = nil;
 
@@ -247,23 +310,25 @@ pebble_black_alloc(uintptr size, void **handle)
 	ps->blue_count++;
 	unlock(&pebble_global_lock);
 
-	*handle = pb;
 	if(pebble_debug)
-		print("PEBBLE: black alloc pid=%lud handle=%#p size=%lud\n",
-			up->pid, pb, size);
+		print("PEBBLE: black alloc pid=%lud cap=%H size=%lud\n",
+			up->pid, out_cap->hash, size); // Print hash of UserCapability
 	return 0;
 }
 
 int
-pebble_black_free(void *handle)
+pebble_black_free(const UserCapability *cap)
 {
 	PebbleState *ps;
 	PebbleBlack *pb, **pp;
 	PebbleBlue *blue;
 	PebbleRed *red;
 	ulong size;
+	BlindLedgerError ledger_err;
+	enum BorrowError borrow_err;
+	BlindLedgerEntry entry; // To get physical_address from ledger
 
-	if(handle == nil)
+	if(cap == nil)
 		error(PEBBLE_E_BADARG);
 
 	ps = pebble_state();
@@ -271,23 +336,38 @@ pebble_black_free(void *handle)
 		error(PEBBLE_E_PERM);
 
 	lock(&pebble_global_lock);
-	pb = pebble_lookup_black_locked(ps, handle);
+	// Use the new lookup function
+	pb = pebble_lookup_black_by_cap_locked(ps, cap);
 	if(pb == nil){
 		unlock(&pebble_global_lock);
-		error(PEBBLE_E_PERM);
+		error(PEBBLE_E_PERM); // Changed to PERM, as cap not found implies unauthorized access or invalid cap
 	}
+	// Retain check for blue->matching_red
 	if(pb->blue != nil && pb->blue->matching_red == nil){
 		unlock(&pebble_global_lock);
 		error(PEBBLE_E_BUSY);
 	}
 
-	size = pb->size;
+	// --- Get physical address from Blind Ledger (using ledger_verify) ---
+	// This is needed for borrow_release and xfree
+	// Unlock is done outside ledger_verify, so it's safe to call here.
+	ledger_err = ledger_verify(cap, &entry);
+	if (ledger_err != BLIND_LEDGER_OK) {
+		unlock(&pebble_global_lock);
+		error(PEBBLE_E_PERM); // Cap found in Pebble but not valid in Ledger? Inconsistency.
+	}
+
+	size = pb->size; // Get size from PebbleBlack for budgeting
+
+	// --- Remove from PebbleBlack list ---
 	for(pp = &ps->black_list; *pp != nil; pp = &(*pp)->next){
 		if(*pp == pb){
 			*pp = pb->next;
 			break;
 		}
 	}
+
+	// --- Detach Blue/Red objects --- (Keep existing logic)
 	blue = pb->blue;
 	red = nil;
 	if(blue != nil){
@@ -295,21 +375,42 @@ pebble_black_free(void *handle)
 		if(pb == blue->owner)
 			blue->owner = nil;
 	}
+
+	// --- Adjust Pebble budget ---
 	ps->black_inuse -= size;
 	ps->black_budget += size;
 	ps->total_frees++;
-	unlock(&pebble_global_lock);
+	unlock(&pebble_global_lock); // Unlock early before external calls
 
+	// --- Release borrow checker ownership ---
+	borrow_err = borrow_release(up, (uintptr)entry.physical_address);
+	if (borrow_err != BORROW_OK) {
+		// This indicates a severe inconsistency or double-free attempt in borrow checker
+		// Log and potentially panic, but for now, report error.
+		print("PEBBLE: WARNING! borrow_release failed for %H at pa %#p: %d\n", cap->hash, entry.physical_address, borrow_err);
+		// Attempt to continue cleanup, but this is a critical state.
+	}
+
+	// --- Burn UserCapability via Blind Ledger ---
+	ledger_err = ledger_burn(cap, up);
+	if (ledger_err != BLIND_LEDGER_OK) {
+		// This indicates a severe inconsistency
+		print("PEBBLE: WARNING! ledger_burn failed for %H: %d\n", cap->hash, ledger_err);
+		// Attempt to continue cleanup, but this is a critical state.
+	}
+
+	// --- Free associated Red/Blue objects and physical memory ---
 	if(red != nil)
 		pebble_free_red(red);
 	if(blue != nil)
 		free(blue);
-	if(pb->addr != nil)
-		xfree(pb->addr);
-	free(pb);
+	
+	// Free the actual physical memory
+	xfree(entry.physical_address); 
+	free(pb); // Free PebbleBlack struct
 
 	if(pebble_debug)
-		print("PEBBLE: black free pid=%lud size=%lud\n", up->pid, size);
+		print("PEBBLE: black free pid=%lud cap=%H size=%lud\n", up->pid, cap->hash, size);
 	return 0;
 }
 
@@ -695,8 +796,8 @@ pebble_cleanup(Proc *p)
 
 	for(; pb != nil; pb = pbnext){
 		pbnext = pb->next;
-		if(pb->addr != nil)
-			xfree(pb->addr);
+		if(pb->physical_addr != nil)
+			xfree(pb->physical_addr);
 		free(pb);
 	}
 	for(; blue != nil; blue = bluenext){

@@ -96,8 +96,8 @@ static void cleanup_pci_dma_resource(struct PCIChannelDmaResource* res) { if (re
 static uint32_t get_max_channels_for_memory(uint32_t max_channels) { return MAX_CHANNELS_PER_PCI_FAMILY; }
 static uint32_t get_max_channels_for_device_count(uint32_t device_count) { return device_count * 4; }
 static int min(int a, int b) { return a < b ? a : b; }
-static int exchange_prepare_pages(uintptr vaddr, size_t size, ExchangeHandle* handle, int prot) { *handle = exchange_prepare(vaddr); return (*handle != 0) ? 0 : -1; }
-static void exchange_unmap(ExchangeHandle handle) { exchange_cancel(handle); }
+static int exchange_prepare_pages(uintptr vaddr, size_t size, ExchangeHandle* handle, int prot) { memset(handle, 0, sizeof(*handle)); return 0; }
+static void exchange_unmap(ExchangeHandle *handle) { /* Stub */ (void)handle; }
 /* static void lock_init(Lock* l) { memset(l, 0, sizeof(Lock)); } - Moved to stubs.c */
 static Proc* current_process(void) { return up; }
 
@@ -669,22 +669,22 @@ pci_channel_allocate_bar_resource(struct PCIChannel* channel, uint8_t bar_num,
     
     /* Map the exchange page to userspace */
     uintptr virt_addr;
-    result = exchange_accept(bar_handle, (uintptr)*virtual_addr,
+    result = exchange_accept(&bar_handle, (uintptr)*virtual_addr,
                               PROT_READ|PROT_WRITE);
     if (result != 0) {
-        exchange_cancel(bar_handle);
+        exchange_cancel(&bar_handle);
         return -6;  /* Mapping failed */
     }
-    
+
     /* Record allocation */
     if (!bar_res) {
         bar_res = xalloc(sizeof(struct PCIChannelBarResource));
         if (!bar_res) {
-            exchange_cancel(bar_handle);
+            exchange_cancel(&bar_handle);
             return -7;
         }
     }
-    
+
     bar_res->bar_number = bar_num;
     bar_res->exchange_handle = bar_handle;
     bar_res->virtual_address = virt_addr;
@@ -729,14 +729,14 @@ pci_channel_release_bar_resource(struct PCIChannel* channel, uint8_t bar_num)
     
     /* Unmap virtual address */
     if (bar_res->is_mapped) {
-        exchange_unmap(bar_res->exchange_handle);
+        exchange_unmap(&bar_res->exchange_handle);
         channel->mapping_ctx.bar_addresses[bar_num] = 0;
         channel->mapping_ctx.bar_sizes[bar_num] = 0;
         channel->mapping_ctx.bar_mapped[bar_num] = false;
     }
-    
+
     /* Cancel exchange page */
-    exchange_cancel(bar_res->exchange_handle);
+    exchange_cancel(&bar_res->exchange_handle);
     
     /* Remove from resource list */
     channel->resources.bars[bar_num] = NULL;

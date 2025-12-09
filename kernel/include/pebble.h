@@ -42,6 +42,7 @@ extern int pebble_debug;
 #define PEBBLE_CAP_FS		(1<<8)
 
 #include "borrowchecker.h"
+#include "blind_ledger.h"
 
 /* White token structure - opaque to user */
 typedef struct PebbleWhite {
@@ -49,7 +50,6 @@ typedef struct PebbleWhite {
   u32int  generation;
   void  *data_ptr;
   ulong  size;
-  u64int index;      /* Index in the global granule bitmap */
 } PebbleWhite;
 
 /* Blue object structure - speculative */
@@ -69,10 +69,10 @@ typedef struct PebbleRed {
 } PebbleRed;
 
 typedef struct PebbleBlack {
-  void    *addr;
-  ulong    size;
+  UserCapability capability; // The UserCapability provided by Blind Ledger
+  void    *physical_addr; // The actual physical memory address managed by this token
+  ulong    size;          // Size of the allocation
   ulong    flags;
-  struct IdentKey key; /* Authorization key */
   PebbleBlue  *blue;
   PebbleRed  *red;
   struct PebbleBlack *next;
@@ -109,8 +109,8 @@ typedef struct PebbleState {
 extern Lock pebble_global_lock;
 
 /* Core API functions */
-int  pebble_black_alloc(uintptr size, void **handle);
-int  pebble_black_free(void *handle);
+int  pebble_black_alloc(ulong size, UserCapability *out_cap);
+int  pebble_black_free(const UserCapability *cap);
 int  pebble_white_verify(PebbleWhite *white_cap, void **black_cap);
 int  pebble_red_copy(PebbleBlue *blue_obj, PebbleRed **red_copy);
 int  pebble_blue_discard(PebbleBlue *blue_obj);

@@ -26,12 +26,12 @@
 /* Stub implementations for missing helper functions */
 static Proc* current_process(void) { return up; }
 static uint64_t now(void) { return fastticks(nil); }
-static int exchange_prepare_pci_bar(uint64_t channel_id, uint8_t bar_num, PebbleHandle* token, ExchangeHandle* handle) { *handle = 0; return 0; }
-static void exchange_cleanup(ExchangeHandle handle) { if (handle) exchange_cancel(handle); }
+static int exchange_prepare_pci_bar(uint64_t channel_id, uint8_t bar_num, PebbleHandle* token, ExchangeHandle* handle) { memset(handle, 0, sizeof(*handle)); return 0; }
+static void exchange_cleanup(ExchangeHandle *handle) { /* Stub: capability cleanup not implemented */ (void)handle; }
 static PebbleHandle* pebble_create_white(void* ctx, char* desc, size_t size) { return nil; }
 static struct PCIChannel* lookup_pci_channel(struct FamilyExchangePage* family, uint64_t channel_id) { return nil; }
 static void* upamalloc(uintptr addr, size_t size, size_t align) { return xspanalloc(size, (int)align, 0); }
-static int exchange_prepare_pci_dma(uint64_t channel_id, uintptr paddr, size_t size, PebbleHandle* token, ExchangeHandle* handle) { *handle = 0; return 0; }
+static int exchange_prepare_pci_dma(uint64_t channel_id, uintptr paddr, size_t size, PebbleHandle* token, ExchangeHandle* handle) { memset(handle, 0, sizeof(*handle)); return 0; }
 
 /* Resource pool statistics */
 struct ResourcePoolStats {

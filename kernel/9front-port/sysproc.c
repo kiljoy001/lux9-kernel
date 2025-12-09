@@ -16,7 +16,7 @@
 /* CLR compilation includes */
 #include	"../clr/fruity/fruity_ir.h"
 #include	"../clr/fruity/fruity_to_qbe.h"
-#include	"../clr/qbe/qbe_kernel_wrapper.h"
+#include	"../clr/qbe_compile.h"
 #include	"exchange.h"
 
 typedef struct SyscallVaList {
