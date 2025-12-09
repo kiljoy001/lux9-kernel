@@ -52,20 +52,20 @@ typedef struct PebbleWhite {
   ulong  size;
 } PebbleWhite;
 
-/* Blue object structure - speculative */
+/* Blue object structure - independent colored token for block I/O */
 typedef struct PebbleBlue {
-  void  *owner;      /* originating black handle */
-  void  *blue_data;
-  ulong  blue_size;
-  void  *matching_red;  /* corresponding red copy when it exists */
-  struct PebbleBlue *next;
+  void  *blue_data;      /* Physical memory (separate allocation) */
+  ulong  blue_size;      /* Size of allocation */
+  ulong  flags;          /* State flags */
+  struct PebbleBlue *next;  /* List linkage */
 } PebbleBlue;
 
-/* Red copy structure - safe snapshot */
+/* Red copy structure - independent colored token for snapshots */
 typedef struct PebbleRed {
-  void  *red_data;
-  ulong  red_size;
-  struct PebbleRed *next;
+  void  *red_data;       /* Physical memory (separate allocation) */
+  ulong  red_size;       /* Size of allocation */
+  ulong  flags;          /* State flags */
+  struct PebbleRed *next;  /* List linkage */
 } PebbleRed;
 
 typedef struct PebbleBlack {
@@ -73,19 +73,19 @@ typedef struct PebbleBlack {
   void    *physical_addr; // The actual physical memory address managed by this token
   ulong    size;          // Size of the allocation
   ulong    flags;
-  PebbleBlue  *blue;
-  PebbleRed  *red;
   struct PebbleBlack *next;
 } PebbleBlack;
 
 /* Per-process Pebble state */
 typedef struct PebbleState {
-  ulong  black_budget;    /* remaining bytes for this process */
-  ulong  black_inuse;    /* current allocation */
+  ulong  black_budget;    /* remaining bytes for this process (COLORLESS pool) */
+  ulong  black_inuse;    /* bytes in BLACK state */
+  ulong  blue_inuse;     /* bytes in BLUE state */
+  ulong  red_inuse;      /* bytes in RED state */
   ulong  white_verified;    /* count of active white→black conversions */
-  ulong  white_pending;    /* bytes authorized by white tokens */
-  ulong  red_count;    /* number of live red shadows */
-  ulong  blue_count;    /* live blue objects */
+  ulong  white_pending;    /* bytes authorized by white tokens (WHITE state) */
+  ulong  red_count;    /* number of live red tokens */
+  ulong  blue_count;    /* number of live blue tokens */
   ulong  total_allocs;    /* total allocations made */
   ulong  total_frees;    /* total frees performed */
 
@@ -112,8 +112,17 @@ extern Lock pebble_global_lock;
 int  pebble_black_alloc(ulong size, UserCapability *out_cap);
 int  pebble_black_free(const UserCapability *cap);
 int  pebble_white_verify(PebbleWhite *white_cap, void **black_cap);
-int  pebble_red_copy(PebbleBlue *blue_obj, PebbleRed **red_copy);
-int  pebble_blue_discard(PebbleBlue *blue_obj);
+
+/* Blue/Red API - Independent colored tokens for block I/O transactions */
+PebbleBlue*  pebble_blue_alloc(ulong size);          /* COLORLESS → BLUE */
+int          pebble_blue_free(PebbleBlue *blue);      /* BLUE → COLORLESS */
+PebbleRed*   pebble_red_alloc(ulong size);            /* COLORLESS → RED */
+int          pebble_red_free(PebbleRed *red);         /* RED → COLORLESS */
+int          pebble_red_snapshot(PebbleBlue *blue, PebbleRed **out_red); /* Copy Blue → Red */
+
+/* Legacy API - DEPRECATED, will be removed */
+int  pebble_red_copy(PebbleBlue *blue_obj, PebbleRed **red_copy);  /* Use pebble_red_snapshot */
+int  pebble_blue_discard(PebbleBlue *blue_obj);                     /* Use pebble_blue_free */
 
 /* Internal helper functions */
 PebbleState*  pebble_state(void);

@@ -519,9 +519,275 @@ pebble_free_red(PebbleRed *red)
 	/* Return budget to colorless bank (state transition: RED → COLORLESS) */
 	lock(&pebble_global_lock);
 	ps->black_budget += size;
-	ps->black_inuse -= size;
+	ps->red_inuse -= size;
 	unlock(&pebble_global_lock);
 }
+
+/* ========== New Independent Blue/Red API ========== */
+
+/*
+ * pebble_blue_alloc - Allocate independent Blue token for block I/O
+ *
+ * State transition: COLORLESS → BLUE
+ * Consumes budget from colorless bank for separate allocation.
+ */
+PebbleBlue*
+pebble_blue_alloc(ulong size)
+{
+	PebbleState *ps;
+	PebbleBlue *blue;
+
+	if(size == 0)
+		return nil;
+
+	ps = pebble_state();
+	if(ps == nil)
+		return nil;
+
+	/* Check budget (state transition: COLORLESS → BLUE) */
+	lock(&pebble_global_lock);
+	if(ps->black_budget < size){
+		unlock(&pebble_global_lock);
+		return nil;  /* Insufficient budget */
+	}
+	ps->black_budget -= size;
+	ps->blue_inuse += size;
+	unlock(&pebble_global_lock);
+
+	/* Allocate Blue structure */
+	blue = mallocz(sizeof(PebbleBlue), 1);
+	if(blue == nil){
+		/* Rollback budget */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->blue_inuse -= size;
+		unlock(&pebble_global_lock);
+		return nil;
+	}
+
+	/* Allocate physical memory (backed by budget) */
+	blue->blue_data = xallocz(size, 1);
+	if(blue->blue_data == nil){
+		/* Rollback budget */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->blue_inuse -= size;
+		unlock(&pebble_global_lock);
+		free(blue);
+		return nil;
+	}
+
+	blue->blue_size = size;
+	blue->flags = 0;
+
+	/* Add to process Blue list */
+	lock(&pebble_global_lock);
+	blue->next = ps->blue_list;
+	ps->blue_list = blue;
+	ps->blue_count++;
+	unlock(&pebble_global_lock);
+
+	if(pebble_debug)
+		print("PEBBLE: blue_alloc pid=%lud size=%lud\n", up->pid, size);
+
+	return blue;
+}
+
+/*
+ * pebble_blue_free - Free Blue token back to colorless bank
+ *
+ * State transition: BLUE → COLORLESS
+ * Returns budget to colorless bank.
+ */
+int
+pebble_blue_free(PebbleBlue *blue)
+{
+	PebbleState *ps;
+	PebbleBlue **bp;
+	ulong size;
+
+	if(blue == nil)
+		return 0;
+
+	ps = pebble_state();
+	if(ps == nil)
+		return -1;
+
+	size = blue->blue_size;
+
+	/* Remove from process Blue list */
+	lock(&pebble_global_lock);
+	for(bp = &ps->blue_list; *bp != nil; bp = &(*bp)->next){
+		if(*bp == blue){
+			*bp = blue->next;
+			ps->blue_count--;
+			break;
+		}
+	}
+	unlock(&pebble_global_lock);
+
+	/* Free physical memory */
+	if(blue->blue_data != nil)
+		xfree(blue->blue_data);
+	free(blue);
+
+	/* Return budget to colorless bank (state transition: BLUE → COLORLESS) */
+	lock(&pebble_global_lock);
+	ps->black_budget += size;
+	ps->blue_inuse -= size;
+	unlock(&pebble_global_lock);
+
+	if(pebble_debug)
+		print("PEBBLE: blue_free pid=%lud size=%lud\n", up->pid, size);
+
+	return 0;
+}
+
+/*
+ * pebble_red_alloc - Allocate independent Red token for snapshot
+ *
+ * State transition: COLORLESS → RED
+ * Consumes budget from colorless bank for separate allocation.
+ */
+PebbleRed*
+pebble_red_alloc(ulong size)
+{
+	PebbleState *ps;
+	PebbleRed *red;
+
+	if(size == 0)
+		return nil;
+
+	ps = pebble_state();
+	if(ps == nil)
+		return nil;
+
+	/* Check budget (state transition: COLORLESS → RED) */
+	lock(&pebble_global_lock);
+	if(ps->black_budget < size){
+		unlock(&pebble_global_lock);
+		return nil;  /* Insufficient budget */
+	}
+	ps->black_budget -= size;
+	ps->red_inuse += size;
+	unlock(&pebble_global_lock);
+
+	/* Allocate Red structure */
+	red = mallocz(sizeof(PebbleRed), 1);
+	if(red == nil){
+		/* Rollback budget */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->red_inuse -= size;
+		unlock(&pebble_global_lock);
+		return nil;
+	}
+
+	/* Allocate physical memory (backed by budget) */
+	red->red_data = xallocz(size, 1);
+	if(red->red_data == nil){
+		/* Rollback budget */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->red_inuse -= size;
+		unlock(&pebble_global_lock);
+		free(red);
+		return nil;
+	}
+
+	red->red_size = size;
+	red->flags = 0;
+
+	/* Add to process Red list */
+	lock(&pebble_global_lock);
+	red->next = ps->red_list;
+	ps->red_list = red;
+	ps->red_count++;
+	unlock(&pebble_global_lock);
+
+	if(pebble_debug)
+		print("PEBBLE: red_alloc pid=%lud size=%lud\n", up->pid, size);
+
+	return red;
+}
+
+/*
+ * pebble_red_free - Free Red token back to colorless bank
+ *
+ * State transition: RED → COLORLESS
+ * Returns budget to colorless bank.
+ */
+int
+pebble_red_free(PebbleRed *red)
+{
+	PebbleState *ps;
+	PebbleRed **rp;
+	ulong size;
+
+	if(red == nil)
+		return 0;
+
+	ps = pebble_state();
+	if(ps == nil)
+		return -1;
+
+	size = red->red_size;
+
+	/* Remove from process Red list */
+	lock(&pebble_global_lock);
+	for(rp = &ps->red_list; *rp != nil; rp = &(*rp)->next){
+		if(*rp == red){
+			*rp = red->next;
+			ps->red_count--;
+			break;
+		}
+	}
+	unlock(&pebble_global_lock);
+
+	/* Free physical memory */
+	if(red->red_data != nil)
+		xfree(red->red_data);
+	free(red);
+
+	/* Return budget to colorless bank (state transition: RED → COLORLESS) */
+	lock(&pebble_global_lock);
+	ps->black_budget += size;
+	ps->red_inuse -= size;
+	unlock(&pebble_global_lock);
+
+	if(pebble_debug)
+		print("PEBBLE: red_free pid=%lud size=%lud\n", up->pid, size);
+
+	return 0;
+}
+
+/*
+ * pebble_red_snapshot - Create Red snapshot from Blue data
+ *
+ * Allocates new Red token and copies Blue data to it.
+ * Blue and Red are independent allocations.
+ */
+int
+pebble_red_snapshot(PebbleBlue *blue, PebbleRed **out_red)
+{
+	PebbleRed *red;
+
+	if(blue == nil || out_red == nil)
+		return -1;
+
+	/* Allocate Red token (COLORLESS → RED) */
+	red = pebble_red_alloc(blue->blue_size);
+	if(red == nil)
+		return -1;
+
+	/* Copy Blue data to Red */
+	memmove(red->red_data, blue->blue_data, blue->blue_size);
+
+	*out_red = red;
+	return 0;
+}
+
+/* ========== Legacy API (DEPRECATED) ========== */
 
 int
 pebble_blue_exists(PebbleState *ps, PebbleBlue *blue)
