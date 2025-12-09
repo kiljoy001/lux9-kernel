@@ -284,20 +284,27 @@ void
 tpminit(void)
 {
     u32int did_vid;
-    uintptr base = 0xFED40000;  /* Standard TPM base address */
+    uintptr phys_base = 0xFED40000;  /* Standard TPM base address */
+    void *virt_base;
 
     print("TPM: Initializing TPM 2.0 driver...\n");
 
-    tpm_state.base = base;
+    /* Map TPM MMIO region using HHDM (Higher Half Direct Map) */
+    extern uintptr hhdm_base;
+    virt_base = (void*)(hhdm_base + phys_base);
+
+    tpm_state.base = (uintptr)virt_base;
     tpm_state.initialized = 0;
     tpm_state.version = 0;
+
+    print("TPM: Mapped MMIO phys=%#p virt=%#p (HHDM)\n", phys_base, virt_base);
 
     /* Read Device/Vendor ID */
     did_vid = tpm_read32(TPM_DID_VID_0);
 
     if(did_vid == 0xFFFFFFFF || did_vid == 0x00000000){
-        print("TPM: No TPM hardware detected at 0x%p (DID/VID: 0x%08X)\n",
-              (void*)base, did_vid);
+        print("TPM: No TPM hardware detected at %#p (DID/VID: 0x%08X)\n",
+              phys_base, did_vid);
         print("TPM: Using software fallback mode\n");
         return;
     }
