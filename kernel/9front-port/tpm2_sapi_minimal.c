@@ -45,6 +45,8 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_ALG_ECC            0x0023
 #define TPM2_ALG_KDF1_SP800_56A 0x0020
 #define TPM2_ECC_NIST_P256      0x0003
+#define TPM2_ALG_AES            0x0006
+#define TPM2_ALG_CFB            0x0043
 
 #define TPM_SUCCESS             0x00000000
 
@@ -110,22 +112,25 @@ unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len)
 	return len;
 }
 
-/* 
- * Marshal a Password Session 
+/*
+ * Marshal a Password Session
  * Used for commands requiring authorization (like owner hierarchy access)
+ *
+ * The authSize is the size of all authorization structures that follow,
+ * NOT including the authSize field itself (4 bytes).
  */
 static void
 marshal_password_session(u8int **buf)
 {
-	/* Authorization Size: 9 bytes
-	 * sessionHandle (4) + nonce (2) + attributes (1) + hmac (2) */
+	/* Authorization Size (excludes itself, includes session data):
+	 * sessionHandle (4) + nonce size (2) + attributes (1) + hmac size (2) = 9 bytes */
 	marshal_u32(buf, 9);
-	
+
 	/* Session Data */
 	marshal_u32(buf, TPM_RS_PW);    /* sessionHandle: TPM_RS_PW */
-	marshal_u16(buf, 0);            /* nonceTPM: empty */
+	marshal_u16(buf, 0);            /* nonce size: empty */
 	*(*buf)++ = 0x00;               /* sessionAttributes: none (continueSession=0) */
-	marshal_u16(buf, 0);            /* hmac: empty (password) */
+	marshal_u16(buf, 0);            /* hmac size: empty (password) */
 }
 
 /*
@@ -222,10 +227,10 @@ tpm2_create_primary(u32int *handle_out)
 	marshal_u16(&p, 0);  /* authPolicy size */
 
 	/* TPMS_ECC_PARMS (ECC parameters) */
-	/* TPMT_SYM_DEF_OBJECT for symmetric - AES-128-CFB for storage */
-	marshal_u16(&p, 0x0006);  /* TPM2_ALG_AES */
-	marshal_u16(&p, 128);     /* key bits */
-	marshal_u16(&p, 0x0043);  /* TPM2_ALG_CFB mode */
+	/* symmetric: TPMT_SYM_DEF_OBJECT (algorithm, keyBits, mode) */
+	marshal_u16(&p, TPM2_ALG_AES);      /* algorithm = AES */
+	marshal_u16(&p, 128);               /* keyBits = 128 */
+	marshal_u16(&p, TPM2_ALG_CFB);      /* mode = CFB */
 
 	/* TPMT_ECC_SCHEME - NULL for storage key */
 	marshal_u16(&p, TPM2_ALG_NULL);  /* scheme */
@@ -302,18 +307,12 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 		return -1;
 	}
 
-	/* Command Header */
-	marshal_u16(&p, TPM2_ST_SESSIONS);
-	marshal_u32(&p, 0);  /* size - fill later */
-	marshal_u32(&p, TPM2_CC_Create);
-
 	/* Parent handle */
 	marshal_u32(&p, parent_handle);
+	print("DEBUG: tpm2_create using parent_handle=0x%08X\n", parent_handle);
 
 	/* Authorization Session (Password) for parent */
 	marshal_password_session(&p);
-
-	print("tpm2_create: parent_handle=0x%08X data_len=%d\n", parent_handle, data_len);
 
 	/* inSensitive - contains the data to seal */
 	u8int *sens_start = p;
@@ -331,7 +330,9 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 
 	marshal_u16(&p, TPM2_ALG_KEYEDHASH);  /* type */
 	marshal_u16(&p, TPM2_ALG_SHA256);  /* nameAlg */
-	/* objectAttributes: fixedTPM(1) | fixedParent(4) | userWithAuth(6) = 0x00000052 */
+	/* objectAttributes: fixedTPM(1) | fixedParent(4) | userWithAuth(6) = 0x00000052
+	 * NOTE: sensitiveDataOrigin MUST be 0 when sealing user-provided data.
+	 * Setting it to 1 tells TPM to generate its own random data and ignore inSensitive.data */
 	marshal_u32(&p, 0x00000052);
 	marshal_u16(&p, 0);  /* authPolicy size = 0 (use password auth, not policy) */
 
