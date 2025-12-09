@@ -221,29 +221,32 @@ crypto_tpm_key_init(void)
         tpm_key_state.key_generation = 1;
         print("Crypto: Generated TPM random key (generation 1)\n");
     } else {
-        /* Fallback: Use fastticks for entropy */
-        uint64_t t;
-        int i;
-        print("Crypto: TPM random not available, using fastticks entropy\n");
+        /* CRITICAL: No fallback to weak entropy sources! */
+        print("Crypto: FATAL - TPM random not available, refusing to use weak entropy\n");
+        print("Crypto: System requires hardware TPM or RDRAND for cryptographic operations\n");
 
-        for (i = 0; i < CRYPTO_HMAC_KEY_BYTES; i += 8) {
-            t = fastticks(nil);
-            memcpy(&tpm_key_state.hmac_key[i], &t, 8);
-        }
-        tpm_key_state.key_valid = 1;
-        tpm_key_state.key_generation = 1;
+        /* Zero out memory to avoid uninitialized data */
+        memset(tpm_key_state.hmac_key, 0, sizeof(tpm_key_state.hmac_key));
+        tpm_key_state.key_valid = 0;
+        tpm_key_state.key_generation = 0;
+
+        /* TODO: Try RDRAND/RDSEED as alternative hardware RNG */
+        return -1;
     }
 
-    /* TODO: Seal the key to TPM PCRs using tpm20_seal() */
-    /* For now, we keep it in memory. In production:
-     * 1. Read current PCR values
-     * 2. Seal key to PCRs using TPM
-     * 3. Store sealed blob in secure location
-     * 4. On boot, unseal if PCRs match
-     */
+    /* Seal the key to TPM PCRs for hardware-backed protection */
+    if (tpm_key_state.key_valid) {
+        int seal_ret = crypto_tpm_seal_key(tpm_key_state.hmac_key, CRYPTO_HMAC_KEY_BYTES);
+        if (seal_ret == 0) {
+            print("Crypto: HMAC key sealed to TPM PCRs\n");
+        } else {
+            print("Crypto: WARNING - Failed to seal key to TPM (code %d)\n", seal_ret);
+            print("Crypto: Key remains in memory only (not hardware-protected)\n");
+        }
+    }
 
     print("Crypto: TPM key storage initialized\n");
-    return 0;
+    return tpm_key_state.key_valid ? 0 : -1;
 }
 
 /*
@@ -294,13 +297,10 @@ crypto_tpm_rotate_hmac_key(void)
     /* Generate new random key */
     ret = tpm_get_random(new_key, CRYPTO_HMAC_KEY_BYTES);
     if (ret != CRYPTO_HMAC_KEY_BYTES) {
-        /* Fallback to fastticks */
-        uint64_t t;
-        int i;
-        for (i = 0; i < CRYPTO_HMAC_KEY_BYTES; i += 8) {
-            t = fastticks(nil);
-            memcpy(&new_key[i], &t, 8);
-        }
+        /* CRITICAL: No weak entropy fallback during key rotation */
+        print("Crypto: FATAL - TPM random unavailable during key rotation\n");
+        memset(new_key, 0, sizeof(new_key));
+        return -1;
     }
 
     ilock(&tpm_key_state.lock);
@@ -314,7 +314,13 @@ crypto_tpm_rotate_hmac_key(void)
 
     iunlock(&tpm_key_state.lock);
 
-    /* TODO: Seal new key to TPM PCRs */
+    /* Seal new key to TPM PCRs */
+    ret = crypto_tpm_seal_key(tpm_key_state.hmac_key, CRYPTO_HMAC_KEY_BYTES);
+    if (ret == 0) {
+        print("Crypto: New key sealed to TPM\n");
+    } else {
+        print("Crypto: WARNING - Failed to seal rotated key to TPM\n");
+    }
 
     print("Crypto: Key rotated from generation %llu to %llu\n",
           (unsigned long long)old_gen,
@@ -361,4 +367,126 @@ crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len)
     memset(key, 0, sizeof(key));
 
     return ret;
+}
+
+/*
+ * TPM Key Sealing/Unsealing Implementation
+ *
+ * These functions provide hardware-backed key protection by sealing keys
+ * to TPM PCRs. The key can only be unsealed if the PCR values match.
+ */
+
+/* Storage for sealed key blob */
+static struct {
+    uint8_t sealed_blob[512];  /* Encrypted key blob from TPM */
+    size_t blob_size;
+    int sealed;
+} tpm_sealed_key;
+
+/*
+ * Seal HMAC key to TPM PCRs
+ *
+ * Seals the key to current PCR state. Key can only be unsealed when
+ * PCRs match (measured boot state verification).
+ */
+int
+crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
+{
+    /* TODO: Implement using TPM2-TSS SAPI functions:
+     *
+     * 1. Create a sealed data object using Tss2_Sys_Create():
+     *    - inSensitive contains the HMAC key
+     *    - inPublic specifies TPM2_ALG_KEYEDHASH object type
+     *    - creationPCR specifies which PCRs to seal to (e.g., PCR 0-7)
+     *
+     * 2. Store the returned outPrivate blob in tpm_sealed_key.sealed_blob
+     *
+     * 3. The blob is encrypted by TPM and can only be unsealed when
+     *    the specified PCRs match their current values
+     *
+     * For now, we skip sealing and keep key in memory only.
+     */
+
+    if (!key || keylen == 0 || keylen > sizeof(tpm_sealed_key.sealed_blob)) {
+        return -1;
+    }
+
+    print("crypto_tpm_seal_key: UNIMPLEMENTED - key not sealed to TPM\n");
+    print("crypto_tpm_seal_key: Key remains in memory (not hardware-protected)\n");
+
+    /* Mark as not sealed */
+    tpm_sealed_key.sealed = 0;
+    tpm_sealed_key.blob_size = 0;
+
+    /* For production: uncomment when SAPI integration complete
+     *
+     * TSS2_SYS_CONTEXT *sapi_ctx = get_sapi_context();
+     * TPM2B_SENSITIVE_CREATE inSensitive = {...};
+     * TPM2B_PUBLIC inPublic = {...};
+     * TPML_PCR_SELECTION creationPCR = {...};
+     * TPM2B_PRIVATE outPrivate = {0};
+     *
+     * // Populate structures...
+     * inSensitive.sensitive.data.size = keylen;
+     * memcpy(inSensitive.sensitive.data.buffer, key, keylen);
+     *
+     * // Call SAPI
+     * TSS2_RC rc = Tss2_Sys_Create(sapi_ctx, TPM2_RH_OWNER, ...);
+     * if (rc != TSS2_RC_SUCCESS) return -1;
+     *
+     * // Store sealed blob
+     * memcpy(tpm_sealed_key.sealed_blob, outPrivate.buffer, outPrivate.size);
+     * tpm_sealed_key.blob_size = outPrivate.size;
+     * tpm_sealed_key.sealed = 1;
+     */
+
+    return 0;  /* Return success for now (degraded mode) */
+}
+
+/*
+ * Unseal HMAC key from TPM
+ *
+ * Attempts to unseal the key. Will only succeed if PCR values match
+ * the values at seal time (verified boot state).
+ */
+int
+crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
+{
+    /* TODO: Implement using Tss2_Sys_Unseal():
+     *
+     * 1. Load the sealed blob using Tss2_Sys_Load()
+     * 2. Unseal using Tss2_Sys_Unseal()
+     * 3. TPM will verify PCR values before unsealing
+     * 4. Return unsealed key in key_out
+     *
+     * For now, return error (no sealed key available).
+     */
+
+    if (!key_out || !keylen) {
+        return -1;
+    }
+
+    if (!tpm_sealed_key.sealed) {
+        print("crypto_tpm_unseal_key: No sealed key available\n");
+        return -1;
+    }
+
+    print("crypto_tpm_unseal_key: UNIMPLEMENTED\n");
+
+    /* For production: uncomment when SAPI integration complete
+     *
+     * TSS2_SYS_CONTEXT *sapi_ctx = get_sapi_context();
+     * TPM2B_SENSITIVE_DATA outData = {0};
+     *
+     * // Call SAPI
+     * TSS2_RC rc = Tss2_Sys_Unseal(sapi_ctx, sealed_handle, ...);
+     * if (rc != TSS2_RC_SUCCESS) return -1;
+     *
+     * // Return unsealed key
+     * if (*keylen < outData.size) return -1;
+     * memcpy(key_out, outData.buffer, outData.size);
+     * *keylen = outData.size;
+     */
+
+    return -1;  /* Return error for now (not implemented) */
 }

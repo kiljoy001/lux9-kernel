@@ -22,14 +22,27 @@ extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
-/* Helper to get random nonce */
+/* Helper to get cryptographically secure random nonce */
 static u64int
 get_random_nonce(void)
 {
-	/* In real implementation, use HWRNG or similar */
-	static u64int nonce_counter = 0x123456789ABC;
-	nonce_counter = nonce_counter * 6364136223846793005ULL + 1;
-	return nonce_counter ^ (u64int)rdtsc();
+	u64int nonce;
+	extern int tpm_get_random(u8int *buffer, int len);
+
+	/* Use TPM hardware RNG for cryptographic nonce generation */
+	if (tpm_get_random((u8int*)&nonce, sizeof(nonce)) == sizeof(nonce)) {
+		return nonce;
+	}
+
+	/* CRITICAL: If TPM unavailable, try hardware RDRAND */
+	/* TODO: Implement rdrand_u64() using RDRAND instruction */
+
+	/* FATAL: No secure randomness available */
+	print("get_random_nonce: FATAL - no secure RNG available\n");
+	print("get_random_nonce: REFUSING to generate weak capability nonce\n");
+
+	/* Return zero to signal failure - callers must check */
+	return 0;
 }
 
 /**
@@ -133,9 +146,12 @@ create_owner(uintptr key)
 	owner->borrow_deadline_ns = 0;
 	owner->borrow_count = 0;
 	
-	/* Initialize Capability Key (v2.0) */
+	/* Initialize Capability Key (v2.0) - CRITICAL: Must have secure randomness */
 	owner->key_cap.gen = 1; /* Start at gen 1 */
 	owner->key_cap.nonce = get_random_nonce();
+	if (owner->key_cap.nonce == 0) {
+		panic("create_owner: FATAL - cannot generate secure capability nonce");
+	}
 
 	owner->next = borrowpool.owners[hash].head;
 	borrowpool.owners[hash].head = owner;
@@ -172,10 +188,13 @@ borrow_acquire(Proc *p, uintptr key)
 	owner->owner = p;
 	owner->state = BORROW_EXCLUSIVE;
 	owner->acquired_ns = todget(nil, nil);
-	
-	/* Rotate capability key on new acquisition */
+
+	/* Rotate capability key on new acquisition - CRITICAL: Must have secure randomness */
 	owner->key_cap.gen++;
 	owner->key_cap.nonce = get_random_nonce();
+	if (owner->key_cap.nonce == 0) {
+		panic("borrow_acquire: FATAL - cannot generate secure capability nonce");
+	}
 
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
@@ -280,10 +299,13 @@ borrow_transfer(Proc *from, Proc *to, uintptr key)
 
 	owner->owner = to;
 	owner->acquired_ns = todget(nil, nil);
-	
+
 	/* Rotate capability key on transfer to prevent sender from retaining access */
 	owner->key_cap.gen++;
 	owner->key_cap.nonce = get_random_nonce();
+	if (owner->key_cap.nonce == 0) {
+		panic("borrow_transfer: FATAL - cannot generate secure capability nonce");
+	}
 
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
@@ -340,10 +362,13 @@ borrow_broker_transfer(Proc *sender, Proc *receiver, uintptr phys_addr, struct I
 	/* 5. The Transfer (Effect) */
 	owner->owner = receiver;
 	owner->acquired_ns = todget(nil, nil);
-	
-	/* Rotate key for receiver */
+
+	/* Rotate key for receiver - CRITICAL: Must have secure randomness */
 	owner->key_cap.gen++;
 	owner->key_cap.nonce = get_random_nonce();
+	if (owner->key_cap.nonce == 0) {
+		panic("borrow_broker_transfer: FATAL - cannot generate secure capability nonce");
+	}
 
 	iunlock(&borrowpool.lock);
 	return BORROW_OK;
