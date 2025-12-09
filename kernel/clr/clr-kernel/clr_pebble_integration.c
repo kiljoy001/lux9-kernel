@@ -298,9 +298,27 @@ clr_object_free_internal(clr_heap_t *heap, clr_object_t *obj)
 
 /* ========== Speculative Execution: Red-Blue ========== */
 
-/* TODO: Red-Blue snapshot operations need proper Pebble API
- * The current Pebble API doesn't expose Red-Blue operations at this level.
- * These functions need to be refactored to use a proper API once it's designed.
+/*
+ * Red-Blue Transactional Memory for Block Device Operations
+ *
+ * Token State Machine (Circular Economy):
+ *   COLORLESS → WHITE → BLACK/BLUE/RED → COLORLESS
+ *
+ * Architecture:
+ * - Blue and Red are SEPARATE colored tokens (not shadows)
+ * - Each consumes budget from the colorless bank
+ * - Used for block device I/O transaction safety (NOT for IPC - use exchange pages)
+ *
+ * Correct Flow:
+ * 1. Allocate Blue from colorless bank (for block I/O working buffer)
+ * 2. Allocate Red from colorless bank (for snapshot/rollback)
+ * 3. Perform block I/O into Blue
+ * 4. On success: Free Blue→colorless, Free Red→colorless (commit)
+ * 5. On failure: Copy Red→Blue, Free both→colorless (rollback)
+ *
+ * TODO: This requires redesign to respect token economy.
+ * Current Pebble Blue/Red API uses "matching_red" shadow model which
+ * violates circular economy by not properly tracking separate allocations.
  */
 
 int
@@ -309,8 +327,11 @@ clr_object_snapshot(clr_heap_t *heap, clr_object_t *obj)
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	/* TODO: Call proper Pebble snapshot API */
-	error("Red-Blue snapshots not yet implemented");
+	/* TODO: Implement proper token state machine transitions
+	 * Requires: COLORLESS → WHITE → RED allocation
+	 * Current shadow model is incompatible with circular economy
+	 */
+	error("Red-Blue snapshots require token economy redesign");
 	return 0;
 }
 
@@ -320,8 +341,10 @@ clr_object_commit(clr_heap_t *heap, clr_object_t *obj)
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	/* TODO: Call proper Pebble commit API */
-	error("Red-Blue commits not yet implemented");
+	/* TODO: Implement proper state transitions
+	 * Should: Free Blue→COLORLESS, Free Red→COLORLESS
+	 */
+	error("Red-Blue commits require token economy redesign");
 	return 0;
 }
 
@@ -331,8 +354,10 @@ clr_object_rollback(clr_heap_t *heap, clr_object_t *obj)
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	/* TODO: Call proper Pebble rollback API */
-	error("Red-Blue rollback not yet implemented");
+	/* TODO: Implement proper state transitions
+	 * Should: Copy Red→Blue, Free both→COLORLESS
+	 */
+	error("Red-Blue rollback requires token economy redesign");
 	return 0;
 }
 
