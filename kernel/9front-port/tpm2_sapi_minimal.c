@@ -313,6 +313,8 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 	/* Authorization Session (Password) for parent */
 	marshal_password_session(&p);
 
+	print("tpm2_create: parent_handle=0x%08X data_len=%d\n", parent_handle, data_len);
+
 	/* inSensitive - contains the data to seal */
 	u8int *sens_start = p;
 	marshal_u16(&p, 0);  /* size - fill later */
@@ -329,8 +331,9 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 
 	marshal_u16(&p, TPM2_ALG_KEYEDHASH);  /* type */
 	marshal_u16(&p, TPM2_ALG_SHA256);  /* nameAlg */
-	marshal_u32(&p, 0x00040002);  /* objectAttributes (fixedTPM | fixedParent) */
-	marshal_u16(&p, 0);  /* authPolicy size */
+	/* objectAttributes: fixedTPM(1) | fixedParent(4) | userWithAuth(6) = 0x00000052 */
+	marshal_u32(&p, 0x00000052);
+	marshal_u16(&p, 0);  /* authPolicy size = 0 (use password auth, not policy) */
 
 	/* KEYEDHASH parameters */
 	marshal_u16(&p, TPM2_ALG_NULL);  /* scheme */
