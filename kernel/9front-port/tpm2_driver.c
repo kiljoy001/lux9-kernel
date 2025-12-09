@@ -285,19 +285,30 @@ tpminit(void)
 {
     u32int did_vid;
     uintptr phys_base = 0xFED40000;  /* Standard TPM base address */
-    void *virt_base;
+    uintptr virt_base;  /* Use uintptr instead of void* to avoid pointer truncation */
+    ulong tpm_size;
 
     print("TPM: Initializing TPM 2.0 driver...\n");
 
-    /* Map TPM MMIO region using HHDM (Higher Half Direct Map) */
-    extern uintptr hhdm_base;
-    virt_base = (void*)(hhdm_base + phys_base);
+    /* TPM TIS specification defines 5KB of MMIO space per locality (locality 0-4)
+     * We need at least 4KB for locality 0, round up to page boundary (4KB) */
+    tpm_size = PGROUND(16*1024);  /* Map 16KB to cover all localities, page-aligned */
 
-    tpm_state.base = (uintptr)virt_base;
-    tpm_state.initialized = 0;
+    /* Map TPM MMIO region using vmap() */
+    virt_base = (uintptr)vmap(phys_base, tpm_size);
+    if(virt_base == 0){
+        print("TPM: Failed to map MMIO region at phys=%#p size=%#lux\n", phys_base, tpm_size);
+        print("TPM: Using software fallback mode\n");
+        tpm_state.initialized = 0;
+        tpm_state.base = 0;
+        return;
+    }
+
+    tpm_state.base = virt_base;
+    tpm_state.initialized = 0;  /* Not fully initialized until hardware detected */
     tpm_state.version = 0;
 
-    print("TPM: Mapped MMIO phys=%#p virt=%#p (HHDM)\n", phys_base, virt_base);
+    print("TPM: Mapped MMIO phys=%#p virt=%#p size=%#lux\n", phys_base, (void*)virt_base, tpm_size);
 
     /* Read Device/Vendor ID */
     did_vid = tpm_read32(TPM_DID_VID_0);

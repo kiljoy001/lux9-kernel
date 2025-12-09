@@ -547,3 +547,7 @@ void		benchmark_boot_end(void);
 void		benchmark_print_summary(void);
 int		validate_all(void);
 uvlong		rdtsc(void);
+
+/* MMU virtual mapping (architecture-specific but commonly used) */
+void*		vmap(uvlong, vlong);
+void		vunmap(void*, vlong);
