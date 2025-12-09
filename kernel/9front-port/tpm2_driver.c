@@ -96,13 +96,13 @@ tpm_write32(uintptr offset, u32int val)
 
 /* Wait for TPM status bit */
 static int
-tpm_wait_status(u8int mask, u8int expected, int timeout_ms)
+tpm_wait_status(uintptr reg_offset, u8int mask, u8int expected, int timeout_ms)
 {
     int i;
     u8int status;
 
     for(i = 0; i < timeout_ms; i++){
-        status = tpm_read8(TPM_STS_0);
+        status = tpm_read8(reg_offset);
         if((status & mask) == expected)
             return 0;
 
@@ -121,6 +121,7 @@ tpm_request_locality(void)
 
     /* Check if already active */
     access = tpm_read8(TPM_ACCESS_0);
+    print("TPM: tpm_request_locality: Initial TPM_ACCESS_0 = 0x%x\n", access);
     if(access & TPM_ACCESS_ACTIVE_LOCALITY)
         return 0;
 
@@ -128,8 +129,9 @@ tpm_request_locality(void)
     tpm_write8(TPM_ACCESS_0, TPM_ACCESS_REQUEST_USE);
 
     /* Wait for locality */
-    if(tpm_wait_status(TPM_ACCESS_ACTIVE_LOCALITY, TPM_ACCESS_ACTIVE_LOCALITY, 1000) < 0){
-        print("TPM: Failed to acquire locality\n");
+    if(tpm_wait_status(TPM_ACCESS_0, TPM_ACCESS_ACTIVE_LOCALITY, TPM_ACCESS_ACTIVE_LOCALITY, 1000) < 0){
+        access = tpm_read8(TPM_ACCESS_0);
+        print("TPM: Failed to acquire locality (final TPM_ACCESS_0 = 0x%x)\n", access);
         return -1;
     }
 
@@ -195,7 +197,7 @@ tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
     if(!(status & TPM_STS_COMMAND_READY)){
         /* Send command ready */
         tpm_write8(TPM_STS_0, TPM_STS_COMMAND_READY);
-        if(tpm_wait_status(TPM_STS_COMMAND_READY, TPM_STS_COMMAND_READY, 1000) < 0){
+        if(tpm_wait_status(TPM_STS_0, TPM_STS_COMMAND_READY, TPM_STS_COMMAND_READY, 1000) < 0){
             print("TPM: Timeout waiting for command ready\n");
             tpm_release_locality();
             return -1;
@@ -229,7 +231,7 @@ tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
     tpm_write8(TPM_STS_0, TPM_STS_TPM_GO);
 
     /* Wait for data available (up to 30 seconds for slow commands) */
-    if(tpm_wait_status(TPM_STS_DATA_AVAIL | TPM_STS_VALID,
+    if(tpm_wait_status(TPM_STS_0, TPM_STS_DATA_AVAIL | TPM_STS_VALID,
                        TPM_STS_DATA_AVAIL | TPM_STS_VALID, 30000) < 0){
         print("TPM: Timeout waiting for response\n");
         tpm_release_locality();
@@ -265,14 +267,9 @@ tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
     /* Release locality */
     tpm_release_locality();
 
-    /* Check response code */
-    u32int rc = (rhdr->code >> 24) | ((rhdr->code >> 8) & 0xFF00) |
-                ((rhdr->code << 8) & 0xFF0000) | (rhdr->code << 24);
-
-    if(rc != TPM_SUCCESS_LOCAL){
-        print("TPM: Command failed with code 0x%08X\n", rc);
-        return -1;
-    }
+    /* NOTE: We don't check the response code here - let the caller handle it.
+     * Some commands may expect non-zero response codes (e.g., TPM2_Startup
+     * returns TPM_RC_INITIALIZE if already started, which is not an error). */
 
     return 0;
 }
@@ -348,7 +345,7 @@ tpm_get_random(u8int *buffer, int len)
 
     /* Build TPM2_GetRandom command */
     chdr = (TPM2_Command_Header*)cmd;
-    chdr->tag = 0xC100;  /* TPM_ST_NO_SESSIONS (big-endian: 0x00C1) */
+    chdr->tag = 0x0180;  /* TPM_ST_NO_SESSIONS (big-endian: 0x8001) */
     chdr->size = 0x0C000000;  /* 12 bytes (big-endian) */
     chdr->code = 0x7B010000;  /* TPM2_CC_GetRandom (big-endian: 0x0000017B) */
 
@@ -388,7 +385,7 @@ tpm20_pcr_extend(u32int pcr_handle, u8int *hash, usize hash_len)
 
     /* Build TPM2_PCR_Extend command */
     chdr = (TPM2_Command_Header*)cmd;
-    chdr->tag = 0xC100;  /* TPM_ST_NO_SESSIONS */
+    chdr->tag = 0x0180;  /* TPM_ST_NO_SESSIONS */
     chdr->size = 0x21000000;  /* 33 bytes base + hash */
     chdr->code = 0x82010000;  /* TPM2_CC_PCR_Extend */
 
@@ -436,7 +433,7 @@ tpm20_pcr_read(u32int pcr_handle, u8int *pcr_value, usize *pcr_len)
 
     /* Build TPM2_PCR_Read command */
     chdr = (TPM2_Command_Header*)cmd;
-    chdr->tag = 0xC100;
+    chdr->tag = 0x0180;
     chdr->size = 0x14000000;  /* 20 bytes */
     chdr->code = 0x7E010000;  /* TPM2_CC_PCR_Read */
 

@@ -25,17 +25,26 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_ST_NO_SESSIONS     0x8001
 #define TPM2_ST_SESSIONS        0x8002
 
+#define TPM2_CC_Startup         0x00000144
 #define TPM2_CC_CreatePrimary   0x00000131
 #define TPM2_CC_Create          0x00000153
 #define TPM2_CC_Load            0x00000157
 #define TPM2_CC_Unseal          0x0000015E
 
+#define TPM2_SU_CLEAR           0x0000
+#define TPM2_SU_STATE           0x0001
+
 #define TPM2_RH_OWNER           0x40000001
 #define TPM2_RH_NULL            0x40000007
+#define TPM_RS_PW               0x40000009
 
+#define TPM2_ALG_RSA            0x0001
 #define TPM2_ALG_SHA256         0x000B
 #define TPM2_ALG_KEYEDHASH      0x0008
 #define TPM2_ALG_NULL           0x0010
+#define TPM2_ALG_ECC            0x0023
+#define TPM2_ALG_KDF1_SP800_56A 0x0020
+#define TPM2_ECC_NIST_P256      0x0003
 
 #define TPM_SUCCESS             0x00000000
 
@@ -101,6 +110,74 @@ unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len)
 	return len;
 }
 
+/* 
+ * Marshal a Password Session 
+ * Used for commands requiring authorization (like owner hierarchy access)
+ */
+static void
+marshal_password_session(u8int **buf)
+{
+	/* Authorization Size: 9 bytes
+	 * sessionHandle (4) + nonce (2) + attributes (1) + hmac (2) */
+	marshal_u32(buf, 9);
+	
+	/* Session Data */
+	marshal_u32(buf, TPM_RS_PW);    /* sessionHandle: TPM_RS_PW */
+	marshal_u16(buf, 0);            /* nonceTPM: empty */
+	*(*buf)++ = 0x00;               /* sessionAttributes: none (continueSession=0) */
+	marshal_u16(buf, 0);            /* hmac: empty (password) */
+}
+
+/*
+ * TPM2_Startup - Initialize TPM after power-on
+ *
+ * Must be called before any other TPM commands.
+ * Uses TPM2_SU_CLEAR to start with a clean state.
+ */
+int
+tpm2_startup(void)
+{
+	u8int cmd[12];
+	u8int resp[10];
+	usize resp_len = sizeof(resp);
+	u8int *p = cmd;
+	u8int *rp;
+	u32int rc;
+
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_NO_SESSIONS);  /* tag */
+	marshal_u32(&p, 12);  /* size */
+	marshal_u32(&p, TPM2_CC_Startup);  /* command code */
+
+	/* Startup Type */
+	marshal_u16(&p, TPM2_SU_CLEAR);  /* Clear state */
+
+	/* Send command */
+	if(tpm_transmit(cmd, 12, resp, &resp_len) < 0){
+		print("tpm2_startup: transmit failed\n");
+		return -1;
+	}
+
+	/* Parse response */
+	rp = resp;
+	unmarshal_u16(&rp);  /* tag */
+	unmarshal_u32(&rp);  /* size */
+	rc = unmarshal_u32(&rp);  /* response code */
+
+	if(rc != TPM_SUCCESS){
+		/* TPM_RC_INITIALIZE (0x100) means already initialized - that's OK */
+		if(rc == 0x100){
+			print("tpm2_startup: TPM already initialized\n");
+			return 0;
+		}
+		print("tpm2_startup: TPM returned error 0x%08X\n", rc);
+		return -1;
+	}
+
+	print("tpm2_startup: TPM initialized successfully\n");
+	return 0;
+}
+
 /*
  * TPM2_CreatePrimary - Create Storage Root Key (SRK)
  *
@@ -109,43 +186,57 @@ unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len)
 int
 tpm2_create_primary(u32int *handle_out)
 {
-	u8int cmd[256];
-	u8int resp[256];
+	u8int cmd[512];
+	u8int resp[512];  /* CreatePrimary response includes full public key */
 	usize resp_len = sizeof(resp);
 	u8int *p = cmd;
 	u8int *rp;
 	u32int rc;
 
 	/* Command Header */
-	marshal_u16(&p, TPM2_ST_NO_SESSIONS);  /* tag */
+	marshal_u16(&p, TPM2_ST_SESSIONS);  /* tag */
 	marshal_u32(&p, 0);  /* size - fill later */
 	marshal_u32(&p, TPM2_CC_CreatePrimary);  /* command code */
 
 	/* Primary Handle (owner hierarchy) */
 	marshal_u32(&p, TPM2_RH_OWNER);
 
-	/* Auth (empty - no password) */
-	marshal_u32(&p, 0);  /* authSize = 0 */
+	/* Authorization Session (Password) */
+	marshal_password_session(&p);
 
-	/* inSensitive (empty - no sensitive data for SRK) */
-	marshal_u16(&p, 0);  /* size = 0 */
+	/* inSensitive - TPM2B_SENSITIVE_CREATE (empty auth and data) */
+	marshal_u16(&p, 4);   /* size of TPMS_SENSITIVE_CREATE = 4 bytes */
+	marshal_u16(&p, 0);   /* userAuth size = 0 (no password) */
+	marshal_u16(&p, 0);   /* data size = 0 (no sensitive data) */
 
-	/* inPublic - RSA 2048 storage key template */
+	/* inPublic - ECC P256 storage key template */
 	u8int *public_start = p;
 	marshal_u16(&p, 0);  /* size - fill later */
 
-	/* TPMT_PUBLIC */
-	marshal_u16(&p, TPM2_ALG_SHA256);  /* type = RSA */
+	/* TPMT_PUBLIC for ECC */
+	marshal_u16(&p, TPM2_ALG_ECC);  /* type = ECC */
 	marshal_u16(&p, TPM2_ALG_SHA256);  /* nameAlg */
-	marshal_u32(&p, 0x00030072);  /* objectAttributes */
+	/* objectAttributes: fixedTPM(1) | fixedParent(4) | sensitiveDataOrigin(5) |
+	 * userWithAuth(6) | restricted(16) | decrypt(17) = 0x00030072 */
+	marshal_u32(&p, 0x00030072);
 	marshal_u16(&p, 0);  /* authPolicy size */
 
-	/* RSA parameters */
-	marshal_u16(&p, TPM2_ALG_NULL);  /* symmetric */
+	/* TPMS_ECC_PARMS (ECC parameters) */
+	/* TPMT_SYM_DEF_OBJECT for symmetric - AES-128-CFB for storage */
+	marshal_u16(&p, 0x0006);  /* TPM2_ALG_AES */
+	marshal_u16(&p, 128);     /* key bits */
+	marshal_u16(&p, 0x0043);  /* TPM2_ALG_CFB mode */
+
+	/* TPMT_ECC_SCHEME - NULL for storage key */
 	marshal_u16(&p, TPM2_ALG_NULL);  /* scheme */
-	marshal_u16(&p, 2048);  /* keyBits */
-	marshal_u32(&p, 0);  /* exponent (0 = default 65537) */
-	marshal_u16(&p, 0);  /* unique size (generated by TPM) */
+
+	/* ECC details */
+	marshal_u16(&p, TPM2_ECC_NIST_P256); /* curveID */
+	marshal_u16(&p, TPM2_ALG_NULL);  /* kdf */
+
+	/* TPMS_ECC_POINT for unique (X and Y coordinates) */
+	marshal_u16(&p, 0);  /* X size - generated by TPM */
+	marshal_u16(&p, 0);  /* Y size - generated by TPM */
 
 	/* Fill in public size */
 	u16int public_size = p - public_start - 2;
@@ -212,15 +303,15 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 	}
 
 	/* Command Header */
-	marshal_u16(&p, TPM2_ST_NO_SESSIONS);
+	marshal_u16(&p, TPM2_ST_SESSIONS);
 	marshal_u32(&p, 0);  /* size - fill later */
 	marshal_u32(&p, TPM2_CC_Create);
 
 	/* Parent handle */
 	marshal_u32(&p, parent_handle);
 
-	/* Auth (empty) */
-	marshal_u32(&p, 0);
+	/* Authorization Session (Password) for parent */
+	marshal_password_session(&p);
 
 	/* inSensitive - contains the data to seal */
 	u8int *sens_start = p;
@@ -280,6 +371,33 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 	}
 
 	/* Extract private and public blobs */
+	/* Note: Response includes parameter size (U32) before parameters? No, only for sessions?
+	 * TPM2_Create Response:
+	 *   outPrivate (2B)
+	 *   outPublic (2B)
+	 *   creationData (2B)
+	 *   creationHash (2B)
+	 *   creationTicket (TK)
+	 *
+	 * BUT, since we sent a session, the response MAY contain a session tag?
+	 * If response code is SUCCESS, the tag is TPM_ST_SESSIONS?
+	 * No, response tag matches if sessions are present in response.
+	 * We are not requesting a session in response (sessionAttributes=0).
+	 * However, TPM might return a session. We'll ignore it if we can.
+	 *
+	 * Actually, standard TIS response parsing in tpm2_driver.c blindly reads response.
+	 * If TPM returns sessions, the 'size' field covers it.
+	 * But we need to know WHERE the parameters are.
+	 * If tag == TPM_ST_SESSIONS, then parameterSize (U32) follows commandCode.
+	 *
+	 * Let's check tag.
+	 */
+	u16int rtag = (resp[0] << 8) | resp[1];
+	if(rtag == TPM2_ST_SESSIONS){
+		/* Skip parameter size */
+		unmarshal_u32(&rp);
+	}
+
 	*private_len = unmarshal_tpm2b(&rp, private_out, 256);
 	*public_len = unmarshal_tpm2b(&rp, public_out, 256);
 
@@ -305,15 +423,15 @@ tpm2_load(u32int parent_handle, u8int *private_blob, u16int private_len,
 	u32int rc;
 
 	/* Command Header */
-	marshal_u16(&p, TPM2_ST_NO_SESSIONS);
+	marshal_u16(&p, TPM2_ST_SESSIONS);
 	marshal_u32(&p, 0);  /* size - fill later */
 	marshal_u32(&p, TPM2_CC_Load);
 
 	/* Parent handle */
 	marshal_u32(&p, parent_handle);
 
-	/* Auth (empty) */
-	marshal_u32(&p, 0);
+	/* Authorization Session (Password) for parent */
+	marshal_password_session(&p);
 
 	/* Private blob */
 	marshal_tpm2b(&p, private_blob, private_len);
@@ -336,13 +454,17 @@ tpm2_load(u32int parent_handle, u8int *private_blob, u16int private_len,
 
 	/* Parse response */
 	rp = resp;
-	unmarshal_u16(&rp);  /* tag */
+	u16int rtag = unmarshal_u16(&rp);  /* tag */
 	unmarshal_u32(&rp);  /* size */
 	rc = unmarshal_u32(&rp);
 
 	if(rc != TPM_SUCCESS){
 		print("tpm2_load: TPM returned error 0x%08X\n", rc);
 		return -1;
+	}
+
+	if(rtag == TPM2_ST_SESSIONS){
+		unmarshal_u32(&rp);
 	}
 
 	/* Extract handle */
@@ -366,15 +488,15 @@ tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len)
 	u32int rc;
 
 	/* Command Header */
-	marshal_u16(&p, TPM2_ST_NO_SESSIONS);
+	marshal_u16(&p, TPM2_ST_SESSIONS);
 	marshal_u32(&p, 0);  /* size - fill later */
 	marshal_u32(&p, TPM2_CC_Unseal);
 
 	/* Item handle */
 	marshal_u32(&p, item_handle);
 
-	/* Auth (empty) */
-	marshal_u32(&p, 0);
+	/* Authorization Session (Password) for item */
+	marshal_password_session(&p);
 
 	/* Fill command size */
 	u32int cmd_size = p - cmd;
@@ -391,7 +513,7 @@ tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len)
 
 	/* Parse response */
 	rp = resp;
-	unmarshal_u16(&rp);  /* tag */
+	u16int rtag = unmarshal_u16(&rp);  /* tag */
 	unmarshal_u32(&rp);  /* size */
 	rc = unmarshal_u32(&rp);
 
@@ -400,8 +522,25 @@ tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len)
 		return -1;
 	}
 
-	/* Skip parameter size */
-	unmarshal_u32(&rp);
+	if(rtag == TPM2_ST_SESSIONS){
+		unmarshal_u32(&rp);
+	}
+
+	/* Skip parameter size (if present in unseal response? Unseal returns 'outData')
+	 * Unseal response: outData (2B)
+	 * It IS a parameter.
+	 */
+	/* Wait, if sessions are present, the parameterSize field TELLS us the size of parameters.
+	 * But we usually skip it to find parameters.
+	 * If NO sessions, parameters are immediate.
+	 * If SESSIONS, parameterSize is U32 before parameters.
+	 */
+	/* In previous code we skipped parameter size unconditionally? No.
+	 * Let's be careful.
+	 * If tag == SESSIONS, we skipped 4 bytes (parameterSize) above.
+	 * That puts us at start of parameters.
+	 * So we are good.
+	 */
 
 	/* Extract unsealed data */
 	*data_len = unmarshal_tpm2b(&rp, data_out, 128);

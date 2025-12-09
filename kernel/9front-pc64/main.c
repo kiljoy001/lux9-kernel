@@ -317,6 +317,12 @@ fbconsoleinit();  /* Initialize framebuffer console */
 	printinit();
 	uartputs("DEBUG: printinit complete\n", 28);
 
+	/* Initialize TPM driver before crypto subsystem */
+	extern void tpminit(void);
+	print("=== Initializing TPM Driver ===\n");
+	tpminit();
+	print("=== TPM Driver Initialized ===\n");
+
 	/* Initialize crypto subsystem early for testing */
 	extern int crypto_tpm_key_init(void);
 	print("=== Initializing Crypto Subsystem ===\n");

@@ -444,6 +444,7 @@ crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len)
  */
 
 /* External TPM2 SAPI functions */
+extern int tpm2_startup(void);
 extern int tpm2_create_primary(u32int *handle_out);
 extern int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
                        u8int *private_out, u16int *private_len,
@@ -460,6 +461,7 @@ static struct {
     uint16_t public_len;
     uint32_t srk_handle;  /* Storage Root Key handle */
     int sealed;
+    int started;  /* Flag to track if TPM2_Startup has been called */
 } tpm_sealed_key;
 
 /*
@@ -476,6 +478,16 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
     if (!key || keylen == 0 || keylen > 128) {
         print("crypto_tpm_seal_key: invalid parameters (keylen=%lu)\n", keylen);
         return -1;
+    }
+
+    /* Initialize TPM if not already started */
+    if (!tpm_sealed_key.started) {
+        ret = tpm2_startup();
+        if (ret < 0) {
+            print("crypto_tpm_seal_key: TPM2_Startup failed\n");
+            return -1;
+        }
+        tpm_sealed_key.started = 1;
     }
 
     /* Create Storage Root Key if not already created */
