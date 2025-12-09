@@ -14,9 +14,12 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismat
            -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
            -Ikernel/include \
            -Ikernel/crypto \
+           -Ikernel/clr/libmcu-cbor \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
+           -D__PLAN9_KERNEL__ \
+           -D_KERNEL_QBE \
            -DKTZERO=0xffffffff80110000 \
            -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer
 
@@ -37,7 +40,12 @@ LOCKDAG_C := kernel/lock_dag.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 BENCHMARK_C := kernel/benchmark.c
-CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c
+CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
+CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
+
+# QBE compiler core sources (for qbe.a)
+QBE_CORE_C := kernel/clr/qbe/alias.c kernel/clr/qbe/cfg.c kernel/clr/qbe/copy.c kernel/clr/qbe/fold.c kernel/clr/qbe/gas.c kernel/clr/qbe/live.c kernel/clr/qbe/load.c kernel/clr/qbe/mem.c kernel/clr/qbe/parse.c kernel/clr/qbe/rega.c kernel/clr/qbe/spill.c kernel/clr/qbe/ssa.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/emit.c kernel/clr/qbe/amd64/isel.c kernel/clr/qbe/amd64/sysv.c
+QBE_CORE_O := $(QBE_CORE_C:.c=.o)
 
 # SD/FIS support files already included by wildcard above
 
@@ -74,6 +82,16 @@ $(KERNEL): $(ALL_O)
 	$(LD) $(LDFLAGS) $(ALL_O) -o $@
 	@echo "Build complete: $(KERNEL)"
 	@ls -lh $(KERNEL)
+
+# Build QBE static library
+$(QBE_A): $(QBE_CORE_O)
+	@echo "AR $@"
+	@ar rcs $@ $(QBE_CORE_O)
+
+# CBOR library needs special flags
+kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
+	@echo "CC $< (CBOR)"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"
