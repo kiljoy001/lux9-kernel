@@ -494,11 +494,33 @@ pebble_detach_blue_locked(PebbleState *ps, PebbleBlue *blue)
 static void
 pebble_free_red(PebbleRed *red)
 {
+	PebbleState *ps;
+	ulong size;
+
 	if(red == nil)
 		return;
+
+	ps = pebble_state();
+	if(ps == nil){
+		/* Fallback: Just free memory without budget tracking */
+		if(red->red_data != nil)
+			xfree(red->red_data);
+		free(red);
+		return;
+	}
+
+	size = red->red_size;
+
+	/* Free physical memory */
 	if(red->red_data != nil)
 		xfree(red->red_data);
 	free(red);
+
+	/* Return budget to colorless bank (state transition: RED → COLORLESS) */
+	lock(&pebble_global_lock);
+	ps->black_budget += size;
+	ps->black_inuse -= size;
+	unlock(&pebble_global_lock);
 }
 
 int
@@ -535,23 +557,54 @@ pebble_has_matching_red(PebbleState *, PebbleBlue *blue)
 }
 
 PebbleRed*
-pebble_duplicate_blue(PebbleState *, PebbleBlue *blue)
+pebble_duplicate_blue(PebbleState *ps, PebbleBlue *blue)
 {
 	PebbleRed *red;
+	ulong size;
 
-	if(blue == nil)
+	if(ps == nil || blue == nil)
 		return nil;
 
+	size = blue->blue_size;
+
+	/* Check budget availability - Red allocation must consume from colorless bank */
+	lock(&pebble_global_lock);
+	if(ps->black_budget < size){
+		unlock(&pebble_global_lock);
+		return nil;  /* Insufficient budget for Red snapshot */
+	}
+	/* Reserve budget for Red allocation (state transition: COLORLESS → RED) */
+	ps->black_budget -= size;
+	ps->black_inuse += size;  /* Track Red allocation in black_inuse */
+	unlock(&pebble_global_lock);
+
+	/* Allocate Red structure */
 	red = mallocz(sizeof(PebbleRed), 1);
-	if(red == nil)
+	if(red == nil){
+		/* Rollback budget on failure */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->black_inuse -= size;
+		unlock(&pebble_global_lock);
 		return nil;
-	red->red_data = xallocz(blue->blue_size, 1);
+	}
+
+	/* Allocate Red data buffer (backed by consumed budget) */
+	red->red_data = xallocz(size, 1);
 	if(red->red_data == nil){
+		/* Rollback budget on failure */
+		lock(&pebble_global_lock);
+		ps->black_budget += size;
+		ps->black_inuse -= size;
+		unlock(&pebble_global_lock);
 		free(red);
 		return nil;
 	}
-	memmove(red->red_data, blue->blue_data, blue->blue_size);
-	red->red_size = blue->blue_size;
+
+	/* Copy Blue data to Red snapshot */
+	memmove(red->red_data, blue->blue_data, size);
+	red->red_size = size;
+
 	return red;
 }
 
