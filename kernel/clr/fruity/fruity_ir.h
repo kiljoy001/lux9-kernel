@@ -13,11 +13,11 @@
 #ifndef FRUITY_IR_H
 #define FRUITY_IR_H
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
+/* Fruity IR assumes kernel headers are already included:
+ *   u.h, portlib.h, mem.h, dat.h, fns.h
+ * These must be included by the caller before including fruity_ir.h
+ */
+
 #include "fruity_types.h"
 #include "fruity_opcodes.h"
 
@@ -284,5 +284,15 @@ void fruity_instruction_print(fruity_instruction_t *instr);
 void fruity_basic_block_print(fruity_basic_block_t *block);
 void fruity_function_print(fruity_function_t *func);
 void fruity_module_print(fruity_module_t *module);
+
+/* ===== CBOR Serialization ===== */
+
+/* Encode Fruity IR module to CBOR format */
+ulong fruity_module_to_cbor(fruity_module_t *module, u8int *buf, ulong bufsize,
+                            char *errbuf, ulong errbuf_size);
+
+/* Decode CBOR data into Fruity IR module */
+fruity_module_t* fruity_module_from_cbor(u8int *data, ulong datalen,
+                                         char *errbuf, ulong errbuf_size);
 
 #endif /* FRUITY_IR_H */

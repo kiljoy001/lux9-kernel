@@ -116,7 +116,7 @@ clr_object_alloc(clr_heap_t *heap, ulong size, clr_value_type_t type)
 {
 	clr_object_t *obj;
 	PebbleWhite *white;
-	void *black_handle;
+	BlindLedgerEntry entry;
 
 	if(heap == nil || size == 0)
 		error(PEBBLE_E_BADARG);
@@ -126,31 +126,34 @@ clr_object_alloc(clr_heap_t *heap, ulong size, clr_value_type_t type)
 	if(obj == nil)
 		error(PEBBLE_E_NOMEM);
 
-	/* Issue white token for allocation */
-	white = pebble_issue_white(heap->pebble, nil, size);
-	if(white == nil){
-		free(obj);
-		error(PEBBLE_E_AGAIN);
-	}
-
-	/* Verify white and allocate black */
-	if(pebble_white_verify(white, &black_handle) != 0){
-		free(obj);
-		error(PEBBLE_E_PERM);
-	}
-
-	if(pebble_black_alloc(size, &black_handle) != 0){
+	/* Allocate black pebble (creates UserCapability) */
+	if(pebble_black_alloc(size, &obj->black_cap) != 0){
 		free(obj);
 		error(PEBBLE_E_NOMEM);
 	}
 
+	/* Verify the capability to get physical address */
+	if(ledger_verify(&obj->black_cap, &entry) != BLIND_LEDGER_OK){
+		pebble_black_free(&obj->black_cap);
+		free(obj);
+		error(PEBBLE_E_PERM);
+	}
+
+	/* Issue white token for this allocation */
+	white = pebble_issue_white(heap->pebble, (void*)entry.physical_address, size);
+	if(white == nil){
+		pebble_black_free(&obj->black_cap);
+		free(obj);
+		error(PEBBLE_E_AGAIN);
+	}
+
 	/* Initialize object */
-	obj->black = black_handle;
+	obj->data = (void*)entry.physical_address;
 	obj->type = type;
 	obj->size = size;
 	obj->exchange_handles = nil;
 	obj->exchange_npages = 0;
-	obj->is_prepared = false;
+	obj->is_prepared = 0;
 
 	/* First white token stored inline */
 	obj->inline_white.white = white;
@@ -182,7 +185,7 @@ clr_object_addref(clr_heap_t *heap, clr_object_t *obj)
 		error(PEBBLE_E_BADARG);
 
 	/* Issue new white token */
-	white = pebble_issue_white(heap->pebble, obj->black->addr, obj->size);
+	white = pebble_issue_white(heap->pebble, obj->data, obj->size);
 	if(white == nil)
 		error(PEBBLE_E_AGAIN);
 
@@ -206,7 +209,7 @@ int
 clr_object_release(clr_heap_t *heap, clr_object_t *obj, PebbleWhite *white)
 {
 	clr_white_ref_t *ref, *next;
-	bool found = false;
+	int found = 0;
 
 	if(heap == nil || obj == nil || white == nil)
 		error(PEBBLE_E_BADARG);
@@ -216,11 +219,11 @@ clr_object_release(clr_heap_t *heap, clr_object_t *obj, PebbleWhite *white)
 	/* Find the white in our list */
 	if(obj->inline_white.white == white){
 		ref = &obj->inline_white;
-		found = true;
+		found = 1;
 	} else {
 		for(ref = obj->white_list; ref != nil; ref = ref->next){
 			if(ref->white == white){
-				found = true;
+				found = 1;
 				break;
 			}
 		}
@@ -285,8 +288,7 @@ clr_object_free_internal(clr_heap_t *heap, clr_object_t *obj)
 		obj->inline_white.white->token = 0;
 
 	/* Free black pebble */
-	if(obj->black != nil)
-		pebble_black_free(obj->black);
+	pebble_black_free(&obj->black_cap);
 
 	/* Free object structure */
 	free(obj);
@@ -296,72 +298,41 @@ clr_object_free_internal(clr_heap_t *heap, clr_object_t *obj)
 
 /* ========== Speculative Execution: Red-Blue ========== */
 
+/* TODO: Red-Blue snapshot operations need proper Pebble API
+ * The current Pebble API doesn't expose Red-Blue operations at this level.
+ * These functions need to be refactored to use a proper API once it's designed.
+ */
+
 int
 clr_object_snapshot(clr_heap_t *heap, clr_object_t *obj)
 {
-	PebbleRed *red;
-
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	if(obj->black == nil || obj->black->blue == nil)
-		error(PEBBLE_E_PERM);
-
-	/* Create red snapshot if doesn't exist */
-	if(obj->black->blue->matching_red == nil){
-		if(pebble_red_copy(obj->black->blue, &red) != 0)
-			error(PEBBLE_E_NOMEM);
-	}
-
+	/* TODO: Call proper Pebble snapshot API */
+	error("Red-Blue snapshots not yet implemented");
 	return 0;
 }
 
 int
 clr_object_commit(clr_heap_t *heap, clr_object_t *obj)
 {
-	PebbleBlue *blue;
-
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	if(obj->black == nil || obj->black->blue == nil)
-		error(PEBBLE_E_PERM);
-
-	blue = obj->black->blue;
-
-	/* If we have a red snapshot, this was speculative - commit by discarding red */
-	if(blue->matching_red != nil){
-		/* The pebble system will handle cleanup when we discard */
-		/* For now, just mark that we're keeping the blue */
-		/* Actual red cleanup happens in pebble_ensure_red_snapshots */
-	}
-
+	/* TODO: Call proper Pebble commit API */
+	error("Red-Blue commits not yet implemented");
 	return 0;
 }
 
 int
 clr_object_rollback(clr_heap_t *heap, clr_object_t *obj)
 {
-	PebbleBlue *blue;
-	PebbleRed *red;
-
 	if(heap == nil || obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	if(obj->black == nil || obj->black->blue == nil)
-		error(PEBBLE_E_PERM);
-
-	blue = obj->black->blue;
-	red = blue->matching_red;
-
-	if(red == nil)
-		error(PEBBLE_E_BUSY);  /* No snapshot to rollback to */
-
-	/* Restore from red snapshot */
-	if(red->red_data != nil && blue->blue_data != nil){
-		memmove(blue->blue_data, red->red_data, red->red_size);
-	}
-
+	/* TODO: Call proper Pebble rollback API */
+	error("Red-Blue rollback not yet implemented");
 	return 0;
 }
 
@@ -371,8 +342,8 @@ clr_stack_t*
 clr_stack_init(clr_heap_t *heap, ulong max_depth)
 {
 	clr_stack_t *stack;
-	PebbleWhite *white;
-	void *black_handle;
+	UserCapability cap;
+	BlindLedgerEntry entry;
 	ulong size;
 
 	if(heap == nil)
@@ -380,20 +351,20 @@ clr_stack_init(clr_heap_t *heap, ulong max_depth)
 
 	/* Allocate stack structure via pebble */
 	size = sizeof(clr_stack_t);
-	white = pebble_issue_white(heap->pebble, nil, size);
-	if(white == nil)
-		error(PEBBLE_E_AGAIN);
 
-	if(pebble_white_verify(white, &black_handle) != 0)
-		error(PEBBLE_E_PERM);
-
-	if(pebble_black_alloc(size, &black_handle) != 0)
+	if(pebble_black_alloc(size, &cap) != 0)
 		error(PEBBLE_E_NOMEM);
 
-	stack = black_handle;
+	/* Get physical address */
+	if(ledger_verify(&cap, &entry) != BLIND_LEDGER_OK){
+		pebble_black_free(&cap);
+		error(PEBBLE_E_PERM);
+	}
+
+	stack = (clr_stack_t*)entry.physical_address;
 	memset(stack, 0, sizeof(clr_stack_t));
 
-	stack->black = black_handle;
+	stack->black_cap = cap;
 	stack->top = nil;
 	stack->bottom = nil;
 	stack->depth = 0;
@@ -560,8 +531,7 @@ clr_stack_cleanup(clr_heap_t *heap, clr_stack_t *stack)
 	}
 
 	/* Free stack structure */
-	if(stack->black != nil)
-		pebble_black_free(stack->black);
+	pebble_black_free(&stack->black_cap);
 }
 
 /* ========== CLR Pebble State Initialization ========== */
@@ -624,7 +594,7 @@ clr_pebble_init(PebbleState *pebble,
 	}
 
 	state->ip = 0;
-	state->is_speculative = false;
+	state->is_speculative = 0;
 	state->snapshot_depth = 0;
 	state->instructions_executed = 0;
 	state->refs_created = 0;
@@ -670,8 +640,8 @@ clr_locals_t*
 clr_locals_init(clr_heap_t *heap, ulong max_count)
 {
 	clr_locals_t *locals;
-	PebbleWhite *white;
-	void *black_handle;
+	UserCapability cap;
+	BlindLedgerEntry entry;
 	ulong size;
 
 	if(heap == nil)
@@ -679,20 +649,20 @@ clr_locals_init(clr_heap_t *heap, ulong max_count)
 
 	/* Allocate locals structure via pebble */
 	size = sizeof(clr_locals_t);
-	white = pebble_issue_white(heap->pebble, nil, size);
-	if(white == nil)
-		error(PEBBLE_E_AGAIN);
 
-	if(pebble_white_verify(white, &black_handle) != 0)
-		error(PEBBLE_E_PERM);
-
-	if(pebble_black_alloc(size, &black_handle) != 0)
+	if(pebble_black_alloc(size, &cap) != 0)
 		error(PEBBLE_E_NOMEM);
 
-	locals = black_handle;
+	/* Get physical address */
+	if(ledger_verify(&cap, &entry) != BLIND_LEDGER_OK){
+		pebble_black_free(&cap);
+		error(PEBBLE_E_PERM);
+	}
+
+	locals = (clr_locals_t*)entry.physical_address;
 	memset(locals, 0, sizeof(clr_locals_t));
 
-	locals->black = black_handle;
+	locals->black_cap = cap;
 	locals->head = nil;
 	locals->tail = nil;
 	locals->count = 0;
@@ -834,8 +804,7 @@ clr_locals_cleanup(clr_heap_t *heap, clr_locals_t *locals)
 	}
 
 	/* Free locals structure */
-	if(locals->black != nil)
-		pebble_black_free(locals->black);
+	pebble_black_free(&locals->black_cap);
 }
 
 /* ========== CLR Instruction Execution ========== */
@@ -1015,7 +984,7 @@ clr_object_print_debug(clr_object_t *obj)
 	}
 
 	print("CLR Object %#p:\n", obj);
-	print("  Black: %#p\n", obj->black);
+	print("  Data: %#p\n", obj->data);
 	print("  Type: %d\n", obj->type);
 	print("  Size: %lud bytes\n", obj->size);
 	print("  Ref count: %lud\n", obj->white_count);

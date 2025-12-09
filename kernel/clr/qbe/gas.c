@@ -120,7 +120,9 @@ gasemitfin(FILE *f)
 	Asmbits *b;
 	char *p;
 	int sz, i;
+#ifndef _KERNEL_QBE
 	double d;
+#endif
 
 	if (!stash)
 		return;
@@ -136,6 +138,7 @@ gasemitfin(FILE *f)
 				for (p=b->bits; p<&b->bits[sz]; p+=4)
 					fprintf(f, "\n\t.int %"PRId32,
 						*(int32_t *)p);
+#ifndef _KERNEL_QBE
 				if (sz <= 8) {
 					if (sz == 4)
 						d = *(float *)b->bits;
@@ -143,6 +146,7 @@ gasemitfin(FILE *f)
 						d = *(double *)b->bits;
 					fprintf(f, " /* %f */\n", d);
 				} else
+#endif
 					fprintf(f, "\n");
 			}
 		}

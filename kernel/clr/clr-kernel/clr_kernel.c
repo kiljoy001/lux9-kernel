@@ -367,8 +367,8 @@ clr_kernel_send_message(clr_kernel_system_t *sys,
 	}
 
 	/* Prepare exchange (get physical page handles) */
-	if(payload_obj->black && payload_obj->black->addr){
-		uintptr vaddr = (uintptr)payload_obj->black->addr;
+	if(payload_obj->data){
+		uintptr vaddr = (uintptr)payload_obj->data;
 		int n = exchange_prepare_range(vaddr, payload_obj->size, handles);
 		if(n < 0){
 			free(handles);
@@ -443,8 +443,8 @@ clr_kernel_receive_message(clr_kernel_system_t *sys,
 	if(msg->exchange_handles != nil && msg->npages > 0){
 		/* Accept exchange pages into receiver's address space */
 		for(ulong i = 0; i < msg->npages; i++){
-			uintptr dest_vaddr = (uintptr)msg->payload_obj->black->addr + (i * 4096);
-			int err = exchange_accept(msg->exchange_handles[i], dest_vaddr, PTEVALID | PTEUSER | PTEWRITE);
+			uintptr dest_vaddr = (uintptr)msg->payload_obj->data + (i * 4096);
+			int err = exchange_accept(&msg->exchange_handles[i], dest_vaddr, PTEVALID | PTEUSER | PTEWRITE);
 			if(err != EXCHANGE_OK){
 				/* Rollback on error */
 				free(msg->exchange_handles);

@@ -7,6 +7,11 @@
 #ifndef FRUITY_TYPES_H
 #define FRUITY_TYPES_H
 
+/* When compiling standalone (not in kernel), include compatibility types */
+#ifndef _U_H_
+#include "fruity_standalone.h"
+#endif
+
 /* Basic CLR types - forward declarations */
 typedef u32int tasklet_id_t;
 typedef u32int channel_id_t;

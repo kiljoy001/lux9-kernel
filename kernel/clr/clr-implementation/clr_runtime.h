@@ -14,8 +14,7 @@
 #ifndef CLR_RUNTIME_H
 #define CLR_RUNTIME_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "../include/u.h"
 
 
 /* ========== Core Types (from CLRProofs_Core.v) ========== */
@@ -32,10 +31,10 @@ typedef enum {
 typedef struct {
     clr_value_type_t type;
     union {
-        int32_t int32_val;
-        int64_t int64_val;
-        uintptr_t ref_val;
-        bool bool_val;
+        s32int int32_val;
+        s64int int64_val;
+        uintptr ref_val;
+        int bool_val;
     } data;
 } clr_value_t;
 
@@ -45,12 +44,12 @@ typedef struct {
 
 typedef struct {
     clr_value_t stack[MAX_STACK_SIZE];
-    size_t stack_size;
-    
+    usize stack_size;
+
     clr_value_t locals[MAX_LOCALS];
-    size_t locals_size;
-    
-    size_t ip; /* instruction pointer */
+    usize locals_size;
+
+    usize ip; /* instruction pointer */
 } clr_state_t;
 
 /* CIL Opcodes - corresponds to Opcode inductive type */
@@ -71,9 +70,9 @@ typedef enum {
 typedef struct {
     clr_opcode_t opcode;
     union {
-        int32_t int32_arg;
-        size_t index_arg;
-        size_t branch_target;
+        s32int int32_arg;
+        usize index_arg;
+        usize branch_target;
     } arg;
 } clr_instruction_t;
 
@@ -122,7 +121,7 @@ static inline clr_result_t clr_pop_two(clr_state_t *state, clr_value_t *v1, clr_
 /* ========== Verified Helper Functions ========== */
 
 /* Create CLR values */
-static inline clr_value_t clr_make_int32(int32_t value) {
+static inline clr_value_t clr_make_int32(s32int value) {
     clr_value_t result = {0};
     result.type = CLR_INT32;
     result.data.int32_val = value;
@@ -136,36 +135,37 @@ static inline clr_value_t clr_make_null(void) {
 }
 
 /* Type checking - corresponds to well_typed_value in Coq */
-static inline bool clr_is_well_typed(const clr_value_t *value) {
+static inline int clr_is_well_typed(const clr_value_t *value) {
     switch (value->type) {
         case CLR_INT32:
         case CLR_INT64:
         case CLR_REF:
         case CLR_NULL:
         case CLR_BOOL:
-            return true;
+            return 1;
         default:
-            return false;
+            return 0;
     }
 }
 
 /* State validation - corresponds to well_typed_state in Coq */
-static inline bool clr_state_is_well_typed(const clr_state_t *state) {
+static inline int clr_state_is_well_typed(const clr_state_t *state) {
+    usize i;
     /* All stack values must be well-typed */
-    for (size_t i = 0; i < state->stack_size; i++) {
+    for (i = 0; i < state->stack_size; i++) {
         if (!clr_is_well_typed(&state->stack[i])) {
-            return false;
+            return 0;
         }
     }
-    
+
     /* All local variables must be well-typed */
-    for (size_t i = 0; i < state->locals_size; i++) {
+    for (i = 0; i < state->locals_size; i++) {
         if (!clr_is_well_typed(&state->locals[i])) {
-            return false;
+            return 0;
         }
     }
-    
-    return true;
+
+    return 1;
 }
 
 /* ========== CIL Instruction Execution ========== */
@@ -178,8 +178,8 @@ void clr_state_init(clr_state_t *state);
 
 /* Stack discipline verification - from stack_discipline theorem */
 typedef struct {
-    size_t pops;
-    size_t pushes;
+    usize pops;
+    usize pushes;
 } clr_stack_effect_t;
 
 clr_stack_effect_t clr_get_stack_effect(clr_opcode_t opcode);

@@ -316,7 +316,9 @@ void *exchange_fdata(ExchangeFILE *fp, size_t *len)
 
 /* Helper functions for scanf */
 extern int atoi(const char *s);
+#ifndef _KERNEL_QBE
 extern double strtod(const char *s, char **endptr);
+#endif
 
 /* Formatted input - simplified version for QBE's needs */
 int exchange_vfscanf(ExchangeFILE *fp, const char *fmt, va_list ap)
@@ -356,7 +358,10 @@ int exchange_vfscanf(ExchangeFILE *fp, const char *fmt, va_list ap)
 				*p = '\0';
 				*ip = atoi(buf);
 				count++;
-			} else if (*f == 'f' || *f == 'l') {
+			}
+#ifndef _KERNEL_QBE
+			/* Float/double scanning not supported in kernel (no FPU) */
+			else if (*f == 'f' || *f == 'l') {
 				/* Float/double */
 				double *dp = va_arg(ap, double *);
 				p = buf;
@@ -378,7 +383,9 @@ int exchange_vfscanf(ExchangeFILE *fp, const char *fmt, va_list ap)
 				*p = '\0';
 				*dp = strtod(buf, NULL);
 				count++;
-			} else if (*f == 's') {
+			}
+#endif
+			else if (*f == 's') {
 				/* String */
 				char *sp = va_arg(ap, char *);
 				/* Skip whitespace */

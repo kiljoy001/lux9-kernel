@@ -16,11 +16,14 @@
 #ifndef CLR_PEBBLE_INTEGRATION_H
 #define CLR_PEBBLE_INTEGRATION_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "../../include/u.h"
 #include "../../include/pebble.h"
 #include "../../include/exchange.h"
 #include "../clr-implementation/clr_runtime.h"
+
+/* Forward declarations */
+typedef u32int tasklet_id_t;
+typedef u32int channel_id_t;
 
 /* ========== White Token Reference List ========== */
 
@@ -44,7 +47,8 @@ typedef struct clr_white_ref {
  * - white_list: Linked list for additional refs
  */
 typedef struct clr_object {
-	PebbleBlack *black;		/* The actual memory */
+	UserCapability black_cap;	/* The black pebble capability */
+	void *data;			/* Actual memory pointer */
 
 	/* Reference counting via white token list */
 	clr_white_ref_t inline_white;	/* First ref stored inline */
@@ -58,7 +62,7 @@ typedef struct clr_object {
 	/* Exchange support for zero-copy IPC */
 	ExchangeHandle *exchange_handles;	/* Physical page handles */
 	ulong exchange_npages;
-	bool is_prepared;		/* Prepared for exchange? */
+	int is_prepared;		/* Prepared for exchange? */
 
 	/* Concurrency */
 	Lock lock;			/* Protects white_list modifications */
@@ -146,8 +150,10 @@ int clr_object_commit(clr_heap_t *heap, clr_object_t *obj);
 int clr_object_rollback(clr_heap_t *heap, clr_object_t *obj);
 
 /* Check if object has snapshot */
-static inline bool clr_object_has_snapshot(clr_object_t *obj) {
-	return obj && obj->black && obj->black->red != nil;
+static inline int clr_object_has_snapshot(clr_object_t *obj) {
+	USED(obj);
+	/* TODO: Implement once Red-Blue API is available */
+	return 0;
 }
 
 /* ========== Zero-Copy Message Passing ========== */
@@ -177,7 +183,7 @@ typedef struct clr_exchange_msg {
 	ulong npages;
 
 	/* Message ordering */
-	uint32_t dag_id;		/* GHOSTDAG ordering */
+	u32int dag_id;		/* GHOSTDAG ordering */
 
 	/* Intrusive list */
 	struct clr_exchange_msg *next;
@@ -188,7 +194,7 @@ typedef struct clr_exchange_msg {
 clr_exchange_msg_t* clr_msg_prepare(clr_heap_t *heap,
                                      clr_object_t *obj,
                                      tasklet_id_t to,
-                                     uint32_t dag_id);
+                                     u32int dag_id);
 
 /* Send message - transfers ownership via white + exchange */
 int clr_msg_send(clr_heap_t *from_heap,
@@ -228,7 +234,7 @@ typedef struct clr_stack_slot {
 } clr_stack_slot_t;
 
 typedef struct clr_stack {
-	PebbleBlack *black;		/* Stack structure itself (pebble-allocated) */
+	UserCapability black_cap;	/* Stack structure capability */
 
 	/* Stack slots (intrusive doubly-linked list) */
 	clr_stack_slot_t *top;		/* Top of stack */
@@ -279,7 +285,7 @@ typedef struct clr_local_slot {
 } clr_local_slot_t;
 
 typedef struct clr_locals {
-	PebbleBlack *black;		/* Locals structure itself (pebble-allocated) */
+	UserCapability black_cap;	/* Locals structure capability */
 
 	/* Locals slots (intrusive doubly-linked list) */
 	clr_local_slot_t *head;
@@ -320,7 +326,7 @@ typedef struct clr_pebble_state {
 	uintptr ip;			/* Instruction pointer */
 
 	/* Speculative execution state */
-	bool is_speculative;		/* Currently executing speculatively? */
+	int is_speculative;		/* Currently executing speculatively? */
 	ulong snapshot_depth;		/* Number of objects snapshotted */
 
 	/* Statistics */

@@ -4,6 +4,12 @@
  * All allocations use xalloc() from the kernel.
  */
 
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+
 #include "fruity_ir.h"
 
 /* Opcode metadata table */

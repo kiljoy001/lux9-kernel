@@ -262,17 +262,23 @@ clrwrite(Chan *c, void *va, long n, vlong off)
 		return n;
 
 	case QassemblyCompile:
-		/* Parse Fruity IR from write data and store in Chan->aux */
+		/* Create a simple test module directly in kernel for Phase 5.4 */
 		ctx = (CompileContext*)c->aux;
 		if(ctx == nil)
 			error("devclr: no compilation context");
 
-		/* TODO Phase 5.4: Parse binary Fruity IR from 'a' (size 'n')
-		 * For now, just set module to nil to indicate "no IR loaded yet"
-		 */
-		ctx->module = nil;
-		snprint(ctx->error, sizeof(ctx->error),
-		        "Fruity IR serialization not yet implemented");
+		/* Free any existing module */
+		if(ctx->module != nil){
+			fruity_module_destroy(ctx->module);
+			ctx->module = nil;
+		}
+
+		/* Deserialize CBOR data into Fruity IR module */
+		ctx->module = fruity_module_from_cbor((u8int*)a, n, ctx->error, sizeof(ctx->error));
+		if(ctx->module == nil){
+			/* Error message already in ctx->error */
+			error("devclr: CBOR deserialization failed");
+		}
 		return n;
 
 	case QassembliesNew:

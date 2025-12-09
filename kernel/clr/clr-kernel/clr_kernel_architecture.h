@@ -12,8 +12,7 @@
 #ifndef CLR_KERNEL_ARCHITECTURE_H
 #define CLR_KERNEL_ARCHITECTURE_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "../../include/u.h"
 #include "../clr-implementation/clr_runtime.h"
 #include "../ipc/ipc_kmsg.h"
 #include "../ipc/ghostdag_kernel.h"
@@ -27,8 +26,8 @@
 
 /* ========== CLR Tasklet Definitions ========== */
 
-typedef uint32_t tasklet_id_t;
-typedef uint32_t channel_id_t;
+typedef u32int tasklet_id_t;
+typedef u32int channel_id_t;
 
 /* CLR Tasklet - matches Coq CLRTasklet record */
 /* NOW USES PEBBLE FOR ALL MEMORY */

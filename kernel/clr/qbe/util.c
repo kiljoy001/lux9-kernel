@@ -49,6 +49,8 @@ hash(char *s)
 	return h;
 }
 
+#ifndef _KERNEL_QBE
+/* Userspace version - kernel provides its own die_ in qbe_kernel_wrapper.c */
 void
 die_(char *file, char *s, ...)
 {
@@ -61,6 +63,7 @@ die_(char *file, char *s, ...)
 	fputc('\n', stderr);
 	abort();
 }
+#endif
 
 void *
 emalloc(size_t n)

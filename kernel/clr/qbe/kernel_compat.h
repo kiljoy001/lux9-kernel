@@ -22,6 +22,10 @@ typedef signed int int32_t;
 typedef signed long long int64_t;
 
 /* inttypes.h printf format macros */
+#define PRIi32 "d"
+#define PRId32 "d"
+#define PRIu32 "u"
+#define PRIx32 "x"
 #define PRIi64 "lld"
 #define PRId64 "lld"
 #define PRIu64 "llu"
@@ -90,6 +94,7 @@ extern FILE *exchange_stderr;
 extern size_t strlen(const char *s);
 extern int strcmp(const char *s1, const char *s2);
 extern int strncmp(const char *s1, const char *s2, size_t n);
+extern int memcmp(const void *s1, const void *s2, size_t n);
 extern void *memcpy(void *dest, const void *src, size_t n);
 extern void *memmove(void *dest, const void *src, size_t n);
 extern void *memset(void *s, int c, size_t n);

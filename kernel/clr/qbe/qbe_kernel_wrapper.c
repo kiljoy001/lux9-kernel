@@ -47,6 +47,7 @@ die_(char *file, char *s, ...)
 	va_start(ap, s);
 	panic("QBE error in %s: %s", file, s);
 	va_end(ap);
+	__builtin_unreachable();
 }
 
 /* Callback for data sections */
