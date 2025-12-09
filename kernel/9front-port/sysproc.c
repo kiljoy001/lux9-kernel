@@ -481,6 +481,7 @@ sysexec(va_list list)
 					break;
 				}
 				hash_binary(tc);
+				poperror();
 				break; /* for binary */
 			}
 
@@ -586,6 +587,7 @@ sysexec(va_list list)
 				is_elf = 1;
 				file_offset = elf_file_offset;
 				hash_binary(tc);
+				poperror();
 				break; /* for binary */
 			}
 		}

@@ -15,6 +15,7 @@
 #include "fns.h"
 #include "error.h"
 #include "io.h"
+#include "../include/crypto.h"
 
 /* TPM driver functions (from tpm2_driver.c) */
 extern void tpminit(void);
@@ -167,8 +168,13 @@ tpmwrite(Chan *c, void *va, long n, vlong off)
 			nexterror();
 		}
 
-		/* Future: NV define/write/delete commands */
-		print("TPM ctl: %s\n", cb->f[0]);
+		if(strcmp(cb->f[0], "rotate_hmac") == 0){
+			if(crypto_tpm_rotate_hmac_key() < 0)
+				error(Eio);
+		} else {
+			/* Future: NV define/write/delete commands */
+			print("TPM ctl: %s\n", cb->f[0]);
+		}
 
 		poperror();
 		free(cb);

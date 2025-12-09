@@ -80,6 +80,9 @@ run: lux9.iso
 	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
+		-chardev socket,id=chrtpm,path=../swtpm/swtpm-sock \
+		-tpmdev emulator,id=tpm0,chardev=chrtpm \
+		-device tpm-tis,tpmdev=tpm0 \
 		-nographic -serial stdio \
 		-display none
 
