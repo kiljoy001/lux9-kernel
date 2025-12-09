@@ -31,8 +31,8 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
 
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
-# Ensure TPM driver is included
-TPM_C := kernel/9front-port/tpm2_driver.c
+# Ensure TPM drivers are included
+TPM_C := kernel/9front-port/tpm2_driver.c kernel/9front-port/tpm2_sapi_minimal.c
 PC64_C := $(wildcard kernel/9front-pc64/*.c)
 LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
@@ -46,11 +46,11 @@ BENCHMARK_C := kernel/benchmark.c
 CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
 CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
 
-# TPM2-TSS sources
-TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
-TPM2_SAPI_C := $(wildcard kernel/tpm2-tss/sapi/*.c) $(wildcard kernel/tpm2-tss/sapi/api/*.c)
-TPM2_TCTI_C := kernel/tpm2-tss/tcti_kernel.c
-TPM2_TSS_C := $(TPM2_MU_C) $(TPM2_SAPI_C) $(TPM2_TCTI_C)
+# TPM2-TSS sources - REMOVED, using minimal SAPI instead
+# TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
+# TPM2_SAPI_C := $(wildcard kernel/tpm2-tss/sapi/*.c) $(wildcard kernel/tpm2-tss/sapi/api/*.c)
+# TPM2_TCTI_C := kernel/tpm2-tss/tcti_kernel.c
+# TPM2_TSS_C := $(TPM2_MU_C) $(TPM2_SAPI_C) $(TPM2_TCTI_C)
 
 # QBE compiler core sources (for qbe.a)
 QBE_CORE_C := kernel/clr/qbe/alias.c kernel/clr/qbe/cfg.c kernel/clr/qbe/copy.c kernel/clr/qbe/fold.c kernel/clr/qbe/gas.c kernel/clr/qbe/live.c kernel/clr/qbe/load.c kernel/clr/qbe/mem.c kernel/clr/qbe/parse.c kernel/clr/qbe/rega.c kernel/clr/qbe/spill.c kernel/clr/qbe/ssa.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/emit.c kernel/clr/qbe/amd64/isel.c kernel/clr/qbe/amd64/sysv.c
@@ -76,12 +76,12 @@ REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 CLR_O := $(CLR_C:.c=.o)
-TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)
+# TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)  # Removed - using minimal SAPI
 
 # External archives
 QBE_A := kernel/clr/qbe/qbe.a
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(TPM2_TSS_O) $(QBE_A)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(QBE_A)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help

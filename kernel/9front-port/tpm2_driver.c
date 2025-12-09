@@ -167,8 +167,9 @@ tpm_get_burst_count(void)
  * Transmit command to TPM and receive response
  *
  * This is the core command transmission layer.
+ * Made non-static for use by tpm2_sapi_minimal.c
  */
-static int
+int
 tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 {
     int i, burst, count;

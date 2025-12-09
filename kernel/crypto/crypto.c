@@ -376,10 +376,22 @@ crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len)
  * to TPM PCRs. The key can only be unsealed if the PCR values match.
  */
 
+/* External TPM2 SAPI functions */
+extern int tpm2_create_primary(u32int *handle_out);
+extern int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
+                       u8int *private_out, u16int *private_len,
+                       u8int *public_out, u16int *public_len);
+extern int tpm2_load(u32int parent_handle, u8int *private_blob, u16int private_len,
+                     u8int *public_blob, u16int public_len, u32int *handle_out);
+extern int tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len);
+
 /* Storage for sealed key blob */
 static struct {
-    uint8_t sealed_blob[512];  /* Encrypted key blob from TPM */
-    size_t blob_size;
+    uint8_t private_blob[256];  /* Encrypted private blob from TPM */
+    uint16_t private_len;
+    uint8_t public_blob[256];   /* Public blob */
+    uint16_t public_len;
+    uint32_t srk_handle;  /* Storage Root Key handle */
     int sealed;
 } tpm_sealed_key;
 
@@ -392,55 +404,38 @@ static struct {
 int
 crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
 {
-    /* TODO: Implement using TPM2-TSS SAPI functions:
-     *
-     * 1. Create a sealed data object using Tss2_Sys_Create():
-     *    - inSensitive contains the HMAC key
-     *    - inPublic specifies TPM2_ALG_KEYEDHASH object type
-     *    - creationPCR specifies which PCRs to seal to (e.g., PCR 0-7)
-     *
-     * 2. Store the returned outPrivate blob in tpm_sealed_key.sealed_blob
-     *
-     * 3. The blob is encrypted by TPM and can only be unsealed when
-     *    the specified PCRs match their current values
-     *
-     * For now, we skip sealing and keep key in memory only.
-     */
+    int ret;
 
-    if (!key || keylen == 0 || keylen > sizeof(tpm_sealed_key.sealed_blob)) {
+    if (!key || keylen == 0 || keylen > 128) {
+        print("crypto_tpm_seal_key: invalid parameters (keylen=%lu)\n", keylen);
         return -1;
     }
 
-    print("crypto_tpm_seal_key: UNIMPLEMENTED - key not sealed to TPM\n");
-    print("crypto_tpm_seal_key: Key remains in memory (not hardware-protected)\n");
+    /* Create Storage Root Key if not already created */
+    if (tpm_sealed_key.srk_handle == 0) {
+        ret = tpm2_create_primary(&tpm_sealed_key.srk_handle);
+        if (ret < 0) {
+            print("crypto_tpm_seal_key: failed to create SRK\n");
+            return -1;
+        }
+    }
 
-    /* Mark as not sealed */
-    tpm_sealed_key.sealed = 0;
-    tpm_sealed_key.blob_size = 0;
+    /* Seal the key using TPM2_Create */
+    ret = tpm2_create(tpm_sealed_key.srk_handle,
+                      (u8int*)key, (u16int)keylen,
+                      tpm_sealed_key.private_blob, &tpm_sealed_key.private_len,
+                      tpm_sealed_key.public_blob, &tpm_sealed_key.public_len);
 
-    /* For production: uncomment when SAPI integration complete
-     *
-     * TSS2_SYS_CONTEXT *sapi_ctx = get_sapi_context();
-     * TPM2B_SENSITIVE_CREATE inSensitive = {...};
-     * TPM2B_PUBLIC inPublic = {...};
-     * TPML_PCR_SELECTION creationPCR = {...};
-     * TPM2B_PRIVATE outPrivate = {0};
-     *
-     * // Populate structures...
-     * inSensitive.sensitive.data.size = keylen;
-     * memcpy(inSensitive.sensitive.data.buffer, key, keylen);
-     *
-     * // Call SAPI
-     * TSS2_RC rc = Tss2_Sys_Create(sapi_ctx, TPM2_RH_OWNER, ...);
-     * if (rc != TSS2_RC_SUCCESS) return -1;
-     *
-     * // Store sealed blob
-     * memcpy(tpm_sealed_key.sealed_blob, outPrivate.buffer, outPrivate.size);
-     * tpm_sealed_key.blob_size = outPrivate.size;
-     * tpm_sealed_key.sealed = 1;
-     */
+    if (ret < 0) {
+        print("crypto_tpm_seal_key: TPM2_Create failed\n");
+        tpm_sealed_key.sealed = 0;
+        return -1;
+    }
 
-    return 0;  /* Return success for now (degraded mode) */
+    tpm_sealed_key.sealed = 1;
+    print("crypto_tpm_seal_key: Successfully sealed %lu byte key to TPM\n", keylen);
+
+    return 0;
 }
 
 /*
@@ -452,15 +447,9 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
 int
 crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
 {
-    /* TODO: Implement using Tss2_Sys_Unseal():
-     *
-     * 1. Load the sealed blob using Tss2_Sys_Load()
-     * 2. Unseal using Tss2_Sys_Unseal()
-     * 3. TPM will verify PCR values before unsealing
-     * 4. Return unsealed key in key_out
-     *
-     * For now, return error (no sealed key available).
-     */
+    int ret;
+    u32int obj_handle;
+    u16int unsealed_len;
 
     if (!key_out || !keylen) {
         return -1;
@@ -471,22 +460,27 @@ crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
         return -1;
     }
 
-    print("crypto_tpm_unseal_key: UNIMPLEMENTED\n");
+    /* Load the sealed object */
+    ret = tpm2_load(tpm_sealed_key.srk_handle,
+                    tpm_sealed_key.private_blob, tpm_sealed_key.private_len,
+                    tpm_sealed_key.public_blob, tpm_sealed_key.public_len,
+                    &obj_handle);
 
-    /* For production: uncomment when SAPI integration complete
-     *
-     * TSS2_SYS_CONTEXT *sapi_ctx = get_sapi_context();
-     * TPM2B_SENSITIVE_DATA outData = {0};
-     *
-     * // Call SAPI
-     * TSS2_RC rc = Tss2_Sys_Unseal(sapi_ctx, sealed_handle, ...);
-     * if (rc != TSS2_RC_SUCCESS) return -1;
-     *
-     * // Return unsealed key
-     * if (*keylen < outData.size) return -1;
-     * memcpy(key_out, outData.buffer, outData.size);
-     * *keylen = outData.size;
-     */
+    if (ret < 0) {
+        print("crypto_tpm_unseal_key: TPM2_Load failed\n");
+        return -1;
+    }
 
-    return -1;  /* Return error for now (not implemented) */
+    /* Unseal the data */
+    ret = tpm2_unseal(obj_handle, (u8int*)key_out, &unsealed_len);
+
+    if (ret < 0) {
+        print("crypto_tpm_unseal_key: TPM2_Unseal failed\n");
+        return -1;
+    }
+
+    *keylen = unsealed_len;
+    print("crypto_tpm_unseal_key: Successfully unsealed %d byte key\n", unsealed_len);
+
+    return 0;
 }
