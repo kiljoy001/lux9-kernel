@@ -12,15 +12,19 @@
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
-extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */ 
+extern int xinit_done;  /* Defined in xalloc.c, set after xinit() completes */
 #include "fns.h"
 #include "borrowchecker.h"
 #include "lock_dag.h"
 #include "hhdm.h"
 #include "pebble.h"
+#include "siphash.h"  /* For DoS-resistant hash table hashing */
 
 /* Global borrow pool */
 struct BorrowPool borrowpool;
+
+/* SipHash key for DoS-resistant hashing (generated at boot from TPM/RDRAND) */
+static hsiphash_key_t borrow_hash_key;
 
 /* Helper to get cryptographically secure random nonce */
 static u64int
@@ -80,16 +84,31 @@ borrowinit(void)
 	borrowpool.nowners = 0;
 	borrowpool.nshared = 0;
 	borrowpool.nmut = 0;
+
+	/* Generate SipHash key from secure RNG (TPM or RDRAND) */
+	extern int tpm_get_random(u8int *buffer, int len);
+	extern u64int rdrand_u64(void);
+	extern int crypto_hw_rdrand_available(void);
+
+	if (tpm_get_random((u8int*)&borrow_hash_key, sizeof(borrow_hash_key)) == sizeof(borrow_hash_key)) {
+		print("borrowchecker: Using TPM random for SipHash key\n");
+	} else if (crypto_hw_rdrand_available()) {
+		borrow_hash_key.key[0] = rdrand_u64();
+		borrow_hash_key.key[1] = rdrand_u64();
+		print("borrowchecker: Using RDRAND for SipHash key\n");
+	} else {
+		panic("borrowchecker: FATAL - no secure RNG for SipHash key");
+	}
 }
 
-/* Hash function for uintptr keys */
+/* SipHash-based hash function for uintptr keys (DoS-resistant) */
 ulong
 borrow_hash(uintptr key)
 {
 	if(borrowpool.nbuckets == 0 || borrowpool.owners == nil)
 		panic("borrow_hash: borrowinit not called");
-	/* Simple hash: use the lower bits */
-	return key % borrowpool.nbuckets;
+	/* Use HalfSipHash for fast, DoS-resistant hashing */
+	return hsiphash(&key, sizeof(key), &borrow_hash_key) % borrowpool.nbuckets;
 }
 
 /* Find BorrowOwner for a key */

@@ -4,6 +4,7 @@
 #include "dat.h"
 #include "blind_ledger.h"
 #include "crypto.h" // For SHA256 hashing
+#include "siphash.h" // For DoS-resistant hash table hashing
 #include "fns.h"    // For lock, unlock, mallocz, free
 #include <error.h> // For error codes
 
@@ -33,31 +34,29 @@ static Lock ledger_lock; // Protects access to both hash tables
 // Global epoch counter for use-after-free prevention
 static u64int global_epoch = 1;
 
+// SipHash keys for DoS-resistant hashing (generated at boot from TPM/RDRAND)
+static hsiphash_key_t capability_hash_key;
+static hsiphash_key_t pa_hash_key;
+
 // =========================================================================
 //  Internal Utility Functions
 // =========================================================================
 
-// Basic hash function for UserCapability
+// SipHash-based hash function for UserCapability (DoS-resistant)
 static u32int
 hash_user_capability(UserCapability cap)
 {
-    u32int hash_val = 0;
-    // Accumulate bytes of the capability hash using a rotating XOR for better distribution.
-    // This avoids making assumptions about alignment for u32int/u64int access.
-    for (int i = 0; i < BLIND_LEDGER_CAP_SIZE; i++) {
-        hash_val = (hash_val << 5) ^ (hash_val >> 27) ^ cap.hash[i]; // Rotate hash_val left by 5 and XOR with current byte
-    }
-    return hash_val % LEDGER_HASHTABLE_SIZE;
+    // Use HalfSipHash for fast, DoS-resistant hashing
+    // Hash the capability's 32-byte hash field
+    return hsiphash(cap.hash, BLIND_LEDGER_CAP_SIZE, &capability_hash_key) % LEDGER_HASHTABLE_SIZE;
 }
 
-// Hash function for physical addresses (secondary index)
+// SipHash-based hash function for physical addresses (DoS-resistant)
 static u32int
 hash_physical_address(uintptr pa)
 {
-    // Simple multiplicative hash
-    // Use golden ratio prime for good distribution
-    u64int hash = pa * 0x9e3779b97f4a7c15ULL;
-    return (u32int)(hash % LEDGER_HASHTABLE_SIZE);
+    // Use HalfSipHash on the physical address
+    return hsiphash(&pa, sizeof(pa), &pa_hash_key) % LEDGER_HASHTABLE_SIZE;
 }
 
 // =========================================================================
@@ -68,15 +67,32 @@ void
 blind_ledger_init(void)
 {
     extern int crypto_hw_sha_available(void);
+    extern int tpm_get_random(u8int *buffer, int len);
+    extern u64int rdrand_u64(void);
+    extern int crypto_hw_rdrand_available(void);
 
     memset(ledger_hashtable, 0, sizeof(ledger_hashtable));
     memset(ledger_pa_index, 0, sizeof(ledger_pa_index));
     memset(&ledger_lock, 0, sizeof(Lock)); // Boot-safe lock initialization
 
-    if(crypto_hw_sha_available()) {
-        print("blind_ledger: initialized with HW-accelerated SHA256 (PA secondary index)\n");
+    // Generate SipHash keys from secure RNG (TPM or RDRAND)
+    if (tpm_get_random((u8int*)&capability_hash_key, sizeof(capability_hash_key)) == sizeof(capability_hash_key) &&
+        tpm_get_random((u8int*)&pa_hash_key, sizeof(pa_hash_key)) == sizeof(pa_hash_key)) {
+        print("blind_ledger: Using TPM random for SipHash keys\n");
+    } else if (crypto_hw_rdrand_available()) {
+        capability_hash_key.key[0] = rdrand_u64();
+        capability_hash_key.key[1] = rdrand_u64();
+        pa_hash_key.key[0] = rdrand_u64();
+        pa_hash_key.key[1] = rdrand_u64();
+        print("blind_ledger: Using RDRAND for SipHash keys\n");
     } else {
-        print("blind_ledger: initialized with software SHA256 (PA secondary index)\n");
+        panic("blind_ledger: FATAL - no secure RNG for SipHash keys");
+    }
+
+    if(crypto_hw_sha_available()) {
+        print("blind_ledger: initialized with HW-accelerated SHA256 + SipHash hash tables\n");
+    } else {
+        print("blind_ledger: initialized with software SHA256 + SipHash hash tables\n");
     }
 }
 
