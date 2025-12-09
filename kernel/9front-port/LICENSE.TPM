@@ -1,0 +1,29 @@
+TPM Driver License Notice
+=========================
+
+The TPM TIS driver implementation in tpm2_driver.c is adapted from the
+Linux kernel TPM subsystem, specifically understanding the TIS protocol
+flow from drivers/char/tpm/tpm_tis_core.c.
+
+Original Linux TPM driver:
+  Copyright (C) 2005, 2006 IBM Corporation
+  Copyright (C) 2014, 2015 Intel Corporation
+  Authors: Leendert van Doorn, Kylene Hall
+  License: GPL-2.0-only
+  Source: https://github.com/torvalds/linux (v6.11)
+
+This adapted implementation for Lux9:
+  - Understands TIS register protocol from Linux reference
+  - Reimplemented in Plan 9 C style without Linux dependencies
+  - Uses Plan 9 kernel primitives (microdelay, print, etc.)
+  - Simplified for embedded kernel use (no interrupts, no sysfs)
+  - License: GPL-2.0-only (compatible with Linux sources)
+
+The adaptation process:
+1. Studied Linux TIS protocol implementation
+2. Extracted core TIS register operations
+3. Reimplemented using Plan 9 kernel APIs
+4. Removed Linux-specific infrastructure (wait queues, sysfs, etc.)
+
+This file maintains GPL-2.0 compliance for the TPM subsystem while
+the rest of Lux9 kernel uses MIT/LPL/GPLv2+ licensing.

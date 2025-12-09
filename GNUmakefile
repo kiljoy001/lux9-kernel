@@ -30,6 +30,8 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
 
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
+# Ensure TPM driver is included
+TPM_C := kernel/9front-port/tpm2_driver.c
 PC64_C := $(wildcard kernel/9front-pc64/*.c)
 LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
@@ -72,6 +74,7 @@ CLR_O := $(CLR_C:.c=.o)
 QBE_A := kernel/clr/qbe/qbe.a
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(QBE_A)
+# TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
 
