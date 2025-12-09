@@ -26,7 +26,7 @@ struct BorrowPool borrowpool;
 /* SipHash key for DoS-resistant hashing (generated at boot from TPM/RDRAND) */
 static hsiphash_key_t borrow_hash_key;
 
-/* Helper to get cryptographically secure random nonce */
+/* Helper to get cryptographically secure random nonce (3-tier fallback) */
 static u64int
 get_random_nonce(void)
 {
@@ -34,13 +34,14 @@ get_random_nonce(void)
 	extern int tpm_get_random(u8int *buffer, int len);
 	extern u64int rdrand_u64(void);
 	extern int crypto_hw_rdrand_available(void);
+	extern u64int chacha20_csprng_u64(void);
 
-	/* Use TPM hardware RNG for cryptographic nonce generation */
+	/* Tier 1: Use TPM hardware RNG for cryptographic nonce generation */
 	if (tpm_get_random((u8int*)&nonce, sizeof(nonce)) == sizeof(nonce)) {
 		return nonce;
 	}
 
-	/* TPM unavailable - try hardware RDRAND as fallback */
+	/* Tier 2: TPM unavailable - try hardware RDRAND as fallback */
 	if (crypto_hw_rdrand_available()) {
 		nonce = rdrand_u64();
 		if (nonce != 0) {
@@ -49,11 +50,15 @@ get_random_nonce(void)
 		print("get_random_nonce: RDRAND failed\n");
 	}
 
-	/* FATAL: No secure randomness available */
-	print("get_random_nonce: FATAL - no secure RNG available (TPM or RDRAND)\n");
-	print("get_random_nonce: REFUSING to generate weak capability nonce\n");
+	/* Tier 3: Software CSPRNG fallback (ChaCha20 with multi-source entropy) */
+	print("get_random_nonce: Using ChaCha20 CSPRNG (SOFTWARE FALLBACK)\n");
+	nonce = chacha20_csprng_u64();
+	if (nonce != 0) {
+		return nonce;
+	}
 
-	/* Return zero to signal failure - callers must check */
+	/* FATAL: Even CSPRNG failed (should never happen) */
+	print("get_random_nonce: FATAL - all RNG sources failed\n");
 	return 0;
 }
 
@@ -85,10 +90,11 @@ borrowinit(void)
 	borrowpool.nshared = 0;
 	borrowpool.nmut = 0;
 
-	/* Generate SipHash key from secure RNG (TPM or RDRAND) */
+	/* Generate SipHash key from secure RNG (3-tier fallback) */
 	extern int tpm_get_random(u8int *buffer, int len);
 	extern u64int rdrand_u64(void);
 	extern int crypto_hw_rdrand_available(void);
+	extern u64int chacha20_csprng_u64(void);
 
 	if (tpm_get_random((u8int*)&borrow_hash_key, sizeof(borrow_hash_key)) == sizeof(borrow_hash_key)) {
 		print("borrowchecker: Using TPM random for SipHash key\n");
@@ -97,7 +103,10 @@ borrowinit(void)
 		borrow_hash_key.key[1] = rdrand_u64();
 		print("borrowchecker: Using RDRAND for SipHash key\n");
 	} else {
-		panic("borrowchecker: FATAL - no secure RNG for SipHash key");
+		/* Fallback to ChaCha20 CSPRNG with multi-source entropy */
+		borrow_hash_key.key[0] = chacha20_csprng_u64();
+		borrow_hash_key.key[1] = chacha20_csprng_u64();
+		print("borrowchecker: Using ChaCha20 CSPRNG for SipHash key (SOFTWARE FALLBACK)\n");
 	}
 }
 

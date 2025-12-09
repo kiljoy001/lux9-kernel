@@ -75,7 +75,9 @@ blind_ledger_init(void)
     memset(ledger_pa_index, 0, sizeof(ledger_pa_index));
     memset(&ledger_lock, 0, sizeof(Lock)); // Boot-safe lock initialization
 
-    // Generate SipHash keys from secure RNG (TPM or RDRAND)
+    // Generate SipHash keys from secure RNG (3-tier fallback)
+    extern u64int chacha20_csprng_u64(void);
+
     if (tpm_get_random((u8int*)&capability_hash_key, sizeof(capability_hash_key)) == sizeof(capability_hash_key) &&
         tpm_get_random((u8int*)&pa_hash_key, sizeof(pa_hash_key)) == sizeof(pa_hash_key)) {
         print("blind_ledger: Using TPM random for SipHash keys\n");
@@ -86,7 +88,12 @@ blind_ledger_init(void)
         pa_hash_key.key[1] = rdrand_u64();
         print("blind_ledger: Using RDRAND for SipHash keys\n");
     } else {
-        panic("blind_ledger: FATAL - no secure RNG for SipHash keys");
+        /* Fallback to ChaCha20 CSPRNG with multi-source entropy */
+        capability_hash_key.key[0] = chacha20_csprng_u64();
+        capability_hash_key.key[1] = chacha20_csprng_u64();
+        pa_hash_key.key[0] = chacha20_csprng_u64();
+        pa_hash_key.key[1] = chacha20_csprng_u64();
+        print("blind_ledger: Using ChaCha20 CSPRNG for SipHash keys (SOFTWARE FALLBACK)\n");
     }
 
     if(crypto_hw_sha_available()) {
