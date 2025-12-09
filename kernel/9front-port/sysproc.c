@@ -384,8 +384,15 @@ sysexec(va_list list)
 	Tos *tos;
 	Chan *tc;
 	Fgrp *f;
+	int saved_nerrlab;
 
 	print("sysexec: started, list=%p\n", list);
+
+	/* Save error stack level - we'll restore it before returning
+	 * The syscall wrapper will pop once after we return, so we need to be at saved+1 */
+	saved_nerrlab = up->nerrlab;
+	print("sysexec: saved_nerrlab=%d\n", saved_nerrlab);
+	up->nerrlab = 0;  /* Reset to clean state for sysexec's own waserrors */
 
 	args = elem = nil;
 	file0 = va_arg(list, char*);
@@ -918,6 +925,15 @@ sysexec(va_list list)
 
 	if(up->hang)
 		up->procctl = Proc_stopme;
+
+	/* Force error stack to 1 - syscall wrapper will pop once to get to 0 */
+	print("sysexec: before cleanup, nerrlab=%d\n", up->nerrlab);
+	while(up->nerrlab > 1)
+		poperror();
+	while(up->nerrlab < 1)
+		up->nerrlab++;
+	print("sysexec: after cleanup, nerrlab=%d\n", up->nerrlab);
+
 	return execregs(entry, ssize, nargs);
 }
 
