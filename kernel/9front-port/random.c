@@ -126,6 +126,12 @@ randomread(void *p, ulong n)
 void
 genrandom(uchar *p, int n)
 {
+	/* Early boot fallback: use ChaCha20 CSPRNG if random subsystem not initialized */
+	if(rs == nil) {
+		extern void chacha20_csprng_fill(u8int *buf, ulong len);
+		chacha20_csprng_fill(p, n);
+		return;
+	}
 	randomread(p, n);
 }
 
