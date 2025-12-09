@@ -168,14 +168,12 @@ tpm_get_burst_count(void)
  *
  * This is the core command transmission layer.
  */
-int
-tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
+static int
+tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 {
     int i, burst, count;
     u8int status;
     TPM2_Response_Header *rhdr;
-
-    USED(ctx);
 
     if(!tpm_state.initialized){
         print("TPM: Not initialized\n");
@@ -270,7 +268,7 @@ tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp, usize *res
     u32int rc = (rhdr->code >> 24) | ((rhdr->code >> 8) & 0xFF00) |
                 ((rhdr->code << 8) & 0xFF0000) | (rhdr->code << 24);
 
-    if(rc != TPM_SUCCESS){
+    if(rc != TPM_SUCCESS_LOCAL){
         print("TPM: Command failed with code 0x%08X\n", rc);
         return -1;
     }
@@ -339,7 +337,7 @@ tpm_get_random(u8int *buffer, int len)
     *(u16int*)(cmd + 10) = bytes_requested;
 
     /* Send command */
-    if(tpm_transmit(nil, cmd, 12, resp, &resp_len) < 0)
+    if(tpm_transmit(cmd, 12, resp, &resp_len) < 0)
         return -1;
 
     /* Parse response: header(10) + size(2) + random_bytes */
@@ -358,15 +356,13 @@ tpm_get_random(u8int *buffer, int len)
  * TPM2_PCR_Extend - Extend PCR with hash
  */
 int
-tpm20_pcr_extend(TPMContext *ctx, u32int pcr_handle, u8int *hash, usize hash_len)
+tpm20_pcr_extend(u32int pcr_handle, u8int *hash, usize hash_len)
 {
     u8int cmd[64];
     u8int resp[128];
     usize resp_len = sizeof(resp);
     TPM2_Command_Header *chdr;
     int i;
-
-    USED(ctx);
 
     if(!tpm_state.initialized || hash_len != 32)
         return -1;
@@ -402,21 +398,19 @@ tpm20_pcr_extend(TPMContext *ctx, u32int pcr_handle, u8int *hash, usize hash_len
     memmove(cmd + i, hash, 32);
     i += 32;
 
-    return tpm_transmit(nil, cmd, i, resp, &resp_len);
+    return tpm_transmit(cmd, i, resp, &resp_len);
 }
 
 /*
  * TPM2_PCR_Read - Read PCR value
  */
 int
-tpm20_pcr_read(TPMContext *ctx, u32int pcr_handle, u8int *pcr_value, usize *pcr_len)
+tpm20_pcr_read(u32int pcr_handle, u8int *pcr_value, usize *pcr_len)
 {
     u8int cmd[20];
     u8int resp[256];
     usize resp_len = sizeof(resp);
     TPM2_Command_Header *chdr;
-
-    USED(ctx);
 
     if(!tpm_state.initialized)
         return -1;
@@ -435,7 +429,7 @@ tpm20_pcr_read(TPMContext *ctx, u32int pcr_handle, u8int *pcr_value, usize *pcr_
     cmd[18] = 0;
     cmd[19] = 0;
 
-    if(tpm_transmit(nil, cmd, 20, resp, &resp_len) < 0)
+    if(tpm_transmit(cmd, 20, resp, &resp_len) < 0)
         return -1;
 
     /* Parse PCR value from response (simplified) */
@@ -445,5 +439,26 @@ tpm20_pcr_read(TPMContext *ctx, u32int pcr_handle, u8int *pcr_value, usize *pcr_
         return 0;
     }
 
+    return -1;
+}
+
+/*
+ * tpm_init - Stub for compatibility (tpminit is the real init)
+ */
+int
+tpm_init(void)
+{
+    /* Already initialized in tpminit() */
+    return tpm_state.initialized ? 0 : -1;
+}
+
+/*
+ * TPM2_HMAC - HMAC operation (stub for now)
+ */
+int
+tpm20_hmac(u32int key_handle, u8int *data, usize data_len, u8int *hmac_out, usize *hmac_out_len)
+{
+    USED(key_handle, data, data_len, hmac_out, hmac_out_len);
+    print("TPM: tpm20_hmac not yet implemented\n");
     return -1;
 }

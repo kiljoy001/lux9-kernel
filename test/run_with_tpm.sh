@@ -4,13 +4,17 @@
 set -e
 
 TPM_DIR="/tmp/lux9-tpm"
-KERNEL="../lux9.elf"
+ISO="../lux9.iso"
 
-# Check if kernel exists
-if [ ! -f "$KERNEL" ]; then
-    echo "ERROR: Kernel not found at $KERNEL"
-    echo "Run 'make' first to build the kernel"
-    exit 1
+# Check if ISO exists, build if not
+if [ ! -f "$ISO" ]; then
+    echo "ISO not found, building..."
+    cd .. && make iso
+    if [ ! -f "$ISO" ]; then
+        echo "ERROR: Failed to build ISO"
+        exit 1
+    fi
+    cd test
 fi
 
 # Check if TPM is initialized
@@ -49,7 +53,8 @@ echo ""
 qemu-system-x86_64 \
     -M q35 \
     -m 2G \
-    -kernel "$KERNEL" \
+    -cdrom "$ISO" \
+    -boot d \
     -chardev socket,id=chrtpm,path=$TPM_DIR/swtpm-sock \
     -tpmdev emulator,id=tpm0,chardev=chrtpm \
     -device tpm-tis,tpmdev=tpm0 \
