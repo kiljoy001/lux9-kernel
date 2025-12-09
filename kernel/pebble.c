@@ -14,8 +14,6 @@ int pebble_debug = PEBBLE_DEBUG;
 static int pebble_initialized;
 
 static void pebble_free_red(PebbleRed*);
-static PebbleRed* pebble_detach_blue_locked(PebbleState*, PebbleBlue*);
-static int pebble_blue_exists_locked(PebbleState*, PebbleBlue*);
 
 static PebbleBlack*
 pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap)
@@ -190,7 +188,7 @@ pebble_black_alloc(ulong size, UserCapability *out_cap)
     if(ledger_err != BLIND_LEDGER_OK)
         error(PEBBLE_E_NOMEM);
 
-	lock(&pebble_global_lock);
+    lock(&pebble_global_lock);
 	if(ps->white_verified == 0){
 		unlock(&pebble_global_lock);
 		error(PEBBLE_E_PERM);
@@ -270,44 +268,20 @@ pebble_black_alloc(ulong size, UserCapability *out_cap)
 		error(PEBBLE_E_NOMEM);
 	}
 
-    // --- PebbleBlue Struct Allocation ---
-	blue = mallocz(sizeof(PebbleBlue), 1);
-	if(blue == nil){
-        // Rollback PebbleBlack, borrow_acquire, and ledger_mint
-        free(pb);
-        borrow_release(up, (uintptr)buf);
-        ledger_burn(out_cap, up);
-		xfree(buf);
-		lock(&pebble_global_lock);
-		ps->black_budget += size;
-		ps->black_inuse -= size;
-		ps->total_allocs--;
-		ps->white_pending += size;
-		ps->white_verified++;
-		unlock(&pebble_global_lock);
-		error(PEBBLE_E_NOMEM);
-	}
-
     // --- Populate PebbleBlack Struct ---
 	memmove(&pb->capability, out_cap, sizeof(UserCapability)); // Store the UserCapability
 	pb->physical_addr = buf; // Store the actual physical address
 	pb->size = size; // Retain size for budgeting
 	pb->flags = PEBBLE_CAP_BLACK | PEBBLE_CAP_ACTIVE;
-	pb->blue = blue;
 
-    // --- Populate PebbleBlue Struct ---
-	blue->owner = pb; // Owner is the PebbleBlack object
-	blue->blue_data = buf; // Points to the physical memory
-	blue->blue_size = size;
-	blue->matching_red = nil;
+	/* NOTE: Blue is NO LONGER auto-created - it's an independent token!
+	 * If block I/O transactions are needed, use pebble_blue_alloc() separately.
+	 * This enforces the circular economy: Black and Blue are separate colors.
+	 */
 
 	lock(&pebble_global_lock);
 	pb->next = ps->black_list;
 	ps->black_list = pb;
-
-	blue->next = ps->blue_list;
-	ps->blue_list = blue;
-	ps->blue_count++;
 	unlock(&pebble_global_lock);
 
 	if(pebble_debug)
@@ -321,8 +295,6 @@ pebble_black_free(const UserCapability *cap)
 {
 	PebbleState *ps;
 	PebbleBlack *pb, **pp;
-	PebbleBlue *blue;
-	PebbleRed *red;
 	ulong size;
 	BlindLedgerError ledger_err;
 	enum BorrowError borrow_err;
@@ -342,11 +314,11 @@ pebble_black_free(const UserCapability *cap)
 		unlock(&pebble_global_lock);
 		error(PEBBLE_E_PERM); // Changed to PERM, as cap not found implies unauthorized access or invalid cap
 	}
-	// Retain check for blue->matching_red
-	if(pb->blue != nil && pb->blue->matching_red == nil){
-		unlock(&pebble_global_lock);
-		error(PEBBLE_E_BUSY);
-	}
+
+	/* NOTE: Blue/Red coupling checks removed - they are now independent tokens!
+	 * Blue and Red must be freed separately via pebble_blue_free() and pebble_red_free().
+	 * Black tokens only manage BLACK state in the circular economy.
+	 */
 
 	// --- Get physical address from Blind Ledger (using ledger_verify) ---
 	// This is needed for borrow_release and xfree
@@ -367,16 +339,7 @@ pebble_black_free(const UserCapability *cap)
 		}
 	}
 
-	// --- Detach Blue/Red objects --- (Keep existing logic)
-	blue = pb->blue;
-	red = nil;
-	if(blue != nil){
-		red = pebble_detach_blue_locked(ps, blue);
-		if(pb == blue->owner)
-			blue->owner = nil;
-	}
-
-	// --- Adjust Pebble budget ---
+	// --- Adjust Pebble budget (BLACK → COLORLESS) ---
 	ps->black_inuse -= size;
 	ps->black_budget += size;
 	ps->total_frees++;
@@ -406,14 +369,9 @@ pebble_black_free(const UserCapability *cap)
 		      cap->hash, ledger_err);
 	}
 
-	// --- Free associated Red/Blue objects and physical memory ---
-	if(red != nil)
-		pebble_free_red(red);
-	if(blue != nil)
-		free(blue);
-	
-	// Free the actual physical memory
-	xfree(entry.physical_address); 
+	// --- Free physical memory and PebbleBlack struct ---
+	// (Blue/Red are freed separately - they're independent colored tokens)
+	xfree((void*)entry.physical_address);
 	free(pb); // Free PebbleBlack struct
 
 	if(pebble_debug)
@@ -461,35 +419,7 @@ pebble_white_verify(PebbleWhite *white_cap, void **black_cap)
 	return 0;
 }
 
-static PebbleRed*
-pebble_detach_blue_locked(PebbleState *ps, PebbleBlue *blue)
-{
-	PebbleBlue **bp;
-	PebbleRed **rp, *red;
-
-	if(blue == nil)
-		return nil;
-
-	for(bp = &ps->blue_list; *bp != nil; bp = &(*bp)->next){
-		if(*bp == blue){
-			*bp = blue->next;
-			ps->blue_count--;
-			break;
-		}
-	}
-	red = blue->matching_red;
-	if(red != nil){
-		for(rp = &ps->red_list; *rp != nil; rp = &(*rp)->next){
-			if(*rp == red){
-				*rp = red->next;
-				ps->red_count--;
-				break;
-			}
-		}
-		blue->matching_red = nil;
-	}
-	return red;
-}
+/* REMOVED: pebble_detach_blue_locked() - coupled Blue/Red model deprecated */
 
 static void
 pebble_free_red(PebbleRed *red)
@@ -803,275 +733,63 @@ pebble_blue_exists(PebbleState *ps, PebbleBlue *blue)
 	return 0;
 }
 
-static int
-pebble_blue_exists_locked(PebbleState *ps, PebbleBlue *blue)
-{
-	PebbleBlue *bp;
+/* REMOVED: pebble_blue_exists_locked() - coupled Blue/Red model deprecated */
+/* REMOVED: pebble_has_matching_red() - coupled Blue/Red model deprecated */
 
-	if(ps == nil || blue == nil)
-		return 0;
-	for(bp = ps->blue_list; bp != nil; bp = bp->next)
-		if(bp == blue)
-			return 1;
-	return 0;
-}
-
-int
-pebble_has_matching_red(PebbleState *, PebbleBlue *blue)
-{
-	return blue != nil && blue->matching_red != nil;
-}
-
-PebbleRed*
-pebble_duplicate_blue(PebbleState *ps, PebbleBlue *blue)
-{
-	PebbleRed *red;
-	ulong size;
-
-	if(ps == nil || blue == nil)
-		return nil;
-
-	size = blue->blue_size;
-
-	/* Check budget availability - Red allocation must consume from colorless bank */
-	lock(&pebble_global_lock);
-	if(ps->black_budget < size){
-		unlock(&pebble_global_lock);
-		return nil;  /* Insufficient budget for Red snapshot */
-	}
-	/* Reserve budget for Red allocation (state transition: COLORLESS → RED) */
-	ps->black_budget -= size;
-	ps->black_inuse += size;  /* Track Red allocation in black_inuse */
-	unlock(&pebble_global_lock);
-
-	/* Allocate Red structure */
-	red = mallocz(sizeof(PebbleRed), 1);
-	if(red == nil){
-		/* Rollback budget on failure */
-		lock(&pebble_global_lock);
-		ps->black_budget += size;
-		ps->black_inuse -= size;
-		unlock(&pebble_global_lock);
-		return nil;
-	}
-
-	/* Allocate Red data buffer (backed by consumed budget) */
-	red->red_data = xallocz(size, 1);
-	if(red->red_data == nil){
-		/* Rollback budget on failure */
-		lock(&pebble_global_lock);
-		ps->black_budget += size;
-		ps->black_inuse -= size;
-		unlock(&pebble_global_lock);
-		free(red);
-		return nil;
-	}
-
-	/* Copy Blue data to Red snapshot */
-	memmove(red->red_data, blue->blue_data, size);
-	red->red_size = size;
-
-	return red;
-}
-
-void
-pebble_mark_red(PebbleState *ps, PebbleBlue *blue, PebbleRed *red)
-{
-	if(ps == nil || blue == nil || red == nil)
-		return;
-
-	red->next = ps->red_list;
-	ps->red_list = red;
-	ps->red_count++;
-
-	blue->matching_red = red;
-	if(blue->owner != nil){
-		PebbleBlack *pb = blue->owner;
-		pb->red = red;
-	}
-}
+/* REMOVED: pebble_duplicate_blue() - replaced by pebble_red_snapshot() */
+/* REMOVED: pebble_mark_red() - coupled Blue/Red model deprecated */
 
 int
 pebble_red_copy(PebbleBlue *blue_obj, PebbleRed **red_copy)
 {
-	PebbleState *ps;
-	PebbleRed *red, *existing;
-
+	/* DEPRECATED: Use pebble_red_snapshot() instead.
+	 * This wrapper maintains backward compatibility.
+	 */
 	if(blue_obj == nil || red_copy == nil)
 		error(PEBBLE_E_BADARG);
 
-	ps = pebble_state();
-	if(ps == nil)
-		error(PEBBLE_E_PERM);
-
-	lock(&pebble_global_lock);
-	if(!pebble_blue_exists_locked(ps, blue_obj)){
-		unlock(&pebble_global_lock);
-		error(PEBBLE_E_PERM);
-	}
-	if(blue_obj->matching_red != nil){
-		red = blue_obj->matching_red;
-		unlock(&pebble_global_lock);
-		*red_copy = red;
-		return 0;
-	}
-	unlock(&pebble_global_lock);
-
-	red = pebble_duplicate_blue(ps, blue_obj);
-	if(red == nil)
-		error(PEBBLE_E_NOMEM);
-
-	lock(&pebble_global_lock);
-	if(!pebble_blue_exists_locked(ps, blue_obj)){
-		unlock(&pebble_global_lock);
-		pebble_free_red(red);
-		error(PEBBLE_E_PERM);
-	}
-	if(blue_obj->matching_red != nil){
-		existing = blue_obj->matching_red;
-		unlock(&pebble_global_lock);
-		pebble_free_red(red);
-		*red_copy = existing;
-		return 0;
-	}
-	pebble_mark_red(ps, blue_obj, red);
-	unlock(&pebble_global_lock);
-
-	*red_copy = red;
-	if(pebble_debug)
-		print("PEBBLE: red copy pid=%lud blue=%#p red=%#p\n",
-			up->pid, blue_obj, red);
-	return 0;
+	return pebble_red_snapshot(blue_obj, red_copy);
 }
 
-static void
-pebble_remove_red_locked(PebbleState *ps, PebbleRed *red)
-{
-	PebbleRed **rp;
-
-	if(red == nil)
-		return;
-	for(rp = &ps->red_list; *rp != nil; rp = &(*rp)->next){
-		if(*rp == red){
-			*rp = red->next;
-			ps->red_count--;
-			break;
-		}
-	}
-}
+/* REMOVED: pebble_remove_red_locked() - coupled Blue/Red model deprecated */
 
 int
 pebble_blue_discard(PebbleBlue *blue_obj)
 {
-	PebbleState *ps;
-	PebbleRed *red;
-
+	/* DEPRECATED: Use pebble_blue_free() instead.
+	 * This wrapper maintains backward compatibility.
+	 */
 	if(blue_obj == nil)
 		error(PEBBLE_E_BADARG);
 
-	ps = pebble_state();
-	if(ps == nil)
-		error(PEBBLE_E_PERM);
-
-	lock(&pebble_global_lock);
-	if(!pebble_blue_exists(ps, blue_obj)){
-		unlock(&pebble_global_lock);
-		error(PEBBLE_E_PERM);
-	}
-	if(blue_obj->matching_red == nil){
-		unlock(&pebble_global_lock);
-		error(PEBBLE_E_BUSY);
-	}
-
-	red = pebble_detach_blue_locked(ps, blue_obj);
-	if(red != nil)
-		pebble_remove_red_locked(ps, red);
-	if(blue_obj->owner != nil){
-		PebbleBlack *pb = blue_obj->owner;
-		pb->blue = nil;
-		pb->red = nil;
-	}
-	unlock(&pebble_global_lock);
-
-	pebble_free_red(red);
-	free(blue_obj);
-	if(pebble_debug)
-		print("PEBBLE: blue discard pid=%lud\n", up->pid);
-	return 0;
+	return pebble_blue_free(blue_obj);
 }
 
 void
 pebble_ensure_red_snapshots(PebbleState *ps)
 {
-	PebbleBlue *blue, **pending;
-	int count, i;
-	PebbleRed *red;
-
-	if(ps == nil)
-		return;
-
-	lock(&pebble_global_lock);
-	count = 0;
-	for(blue = ps->blue_list; blue != nil; blue = blue->next)
-		if(blue->matching_red == nil)
-			count++;
-	unlock(&pebble_global_lock);
-
-	if(count == 0)
-		return;
-
-	pending = malloc(count * sizeof(PebbleBlue*));
-	if(pending == nil){
-		if(pebble_debug)
-			print("PEBBLE: ensure_red_snapshots: no memory for pending list\n");
-		return;
-	}
-
-	lock(&pebble_global_lock);
-	i = 0;
-	for(blue = ps->blue_list; blue != nil && i < count; blue = blue->next)
-		if(blue->matching_red == nil)
-			pending[i++] = blue;
-	unlock(&pebble_global_lock);
-
-	count = i;
-	for(i = 0; i < count; i++){
-		if(pending[i] == nil)
-			continue;
-		if(waserror()){
-			if(pebble_debug)
-				print("PEBBLE: ensure_red_snapshots failed: %s\n", up != nil ? up->errstr : "no proc");
-			poperror();
-			continue;
-		}
-		red = nil;
-		pebble_red_copy(pending[i], &red);
-		USED(red);
-		poperror();
-	}
-	free(pending);
+	/* DEPRECATED: Blue/Red coupling removed.
+	 * Blue and Red are now independent tokens managed separately.
+	 * Applications must explicitly create Red snapshots via pebble_red_snapshot()
+	 * when transaction safety is needed.
+	 */
+	USED(ps);
+	return;
 }
 
 void
 pebble_red_blue_exit(void)
 {
-	PebbleState *ps;
-
-	__asm__ volatile("outb %0, %1" : : "a"((char)'1'), "Nd"((unsigned short)0x3F8));
-	if(!pebble_enabled) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'2'), "Nd"((unsigned short)0x3F8));
-		return;
-	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'3'), "Nd"((unsigned short)0x3F8));
-	ps = pebble_state();
-	__asm__ volatile("outb %0, %1" : : "a"((char)'4'), "Nd"((unsigned short)0x3F8));
-	if(ps == nil) {
-		__asm__ volatile("outb %0, %1" : : "a"((char)'5'), "Nd"((unsigned short)0x3F8));
-		return;
-	}
-	__asm__ volatile("outb %0, %1" : : "a"((char)'6'), "Nd"((unsigned short)0x3F8));
-	pebble_ensure_red_snapshots(ps);
-	__asm__ volatile("outb %0, %1" : : "a"((char)'7'), "Nd"((unsigned short)0x3F8));
+	/* DEPRECATED: Blue/Red are now independent tokens, not coupled to Black.
+	 * This function previously ensured Red snapshots for all Blue objects,
+	 * but that coupling model has been removed.
+	 *
+	 * Blue/Red are only used in tests and must be managed explicitly via:
+	 * - pebble_blue_alloc() / pebble_blue_free()
+	 * - pebble_red_alloc() / pebble_red_free()
+	 * - pebble_red_snapshot()
+	 */
+	return;
 }
 
 void
@@ -1143,10 +861,9 @@ pebble_selftest(void)
 {
 	PebbleState *ps;
 	PebbleWhite *white;
-	PebbleBlack *black;
+	UserCapability black_cap;
 	PebbleBlue *blue;
 	PebbleRed *red;
-	void *handle;
 
 	if(!pebble_enabled)
 		return;
@@ -1161,43 +878,46 @@ pebble_selftest(void)
 		return;
 	}
 
+	/* Test 1: White → Black allocation (circular economy) */
 	white = pebble_issue_white(ps, nil, PEBBLE_MIN_ALLOC);
 	if(white == nil)
-		error(PEBBLE_E_AGAIN);
+		error("pebble selftest: white issue failed");
 
-	handle = nil;
-	pebble_white_verify(white, &handle);
-	pebble_black_alloc(PEBBLE_MIN_ALLOC, &handle);
+	pebble_white_verify(white, nil);
+	if(pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)
+		error("pebble selftest: black alloc failed");
 
-	black = handle;
-	if(black == nil)
-		error("pebble selftest: black handle nil");
-
-	blue = black->blue;
+	/* Test 2: Independent Blue allocation (COLORLESS → BLUE) */
+	blue = pebble_blue_alloc(PEBBLE_MIN_ALLOC);
 	if(blue == nil)
-		error("pebble selftest: blue missing");
+		error("pebble selftest: blue alloc failed");
 
-	red = nil;
-	pebble_red_copy(blue, &red);
+	/* Test 3: Blue → Red snapshot (independent tokens) */
+	if(pebble_red_snapshot(blue, &red) != 0)
+		error("pebble selftest: red snapshot failed");
 	if(red == nil)
-		error("pebble selftest: red missing");
+		error("pebble selftest: red nil after snapshot");
 
-	pebble_blue_discard(blue);
-	pebble_black_free(black);
+	/* Test 4: Free all tokens back to colorless bank */
+	if(pebble_red_free(red) != 0)
+		error("pebble selftest: red free failed");
+	if(pebble_blue_free(blue) != 0)
+		error("pebble selftest: blue free failed");
+	if(pebble_black_free(&black_cap) != 0)
+		error("pebble selftest: black free failed");
 
 	poperror();
-	print("PEBBLE: selftest PASS\n");
+	print("PEBBLE: selftest PASS (independent tokens, circular economy validated)\n");
 }
 
 void
 pebble_sip_issue_test(void)
 {
 	PebbleWhite *white;
-	PebbleBlack *pb;
+	UserCapability black_cap;
+	PebbleBlue *blue;
 	PebbleRed *red;
 	PebbleState *ps;
-	void *hint;
-	void *handle;
 
 	if(!pebble_enabled)
 		return;
@@ -1211,31 +931,35 @@ pebble_sip_issue_test(void)
 		return;
 	}
 
+	/* Test 1: White token with larger size */
 	white = pebble_issue_white(ps, nil, PEBBLE_MIN_ALLOC*2);
 	if(white == nil)
-		error(PEBBLE_E_AGAIN);
+		error("pebble sip issue: white issue failed");
 
-	hint = nil;
-	pebble_white_verify(white, &hint);
+	pebble_white_verify(white, nil);
 
-	handle = nil;
-	pebble_black_alloc(PEBBLE_MIN_ALLOC, &handle);
-	pb = handle;
-	if(pb == nil)
-		error("pebble sip issue: black alloc nil");
-	if(pb->blue == nil)
-		error("pebble sip issue: blue missing");
+	/* Test 2: Black allocation from white token */
+	if(pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)
+		error("pebble sip issue: black alloc failed");
 
-	red = nil;
-	pebble_red_copy(pb->blue, &red);
+	/* Test 3: Independent Blue allocation */
+	blue = pebble_blue_alloc(PEBBLE_MIN_ALLOC);
+	if(blue == nil)
+		error("pebble sip issue: blue alloc failed");
+
+	/* Test 4: Create Red snapshot */
+	if(pebble_red_snapshot(blue, &red) != 0)
+		error("pebble sip issue: red snapshot failed");
 	if(red == nil)
-		error("pebble sip issue: red missing");
+		error("pebble sip issue: red nil");
 
-	pebble_blue_discard(pb->blue);
-	pebble_black_free(pb);
+	/* Test 5: Free all back to colorless (circular economy) */
+	pebble_red_free(red);
+	pebble_blue_free(blue);
+	pebble_black_free(&black_cap);
 
 	poperror();
-	print("PEBBLE: /dev/sip/issue test PASS\n");
+	print("PEBBLE: /dev/sip/issue test PASS (circular economy validated)\n");
 }
 
 
