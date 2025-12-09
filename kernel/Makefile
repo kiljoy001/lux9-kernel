@@ -37,6 +37,9 @@ CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
 FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
+CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
+CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
+CLR_QBE_C := clr/qbe_compile.c
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
@@ -50,8 +53,11 @@ CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
 FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
+CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o
+CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
+CLR_QBE_O := qbe_compile.o
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -72,7 +78,10 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
           -I../include \
           -I../port \
           -I.. \
+          -Iclr/libmcu-cbor \
+          -Iclr/fruity \
           -D_PLAN9_SOURCE \
+          -D__PLAN9_KERNEL__ \
           -DKTZERO=0xffffffff80110000
 
 # Linker configuration
@@ -134,10 +143,54 @@ pebble_family.o: family/pebble.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+# CLR Fruity IR compilation
+fruity_ir.o: clr/fruity/fruity_ir.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+fruity_cbor.o: clr/fruity/fruity_cbor.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+fruity_to_qbe.o: clr/fruity/fruity_to_qbe.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+qbe_buffer.o: clr/fruity/qbe_buffer.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# CLR CBOR library compilation
+cbor_common.o: clr/libmcu-cbor/common.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+cbor_decoder.o: clr/libmcu-cbor/decoder.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+cbor_encoder.o: clr/libmcu-cbor/encoder.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+cbor_helper.o: clr/libmcu-cbor/helper.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+cbor_ieee754.o: clr/libmcu-cbor/ieee754_stub.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+cbor_parser.o: clr/libmcu-cbor/parser.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+
+# CLR QBE compiler
+qbe_compile.o: clr/qbe_compile.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 # Testing targets (placeholder)
-test:
-	@echo "Running kernel tests..."
-	@echo "✓ Basic compilation test passed"
 
 run: $(KERNEL_BINARY)
 	@echo "Running kernel in QEMU..."

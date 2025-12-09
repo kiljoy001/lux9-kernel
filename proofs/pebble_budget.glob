@@ -1,4 +1,4 @@
-DIGEST 4e7d22af2fbca4650b26628a29f56e08
+DIGEST 2e7b0e83a5842867bf3e035c2909df6c
 Fpebble_budget
 R284:300 Coq.ZArith.ZArith <> <> lib
 rec 510:520 <> PebbleState
@@ -189,21 +189,224 @@ R2800:2800 pebble_budget <> s:30 var
 R2822:2832 pebble_budget <> black_inuse proj
 R2819:2819 pebble_budget <> s:30 var
 R2837:2847 pebble_budget <> initial_mem:31 var
-prf 3033:3061 <> Alloc_Preserves_Physical_Mass
-binder 3074:3075 <> s1:32
-binder 3077:3078 <> s2:33
-binder 3080:3083 <> size:34
-binder 3085:3091 <> initial:35
-R3138:3143 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R3096:3126 pebble_budget <> Invariant_Physical_Conservation def
-R3128:3129 pebble_budget <> s1:32 var
-R3131:3137 pebble_budget <> initial:35 var
-R3165:3170 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R3144:3153 pebble_budget <> BlackAlloc ind
-R3155:3158 pebble_budget <> size:34 var
-R3160:3161 pebble_budget <> s1:32 var
-R3163:3164 pebble_budget <> s2:33 var
-R3171:3201 pebble_budget <> Invariant_Physical_Conservation def
-R3203:3204 pebble_budget <> s2:33 var
-R3206:3212 pebble_budget <> initial:35 var
-R3297:3327 pebble_budget <> Invariant_Physical_Conservation def
+prf 3076:3098 <> mass_conservation_alloc
+binder 3109:3109 <> b:32
+binder 3111:3111 <> i:33
+binder 3113:3113 <> s:34
+R3131:3133 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3121:3124 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3130:3130 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3117:3119 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R3116:3116 pebble_budget <> b:32 var
+R3120:3120 pebble_budget <> s:34 var
+R3126:3128 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3125:3125 pebble_budget <> i:33 var
+R3129:3129 pebble_budget <> s:34 var
+R3135:3137 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3134:3134 pebble_budget <> b:32 var
+R3138:3138 pebble_budget <> i:33 var
+R3167:3171 Coq.ZArith.BinInt Z sub def
+R3187:3197 Coq.ZArith.BinInt Z add_assoc thm
+R3187:3197 Coq.ZArith.BinInt Z add_assoc thm
+R3187:3197 Coq.ZArith.BinInt Z add_assoc thm
+R3266:3268 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3256:3259 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3265:3265 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3254:3254 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3261:3263 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3266:3268 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3256:3259 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3265:3265 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3254:3254 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3261:3263 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3290:3299 Coq.ZArith.BinInt Z add_comm thm
+R3290:3299 Coq.ZArith.BinInt Z add_comm thm
+R3290:3299 Coq.ZArith.BinInt Z add_comm thm
+R3319:3329 Coq.ZArith.BinInt Z add_assoc thm
+R3319:3329 Coq.ZArith.BinInt Z add_assoc thm
+R3319:3329 Coq.ZArith.BinInt Z add_assoc thm
+R3344:3359 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R3344:3359 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R3344:3359 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R3374:3382 Coq.ZArith.BinInt Z add_0_l thm
+R3374:3382 Coq.ZArith.BinInt Z add_0_l thm
+R3374:3382 Coq.ZArith.BinInt Z add_0_l thm
+prf 3484:3505 <> mass_conservation_free
+binder 3516:3516 <> b:35
+binder 3518:3518 <> i:36
+binder 3520:3520 <> s:37
+R3538:3540 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3528:3531 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3537:3537 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3524:3526 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3523:3523 pebble_budget <> b:35 var
+R3527:3527 pebble_budget <> s:37 var
+R3533:3535 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R3532:3532 pebble_budget <> i:36 var
+R3536:3536 pebble_budget <> s:37 var
+R3542:3544 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3541:3541 pebble_budget <> b:35 var
+R3545:3545 pebble_budget <> i:36 var
+R3574:3578 Coq.ZArith.BinInt Z sub def
+R3594:3604 Coq.ZArith.BinInt Z add_assoc thm
+R3594:3604 Coq.ZArith.BinInt Z add_assoc thm
+R3594:3604 Coq.ZArith.BinInt Z add_assoc thm
+R3673:3675 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3662:3665 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3672:3672 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3667:3669 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3670:3670 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3673:3675 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3662:3665 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3672:3672 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3667:3669 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R3670:3670 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3697:3706 Coq.ZArith.BinInt Z add_comm thm
+R3711:3711 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3697:3706 Coq.ZArith.BinInt Z add_comm thm
+R3711:3711 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3697:3706 Coq.ZArith.BinInt Z add_comm thm
+R3711:3711 Coq.ZArith.BinInt <> ::Z_scope:'-'_x not
+R3729:3739 Coq.ZArith.BinInt Z add_assoc thm
+R3729:3739 Coq.ZArith.BinInt Z add_assoc thm
+R3729:3739 Coq.ZArith.BinInt Z add_assoc thm
+R3754:3769 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R3754:3769 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R3754:3769 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R3784:3792 Coq.ZArith.BinInt Z add_0_l thm
+R3784:3792 Coq.ZArith.BinInt Z add_0_l thm
+R3784:3792 Coq.ZArith.BinInt Z add_0_l thm
+prf 4032:4060 <> Alloc_Preserves_Physical_Mass
+binder 4073:4074 <> s1:38
+binder 4076:4077 <> s2:39
+binder 4079:4082 <> size:40
+binder 4084:4090 <> initial:41
+R4137:4142 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4095:4125 pebble_budget <> Invariant_Physical_Conservation def
+R4127:4128 pebble_budget <> s1:38 var
+R4130:4136 pebble_budget <> initial:41 var
+R4164:4169 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4143:4152 pebble_budget <> BlackAlloc ind
+R4154:4157 pebble_budget <> size:40 var
+R4159:4160 pebble_budget <> s1:38 var
+R4162:4163 pebble_budget <> s2:39 var
+R4170:4200 pebble_budget <> Invariant_Physical_Conservation def
+R4202:4203 pebble_budget <> s2:39 var
+R4205:4211 pebble_budget <> initial:41 var
+R4296:4326 pebble_budget <> Invariant_Physical_Conservation def
+R4370:4392 pebble_budget <> mass_conservation_alloc thm
+R4370:4392 pebble_budget <> mass_conservation_alloc thm
+prf 4409:4436 <> Free_Preserves_Physical_Mass
+binder 4449:4450 <> s1:42
+binder 4452:4453 <> s2:43
+binder 4455:4458 <> size:44
+binder 4460:4466 <> initial:45
+R4513:4518 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4471:4501 pebble_budget <> Invariant_Physical_Conservation def
+R4503:4504 pebble_budget <> s1:42 var
+R4506:4512 pebble_budget <> initial:45 var
+R4539:4544 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4519:4527 pebble_budget <> BlackFree ind
+R4529:4532 pebble_budget <> size:44 var
+R4534:4535 pebble_budget <> s1:42 var
+R4537:4538 pebble_budget <> s2:43 var
+R4545:4575 pebble_budget <> Invariant_Physical_Conservation def
+R4577:4578 pebble_budget <> s2:43 var
+R4580:4586 pebble_budget <> initial:45 var
+R4671:4701 pebble_budget <> Invariant_Physical_Conservation def
+R4745:4766 pebble_budget <> mass_conservation_free thm
+R4745:4766 pebble_budget <> mass_conservation_free thm
+prf 4783:4802 <> Rollback_Is_Identity
+binder 4815:4816 <> s1:46
+binder 4818:4819 <> s2:47
+binder 4821:4824 <> size:48
+R4859:4864 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4829:4847 pebble_budget <> BlackAlloc_Rollback ind
+R4849:4852 pebble_budget <> size:48 var
+R4854:4855 pebble_budget <> s1:46 var
+R4857:4858 pebble_budget <> s2:47 var
+R4867:4869 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4865:4866 pebble_budget <> s1:46 var
+R4870:4871 pebble_budget <> s2:47 var
+R5142:5144 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5135:5137 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5128:5130 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5142:5144 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5135:5137 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5128:5130 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5162:5166 Coq.ZArith.BinInt Z sub def
+R5180:5190 Coq.ZArith.BinInt Z add_assoc thm
+R5180:5190 Coq.ZArith.BinInt Z add_assoc thm
+R5180:5190 Coq.ZArith.BinInt Z add_assoc thm
+R5201:5216 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5201:5216 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5201:5216 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5227:5235 Coq.ZArith.BinInt Z add_0_r thm
+R5227:5235 Coq.ZArith.BinInt Z add_0_r thm
+R5227:5235 Coq.ZArith.BinInt Z add_0_r thm
+R5348:5350 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5341:5343 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5334:5336 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5348:5350 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5341:5343 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5334:5336 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5368:5372 Coq.ZArith.BinInt Z sub def
+R5386:5396 Coq.ZArith.BinInt Z add_assoc thm
+R5386:5396 Coq.ZArith.BinInt Z add_assoc thm
+R5386:5396 Coq.ZArith.BinInt Z add_assoc thm
+R5407:5422 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R5407:5422 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R5407:5422 Coq.ZArith.BinInt Z add_opp_diag_r thm
+R5433:5441 Coq.ZArith.BinInt Z add_0_r thm
+R5433:5441 Coq.ZArith.BinInt Z add_0_r thm
+R5433:5441 Coq.ZArith.BinInt Z add_0_r thm
+R5556:5558 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5549:5551 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5542:5544 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5556:5558 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5549:5551 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5542:5544 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5576:5580 Coq.ZArith.BinInt Z sub def
+R5594:5604 Coq.ZArith.BinInt Z add_assoc thm
+R5594:5604 Coq.ZArith.BinInt Z add_assoc thm
+R5594:5604 Coq.ZArith.BinInt Z add_assoc thm
+R5615:5630 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5615:5630 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5615:5630 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5641:5649 Coq.ZArith.BinInt Z add_0_r thm
+R5641:5649 Coq.ZArith.BinInt Z add_0_r thm
+R5641:5649 Coq.ZArith.BinInt Z add_0_r thm
+R5753:5755 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5749:5751 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5745:5747 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5753:5755 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5749:5751 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5745:5747 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R5773:5777 Coq.ZArith.BinInt Z sub def
+R5791:5801 Coq.ZArith.BinInt Z add_assoc thm
+R5791:5801 Coq.ZArith.BinInt Z add_assoc thm
+R5791:5801 Coq.ZArith.BinInt Z add_assoc thm
+R5812:5827 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5812:5827 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5812:5827 Coq.ZArith.BinInt Z add_opp_diag_l thm
+R5838:5846 Coq.ZArith.BinInt Z add_0_r thm
+R5838:5846 Coq.ZArith.BinInt Z add_0_r thm
+R5838:5846 Coq.ZArith.BinInt Z add_0_r thm
+prf 5906:5933 <> Verify_Ignores_Physical_Mass
+binder 5946:5947 <> s1:49
+binder 5949:5950 <> s2:50
+binder 5952:5955 <> size:51
+binder 5957:5963 <> initial:52
+R6010:6015 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5968:5998 pebble_budget <> Invariant_Physical_Conservation def
+R6000:6001 pebble_budget <> s1:49 var
+R6003:6009 pebble_budget <> initial:52 var
+R6038:6043 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6016:6026 pebble_budget <> VerifyWhite ind
+R6028:6031 pebble_budget <> size:51 var
+R6033:6034 pebble_budget <> s1:49 var
+R6036:6037 pebble_budget <> s2:50 var
+R6044:6074 pebble_budget <> Invariant_Physical_Conservation def
+R6076:6077 pebble_budget <> s2:50 var
+R6079:6085 pebble_budget <> initial:52 var
+R6170:6200 pebble_budget <> Invariant_Physical_Conservation def
