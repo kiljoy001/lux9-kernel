@@ -324,3 +324,34 @@ hwcrypto_have_aes:
 	/* For now, return 0 as placeholder - will be replaced with proper check */
 	xorl	%eax, %eax
 	ret
+
+/*
+ * RDRAND - Hardware Random Number Generator
+ *
+ * uint64_t rdrand_u64(void);
+ *
+ * Returns a cryptographically secure 64-bit random number using RDRAND.
+ * Retries up to 10 times on failure.
+ * Returns 0 on failure (caller must check).
+ *
+ * RDRAND instruction sets CF on success, clears on failure.
+ */
+.globl rdrand_u64
+.type rdrand_u64, @function
+rdrand_u64:
+	movl	$10, %ecx		/* Retry counter (Intel recommends 10) */
+1:
+	rdrand	%rax			/* Execute RDRAND, result in RAX */
+	jc	2f			/* CF=1 means success, jump to return */
+
+	/* Retry on failure */
+	decl	%ecx
+	jnz	1b			/* Loop if retries remain */
+
+	/* All retries failed */
+	xorq	%rax, %rax		/* Return 0 on failure */
+2:
+	ret
+
+/* Mark stack as non-executable */
+.section .note.GNU-stack,"",@progbits

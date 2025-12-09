@@ -236,6 +236,7 @@ struct Mach
 	char	haveaes;	/* AES-NI instructions available */
 	char	havesha;	/* SHA extensions available */
 	char	havepclmul;	/* PCLMULQDQ instruction available */
+	char	haverdrand;	/* RDRAND instruction available */
 
 	int	fpstate;		/* FPU state for interrupts */
 	FPalloc	*fpsave;

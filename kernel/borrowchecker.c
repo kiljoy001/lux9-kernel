@@ -28,17 +28,25 @@ get_random_nonce(void)
 {
 	u64int nonce;
 	extern int tpm_get_random(u8int *buffer, int len);
+	extern u64int rdrand_u64(void);
+	extern int crypto_hw_rdrand_available(void);
 
 	/* Use TPM hardware RNG for cryptographic nonce generation */
 	if (tpm_get_random((u8int*)&nonce, sizeof(nonce)) == sizeof(nonce)) {
 		return nonce;
 	}
 
-	/* CRITICAL: If TPM unavailable, try hardware RDRAND */
-	/* TODO: Implement rdrand_u64() using RDRAND instruction */
+	/* TPM unavailable - try hardware RDRAND as fallback */
+	if (crypto_hw_rdrand_available()) {
+		nonce = rdrand_u64();
+		if (nonce != 0) {
+			return nonce;
+		}
+		print("get_random_nonce: RDRAND failed\n");
+	}
 
 	/* FATAL: No secure randomness available */
-	print("get_random_nonce: FATAL - no secure RNG available\n");
+	print("get_random_nonce: FATAL - no secure RNG available (TPM or RDRAND)\n");
 	print("get_random_nonce: REFUSING to generate weak capability nonce\n");
 
 	/* Return zero to signal failure - callers must check */

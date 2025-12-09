@@ -21,6 +21,7 @@
 
 /* External symbols from assembly */
 extern void sha256_transform_hw(uint32_t state[8], const uint8_t block[64], uint32_t nblocks);
+extern uint64_t rdrand_u64(void);
 
 /*
  * Check if hardware SHA extensions are available
@@ -42,6 +43,17 @@ crypto_hw_aes_available(void)
     /* Access current CPU's Mach structure */
     extern Mach *m;
     return m->haveaes;
+}
+
+/*
+ * Check if hardware RDRAND is available
+ */
+int
+crypto_hw_rdrand_available(void)
+{
+    /* Access current CPU's Mach structure */
+    extern Mach *m;
+    return m->haverdrand;
 }
 
 /*
@@ -221,17 +233,47 @@ crypto_tpm_key_init(void)
         tpm_key_state.key_generation = 1;
         print("Crypto: Generated TPM random key (generation 1)\n");
     } else {
-        /* CRITICAL: No fallback to weak entropy sources! */
-        print("Crypto: FATAL - TPM random not available, refusing to use weak entropy\n");
-        print("Crypto: System requires hardware TPM or RDRAND for cryptographic operations\n");
+        /* TPM unavailable - try RDRAND as hardware RNG fallback */
+        print("Crypto: TPM random not available\n");
 
-        /* Zero out memory to avoid uninitialized data */
-        memset(tpm_key_state.hmac_key, 0, sizeof(tpm_key_state.hmac_key));
-        tpm_key_state.key_valid = 0;
-        tpm_key_state.key_generation = 0;
+        if (crypto_hw_rdrand_available()) {
+            print("Crypto: Falling back to RDRAND hardware RNG\n");
+            int i;
+            uint64_t *key_u64 = (uint64_t*)random_key;
+            int success = 1;
 
-        /* TODO: Try RDRAND/RDSEED as alternative hardware RNG */
-        return -1;
+            for (i = 0; i < CRYPTO_HMAC_KEY_BYTES / 8; i++) {
+                key_u64[i] = rdrand_u64();
+                if (key_u64[i] == 0) {
+                    print("Crypto: RDRAND failed at byte %d\n", i * 8);
+                    success = 0;
+                    break;
+                }
+            }
+
+            if (success) {
+                memcpy(tpm_key_state.hmac_key, random_key, CRYPTO_HMAC_KEY_BYTES);
+                tpm_key_state.key_valid = 1;
+                tpm_key_state.key_generation = 1;
+                print("Crypto: Generated RDRAND key (generation 1)\n");
+            } else {
+                print("Crypto: FATAL - RDRAND failed\n");
+                memset(tpm_key_state.hmac_key, 0, sizeof(tpm_key_state.hmac_key));
+                tpm_key_state.key_valid = 0;
+                tpm_key_state.key_generation = 0;
+                return -1;
+            }
+        } else {
+            /* CRITICAL: No hardware RNG available! */
+            print("Crypto: FATAL - No hardware RNG available (TPM or RDRAND)\n");
+            print("Crypto: System requires hardware TPM or RDRAND for cryptographic operations\n");
+
+            /* Zero out memory to avoid uninitialized data */
+            memset(tpm_key_state.hmac_key, 0, sizeof(tpm_key_state.hmac_key));
+            tpm_key_state.key_valid = 0;
+            tpm_key_state.key_generation = 0;
+            return -1;
+        }
     }
 
     /* Seal the key to TPM PCRs for hardware-backed protection */
@@ -294,13 +336,38 @@ crypto_tpm_rotate_hmac_key(void)
 
     print("Crypto: Rotating HMAC key...\n");
 
-    /* Generate new random key */
+    /* Generate new random key from TPM */
     ret = tpm_get_random(new_key, CRYPTO_HMAC_KEY_BYTES);
     if (ret != CRYPTO_HMAC_KEY_BYTES) {
-        /* CRITICAL: No weak entropy fallback during key rotation */
-        print("Crypto: FATAL - TPM random unavailable during key rotation\n");
-        memset(new_key, 0, sizeof(new_key));
-        return -1;
+        /* TPM unavailable - try RDRAND as fallback */
+        print("Crypto: TPM random unavailable during key rotation\n");
+
+        if (crypto_hw_rdrand_available()) {
+            print("Crypto: Falling back to RDRAND for key rotation\n");
+            int i;
+            uint64_t *key_u64 = (uint64_t*)new_key;
+            int success = 1;
+
+            for (i = 0; i < CRYPTO_HMAC_KEY_BYTES / 8; i++) {
+                key_u64[i] = rdrand_u64();
+                if (key_u64[i] == 0) {
+                    print("Crypto: RDRAND failed during rotation at byte %d\n", i * 8);
+                    success = 0;
+                    break;
+                }
+            }
+
+            if (!success) {
+                print("Crypto: FATAL - RDRAND failed during key rotation\n");
+                memset(new_key, 0, sizeof(new_key));
+                return -1;
+            }
+        } else {
+            /* CRITICAL: No hardware RNG available */
+            print("Crypto: FATAL - No hardware RNG available for key rotation\n");
+            memset(new_key, 0, sizeof(new_key));
+            return -1;
+        }
     }
 
     ilock(&tpm_key_state.lock);

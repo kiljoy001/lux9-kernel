@@ -821,6 +821,7 @@ cpuidentify(void)
 	m->haveaes = 0;
 	m->havesha = 0;
 	m->havepclmul = 0;
+	m->haverdrand = 0;
 
 	if(m->cpuidcx & Aes){
 		m->haveaes = 1;
@@ -830,6 +831,11 @@ cpuidentify(void)
 	if(m->cpuidcx & Pclmulqdq){
 		m->havepclmul = 1;
 		uartprintf("cpuidentify: PCLMULQDQ detected\n");
+	}
+
+	if(m->cpuidcx & Rdrnd){
+		m->haverdrand = 1;
+		uartprintf("cpuidentify: RDRAND detected\n");
 	}
 
 	/* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
