@@ -167,8 +167,26 @@ iso: $(KERNEL) userspace/build/initrd.tar
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o lux9.iso
 	@echo "Installing boot loader..."
-	@[ -f boot/limine/bin/limine ] && boot/limine/bin/limine bios-install lux9.iso 2>/dev/null || \
-	( command -v limine >/dev/null 2>&1 && limine bios-install lux9.iso 2>/dev/null || echo "Could not install boot loader" )
+	@if [ -f boot/limine/bin/limine ]; then \
+		echo "Using local limine binary"; \
+		if boot/limine/bin/limine bios-install lux9.iso; then \
+			echo "✓ BIOS bootloader installed successfully"; \
+		else \
+			echo "⚠ BIOS bootloader installation failed (exit code $$?)"; \
+			echo "  ISO will only boot via UEFI"; \
+		fi; \
+	elif command -v limine > /dev/null 2>&1; then \
+		echo "Using system limine binary"; \
+		if limine bios-install lux9.iso; then \
+			echo "✓ BIOS bootloader installed successfully"; \
+		else \
+			echo "⚠ BIOS bootloader installation failed (exit code $$?)"; \
+			echo "  ISO will only boot via UEFI"; \
+		fi; \
+	else \
+		echo "⚠ No limine binary found - skipping BIOS bootloader installation"; \
+		echo "  ISO will only boot via UEFI"; \
+	fi
 	@rm -rf iso_root
 	@echo "✓ Created lux9.iso"
 

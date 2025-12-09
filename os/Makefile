@@ -58,8 +58,12 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 		-rock -joliet \
 		$(ISO_DIR) -o $@
 	
-	# Install boot loader
-	@$(LIMINE_DIR)/bin/limine bios-install $@ 2>/dev/null || true
+	# Install boot loader (BIOS mode - will fail if limine built without BIOS support)
+	@if $(LIMINE_DIR)/bin/limine bios-install $@; then \
+		echo "✓ BIOS bootloader installed"; \
+	else \
+		echo "⚠ BIOS bootloader installation failed - ISO will only boot via UEFI"; \
+	fi
 	
 	@echo "OS image created: $@"
 	@ls -lh $@
