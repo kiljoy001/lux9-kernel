@@ -1,18 +1,24 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2018, Intel Corporation
  * All rights reserved.
  ***********************************************************************/
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <stdint.h> // for uint8_t
-#include <string.h> // for memmove, size_t
+#include <stdint.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for uint8_t
+#include <string.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for memmove, size_t
 
-#include "sysapi_util.h" // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
-#include "tss2_common.h" // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_SYS_RC_BAD_R...
-#include "tss2_sys.h"    // for Tss2_Sys_GetEncryptParam, TSS2_SYS_CONTEXT
+#include "../sapi/sysapi_util.h" // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "../include/tss2_common.h" // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_SYS_RC_BAD_R...
+#include "../include/tss2_sys.h"    // for Tss2_Sys_GetEncryptParam, TSS2_SYS_CONTEXT
 
 TSS2_RC
 Tss2_Sys_SetEncryptParam(TSS2_SYS_CONTEXT *sysContext,

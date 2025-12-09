@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -5,16 +11,16 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <string.h> // for memcpy, size_t
+#include <string.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for memcpy, size_t
 
-#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
-#include "tss2_common.h"     // for TSS2_RC, UINT32, TSS2_SYS_RC_BAD_REFERENCE
-#include "tss2_mu.h"         // for Tss2_MU_UINT32_Marshal, Tss2_MU_TPMS_CA...
-#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
-#include "tss2_tpm2_types.h" // for TPMS_CAPABILITY_DATA, TPM2B_MAX_CAP_BUFFER
+#include "../sapi/sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "../include/tss2_common.h"     // for TSS2_RC, UINT32, TSS2_SYS_RC_BAD_REFERENCE
+#include "../include/tss2_mu.h"         // for Tss2_MU_UINT32_Marshal, Tss2_MU_TPMS_CA...
+#include "../include/tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
+#include "../include/tss2_tpm2_types.h" // for TPMS_CAPABILITY_DATA, TPM2B_MAX_CAP_BUFFER
 
 TSS2_RC
 Tss2_Sys_GetCapability_Prepare(TSS2_SYS_CONTEXT *sysContext,

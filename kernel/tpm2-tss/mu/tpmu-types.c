@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -6,19 +12,19 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <inttypes.h> // for PRIx32, uint8_t, uint32_t, PRIxPTR, uin...
-#include <string.h>   // for NULL, size_t, memcpy
+#include <inttypes.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for PRIx32, uint8_t, uint32_t, PRIxPTR, uin...
+#include <string.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h   // for NULL, size_t, memcpy
 
-#include "tss2_common.h"     // for TSS2_RC, BYTE, TSS2_RC_SUCCESS, TSS2_MU...
-#include "tss2_mu.h"         // for Tss2_MU_TPMS_SCHEME_HASH_Marshal, Tss2_...
-#include "tss2_tpm2_types.h" // for TPM2_ALG_NULL, TPMU_ASYM_SCHEME, TPMU_A...
-#include "util/aux_util.h"   // for UNUSED
+#include "../include/tss2_common.h"     // for TSS2_RC, BYTE, TSS2_RC_SUCCESS, TSS2_MU...
+#include "../include/tss2_mu.h"         // for Tss2_MU_TPMS_SCHEME_HASH_Marshal, Tss2_...
+#include "../include/tss2_tpm2_types.h" // for TPM2_ALG_NULL, TPMU_ASYM_SCHEME, TPMU_A...
+#include "../util/aux_util.h"   // for UNUSED
 
 #define LOGMODULE marshal
-#include "util/log.h" // for LOG_DEBUG, LOG_ERROR, LOG_WARNING, LOG_...
+#include "../util/log.h" // for LOG_DEBUG, LOG_ERROR, LOG_WARNING, LOG_...
 
 #define ADDR & // NOLINT(bugprone-macro-parentheses)
 #define VAL

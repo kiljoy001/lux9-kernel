@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -5,14 +11,14 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
-#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
-#include "tss2_mu.h"         // for Tss2_MU_UINT16_Marshal
-#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, Tss2_Sys_Startup, Tss...
-#include "tss2_tpm2_types.h" // for TPM2_SU, TPM2_CC_Startup
+#include "../sapi/sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "../include/tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "../include/tss2_mu.h"         // for Tss2_MU_UINT16_Marshal
+#include "../include/tss2_sys.h"        // for TSS2_SYS_CONTEXT, Tss2_Sys_Startup, Tss...
+#include "../include/tss2_tpm2_types.h" // for TPM2_SU, TPM2_CC_Startup
 
 TSS2_RC
 Tss2_Sys_Startup_Prepare(TSS2_SYS_CONTEXT *sysContext, TPM2_SU startupType) {

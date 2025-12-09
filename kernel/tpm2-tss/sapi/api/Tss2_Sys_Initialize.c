@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015-2018, Intel Corporation
@@ -8,19 +14,19 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <inttypes.h> // for PRIu32, PRIx32
+#include <inttypes.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for PRIu32, PRIx32
 #include <stddef.h>   // for NULL, size_t
 
-#include "sysapi_util.h" // for _TSS2_SYS_CONTEXT_BLOB, InitSysContextFields
-#include "tss2_common.h" // for TSS2_ABI_VERSION, TSS2_ABI_VERSION_CURRENT
-#include "tss2_sys.h"    // for TSS2_SYS_CONTEXT, Tss2_Sys_Initialize
-#include "tss2_tcti.h"   // for TSS2_TCTI_CONTEXT, TSS2_TCTI_RECEIVE, TSS2_...
+#include "../sapi/sysapi_util.h" // for _TSS2_SYS_CONTEXT_BLOB, InitSysContextFields
+#include "../include/tss2_common.h" // for TSS2_ABI_VERSION, TSS2_ABI_VERSION_CURRENT
+#include "../include/tss2_sys.h"    // for TSS2_SYS_CONTEXT, Tss2_Sys_Initialize
+#include "../include/tss2_tcti.h"   // for TSS2_TCTI_CONTEXT, TSS2_TCTI_RECEIVE, TSS2_...
 
 #define LOGMODULE sys
-#include "util/log.h" // for LOG_ERROR
+#include "../util/log.h" // for LOG_ERROR
 
 static const TSS2_ABI_VERSION CURRENT = TSS2_ABI_VERSION_CURRENT;
 #define CURRENT_CREATOR (CURRENT.tssCreator)

@@ -1,19 +1,25 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2018, Intel Corporation
  * All rights reserved.
  ***********************************************************************/
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <stdint.h> // for uint8_t
-#include <string.h> // for memmove, size_t
+#include <stdint.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for uint8_t
+#include <string.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for memmove, size_t
 
-#include "sysapi_util.h"      // for _TSS2_SYS_CONTEXT_BLOB, req_header_fro...
-#include "tss2_common.h"      // for UINT8, TSS2_SYS_RC_INSUFFICIENT_CONTEXT
-#include "tss2_sys.h"         // for Tss2_Sys_GetDecryptParam, TSS2_SYS_CON...
-#include "util/tss2_endian.h" // for BE_TO_HOST_32, HOST_TO_BE_16, HOST_TO_...
+#include "../sapi/sysapi_util.h"      // for _TSS2_SYS_CONTEXT_BLOB, req_header_fro...
+#include "../include/tss2_common.h"      // for UINT8, TSS2_SYS_RC_INSUFFICIENT_CONTEXT
+#include "../include/tss2_sys.h"         // for Tss2_Sys_GetDecryptParam, TSS2_SYS_CON...
+#include "../util/tss2_endian.h" // for BE_TO_HOST_32, HOST_TO_BE_16, HOST_TO_...
 
 TSS2_RC
 Tss2_Sys_SetDecryptParam(TSS2_SYS_CONTEXT *sysContext,

@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -6,20 +12,20 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <inttypes.h> // for PRIxPTR, uintptr_t, uint8_t
-#include <string.h>   // for NULL, size_t, memcpy
+#include <inttypes.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for PRIxPTR, uintptr_t, uint8_t
+#include <string.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h   // for NULL, size_t, memcpy
 
-#include "tss2_common.h"      // for UINT16, TSS2_MU_RC_INSUFFICIENT_BUFFER
-#include "tss2_mu.h"          // for Tss2_MU_UINT16_Marshal, Tss2_MU_UINT16...
-#include "tss2_tpm2_types.h"  // for TPM2B_ATTEST, TPM2B_AUTH, TPM2B_CONTEX...
-#include "util/tpm2b.h"       // for TPM2B
-#include "util/tss2_endian.h" // for HOST_TO_BE_16
+#include "../include/tss2_common.h"      // for UINT16, TSS2_MU_RC_INSUFFICIENT_BUFFER
+#include "../include/tss2_mu.h"          // for Tss2_MU_UINT16_Marshal, Tss2_MU_UINT16...
+#include "../include/tss2_tpm2_types.h"  // for TPM2B_ATTEST, TPM2B_AUTH, TPM2B_CONTEX...
+#include "../util/tpm2b.h"       // for TPM2B
+#include "../util/tss2_endian.h" // for HOST_TO_BE_16
 
 #define LOGMODULE marshal
-#include "util/log.h" // for LOG_DEBUG, LOG_WARNING, LOG_TRACE
+#include "../util/log.h" // for LOG_DEBUG, LOG_WARNING, LOG_TRACE
 
 #define TPM2B_MARSHAL(type)                                                                        \
     TSS2_RC Tss2_MU_##type##_Marshal(type const *src, uint8_t buffer[], size_t buffer_size,        \

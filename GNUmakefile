@@ -15,6 +15,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismat
            -Ikernel/include \
            -Ikernel/crypto \
            -Ikernel/clr/libmcu-cbor \
+           -Ikernel/tpm2-tss/include \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
@@ -45,6 +46,12 @@ BENCHMARK_C := kernel/benchmark.c
 CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
 CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
 
+# TPM2-TSS sources
+TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
+TPM2_SAPI_C := $(wildcard kernel/tpm2-tss/sapi/*.c) $(wildcard kernel/tpm2-tss/sapi/api/*.c)
+TPM2_TCTI_C := kernel/tpm2-tss/tcti_kernel.c
+TPM2_TSS_C := $(TPM2_MU_C) $(TPM2_SAPI_C) $(TPM2_TCTI_C)
+
 # QBE compiler core sources (for qbe.a)
 QBE_CORE_C := kernel/clr/qbe/alias.c kernel/clr/qbe/cfg.c kernel/clr/qbe/copy.c kernel/clr/qbe/fold.c kernel/clr/qbe/gas.c kernel/clr/qbe/live.c kernel/clr/qbe/load.c kernel/clr/qbe/mem.c kernel/clr/qbe/parse.c kernel/clr/qbe/rega.c kernel/clr/qbe/spill.c kernel/clr/qbe/ssa.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/emit.c kernel/clr/qbe/amd64/isel.c kernel/clr/qbe/amd64/sysv.c
 QBE_CORE_O := $(QBE_CORE_C:.c=.o)
@@ -69,11 +76,12 @@ REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 CLR_O := $(CLR_C:.c=.o)
+TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)
 
 # External archives
 QBE_A := kernel/clr/qbe/qbe.a
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(QBE_A)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(TPM2_TSS_O) $(QBE_A)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help

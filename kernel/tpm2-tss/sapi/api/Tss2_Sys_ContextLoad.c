@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -5,14 +11,14 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
-#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
-#include "tss2_mu.h"         // for Tss2_MU_TPMS_CONTEXT_Marshal, Tss2_MU_U...
-#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, Tss2_Sys_ContextLoad
-#include "tss2_tpm2_types.h" // for TPMI_DH_CONTEXT, TPMS_CONTEXT, TPM2_CC_...
+#include "../sapi/sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "../include/tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "../include/tss2_mu.h"         // for Tss2_MU_TPMS_CONTEXT_Marshal, Tss2_MU_U...
+#include "../include/tss2_sys.h"        // for TSS2_SYS_CONTEXT, Tss2_Sys_ContextLoad
+#include "../include/tss2_tpm2_types.h" // for TPMI_DH_CONTEXT, TPMS_CONTEXT, TPM2_CC_...
 
 TSS2_RC
 Tss2_Sys_ContextLoad_Prepare(TSS2_SYS_CONTEXT *sysContext, const TPMS_CONTEXT *context) {

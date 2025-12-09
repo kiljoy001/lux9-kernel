@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015-2018, Intel Corporation
@@ -6,18 +12,18 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include <stdbool.h> // for bool
-#include <stdint.h>  // for uint8_t
+#include <stdbool.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h // for bool
+#include <stdint.h> // Provided by tss2_kernel.h // Provided by tss2_kernel.h  // for uint8_t
 
-#include "sysapi_util.h"
-#include "tss2_mu.h"          // for Tss2_MU_TPM2_ST_Marshal, Tss2_MU_TPM2_...
-#include "util/tss2_endian.h" // for BE_TO_HOST_32, HOST_TO_BE_32, BE_TO_HO...
+#include "../sapi/sysapi_util.h"
+#include "../include/tss2_mu.h"          // for Tss2_MU_TPM2_ST_Marshal, Tss2_MU_TPM2_...
+#include "../util/tss2_endian.h" // for BE_TO_HOST_32, HOST_TO_BE_32, BE_TO_HO...
 
 #define LOGMODULE sys
-#include "util/log.h"
+#include "../util/log.h"
 
 void
 InitSysContextFields(TSS2_SYS_CONTEXT_BLOB *ctx) {

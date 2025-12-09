@@ -1,3 +1,9 @@
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
+/* Kernel compatibility */
+#include "../include/tss2_kernel.h"
+
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
  * Copyright (c) 2015 - 2017, Intel Corporation
@@ -5,14 +11,14 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include "config.h" // IWYU pragma: keep
+#include "config.h" // Provided by tss2_kernel.h // Provided by tss2_kernel.h // IWYU pragma: keep
 #endif
 
-#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
-#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
-#include "tss2_mu.h"         // for Tss2_MU_TPM2B_DIGEST_Unmarshal, Tss2_MU...
-#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
-#include "tss2_tpm2_types.h" // for TPM2B_DIGEST, TPMI_SH_POLICY, TPM2_CC_P...
+#include "../sapi/sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "../include/tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "../include/tss2_mu.h"         // for Tss2_MU_TPM2B_DIGEST_Unmarshal, Tss2_MU...
+#include "../include/tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
+#include "../include/tss2_tpm2_types.h" // for TPM2B_DIGEST, TPMI_SH_POLICY, TPM2_CC_P...
 
 TSS2_RC
 Tss2_Sys_PolicyGetDigest_Prepare(TSS2_SYS_CONTEXT *sysContext, TPMI_SH_POLICY policySession) {
