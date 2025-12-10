@@ -5,8 +5,8 @@ CC := gcc
 LD := ld
 AS := as
 
-# Compiler flags - Plan 9 compatible
-CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-missing-braces -Wno-incompatible-pointer-types -std=gnu11 \
+# Compiler flags - Plan 9 compatible with MAXIMUM SAFETY
+CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-missing-braces -Wno-incompatible-pointer-types -std=gnu11 \
            -O0 -g3 -gdwarf-4 \
            -ffreestanding -fno-stack-protector -fno-stack-check \
            -fno-lto -fno-pie -no-pie -fno-pic \
@@ -40,6 +40,10 @@ FAMILY_C := $(wildcard kernel/family/*.c)
 CRYPTO_C := $(wildcard kernel/crypto/*.c)
 BORROW_C := kernel/borrowchecker.c
 LOCKDAG_C := kernel/lock_dag.c
+PROCSTATEDAG_C := kernel/proc_state_dag.c
+PROCFSM_C := kernel/proc_fsm.c
+P9ROUTER_C := kernel/9p_router.c
+GHOSTDAG_C := kernel/ghostdag_kernel.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 BENCHMARK_C := kernel/benchmark.c
@@ -72,6 +76,10 @@ ASM_O := $(ASM_S:.S=.o)
 MEMDRAW_O := $(MEMDRAW_C:.c=.o)
 BORROW_O := $(BORROW_C:.c=.o)
 LOCKDAG_O := $(LOCKDAG_C:.c=.o)
+PROCSTATEDAG_O := $(PROCSTATEDAG_C:.c=.o)
+PROCFSM_O := $(PROCFSM_C:.c=.o)
+P9ROUTER_O := $(P9ROUTER_C:.c=.o)
+GHOSTDAG_O := $(GHOSTDAG_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
@@ -81,7 +89,7 @@ CLR_O := $(CLR_C:.c=.o)
 # External archives
 QBE_A := kernel/clr/qbe/qbe.a
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(CLR_O) $(QBE_A)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(GHOSTDAG_O) $(CLR_O) $(QBE_A)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
