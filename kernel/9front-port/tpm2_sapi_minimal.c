@@ -33,6 +33,7 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_CC_NV_UndefineSpace 0x00000122
 #define TPM2_CC_NV_Write        0x00000137
 #define TPM2_CC_NV_DefineSpace  0x0000012A
+#define TPM2_CC_HMAC            0x00000172
 
 #define TPM2_SU_CLEAR           0x0000
 #define TPM2_SU_STATE           0x0001
@@ -47,6 +48,7 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_ALG_KEYEDHASH      0x0008
 #define TPM2_ALG_NULL           0x0010
 #define TPM2_ALG_ECC            0x0023
+#define TPM2_ALG_KDF1_SP800_56A 0x0020
 #define TPM2_ECC_NIST_P256      0x0003
 #define TPM2_ALG_AES            0x0006
 #define TPM2_ALG_CFB            0x0043
@@ -310,9 +312,13 @@ tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 		return -1;
 	}
 
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_SESSIONS);
+	marshal_u32(&p, 0);
+	marshal_u32(&p, TPM2_CC_Create);
+
 	/* Parent handle */
 	marshal_u32(&p, parent_handle);
-	print("DEBUG: tpm2_create using parent_handle=0x%08X\n", parent_handle);
 
 	/* Authorization Session (Password) for parent */
 	marshal_password_session(&p);
@@ -533,6 +539,22 @@ tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len)
 		unmarshal_u32(&rp);
 	}
 
+	/* Skip parameter size (if present in unseal response? Unseal returns 'outData')
+	 * Unseal response: outData (2B)
+	 * It IS a parameter.
+	 */
+	/* Wait, if sessions are present, the parameterSize field TELLS us the size of parameters.
+	 * But we usually skip it to find parameters.
+	 * If NO sessions, parameters are immediate.
+	 * If SESSIONS, parameterSize is U32 before parameters.
+	 */
+	/* In previous code we skipped parameter size unconditionally? No.
+	 * Let's be careful.
+	 * If tag == SESSIONS, we skipped 4 bytes (parameterSize) above.
+	 * That puts us at start of parameters.
+	 * So we are good.
+	 */
+
 	/* Extract unsealed data */
 	*data_len = unmarshal_tpm2b(&rp, data_out, 128);
 
@@ -579,7 +601,8 @@ tpm2_nv_define_space(u32int nv_index, u16int size, u32int attributes)
 
 	/* Fill TPMS_NV_PUBLIC size */
 	u16int public_size = p - public_start;
-	*(u16int*)(public_start - 2) = (public_size >> 8) | (public_size & 0xFF); /* Big endian */
+	public_start[-2] = (public_size >> 8) & 0xFF;
+	public_start[-1] = public_size & 0xFF;
 
 	/* Fill command size */
 	u32int cmd_size = p - cmd;
@@ -714,6 +737,70 @@ tpm2_nv_write(u32int nv_index, u8int *data, u16int len, u16int offset)
 		print("tpm2_nv_write: TPM error 0x%08X\n", rc);
 		return -1;
 	}
+
+	return 0;
+}
+
+/*
+ * TPM2_HMAC - Compute HMAC using key in TPM
+ */
+int
+tpm20_hmac(u32int key_handle, u8int *data, usize data_len, u8int *hmac_out, usize *hmac_out_len)
+{
+	u8int cmd[1024];
+	u8int resp[1024];
+	usize resp_len = sizeof(resp);
+	u8int *p = cmd;
+	u8int *rp;
+	u32int rc;
+
+	if(data_len > 1024) return -1;
+
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_SESSIONS);
+	marshal_u32(&p, 0);
+	marshal_u32(&p, TPM2_CC_HMAC);
+
+	/* Key Handle */
+	marshal_u32(&p, key_handle);
+
+	/* Authorization Session (Password) */
+	marshal_password_session(&p);
+
+	/* Buffer */
+	marshal_tpm2b(&p, data, data_len);
+
+	/* Hash Algorithm */
+	marshal_u16(&p, TPM2_ALG_SHA256);
+
+	/* Fill command size */
+	u32int cmd_size = p - cmd;
+	cmd[2] = (cmd_size >> 24) & 0xFF;
+	cmd[3] = (cmd_size >> 16) & 0xFF;
+	cmd[4] = (cmd_size >> 8) & 0xFF;
+	cmd[5] = cmd_size & 0xFF;
+
+	if(tpm_transmit(cmd, cmd_size, resp, &resp_len) < 0){
+		print("tpm20_hmac: transmit failed\n");
+		return -1;
+	}
+
+	rp = resp;
+	u16int rtag = unmarshal_u16(&rp);
+	unmarshal_u32(&rp);
+	rc = unmarshal_u32(&rp);
+
+	if(rc != TPM_SUCCESS){
+		print("tpm20_hmac: TPM error 0x%08X\n", rc);
+		return -1;
+	}
+
+	if(rtag == TPM2_ST_SESSIONS){
+		unmarshal_u32(&rp);
+	}
+
+	/* Extract digest */
+	*hmac_out_len = unmarshal_tpm2b(&rp, hmac_out, 64);
 
 	return 0;
 }
