@@ -20,6 +20,10 @@ typedef ulong *syscall_va_list;
 
 
 
+
+
+
+
 #define syscall_vainit(list, start) ((list) = (syscall_va_list)(start))
 
 
@@ -782,6 +786,7 @@ uintptr sysexec(void *list_void) {
    */
   tos = (Tos *)(tstk - sizeof(Tos));
   tos->cyclefreq = m->cyclefreq;
+  print("DEBUG: stack tos initialized\n");
   tos->kcycles = 0;
   tos->pcycles = 0;
   tos->clock = 0;

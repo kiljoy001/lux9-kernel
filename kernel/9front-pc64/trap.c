@@ -224,8 +224,11 @@ void trap(Ureg *ureg) {
       }
 
       /* early fault before trapinit() */
-      if (vno == VectorPF)
+      if (vno == VectorPF) {
         faultamd64(ureg, 0);
+        print("DEBUG: faultamd64 returned\n");
+        goto out;
+      }
     }
 
     dumpregs(ureg);
