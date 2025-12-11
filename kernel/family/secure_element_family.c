@@ -464,7 +464,7 @@ secure_element_get_random(uint8_t* buffer, int len)
         int bytes_to_generate = (len - i) > sizeof(tmp) ? sizeof(tmp) : (len - i);
         int ret = tpm_get_random(tmp, bytes_to_generate);
         if (ret > 0) {
-            memcpy(buffer + i, tmp, ret);
+            memmove(buffer + i, tmp, ret);
             bytes_generated += ret;
         }
     }
@@ -493,7 +493,7 @@ secure_element_hmac(uint64_t channel_id, const uint8_t* data, size_t len, uint8_
 
     /* Use TPM 2.0 HMAC if available */
     if (ctx->tpm_available && ctx->tpm_ctx && ctx->detected_version == TPM_2_0) {
-        if (tpm20_hmac(ctx->tpm_ctx, ctx->tpm_ctx->hmac_key_handle,
+        if (tpm20_hmac(ctx->tpm_ctx->hmac_key_handle,
                       (uint8_t*)data, len, hmac_out, &hmac_len) == 0) {
             return (int)hmac_len;
         }
@@ -548,7 +548,7 @@ secure_element_attest(uint64_t channel_id, uint8_t* attestation_data, size_t* da
     attestation_data[5] = 0;
     attestation_data[6] = 0;
     attestation_data[7] = 0;
-    memcpy(&attestation_data[8], &timestamp, sizeof(timestamp));
+    memmove(&attestation_data[8], &timestamp, sizeof(timestamp));
 
     /* Hash the entire attestation structure using SHA256 */
     if (crypto_sha256(hash, attestation_data, 512) != 0) {
@@ -557,7 +557,7 @@ secure_element_attest(uint64_t channel_id, uint8_t* attestation_data, size_t* da
     }
 
     /* Include the hash in the attestation */
-    memcpy(&attestation_data[16], hash, 32);
+    memmove(&attestation_data[16], hash, 32);
 
     *data_size = 64;
     print("Secure Element: Software attestation generated (SHA256)\n");

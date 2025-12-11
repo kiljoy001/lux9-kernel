@@ -30,12 +30,16 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_CC_Create          0x00000153
 #define TPM2_CC_Load            0x00000157
 #define TPM2_CC_Unseal          0x0000015E
+#define TPM2_CC_NV_UndefineSpace 0x00000122
+#define TPM2_CC_NV_Write        0x00000137
+#define TPM2_CC_NV_DefineSpace  0x0000012A
 
 #define TPM2_SU_CLEAR           0x0000
 #define TPM2_SU_STATE           0x0001
 
 #define TPM2_RH_OWNER           0x40000001
 #define TPM2_RH_NULL            0x40000007
+#define TPM2_RH_PLATFORM        0x4000000C
 #define TPM_RS_PW               0x40000009
 
 #define TPM2_ALG_RSA            0x0001
@@ -43,7 +47,6 @@ extern int tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 #define TPM2_ALG_KEYEDHASH      0x0008
 #define TPM2_ALG_NULL           0x0010
 #define TPM2_ALG_ECC            0x0023
-#define TPM2_ALG_KDF1_SP800_56A 0x0020
 #define TPM2_ECC_NIST_P256      0x0003
 #define TPM2_ALG_AES            0x0006
 #define TPM2_ALG_CFB            0x0043
@@ -530,25 +533,187 @@ tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len)
 		unmarshal_u32(&rp);
 	}
 
-	/* Skip parameter size (if present in unseal response? Unseal returns 'outData')
-	 * Unseal response: outData (2B)
-	 * It IS a parameter.
-	 */
-	/* Wait, if sessions are present, the parameterSize field TELLS us the size of parameters.
-	 * But we usually skip it to find parameters.
-	 * If NO sessions, parameters are immediate.
-	 * If SESSIONS, parameterSize is U32 before parameters.
-	 */
-	/* In previous code we skipped parameter size unconditionally? No.
-	 * Let's be careful.
-	 * If tag == SESSIONS, we skipped 4 bytes (parameterSize) above.
-	 * That puts us at start of parameters.
-	 * So we are good.
-	 */
-
 	/* Extract unsealed data */
 	*data_len = unmarshal_tpm2b(&rp, data_out, 128);
 
 	print("tpm2_unseal: Unsealed %d bytes\n", *data_len);
+	return 0;
+}
+
+/*
+ * TPM2_NV_DefineSpace - Define NVRAM index
+ */
+int
+tpm2_nv_define_space(u32int nv_index, u16int size, u32int attributes)
+{
+	u8int cmd[256];
+	u8int resp[64];
+	usize resp_len = sizeof(resp);
+	u8int *p = cmd;
+	u8int *rp;
+	u32int rc;
+
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_SESSIONS);
+	marshal_u32(&p, 0);  /* size - fill later */
+	marshal_u32(&p, TPM2_CC_NV_DefineSpace);
+
+	/* Authorization Handle (Owner or Platform) */
+	marshal_u32(&p, TPM2_RH_OWNER);
+
+	/* Authorization Session (Password) */
+	marshal_password_session(&p);
+
+	/* Auth (empty password for the index) */
+	marshal_u16(&p, 0);  /* size */
+
+	/* TPMS_NV_PUBLIC */
+	marshal_u16(&p, 0);  /* size of TPMS_NV_PUBLIC - fill later */
+	u8int *public_start = p;
+
+	marshal_u32(&p, nv_index);  /* nvIndex */
+	marshal_u16(&p, TPM2_ALG_SHA256);  /* nameAlg */
+	marshal_u32(&p, attributes);  /* attributes (e.g. TPMA_NV_OWNERWRITE) */
+	marshal_u16(&p, 0);  /* authPolicy size */
+	marshal_u16(&p, size);  /* dataSize */
+
+	/* Fill TPMS_NV_PUBLIC size */
+	u16int public_size = p - public_start;
+	*(u16int*)(public_start - 2) = (public_size >> 8) | (public_size & 0xFF); /* Big endian */
+
+	/* Fill command size */
+	u32int cmd_size = p - cmd;
+	cmd[2] = (cmd_size >> 24) & 0xFF;
+	cmd[3] = (cmd_size >> 16) & 0xFF;
+	cmd[4] = (cmd_size >> 8) & 0xFF;
+	cmd[5] = cmd_size & 0xFF;
+
+	if(tpm_transmit(cmd, cmd_size, resp, &resp_len) < 0){
+		print("tpm2_nv_define_space: transmit failed\n");
+		return -1;
+	}
+
+	rp = resp;
+	unmarshal_u16(&rp);
+	unmarshal_u32(&rp);
+	rc = unmarshal_u32(&rp);
+
+	if(rc != TPM_SUCCESS){
+		print("tpm2_nv_define_space: TPM error 0x%08X\n", rc);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * TPM2_NV_UndefineSpace - Delete NVRAM index
+ */
+int
+tpm2_nv_undefine_space(u32int nv_index)
+{
+	u8int cmd[128];
+	u8int resp[64];
+	usize resp_len = sizeof(resp);
+	u8int *p = cmd;
+	u8int *rp;
+	u32int rc;
+
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_SESSIONS);
+	marshal_u32(&p, 0);
+	marshal_u32(&p, TPM2_CC_NV_UndefineSpace);
+
+	/* Authorization Handle (Owner or Platform) */
+	marshal_u32(&p, TPM2_RH_OWNER);
+
+	/* NV Index */
+	marshal_u32(&p, nv_index);
+
+	/* Authorization Session (Password) */
+	marshal_password_session(&p);
+
+	/* Fill command size */
+	u32int cmd_size = p - cmd;
+	cmd[2] = (cmd_size >> 24) & 0xFF;
+	cmd[3] = (cmd_size >> 16) & 0xFF;
+	cmd[4] = (cmd_size >> 8) & 0xFF;
+	cmd[5] = cmd_size & 0xFF;
+
+	if(tpm_transmit(cmd, cmd_size, resp, &resp_len) < 0){
+		print("tpm2_nv_undefine_space: transmit failed\n");
+		return -1;
+	}
+
+	rp = resp;
+	unmarshal_u16(&rp);
+	unmarshal_u32(&rp);
+	rc = unmarshal_u32(&rp);
+
+	if(rc != TPM_SUCCESS){
+		print("tpm2_nv_undefine_space: TPM error 0x%08X\n", rc);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * TPM2_NV_Write - Write data to NVRAM
+ */
+int
+tpm2_nv_write(u32int nv_index, u8int *data, u16int len, u16int offset)
+{
+	u8int cmd[1024];  /* Max NV write is small usually, but buffer needs space */
+	u8int resp[64];
+	usize resp_len = sizeof(resp);
+	u8int *p = cmd;
+	u8int *rp;
+	u32int rc;
+
+	if(len > 1024) return -1;
+
+	/* Command Header */
+	marshal_u16(&p, TPM2_ST_SESSIONS);
+	marshal_u32(&p, 0);
+	marshal_u32(&p, TPM2_CC_NV_Write);
+
+	/* Auth Handle (Owner) */
+	marshal_u32(&p, TPM2_RH_OWNER);
+
+	/* NV Index */
+	marshal_u32(&p, nv_index);
+
+	/* Authorization Session (Password) */
+	marshal_password_session(&p);
+
+	/* Data */
+	marshal_tpm2b(&p, data, len);
+
+	/* Offset */
+	marshal_u16(&p, offset);
+
+	/* Fill command size */
+	u32int cmd_size = p - cmd;
+	cmd[2] = (cmd_size >> 24) & 0xFF;
+	cmd[3] = (cmd_size >> 16) & 0xFF;
+	cmd[4] = (cmd_size >> 8) & 0xFF;
+	cmd[5] = cmd_size & 0xFF;
+
+	if(tpm_transmit(cmd, cmd_size, resp, &resp_len) < 0){
+		print("tpm2_nv_write: transmit failed\n");
+		return -1;
+	}
+
+	rp = resp;
+	unmarshal_u16(&rp);
+	unmarshal_u32(&rp);
+	rc = unmarshal_u32(&rp);
+
+	if(rc != TPM_SUCCESS){
+		print("tpm2_nv_write: TPM error 0x%08X\n", rc);
+		return -1;
+	}
+
 	return 0;
 }

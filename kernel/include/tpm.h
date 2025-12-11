@@ -5,6 +5,8 @@
 #include "u.h"
 #include "dat.h"
 #include "fns.h"
+#include <stdint.h>
+#include <stddef.h>
 
 /* Forward declaration - removed, using proper struct definition below */
 
@@ -28,6 +30,9 @@
 #define TPM2_CC_GetCapability      0x0000011A
 #define TPM2_CC_PCR_Read           0x00000117
 #define TPM2_CC_PCR_Extend         0x00000118
+#define TPM2_CC_NV_DefineSpace     0x0000012A
+#define TPM2_CC_NV_UndefineSpace   0x00000122
+#define TPM2_CC_NV_Write           0x00000137
 
 /* TPM 1.2 Command Codes */
 #define TPM_ORD_GetRandom          0x00000046
@@ -128,28 +133,28 @@ typedef struct {
 /* Function Prototypes - Fixed signatures */
 
 /* Core TPM Operations */
-int tpm_init(void);  /* Simplified: no TPMContext parameter */
-int tpm_startup(int version, uint16_t mode);
-int tpm_self_test(int version);
+int tpm_init(void);
+int tpm2_startup(void);
 int tpm_get_random(uint8_t* buffer, int len);
-int tpm_get_capability(uint32_t capability, uint32_t property);
 
-/* TPM 1.2 Operations */
-int tpm12_osap(TPMContext* ctx, uint16_t key_id, uint8_t* nonce_even);
-int tpm12_load_key(TPMContext* ctx, uint32_t parent_handle, uint8_t* key_data, size_t key_size);
-int tpm12_quote(TPMContext* ctx, uint32_t key_handle, uint8_t* nonce, uint16_t nonce_size,
-                TPM1_2_PCR_SELECTION* pcr_select, uint16_t select_size, uint8_t* quote, size_t* quote_size);
+/* TPM 2.0 Operations (tpm2_sapi_minimal.c) */
+int tpm2_create_primary(uint32_t *handle_out);
+int tpm2_create(uint32_t parent_handle, uint8_t *data, uint16_t data_len,
+                uint8_t *private_out, uint16_t *private_len,
+                uint8_t *public_out, uint16_t *public_len);
+int tpm2_load(uint32_t parent_handle, uint8_t *private_blob, uint16_t private_len,
+              uint8_t *public_blob, uint16_t public_len, uint32_t *handle_out);
+int tpm2_unseal(uint32_t item_handle, uint8_t *data_out, uint16_t *data_len);
 
-/* TPM 2.0 Operations */
-int tpm20_create_primary(TPMContext* ctx, uint32_t primary_handle);
-int tpm20_load(TPMContext* ctx, uint32_t parent_handle, uint8_t* public_data, size_t public_size);
-int tpm20_hmac(TPMContext* ctx, uint32_t key_handle, uint8_t* data, size_t data_len, uint8_t* hmac_out, size_t* hmac_out_len);
-int tpm20_seal(TPMContext* ctx, uint32_t parent_handle, uint8_t* data, size_t data_len, uint8_t* sealed, size_t* sealed_len);
-int tpm20_unseal(TPMContext* ctx, uint32_t key_handle, uint8_t* sealed, size_t sealed_len, uint8_t* data, size_t* data_len);
-int tpm20_pcr_read(TPMContext* ctx, uint32_t pcr_handle, uint8_t* pcr_value, size_t* pcr_len);
-int tpm20_pcr_extend(TPMContext* ctx, uint32_t pcr_handle, uint8_t* hash, size_t hash_len);
-int tpm20_quote(TPMContext* ctx, uint32_t signing_key, uint8_t* qualifying_data, size_t qualifying_len,
-                uint8_t* signature, size_t* signature_len, uint8_t* quoted, size_t* quoted_len);
+/* TPM 2.0 Operations (tpm2_driver.c) */
+int tpm20_pcr_read(uint32_t pcr_handle, uint8_t* pcr_value, size_t* pcr_len);
+int tpm20_pcr_extend(uint32_t pcr_handle, uint8_t* hash, size_t hash_len);
+int tpm20_hmac(uint32_t key_handle, uint8_t* data, size_t data_len, uint8_t* hmac_out, size_t* hmac_out_len);
+
+/* TPM 2.0 NVRAM Operations */
+int tpm2_nv_define_space(uint32_t nv_index, uint16_t size, uint32_t attributes);
+int tpm2_nv_undefine_space(uint32_t nv_index);
+int tpm2_nv_write(uint32_t nv_index, uint8_t* data, uint16_t len, uint16_t offset);
 
 /* Utility Functions */
 int tpm_transmit(TPMContext* ctx, uint8_t* command, size_t cmd_len, uint8_t* response, size_t* resp_len);

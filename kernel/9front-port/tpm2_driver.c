@@ -469,12 +469,72 @@ tpm_init(void)
 }
 
 /*
- * TPM2_HMAC - HMAC operation (stub for now)
+ * TPM2_HMAC - HMAC operation
  */
 int
 tpm20_hmac(u32int key_handle, u8int *data, usize data_len, u8int *hmac_out, usize *hmac_out_len)
 {
-    USED(key_handle, data, data_len, hmac_out, hmac_out_len);
-    print("TPM: tpm20_hmac not yet implemented\n");
-    return -1;
+    u8int cmd[1024];
+    u8int resp[1024];
+    usize resp_len = sizeof(resp);
+    TPM2_Command_Header *chdr;
+    int i;
+
+    if(!tpm_state.initialized || data_len > 1024)
+        return -1;
+
+    /* Build TPM2_HMAC command */
+    chdr = (TPM2_Command_Header*)cmd;
+    chdr->tag = 0x0180;  /* TPM_ST_NO_SESSIONS */
+    chdr->size = 0;      /* Fill later */
+    chdr->code = 0x72010000;  /* TPM2_CC_HMAC (0x00000172 big-endian) */
+
+    i = 10;
+
+    /* Key Handle */
+    cmd[i++] = (key_handle >> 24) & 0xFF;
+    cmd[i++] = (key_handle >> 16) & 0xFF;
+    cmd[i++] = (key_handle >> 8) & 0xFF;
+    cmd[i++] = key_handle & 0xFF;
+
+    /* Auth Area Size (0) */
+    cmd[i++] = 0;
+    cmd[i++] = 0;
+    cmd[i++] = 0;
+    cmd[i++] = 0;
+
+    /* Buffer (TPM2B_MAX_BUFFER) */
+    cmd[i++] = (data_len >> 8) & 0xFF;
+    cmd[i++] = data_len & 0xFF;
+    memmove(cmd + i, data, data_len);
+    i += data_len;
+
+    /* Hash Algorithm (TPM_ALG_SHA256 = 0x000B) */
+    cmd[i++] = 0x00;
+    cmd[i++] = 0x0B;
+
+    /* Update command size */
+    chdr->size = (i >> 24) | ((i >> 8) & 0xFF00) | ((i << 8) & 0xFF0000) | (i << 24);
+
+    if(tpm_transmit(cmd, i, resp, &resp_len) < 0)
+        return -1;
+
+    /* Response: Header(10) + ParameterSize(4) + TPM2B_DIGEST */
+    /* TPM2B_DIGEST: size(2) + buffer */
+    
+    if(resp_len < 16)
+        return -1;
+
+    /* Skip Header(10) + ParameterSize(4) */
+    int offset = 14;
+    u16int digest_size = (resp[offset] << 8) | resp[offset+1];
+    offset += 2;
+
+    if(digest_size > *hmac_out_len || offset + digest_size > resp_len)
+        return -1;
+
+    memmove(hmac_out, resp + offset, digest_size);
+    *hmac_out_len = digest_size;
+
+    return 0;
 }

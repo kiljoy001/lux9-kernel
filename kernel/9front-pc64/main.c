@@ -327,6 +327,10 @@ void main_after_cr3(void) {
   crypto_tpm_key_init();
   print("=== Crypto Subsystem Initialized ===\n");
 
+  /* Run TPM 2.0 Kernel Test */
+  extern void tpm_test_run(void);
+  tpm_test_run();
+
   userinit();
   uartputs("DEBUG: userinit complete\n", 28);
 
