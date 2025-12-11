@@ -646,53 +646,23 @@ forkret:
     cmpq $KESEL, 48(%rsp)
     je _syscall_iretnested
 
+    /* Returning to user mode: swap GS to restore user GS base */
     swapgs
-    movq 8(%rsp), %r15
-    movq 0(%rsp), %r14
 
 _syscall_iretnested:
 	/* Restore preserved registers */
 	movq 0(%rsp), %r14
 	movq 8(%rsp), %r15
 
-	/* Restore data segments to User Selector (saved on stack) */
-	/* Necessary because SYSRET doesn't restore them, and we need DPL 3 */
+	/* Restore data segments from stack */
 	movw 16(%rsp), %ds
 	movw 18(%rsp), %es
 
-	swapgs
+	/* Skip past r14(8), r15(8), segments(8), trap(8), error(8) = 40 bytes total */
+	/* Stack now points at the hardware IRETQ frame: RIP, CS, RFLAGS, RSP, SS */
+	addq $40, %rsp
 
-	/* Prepare for SYSRETQ:
-	 * RCX = RIP (User PC) - at offset 40
-	 * R11 = RFLAGS - at offset 56
-	 * RSP = User SP - at offset 64
-	 */
-	movq 40(%rsp), %rcx
-	movq 56(%rsp), %r11
-	movq 64(%rsp), %rsp
-	sysretq
-
-	/* Debug: print iretq frame values - DISABLED */
-	/* 
-	pushq %rdi
-	pushq %rsi
-	pushq %rax
-
-	/* Frame is now at rsp+24: pc, cs, flags, sp, ss */
-	/* movq 24(%rsp), %rsi         /* pc */
-	/* movq 32(%rsp), %rdx         /* cs */
-	/* movq 40(%rsp), %rcx         /* flags */
-	/* movq 48(%rsp), %r8          /* sp */
-	/* movq 56(%rsp), %r9          /* ss */
-	/* leaq _iretq_debug_msg(%rip), %rdi
-	/* xorq %rax, %rax
-	/* call iprint
-
-	/* popq %rax
-	/* popq %rsi
-	/* popq %rdi
-	*/
-
+	/* Use IRETQ (not SYSRETQ) because our GDT layout is incompatible with SYSRET */
 	iretq
 .section .rodata
 _iretq_debug_msg:
