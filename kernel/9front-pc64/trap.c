@@ -9,6 +9,7 @@
 #include	"ureg.h"
 #include <error.h>
 #include	<trace.h>
+#include	"9p_router.h"	/* For p9_handle_doorbell() */
 
 extern int irqhandled(Ureg*, int);
 extern void irqinit(void);
@@ -571,14 +572,14 @@ syscall(Ureg* ureg)
 		print("SYSCALL[%d]: %s (#%ld) pc=%#p\n", syscall_count, scname, scallnr, ureg->pc);
 	*/
 
-	/* SYSCALL instruction doesn't push a return address (unlike INT/CALL),
-	 * but the standard ABI (Go, 6c) leaves a slot for it.
-	 * We must skip this slot to find the arguments. */
-	dosyscall(scallnr, (Sargs*)(ureg->sp + BY2WD), (uintptr*)(&ureg->ax));
+	/* Phase 6: Pure 9P - TRUE syscall elimination
+	 * Userspace writes Fcall to exchange page, rings doorbell
+	 * This is the ONLY syscall - no translation layer! */
+	p9_handle_doorbell(up);
 
-	/* Debug: after dosyscall */
+	/* Debug: after 9P dispatch */
 	/* DEBUG: Disabled verbose syscall return tracing
-	print("syscall: dosyscall returned, delaysched=%d\n", up->delaysched);
+	print("syscall: 9P dispatch returned, delaysched=%d\n", up->delaysched);
 	*/
 
 	/* if we delayed sched because we held a lock, sched now */

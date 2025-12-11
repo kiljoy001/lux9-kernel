@@ -8,6 +8,7 @@
 #include	<trace.h>
 #include	"tos.h"
 #include	"ureg.h"
+#include	"9p_router.h"  /* For P9Control structure */
 
 enum {
 	Scaling = 2,
@@ -803,6 +804,23 @@ newproc(void)
 	 * TODO: Once /dev/sip is implemented, processes should start with
 	 * zero capabilities and explicitly request them via SIP control */
 	p->capabilities = 0xFFFFFFFF;
+
+	/* Phase 6: Allocate 9P exchange page for pure 9P architecture
+	 * This page is mapped into userspace for direct 9P message passing */
+	if(p->p9page == nil) {
+		p->p9page = xallocz(BY2PG, 1);
+		if(p->p9page == nil) {
+			/* Exchange page allocation failed - process cannot run */
+			print("newproc: failed to allocate p9page for pid %lud\n", p->pid);
+			return nil;
+		}
+
+		/* Initialize P9Control block at offset 0xF00 */
+		P9Control *ctl = (P9Control*)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+		memset(ctl, 0, sizeof(P9Control));
+		ctl->status = P9_STATUS_IDLE;
+		ctl->doorbell = 0;
+	}
 
 	return p;
 }

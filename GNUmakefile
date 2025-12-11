@@ -43,12 +43,13 @@ LOCKDAG_C := kernel/lock_dag.c
 PROCSTATEDAG_C := kernel/proc_state_dag.c
 PROCFSM_C := kernel/proc_fsm.c
 P9ROUTER_C := kernel/9p_router.c
+# SYSCALL9P_C removed - Phase 6: TRUE syscall elimination via exchange page doorbell
 GHOSTDAG_C := kernel/ghostdag_kernel.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 BENCHMARK_C := kernel/benchmark.c
 CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
-CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
+CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/clr_p9_internal.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
 
 # TPM2-TSS sources - REMOVED, using minimal SAPI instead
 # TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
@@ -79,6 +80,7 @@ LOCKDAG_O := $(LOCKDAG_C:.c=.o)
 PROCSTATEDAG_O := $(PROCSTATEDAG_C:.c=.o)
 PROCFSM_O := $(PROCFSM_C:.c=.o)
 P9ROUTER_O := $(P9ROUTER_C:.c=.o)
+# SYSCALL9P_O removed - Phase 6 pure 9P via doorbell
 GHOSTDAG_O := $(GHOSTDAG_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
@@ -88,6 +90,8 @@ CLR_O := $(CLR_C:.c=.o)
 
 # External archives
 QBE_A := kernel/clr/qbe/qbe.a
+
+QBE_GHOSTDAG_O = kernel/ghostdag_kernel.o
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(GHOSTDAG_O) $(CLR_O) $(QBE_A)
 # TPM already included in PORT_O
