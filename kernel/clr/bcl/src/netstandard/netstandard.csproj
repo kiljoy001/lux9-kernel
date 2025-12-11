@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <AssemblyName>netstandard</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../System.Runtime/System.Runtime.csproj" />
+    <ProjectReference Include="../System.Numerics/System.Numerics.csproj" />
+    <ProjectReference Include="../System.Collections/System.Collections.csproj" />
+  </ItemGroup>
+
+<ItemGroup>
+  <!-- We need to compile this with the core types visible -->
+</ItemGroup>
+
+</Project>

@@ -30,7 +30,7 @@ extern int pebble_debug;
 #define PEBBLE_E_BADARG    "bad argument"
 #define PEBBLE_E_BUSY      "resource busy"
 
-/* Capability flags */
+/* Capability flags - Universal CBS model */
 #define PEBBLE_CAP_BLACK   (1<<0)
 #define PEBBLE_CAP_ACTIVE  (1<<1)
 #define PEBBLE_CAP_DEVICE	(1<<2)
@@ -40,6 +40,10 @@ extern int pebble_debug;
 #define PEBBLE_CAP_DMA		(1<<6)
 #define PEBBLE_CAP_PCI		(1<<7)
 #define PEBBLE_CAP_FS		(1<<8)
+#define PEBBLE_CAP_ADMIN	(1<<9)  /* Administrative: can modify other processes' capabilities */
+
+/* Helper macro for capability checking */
+#define has_capability(p, cap) ((p)->capabilities & (cap))
 
 #include "borrowchecker.h"
 #include "blind_ledger.h"

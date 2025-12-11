@@ -883,7 +883,8 @@ pebble_selftest(void)
 	if(white == nil)
 		error("pebble selftest: white issue failed");
 
-	pebble_white_verify(white, nil);
+	void *black_handle = nil;
+	pebble_white_verify(white, &black_handle);
 	if(pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)
 		error("pebble selftest: black alloc failed");
 
@@ -936,7 +937,8 @@ pebble_sip_issue_test(void)
 	if(white == nil)
 		error("pebble sip issue: white issue failed");
 
-	pebble_white_verify(white, nil);
+	void *black_handle = nil;
+	pebble_white_verify(white, &black_handle);
 
 	/* Test 2: Black allocation from white token */
 	if(pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)

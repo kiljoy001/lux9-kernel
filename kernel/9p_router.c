@@ -7,16 +7,31 @@
 #include <u.h>
 #include "portlib.h"
 
-/* Manual typedefs (portlib.h gives structs but not always typedefs used by kernel) */
+/* Manual typedefs (portlib.h gives structs but not always typedefs used by
+ * kernel) */
 typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
+#include "9p_router.h"
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "9p_router.h"
 #include "proc_packet.h"
+
+/* Stub definitions for proc FSM (until full FSM is implemented) */
+/* EV_* and proc_state are already defined in proc_packet.h */
+
+static void proc_event_stub(Proc *p, int ev) {
+  USED(p);
+  USED(ev);
+  /* TODO: Implement process FSM state transitions */
+}
+#define proc_event proc_event_stub
+
+static char *proc_state_names_stub[] = {
+    "unknown", "ready", "running", "waiting", "stopped", "broken", "dead"};
+#define proc_state_names proc_state_names_stub
 
 /* Forward declarations for handlers */
 extern int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r);
@@ -164,7 +179,7 @@ static int p9_validate_pebble_full(PebbleToken *tok, char *path, Proc *owner) {
   /* Zero-pad the rest of the hash */
   memset(cap.hash + 16, 0, 16);
 
-  cap.type = CAP_TYPE_DEVICE;  /* Device capability */
+  cap.type = CAP_TYPE_DEVICE; /* Device capability */
   cap.perms = 0;
   if (tok->permissions & PEBBLE_PERM_READ)
     cap.perms |= CAP_PERM_READ;
@@ -252,7 +267,7 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
     path = "/"; /* TODO: Need full path for correct DAG dependency? */
 
   /* Submit for ordering */
-  if (ghostdag_submit(p, t, path) < 0) {
+  if (ghostdag_submit(nil, p, t, path) < 0) {
     r->type = Rerror;
     r->ename = "ghostdag queue full";
     return -1;
@@ -269,7 +284,7 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
    * TEMPORARY HACK: Process strictly (flush the queue) to simulate synchronous
    * behavior until the scheduler is fully event-driven.
    */
-  ghostdag_process_all();
+  ghostdag_process_all(nil);
 
   /*
    * Note: 'r' is populated by p9_dispatch called via ghostdag_process_all ->
@@ -468,7 +483,7 @@ static char *devname_from_path(char *path) {
  * Returns 0 on success, -1 on permission error
  */
 static int handle_tattach_with_pebble(Proc *caller, Fcall *t, Fcall *r,
-                                       int required_perms, uchar qid_path) {
+                                      int required_perms, uchar qid_path) {
   PebbleToken tok;
   Qid q;
 
@@ -511,7 +526,7 @@ static int cons_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   switch (t->type) {
   case Tattach:
     return handle_tattach_with_pebble(caller, t, r,
-                                       PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 1);
+                                      PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 1);
 
   case Twrite:
     /* Check write permission */
@@ -565,7 +580,7 @@ static int null_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   switch (t->type) {
   case Tattach:
     return handle_tattach_with_pebble(caller, t, r,
-                                       PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 2);
+                                      PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 2);
 
   case Twrite:
     /* Check write permission */
@@ -785,7 +800,7 @@ static int sysname_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   switch (t->type) {
   case Tattach:
     return handle_tattach_with_pebble(caller, t, r,
-                                       PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 6);
+                                      PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 6);
 
   case Twrite:
     /* Check write permission */

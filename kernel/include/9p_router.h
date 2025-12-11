@@ -7,6 +7,10 @@
 #ifndef _9P_ROUTER_H_
 #define _9P_ROUTER_H_
 
+/* Forward declarations */
+typedef struct Proc Proc;
+typedef struct Fcall Fcall;
+
 /* 9P Exchange Page Layout */
 #define P9_PAGE_SIZE 4096
 #define P9_REQUEST_OFFSET 0x000
@@ -15,6 +19,9 @@
 #define P9_REPLY_SIZE 0x700
 #define P9_CONTROL_OFFSET 0xF00
 #define P9_CONTROL_SIZE 0x100
+
+/* Fixed user virtual address for the Exchange Page */
+#define EXCHANGE_PAGE_ADDR 0x7FFFFFFF0000ULL
 
 /* Control Block (at offset 0xF00) */
 typedef struct P9Control {

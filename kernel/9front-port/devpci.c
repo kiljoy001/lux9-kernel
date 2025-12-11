@@ -283,6 +283,10 @@ pciread(Chan *c, void *va, long n, vlong off)
 	uchar *config;
 	int i;
 
+	/* Universal CBS: Check PCI capability for device access */
+	if((c->qid.path >= Qdevconfig) && !has_capability(up, PEBBLE_CAP_PCI))
+		error(PEBBLE_E_PERM);
+
 	switch(c->qid.path){
 	case Qdir:
 		return devdirread(c, va, n, nil, 0, pcigen);
@@ -453,6 +457,10 @@ static long
 pciwrite(Chan *c, void *va, long n, vlong off)
 {
 	USED(va, off);
+
+	/* Universal CBS: Check PCI capability for write access */
+	if((c->qid.path >= Qdevconfig) && !has_capability(up, PEBBLE_CAP_PCI))
+		error(PEBBLE_E_PERM);
 
 	switch(c->qid.path){
 	case Qdir:

@@ -88,7 +88,7 @@ Walkqid*	devwalk(Chan*, Chan*, char**, int, Dirtab*, int, Devgen*);
 int		devwstat(Chan*, uchar*, int);
 Dir*		dirchanstat(Chan *);
 int		donotify(Ureg*);
-int		dosyscall(ulong, Sargs*, uintptr*);
+void		syscall_to_9p(Ureg*);  /* Phase 6: Pure 9P dispatch replaces dosyscall */
 void		drawactive(int);
 void		drawcmap(void);
 void		dtracytick(Ureg*);

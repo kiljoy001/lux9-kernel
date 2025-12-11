@@ -126,9 +126,4 @@ __ctype_b_loc(void)
 	return loc;
 }
 
-/* Stub for stack canary check - kernel doesn't use stack protector */
-void
-__stack_chk_fail(void)
-{
-	panic("stack protector triggered in QBE code");
-}
+/* Phase 7: __stack_chk_fail now defined in kernel/9front-pc64/main.c */

@@ -6,6 +6,7 @@ LD := ld
 AS := as
 
 # Compiler flags - Plan 9 compatible with MAXIMUM SAFETY
+# Phase 7: Security hardening enabled
 CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-missing-braces -Wno-incompatible-pointer-types -std=gnu11 \
            -O0 -g3 -gdwarf-4 \
            -ffreestanding -fno-stack-protector -fno-stack-check \
@@ -20,13 +21,17 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -I. \
            -D_PLAN9_SOURCE \
            -D__PLAN9_KERNEL__ \
+           -DKERNEL \
            -D_KERNEL_QBE \
            -DKTZERO=0xffffffff80110000 \
-           -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer
+           -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer \
+           -Wformat-security -Wconversion -Wshadow
 
 # Linker flags
+# Phase 7: Security hardening - DEP/NX enabled
 LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
            -z max-page-size=0x1000 \
+           -z noexecstack \
            -T kernel/linker.ld
 
 # Source files
@@ -49,7 +54,7 @@ REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 BENCHMARK_C := kernel/benchmark.c
 CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
-CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/clr_p9_internal.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c $(CBOR_C)
+CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe/qbe_kernel_wrapper.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/clr_p9_internal.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c $(CBOR_C)
 
 # TPM2-TSS sources - REMOVED, using minimal SAPI instead
 # TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
@@ -93,7 +98,7 @@ QBE_A := kernel/clr/qbe/qbe.a
 
 QBE_GHOSTDAG_O = kernel/ghostdag_kernel.o
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(GHOSTDAG_O) $(CLR_O) $(QBE_A)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(GHOSTDAG_O) $(CLR_O) $(QBE_A)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -110,6 +115,15 @@ $(KERNEL): $(ALL_O)
 $(QBE_A): $(QBE_CORE_O)
 	@echo "AR $@"
 	@ar rcs $@ $(QBE_CORE_O)
+
+# QBE needs SSE for floating point and doesn't use GNU extensions
+kernel/clr/qbe/%.o: kernel/clr/qbe/%.c
+	@echo "CC $< (QBE)"
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -c $< -o $@
+
+kernel/clr/qbe/amd64/%.o: kernel/clr/qbe/amd64/%.c
+	@echo "CC $< (QBE)"
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -c $< -o $@
 
 # CBOR library needs special flags
 kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c

@@ -40,6 +40,7 @@ FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c famil
 CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
 CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
 CLR_QBE_C := clr/qbe_compile.c
+MISC_KERNEL_C := ../kernel/ghostdag_kernel.c ../kernel/9p_router.c
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
@@ -53,11 +54,12 @@ CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
 FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
-CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o
+CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o
+CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_runtime.o
+MISC_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(MISC_KERNEL_C))
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(MISC_KERNEL_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -82,6 +84,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
           -Iclr/fruity \
           -D_PLAN9_SOURCE \
           -D__PLAN9_KERNEL__ \
+          -DKERNEL \
           -DKTZERO=0xffffffff80110000
 
 # Linker configuration
@@ -187,6 +190,26 @@ cbor_parser.o: clr/libmcu-cbor/parser.c
 
 # CLR QBE compiler
 qbe_compile.o: clr/qbe_compile.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_console.o: clr/qbe/clr_console.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_core.o: clr/qbe/clr_core.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+il_parser.o: clr/il_parser.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+il_to_fruity.o: clr/il_to_fruity.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_runtime.o: clr/clr_runtime.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

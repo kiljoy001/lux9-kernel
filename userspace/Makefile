@@ -59,6 +59,7 @@ $(BIN_DIR)/init: init_minimal/init.c | $(BIN_DIR) libs
 	@echo "Building C init program..."
 	@mkdir -p $(OBJ_DIR)
 	@$(CC) -nostdlib -static -ffreestanding -m64 -O2 \
+	    -fcf-protection=none \
 	    -I./lux-c/include \
 	    -o $@ $< lux-c/crt0.o lux-c/liblux-c.a
 
@@ -89,9 +90,13 @@ initrd: init-asm $(BUILD_DIR)/initrd.tar
 $(BUILD_DIR)/initrd.tar: init-c libs
 	@echo "Building minimal initrd with init only"
 	@rm -rf $(INITRD_DIR)
-	@mkdir -p $(INITRD_DIR)/bin $(INITRD_DIR)/dev $(INITRD_DIR)/srv
-	# Copy init program
+	@mkdir -p $(INITRD_DIR)/bin $(INITRD_DIR)/boot $(INITRD_DIR)/dev $(INITRD_DIR)/srv
+	# Copy init program to /boot/init (kernel expects it there)
+	@cp $(BIN_DIR)/init $(INITRD_DIR)/boot/init
+	# Also copy to /bin/init for compatibility
 	@cp $(BIN_DIR)/init $(INITRD_DIR)/bin/init
+	# Copy CLR Init
+	@cp ../kernel/clr/test/bin/Debug/net9.0/init.dll $(INITRD_DIR)/boot/Init.dll
 	# Create tar
 	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
 	@echo "Initrd created: $@"

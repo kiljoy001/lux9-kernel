@@ -3,7 +3,9 @@
 #ifndef QBE_COMPILE_H
 #define QBE_COMPILE_H
 
-#include "u.h"
+#ifndef _U_H_
+#include "../include/u.h"
+#endif
 
 /*
  * Compile QBE IL to native assembly code
@@ -17,6 +19,7 @@
  * Returns:
  *   0 on success, -1 on error
  */
-int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf, usize errorbuf_size);
+int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
+                     usize errorbuf_size);
 
 #endif /* QBE_COMPILE_H */

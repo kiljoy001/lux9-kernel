@@ -51,7 +51,9 @@
  *  Address spaces. Kernel, sorted by address.
  */
 #define KZERO		(0xffffffff80000000ull)
+#ifndef KTZERO
 #define KTZERO		(KZERO+2*MiB)  /* Kernel text/data starts here, physical 2MB after relocation */
+#endif
 
 #define VMAP		(0xfffffe8000000000ull)
 #define VMAPSIZE	(1024ull*GiB)

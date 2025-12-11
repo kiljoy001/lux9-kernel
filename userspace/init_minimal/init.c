@@ -3,40 +3,40 @@
 void
 main(int argc, char *argv[])
 {
-	int fd, n;
-	char buf[32];
-	
-	print("init: starting...\n");
+	int fd;
 
-	/* Bind devices */
-	if(bind("#c", "/dev", MREPL) < 0)
-		print("init: bind #c /dev failed\n");
-	if(bind("#t", "/dev", MAFTER) < 0)
-		print("init: bind #t /dev failed\n");
-	if(bind("#p", "/proc", MREPL) < 0)
-		print("init: bind #p /proc failed\n");
-	if(bind("#Ϯ", "/dev", MAFTER) < 0)
-		print("init: bind #Ϯ (TPM) /dev failed\n");
-
-	print("init: namespace built\n");
-
-	/* Verify TPM availability */
-	fd = open("/dev/tpm/random", OREAD);
-	if(fd < 0){
-		print("init: could not open /dev/tpm/random\n");
-	} else {
-		n = read(fd, buf, sizeof(buf));
-		if(n > 0){
-			print("init: TPM read %d random bytes successfully\n", n);
-		} else {
-			print("init: TPM read failed\n");
-		}
-		close(fd);
+	/* First, we need to open console for stdin/stdout/stderr */
+	/* Bind #c (console device) to /dev */
+	if(bind("#c", "/dev", MREPL) < 0) {
+		/* Can't print error - no console yet! Just loop */
+		for(;;);
 	}
 
-	print("init: boot verification complete. looping.\n");
+	/* Open /dev/cons for stdin (fd 0) */
+	fd = open("/dev/cons", OREAD);
+	if(fd != 0) {
+		/* Wrong fd, close and try again or just fail */
+		for(;;);
+	}
 
+	/* Open /dev/cons for stdout (fd 1) */
+	fd = open("/dev/cons", OWRITE);
+	if(fd != 1) {
+		for(;;);
+	}
+
+	/* Open /dev/cons for stderr (fd 2) */
+	fd = open("/dev/cons", OWRITE);
+	if(fd != 2) {
+		for(;;);
+	}
+
+	/* Now we can print! */
+	print("init: Console opened successfully!\n");
+	print("init: Starting CLR bootstrap...\n");
+
+	/* Loop forever for now */
 	for(;;)
-		;  /* Just loop, no sleep syscall for now */
+		;
 }
 

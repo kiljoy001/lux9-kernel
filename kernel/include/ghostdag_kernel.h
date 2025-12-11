@@ -21,6 +21,7 @@ struct Fcall;
 #define GHOSTDAG_MAX_ANTICONE 10 /* Maximum anticone size */
 #define GHOSTDAG_MAX_PARENTS 8   /* Max parents per message */
 #define GHOSTDAG_GENESIS_ID 0    /* Genesis message ID */
+#define GHOSTDAG_MAX_DAGS 64     /* Max number of DAG instances */
 
 /*
  * GHOSTDAG Message Colors
@@ -37,16 +38,37 @@ struct Fcall;
 #define GHOSTDAG_STATE_COMPLETE 3
 
 /*
+ * GHOSTDAG Message Types
+ */
+#define GHOSTDAG_MSG_9P 0
+#define GHOSTDAG_MSG_RAW 1
+
+/*
+ * GHOSTDAG Message Payload
+ */
+typedef struct GhostPayload {
+  int type;
+  union {
+    Fcall *fcall;
+    struct {
+      void *data;
+      ulong len;
+    } raw;
+  };
+} GhostPayload;
+
+/*
  * GHOSTDAG Message Metadata
- * Attached to each 9P Fcall for consensus tracking
+ * Attached to each 9P Fcall or raw data for consensus tracking
  */
 typedef struct GhostMsg {
   /* Message identity */
   uint gm_id;          /* Unique message ID */
   uvlong gm_timestamp; /* Creation timestamp */
 
-  /* The 9P message */
-  Fcall *gm_fcall;   /* The Fcall being ordered */
+  /* The payload */
+  GhostPayload gm_payload;
+
   Proc *gm_caller;   /* Calling process */
   char gm_path[256]; /* Target path */
 
@@ -72,6 +94,8 @@ typedef struct GhostMsg {
  * GHOSTDAG DAG Structure
  */
 typedef struct GhostDAG {
+  int gd_id; /* DAG Instance ID */
+
   /* Message queue */
   GhostMsg *gd_head;
   GhostMsg *gd_tail;
@@ -91,12 +115,15 @@ typedef struct GhostDAG {
   uvlong gd_red_msgs;
   uvlong gd_avg_latency;
 
+  /* Synchronization for readers */
+  Rendez gd_rendez;
+
   /* State */
   int gd_initialized;
 } GhostDAG;
 
 /*
- * Global GHOSTDAG instance
+ * Global GHOSTDAG instance (System DAG, ID 0)
  */
 extern GhostDAG *ghostdag;
 
@@ -104,45 +131,57 @@ extern GhostDAG *ghostdag;
  * Core API
  */
 
-/* Initialize GHOSTDAG subsystem */
+/* Initialize GHOSTDAG subsystem (called by kernel main) */
 void ghostdag_init(uint k_param);
 
+/* Create a new dynamic DAG instance */
+GhostDAG *ghostdag_create_instance(uint k_param);
+
+/* Destroy a DAG instance */
+void ghostdag_destroy_instance(GhostDAG *dag);
+
+/* Get DAG instance by ID */
+GhostDAG *ghostdag_get(int id);
+
 /* Submit 9P message for ordering - REPLACES p9_route() */
-int ghostdag_submit(Proc *caller, Fcall *t, char *path);
+int ghostdag_submit(GhostDAG *dag, Proc *caller, Fcall *t, char *path);
+
+/* Submit raw data for ordering */
+int ghostdag_submit_raw(GhostDAG *dag, Proc *caller, void *data, ulong len);
 
 /* Get next ordered message ready for delivery */
-GhostMsg *ghostdag_next(void);
+GhostMsg *ghostdag_next(GhostDAG *dag);
 
 /* Complete message and remove from DAG */
-void ghostdag_complete(GhostMsg *msg);
+void ghostdag_complete(GhostDAG *dag, GhostMsg *msg);
 
 /*
  * Ordering API
  */
 
 /* Compute anticone for message */
-int ghostdag_anticone(GhostMsg *msg);
+int ghostdag_anticone(GhostDAG *dag, GhostMsg *msg);
 
 /* Determine color (BLUE if anticone <= k) */
-int ghostdag_color(GhostMsg *msg);
+int ghostdag_color(GhostDAG *dag, GhostMsg *msg);
 
 /* Check if message can be delivered */
-int ghostdag_can_deliver(GhostMsg *msg);
+int ghostdag_can_deliver(GhostDAG *dag, GhostMsg *msg);
 
 /*
  * Processing
  */
 
 /* Process one ordered message - called from scheduler */
-int ghostdag_process_one(void);
+int ghostdag_process_one(GhostDAG *dag);
 
 /* Process all ready messages */
-void ghostdag_process_all(void);
+void ghostdag_process_all(GhostDAG *dag);
 
 /*
  * Statistics
  */
-void ghostdag_stats(uvlong *total, uvlong *blue, uvlong *red);
+void ghostdag_stats(GhostDAG *dag, uvlong *total, uvlong *blue, uvlong *red);
 
 /*
  * Convenience macros
