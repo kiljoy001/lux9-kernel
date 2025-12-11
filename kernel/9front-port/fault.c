@@ -1,11 +1,30 @@
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
-#include "portlib.h"
-#include "u.h"
 #include <error.h>
 
-Segment *seg(Proc *, uintptr, int);
+struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {
+  struct Segment **s, **et, *n;
+
+  et = &p->seg[NSEG];
+  for (s = p->seg; s < et; s++) {
+    if ((n = *s) == nil)
+      continue;
+    if (addr >= n->base && addr < n->top) {
+      if (dolock == 0)
+        return n;
+
+      qlock(n);
+      if (addr >= n->base && addr < n->top)
+        return n;
+      qunlock(n);
+    }
+  }
+
+  return nil;
+}
 
 _Noreturn static void faulterror(char *s, Chan *c) {
   char buf[ERRMAX];
@@ -493,27 +512,6 @@ void *vmemchr(void *s, int c, ulong n) {
 
   /* fits in one page */
   return memchr((void *)a, c, n);
-}
-
-Segment *seg(Proc *p, uintptr addr, int dolock) {
-  Segment **s, **et, *n;
-
-  et = &p->seg[NSEG];
-  for (s = p->seg; s < et; s++) {
-    if ((n = *s) == nil)
-      continue;
-    if (addr >= n->base && addr < n->top) {
-      if (dolock == 0)
-        return n;
-
-      qlock(n);
-      if (addr >= n->base && addr < n->top)
-        return n;
-      qunlock(n);
-    }
-  }
-
-  return nil;
 }
 
 extern void checkmmu(uintptr, uintptr);

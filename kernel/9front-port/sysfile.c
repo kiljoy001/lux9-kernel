@@ -12,28 +12,6 @@ typedef ulong *syscall_va_list;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define SYSCALL_ARG(list, type) (*(type*)((list)++))
 
 #include "portlib.h"

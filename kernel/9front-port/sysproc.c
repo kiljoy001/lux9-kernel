@@ -12,18 +12,6 @@ typedef ulong *syscall_va_list;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 #define syscall_vainit(list, start) ((list) = (syscall_va_list)(start))
 
 
