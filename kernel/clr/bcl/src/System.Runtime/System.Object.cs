@@ -1,13 +1,13 @@
 namespace System
 {
     using System.Runtime.CompilerServices;
+    using System.Runtime.InteropServices;
 
     public interface IDisposable
     {
         void Dispose();
     }
 
-    // Attributes required by compiler
     namespace Runtime.InteropServices
     {
         public sealed class StructLayoutAttribute : Attribute
@@ -80,12 +80,8 @@ namespace System
         }
     }
 
-    // Fundamental Types
-
     public class Object
     {
-        // Layout must match kernel clr_object_t implicitly
-        
         public virtual bool Equals(Object obj)
         {
             return (object)this == (object)obj;
@@ -98,7 +94,7 @@ namespace System
             return objA.Equals(objB);
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        [MethodImpl(MethodImplOptions.InternalCall)]
         public virtual extern int GetHashCode();
 
         public virtual string ToString()
@@ -106,10 +102,10 @@ namespace System
             return GetType().FullName;
         }
         
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        [MethodImpl(MethodImplOptions.InternalCall)]
         public extern Type GetType();
 
-        public extern void Finalize(); // Protected in real C#, public/extern here for kernel hook
+        public extern void Finalize();
     }
 
     public abstract class ValueType : Object {}
@@ -118,106 +114,234 @@ namespace System
 
     public struct Void {}
 
-    public struct Boolean
+    [StructLayout(LayoutKind.Sequential, Size = 1)]
+    public unsafe struct Boolean
     {
-        private bool m_value;
-        public override string ToString() => m_value ? "True" : "False";
+        internal fixed byte m_value[1];
+        public override string ToString() => "Boolean";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(bool left, bool right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(bool left, bool right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !(bool value);
     }
 
-    public partial struct Char
+    [StructLayout(LayoutKind.Sequential, Size = 2, Pack = 2)]
+    public unsafe partial struct Char
     {
-        private char m_value;
+        internal fixed byte m_value[2];
         public override string ToString() => "Char";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(char left, char right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(char left, char right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(char left, char right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >(char left, char right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <=(char left, char right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >=(char left, char right);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator int(char c);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator char(int i);
     }
 
-    public struct SByte
+    [StructLayout(LayoutKind.Sequential, Size = 1)]
+    public unsafe struct SByte
     {
-        private sbyte m_value;
+        internal fixed byte m_value[1];
         public override string ToString() => "SByte";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator int(sbyte b);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator sbyte(int i);
     }
 
-    public struct Byte
+    [StructLayout(LayoutKind.Sequential, Size = 1)]
+    public unsafe struct Byte
     {
-        private byte m_value;
+        internal fixed byte m_value[1];
         public override string ToString() => "Byte";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator int(byte b);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator byte(int i);
     }
 
-    public struct Int16
+    [StructLayout(LayoutKind.Sequential, Size = 2, Pack = 2)]
+    public unsafe struct Int16
     {
-        private short m_value;
+        internal fixed byte m_value[2];
         public override string ToString() => "Int16";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator int(short s);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator short(int i);
     }
 
-    public struct UInt16
+    [StructLayout(LayoutKind.Sequential, Size = 2, Pack = 2)]
+    public unsafe struct UInt16
     {
-        private ushort m_value;
+        internal fixed byte m_value[2];
         public override string ToString() => "UInt16";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator int(ushort s);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator ushort(int i);
     }
 
-    public struct Int32
+    [StructLayout(LayoutKind.Sequential, Size = 4, Pack = 4)]
+    public unsafe struct Int32
     {
-        private int m_value;
+        internal fixed byte m_value[4];
         public override string ToString() => "Int32";
+        
+        // Arithmetic
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator +(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator -(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator *(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator /(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator %(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator -(int value);
+        
+        // Bitwise
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator &(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator |(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator ^(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator ~(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator <<(int value, int shift);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator >>(int value, int shift);
+        
+        // Comparison
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <=(int left, int right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >=(int left, int right);
+        
+        // Conversions
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator long(int i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator float(int i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator double(int i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator int(long i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator int(float f);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator int(double d);
     }
 
-    public struct UInt32
+    [StructLayout(LayoutKind.Sequential, Size = 4, Pack = 4)]
+    public unsafe struct UInt32
     {
-        private uint m_value;
+        internal fixed byte m_value[4];
         public override string ToString() => "UInt32";
+        
+        // Partial set for BitOperations
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(uint left, uint right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(uint left, uint right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern uint operator &(uint left, uint right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern uint operator |(uint left, uint right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern uint operator <<(uint value, int shift);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern uint operator >>(uint value, int shift);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator uint(int i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator int(uint u);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator ulong(uint u);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator uint(ulong u);
     }
 
-    public struct Int64
+    [StructLayout(LayoutKind.Sequential, Size = 8, Pack = 8)]
+    public unsafe struct Int64
     {
-        private long m_value;
+        internal fixed byte m_value[8];
         public override string ToString() => "Int64";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern long operator -(long value);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <=(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >=(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(long left, long right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern long operator *(long left, long right);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern long operator &(long left, long right);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator float(long i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator double(long i);
     }
 
-    public struct UInt64
+    [StructLayout(LayoutKind.Sequential, Size = 8, Pack = 8)]
+    public unsafe struct UInt64
     {
-        private ulong m_value;
+        internal fixed byte m_value[8];
         public override string ToString() => "UInt64";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(ulong left, ulong right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(ulong left, ulong right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern ulong operator &(ulong left, ulong right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern ulong operator |(ulong left, ulong right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern ulong operator <<(ulong value, int shift);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern ulong operator >>(ulong value, int shift);
     }
 
+    [StructLayout(LayoutKind.Sequential, Size = 8, Pack = 8)]
     public unsafe struct IntPtr
     {
         private void* m_value;
-        
         public static readonly IntPtr Zero = default;
         public override string ToString() => ((nint)m_value).ToString();
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(IntPtr left, IntPtr right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(IntPtr left, IntPtr right);
     }
 
+    [StructLayout(LayoutKind.Sequential, Size = 8, Pack = 8)]
     public unsafe struct UIntPtr
     {
         private void* m_value;
-        
         public static readonly UIntPtr Zero = default;
         public override string ToString() => ((nuint)m_value).ToString();
     }
 
-    public struct Double
+    [StructLayout(LayoutKind.Sequential, Size = 8, Pack = 8)]
+    public unsafe struct Double
     {
-        private double m_value;
-        public override string ToString() => m_value.ToString();
+        internal fixed byte m_value[8];
+        public override string ToString() => "Double";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <=(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >=(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(double left, double right);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern double operator +(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern double operator -(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern double operator *(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern double operator /(double left, double right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern double operator -(double value);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern explicit operator float(double d);
     }
 
-    public struct Single
+    [StructLayout(LayoutKind.Sequential, Size = 4, Pack = 4)]
+    public unsafe struct Single
     {
-        private float m_value;
-        public override string ToString() => m_value.ToString();
+        internal fixed byte m_value[4];
+        public override string ToString() => "Single";
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <=(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator >=(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator !=(float left, float right);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern float operator +(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern float operator -(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern float operator *(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern float operator /(float left, float right);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern float operator -(float value);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern implicit operator double(float f);
     }
-
-
-
-    // Attribute moved up
-    
-
     
     [AttributeUsage(AttributeTargets.Enum)]
     public class FlagsAttribute : Attribute { }
 
-
-
     public struct RuntimeTypeHandle { }
     public struct RuntimeFieldHandle { } 
 }
-

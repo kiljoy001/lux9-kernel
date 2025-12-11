@@ -18,6 +18,12 @@ public struct Decimal : IComparable, IEquatable<Decimal>
     
     public static bool operator ==(Decimal d1, Decimal d2) => d1.m_value == d2.m_value;
     public static bool operator !=(Decimal d1, Decimal d2) => d1.m_value != d2.m_value;
+    public static bool operator <(Decimal d1, Decimal d2) => d1.m_value < d2.m_value;
+    public static bool operator >(Decimal d1, Decimal d2) => d1.m_value > d2.m_value;
+    public static bool operator <=(Decimal d1, Decimal d2) => d1.m_value <= d2.m_value;
+    public static bool operator >=(Decimal d1, Decimal d2) => d1.m_value >= d2.m_value;
+    public static Decimal operator -(Decimal d) => new Decimal(-d.m_value);
+    public static implicit operator Decimal(int value) => new Decimal(value);
     
     public override string ToString() => "Decimal";
     public int CompareTo(object obj) => 0;
