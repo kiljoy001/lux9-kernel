@@ -459,7 +459,7 @@ namespace System.Runtime.CompilerServices
         
         public void SetException(Exception exception) { }
         
-        public Task<TResult> Task => _task ?? Task.FromResult(_result);
+        public Task<TResult> Task => _task ?? System.Threading.Tasks.Task.FromResult(_result);
         
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion

@@ -66,6 +66,56 @@ namespace System
             }
             return result;
         }
+        
+        // Object overloads (compiler-required for + operator)
+        // IMPORTANT: These must NOT use ?., ??, or ternary with strings as those call Concat!
+        public static string Concat(object arg0)
+        {
+            if (arg0 == null) return Empty;
+            return arg0.ToString();
+        }
+        
+        public static string Concat(object arg0, object arg1)
+        {
+            string s0 = arg0 == null ? Empty : arg0.ToString();
+            string s1 = arg1 == null ? Empty : arg1.ToString();
+            return Internal_Concat2(s0, s1);
+        }
+        
+        public static string Concat(object arg0, object arg1, object arg2)
+        {
+            string s0 = arg0 == null ? Empty : arg0.ToString();
+            string s1 = arg1 == null ? Empty : arg1.ToString();
+            string s2 = arg2 == null ? Empty : arg2.ToString();
+            return Internal_Concat3(s0, s1, s2);
+        }
+        
+        public static string Concat(object arg0, object arg1, object arg2, object arg3)
+        {
+            string s0 = arg0 == null ? Empty : arg0.ToString();
+            string s1 = arg1 == null ? Empty : arg1.ToString();
+            string s2 = arg2 == null ? Empty : arg2.ToString();
+            string s3 = arg3 == null ? Empty : arg3.ToString();
+            // Chain: ((s0+s1) + s2) + s3
+            string t1 = Internal_Concat2(s0, s1);
+            string t2 = Internal_Concat2(t1, s2);
+            return Internal_Concat2(t2, s3);
+        }
+        
+        public static string Concat(params object[] args)
+        {
+            if (args == null) return Empty;
+            int len = args.Length;
+            if (len == 0) return Empty;
+            
+            string result = args[0] == null ? Empty : args[0].ToString();
+            for (int i = 1; i < len; i++)
+            {
+                string s = args[i] == null ? Empty : args[i].ToString();
+                result = Internal_Concat2(result, s);
+            }
+            return result;
+        }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern string Internal_Concat2(string str0, string str1);

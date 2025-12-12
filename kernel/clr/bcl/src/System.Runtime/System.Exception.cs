@@ -245,4 +245,13 @@ namespace System
         public KeyNotFoundException() : base("The given key was not present in the dictionary.") { }
         public KeyNotFoundException(string message) : base(message) { }
     }
+    
+    /// <summary>
+    /// Exception thrown when an array type mismatch occurs.
+    /// </summary>
+    public class ArrayTypeMismatchException : Exception
+    {
+        public ArrayTypeMismatchException() : base("Array type mismatch.") { }
+        public ArrayTypeMismatchException(string message) : base(message) { }
+    }
 }

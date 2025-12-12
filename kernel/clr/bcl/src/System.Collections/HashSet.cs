@@ -27,7 +27,7 @@ namespace System.Collections.Generic
         private IEqualityComparer<T> _comparer;
         private int _version;
         
-        public HashSet() : this(null) { }
+        public HashSet() : this((IEqualityComparer<T>)null) { }
         
         public HashSet(IEqualityComparer<T> comparer)
         {

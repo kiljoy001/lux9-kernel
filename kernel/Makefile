@@ -56,7 +56,7 @@ FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transact
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_runtime.o
+CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o
 MISC_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(MISC_KERNEL_C))
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(MISC_KERNEL_O)
@@ -198,6 +198,10 @@ clr_console.o: clr/qbe/clr_console.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clr_core.o: clr/qbe/clr_core.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_bcl_helpers.o: clr/qbe/clr_bcl_helpers.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

@@ -196,6 +196,32 @@ extern void clr_environment_failfast(void *);
 extern void clr_monitor_enter(void *);
 extern void clr_monitor_exit(void *);
 
+/* System.P9.P9Internal - 9P operations */
+extern unsigned int clr_p9_attach(const char *path);
+extern int clr_p9_read(unsigned int fid, void *buffer, int offset, int count,
+                       long long position);
+extern int clr_p9_write(unsigned int fid, void *buffer, int offset, int count,
+                        long long position);
+extern void clr_p9_clunk(unsigned int fid);
+extern long long clr_p9_stat(unsigned int fid);
+
+/* BCL Helpers (clr_bcl_helpers.c) */
+extern long long clr_datetime_now(void);
+extern int clr_datetime_tickcount(void);
+extern int clr_bigint_add(u32int *left, int leftLen, u32int *right,
+                          int rightLen, u32int *result);
+extern int clr_bigint_sub(u32int *left, int leftLen, u32int *right,
+                          int rightLen, u32int *result);
+extern int clr_bigint_mul(u32int *left, int leftLen, u32int *right,
+                          int rightLen, u32int *result);
+extern int clr_bigint_div_small(u32int *dividend, int dividendLen,
+                                u32int divisor, u32int *quotient,
+                                u32int *remainder);
+extern void clr_span_clear(void *ptr, int elementSize, int count);
+extern void clr_span_copy(void *dst, void *src, int elementSize, int count);
+extern int clr_decimal_add96(u32int *a, u32int *b, u32int *result);
+extern u32int clr_decimal_mul32(u32int *a, u32int multiplier, u32int *result);
+
 /* Simple symbol resolver */
 static void *resolve_kernel_symbol(char *name) {
   /* Console */
@@ -247,6 +273,40 @@ static void *resolve_kernel_symbol(char *name) {
     return (void *)clr_array_getvalue;
   if (strcmp(name, "System_Array_SetValue") == 0)
     return (void *)clr_array_setvalue;
+
+  /* System.P9.P9Internal - 9P filesystem operations */
+  if (strcmp(name, "System_P9_P9Internal_Attach") == 0)
+    return (void *)clr_p9_attach;
+  if (strcmp(name, "System_P9_P9Internal_Read") == 0)
+    return (void *)clr_p9_read;
+  if (strcmp(name, "System_P9_P9Internal_Write") == 0)
+    return (void *)clr_p9_write;
+  if (strcmp(name, "System_P9_P9Internal_Clunk") == 0)
+    return (void *)clr_p9_clunk;
+  if (strcmp(name, "System_P9_P9Internal_Stat") == 0)
+    return (void *)clr_p9_stat;
+
+  /* BCL Helpers */
+  if (strcmp(name, "System_DateTime_Internal_GetNow") == 0)
+    return (void *)clr_datetime_now;
+  if (strcmp(name, "System_Environment_get_TickCount_Internal") == 0)
+    return (void *)clr_datetime_tickcount;
+  if (strcmp(name, "System_Numerics_BigInteger_Internal_Add") == 0)
+    return (void *)clr_bigint_add;
+  if (strcmp(name, "System_Numerics_BigInteger_Internal_Sub") == 0)
+    return (void *)clr_bigint_sub;
+  if (strcmp(name, "System_Numerics_BigInteger_Internal_Mul") == 0)
+    return (void *)clr_bigint_mul;
+  if (strcmp(name, "System_Numerics_BigInteger_Internal_DivSmall") == 0)
+    return (void *)clr_bigint_div_small;
+  if (strcmp(name, "System_Span_Internal_Clear") == 0)
+    return (void *)clr_span_clear;
+  if (strcmp(name, "System_Span_Internal_Copy") == 0)
+    return (void *)clr_span_copy;
+  if (strcmp(name, "System_Decimal_Internal_Add96") == 0)
+    return (void *)clr_decimal_add96;
+  if (strcmp(name, "System_Decimal_Internal_Mul32") == 0)
+    return (void *)clr_decimal_mul32;
 
   return nil;
 }
@@ -484,6 +544,136 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           emit_byte(&code, 0x2B);
           emit_byte(&code, 0x85);
           emit_dword(&code, -(src2 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "mul") == 0) {
+          /* mul: imul rax, [rbp-src2*8] */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* imul rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xAF);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "div") == 0 || strcmp(token, "udiv") == 0) {
+          /* div: idiv (signed) or div (unsigned) */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] (dividend) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* cqo: sign-extend rax into rdx:rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x99);
+          /* idiv [rbp-src2*8] (divisor) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xF7);
+          emit_byte(&code, 0xBD);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax (quotient) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "rem") == 0 || strcmp(token, "urem") == 0) {
+          /* rem: remainder is in rdx after idiv */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* cqo */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x99);
+          /* idiv [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xF7);
+          emit_byte(&code, 0xBD);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rdx (remainder) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x95);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "and") == 0) {
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* and rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x23);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "or") == 0) {
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* or rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x0B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "xor") == 0) {
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* xor rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x33);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
           emit_byte(&code, 0x48);
           emit_byte(&code, 0x89);
           emit_byte(&code, 0x85);

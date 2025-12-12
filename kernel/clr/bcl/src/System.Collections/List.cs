@@ -3,6 +3,8 @@ namespace System.Collections.Generic
     using System;
     using System.Collections;
 
+    using System.Reflection;
+
     public class List<T> : IList<T>, IList, IReadOnlyList<T>
     {
         private T[] _items;
@@ -22,6 +24,43 @@ namespace System.Collections.Generic
                 _items = _emptyArray;
             else
                 _items = new T[capacity];
+        }
+
+        public List(IEnumerable<T> collection)
+        {
+            if (collection == null) throw new ArgumentNullException(nameof(collection));
+            
+            if (collection is ICollection<T> c)
+            {
+                int count = c.Count;
+                if (count == 0)
+                {
+                    _items = _emptyArray;
+                }
+                else
+                {
+                    _items = new T[count];
+                    c.CopyTo(_items, 0);
+                    _size = count;
+                }
+            }
+            else
+            {
+                _size = 0;
+                _items = _emptyArray;
+                foreach(var item in collection)
+                {
+                    Add(item);
+                }
+            }
+        }
+        
+        public T[] ToArray()
+        {
+            if (_size == 0) return _emptyArray;
+            T[] array = new T[_size];
+            Array.Copy(_items, 0, array, 0, _size);
+            return array;
         }
 
         public int Count => _size;
@@ -79,7 +118,7 @@ namespace System.Collections.Generic
             Array.Copy(_items, 0, array, arrayIndex, _size);
         }
 
-        bool ICollection<T>.Remove(T item)
+        public bool Remove(T item)
         {
             int index = IndexOf(item);
             if (index >= 0)
@@ -226,7 +265,7 @@ namespace System.Collections.Generic
         void IList.Clear() { Clear(); }
         int IList.IndexOf(object value) { return IsCompatibleObject(value) ? IndexOf((T)value) : -1; }
         void IList.Insert(int index, object value) { Insert(index, (T)value); }
-        void IList.Remove(object value) { if (IsCompatibleObject(value)) Remove((T)value); }
+        void IList.Remove(object value) { if (IsCompatibleObject(value)) ((ICollection<T>)this).Remove((T)value); }
         void IList.RemoveAt(int index) { RemoveAt(index); }
         void ICollection.CopyTo(Array array, int index) { 
              if ((array != null) && (array.Rank != 1)) throw new ArgumentException("Multi-dim");

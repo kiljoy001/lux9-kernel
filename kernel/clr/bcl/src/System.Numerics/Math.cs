@@ -357,7 +357,7 @@ namespace System.Numerics
         public bool Equals(Vector2 other) => X == other.X && Y == other.Y;
         public override bool Equals(object obj) => obj is Vector2 v && Equals(v);
         public override int GetHashCode() => X.GetHashCode() ^ Y.GetHashCode();
-        public override string ToString() => $"<{X}, {Y}>";
+        public override string ToString() => String.Concat("<", X.ToString(), ", ", Y.ToString(), ">");
     }
 
     /// <summary>
@@ -430,7 +430,7 @@ namespace System.Numerics
         public bool Equals(Vector3 other) => X == other.X && Y == other.Y && Z == other.Z;
         public override bool Equals(object obj) => obj is Vector3 v && Equals(v);
         public override int GetHashCode() => X.GetHashCode() ^ Y.GetHashCode() ^ Z.GetHashCode();
-        public override string ToString() => $"<{X}, {Y}, {Z}>";
+        public override string ToString() => String.Concat("<", X.ToString(), ", ", Y.ToString(), ", ", Z.ToString(), ">");
     }
 
     /// <summary>
@@ -490,7 +490,7 @@ namespace System.Numerics
         public bool Equals(Vector4 other) => X == other.X && Y == other.Y && Z == other.Z && W == other.W;
         public override bool Equals(object obj) => obj is Vector4 v && Equals(v);
         public override int GetHashCode() => X.GetHashCode() ^ Y.GetHashCode() ^ Z.GetHashCode() ^ W.GetHashCode();
-        public override string ToString() => $"<{X}, {Y}, {Z}, {W}>";
+        public override string ToString() => String.Concat("<", X.ToString(), ", ", Y.ToString(), ", ", Z.ToString(), ", ", W.ToString(), ">");
     }
 
     /// <summary>
@@ -646,7 +646,7 @@ namespace System.Numerics
         public bool Equals(Quaternion other) => this == other;
         public override bool Equals(object obj) => obj is Quaternion q && Equals(q);
         public override int GetHashCode() => X.GetHashCode() ^ Y.GetHashCode() ^ Z.GetHashCode() ^ W.GetHashCode();
-        public override string ToString() => $"<{X}, {Y}, {Z}, {W}>";
+        public override string ToString() => String.Concat("<", X.ToString(), ", ", Y.ToString(), ", ", Z.ToString(), ", ", W.ToString(), ">");
     }
     
     /// <summary>
@@ -695,6 +695,6 @@ namespace System.Numerics
         public bool Equals(Complex other) => Real == other.Real && Imaginary == other.Imaginary;
         public override bool Equals(object obj) => obj is Complex c && Equals(c);
         public override int GetHashCode() => Real.GetHashCode() ^ Imaginary.GetHashCode();
-        public override string ToString() => $"({Real}, {Imaginary})";
+        public override string ToString() => String.Concat("(", Real.ToString(), ", ", Imaginary.ToString(), ")");
     }
 }

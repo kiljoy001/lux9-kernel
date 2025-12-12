@@ -149,9 +149,6 @@ namespace System.Collections
         DictionaryEntry Entry { get; }
     }
     
-    // DictionaryEntry definition needs to be somewhere. 
-    // It was in Dictionary.cs (generic) and Interfaces.cs (generic file before).
-    // It is non-generic, so belongs in System.Collections.
     public struct DictionaryEntry
     {
         public object Key { get; set; }

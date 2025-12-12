@@ -35,6 +35,18 @@ namespace System.Threading
         
         [MethodImpl(MethodImplOptions.InternalCall)]
         public static extern object CompareExchange(ref object location1, object value, object comparand);
+
+        public static T CompareExchange<T>(ref T location1, T value, T comparand) where T : class
+        {
+            // Simple unsafe cast wrapper - assumes layout compatibility (which is true for classes)
+            // Ideally should be Intrinsic/InternalCall
+            // But we can't easily do ref T -> ref object in C# without Unsafe.
+            // Let's declare it as InternalCall for now to satisfy complier.
+            return CompareExchangeInternal<T>(ref location1, value, comparand);
+        }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern T CompareExchangeInternal<T>(ref T location1, T value, T comparand) where T : class;
     }
 
     /// <summary>
@@ -478,93 +490,4 @@ namespace System.Threading
     }
 }
 
-namespace System
-{
-    /// <summary>
-    /// Represents a time interval.
-    /// </summary>
-    public readonly struct TimeSpan : IComparable<TimeSpan>, IEquatable<TimeSpan>
-    {
-        public const long TicksPerMillisecond = 10000;
-        public const long TicksPerSecond = TicksPerMillisecond * 1000;
-        public const long TicksPerMinute = TicksPerSecond * 60;
-        public const long TicksPerHour = TicksPerMinute * 60;
-        public const long TicksPerDay = TicksPerHour * 24;
-        
-        public static readonly TimeSpan Zero = new TimeSpan(0);
-        public static readonly TimeSpan MinValue = new TimeSpan(long.MinValue);
-        public static readonly TimeSpan MaxValue = new TimeSpan(long.MaxValue);
-        
-        private readonly long _ticks;
-        
-        public TimeSpan(long ticks)
-        {
-            _ticks = ticks;
-        }
-        
-        public TimeSpan(int hours, int minutes, int seconds)
-        {
-            _ticks = hours * TicksPerHour + minutes * TicksPerMinute + seconds * TicksPerSecond;
-        }
-        
-        public TimeSpan(int days, int hours, int minutes, int seconds)
-            : this(days, hours, minutes, seconds, 0)
-        {
-        }
-        
-        public TimeSpan(int days, int hours, int minutes, int seconds, int milliseconds)
-        {
-            _ticks = days * TicksPerDay + hours * TicksPerHour + 
-                     minutes * TicksPerMinute + seconds * TicksPerSecond +
-                     milliseconds * TicksPerMillisecond;
-        }
-        
-        public long Ticks => _ticks;
-        public int Days => (int)(_ticks / TicksPerDay);
-        public int Hours => (int)((_ticks / TicksPerHour) % 24);
-        public int Minutes => (int)((_ticks / TicksPerMinute) % 60);
-        public int Seconds => (int)((_ticks / TicksPerSecond) % 60);
-        public int Milliseconds => (int)((_ticks / TicksPerMillisecond) % 1000);
-        
-        public double TotalDays => (double)_ticks / TicksPerDay;
-        public double TotalHours => (double)_ticks / TicksPerHour;
-        public double TotalMinutes => (double)_ticks / TicksPerMinute;
-        public double TotalSeconds => (double)_ticks / TicksPerSecond;
-        public double TotalMilliseconds => (double)_ticks / TicksPerMillisecond;
-        
-        public TimeSpan Add(TimeSpan ts) => new TimeSpan(_ticks + ts._ticks);
-        public TimeSpan Subtract(TimeSpan ts) => new TimeSpan(_ticks - ts._ticks);
-        public TimeSpan Negate() => new TimeSpan(-_ticks);
-        public TimeSpan Duration() => new TimeSpan(_ticks >= 0 ? _ticks : -_ticks);
-        
-        public static TimeSpan FromDays(double value) => new TimeSpan((long)(value * TicksPerDay));
-        public static TimeSpan FromHours(double value) => new TimeSpan((long)(value * TicksPerHour));
-        public static TimeSpan FromMinutes(double value) => new TimeSpan((long)(value * TicksPerMinute));
-        public static TimeSpan FromSeconds(double value) => new TimeSpan((long)(value * TicksPerSecond));
-        public static TimeSpan FromMilliseconds(double value) => new TimeSpan((long)(value * TicksPerMillisecond));
-        public static TimeSpan FromTicks(long value) => new TimeSpan(value);
-        
-        public static TimeSpan operator +(TimeSpan t1, TimeSpan t2) => t1.Add(t2);
-        public static TimeSpan operator -(TimeSpan t1, TimeSpan t2) => t1.Subtract(t2);
-        public static TimeSpan operator -(TimeSpan t) => t.Negate();
-        public static bool operator ==(TimeSpan t1, TimeSpan t2) => t1._ticks == t2._ticks;
-        public static bool operator !=(TimeSpan t1, TimeSpan t2) => t1._ticks != t2._ticks;
-        public static bool operator <(TimeSpan t1, TimeSpan t2) => t1._ticks < t2._ticks;
-        public static bool operator <=(TimeSpan t1, TimeSpan t2) => t1._ticks <= t2._ticks;
-        public static bool operator >(TimeSpan t1, TimeSpan t2) => t1._ticks > t2._ticks;
-        public static bool operator >=(TimeSpan t1, TimeSpan t2) => t1._ticks >= t2._ticks;
-        
-        public int CompareTo(TimeSpan other) => _ticks.CompareTo(other._ticks);
-        public bool Equals(TimeSpan other) => _ticks == other._ticks;
-        public override bool Equals(object obj) => obj is TimeSpan ts && Equals(ts);
-        public override int GetHashCode() => _ticks.GetHashCode();
-        
-        public override string ToString()
-        {
-            // Simplified format: d.hh:mm:ss
-            if (Days != 0)
-                return $"{Days}.{Hours:D2}:{Minutes:D2}:{Seconds:D2}";
-            return $"{Hours:D2}:{Minutes:D2}:{Seconds:D2}";
-        }
-    }
-}
+

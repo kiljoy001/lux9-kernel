@@ -14,6 +14,7 @@ namespace System.Reflection
     {
         public abstract string Name { get; }
         public abstract Type DeclaringType { get; }
+
         public abstract Type ReflectedType { get; }
         public abstract MemberTypes MemberType { get; }
         
@@ -330,6 +331,12 @@ namespace System.Reflection
         public abstract MethodInfo[] GetMethods();
     }
 
+}
+
+namespace System
+{
+    using System.Reflection;
+
     /// <summary>
     /// Contains methods to create types at runtime.
     /// </summary>
@@ -353,6 +360,10 @@ namespace System.Reflection
             return (T)CreateInstance(typeof(T));
         }
     }
+}
+
+namespace System.Reflection
+{
 
     // Enums and flags
     [Flags]
@@ -467,6 +478,17 @@ namespace System.Reflection
         Any = 3,
         HasThis = 32,
         ExplicitThis = 64
+    }
+
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface)]
+    public sealed class DefaultMemberAttribute : Attribute
+    {
+        public DefaultMemberAttribute(string memberName)
+        {
+            MemberName = memberName;
+        }
+
+        public string MemberName { get; }
     }
 }
 

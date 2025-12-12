@@ -25,39 +25,8 @@ typedef signed int s32int;
 typedef signed long long s64int;
 typedef __builtin_va_list va_list;
 
-typedef struct Qid Qid;
-typedef struct Dir Dir;
-typedef struct Waitmsg Waitmsg;
-typedef struct Fmt Fmt;
-
-struct Qid {
-  uvlong path;
-  ulong vers;
-  uchar type;
-};
-struct Dir {
-  ushort type;
-  uint dev;
-  Qid qid;
-  ulong mode;
-  ulong atime;
-  ulong mtime;
-  vlong length;
-  char *name;
-  char *uid;
-  char *gid;
-  char *muid;
-};
-#define ERRMAX 128
-struct Waitmsg {
-  int pid;
-  ulong time[3];
-  char msg[ERRMAX];
-};
-
-#include <string.h>
-/* #include "../../include/portlib.h" - Removed to avoid redefinitions */
-extern int snprint(char *, int, char *, ...);
+/* Structs Qid, Dir, Waitmsg are defined in portlib.h / dat.h */
+/* #include <string.h> - Removed for kernel build */
 
 #include "../../9front-pc64/mem.h"
 #include "../../include/dat.h"
@@ -88,15 +57,16 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
   fruity_instruction_t *instr;
   int tmp_counter = 0;
 
+  /* Emit function */
   qbe_buffer_printf(buf, "export function w $%s(", func->name);
-  for (int i = 0; i < func->arg_count; i++) {
-    qbe_buffer_printf(buf, "%s %%arg%d", i == 0 ? "l" : ", l", i);
+  for (ulong i = 0; i < func->arg_count; i++) {
+    qbe_buffer_printf(buf, "%s %%arg%lu", i == 0 ? "l" : ", l", i);
   }
   qbe_buffer_printf(buf, ") {\n");
 
   /* Allocate storage for locals (simplified: all 8 bytes) */
-  for (int i = 0; i < func->local_count; i++) {
-    qbe_buffer_printf(buf, "    %%loc%d =l alloc8 8\n", i);
+  for (ulong i = 0; i < func->local_count; i++) {
+    qbe_buffer_printf(buf, "    %%loc%lu =l alloc8 8\n", i);
   }
 
   qbe_buffer_printf(buf, "@start\n");
@@ -125,6 +95,49 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         tmp_counter--;
         break;
 
+      case FRUITY_MUL:
+        qbe_buffer_printf(buf, "    %%t%d =w mul %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_DIV:
+        qbe_buffer_printf(buf, "    %%t%d =w div %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_REM:
+        qbe_buffer_printf(buf, "    %%t%d =w rem %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_AND:
+        qbe_buffer_printf(buf, "    %%t%d =w and %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_OR:
+        qbe_buffer_printf(buf, "    %%t%d =w or %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_XOR:
+        qbe_buffer_printf(buf, "    %%t%d =w xor %%t%d, %%t%d\n",
+                          tmp_counter - 1, tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CALL:
+        /* Emit call and store result */
+        /* TODO: proper argument handling; for now just call with no args */
+        qbe_buffer_printf(buf, "    %%t%d =l call $method_%u()\n",
+                          ++tmp_counter, instr->operand.value.token);
+        break;
+
       /* Variable Access */
       case FRUITY_LOAD_LOCAL:
         qbe_buffer_printf(buf, "    %%t%d =l loadl %%loc%d\n", ++tmp_counter,
@@ -149,17 +162,17 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
       case FRUITY_BTRUE:
       case FRUITY_BFALSE: {
         int cond_temp = tmp_counter--;
-        int target_id = instr->operand.value.target
-                            ? instr->operand.value.target->block_id
-                            : 0;
-        int next_id = bb->next ? bb->next->block_id : 0; // Fallthrough
+        u32int target_id = instr->operand.value.target
+                               ? instr->operand.value.target->block_id
+                               : 0;
+        u32int next_id = bb->next ? bb->next->block_id : 0; // Fallthrough
 
         /* QBE jnz: jnz %val, @true, @false */
         if (instr->opcode == FRUITY_BTRUE)
-          qbe_buffer_printf(buf, "    jnz %%t%d, @bb%d, @bb%d\n", cond_temp,
+          qbe_buffer_printf(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cond_temp,
                             target_id, next_id);
         else
-          qbe_buffer_printf(buf, "    jnz %%t%d, @bb%d, @bb%d\n", cond_temp,
+          qbe_buffer_printf(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cond_temp,
                             next_id, target_id); /* Swap for FALSE */
       } break;
 
@@ -199,7 +212,7 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, char *errorbuf,
 
   if (module == nil) {
     if (errorbuf && errorbuf_size > 0)
-      snprint(errorbuf, errorbuf_size, "null module");
+      snprint(errorbuf, (int)errorbuf_size, "null module");
     return -1;
   }
 
@@ -213,7 +226,7 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, char *errorbuf,
   for (func = module->functions_head; func != nil; func = func->next) {
     if (emit_function(&buf, func) < 0) {
       if (errorbuf && errorbuf_size > 0)
-        snprint(errorbuf, errorbuf_size, "Failed to emit function");
+        snprint(errorbuf, (int)errorbuf_size, "Failed to emit function");
       qbe_buffer_free(&buf);
       return -1;
     }
@@ -224,7 +237,7 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, char *errorbuf,
   copy_len = qbe_buffer_len(&buf);
   if (copy_len > 4096) {
     if (errorbuf && errorbuf_size > 0)
-      snprint(errorbuf, errorbuf_size, "Output too large: %lud bytes",
+      snprint(errorbuf, (int)errorbuf_size, "Output too large: %lud bytes",
               copy_len);
     qbe_buffer_free(&buf);
     return -1;

@@ -519,11 +519,11 @@ syscallentry:
     testq %rsp, %rsp            /* test sign bit */
     jns halt_rsp_not_kernel     /* if bit 63 not set, halt with code 0xDEAD0003 */
 
-    pushq $UDSEL                /* ss - user data segment */
+    pushq $UD64SEL              /* ss - user data segment 64-bit */
     pushq %r13                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */
-    pushq %rcx                  /* user pc */
+    pushq %rcx                  /* user pc - RCX holds return addr from syscall */
     pushq $0                    /* error code */
     pushq $64                   /* trap number (VectorSYSCALL) */
 

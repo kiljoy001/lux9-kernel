@@ -7,6 +7,8 @@ namespace System.Collections.Generic
     using System;
     using System.Collections;
 
+    using System.Reflection;
+
     public class Dictionary<TKey, TValue> : IDictionary<TKey, TValue>, IDictionary
     {
         private struct Entry

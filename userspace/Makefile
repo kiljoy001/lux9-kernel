@@ -92,9 +92,9 @@ $(BUILD_DIR)/initrd.tar: init-c libs
 	@rm -rf $(INITRD_DIR)
 	@mkdir -p $(INITRD_DIR)/bin $(INITRD_DIR)/boot $(INITRD_DIR)/dev $(INITRD_DIR)/srv
 	# Copy init program to /boot/init (kernel expects it there)
-	@cp $(BIN_DIR)/init $(INITRD_DIR)/boot/init
+	@cp ../bin/init $(INITRD_DIR)/boot/init
 	# Also copy to /bin/init for compatibility
-	@cp $(BIN_DIR)/init $(INITRD_DIR)/bin/init
+	@cp ../bin/init $(INITRD_DIR)/bin/init
 	# Copy CLR Init
 	@cp ../kernel/clr/test/bin/Debug/net9.0/init.dll $(INITRD_DIR)/boot/Init.dll
 	# Create tar

@@ -221,7 +221,7 @@ namespace System.Collections.Generic
         
         public override string ToString()
         {
-            return "[" + (Key != null ? Key.ToString() : "") + ", " + (Value != null ? Value.ToString() : "") + "]";
+            return String.Concat("[", (Key != null ? Key.ToString() : ""), ", ", (Value != null ? Value.ToString() : ""), "]");
         }
     }
     

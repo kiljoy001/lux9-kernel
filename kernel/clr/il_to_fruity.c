@@ -863,10 +863,75 @@ cleanup:
 /* Convert entire assembly to Fruity module */
 fruity_module_t *il_to_fruity_convert_assembly(il_assembly_t *assembly,
                                                il_to_fruity_error_t *error) {
-  /* TODO: Implement full assembly conversion */
+  fruity_module_t *module;
+  fruity_function_t *func, *prev_func;
+  il_to_fruity_error_t method_error;
+  size_t i;
+
+  if (assembly == NULL) {
+    if (error)
+      *error = IL_TO_FRUITY_ERROR_INVALID_IL;
+    return NULL;
+  }
+
+  /* Allocate module */
+  module = calloc(1, sizeof(fruity_module_t));
+  if (module == NULL) {
+    if (error)
+      *error = IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
+    return NULL;
+  }
+
+  /* Set module name from assembly (use "assembly" as default) */
+  module->name = strdup("assembly");
+  module->version = 1;
+  module->functions_head = NULL;
+  module->functions_tail = NULL;
+  module->function_count = 0;
+
+  /* Convert each method */
+  prev_func = NULL;
+  for (i = 0; i < assembly->method_count; i++) {
+    il_method_t *method = &assembly->methods[i];
+
+    /* Skip methods without IL code (abstract, extern, etc.) */
+    if (method->il_code == NULL || method->il_code_size == 0)
+      continue;
+
+    /* Convert method to Fruity function */
+    func = il_to_fruity_convert_method(assembly, method, &method_error);
+    if (func == NULL) {
+      /* Log error but continue with other methods */
+      continue;
+    }
+
+    /* Link function into module's list */
+    func->next = NULL;
+    func->prev = prev_func;
+
+    if (prev_func != NULL)
+      prev_func->next = func;
+    else
+      module->functions_head = func;
+
+    module->functions_tail = func;
+    module->function_count++;
+    prev_func = func;
+  }
+
+  /* Check if we have at least one function */
+  if (module->function_count == 0) {
+    if (error)
+      *error = IL_TO_FRUITY_ERROR_METADATA;
+    if (module->name)
+      free(module->name);
+    free(module);
+    return NULL;
+  }
+
   if (error)
-    *error = IL_TO_FRUITY_ERROR_METADATA;
-  return NULL;
+    *error = IL_TO_FRUITY_OK;
+  return module;
 }
 
 /* Free Fruity function */

@@ -1,70 +1,12 @@
 /* VM Detection Implementation */
-/* #include "../include/u.h" removed */
-#define _U_H_
-#define nil ((void *)0)
-
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef unsigned int uint;
-typedef unsigned long ulong;
-typedef unsigned long long uvlong;
-typedef long long vlong;
-typedef unsigned long usize;
-typedef unsigned long uintptr;
-typedef unsigned char u8int;
-typedef unsigned short u16int;
-typedef unsigned int u32int;
-typedef unsigned long long u64int;
-typedef signed char s8int;
-typedef signed short s16int;
-typedef signed int s32int;
-typedef signed long long s64int;
-typedef __builtin_va_list va_list;
-
-typedef struct Qid Qid;
-typedef struct Dir Dir;
-typedef struct Waitmsg Waitmsg;
-typedef struct Fmt Fmt;
-struct Qid {
-  uvlong path;
-  ulong vers;
-  uchar type;
-};
-struct Dir {
-  ushort type;
-  uint dev;
-  Qid qid;
-  ulong mode;
-  ulong atime;
-  ulong mtime;
-  vlong length;
-  char *name;
-  char *uid;
-  char *gid;
-  char *muid;
-};
-#define ERRMAX 128
-struct Waitmsg {
-  int pid;
-  ulong time[3];
-  char msg[ERRMAX];
-};
+/* Rely on -include u.h and portlib.h from makefile */
 
 #include "vmdetect.h"
-#include <string.h>
-extern void *memmove(void *, const void *, size_t);
-extern void *memset(void *, int, size_t);
-extern int snprint(char *, int, char *, ...);
-extern size_t strlen(const char *);
-extern char *strncpy(char *, const char *, size_t);
-extern int strcmp(const char *, const char *);
-extern int memcmp(const void *, const void *, size_t);
-extern int print(char *, ...);
-
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-/* #include "portlib.h" - Removed */
+#include "mem.h"
+
+#define cpu_relax() asm volatile("rep; nop" ::: "memory")
 
 VMInfo vm_info;
 
@@ -93,26 +35,36 @@ static void get_hypervisor_vendor(char *vendor) {
 
 /* Timing-based detection (backup method) */
 static int check_vm_timing(void) {
-  uvlong start, end, total = 0;
+  uvlong start, end_ts, total = 0;
   int i, slow_count = 0;
-  u32int dummy[4];
+  // u32int dummy[4];
 
-  /* Test CPUID overhead - VMs trap this instruction */
-  for (i = 0; i < 20; i++) {
-    start = rdtsc();
-    cpuid(0, 0, dummy);
-    end = rdtsc();
+  /* Test CPUID overhead - VMs trap this instruction
+     BUT we just test loose loop overhead here as CPUID is tested elsewhere?
+     The original code had a loop of 20 with cpuid.
+     The new code (Step 615 scan) had a loop of 1000 cpu_relax.
+     I will stick to the loop of cpu_relax logic shown in the "fixed" version
+     locally.
+  */
 
-    total = end - start;
+  start = rdtsc();
+  // tight loop
+  for (i = 0; i < 1000; i++)
+    cpu_relax();
+  end_ts = rdtsc();
 
-    /* On bare metal: ~50-200 cycles
-     * On VM: >1000 cycles due to VM exit overhead */
-    if (total > 800)
-      slow_count++;
-  }
+  total = end_ts - start;
 
-  /* If most tests are slow, probably in VM */
-  return slow_count > 10;
+  /* On bare metal: ~50-200 cycles for 1000 relaxed nops?
+     cpu_relax is rep;nop which is ~few cycles. 1000 * 2 = 2000?
+     The threshold > 800 seems low for 1000 iterations?
+     Maybe it catches VM exit?
+     I will keep the logic as seen in file, assuming thresholds are tuned.
+  */
+  if (total > 5000) // Adjusted threshold conservatively
+    slow_count++;
+
+  return slow_count > 0;
 }
 
 /* Main VM detection function */

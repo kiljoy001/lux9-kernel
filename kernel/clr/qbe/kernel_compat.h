@@ -52,9 +52,12 @@ typedef unsigned long long bits;
 #endif
 
 /* Standard library replacements */
-#define assert(x) do { if (!(x)) { \
-	die("assertion failed: %s at %s:%d", #x, __FILE__, __LINE__); \
-} } while(0)
+#define assert(x)                                                              \
+  do {                                                                         \
+    if (!(x)) {                                                                \
+      die("assertion failed: %s at %s:%d", #x, __FILE__, __LINE__);            \
+    }                                                                          \
+  } while (0)
 
 #define abort() die("QBE abort at %s:%d", __FILE__, __LINE__)
 
@@ -91,15 +94,20 @@ extern FILE *exchange_stderr;
 #define stderr exchange_stderr
 
 /* String functions - declare what we need */
-extern size_t strlen(const char *s);
-extern int strcmp(const char *s1, const char *s2);
-extern int strncmp(const char *s1, const char *s2, size_t n);
-extern int memcmp(const void *s1, const void *s2, size_t n);
+/* String functions - declare what we need */
+/* #ifndef _PORTLIB_H_ */
+/* extern size_t strlen(const char *s); */
+/* extern int strcmp(const char *s1, const char *s2); */
+/* extern int strncmp(const char *s1, const char *s2, size_t n); */
+/* extern int memcmp(const void *s1, const void *s2, size_t n); */
+/* #endif */
 extern void *memcpy(void *dest, const void *src, size_t n);
-extern void *memmove(void *dest, const void *src, size_t n);
+/* #ifndef _PORTLIB_H_ */
+/* extern void *memmove(void *dest, const void *src, size_t n); */
 extern void *memset(void *s, int c, size_t n);
-extern char *strcpy(char *dest, const char *src);
-extern char *strncpy(char *dest, const char *src, size_t n);
+/* extern char *strcpy(char *dest, const char *src); */
+/* extern char *strncpy(char *dest, const char *src, size_t n); */
+/* #endif */
 extern int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 extern int snprintf(char *str, size_t size, const char *format, ...);
 extern int sprintf(char *str, const char *format, ...);
@@ -109,12 +117,16 @@ extern void *malloc(size_t size);
 extern void *calloc(size_t nmemb, size_t size);
 extern void *realloc(void *ptr, size_t size);
 extern void free(void *ptr);
-extern void qsort(void *base, size_t nmemb, size_t size,
-                  int (*compar)(const void *, const void *));
+/* #ifndef _PORTLIB_H_ */
+/* extern void qsort(void *base, size_t nmemb, size_t size, */
+/*                   int (*compar)(const void *, const void *)); */
+/* #endif */
 extern void exit(int status);
 
 /* String conversion */
-extern int atoi(const char *s);
+/* #ifndef _PORTLIB_H_ */
+/* extern int atoi(const char *s); */
+/* #endif */
 extern double strtod(const char *s, char **endptr);
 
 /* Error handling (setjmp/longjmp) */

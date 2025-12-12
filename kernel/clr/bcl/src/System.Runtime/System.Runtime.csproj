@@ -12,4 +12,11 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../System.Collections/**/*.cs" />
+    <Compile Include="../System.Numerics/Math.cs" />
+    <Compile Include="../System.Threading/Threading.cs" />
+    <Compile Include="../System.Reflection/Reflection.cs" />
+  </ItemGroup>
 </Project>

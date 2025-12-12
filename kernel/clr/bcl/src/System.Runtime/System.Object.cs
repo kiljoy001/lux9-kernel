@@ -186,7 +186,41 @@ namespace System
     public unsafe struct Int32
     {
         internal fixed byte m_value[4];
+        
+        public const int MinValue = -2147483648;
+        public const int MaxValue = 2147483647;
+        
         public override string ToString() => "Int32";
+        
+        public static int Parse(string s)
+        {
+            if (s == null) throw new ArgumentNullException("s");
+            int result = 0;
+            int sign = 1;
+            int i = 0;
+            
+            // Skip leading whitespace
+            while (i < s.Length && s[i] == ' ') i++;
+            
+            // Handle sign
+            if (i < s.Length && s[i] == '-') { sign = -1; i++; }
+            else if (i < s.Length && s[i] == '+') { i++; }
+            
+            // Parse digits
+            while (i < s.Length && s[i] >= '0' && s[i] <= '9')
+            {
+                result = result * 10 + (s[i] - '0');
+                i++;
+            }
+            
+            return result * sign;
+        }
+        
+        public static bool TryParse(string s, out int result)
+        {
+            try { result = Parse(s); return true; }
+            catch { result = 0; return false; }
+        }
         
         // Arithmetic
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern int operator +(int left, int right);
@@ -226,6 +260,8 @@ namespace System
     {
         internal fixed byte m_value[4];
         public override string ToString() => "UInt32";
+        public const uint MaxValue = 4294967295;
+        public const uint MinValue = 0;
         
         // Partial set for BitOperations
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator ==(uint left, uint right);
@@ -245,6 +281,10 @@ namespace System
     public unsafe struct Int64
     {
         internal fixed byte m_value[8];
+        
+        public const long MinValue = -9223372036854775808L;
+        public const long MaxValue = 9223372036854775807L;
+        
         public override string ToString() => "Int64";
         
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern long operator -(long value);
@@ -299,6 +339,19 @@ namespace System
     public unsafe struct Double
     {
         internal fixed byte m_value[8];
+        
+        public const double NaN = 0.0 / 0.0;
+        public const double PositiveInfinity = 1.0 / 0.0;
+        public const double NegativeInfinity = -1.0 / 0.0;
+        public const double MinValue = -1.7976931348623157E+308;
+        public const double MaxValue = 1.7976931348623157E+308;
+        public const double Epsilon = 4.9406564584124654E-324;
+        
+        public static bool IsNaN(double d) => d != d;
+        public static bool IsInfinity(double d) => d == PositiveInfinity || d == NegativeInfinity;
+        public static bool IsPositiveInfinity(double d) => d == PositiveInfinity;
+        public static bool IsNegativeInfinity(double d) => d == NegativeInfinity;
+        
         public override string ToString() => "Double";
         
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern bool operator <(double left, double right);
@@ -344,4 +397,6 @@ namespace System
 
     public struct RuntimeTypeHandle { }
     public struct RuntimeFieldHandle { } 
+        
+
 }

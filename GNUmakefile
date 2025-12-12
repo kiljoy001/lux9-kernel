@@ -5,6 +5,9 @@ CC := gcc
 LD := ld
 AS := as
 
+# Internal GCC headers (stdarg.h, stdbool.h, etc.)
+GCC_INC := $(shell $(CC) -print-file-name=include)
+
 # Compiler flags - Plan 9 compatible with MAXIMUM SAFETY
 # Phase 7: Security hardening enabled
 CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-missing-braces -Wno-incompatible-pointer-types -std=gnu11 \
@@ -13,6 +16,7 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -fno-lto -fno-pie -no-pie -fno-pic \
            -m64 -march=x86-64 -mcmodel=kernel \
            -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
+           -nostdinc -I$(GCC_INC) \
            -Ikernel/include \
            -Ikernel/crypto \
            -Ikernel/clr/libmcu-cbor \
@@ -36,6 +40,10 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
 
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
+# Shadow files to bypass reversion issues
+PORT_C := $(filter-out kernel/9front-port/blind_ledger.c, $(PORT_C))
+PORT_C := $(filter-out kernel/9front-port/rbtree.c, $(PORT_C))
+
 # Ensure TPM drivers are included
 TPM_C := kernel/9front-port/tpm2_driver.c kernel/9front-port/tpm2_sapi_minimal.c
 PC64_C := $(wildcard kernel/9front-pc64/*.c)
@@ -119,20 +127,20 @@ $(QBE_A): $(QBE_CORE_O)
 # QBE needs SSE for floating point and doesn't use GNU extensions
 kernel/clr/qbe/%.o: kernel/clr/qbe/%.c
 	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -c $< -o $@
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 kernel/clr/qbe/amd64/%.o: kernel/clr/qbe/amd64/%.c
 	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -c $< -o $@
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 # CBOR library needs special flags
 kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
 	@echo "CC $< (CBOR)"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
+	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 %.o: %.S
 	@echo "AS $<"

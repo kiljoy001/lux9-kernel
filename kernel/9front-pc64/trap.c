@@ -508,8 +508,8 @@ void syscall(Ureg *ureg) {
 
   /* Print syscall entry for first few and every 100th */
   if (syscall_count <= 50 || syscall_count % 100 == 0)
-    print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p\n", syscall_count, scname,
-          scallnr, ureg->pc, ureg->sp);
+    print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p cx=%#p\n", syscall_count,
+          scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
 
   /* Phase 6: Pure 9P - TRUE syscall elimination
    * Userspace writes Fcall to exchange page, rings doorbell

@@ -45,6 +45,34 @@ namespace System.Text
             return Append(value?.ToString());
         }
 
+        public StringBuilder Insert(int index, string value)
+        {
+            if (index < 0 || index > _chunkLength) throw new ArgumentOutOfRangeException(nameof(index));
+            if (string.IsNullOrEmpty(value)) return this;
+            
+            EnsureCapacity(_chunkLength + value.Length);
+            
+            // Move existing
+            for (int i = _chunkLength - 1; i >= index; i--)
+            {
+                _chunkChars[i + value.Length] = _chunkChars[i];
+            }
+            
+            // Insert new
+            for (int i = 0; i < value.Length; i++)
+            {
+                _chunkChars[index + i] = value[i];
+            }
+            
+            _chunkLength += value.Length;
+            return this;
+        }
+
+        public StringBuilder Insert(int index, char value)
+        {
+            return Insert(index, value.ToString());
+        }
+
         private void EnsureCapacity(int min)
         {
             if (_chunkChars.Length < min)
