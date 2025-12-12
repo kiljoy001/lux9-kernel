@@ -12,9 +12,17 @@
 #include "u.h"
 
 /*
- * Rotate left at node
+ * Augmented RB-tree Implementation
+ *
+ * Supports incremental updates (e.g., Merkle Tree hashes) via callbacks
+ * during rotations and rebalancing.
  */
-static void __rb_rotate_left(struct rb_node *node, struct rb_root *root) {
+
+/*
+ * Rotate left at node (Internal helper with augmentation)
+ */
+static void __rb_rotate_left(struct rb_node *node, struct rb_root *root,
+                             rb_augment_f augment_rotate, void *data) {
   struct rb_node *right = node->rb_right;
   struct rb_node *parent = rb_parent(node);
 
@@ -34,12 +42,19 @@ static void __rb_rotate_left(struct rb_node *node, struct rb_root *root) {
     root->rb_node = right;
   }
   rb_set_parent(node, right);
+
+  // Augmentation callback: Update 'node' first (child), then 'right' (parent)
+  if (augment_rotate) {
+    augment_rotate(node, data);
+    augment_rotate(right, data);
+  }
 }
 
 /*
- * Rotate right at node
+ * Rotate right at node (Internal helper with augmentation)
  */
-static void __rb_rotate_right(struct rb_node *node, struct rb_root *root) {
+static void __rb_rotate_right(struct rb_node *node, struct rb_root *root,
+                              rb_augment_f augment_rotate, void *data) {
   struct rb_node *left = node->rb_left;
   struct rb_node *parent = rb_parent(node);
 
@@ -59,12 +74,19 @@ static void __rb_rotate_right(struct rb_node *node, struct rb_root *root) {
     root->rb_node = left;
   }
   rb_set_parent(node, left);
+
+  // Augmentation callback: Update 'node' first (child), then 'left' (parent)
+  if (augment_rotate) {
+    augment_rotate(node, data);
+    augment_rotate(left, data);
+  }
 }
 
 /*
- * Rebalance after insertion
+ * Rebalance after insertion (Augmented)
  */
-void rb_insert_color(struct rb_node *node, struct rb_root *root) {
+void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                         rb_augment_f augment_rotate, void *data) {
   struct rb_node *parent, *gparent;
 
   while ((parent = rb_parent(node)) && rb_is_red(parent)) {
@@ -73,7 +95,6 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root) {
     if (parent == gparent->rb_left) {
       struct rb_node *uncle = gparent->rb_right;
 
-      /* Case 1: Uncle is red */
       if (uncle && rb_is_red(uncle)) {
         rb_set_black(uncle);
         rb_set_black(parent);
@@ -82,19 +103,16 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root) {
         continue;
       }
 
-      /* Case 2: Node is right child */
       if (parent->rb_right == node) {
-        __rb_rotate_left(parent, root);
+        __rb_rotate_left(parent, root, augment_rotate, data);
         node = parent;
         parent = rb_parent(node);
       }
 
-      /* Case 3: Node is left child */
       rb_set_black(parent);
       rb_set_red(gparent);
-      __rb_rotate_right(gparent, root);
+      __rb_rotate_right(gparent, root, augment_rotate, data);
     } else {
-      /* Mirror cases for right child of grandparent */
       struct rb_node *uncle = gparent->rb_left;
 
       if (uncle && rb_is_red(uncle)) {
@@ -106,14 +124,14 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root) {
       }
 
       if (parent->rb_left == node) {
-        __rb_rotate_right(parent, root);
+        __rb_rotate_right(parent, root, augment_rotate, data);
         node = parent;
         parent = rb_parent(node);
       }
 
       rb_set_black(parent);
       rb_set_red(gparent);
-      __rb_rotate_left(gparent, root);
+      __rb_rotate_left(gparent, root, augment_rotate, data);
     }
   }
 
@@ -121,10 +139,18 @@ void rb_insert_color(struct rb_node *node, struct rb_root *root) {
 }
 
 /*
- * Rebalance after deletion
+ * Standard Insert (Compatibility wrapper)
+ */
+void rb_insert_color(struct rb_node *node, struct rb_root *root) {
+  rb_insert_augmented(node, root, nil, nil);
+}
+
+/*
+ * Rebalance after deletion (Augmented)
  */
 static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
-                             struct rb_root *root) {
+                             struct rb_root *root, rb_augment_f augment_rotate,
+                             void *data) {
   struct rb_node *sibling;
 
   while ((!node || rb_is_black(node)) && node != root->rb_node) {
@@ -134,7 +160,7 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
       if (rb_is_red(sibling)) {
         rb_set_black(sibling);
         rb_set_red(parent);
-        __rb_rotate_left(parent, root);
+        __rb_rotate_left(parent, root, augment_rotate, data);
         sibling = parent->rb_right;
       }
 
@@ -147,25 +173,24 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
         if (!sibling->rb_right || rb_is_black(sibling->rb_right)) {
           rb_set_black(sibling->rb_left);
           rb_set_red(sibling);
-          __rb_rotate_right(sibling, root);
+          __rb_rotate_right(sibling, root, augment_rotate, data);
           sibling = parent->rb_right;
         }
 
         rb_set_parent_color(sibling, rb_parent(parent), rb_color(parent));
         rb_set_black(parent);
         rb_set_black(sibling->rb_right);
-        __rb_rotate_left(parent, root);
+        __rb_rotate_left(parent, root, augment_rotate, data);
         node = root->rb_node;
         break;
       }
     } else {
-      /* Mirror case */
       sibling = parent->rb_left;
 
       if (rb_is_red(sibling)) {
         rb_set_black(sibling);
         rb_set_red(parent);
-        __rb_rotate_right(parent, root);
+        __rb_rotate_right(parent, root, augment_rotate, data);
         sibling = parent->rb_left;
       }
 
@@ -178,14 +203,14 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
         if (!sibling->rb_left || rb_is_black(sibling->rb_left)) {
           rb_set_black(sibling->rb_right);
           rb_set_red(sibling);
-          __rb_rotate_left(sibling, root);
+          __rb_rotate_left(sibling, root, augment_rotate, data);
           sibling = parent->rb_left;
         }
 
         rb_set_parent_color(sibling, rb_parent(parent), rb_color(parent));
         rb_set_black(parent);
         rb_set_black(sibling->rb_left);
-        __rb_rotate_right(parent, root);
+        __rb_rotate_right(parent, root, augment_rotate, data);
         node = root->rb_node;
         break;
       }
@@ -197,9 +222,10 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
 }
 
 /*
- * Delete node from tree
+ * Delete node from tree (Augmented)
  */
-void rb_erase(struct rb_node *node, struct rb_root *root) {
+void rb_erase_augmented(struct rb_node *node, struct rb_root *root,
+                        rb_augment_f augment_rotate, void *data) {
   struct rb_node *child, *parent;
   int color;
 
@@ -208,7 +234,6 @@ void rb_erase(struct rb_node *node, struct rb_root *root) {
   } else if (!node->rb_right) {
     child = node->rb_left;
   } else {
-    /* Node has two children - find successor */
     struct rb_node *old = node, *left;
 
     node = node->rb_right;
@@ -263,7 +288,14 @@ void rb_erase(struct rb_node *node, struct rb_root *root) {
 
 color_fixup:
   if (color == RB_BLACK)
-    __rb_erase_color(child, parent, root);
+    __rb_erase_color(child, parent, root, augment_rotate, data);
+}
+
+/*
+ * Standard Erase (Compatibility wrapper)
+ */
+void rb_erase(struct rb_node *node, struct rb_root *root) {
+  rb_erase_augmented(node, root, nil, nil);
 }
 
 /*

@@ -1807,9 +1807,9 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
   m->syscall++;
   // print("DEBUG: 2. up=%p\n", up);
   up->insyscall = 1;
-  // print("DEBUG: 3. calling spllo (SKIPPED)\n");
-  // s = spllo();
-  // print("DEBUG: 4. spllo done\n");
+  /* Re-enable interrupts for syscall processing (allows preemption/timers) */
+  if (up && m && up->nlocks == 0)
+    s = spllo();
 
   // if (1) print("DEBUG: Pre-Waserror: up=%p nerrlab=%d\n", up, up->nerrlab);
   if (!waserror()) {

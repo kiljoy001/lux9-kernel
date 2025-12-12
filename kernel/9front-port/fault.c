@@ -1,8 +1,8 @@
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 #include <error.h>
 
 struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {
@@ -364,7 +364,9 @@ int fault(uintptr addr, uintptr pc, int read) {
   m->pfault++;
 
   for (;;) {
-    // spllo();
+    /* Re-enable interrupts before potentially blocking seg() lookup */
+    if (up && m && up->nlocks == 0)
+      spllo();
 
     s = seg(up, addr, 1); /* leaves s locked if seg != nil */
     if (s == nil) {

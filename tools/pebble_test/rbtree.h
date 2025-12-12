@@ -27,9 +27,7 @@ typedef unsigned long uintptr;
 #endif
 
 #ifndef nil
-#ifndef nil
 #define nil ((void *)0)
-#endif
 #endif
 
 /*
@@ -112,5 +110,13 @@ struct rb_node *rb_prev(const struct rb_node *node);
 /* Replace a node in the tree (for updates) */
 void rb_replace_node(struct rb_node *victim, struct rb_node *new_node,
                      struct rb_root *root);
+
+/* Augmented RB-tree support */
+typedef void (*rb_augment_f)(struct rb_node *node, void *data);
+
+void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                         rb_augment_f augment_rotate, void *data);
+void rb_erase_augmented(struct rb_node *node, struct rb_root *root,
+                        rb_augment_f augment_rotate, void *data);
 
 #endif /* RBTREE_H */

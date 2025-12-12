@@ -141,16 +141,38 @@ typedef struct {
   uint32_t *row_counts; // Array of row counts for each table
 } metadata_tables_header_t;
 
-/* ========== Method Structures ========== */
+/* ========== MethodDef Row ========== */
 
 typedef struct {
-  uint32_t rva; // Relative virtual address
+  uint32_t rva; /* Relative virtual address */
   uint16_t impl_flags;
   uint16_t flags;
-  uint32_t name_index;      // Index into #Strings heap
-  uint32_t signature_index; // Index into #Blob heap
-  uint32_t param_list;      // Index into Param table
+  uint32_t name_index;      /* Index into #Strings heap */
+  uint32_t signature_index; /* Index into #Blob heap */
+  uint32_t param_list;      /* Index into Param table */
 } methoddef_row_t;
+
+/* ========== Exception Clause Types (ECMA-335 II.25.4.6) ========== */
+
+typedef enum {
+  COR_ILEXCEPTION_CLAUSE_EXCEPTION = 0x0000, /* Catch handler */
+  COR_ILEXCEPTION_CLAUSE_FILTER = 0x0001,    /* Filter-based handler */
+  COR_ILEXCEPTION_CLAUSE_FINALLY = 0x0002,   /* Finally block */
+  COR_ILEXCEPTION_CLAUSE_FAULT =
+      0x0004, /* Fault block (finally that runs on exception only) */
+} exception_clause_flags_t;
+
+typedef struct {
+  uint32_t flags;          /* Exception clause type */
+  uint32_t try_offset;     /* Offset in IL where try block starts */
+  uint32_t try_length;     /* Length of try block */
+  uint32_t handler_offset; /* Offset where handler starts */
+  uint32_t handler_length; /* Length of handler */
+  uint32_t
+      class_token; /* Catch: TypeRef/Def token; Filter: offset to filter code */
+} exception_clause_t;
+
+/* ========== Method Structures ========== */
 
 typedef struct {
   char *name;
@@ -158,7 +180,11 @@ typedef struct {
   size_t il_code_size;
   uint32_t max_stack;
   uint32_t local_var_sig_token;
-  uint8_t flags; // Tiny or fat format
+  uint8_t flags; /* Tiny or fat format */
+
+  /* Exception handling */
+  exception_clause_t *exception_clauses;
+  size_t exception_clause_count;
 } il_method_t;
 
 /* ========== Assembly Structure ========== */

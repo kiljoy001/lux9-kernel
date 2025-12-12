@@ -92,6 +92,10 @@ typedef struct BlindLedgerEntry {
   BlindLedgerHash leaf_hash; /* Immutable hash of physical properties */
   BlindLedgerHash process_hash; /* Mutable hash of dynamic properties (owner,
                                    perms, state) */
+
+  // Derivation Chain Support (for Red/Blue proofs)
+  BlindLedgerHash parent_hash;    /* Parent capability hash (0 if root) */
+  BlindLedgerHash derivation_sig; /* HMAC(key, parent || constraints || self) */
 } BlindLedgerEntry;
 
 // Error codes for Blind Ledger operations
@@ -159,5 +163,59 @@ BlindLedgerError blind_ledger_get_stats(BlindLedgerStats *stats);
 // Attestation
 BlindLedgerError blind_ledger_attest_root(u8int *out_signature,
                                           u32int *out_len);
+
+// =========================================================================
+// Derivation Chain Proofs (Replaces Sibling Merkle)
+// =========================================================================
+
+#define MAX_DERIVATION_DEPTH 16 // Practical limit for capability chains
+
+/*
+ * DerivationStep - One link in the derivation chain.
+ */
+typedef struct DerivationStep {
+  BlindLedgerHash parent_hash;    // Parent capability hash
+  BlindLedgerHash derivation_sig; // HMAC(key, parent || constraints || child)
+  u32int constraints;             // Permissions granted (≤ parent)
+} DerivationStep;
+
+/*
+ * DerivationProof - Proof of capability validity via derivation chain.
+ *
+ * The proof traces from the target capability up to a trusted root.
+ * Each step proves: "child was derived from parent with valid constraints."
+ */
+typedef struct DerivationProof {
+  BlindLedgerHash target_hash;                // Capability being proven
+  u32int chain_length;                        // 0 = root, N = derivation depth
+  DerivationStep chain[MAX_DERIVATION_DEPTH]; // Ancestors to root
+} DerivationProof;
+
+/*
+ * ledger_derive - Create a child capability from a parent.
+ *
+ * The child inherits a subset of parent's permissions.
+ * Returns the new capability hash in out_cap.
+ */
+BlindLedgerError ledger_derive(const UserCapability *parent_cap, Proc *owner,
+                               u32int child_constraints,
+                               UserCapability *out_child_cap);
+
+/*
+ * ledger_get_derivation_proof - Generate a derivation chain proof.
+ *
+ * Walks the parent chain from target to root, collecting derivation steps.
+ */
+BlindLedgerError ledger_get_derivation_proof(const UserCapability *cap,
+                                             Proc *owner,
+                                             DerivationProof *out_proof);
+
+/*
+ * ledger_verify_derivation_proof - Stateless verification of derivation chain.
+ *
+ * Verifies each derivation step from target to root.
+ * Returns BLIND_LEDGER_OK if valid, BLIND_LEDGER_EPERM if any step fails.
+ */
+BlindLedgerError ledger_verify_derivation_proof(const DerivationProof *proof);
 
 #endif /* BLIND_LEDGER_H */

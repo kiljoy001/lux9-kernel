@@ -93,6 +93,10 @@ typedef struct BlindLedgerEntry {
   BlindLedgerHash leaf_hash; /* Immutable hash of physical properties */
   BlindLedgerHash process_hash; /* Mutable hash of dynamic properties (owner,
                                    perms, state) */
+
+  // Derivation Chain Support
+  BlindLedgerHash parent_hash;    /* Parent capability hash (0 if root) */
+  BlindLedgerHash derivation_sig; /* HMAC(key, parent || constraints || self) */
 } BlindLedgerEntry;
 
 // Error codes for Blind Ledger operations
@@ -160,5 +164,33 @@ BlindLedgerError blind_ledger_get_stats(BlindLedgerStats *stats);
 // Attestation
 BlindLedgerError blind_ledger_attest_root(u8int *out_signature,
                                           u32int *out_len);
+
+// =========================================================================
+// Derivation Chain Proofs
+// =========================================================================
+
+#define MAX_DERIVATION_DEPTH 16
+
+typedef struct DerivationStep {
+  BlindLedgerHash parent_hash;
+  BlindLedgerHash derivation_sig;
+  u32int constraints;
+} DerivationStep;
+
+typedef struct DerivationProof {
+  BlindLedgerHash target_hash;
+  u32int chain_length;
+  DerivationStep chain[MAX_DERIVATION_DEPTH];
+} DerivationProof;
+
+BlindLedgerError ledger_derive(const UserCapability *parent_cap, Proc *owner,
+                               u32int child_constraints,
+                               UserCapability *out_child_cap);
+
+BlindLedgerError ledger_get_derivation_proof(const UserCapability *cap,
+                                             Proc *owner,
+                                             DerivationProof *out_proof);
+
+BlindLedgerError ledger_verify_derivation_proof(const DerivationProof *proof);
 
 #endif /* BLIND_LEDGER_H */

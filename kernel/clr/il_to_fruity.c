@@ -265,12 +265,45 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
       break;
 
     case IL_RET:
-      /* Return ends a block; next instruction (if any) starts new block */
+    case IL_THROW:
+    case IL_ENDFINALLY:
+      /* Return/throw/endfinally ends a block; next instruction (if any) starts
+       * new block */
       if (offset + 1 < il_size) {
         if (add_branch_target(ctx, offset + 1) != 0)
           return -1;
       }
       offset += 1;
+      break;
+
+    case IL_LEAVE_S:
+      /* leave.s: Short branch out of protected region */
+      if (offset + 2 > il_size) {
+        ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+        return -1;
+      }
+      int8_t leave_s_offset = (int8_t)il[offset + 1];
+      uint32_t leave_s_target = offset + 2 + leave_s_offset;
+      if (add_branch_target(ctx, leave_s_target) != 0)
+        return -1;
+      if (add_branch_target(ctx, offset + 2) != 0)
+        return -1;
+      offset += 2;
+      break;
+
+    case IL_LEAVE:
+      /* leave: Long branch out of protected region */
+      if (offset + 5 > il_size) {
+        ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+        return -1;
+      }
+      int32_t leave_offset = *(int32_t *)&il[offset + 1];
+      uint32_t leave_target = offset + 5 + leave_offset;
+      if (add_branch_target(ctx, leave_target) != 0)
+        return -1;
+      if (add_branch_target(ctx, offset + 5) != 0)
+        return -1;
+      offset += 5;
       break;
 
     /* Single-byte instructions */
@@ -572,9 +605,14 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     break;
 
   case IL_CALL:
+  case IL_CALLVIRT:
+    /* call/callvirt: Method call (virtual uses vtable lookup) */
     operand.type = FRUITY_OP_METHOD;
     operand.value.token = *(uint32_t *)&il[offset + 1];
     instr = create_fruity_instruction(FRUITY_CALL, operand, offset);
+    /* Mark callvirt for runtime dispatch */
+    if (opcode == IL_CALLVIRT && instr)
+      instr->pebble_effects.creates_white = 0; /* Tag for vtable lookup */
     *offset_ptr += 5;
     break;
 
@@ -744,6 +782,557 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     operand.value.target = target_block;
     instr = create_fruity_instruction(f_op, operand, offset);
     *offset_ptr += instr_len;
+    break;
+  }
+
+  /* ===== Type Operations ===== */
+  case IL_CASTCLASS:
+    /* castclass: Cast object to type (throws if invalid) */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    /* For now, treat as NOP with type check annotation */
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_ISINST:
+    /* isinst: Type check (returns null if invalid) */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    /* For now, treat as NOP with type check annotation */
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_BOX:
+    /* box: Box value type to reference type */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    /* Boxing allocates a new object (creates white token) */
+    instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
+    if (instr)
+      instr->pebble_effects.creates_white = 1;
+    *offset_ptr += 5;
+    break;
+
+  case IL_UNBOX:
+    /* unbox: Get pointer to value inside boxed object */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    /* Unbox returns address, no token change */
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_UNBOX_ANY:
+    /* unbox.any: Unbox and copy value */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Field Access ===== */
+  case IL_LDFLD:
+    /* ldfld: Load field from object */
+    operand.type = FRUITY_OP_FIELD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_STFLD:
+    /* stfld: Store to object field */
+    operand.type = FRUITY_OP_FIELD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_STORE_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_LDSFLD:
+    /* ldsfld: Load static field */
+    operand.type = FRUITY_OP_FIELD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_FIELD, operand, offset);
+    if (instr)
+      instr->pebble_effects.creates_white = 0; /* Static = no token */
+    *offset_ptr += 5;
+    break;
+
+  case IL_STSFLD:
+    /* stsfld: Store to static field */
+    operand.type = FRUITY_OP_FIELD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_STORE_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Array Operations ===== */
+  case IL_LDLEN:
+    /* ldlen: Load array length */
+    instr = create_fruity_instruction(FRUITY_LDLEN, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_LDELEM_I1:
+  case IL_LDELEM_U1:
+  case IL_LDELEM_I2:
+  case IL_LDELEM_U2:
+  case IL_LDELEM_I4:
+  case IL_LDELEM_U4:
+  case IL_LDELEM_I8:
+  case IL_LDELEM_I:
+  case IL_LDELEM_R4:
+  case IL_LDELEM_R8:
+  case IL_LDELEM_REF:
+    /* ldelem.*: Load array element */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode; /* Encode element type in operand */
+    instr = create_fruity_instruction(FRUITY_LDELEM, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_LDELEM:
+    /* ldelem: Load array element with type token */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LDELEM, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_STELEM_I:
+  case IL_STELEM_I1:
+  case IL_STELEM_I2:
+  case IL_STELEM_I4:
+  case IL_STELEM_I8:
+  case IL_STELEM_R4:
+  case IL_STELEM_R8:
+  case IL_STELEM_REF:
+    /* stelem.*: Store array element */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode;
+    instr = create_fruity_instruction(FRUITY_STELEM, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_STELEM:
+    /* stelem: Store array element with type token */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_STELEM, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_LDELEMA:
+    /* ldelema: Load element address */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LDELEMA, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Exception Handling ===== */
+  case IL_THROW:
+    /* throw: Pop exception reference and dispatch */
+    instr = create_fruity_instruction(FRUITY_THROW, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_LEAVE_S: {
+    /* leave.s: Exit try/catch, branch to target (short) */
+    int8_t delta = (int8_t)il[offset + 1];
+    uint32_t target = offset + 2 + delta;
+    fruity_basic_block_t *target_block = get_block_at_offset(ctx, target);
+    if (!target_block) {
+      ctx->last_error = IL_TO_FRUITY_ERROR_CFG;
+      return -1;
+    }
+    operand.type = FRUITY_OP_BRANCH;
+    operand.value.target = target_block;
+    instr = create_fruity_instruction(FRUITY_LEAVE, operand, offset);
+    *offset_ptr += 2;
+    break;
+  }
+
+  case IL_LEAVE: {
+    /* leave: Exit try/catch, branch to target (long) */
+    int32_t delta = *(int32_t *)&il[offset + 1];
+    uint32_t target = offset + 5 + delta;
+    fruity_basic_block_t *target_block = get_block_at_offset(ctx, target);
+    if (!target_block) {
+      ctx->last_error = IL_TO_FRUITY_ERROR_CFG;
+      return -1;
+    }
+    operand.type = FRUITY_OP_BRANCH;
+    operand.value.target = target_block;
+    instr = create_fruity_instruction(FRUITY_LEAVE, operand, offset);
+    *offset_ptr += 5;
+    break;
+  }
+
+  case IL_ENDFINALLY:
+    /* endfinally/endfault: Resume exception dispatch or normal flow */
+    instr = create_fruity_instruction(FRUITY_ENDFINALLY, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  /* ===== Conversion Opcodes ===== */
+  case IL_CONV_I1:
+  case IL_CONV_I2:
+  case IL_CONV_I4:
+  case IL_CONV_I8:
+  case IL_CONV_U1:
+  case IL_CONV_U2:
+  case IL_CONV_U4:
+  case IL_CONV_U8:
+  case IL_CONV_I:
+  case IL_CONV_U:
+  case IL_CONV_R4:
+  case IL_CONV_R8:
+  case IL_CONV_R_UN:
+    /* conv.*: Type conversion - map to Fruity conversion opcodes */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode; /* Encode target type */
+    instr = create_fruity_instruction(FRUITY_CONV_I4, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_CONV_OVF_I1:
+  case IL_CONV_OVF_U1:
+  case IL_CONV_OVF_I2:
+  case IL_CONV_OVF_U2:
+  case IL_CONV_OVF_I4:
+  case IL_CONV_OVF_U4:
+  case IL_CONV_OVF_I8:
+  case IL_CONV_OVF_U8:
+  case IL_CONV_OVF_I:
+  case IL_CONV_OVF_U:
+  case IL_CONV_OVF_I1_UN:
+  case IL_CONV_OVF_I2_UN:
+  case IL_CONV_OVF_I4_UN:
+  case IL_CONV_OVF_I8_UN:
+  case IL_CONV_OVF_U1_UN:
+  case IL_CONV_OVF_U2_UN:
+  case IL_CONV_OVF_U4_UN:
+  case IL_CONV_OVF_U8_UN:
+  case IL_CONV_OVF_I_UN:
+  case IL_CONV_OVF_U_UN:
+    /* conv.ovf.*: Overflow-checking conversion */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode;
+    instr = create_fruity_instruction(FRUITY_CONV_I4, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  /* ===== Switch Statement ===== */
+  case IL_SWITCH: {
+    /* switch: Jump table - n targets followed by n int32 offsets */
+    if (offset + 5 > il_size) {
+      ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+      return -1;
+    }
+    uint32_t n = *(uint32_t *)&il[offset + 1];
+    uint32_t switch_len = 5 + n * 4;
+    if (offset + switch_len > il_size) {
+      ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+      return -1;
+    }
+    /* For now, emit NOP and skip the switch table */
+    /* Full implementation would create jump table */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = (int32_t)n;
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += switch_len;
+    break;
+  }
+
+  /* ===== Indirect Load/Store ===== */
+  case IL_LDIND_I1:
+  case IL_LDIND_U1:
+  case IL_LDIND_I2:
+  case IL_LDIND_U2:
+  case IL_LDIND_I4:
+  case IL_LDIND_U4:
+  case IL_LDIND_I8:
+  case IL_LDIND_I:
+  case IL_LDIND_R4:
+  case IL_LDIND_R8:
+  case IL_LDIND_REF:
+    /* ldind.*: Load value indirectly through pointer */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode;
+    instr = create_fruity_instruction(FRUITY_LOAD_FIELD, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_STIND_REF:
+  case IL_STIND_I1:
+  case IL_STIND_I2:
+  case IL_STIND_I4:
+  case IL_STIND_I8:
+  case IL_STIND_R4:
+  case IL_STIND_R8:
+  case IL_STIND_I:
+    /* stind.*: Store value indirectly through pointer */
+    operand.type = FRUITY_OP_IMM_I32;
+    operand.value.i32 = opcode;
+    instr = create_fruity_instruction(FRUITY_STORE_FIELD, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  /* ===== Address-of Operations ===== */
+  case IL_LDLOCA_S:
+    /* ldloca.s: Load address of local variable (short) */
+    operand.type = FRUITY_OP_LOCAL;
+    operand.value.index = il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_LOCAL, operand, offset);
+    *offset_ptr += 2;
+    break;
+
+  case IL_LDARGA_S:
+    /* ldarga.s: Load address of argument (short) */
+    operand.type = FRUITY_OP_ARG;
+    operand.value.index = il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_ARG, operand, offset);
+    *offset_ptr += 2;
+    break;
+
+  case IL_STARG_S:
+    /* starg.s: Store to argument (short) */
+    operand.type = FRUITY_OP_ARG;
+    operand.value.index = il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_STORE_ARG, operand, offset);
+    *offset_ptr += 2;
+    break;
+
+  case IL_LDFLDA:
+  case IL_LDSFLDA:
+    /* ldflda/ldsflda: Load field address */
+    operand.type = FRUITY_OP_FIELD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Object Operations ===== */
+  case IL_CPOBJ:
+    /* cpobj: Copy object */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_LDOBJ:
+    /* ldobj: Load value type */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LOAD_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_STOBJ:
+    /* stobj: Store value type */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_STORE_FIELD, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Overflow-checked Arithmetic ===== */
+  case IL_ADD_OVF:
+  case IL_ADD_OVF_UN:
+    instr = create_fruity_instruction(FRUITY_ADD, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_SUB_OVF:
+  case IL_SUB_OVF_UN:
+    instr = create_fruity_instruction(FRUITY_SUB, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_MUL_OVF:
+  case IL_MUL_OVF_UN:
+    instr = create_fruity_instruction(FRUITY_MUL, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  /* ===== Rare/Specialized Opcodes ===== */
+  case IL_JMP:
+    /* jmp: Tail call jump to method */
+    operand.type = FRUITY_OP_METHOD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_JUMP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_CKFINITE:
+    /* ckfinite: Check for finite float (throws on NaN/Inf) */
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 1;
+    break;
+
+  case IL_LDTOKEN:
+    /* ldtoken: Load runtime type/method/field handle */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_LDC_I4, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_REFANYVAL:
+    /* refanyval: Extract value from typed reference */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  case IL_MKREFANY:
+    /* mkrefany: Create typed reference */
+    operand.type = FRUITY_OP_TYPE;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+    *offset_ptr += 5;
+    break;
+
+  /* ===== Two-byte Opcodes (0xFE prefix) ===== */
+  case 0xFE: {
+    if (offset + 2 > il_size) {
+      ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+      return -1;
+    }
+    uint8_t op2 = il[offset + 1];
+
+    switch (op2) {
+    case 0x01: /* ceq */
+      instr = create_fruity_instruction(FRUITY_CEQ, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x02: /* cgt */
+    case 0x03: /* cgt.un */
+      instr = create_fruity_instruction(FRUITY_CGT, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x04: /* clt */
+    case 0x05: /* clt.un */
+      instr = create_fruity_instruction(FRUITY_CLT, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x06: /* ldftn */
+    case 0x07: /* ldvirtftn */
+      operand.type = FRUITY_OP_METHOD;
+      operand.value.token = *(uint32_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 6;
+      break;
+
+    case 0x09: /* ldarg */
+      operand.type = FRUITY_OP_ARG;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_LOAD_ARG, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0A: /* ldarga */
+      operand.type = FRUITY_OP_ARG;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_LOAD_ARG, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0B: /* starg */
+      operand.type = FRUITY_OP_ARG;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_STORE_ARG, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0C: /* ldloc */
+      operand.type = FRUITY_OP_LOCAL;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_LOAD_LOCAL, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0D: /* ldloca */
+      operand.type = FRUITY_OP_LOCAL;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_LOAD_LOCAL, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0E: /* stloc */
+      operand.type = FRUITY_OP_LOCAL;
+      operand.value.index = *(uint16_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_STORE_LOCAL, operand, offset);
+      *offset_ptr += 4;
+      break;
+
+    case 0x0F: /* localloc */
+      instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x15: /* initobj */
+      operand.type = FRUITY_OP_TYPE;
+      operand.value.token = *(uint32_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 6;
+      break;
+
+    case 0x16: /* constrained. */
+      operand.type = FRUITY_OP_TYPE;
+      operand.value.token = *(uint32_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 6;
+      break;
+
+    case 0x17: /* cpblk */
+    case 0x18: /* initblk */
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x1A: /* rethrow */
+      instr = create_fruity_instruction(FRUITY_RETHROW, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x1C: /* sizeof */
+      operand.type = FRUITY_OP_TYPE;
+      operand.value.token = *(uint32_t *)&il[offset + 2];
+      instr = create_fruity_instruction(FRUITY_LDC_I4, operand, offset);
+      *offset_ptr += 6;
+      break;
+
+    case 0x00: /* arglist */
+      /* arglist: Get argument list handle for varargs */
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x1D: /* refanytype */
+      /* refanytype: Get type from typed reference */
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    case 0x1E: /* readonly. */
+      /* readonly: Prefix for readonly array access */
+      instr = create_fruity_instruction(FRUITY_NOP, operand, offset);
+      *offset_ptr += 2;
+      break;
+
+    default:
+      /* Unknown two-byte opcode */
+      ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
+      return -1;
+    }
     break;
   }
 

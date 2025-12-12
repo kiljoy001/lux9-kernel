@@ -587,23 +587,110 @@ static il_method_t *parse_method(il_assembly_t *assembly, uint32_t rva,
   }
 
   // Parse method header
-  uint8_t flags = method_ptr[0];
+  uint8_t header_byte = method_ptr[0];
+  uint8_t *code_end = NULL;
 
-  if ((flags & 0x03) == 0x02) {
-    // Tiny format
+  if ((header_byte & 0x03) == 0x02) {
+    // Tiny format - no exception handling
     method->flags = 0x02;
     method->max_stack = 8;
-    method->il_code_size = flags >> 2;
+    method->il_code_size = header_byte >> 2;
     method->local_var_sig_token = 0;
     method->il_code = method_ptr + 1;
-  } else if ((flags & 0x03) == 0x03) {
+    method->exception_clauses = NULL;
+    method->exception_clause_count = 0;
+  } else if ((header_byte & 0x03) == 0x03) {
     // Fat format
+    uint16_t fat_flags = READ_UINT16(method_ptr);
     method->flags = 0x03;
-    uint16_t header_size = (flags & 0xF0) >> 4;
+    uint16_t header_size = ((fat_flags >> 12) & 0x0F) * 4;
     method->max_stack = READ_UINT16(method_ptr + 2);
     method->il_code_size = READ_UINT32(method_ptr + 4);
     method->local_var_sig_token = READ_UINT32(method_ptr + 8);
-    method->il_code = method_ptr + (header_size * 4);
+    method->il_code = method_ptr + header_size;
+    code_end = method->il_code + method->il_code_size;
+
+    // Check for MoreSects flag (0x08 in low byte)
+    if (fat_flags & 0x08) {
+      // Exception handling data follows IL code (4-byte aligned)
+      uint8_t *sect_ptr = code_end;
+      uintptr_t alignment = ((uintptr_t)sect_ptr) & 3;
+      if (alignment != 0) {
+        sect_ptr += (4 - alignment);
+      }
+
+      // Parse exception sections
+      while (1) {
+        uint8_t sect_flags = sect_ptr[0];
+        int is_fat_sect = (sect_flags & 0x40) != 0;
+        int has_more = (sect_flags & 0x80) != 0;
+
+        if ((sect_flags & 0x01) == 0) {
+          // Not an exception handling section, skip
+          break;
+        }
+
+        size_t clause_count;
+        size_t sect_size;
+        uint8_t *clause_ptr;
+
+        if (is_fat_sect) {
+          // Fat section header: 4 bytes (kind + 24-bit size)
+          sect_size = (sect_ptr[1] | (sect_ptr[2] << 8) | (sect_ptr[3] << 16));
+          clause_count = (sect_size - 4) / 24; // 24 bytes per fat clause
+          clause_ptr = sect_ptr + 4;
+        } else {
+          // Small section header: 4 bytes (kind + 8-bit size + 2 reserved)
+          sect_size = sect_ptr[1];
+          clause_count = (sect_size - 4) / 12; // 12 bytes per small clause
+          clause_ptr = sect_ptr + 4;
+        }
+
+        if (clause_count > 0) {
+          method->exception_clauses =
+              IL_MALLOC(sizeof(exception_clause_t) * clause_count);
+          if (method->exception_clauses) {
+            method->exception_clause_count = clause_count;
+
+            for (size_t i = 0; i < clause_count; i++) {
+              exception_clause_t *clause = &method->exception_clauses[i];
+
+              if (is_fat_sect) {
+                // Fat clause: 24 bytes
+                clause->flags = READ_UINT32(clause_ptr);
+                clause->try_offset = READ_UINT32(clause_ptr + 4);
+                clause->try_length = READ_UINT32(clause_ptr + 8);
+                clause->handler_offset = READ_UINT32(clause_ptr + 12);
+                clause->handler_length = READ_UINT32(clause_ptr + 16);
+                clause->class_token = READ_UINT32(clause_ptr + 20);
+                clause_ptr += 24;
+              } else {
+                // Small clause: 12 bytes
+                clause->flags = READ_UINT16(clause_ptr);
+                clause->try_offset = READ_UINT16(clause_ptr + 2);
+                clause->try_length = clause_ptr[4];
+                clause->handler_offset = READ_UINT16(clause_ptr + 5);
+                clause->handler_length = clause_ptr[7];
+                clause->class_token = READ_UINT32(clause_ptr + 8);
+                clause_ptr += 12;
+              }
+            }
+          }
+        }
+
+        if (!has_more)
+          break;
+        sect_ptr += sect_size;
+        // Align for next section
+        alignment = ((uintptr_t)sect_ptr) & 3;
+        if (alignment != 0) {
+          sect_ptr += (4 - alignment);
+        }
+      }
+    } else {
+      method->exception_clauses = NULL;
+      method->exception_clause_count = 0;
+    }
   } else {
     IL_FREE(method);
     return NULL;
@@ -775,6 +862,9 @@ void il_free_method(il_method_t *method) {
   if (method) {
     if (method->name) {
       IL_FREE(method->name);
+    }
+    if (method->exception_clauses) {
+      IL_FREE(method->exception_clauses);
     }
     IL_FREE(method);
   }

@@ -108,6 +108,9 @@ int crypto_hw_rdrand_available(void) { return 1; }
 int crypto_tpm_hmac_sha256(u8int *out, const u8int *data, ulong len) {
   // In stub, just do a normal software HMAC with a dummy key
   u8int dummy_key[32] = {0xAA};
+  // Prototype needed to avoid implicit declaration warning
+  void crypto_hmac_sha256(u8int * out, u8int * key, ulong klen, u8int * data,
+                          ulong dlen);
   crypto_hmac_sha256(out, dummy_key, 32, (u8int *)data, len);
   return 0; // Success
 }
@@ -117,11 +120,25 @@ int crypto_tpm_rotate_hmac_key(void) { return 0; }
 int crypto_hw_sha_available(void) { return 0; }
 u64int chacha20_csprng_u64(void) { return rdrand_u64(); }
 
-/* Crypto Implementation Mocks (Naive) */
-void crypto_sha256(u8int *out, u8int *in, ulong len) { memset(out, 0xAA, 32); }
+/* Crypto Implementation Mocks (Simple but unique) */
+void crypto_sha256(u8int *out, u8int *in, ulong len) {
+  // Simple hash: XOR all input bytes and spread across output
+  memset(out, 0, 32);
+  for (ulong i = 0; i < len; i++) {
+    out[i % 32] ^= in[i];
+    out[(i + 17) % 32] ^= (in[i] << 4) | (in[i] >> 4);
+  }
+  // Add length for uniqueness
+  out[31] ^= (u8int)(len & 0xFF);
+  out[30] ^= (u8int)((len >> 8) & 0xFF);
+}
 void crypto_hmac_sha256(u8int *out, u8int *key, ulong klen, u8int *data,
                         ulong dlen) {
-  memset(out, 0xBB, 32);
+  memset(out, 0, 32);
+  for (ulong i = 0; i < klen; i++)
+    out[i % 32] ^= key[i];
+  for (ulong i = 0; i < dlen; i++)
+    out[(i + 16) % 32] ^= data[i];
 }
 
 /* SipHash Mock */
