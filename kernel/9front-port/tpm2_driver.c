@@ -14,6 +14,7 @@
 #include "fns.h"
 #include "error.h"
 #include "io.h"
+#include "tpm.h"
 
 /* TPM 2.0 Command Codes (avoid tpm.h conflicts) */
 #define TPM2_CC_GetRandom_LOCAL     0x0000017B
@@ -172,8 +173,9 @@ tpm_get_burst_count(void)
  * Made non-static for use by tpm2_sapi_minimal.c
  */
 int
-tpm_transmit(u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
+tpm_transmit(TPMContext* ctx, u8int *cmd, usize cmd_len, u8int *resp, usize *resp_len)
 {
+    USED(ctx);
     int i, burst, count;
     u8int status;
     TPM2_Response_Header *rhdr;
@@ -358,7 +360,7 @@ tpm_get_random(u8int *buffer, int len)
     *(u16int*)(cmd + 10) = bytes_requested;
 
     /* Send command */
-    if(tpm_transmit(cmd, 12, resp, &resp_len) < 0)
+    if(tpm_transmit(0, cmd, 12, resp, &resp_len) < 0)
         return -1;
 
     /* Parse response: header(10) + size(2) + random_bytes */
@@ -419,7 +421,7 @@ tpm20_pcr_extend(u32int pcr_handle, u8int *hash, usize hash_len)
     memmove(cmd + i, hash, 32);
     i += 32;
 
-    return tpm_transmit(cmd, i, resp, &resp_len);
+    return tpm_transmit(0, cmd, i, resp, &resp_len);
 }
 
 /*
@@ -450,7 +452,7 @@ tpm20_pcr_read(u32int pcr_handle, u8int *pcr_value, usize *pcr_len)
     cmd[18] = 0;
     cmd[19] = 0;
 
-    if(tpm_transmit(cmd, 20, resp, &resp_len) < 0)
+    if(tpm_transmit(0, cmd, 20, resp, &resp_len) < 0)
         return -1;
 
     /* Parse PCR value from response (simplified) */

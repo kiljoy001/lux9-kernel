@@ -444,15 +444,7 @@ crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len)
  */
 
 /* External TPM2 SAPI functions */
-extern int tpm2_startup(void);
-extern int tpm2_create_primary(u32int *handle_out);
-extern int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
-                       u8int *private_out, u16int *private_len,
-                       u8int *public_out, u16int *public_len);
-extern int tpm2_load(u32int parent_handle, u8int *private_blob, u16int private_len,
-                     u8int *public_blob, u16int public_len, u32int *handle_out);
-extern int tpm2_unseal(u32int item_handle, u8int *data_out, u16int *data_len);
-
+/* TPM 2.0 prototypes are in tpm.h */
 /* Storage for sealed key blob */
 static struct {
     uint8_t private_blob[256];  /* Encrypted private blob from TPM */
@@ -482,7 +474,7 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
 
     /* Initialize TPM if not already started */
     if (!tpm_sealed_key.started) {
-        ret = tpm2_startup();
+        ret = tpm2_startup(0);
         if (ret < 0) {
             print("crypto_tpm_seal_key: TPM2_Startup failed\n");
             return -1;
@@ -492,7 +484,7 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
 
     /* Create Storage Root Key if not already created */
     if (tpm_sealed_key.srk_handle == 0) {
-        ret = tpm2_create_primary(&tpm_sealed_key.srk_handle);
+        ret = tpm2_create_primary(0, &tpm_sealed_key.srk_handle);
         if (ret < 0) {
             print("crypto_tpm_seal_key: failed to create SRK\n");
             return -1;
@@ -500,7 +492,7 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
     }
 
     /* Seal the key using TPM2_Create */
-    ret = tpm2_create(tpm_sealed_key.srk_handle,
+    ret = tpm2_create(0, tpm_sealed_key.srk_handle,
                       (u8int*)key, (u16int)keylen,
                       tpm_sealed_key.private_blob, &tpm_sealed_key.private_len,
                       tpm_sealed_key.public_blob, &tpm_sealed_key.public_len);
@@ -540,7 +532,7 @@ crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
     }
 
     /* Load the sealed object */
-    ret = tpm2_load(tpm_sealed_key.srk_handle,
+    ret = tpm2_load(0, tpm_sealed_key.srk_handle,
                     tpm_sealed_key.private_blob, tpm_sealed_key.private_len,
                     tpm_sealed_key.public_blob, tpm_sealed_key.public_len,
                     &obj_handle);
@@ -551,7 +543,7 @@ crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
     }
 
     /* Unseal the data */
-    ret = tpm2_unseal(obj_handle, (u8int*)key_out, &unsealed_len);
+    ret = tpm2_unseal(0, obj_handle, (u8int*)key_out, &unsealed_len);
 
     if (ret < 0) {
         print("crypto_tpm_unseal_key: TPM2_Unseal failed\n");

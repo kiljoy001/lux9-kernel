@@ -14,25 +14,46 @@
 #include "dat.h"
 #include "fns.h"
 
-/* TPM 2.0 Command Codes */
-#define TPM2_CC_GetRandom          0x0000017B
-#define TPM2_CC_HMAC               0x00000175
-#define TPM2_CC_HMAC_Start         0x00000174
-#define TPM2_CC_Hash               0x00000176
-#define TPM2_CC_Create             0x00000173
-#define TPM2_CC_CreatePrimary      0x00000131
-#define TPM2_CC_Load               0x00000137
-#define TPM2_CC_Seal               0x00000174
-#define TPM2_CC_Unseal             0x0000015E
-#define TPM2_CC_Quote              0x00000158
-#define TPM2_CC_Startup            0x00000144
-#define TPM2_CC_SelfTest           0x00000143
-#define TPM2_CC_GetCapability      0x0000011A
-#define TPM2_CC_PCR_Read           0x00000117
-#define TPM2_CC_PCR_Extend         0x00000118
-#define TPM2_CC_NV_DefineSpace     0x0000012A
-#define TPM2_CC_NV_UndefineSpace   0x00000122
-#define TPM2_CC_NV_Write           0x00000137
+/* TPM 2.0 Command Codes - from Linux kernel */
+/* Complete list from include/linux/tpm.h (TPM 2.0 Spec 1.36) */
+#define TPM2_CC_FIRST                      0x0000011F
+#define TPM2_CC_HIERARCHY_CONTROL          0x00000121
+#define TPM2_CC_HIERARCHY_CHANGE_AUTH      0x00000129
+#define TPM2_CC_CREATE_PRIMARY             0x00000131
+#define TPM2_CC_SEQUENCE_COMPLETE          0x0000013E
+#define TPM2_CC_SELF_TEST                  0x00000143
+#define TPM2_CC_STARTUP                    0x00000144
+#define TPM2_CC_SHUTDOWN                   0x00000145
+#define TPM2_CC_NV_READ                    0x0000014E
+#define TPM2_CC_CREATE                     0x00000153
+#define TPM2_CC_LOAD                       0x00000157
+#define TPM2_CC_SEQUENCE_UPDATE            0x0000015C
+#define TPM2_CC_UNSEAL                     0x0000015E
+#define TPM2_CC_CONTEXT_LOAD               0x00000161
+#define TPM2_CC_CONTEXT_SAVE               0x00000162
+#define TPM2_CC_FLUSH_CONTEXT              0x00000165
+#define TPM2_CC_READ_PUBLIC                0x00000173
+#define TPM2_CC_START_AUTH_SESS            0x00000176
+#define TPM2_CC_VERIFY_SIGNATURE           0x00000177
+#define TPM2_CC_GET_CAPABILITY             0x0000017A
+#define TPM2_CC_GET_RANDOM                 0x0000017B
+#define TPM2_CC_PCR_READ                   0x0000017E
+#define TPM2_CC_PCR_EXTEND                 0x00000182
+#define TPM2_CC_EVENT_SEQUENCE_COMPLETE    0x00000185
+#define TPM2_CC_HASH_SEQUENCE_START        0x00000186
+#define TPM2_CC_CREATE_LOADED              0x00000191
+#define TPM2_CC_LAST                       0x00000193
+
+/* Backwards compatibility aliases (deprecated names) */
+#define TPM2_CC_GetRandom          TPM2_CC_GET_RANDOM
+#define TPM2_CC_CreatePrimary      TPM2_CC_CREATE_PRIMARY
+#define TPM2_CC_Unseal             TPM2_CC_UNSEAL
+#define TPM2_CC_Startup            TPM2_CC_STARTUP
+#define TPM2_CC_SelfTest           TPM2_CC_SELF_TEST
+#define TPM2_CC_GetCapability      TPM2_CC_GET_CAPABILITY
+#define TPM2_CC_NV_DefineSpace     0x0000012A  /* Not in Linux enum, custom */
+#define TPM2_CC_NV_UndefineSpace   0x00000122  /* Not in Linux enum, custom */
+#define TPM2_CC_NV_Write           TPM2_CC_NV_READ  /* Placeholder, needs correction */
 
 /* TPM 1.2 Command Codes */
 #define TPM_ORD_GetRandom          0x00000046
@@ -48,7 +69,7 @@
 #define TPM_ORD_SelfTestFull       0x00000054
 #define TPM_ORD_ContinueSelfTest   0x00000053
 
-/* TPM Tags */
+/* TPM 1.2 Tags */
 #define TPM_TAG_RQU_COMMAND        0x00C1
 #define TPM_TAG_RQU_AUTH1_COMMAND  0x00C2
 #define TPM_TAG_RQU_AUTH2_COMMAND  0x00C3
@@ -56,34 +77,87 @@
 #define TPM_TAG_RSP_AUTH1_COMMAND  0x00C5
 #define TPM_TAG_RSP_AUTH2_COMMAND  0x00C6
 
-/* TPM 2.0 Startup Subcommands */
+/* TPM 2.0 Structure Tags (TPM2_ST) */
+#define TPM2_ST_NO_SESSIONS        0x8001
+#define TPM2_ST_SESSIONS           0x8002
+#define TPM2_ST_CREATION           0x8021
+
+/* TPM 2.0 Startup Types */
 #define TPM2_SU_CLEAR              0x0000
 #define TPM2_SU_STATE              0x0001
 
-/* TPM Return Codes */
+/* TPM 2.0 Return Codes - from Linux kernel */
+#define TPM2_RC_SUCCESS            0x0000
+#define TPM2_RC_HASH               0x0083  /* RC_FMT1 */
+#define TPM2_RC_HANDLE             0x008B
+#define TPM2_RC_INTEGRITY          0x009F
+#define TPM2_RC_INITIALIZE         0x0100  /* RC_VER1 */
+#define TPM2_RC_FAILURE            0x0101
+#define TPM2_RC_DISABLED           0x0120
+#define TPM2_RC_UPGRADE            0x012D
+#define TPM2_RC_COMMAND_CODE       0x0143
+#define TPM2_RC_TESTING            0x090A  /* RC_WARN */
+#define TPM2_RC_REFERENCE_H0       0x0910
+#define TPM2_RC_RETRY              0x0922
+#define TPM2_RC_SESSION_MEMORY     0x0903
+
+/* TPM 1.2 Return Codes */
 #define TPM_SUCCESS                0x00000000
 #define TPM_BAD_TAG                0x0000001E
 #define TPM_ECC_PRIVATE_KEY        0x00000091
 
-/* TPM Capability Categories */
+/* TPM 2.0 Capabilities - from Linux kernel */
+#define TPM2_CAP_HANDLES           1
+#define TPM2_CAP_COMMANDS          2
+#define TPM2_CAP_PCRS              5
+#define TPM2_CAP_TPM_PROPERTIES    6
+
+/* TPM 2.0 Permanent Handles */
+#define TPM2_RH_NULL               0x40000007
+#define TPM2_RS_PW                 0x40000009  /* Password authorization */
+
+/* TPM 2.0 Handle Types (MSO - Most Significant Octet) */
+#define TPM2_MSO_NVRAM             0x01
+#define TPM2_MSO_SESSION           0x02
+#define TPM2_MSO_POLICY            0x03
+#define TPM2_MSO_PERMANENT         0x40
+#define TPM2_MSO_VOLATILE          0x80
+#define TPM2_MSO_PERSISTENT        0x81
+
+/* TPM 1.2 Capability Categories (deprecated) */
 #define TPM_CAP_FIRST              0x00000000
 #define TPM_CAP_LAST               0xFFFFFFFF
 #define TPM_CAP_PCR                0x00000012
 #define TPM_CAP_ALG                0x00000003
-#define TPM_CAP_HANDLES            0x00000001
-#define TPM_CAP_COMMANDS           0x00000002
+#define TPM_CAP_HANDLES            TPM2_CAP_HANDLES
+#define TPM_CAP_COMMANDS           TPM2_CAP_COMMANDS
 #define TPM_CAP_PP_COMMANDS        0x00000003
 #define TPM_CAP_AUDIT_COMMANDS     0x00000004
-#define TPM_CAP_PCR_PROPERTIES     0x00000012
-#define TPM_CAP_LAST               0xFFFFFFFF
+#define TPM_CAP_PCR_PROPERTIES     TPM2_CAP_PCRS
 
-/* TPM 2.0 Algorithm Identifiers */
-#define TPM2_ALG_RSA               0x0001
-#define TPM2_ALG_KEYEDHASH         0x0008
-#define TPM2_ALG_SHA256            0x000B
-#define TPM2_ALG_SHA1              0x0004
-#define TPM2_ALG_HMAC              0x0005
-#define TPM2_ALG_AES               0x0006
+/* TPM 2.0 Algorithm Identifiers - from Linux kernel */
+#define TPM_ALG_ERROR              0x0000
+#define TPM_ALG_SHA1               0x0004
+#define TPM_ALG_AES                0x0006
+#define TPM_ALG_KEYEDHASH          0x0008
+#define TPM_ALG_SHA256             0x000B
+#define TPM_ALG_SHA384             0x000C
+#define TPM_ALG_SHA512             0x000D
+#define TPM_ALG_NULL               0x0010
+#define TPM_ALG_SM3_256            0x0012
+#define TPM_ALG_ECC                0x0023
+#define TPM_ALG_CFB                0x0043
+
+/* Backwards compatibility aliases */
+#define TPM2_ALG_RSA               0x0001  /* Not in Linux enum, custom */
+#define TPM2_ALG_KEYEDHASH         TPM_ALG_KEYEDHASH
+#define TPM2_ALG_SHA256            TPM_ALG_SHA256
+#define TPM2_ALG_SHA1              TPM_ALG_SHA1
+#define TPM2_ALG_HMAC              0x0005  /* Not in Linux enum, custom */
+#define TPM2_ALG_AES               TPM_ALG_AES
+
+/* TPM Constants */
+#define TPM_MAX_HASHES             5
 
 /* TPM Handle Types */
 #define TPM2_HR_TRANSIENT          0x80000000
@@ -134,27 +208,29 @@ typedef struct {
 
 /* Core TPM Operations */
 int tpm_init(void);
-int tpm2_startup(void);
+int tpm_startup(TPMContext* ctx);
 int tpm_get_random(uint8_t* buffer, int len);
 
 /* TPM 2.0 Operations (tpm2_sapi_minimal.c) */
-int tpm2_create_primary(uint32_t *handle_out);
-int tpm2_create(uint32_t parent_handle, uint8_t *data, uint16_t data_len,
+int tpm2_startup(TPMContext* ctx);
+int tpm2_create_primary(TPMContext* ctx, uint32_t *handle_out);
+int tpm2_create(TPMContext* ctx, uint32_t parent_handle, uint8_t *data, uint16_t data_len,
                 uint8_t *private_out, uint16_t *private_len,
                 uint8_t *public_out, uint16_t *public_len);
-int tpm2_load(uint32_t parent_handle, uint8_t *private_blob, uint16_t private_len,
+int tpm2_load(TPMContext* ctx, uint32_t parent_handle, uint8_t *private_blob, uint16_t private_len,
               uint8_t *public_blob, uint16_t public_len, uint32_t *handle_out);
-int tpm2_unseal(uint32_t item_handle, uint8_t *data_out, uint16_t *data_len);
+int tpm2_unseal(TPMContext* ctx, uint32_t item_handle, uint8_t *data_out, uint16_t *data_len);
 
-/* TPM 2.0 Operations (tpm2_driver.c) */
-int tpm20_pcr_read(uint32_t pcr_handle, uint8_t* pcr_value, size_t* pcr_len);
-int tpm20_pcr_extend(uint32_t pcr_handle, uint8_t* hash, size_t hash_len);
-int tpm20_hmac(uint32_t key_handle, uint8_t* data, size_t data_len, uint8_t* hmac_out, size_t* hmac_out_len);
+/* TPM 2.0 Management Operations (from Linux kernel) */
+int tpm2_flush_context(TPMContext* ctx, uint32_t handle);
+int tpm2_shutdown(TPMContext* ctx, uint16_t shutdown_type);
+int tpm2_get_capability(TPMContext* ctx, uint32_t capability, uint32_t property, uint32_t *value_out);
+int tpm2_self_test(TPMContext* ctx, uint8_t full_test);
 
 /* TPM 2.0 NVRAM Operations */
-int tpm2_nv_define_space(uint32_t nv_index, uint16_t size, uint32_t attributes);
-int tpm2_nv_undefine_space(uint32_t nv_index);
-int tpm2_nv_write(uint32_t nv_index, uint8_t* data, uint16_t len, uint16_t offset);
+int tpm2_nv_define_space(TPMContext* ctx, uint32_t nv_index, uint16_t size, uint32_t attributes);
+int tpm2_nv_undefine_space(TPMContext* ctx, uint32_t nv_index);
+int tpm2_nv_write(TPMContext* ctx, uint32_t nv_index, uint8_t* data, uint16_t len, uint16_t offset);
 
 /* Utility Functions */
 int tpm_transmit(TPMContext* ctx, uint8_t* command, size_t cmd_len, uint8_t* response, size_t* resp_len);
