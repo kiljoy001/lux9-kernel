@@ -808,18 +808,27 @@ newproc(void)
 	/* Phase 6: Allocate 9P exchange page for pure 9P architecture
 	 * This page is mapped into userspace for direct 9P message passing */
 	if(p->p9page == nil) {
-		p->p9page = xallocz(BY2PG, 1);
+		/* Allocate 2 pages (8KB) for asymmetric exchange */
+		p->p9page = xallocz(2*BY2PG, 1);
 		if(p->p9page == nil) {
 			/* Exchange page allocation failed - process cannot run */
 			print("newproc: failed to allocate p9page for pid %lud\n", p->pid);
 			return nil;
 		}
 
-		/* Initialize P9Control block at offset 0xF00 */
+		/* Initialize P9Control block at offset 0x1F00 (start of 2nd page + offset) */
 		P9Control *ctl = (P9Control*)((uintptr)p->p9page + P9_CONTROL_OFFSET);
 		memset(ctl, 0, sizeof(P9Control));
 		ctl->status = P9_STATUS_IDLE;
 		ctl->doorbell = 0;
+
+		/* Map Page 0 (Requests) as Read-Write */
+		userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page),
+		         PTEVALID | PTEUSER | PTEWRITE);
+
+		/* Map Page 1 (Responses/Control) as Read-Only */
+		userpmap(EXCHANGE_PAGE_ADDR + BY2PG, PADDR(p->p9page) + BY2PG,
+		         PTEVALID | PTEUSER);
 	}
 
 	return p;

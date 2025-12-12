@@ -39,6 +39,7 @@ extern int dev_9p_handle(Proc *p, Fcall *t, Fcall *r);
 extern int env_9p_handle(Proc *p, Fcall *t, Fcall *r);
 extern int srv_9p_handle(Proc *p, Fcall *t, Fcall *r);
 extern int mnt_9p_handle(Proc *p, Fcall *t, Fcall *r);
+static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 
 /*
  * Path matching for routing
@@ -322,6 +323,14 @@ int p9_handle_doorbell(Proc *p) {
     return -1;
   }
 
+  /* Ensure the exchange page is mapped into userspace so user code can ring the
+   * doorbell. Some early processes may not have it mapped yet. */
+  uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
+  if (pte == nil || (*pte & PTEVALID) == 0) {
+    userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page),
+             PTEVALID | PTEUSER | PTEWRITE);
+  }
+
   /* Get control block and buffers */
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   req_buf = (uchar *)p->p9page + P9_REQUEST_OFFSET;
@@ -418,6 +427,20 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     }
 
     cmd = (char *)t->data;
+
+    /* Process Control Commands */
+    if (strncmp(cmd, "spawn ", 6) == 0) {
+      if (!check_permission(caller, PEBBLE_PERM_EXEC)) {
+        r->type = Rerror;
+        r->ename = "spawn permission denied";
+        return -1;
+      }
+      /* TODO: Implement actual userspace spawn. For now, log it. */
+      print("9P SPAWN: %s\n", cmd + 6);
+      r->type = Rwrite;
+      r->count = t->count;
+      return 0;
+    }
 
     if (strcmp(cmd, "wakeup") == 0) {
       proc_event(target, EV_WAKEUP);
@@ -733,6 +756,58 @@ static int random_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 }
 
 /*
+ * Ramdisk handler: /dev/ram
+ * Uses devram read/write paths.
+ */
+extern long ramread(void *a, long n, vlong off);
+extern long ramwrite(void *va, long n, vlong off);
+
+static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
+  r->tag = t->tag;
+
+  switch (t->type) {
+  case Tattach:
+    return handle_tattach_with_pebble(caller, t, r,
+                                      PEBBLE_PERM_READ | PEBBLE_PERM_WRITE, 7);
+
+  case Twrite:
+    if (!check_permission(caller, PEBBLE_PERM_WRITE)) {
+      r->type = Rerror;
+      r->ename = "write permission denied";
+      return -1;
+    }
+    r->count = ramwrite(t->data, t->count, t->offset);
+    r->type = Rwrite;
+    return 0;
+
+  case Tread:
+    if (!check_permission(caller, PEBBLE_PERM_READ)) {
+      r->type = Rerror;
+      r->ename = "read permission denied";
+      return -1;
+    }
+    r->count = ramread(caller->genbuf, t->count, t->offset);
+    r->data = (uchar *)caller->genbuf;
+    r->type = Rread;
+    return 0;
+
+  case Tclunk:
+    r->type = Rclunk;
+    return 0;
+
+  case Tstat:
+    r->type = Rerror;
+    r->ename = "stat not supported";
+    return -1;
+
+  default:
+    r->type = Rerror;
+    r->ename = "operation not supported";
+    return -1;
+  }
+}
+
+/*
  * Time device handler: /dev/time
  */
 static int time_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
@@ -898,6 +973,8 @@ int dev_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     return time_9p_handle(caller, t, r);
   if (strcmp(dev, "sysname") == 0)
     return sysname_9p_handle(caller, t, r);
+  if (strcmp(dev, "ram") == 0)
+    return ram_9p_handle(caller, t, r);
 
   /* Device not found */
   r->type = Rerror;

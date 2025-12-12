@@ -261,7 +261,7 @@ ramclose(Chan *c)
  * Read Operations
  * ======================================================================== */
 
-static long
+long
 ramread(Chan *c, void *va, long n, vlong off)
 {
 	char status[256];
@@ -320,7 +320,7 @@ ramread(Chan *c, void *va, long n, vlong off)
  * Write Operations
  * ======================================================================== */
 
-static long
+long
 ramwrite(Chan *c, void *va, long n, vlong off)
 {
 	char cmd[256];

@@ -4,9 +4,17 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Exchange page layout (must match kernel/include/9p_router.h) */
+#define EXCHANGE_PAGE_ADDR 0x7fffffff0000ULL
+#define P9_REQUEST_OFFSET 0x000
+#define P9_REQUEST_SIZE 0xF00
+#define P9_REPLY_OFFSET 0x1000
+#define P9_REPLY_SIZE 0x1000
+#define P9_CONTROL_OFFSET 0xF00
+#define P9_STATUS_IDLE 0
+
 /* Syscall stubs - will be implemented in libc later */
-extern int fork(void);
-extern int exec(const char *path, char *const argv[]);
+extern int spawn(const char *path, char *const argv[]); /* New 9P spawn */
 extern int mount(const char *path, int server_pid, const char *proto);
 extern int open(const char *path, int flags);
 extern void exit(int status);
@@ -58,61 +66,74 @@ should_run_tests(void)
 	return 0;
 }
 
-static int
-start_server(const char *path, const char *arg)
-{
-	int pid;
-
-	printf("init: starting %s", path);
-	if(arg)
-		printf(" %s", arg);
-	printf("\n");
-
-	pid = fork();
-	if(pid < 0) {
-		printf("init: fork failed\n");
-		return -1;
-	}
-
-	if(pid == 0) {
-		/* Child */
-		char *argv[3];
-		argv[0] = (char*)path;
-		argv[1] = (char*)arg;
-		argv[2] = NULL;
-
-		exec(path, argv);
-		panic("exec failed");
-	}
-
-	/* Parent */
-	return pid;
-}
-
+/* Secure Ramdisk Test */
 static void
-emergency_shell(void)
+test_secure_vault(void)
 {
-	static char *shell_argv[] = { "/bin/sh", NULL };
+	int ctl, data;
+	char buf[128];
+	int n;
 
-	printf("\n");
-	printf("========================================\n");
-	printf("   EMERGENCY SHELL - System Recovery\n");
-	printf("========================================\n");
-	printf("\n");
-	printf("Something went wrong during boot.\n");
-	printf("You are now in a minimal shell.\n");
-	printf("\n");
+	printf("init: starting Secure Ramdisk test...\n");
 
-	exec("/bin/sh", shell_argv);
-	panic("cannot exec emergency shell");
+	/* 1. Initialize/Unlock Vault */
+	ctl = open("/dev/secureram.ctl", 1); /* O_WRITE */
+	if(ctl < 0) {
+		printf("init: failed to open vault control: %r\n");
+		return;
+	}
+
+	printf("init: initializing vault...\n");
+	if(write(ctl, "init password123", 16) < 0) {
+		printf("init: vault init failed (maybe already init?)\n");
+		/* Try unlock */
+		if(write(ctl, "unlock password123", 18) < 0) {
+			printf("init: vault unlock failed\n");
+			close(ctl);
+			return;
+		}
+	}
+	close(ctl);
+
+	/* 2. Write Secret Data */
+	printf("init: writing to secure vault...\n");
+	data = open("/dev/secureram", 1); /* O_WRITE */
+	if(data < 0) {
+		printf("init: failed to open vault data: %r\n");
+		return;
+	}
+	if(write(data, "Top Secret Payload", 16) < 0) {
+		printf("init: vault write failed\n");
+		close(data);
+		return;
+	}
+	close(data);
+
+	/* 3. Read Back */
+	printf("init: reading from secure vault...\n");
+	data = open("/dev/secureram", 0); /* O_READ */
+	if(data < 0) {
+		printf("init: failed to open vault data for read\n");
+		return;
+	}
+	memset(buf, 0, sizeof(buf));
+	n = read(data, buf, sizeof(buf)-1);
+	if(n < 0) {
+		printf("init: vault read failed\n");
+	} else {
+		printf("init: vault content: '%s'\n", buf);
+		if(strncmp(buf, "Top Secret Payload", 16) == 0)
+			printf("init: vault integrity PASS\n");
+		else
+			printf("init: vault integrity FAIL\n");
+	}
+	close(data);
 }
 
 int
 main(int argc, char *argv[])
 {
 	char *rootdev;
-	int fs_pid;
-	int fd;
 	char *init_args[] = { "/sbin/init", NULL };
 	char *shell_args[] = { "/bin/sh", NULL };
 
@@ -120,115 +141,20 @@ main(int argc, char *argv[])
 	(void)argv;
 
 	printf("\n");
-	printf("=== Lux9 Init ===\n");
-	printf("First userspace process starting...\n");
+	printf("=== Lux9 Init (Secure Mode) ===\n");
 	printf("\n");
 
-	/* Step 1: Determine root device */
-	printf("init: determining root device...\n");
-	rootdev = get_kernel_param("root");
-	printf("init: get_kernel_param returned: %s\n", rootdev ? rootdev : "(null)");
-	if(!rootdev) {
-		printf("init: no root= parameter, using default\n");
-		rootdev = "hd0:0";
+	/* Step 1: Run Secure Vault Test */
+	test_secure_vault();
+
+	/* Step 2: Spawn Shell */
+	printf("init: spawning /bin/sh...\n");
+	spawn("/bin/sh", shell_args);
+
+	/* Loop forever */
+	while(1) {
+		sleep_ms(1000);
 	}
-	
-	printf("init: root device is %s\n", rootdev);
-	
-	/* Debug: Try to list available devices */
-	printf("init: DEBUG - attempting to list /dev contents...\n");
-	int devfd = open("/dev", 0);
-	if(devfd >= 0) {
-		printf("init: DEBUG - /dev opened successfully\n");
-		close(devfd);
-	} else {
-		printf("init: DEBUG - failed to open /dev: %r\n");
-	}
-
-	/* Test ramdisk functionality */
-	printf("init: Testing ramdisk device...\n");
-	int ramfd = open("/dev/ram", 0);
-	if(ramfd >= 0) {
-		printf("init: ramdisk device opened successfully\n");
-		char test_data[] = "Hello, Lux9 ramdisk!";
-		int write_result = write(ramfd, test_data, sizeof(test_data)-1);
-		if(write_result > 0) {
-			printf("init: wrote %d bytes to ramdisk\n", write_result);
-			// Seek back to beginning
-			seek(ramfd, 0, 0);
-			char read_buffer[100];
-			int read_result = read(ramfd, read_buffer, sizeof(test_data)-1);
-			if(read_result > 0) {
-				read_buffer[read_result] = '\0';
-				printf("init: read from ramdisk: \"%s\"\n", read_buffer);
-				if(strcmp(read_buffer, test_data) == 0) {
-					printf("init: ramdisk read/write test PASSED\n");
-				} else {
-					printf("init: ramdisk read/write test FAILED (data mismatch)\n");
-				}
-			} else {
-				printf("init: failed to read from ramdisk: %r\n");
-			}
-		} else {
-			printf("init: failed to write to ramdisk: %r\n");
-		}
-		close(ramfd);
-	} else {
-		printf("init: ramdisk device not available: %r\n");
-	}
-
-	/* Step 2: Start filesystem server */
-	fs_pid = start_server("/bin/ext4fs", rootdev);
-	if(fs_pid < 0) {
-		printf("init: failed to start ext4fs\n");
-		emergency_shell();
-	}
-
-	/* Give server time to initialize */
-	printf("init: waiting for ext4fs to initialize...\n");
-	sleep_ms(200);
-
-	/* Step 3: Mount root filesystem */
-	printf("init: mounting root at /\n");
-	if(mount("/", fs_pid, "9P2000") < 0) {
-		printf("init: mount failed\n");
-		emergency_shell();
-	}
-
-	/* Step 4: Verify mount worked */
-	printf("init: verifying root filesystem...\n");
-	fd = open("/etc/fstab", 0);  /* O_RDONLY */
-	if(fd < 0) {
-		printf("init: cannot access /etc/fstab\n");
-		printf("init: root filesystem may not be ready\n");
-		emergency_shell();
-	}
-	/* Close would go here */
-
-	printf("init: root filesystem mounted successfully\n");
-
-	/* Step 5: Start other essential servers */
-	printf("init: starting system servers...\n");
-
-	/* TODO: devfs, procfs, etc. */
-
-	/* Optional: Run syscall/exchange tests only when init_tests=1 */
-	if(should_run_tests()){
-		printf("init: running syscall/exchange tests...\n");
-		start_server("/bin/simple_test", NULL);
-		/* give the console time to drain test output */
-		sleep_ms(100);
-	}
-
-	/* Step 7: Execute real init or shell */
-	printf("init: attempting to exec /sbin/init...\n");
-	exec("/sbin/init", init_args);
-
-	printf("init: /sbin/init not found, trying /bin/sh...\n");
-	exec("/bin/sh", shell_args);
-
-	/* If we get here, nothing worked */
-	panic("init: no shell available");
 
 	return 0;
 }

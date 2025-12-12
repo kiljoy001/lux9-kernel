@@ -12,11 +12,11 @@ typedef struct Proc Proc;
 typedef struct Fcall Fcall;
 
 /* 9P Exchange Page Layout */
-#define P9_PAGE_SIZE 4096
+#define P9_PAGE_SIZE 8192
 #define P9_REQUEST_OFFSET 0x000
-#define P9_REQUEST_SIZE 0x800
-#define P9_REPLY_OFFSET 0x800
-#define P9_REPLY_SIZE 0x700
+#define P9_REQUEST_SIZE 0xF00
+#define P9_REPLY_OFFSET 0x1000
+#define P9_REPLY_SIZE 0x1000
 #define P9_CONTROL_OFFSET 0xF00
 #define P9_CONTROL_SIZE 0x100
 
