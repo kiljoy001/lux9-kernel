@@ -23,6 +23,10 @@
 extern void sha256_transform_hw(uint32_t state[8], const uint8_t block[64], uint32_t nblocks);
 extern uint64_t rdrand_u64(void);
 
+/* Forward declarations */
+int crypto_tpm_seal_key(const uint8_t *key, size_t keylen);
+int crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen);
+
 /*
  * Check if hardware SHA extensions are available
  */
@@ -90,7 +94,7 @@ crypto_sha256(uint8_t *out, const uint8_t *data, size_t len)
         if (remainder > 0 || len == 0) {
             sph_sha256_init(&ctx);
             /* Copy hardware state to software context */
-            memcpy(ctx.val, state, sizeof(state));
+            memmove(ctx.val, state, sizeof(state));
             ctx.count = full_blocks * 64;
             /* Process remaining bytes */
             sph_sha256(&ctx, data + (full_blocks * 64), remainder);
@@ -98,7 +102,7 @@ crypto_sha256(uint8_t *out, const uint8_t *data, size_t len)
         } else {
             /* All data processed by hardware, finalize manually */
             sph_sha256_init(&ctx);
-            memcpy(ctx.val, state, sizeof(state));
+            memmove(ctx.val, state, sizeof(state));
             ctx.count = len;
             sph_sha256_close(&ctx, out);
         }
@@ -141,9 +145,9 @@ crypto_hmac_sha256(uint8_t *out, const uint8_t *key, size_t keylen,
         sph_sha256_init(&ctx);
         sph_sha256(&ctx, key, keylen);
         sph_sha256_close(&ctx, tk);
-        memcpy(k, tk, 32);
+        memmove(k, tk, 32);
     } else {
-        memcpy(k, key, keylen);
+        memmove(k, key, keylen);
     }
 
     /* Compute inner hash: H((K ⊕ ipad) || m) */
@@ -228,7 +232,7 @@ crypto_tpm_key_init(void)
     ret = tpm_get_random(random_key, CRYPTO_HMAC_KEY_BYTES);
     if (ret == CRYPTO_HMAC_KEY_BYTES) {
         /* Successfully got random bytes from TPM */
-        memcpy(tpm_key_state.hmac_key, random_key, CRYPTO_HMAC_KEY_BYTES);
+        memmove(tpm_key_state.hmac_key, random_key, CRYPTO_HMAC_KEY_BYTES);
         tpm_key_state.key_valid = 1;
         tpm_key_state.key_generation = 1;
         print("Crypto: Generated TPM random key (generation 1)\n");
@@ -252,7 +256,7 @@ crypto_tpm_key_init(void)
             }
 
             if (success) {
-                memcpy(tpm_key_state.hmac_key, random_key, CRYPTO_HMAC_KEY_BYTES);
+                memmove(tpm_key_state.hmac_key, random_key, CRYPTO_HMAC_KEY_BYTES);
                 tpm_key_state.key_valid = 1;
                 tpm_key_state.key_generation = 1;
                 print("Crypto: Generated RDRAND key (generation 1)\n");
@@ -313,7 +317,7 @@ crypto_tpm_get_hmac_key(uint8_t *key_out, size_t *keylen)
         return -1;
     }
 
-    memcpy(key_out, tpm_key_state.hmac_key, CRYPTO_HMAC_KEY_BYTES);
+    memmove(key_out, tpm_key_state.hmac_key, CRYPTO_HMAC_KEY_BYTES);
     *keylen = CRYPTO_HMAC_KEY_BYTES;
 
     iunlock(&tpm_key_state.lock);
@@ -375,7 +379,7 @@ crypto_tpm_rotate_hmac_key(void)
     old_gen = tpm_key_state.key_generation;
 
     /* Update key */
-    memcpy(tpm_key_state.hmac_key, new_key, CRYPTO_HMAC_KEY_BYTES);
+    memmove(tpm_key_state.hmac_key, new_key, CRYPTO_HMAC_KEY_BYTES);
     tpm_key_state.key_generation++;
     tpm_key_state.key_uses = 0;
 
@@ -492,7 +496,7 @@ crypto_tpm_seal_key(const uint8_t *key, size_t keylen)
     }
 
     /* Seal the key using TPM2_Create */
-    ret = tpm2_create(0, tpm_sealed_key.srk_handle,
+    ret = tpm2_create(tpm_sealed_key.srk_handle,
                       (u8int*)key, (u16int)keylen,
                       tpm_sealed_key.private_blob, &tpm_sealed_key.private_len,
                       tpm_sealed_key.public_blob, &tpm_sealed_key.public_len);
@@ -532,7 +536,7 @@ crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
     }
 
     /* Load the sealed object */
-    ret = tpm2_load(0, tpm_sealed_key.srk_handle,
+    ret = tpm2_load(tpm_sealed_key.srk_handle,
                     tpm_sealed_key.private_blob, tpm_sealed_key.private_len,
                     tpm_sealed_key.public_blob, tpm_sealed_key.public_len,
                     &obj_handle);
@@ -543,7 +547,7 @@ crypto_tpm_unseal_key(uint8_t *key_out, size_t *keylen)
     }
 
     /* Unseal the data */
-    ret = tpm2_unseal(0, obj_handle, (u8int*)key_out, &unsealed_len);
+    ret = tpm2_unseal(obj_handle, nil, 0, (u8int*)key_out, &unsealed_len);
 
     if (ret < 0) {
         print("crypto_tpm_unseal_key: TPM2_Unseal failed\n");

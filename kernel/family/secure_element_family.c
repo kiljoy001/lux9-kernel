@@ -140,7 +140,7 @@ tpm_family_init(struct FamilyExchangePage* family)
         print("TPM Family: Detected TPM version %d\n", ctx->detected_version);
     } else {
         /* Software fallback capabilities */
-        ctx->detected_version = TPM_2_0;  /* Assume 2.0 for software */
+        ctx->detected_version = TPM_VERSION_2_0;  /* Assume 2.0 for software */
         ctx->capabilities = FAMILY_CAP_SECURE_STORAGE | FAMILY_CAP_CRYPTO;
         print("TPM Family: Using software capabilities\n");
     }
@@ -492,8 +492,8 @@ secure_element_hmac(uint64_t channel_id, const uint8_t* data, size_t len, uint8_
     print("Secure Element: HMAC requested for channel 0x%llx\n", (unsigned long long)channel_id);
 
     /* Use TPM 2.0 HMAC if available */
-    if (ctx->tpm_available && ctx->tpm_ctx && ctx->detected_version == TPM_2_0) {
-        if (tpm20_hmac(ctx->tpm_ctx->hmac_key_handle,
+    if (ctx->tpm_available && ctx->tpm_ctx && ctx->detected_version == TPM_VERSION_2_0) {
+        if (tpm20_hmac(ctx->tpm_ctx, ctx->tpm_ctx->hmac_key_handle,
                       (uint8_t*)data, len, hmac_out, &hmac_len) == 0) {
             return (int)hmac_len;
         }

@@ -23,11 +23,6 @@
 #include "fns.h"
 #include "tpm.h"
 
-/* 
- * NOTE: Function prototypes are now in tpm.h.
- * We rely on the header to ensure signature matching.
- */
-
 void
 tpm_test_run(void)
 {
@@ -71,35 +66,19 @@ tpm_test_run(void)
         return; /* Cannot proceed without SRK */
     }
 
-    /* 3b. CreatePrimary (HMAC Key) */
-    /* Note: Ideally we should create a KeyedHash child, but for simple test
-     * we can try to create a KeyedHash Primary if the template supports it.
-     * However, CreatePrimary is complex.
-     * Let's stick to testing HMAC with SRK (which fails) or skip HMAC test for now.
-     * Actually, let's just create a child HMAC key.
-     * But tpm2_create fails.
-     * So we must fix tpm2_create first.
-     */
-
     /* 4. Seal Data */
     print("Test 4: TPM2_Create (Seal '%s')... ", secret);
-    ret = tpm2_create(0, srk_handle, (u8int*)secret, (u16int)strlen(secret),
+    ret = tpm2_create(srk_handle, (u8int*)secret, (u16int)strlen(secret),
                       priv_blob, &priv_len, pub_blob, &pub_len);
     if(ret == 0){
         print("OK (Priv: %d bytes, Pub: %d bytes)\n", priv_len, pub_len);
-        print("Private Blob (first 16B): %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
-              priv_blob[0], priv_blob[1], priv_blob[2], priv_blob[3], priv_blob[4], priv_blob[5], priv_blob[6], priv_blob[7],
-              priv_blob[8], priv_blob[9], priv_blob[10], priv_blob[11], priv_blob[12], priv_blob[13], priv_blob[14], priv_blob[15]);
-        print("Public Blob (first 16B): %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
-              pub_blob[0], pub_blob[1], pub_blob[2], pub_blob[3], pub_blob[4], pub_blob[5], pub_blob[6], pub_blob[7],
-              pub_blob[8], pub_blob[9], pub_blob[10], pub_blob[11], pub_blob[12], pub_blob[13], pub_blob[14], pub_blob[15]);
     } else {
         print("FAIL\n");
     }
 
     /* 5. Load Object */
     print("Test 5: TPM2_Load... ");
-    ret = tpm2_load(0, srk_handle, priv_blob, priv_len, pub_blob, pub_len, &obj_handle);
+    ret = tpm2_load(srk_handle, priv_blob, priv_len, pub_blob, pub_len, &obj_handle);
     if(ret == 0){
         print("OK (Handle: 0x%08X)\n", obj_handle);
     } else {
@@ -109,7 +88,9 @@ tpm_test_run(void)
     /* 6. Unseal Data */
     print("Test 6: TPM2_Unseal (handle 0x%08X)... ", obj_handle);
     memset(unsealed_data, 0, sizeof(unsealed_data));
-    ret = tpm2_unseal(0, obj_handle, unsealed_data, &unsealed_len);
+    unsealed_len = sizeof(unsealed_data);
+    /* Pass nil auth */
+    ret = tpm2_unseal(obj_handle, nil, 0, unsealed_data, &unsealed_len);
     if(ret == 0){
         unsealed_data[unsealed_len] = 0; /* Null terminate for print */
         print("OK (Data: '%s')\n", (char*)unsealed_data);
@@ -142,13 +123,13 @@ tpm_test_run(void)
     ret = tpm2_nv_undefine_space(0, nv_index);
     print("%s\n", ret == 0 ? "OK" : "FAIL");
 
-    /* 10. HMAC */
-    print("Test 10: TPM2_HMAC (using SRK as key for test)... ");
-    u8int hmac[32];
-    size_t hmac_len = 32;
+    /* 11. HMAC */
+    print("Test 11: TPM2_HMAC (using SRK as key for test)... ");
+    u8int hmac[64];
+    usize hmac_len = sizeof(hmac);
     ret = tpm20_hmac(0, srk_handle, (u8int*)"HMAC_TEST_DATA", 14, hmac, &hmac_len);
     if(ret == 0){
-        print("OK (Digest: %02X %02X %02X...)\n", hmac[0], hmac[1], hmac[2]);
+        print("OK (Digest: %02X %02X %02X...\n", hmac[0], hmac[1], hmac[2]);
     } else {
         print("FAIL (Expected for ECC SRK)\n");
     }
