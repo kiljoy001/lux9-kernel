@@ -314,7 +314,17 @@ typedef enum {
     CIL_OPCODE_SUB_OVF = 0xDA,
     CIL_OPCODE_SUB_OVF_UN = 0xDB,
     CIL_OPCODE_DIV_OVF = 0xDC,
-    CIL_OPCODE_DIV_OVF_UN = 0xDD
+    CIL_OPCODE_DIV_OVF_UN = 0xDD,
+    
+    // Symbolic computing operations (extended beyond ECMA-335, using 0xE0+ range)
+    CIL_OPCODE_SYM_CREATE = 0xE0,        // Create symbolic variable
+    CIL_OPCODE_SYM_EXPR = 0xE1,          // Build symbolic expression  
+    CIL_OPCODE_SYM_DIFF = 0xE2,          // Symbolic differentiation
+    CIL_OPCODE_SYM_INTEGRATE = 0xE3,     // Symbolic integration
+    CIL_OPCODE_SYM_SIMPLIFY = 0xE4,      // Expression simplification
+    CIL_OPCODE_SYM_EVAL = 0xE5,          // Evaluate symbolic expression
+    CIL_OPCODE_SYM_MATCH = 0xE6,         // Pattern matching
+    CIL_OPCODE_SYM_REWRITE = 0xE7        // Term rewriting
 } cil_opcode_t;
 
 // Instruction operand types

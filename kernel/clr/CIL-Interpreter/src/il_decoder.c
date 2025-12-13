@@ -129,6 +129,17 @@ cil_operand_type_t get_opcode_operand_type(cil_opcode_t opcode) {
         case CIL_OPCODE_DIV_OVF_UN:
             return CIL_OPERAND_NONE;
             
+        // Symbolic computing operations (no operands)
+        case CIL_OPCODE_SYM_CREATE:
+        case CIL_OPCODE_SYM_EXPR:
+        case CIL_OPCODE_SYM_DIFF:
+        case CIL_OPCODE_SYM_INTEGRATE:
+        case CIL_OPCODE_SYM_SIMPLIFY:
+        case CIL_OPCODE_SYM_EVAL:
+        case CIL_OPCODE_SYM_MATCH:
+        case CIL_OPCODE_SYM_REWRITE:
+            return CIL_OPERAND_NONE;
+            
         // Byte operand opcodes
         case CIL_OPCODE_LDARG_S:
         case CIL_OPCODE_LDARGA_S:
@@ -445,29 +456,6 @@ const char* get_opcode_name(cil_opcode_t opcode) {
         case CIL_OPCODE_LDLOC: return "ldloc";
         case CIL_OPCODE_LDLOCA: return "ldloca";
         case CIL_OPCODE_STLOC: return "stloc";
-        case CIL_OPCODE_LOCALLOC: return "localloc";
-        case CIL_OPCODE_ENDFILTER: return "endfilter";
-        case CIL_OPCODE_UNALIGNED: return "unaligned.";
-        case CIL_OPCODE_VOLATILE: return "volatile.";
-        case CIL_OPCODE_TAIL: return "tail.";
-        case CIL_OPCODE_INITOBJ: return "initobj";
-        case CIL_OPCODE_CONSTRAINED: return "constrained.";
-        case CIL_OPCODE_CPBLK: return "cpblk";
-        case CIL_OPCODE_INITBLK: return "initblk";
-        case CIL_OPCODE_RETHROW: return "rethrow";
-        case CIL_OPCODE_SIZEOF: return "sizeof";
-        case CIL_OPCODE_REFANYTYPE: return "refanytype";
-        case CIL_OPCODE_READONLY: return "readonly.";
-        case CIL_OPCODE_PREFIX7: return "prefix7";
-        case CIL_OPCODE_PREFIX6: return "prefix6";
-        case CIL_OPCODE_PREFIX5: return "prefix5";
-        case CIL_OPCODE_PREFIX4: return "prefix4";
-        case CIL_OPCODE_PREFIX3: return "prefix3";
-        case CIL_OPCODE_PREFIX2: return "prefix2";
-        case CIL_OPCODE_PREFIX1: return "prefix1";
-        case CIL_OPCODE_PREFIXREF: return "prefixref";
-        
-        // Arithmetic overflow operations
         case CIL_OPCODE_ADD_OVF: return "add.ovf";
         case CIL_OPCODE_ADD_OVF_UN: return "add.ovf.un";
         case CIL_OPCODE_MUL_OVF: return "mul.ovf";
@@ -476,6 +464,16 @@ const char* get_opcode_name(cil_opcode_t opcode) {
         case CIL_OPCODE_SUB_OVF_UN: return "sub.ovf.un";
         case CIL_OPCODE_DIV_OVF: return "div.ovf";
         case CIL_OPCODE_DIV_OVF_UN: return "div.ovf.un";
+        
+        // Symbolic computing operations
+        case CIL_OPCODE_SYM_CREATE: return "sym.create";
+        case CIL_OPCODE_SYM_EXPR: return "sym.expr";
+        case CIL_OPCODE_SYM_DIFF: return "sym.diff";
+        case CIL_OPCODE_SYM_INTEGRATE: return "sym.integrate";
+        case CIL_OPCODE_SYM_SIMPLIFY: return "sym.simplify";
+        case CIL_OPCODE_SYM_EVAL: return "sym.eval";
+        case CIL_OPCODE_SYM_MATCH: return "sym.match";
+        case CIL_OPCODE_SYM_REWRITE: return "sym.rewrite";
         
         default: return "unknown";
     }

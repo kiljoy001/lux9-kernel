@@ -6,6 +6,30 @@
 #include <stddef.h>
 #include "il_decoder.h"
 
+// Symbolic Expression Types
+typedef enum {
+    SYM_VAR,
+    SYM_CONST,
+    SYM_ADD,
+    SYM_SUB,
+    SYM_MUL,
+    SYM_DIV,
+    SYM_POW
+} sym_type_t;
+
+typedef struct sym_expr {
+    sym_type_t type;
+    int ref_count;
+    union {
+        char* name; // For SYM_VAR
+        int64_t value; // For SYM_CONST
+        struct {
+            struct sym_expr* left;
+            struct sym_expr* right;
+        } binary;
+    } data;
+} sym_expr_t;
+
 // VM Stack types
 typedef enum {
     VM_TYPE_I1 = 0x01,
@@ -66,6 +90,8 @@ typedef struct vm_frame {
     vm_stack_t* stack;               // Method stack
     vm_value_t* locals;              // Local variables
     uint32_t local_count;           // Number of locals
+    vm_value_t* args;                // Method arguments
+    uint32_t arg_count;             // Number of arguments
     struct vm_frame* caller_frame;    // Previous frame
     size_t return_address;          // Return address in caller
 } vm_frame_t;
@@ -139,6 +165,16 @@ bool vm_subtract(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_multiply(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_divide(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 
+// Bitwise operations
+bool vm_and(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_or(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_xor(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_not(vm_value_t* value, vm_value_t* result);
+bool vm_neg(vm_value_t* value, vm_value_t* result);
+bool vm_shl(vm_value_t* value, vm_value_t* amount, vm_value_t* result);
+bool vm_shr(vm_value_t* value, vm_value_t* amount, vm_value_t* result);
+bool vm_shr_un(vm_value_t* value, vm_value_t* amount, vm_value_t* result);
+
 // Overflow arithmetic operations
 bool vm_add_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_add_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
@@ -148,6 +184,25 @@ bool vm_multiply_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_multiply_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_divide_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_divide_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+
+// Overflow conversion operations
+bool vm_convert_ovf_i1(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_u1(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_i2(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_u2(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_i4(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_u4(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_i8(vm_value_t* source, vm_value_t* result);
+bool vm_convert_ovf_u8(vm_value_t* source, vm_value_t* result);
+
+// Symbolic computing operations
+bool vm_symbolic_create(vm_value_t* var_name, vm_value_t* result);
+bool vm_symbolic_add(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_symbolic_mul(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_symbolic_expr(vm_value_t* left, vm_value_t* right, vm_value_t* result); // Deprecated generic
+bool vm_symbolic_differentiate(vm_value_t* expr, vm_value_t* var, vm_value_t* result);
+bool vm_symbolic_integrate(vm_value_t* expr, vm_value_t* var, vm_value_t* result);
+bool vm_symbolic_simplify(vm_value_t* expr, vm_value_t* result);
 
 // Comparison operations
 bool vm_compare_equal(vm_value_t* left, vm_value_t* right, vm_value_t* result);

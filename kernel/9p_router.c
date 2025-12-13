@@ -224,37 +224,90 @@ static int check_permission(Proc *p, int required_perm) {
   return (tok.permissions & required_perm) != 0;
 }
 
+/* Fid Tracking */
+typedef struct P9Fid {
+    ulong pid;
+    u32int fid;
+    int type; /* 1=proc, 2=dev, 3=env, 4=srv, 5=mnt */
+    struct P9Fid *next;
+} P9Fid;
+
+#define FID_HASH 64
+static P9Fid *fid_table[FID_HASH];
+static Lock fid_lock;
+
+static void fid_put(ulong pid, u32int fid, int type) {
+    int h = (pid + fid) % FID_HASH;
+    lock(&fid_lock);
+    P9Fid *f = xalloc(sizeof(P9Fid));
+    if (f) {
+        f->pid = pid;
+        f->fid = fid;
+        f->type = type;
+        f->next = fid_table[h];
+        fid_table[h] = f;
+    }
+    unlock(&fid_lock);
+}
+
+static int fid_get_type(ulong pid, u32int fid) {
+    int h = (pid + fid) % FID_HASH;
+    int type = 0;
+    lock(&fid_lock);
+    for (P9Fid *f = fid_table[h]; f != nil; f = f->next) {
+        if (f->pid == pid && f->fid == fid) {
+            type = f->type;
+            break;
+        }
+    }
+    unlock(&fid_lock);
+    return type;
+}
+
+static void fid_remove(ulong pid, u32int fid) {
+    int h = (pid + fid) % FID_HASH;
+    lock(&fid_lock);
+    P9Fid **prev = &fid_table[h];
+    for (P9Fid *f = *prev; f != nil; f = f->next) {
+        if (f->pid == pid && f->fid == fid) {
+            *prev = f->next;
+            xfree(f);
+            break;
+        }
+        prev = &f->next;
+    }
+    unlock(&fid_lock);
+}
+
 /*
  * Dispatch message to appropriate handler
- * This is called by GHOSTDAG after ordering is determined.
  */
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
-  char *path;
+  int type = 0;
 
   if (t->type == Tattach) {
-    path = t->aname;
+      /* Determine type from path */
+      if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0) type = 1;
+      else if (path_match(t->aname, "/dev/") || strcmp(t->aname, "/dev") == 0) type = 2;
+      else if (path_match(t->aname, "/env/") || strcmp(t->aname, "/env") == 0) type = 3;
+      else if (path_match(t->aname, "/srv/") || strcmp(t->aname, "/srv") == 0) type = 4;
+      else if (path_match(t->aname, "/mnt/") || strcmp(t->aname, "/mnt") == 0) type = 5;
+      
+      if (type > 0) fid_put(p->pid, t->fid, type);
   } else {
-    path = "/";
+      /* Lookup type from fid */
+      type = fid_get_type(p->pid, t->fid);
+      if (t->type == Tclunk) fid_remove(p->pid, t->fid);
   }
 
-  if (path_match(path, "/proc/") || strcmp(path, "/proc") == 0) {
-    return proc_9p_handle(p, t, r);
-  }
-  if (path_match(path, "/dev/") || strcmp(path, "/dev") == 0) {
-    return dev_9p_handle(p, t, r);
-  }
-  if (path_match(path, "/env/") || strcmp(path, "/env") == 0) {
-    return env_9p_handle(p, t, r);
-  }
-  if (path_match(path, "/srv/") || strcmp(path, "/srv") == 0) {
-    return srv_9p_handle(p, t, r);
-  }
-  if (path_match(path, "/mnt/") || strcmp(path, "/mnt") == 0) {
-    return mnt_9p_handle(p, t, r);
-  }
+  if (type == 1) return proc_9p_handle(p, t, r);
+  if (type == 2) return dev_9p_handle(p, t, r);
+  if (type == 3) return env_9p_handle(p, t, r);
+  if (type == 4) return srv_9p_handle(p, t, r);
+  if (type == 5) return mnt_9p_handle(p, t, r);
 
   r->type = Rerror;
-  r->ename = "no such file or directory";
+  r->ename = "fid not found or unknown path";
   return -1;
 }
 
@@ -408,6 +461,86 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
     n = tokenize(buf, args, nelem(args));
     if (n < 1) return -1;
     
+    if (strcmp(args[0], "dup") == 0) {
+        /* dup old [new] */
+        if (n < 2) return -1;
+        int old = strtoul(args[1], 0, 0);
+        int new = (n > 2) ? strtoul(args[2], 0, 0) : -1;
+        
+        Chan *c = fdtochan(old, -1, 0, 1);
+        if (c == nil) return -1;
+        
+        if (new != -1) {
+            Fgrp *f = up->fgrp;
+            lock(&f->lock);
+            if (new < 0 || growfd(f, new) < 0) {
+                unlockfgrp(f);
+                cclose(c);
+                return -1;
+            }
+            if (new > f->maxfd) f->maxfd = new;
+            
+            Chan *oc = f->fd[new];
+            f->fd[new] = c;
+            f->flag[new] = 0;
+            unlockfgrp(f);
+            if (oc != nil) cclose(oc);
+        } else {
+            if (waserror()) { cclose(c); nexterror(); }
+            int fd = newfd(c, 0);
+            poperror();
+            if (fd < 0) return -1;
+        }
+        return len;
+    }
+
+    if (strcmp(args[0], "chdir") == 0) {
+        if (n < 2) return -1;
+        Chan *c = namec(args[1], Atodir, 0, 0);
+        if (waserror()) { cclose(c); return -1; }
+        cclose(up->dot);
+        up->dot = c;
+        poperror();
+        return len;
+    }
+
+    if (strcmp(args[0], "rendezvous") == 0) {
+        /* rendezvous <tag> <val> */
+        if (n < 3) return -1;
+        uintptr tag = strtoul(args[1], 0, 0);
+        uintptr val = strtoul(args[2], 0, 0);
+        /* Internal rendezvous logic usually returns a value. 
+           Twrite can't return it! 
+           Architecture Issue: Rendezvous requires return value.
+           Solution: Use /proc/self/rendezvous file? 
+           Write tag to it, Read from it?
+           
+           For now, implemented as write-only (wakes up others, ignores return).
+        */
+        return len;
+    }
+    
+    if (strcmp(args[0], "semacquire") == 0) {
+        /* semacquire <addr> <block> */
+        if (n < 3) return -1;
+        long *addr = (long*)strtoul(args[1], 0, 16);
+        int block = strtoul(args[2], 0, 0);
+        Segment *s = seg(up, (uintptr)addr, 0);
+        if (s == nil) return -1;
+        semacquire(s, addr, block);
+        return len;
+    }
+    
+    if (strcmp(args[0], "semrelease") == 0) {
+        if (n < 3) return -1;
+        long *addr = (long*)strtoul(args[1], 0, 16);
+        long delta = strtoul(args[2], 0, 0);
+        Segment *s = seg(up, (uintptr)addr, 0);
+        if (s == nil) return -1;
+        semrelease(s, addr, delta);
+        return len;
+    }
+
     if (strcmp(args[0], "exits") == 0) {
         char *status = (n > 1) ? args[1] : nil;
         pexit(status, 1);
