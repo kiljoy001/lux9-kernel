@@ -60,7 +60,7 @@ typedef struct {
         if (test_runner_state.verbose) { \
             printf("  Running %s::%s...\n", current_suite->name, #test_name); \
         } \
-        test_result_t result = TEST_SUCCESS; \
+        test_result_t result = TEST_PASSED; \
         if (current_suite->setup) { \
             current_suite->setup(); \
         } \
@@ -136,8 +136,8 @@ typedef struct {
 void test_register_suite(test_suite_t* suite);
 void test_register_case(test_case_t* test_case);
 void test_run_all(void);
-void test_run_suite(const char* suite_name);
-void test_run_single(const char* suite_name, const char* test_name);
+test_result_t test_run_suite(const char* suite_name);
+test_result_t test_run_single(const char* suite_name, const char* test_name);
 void test_set_verbose(bool verbose);
 
 // Utility functions
