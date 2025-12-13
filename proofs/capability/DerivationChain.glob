@@ -1,0 +1,59 @@
+DIGEST 5ba06b92f00f2212ecf759463dd6673d
+Fproofs.capability.DerivationChain
+R83:112 proofs.capability.PermsBitmask <> <> lib
+R130:162 proofs.capability.CapabilityModel <> <> lib
+sec 174:188 <> DerivationChain
+ind 202:214 <> derived_chain
+constr 273:279 <> DC_Refl
+constr 316:322 <> DC_Step
+R222:230 proofs.capability.CapabilityModel <> cap_table def
+binder 217:218 <> ct:1
+R245:248 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R235:244 proofs.capability.CapabilityModel <> Capability rec
+R259:262 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R249:258 proofs.capability.CapabilityModel <> Capability rec
+binder 290:290 <> c:4
+R293:305 proofs.capability.DerivationChain <> derived_chain:2 ind
+R312:312 proofs.capability.DerivationChain <> c:4 var
+R310:310 proofs.capability.DerivationChain <> c:4 var
+R307:308 proofs.capability.DerivationChain <> ct:1 var
+binder 333:333 <> c:5
+binder 335:335 <> p:6
+binder 337:337 <> g:7
+R363:370 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R344:355 proofs.capability.CapabilityModel <> derived_from ind
+R357:358 proofs.capability.DerivationChain <> ct:1 var
+R360:360 proofs.capability.DerivationChain <> c:5 var
+R362:362 proofs.capability.DerivationChain <> p:6 var
+R391:398 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R371:383 proofs.capability.DerivationChain <> derived_chain:2 ind
+R390:390 proofs.capability.DerivationChain <> g:7 var
+R388:388 proofs.capability.DerivationChain <> p:6 var
+R385:386 proofs.capability.DerivationChain <> ct:1 var
+R399:411 proofs.capability.DerivationChain <> derived_chain:2 ind
+R418:418 proofs.capability.DerivationChain <> g:7 var
+R416:416 proofs.capability.DerivationChain <> c:5 var
+R413:414 proofs.capability.DerivationChain <> ct:1 var
+scheme 202:214 <> derived_chain_ind
+scheme 202:214 <> derived_chain_sind
+prf 428:456 <> derived_chain_perms_monotonic
+binder 469:470 <> ct:8
+binder 472:472 <> c:9
+binder 474:476 <> anc:10
+R505:512 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R483:495 proofs.capability.DerivationChain <> derived_chain ind
+R497:498 proofs.capability.DerivationChain <> ct:8 var
+R500:500 proofs.capability.DerivationChain <> c:9 var
+R502:504 proofs.capability.DerivationChain <> anc:10 var
+R513:524 proofs.capability.PermsBitmask <> perms_subset def
+R527:535 proofs.capability.CapabilityModel <> cap_perms proj
+R537:537 proofs.capability.DerivationChain <> c:9 var
+R541:549 proofs.capability.CapabilityModel <> cap_perms proj
+R551:553 proofs.capability.DerivationChain <> anc:10 var
+R620:636 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R620:636 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R650:667 proofs.capability.PermsBitmask <> perms_subset_trans thm
+R650:667 proofs.capability.PermsBitmask <> perms_subset_trans thm
+R682:703 proofs.capability.CapabilityModel <> derived_perm_monotonic thm
+R682:703 proofs.capability.CapabilityModel <> derived_perm_monotonic thm
+R779:793 proofs.capability.DerivationChain DerivationChain <> sec

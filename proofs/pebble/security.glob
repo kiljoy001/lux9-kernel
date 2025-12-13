@@ -1,0 +1,443 @@
+DIGEST 3e1f13739cedd3e16ab6b0251f8c0f8a
+Fpebble.security
+R191:202 pebble.types <> <> lib
+R220:238 pebble.conservation <> <> lib
+R256:258 Coq.micromega.Lia <> <> lib
+def 535:550 <> Inv_NoDoubleFree
+R557:567 pebble.types <> PebbleState rec
+binder 553:553 <> s:1
+binder 589:589 <> c:2
+R592:594 Coq.Init.Logic <> ::type_scope:'~'_x not
+R636:636 Coq.Init.Logic <> ::type_scope:'~'_x not
+R613:616 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R595:596 Coq.Lists.List <> In def
+R603:611 pebble.types <> live_caps proj
+R600:600 pebble.security <> s:1 var
+R598:598 pebble.security <> c:2 var
+R617:618 Coq.Lists.List <> In def
+R625:634 pebble.types <> freed_caps proj
+R622:622 pebble.security <> s:1 var
+R620:620 pebble.security <> c:2 var
+def 651:668 <> Inv_NoUseAfterFree
+R675:685 pebble.types <> PebbleState rec
+binder 671:671 <> s:3
+binder 707:707 <> c:4
+R729:732 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R710:711 Coq.Lists.List <> In def
+R718:727 pebble.types <> freed_caps proj
+R715:715 pebble.security <> s:3 var
+R713:713 pebble.security <> c:4 var
+R733:734 Coq.Init.Logic <> ::type_scope:'~'_x not
+R735:736 Coq.Lists.List <> In def
+R743:751 pebble.types <> live_caps proj
+R740:740 pebble.security <> s:3 var
+R738:738 pebble.security <> c:4 var
+def 767:779 <> Inv_ValidCaps
+R786:796 pebble.types <> PebbleState rec
+binder 782:782 <> s:5
+R830:835 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R826:828 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R814:824 pebble.types <> next_cap_id proj
+R811:811 pebble.security <> s:5 var
+binder 843:843 <> c:6
+R864:867 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R846:847 Coq.Lists.List <> In def
+R854:862 pebble.types <> live_caps proj
+R851:851 pebble.security <> s:5 var
+R849:849 pebble.security <> c:6 var
+R873:876 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R869:871 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R868:868 pebble.security <> c:6 var
+R878:880 Coq.ZArith.BinInt <> ::Z_scope:x_'<'_x not
+R877:877 pebble.security <> c:6 var
+R884:894 pebble.types <> next_cap_id proj
+R881:881 pebble.security <> s:5 var
+def 910:914 <> Valid
+R921:931 pebble.types <> PebbleState rec
+binder 917:917 <> s:7
+R943:943 Coq.Numbers.BinNums <> Z ind
+binder 935:939 <> total:8
+R982:987 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R958:973 pebble.conservation <> Inv_Conservation def
+R975:975 pebble.security <> s:7 var
+R977:981 pebble.security <> total:8 var
+R1006:1011 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R988:1003 pebble.security <> Inv_NoDoubleFree def
+R1005:1005 pebble.security <> s:7 var
+R1032:1037 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R1012:1029 pebble.security <> Inv_NoUseAfterFree def
+R1031:1031 pebble.security <> s:7 var
+R1053:1058 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R1038:1050 pebble.security <> Inv_ValidCaps def
+R1052:1052 pebble.security <> s:7 var
+R1059:1073 pebble.conservation <> Inv_NonNegative def
+R1075:1075 pebble.security <> s:7 var
+prf 1328:1349 <> double_free_impossible
+binder 1362:1363 <> s1:9
+binder 1365:1366 <> s2:10
+binder 1368:1371 <> size:11
+binder 1373:1375 <> cap:12
+R1399:1402 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1380:1395 pebble.security <> Inv_NoDoubleFree def
+R1397:1398 pebble.security <> s1:9 var
+R1427:1430 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1403:1411 pebble.conservation <> BlackFree ind
+R1413:1416 pebble.security <> size:11 var
+R1418:1420 pebble.security <> cap:12 var
+R1422:1423 pebble.security <> s1:9 var
+R1425:1426 pebble.security <> s2:10 var
+R1431:1432 Coq.Init.Logic <> ::type_scope:'~'_x not
+R1433:1434 Coq.Lists.List <> In def
+R1444:1453 pebble.types <> freed_caps proj
+R1440:1441 pebble.security <> s1:9 var
+R1436:1438 pebble.security <> cap:12 var
+prf 1514:1537 <> blackfree_moves_to_freed
+binder 1550:1551 <> s1:13
+binder 1553:1554 <> s2:14
+binder 1556:1559 <> size:15
+binder 1561:1563 <> cap:16
+R1592:1595 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1568:1576 pebble.conservation <> BlackFree ind
+R1578:1581 pebble.security <> size:15 var
+R1583:1585 pebble.security <> cap:16 var
+R1587:1588 pebble.security <> s1:13 var
+R1590:1591 pebble.security <> s2:14 var
+R1596:1597 Coq.Lists.List <> In def
+R1607:1616 pebble.types <> freed_caps proj
+R1603:1604 pebble.security <> s2:14 var
+R1599:1601 pebble.security <> cap:16 var
+prf 1697:1723 <> blackfree_removes_from_live
+binder 1736:1737 <> s1:17
+binder 1739:1740 <> s2:18
+binder 1742:1745 <> size:19
+binder 1747:1749 <> cap:20
+R1778:1781 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1754:1762 pebble.conservation <> BlackFree ind
+R1764:1767 pebble.security <> size:19 var
+R1769:1771 pebble.security <> cap:20 var
+R1773:1774 pebble.security <> s1:17 var
+R1776:1777 pebble.security <> s2:18 var
+R1782:1783 Coq.Init.Logic <> ::type_scope:'~'_x not
+R1784:1785 Coq.Lists.List <> In def
+R1795:1803 pebble.types <> live_caps proj
+R1791:1792 pebble.security <> s2:18 var
+R1787:1789 pebble.security <> cap:20 var
+R1857:1873 pebble.types <> remove_cap_not_in thm
+R1857:1873 pebble.types <> remove_cap_not_in thm
+prf 1890:1923 <> blackfree_preserves_no_double_free
+binder 1936:1937 <> s1:21
+binder 1939:1940 <> s2:22
+binder 1942:1945 <> size:23
+binder 1947:1949 <> cap:24
+R1973:1976 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1954:1969 pebble.security <> Inv_NoDoubleFree def
+R1971:1972 pebble.security <> s1:21 var
+R2001:2004 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1977:1985 pebble.conservation <> BlackFree ind
+R1987:1990 pebble.security <> size:23 var
+R1992:1994 pebble.security <> cap:24 var
+R1996:1997 pebble.security <> s1:21 var
+R1999:2000 pebble.security <> s2:22 var
+R2005:2020 pebble.security <> Inv_NoDoubleFree def
+R2022:2023 pebble.security <> s2:22 var
+R2078:2093 pebble.security <> Inv_NoDoubleFree def
+R2262:2278 pebble.types <> remove_cap_not_in thm
+R2262:2278 pebble.types <> remove_cap_not_in thm
+R2319:2328 pebble.types <> remove_cap def
+R2349:2357 Coq.Lists.List <> filter_In thm
+R2349:2357 Coq.Lists.List <> filter_In thm
+prf 2464:2498 <> blackalloc_preserves_no_double_free
+binder 2511:2512 <> s1:25
+binder 2514:2515 <> s2:26
+binder 2517:2520 <> size:27
+binder 2522:2524 <> cap:28
+R2548:2551 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2529:2544 pebble.security <> Inv_NoDoubleFree def
+R2546:2547 pebble.security <> s1:25 var
+R2577:2580 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2552:2561 pebble.conservation <> BlackAlloc ind
+R2563:2566 pebble.security <> size:27 var
+R2568:2570 pebble.security <> cap:28 var
+R2572:2573 pebble.security <> s1:25 var
+R2575:2576 pebble.security <> s2:26 var
+R2581:2596 pebble.security <> Inv_NoDoubleFree def
+R2598:2599 pebble.security <> s2:26 var
+R2655:2670 pebble.security <> Inv_NoDoubleFree def
+prf 3252:3272 <> blackfree_invalidates
+binder 3285:3286 <> s1:29
+binder 3288:3289 <> s2:30
+binder 3291:3294 <> size:31
+binder 3296:3298 <> cap:32
+R3327:3330 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3303:3311 pebble.conservation <> BlackFree ind
+R3313:3316 pebble.security <> size:31 var
+R3318:3320 pebble.security <> cap:32 var
+R3322:3323 pebble.security <> s1:29 var
+R3325:3326 pebble.security <> s2:30 var
+R3353:3356 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R3331:3332 Coq.Lists.List <> In def
+R3342:3351 pebble.types <> freed_caps proj
+R3338:3339 pebble.security <> s2:30 var
+R3334:3336 pebble.security <> cap:32 var
+R3357:3358 Coq.Init.Logic <> ::type_scope:'~'_x not
+R3359:3360 Coq.Lists.List <> In def
+R3370:3378 pebble.types <> live_caps proj
+R3366:3367 pebble.security <> s2:30 var
+R3362:3364 pebble.security <> cap:32 var
+R3416:3439 pebble.security <> blackfree_moves_to_freed thm
+R3416:3439 pebble.security <> blackfree_moves_to_freed thm
+R3477:3503 pebble.security <> blackfree_removes_from_live thm
+R3477:3503 pebble.security <> blackfree_removes_from_live thm
+prf 3545:3570 <> blackfree_preserves_no_uaf
+binder 3583:3584 <> s1:33
+binder 3586:3587 <> s2:34
+binder 3589:3592 <> size:35
+binder 3594:3596 <> cap:36
+R3622:3625 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3601:3618 pebble.security <> Inv_NoUseAfterFree def
+R3620:3621 pebble.security <> s1:33 var
+R3650:3653 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3626:3634 pebble.conservation <> BlackFree ind
+R3636:3639 pebble.security <> size:35 var
+R3641:3643 pebble.security <> cap:36 var
+R3645:3646 pebble.security <> s1:33 var
+R3648:3649 pebble.security <> s2:34 var
+R3654:3671 pebble.security <> Inv_NoUseAfterFree def
+R3673:3674 pebble.security <> s2:34 var
+R3729:3746 pebble.security <> Inv_NoUseAfterFree def
+R3873:3889 pebble.types <> remove_cap_not_in thm
+R3873:3889 pebble.types <> remove_cap_not_in thm
+R3919:3928 pebble.types <> remove_cap def
+R3953:3961 Coq.Lists.List <> filter_In thm
+R3953:3961 Coq.Lists.List <> filter_In thm
+prf 4075:4101 <> blackalloc_preserves_no_uaf
+binder 4114:4115 <> s1:37
+binder 4117:4118 <> s2:38
+binder 4120:4123 <> size:39
+binder 4125:4127 <> cap:40
+R4153:4156 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4132:4149 pebble.security <> Inv_NoUseAfterFree def
+R4151:4152 pebble.security <> s1:37 var
+R4182:4185 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4157:4166 pebble.conservation <> BlackAlloc ind
+R4168:4171 pebble.security <> size:39 var
+R4173:4175 pebble.security <> cap:40 var
+R4177:4178 pebble.security <> s1:37 var
+R4180:4181 pebble.security <> s2:38 var
+R4186:4203 pebble.security <> Inv_NoUseAfterFree def
+R4205:4206 pebble.security <> s2:38 var
+R4262:4279 pebble.security <> Inv_NoUseAfterFree def
+prf 4745:4769 <> blackalloc_requires_white
+binder 4782:4783 <> s1:41
+binder 4785:4786 <> s2:42
+binder 4788:4791 <> size:43
+binder 4793:4795 <> cap:44
+R4825:4828 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4800:4809 pebble.conservation <> BlackAlloc ind
+R4811:4814 pebble.security <> size:43 var
+R4816:4818 pebble.security <> cap:44 var
+R4820:4821 pebble.security <> s1:41 var
+R4823:4824 pebble.security <> s2:42 var
+R4848:4850 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R4833:4846 pebble.types <> white_verified proj
+R4829:4830 pebble.security <> s1:41 var
+prf 4910:4931 <> whiteverify_authorizes
+binder 4944:4945 <> s1:45
+binder 4947:4948 <> s2:46
+binder 4950:4953 <> size:47
+R4980:4983 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4958:4968 pebble.conservation <> WhiteVerify ind
+R4970:4973 pebble.security <> size:47 var
+R4975:4976 pebble.security <> s1:45 var
+R4978:4979 pebble.security <> s2:46 var
+R5011:5013 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4988:5009 pebble.types <> pending_authorizations proj
+R4984:4985 pebble.security <> s2:46 var
+R5041:5043 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5018:5039 pebble.types <> pending_authorizations proj
+R5014:5015 pebble.security <> s1:45 var
+prf 5359:5385 <> blackalloc_preserves_nonneg
+binder 5398:5399 <> s1:48
+binder 5401:5402 <> s2:49
+binder 5404:5407 <> size:50
+binder 5409:5411 <> cap:51
+R5434:5437 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5416:5430 pebble.conservation <> Inv_NonNegative def
+R5432:5433 pebble.security <> s1:48 var
+R5463:5466 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5438:5447 pebble.conservation <> BlackAlloc ind
+R5449:5452 pebble.security <> size:50 var
+R5454:5456 pebble.security <> cap:51 var
+R5458:5459 pebble.security <> s1:48 var
+R5461:5462 pebble.security <> s2:49 var
+R5467:5481 pebble.conservation <> Inv_NonNegative def
+R5483:5484 pebble.security <> s2:49 var
+R5532:5546 pebble.conservation <> Inv_NonNegative def
+prf 5664:5689 <> blackfree_preserves_nonneg
+binder 5702:5703 <> s1:52
+binder 5705:5706 <> s2:53
+binder 5708:5711 <> size:54
+binder 5713:5715 <> cap:55
+R5738:5741 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5720:5734 pebble.conservation <> Inv_NonNegative def
+R5736:5737 pebble.security <> s1:52 var
+R5766:5769 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5742:5750 pebble.conservation <> BlackFree ind
+R5752:5755 pebble.security <> size:54 var
+R5757:5759 pebble.security <> cap:55 var
+R5761:5762 pebble.security <> s1:52 var
+R5764:5765 pebble.security <> s2:53 var
+R5770:5784 pebble.conservation <> Inv_NonNegative def
+R5786:5787 pebble.security <> s2:53 var
+R5835:5849 pebble.conservation <> Inv_NonNegative def
+prf 6208:6233 <> blackalloc_mints_valid_cap
+binder 6246:6247 <> s1:56
+binder 6249:6250 <> s2:57
+binder 6252:6255 <> size:58
+binder 6257:6259 <> cap:59
+R6280:6283 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6264:6276 pebble.security <> Inv_ValidCaps def
+R6278:6279 pebble.security <> s1:56 var
+R6309:6314 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6284:6293 pebble.conservation <> BlackAlloc ind
+R6295:6298 pebble.security <> size:58 var
+R6300:6302 pebble.security <> cap:59 var
+R6304:6305 pebble.security <> s1:56 var
+R6307:6308 pebble.security <> s2:57 var
+R6336:6339 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6315:6316 Coq.Lists.List <> In def
+R6326:6334 pebble.types <> live_caps proj
+R6322:6323 pebble.security <> s2:57 var
+R6318:6320 pebble.security <> cap:59 var
+R6347:6350 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6343:6345 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R6340:6342 pebble.security <> cap:59 var
+R6354:6356 Coq.ZArith.BinInt <> ::Z_scope:x_'<'_x not
+R6351:6353 pebble.security <> cap:59 var
+R6361:6371 pebble.types <> next_cap_id proj
+R6357:6358 pebble.security <> s2:57 var
+prf 6558:6588 <> blackalloc_preserves_valid_caps
+binder 6601:6602 <> s1:60
+binder 6604:6605 <> s2:61
+binder 6607:6610 <> size:62
+binder 6612:6614 <> cap:63
+R6635:6638 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6619:6631 pebble.security <> Inv_ValidCaps def
+R6633:6634 pebble.security <> s1:60 var
+R6664:6667 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6639:6648 pebble.conservation <> BlackAlloc ind
+R6650:6653 pebble.security <> size:62 var
+R6655:6657 pebble.security <> cap:63 var
+R6659:6660 pebble.security <> s1:60 var
+R6662:6663 pebble.security <> s2:61 var
+R6668:6680 pebble.security <> Inv_ValidCaps def
+R6682:6683 pebble.security <> s2:61 var
+R6789:6801 pebble.security <> Inv_ValidCaps def
+R6988:7003 Coq.ZArith.BinInt Z lt_succ_diag_r thm
+R6988:7003 Coq.ZArith.BinInt Z lt_succ_diag_r thm
+R7103:7112 Coq.ZArith.BinInt Z lt_trans thm
+R7103:7112 Coq.ZArith.BinInt Z lt_trans thm
+R7157:7172 Coq.ZArith.BinInt Z lt_succ_diag_r thm
+R7157:7172 Coq.ZArith.BinInt Z lt_succ_diag_r thm
+prf 7189:7218 <> blackfree_preserves_valid_caps
+binder 7231:7232 <> s1:64
+binder 7234:7235 <> s2:65
+binder 7237:7240 <> size:66
+binder 7242:7244 <> cap:67
+R7265:7268 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7249:7261 pebble.security <> Inv_ValidCaps def
+R7263:7264 pebble.security <> s1:64 var
+R7293:7296 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7269:7277 pebble.conservation <> BlackFree ind
+R7279:7282 pebble.security <> size:66 var
+R7284:7286 pebble.security <> cap:67 var
+R7288:7289 pebble.security <> s1:64 var
+R7291:7292 pebble.security <> s2:65 var
+R7297:7309 pebble.security <> Inv_ValidCaps def
+R7311:7312 pebble.security <> s2:65 var
+R7404:7416 pebble.security <> Inv_ValidCaps def
+R7545:7554 pebble.types <> remove_cap def
+R7570:7578 Coq.Lists.List <> filter_In thm
+R7570:7578 Coq.Lists.List <> filter_In thm
+prf 7913:7928 <> blackfree_secure
+binder 7941:7942 <> s1:68
+binder 7944:7945 <> s2:69
+binder 7947:7950 <> size:70
+binder 7952:7954 <> cap:71
+binder 7956:7960 <> total:72
+R7979:7982 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7965:7969 pebble.security <> Valid def
+R7971:7972 pebble.security <> s1:68 var
+R7974:7978 pebble.security <> total:72 var
+R8007:8012 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7983:7991 pebble.conservation <> BlackFree ind
+R7993:7996 pebble.security <> size:70 var
+R7998:8000 pebble.security <> cap:71 var
+R8002:8003 pebble.security <> s1:68 var
+R8005:8006 pebble.security <> s2:69 var
+R8038:8041 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8013:8028 pebble.conservation <> Inv_Conservation def
+R8030:8031 pebble.security <> s2:69 var
+R8033:8037 pebble.security <> total:72 var
+R8061:8066 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8042:8057 pebble.security <> Inv_NoDoubleFree def
+R8059:8060 pebble.security <> s2:69 var
+R8088:8091 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8067:8084 pebble.security <> Inv_NoUseAfterFree def
+R8086:8087 pebble.security <> s2:69 var
+R8108:8111 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8092:8104 pebble.security <> Inv_ValidCaps def
+R8106:8107 pebble.security <> s2:69 var
+R8112:8126 pebble.conservation <> Inv_NonNegative def
+R8128:8129 pebble.security <> s2:69 var
+R8265:8284 pebble.conservation <> black_free_conserves thm
+R8265:8284 pebble.conservation <> black_free_conserves thm
+R8314:8347 pebble.security <> blackfree_preserves_no_double_free thm
+R8314:8347 pebble.security <> blackfree_preserves_no_double_free thm
+R8377:8402 pebble.security <> blackfree_preserves_no_uaf thm
+R8377:8402 pebble.security <> blackfree_preserves_no_uaf thm
+R8432:8461 pebble.security <> blackfree_preserves_valid_caps thm
+R8432:8461 pebble.security <> blackfree_preserves_valid_caps thm
+R8482:8507 pebble.security <> blackfree_preserves_nonneg thm
+R8482:8507 pebble.security <> blackfree_preserves_nonneg thm
+prf 8531:8547 <> blackalloc_secure
+binder 8560:8561 <> s1:73
+binder 8563:8564 <> s2:74
+binder 8566:8569 <> size:75
+binder 8571:8573 <> cap:76
+binder 8575:8579 <> total:77
+R8598:8601 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8584:8588 pebble.security <> Valid def
+R8590:8591 pebble.security <> s1:73 var
+R8593:8597 pebble.security <> total:77 var
+R8627:8632 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8602:8611 pebble.conservation <> BlackAlloc ind
+R8613:8616 pebble.security <> size:75 var
+R8618:8620 pebble.security <> cap:76 var
+R8622:8623 pebble.security <> s1:73 var
+R8625:8626 pebble.security <> s2:74 var
+R8658:8661 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8633:8648 pebble.conservation <> Inv_Conservation def
+R8650:8651 pebble.security <> s2:74 var
+R8653:8657 pebble.security <> total:77 var
+R8681:8686 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8662:8677 pebble.security <> Inv_NoDoubleFree def
+R8679:8680 pebble.security <> s2:74 var
+R8708:8711 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8687:8704 pebble.security <> Inv_NoUseAfterFree def
+R8706:8707 pebble.security <> s2:74 var
+R8728:8731 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8712:8724 pebble.security <> Inv_ValidCaps def
+R8726:8727 pebble.security <> s2:74 var
+R8732:8746 pebble.conservation <> Inv_NonNegative def
+R8748:8749 pebble.security <> s2:74 var
+R8886:8906 pebble.conservation <> black_alloc_conserves thm
+R8886:8906 pebble.conservation <> black_alloc_conserves thm
+R8936:8970 pebble.security <> blackalloc_preserves_no_double_free thm
+R8936:8970 pebble.security <> blackalloc_preserves_no_double_free thm
+R9000:9026 pebble.security <> blackalloc_preserves_no_uaf thm
+R9000:9026 pebble.security <> blackalloc_preserves_no_uaf thm
+R9056:9086 pebble.security <> blackalloc_preserves_valid_caps thm
+R9056:9086 pebble.security <> blackalloc_preserves_valid_caps thm
+R9107:9133 pebble.security <> blackalloc_preserves_nonneg thm
+R9107:9133 pebble.security <> blackalloc_preserves_nonneg thm

@@ -1,0 +1,1487 @@
+DIGEST dea00397ffb8f3b2adb58e3025e5644f
+Fsip_model
+R324:337 Coq.Lists.List <> <> lib
+R355:371 Coq.ZArith.ZArith <> <> lib
+R389:401 Coq.Bool.Bool <> <> lib
+R419:452 Coq.Logic.FunctionalExtensionality <> <> lib
+R462:474 Coq.Lists.List ListNotations <> mod
+def 778:780 <> Pid
+R785:785 Coq.Numbers.BinNums <> Z ind
+def 799:804 <> PageId
+R809:809 Coq.Numbers.BinNums <> Z ind
+ind 823:832 <> OwnerState
+constr 841:844 <> Free
+constr 892:900 <> Exclusive
+constr 933:943 <> SharedOwned
+constr 977:983 <> MutLent
+scheme 823:832 <> OwnerState_rect
+scheme 823:832 <> OwnerState_ind
+scheme 823:832 <> OwnerState_rec
+scheme 823:832 <> OwnerState_sind
+rec 1021:1029 <> PageState
+proj 1050:1054 <> owner
+proj 1072:1076 <> state
+proj 1094:1109 <> shared_borrowers
+proj 1125:1136 <> mut_borrower
+R1058:1063 Coq.Init.Datatypes <> option ind
+R1065:1067 sip_model <> Pid def
+R1080:1089 sip_model <> OwnerState ind
+R1113:1116 Coq.Init.Datatypes <> list ind
+R1118:1120 sip_model <> Pid def
+R1140:1145 Coq.Init.Datatypes <> option ind
+R1147:1149 sip_model <> Pid def
+def 1193:1203 <> SystemState
+R1214:1217 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1208:1213 sip_model <> PageId def
+R1218:1226 sip_model <> PageState rec
+def 1261:1270 <> init_state
+R1274:1284 sip_model <> SystemState def
+R1300:1310 sip_model <> mkPageState constr
+R1312:1315 Coq.Init.Datatypes <> None constr
+R1317:1320 sip_model <> Free constr
+R1322:1323 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R1325:1328 Coq.Init.Datatypes <> None constr
+def 1558:1568 <> update_page
+R1575:1585 sip_model <> SystemState def
+binder 1571:1571 <> s:8
+R1593:1598 sip_model <> PageId def
+binder 1589:1589 <> p:9
+R1611:1619 sip_model <> PageState rec
+binder 1602:1607 <> new_ps:10
+R1624:1634 sip_model <> SystemState def
+binder 1645:1646 <> p':11
+R1654:1658 Coq.ZArith.BinInt Z eqb def
+R1660:1660 sip_model <> p:9 var
+R1662:1663 sip_model <> p':11 var
+R1682:1682 sip_model <> s:8 var
+R1684:1685 sip_model <> p':11 var
+R1670:1675 sip_model <> new_ps:10 var
+prf 1695:1709 <> update_page_hit
+binder 1722:1722 <> s:12
+binder 1724:1725 <> pg:13
+binder 1727:1732 <> new_ps:14
+R1761:1763 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1735:1745 sip_model <> update_page def
+R1747:1747 sip_model <> s:12 var
+R1749:1750 sip_model <> pg:13 var
+R1752:1757 sip_model <> new_ps:14 var
+R1759:1760 sip_model <> pg:13 var
+R1764:1769 sip_model <> new_ps:14 var
+R1796:1806 sip_model <> update_page def
+R1817:1826 Coq.ZArith.BinInt Z eqb_refl thm
+R1817:1826 Coq.ZArith.BinInt Z eqb_refl thm
+R1817:1826 Coq.ZArith.BinInt Z eqb_refl thm
+prf 1854:1869 <> update_page_miss
+binder 1882:1882 <> s:15
+binder 1884:1885 <> pg:16
+binder 1887:1889 <> pg0:17
+binder 1891:1896 <> new_ps:18
+R1908:1911 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1901:1904 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R1899:1900 sip_model <> pg:16 var
+R1905:1907 sip_model <> pg0:17 var
+R1939:1941 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1912:1922 sip_model <> update_page def
+R1924:1924 sip_model <> s:15 var
+R1926:1927 sip_model <> pg:16 var
+R1929:1934 sip_model <> new_ps:18 var
+R1936:1938 sip_model <> pg0:17 var
+R1942:1942 sip_model <> s:15 var
+R1944:1946 sip_model <> pg0:17 var
+R1994:2004 sip_model <> update_page def
+R2015:2023 Coq.ZArith.BinInt Z eqb_neq thm
+R2015:2023 Coq.ZArith.BinInt Z eqb_neq thm
+ind 2289:2295 <> Acquire
+constr 2359:2373 <> Acquire_Success
+R2302:2304 sip_model <> Pid def
+binder 2298:2298 <> p:19
+R2315:2320 sip_model <> PageId def
+binder 2308:2311 <> page:20
+R2332:2342 sip_model <> SystemState def
+binder 2324:2325 <> s1:21
+binder 2327:2328 <> s2:22
+R2407:2416 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2400:2402 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2394:2398 sip_model <> state proj
+R2384:2385 sip_model <> s1:21 var
+R2387:2390 sip_model <> page:20 var
+R2403:2406 sip_model <> Free constr
+R2482:2491 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2419:2421 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2417:2418 sip_model <> s2:22 var
+R2422:2432 sip_model <> update_page def
+R2434:2435 sip_model <> s1:21 var
+R2437:2440 sip_model <> page:20 var
+R2443:2453 sip_model <> mkPageState constr
+R2456:2459 Coq.Init.Datatypes <> Some constr
+R2461:2461 sip_model <> p:19 var
+R2464:2472 sip_model <> Exclusive constr
+R2474:2475 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R2477:2480 Coq.Init.Datatypes <> None constr
+R2492:2498 sip_model <> Acquire:23 ind
+R2510:2511 sip_model <> s2:22 var
+R2507:2508 sip_model <> s1:21 var
+R2502:2505 sip_model <> page:20 var
+R2500:2500 sip_model <> p:19 var
+scheme 2289:2295 <> Acquire_rect
+scheme 2289:2295 <> Acquire_ind
+scheme 2289:2295 <> Acquire_rec
+scheme 2289:2295 <> Acquire_sind
+ind 2525:2531 <> Release
+constr 2595:2609 <> Release_Success
+R2538:2540 sip_model <> Pid def
+binder 2534:2534 <> p:25
+R2551:2556 sip_model <> PageId def
+binder 2544:2547 <> page:26
+R2568:2578 sip_model <> SystemState def
+binder 2560:2561 <> s1:27
+binder 2563:2564 <> s2:28
+R2645:2654 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2636:2638 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2630:2634 sip_model <> owner proj
+R2620:2621 sip_model <> s1:27 var
+R2623:2626 sip_model <> page:26 var
+R2639:2642 Coq.Init.Datatypes <> Some constr
+R2644:2644 sip_model <> p:25 var
+R2684:2693 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2672:2674 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2666:2670 sip_model <> state proj
+R2656:2657 sip_model <> s1:27 var
+R2659:2662 sip_model <> page:26 var
+R2675:2683 sip_model <> Exclusive constr
+R2727:2736 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2722:2724 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2705:2720 sip_model <> shared_borrowers proj
+R2695:2696 sip_model <> s1:27 var
+R2698:2701 sip_model <> page:26 var
+R2725:2726 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R2768:2777 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2761:2763 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2748:2759 sip_model <> mut_borrower proj
+R2738:2739 sip_model <> s1:27 var
+R2741:2744 sip_model <> page:26 var
+R2764:2767 Coq.Init.Datatypes <> None constr
+R2834:2843 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2780:2782 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2778:2779 sip_model <> s2:28 var
+R2783:2793 sip_model <> update_page def
+R2795:2796 sip_model <> s1:27 var
+R2798:2801 sip_model <> page:26 var
+R2804:2814 sip_model <> mkPageState constr
+R2816:2819 Coq.Init.Datatypes <> None constr
+R2821:2824 sip_model <> Free constr
+R2826:2827 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R2829:2832 Coq.Init.Datatypes <> None constr
+R2844:2850 sip_model <> Release:29 ind
+R2862:2863 sip_model <> s2:28 var
+R2859:2860 sip_model <> s1:27 var
+R2854:2857 sip_model <> page:26 var
+R2852:2852 sip_model <> p:25 var
+scheme 2525:2531 <> Release_rect
+scheme 2525:2531 <> Release_ind
+scheme 2525:2531 <> Release_rec
+scheme 2525:2531 <> Release_sind
+ind 2877:2888 <> BorrowShared
+constr 2977:2996 <> BS_Success_Exclusive
+constr 3282:3298 <> BS_Success_Shared
+R2901:2903 sip_model <> Pid def
+binder 2891:2897 <> p_owner:31
+R2920:2922 sip_model <> Pid def
+binder 2907:2916 <> p_borrower:32
+R2933:2938 sip_model <> PageId def
+binder 2926:2929 <> page:33
+R2950:2960 sip_model <> SystemState def
+binder 2942:2943 <> s1:34
+binder 2945:2946 <> s2:35
+R3038:3047 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3023:3025 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3017:3021 sip_model <> owner proj
+R3007:3008 sip_model <> s1:34 var
+R3010:3013 sip_model <> page:33 var
+R3026:3029 Coq.Init.Datatypes <> Some constr
+R3031:3037 sip_model <> p_owner:31 var
+R3077:3086 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3065:3067 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3059:3063 sip_model <> state proj
+R3049:3050 sip_model <> s1:34 var
+R3052:3055 sip_model <> page:33 var
+R3068:3076 sip_model <> Exclusive constr
+R3131:3141 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3087:3088 Coq.Init.Logic <> ::type_scope:'~'_x not
+R3089:3090 Coq.Lists.List <> In def
+R3114:3129 sip_model <> shared_borrowers proj
+R3104:3105 sip_model <> s1:34 var
+R3107:3110 sip_model <> page:33 var
+R3092:3101 sip_model <> p_borrower:32 var
+R3225:3234 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3144:3146 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3142:3143 sip_model <> s2:35 var
+R3147:3157 sip_model <> update_page def
+R3159:3160 sip_model <> s1:34 var
+R3162:3165 sip_model <> page:33 var
+R3168:3178 sip_model <> mkPageState constr
+R3181:3184 Coq.Init.Datatypes <> Some constr
+R3186:3192 sip_model <> p_owner:31 var
+R3195:3205 sip_model <> SharedOwned constr
+R3207:3207 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3218:3218 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3208:3217 sip_model <> p_borrower:32 var
+R3220:3223 Coq.Init.Datatypes <> None constr
+R3235:3246 sip_model <> BorrowShared:36 ind
+R3275:3276 sip_model <> s2:35 var
+R3272:3273 sip_model <> s1:34 var
+R3267:3270 sip_model <> page:33 var
+R3256:3265 sip_model <> p_borrower:32 var
+R3248:3254 sip_model <> p_owner:31 var
+R3340:3349 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3325:3327 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3319:3323 sip_model <> owner proj
+R3309:3310 sip_model <> s1:34 var
+R3312:3315 sip_model <> page:33 var
+R3328:3331 Coq.Init.Datatypes <> Some constr
+R3333:3339 sip_model <> p_owner:31 var
+R3381:3390 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3367:3369 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3361:3365 sip_model <> state proj
+R3351:3352 sip_model <> s1:34 var
+R3354:3357 sip_model <> page:33 var
+R3370:3380 sip_model <> SharedOwned constr
+R3435:3445 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3391:3392 Coq.Init.Logic <> ::type_scope:'~'_x not
+R3393:3394 Coq.Lists.List <> In def
+R3418:3433 sip_model <> shared_borrowers proj
+R3408:3409 sip_model <> s1:34 var
+R3411:3414 sip_model <> page:33 var
+R3396:3405 sip_model <> p_borrower:32 var
+R3561:3570 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3448:3450 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3446:3447 sip_model <> s2:35 var
+R3451:3461 sip_model <> update_page def
+R3463:3464 sip_model <> s1:34 var
+R3466:3469 sip_model <> page:33 var
+R3472:3482 sip_model <> mkPageState constr
+R3485:3488 Coq.Init.Datatypes <> Some constr
+R3490:3496 sip_model <> p_owner:31 var
+R3499:3509 sip_model <> SharedOwned constr
+R3522:3525 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3512:3521 sip_model <> p_borrower:32 var
+R3537:3552 sip_model <> shared_borrowers proj
+R3527:3528 sip_model <> s1:34 var
+R3530:3533 sip_model <> page:33 var
+R3556:3559 Coq.Init.Datatypes <> None constr
+R3571:3582 sip_model <> BorrowShared:36 ind
+R3611:3612 sip_model <> s2:35 var
+R3608:3609 sip_model <> s1:34 var
+R3603:3606 sip_model <> page:33 var
+R3592:3601 sip_model <> p_borrower:32 var
+R3584:3590 sip_model <> p_owner:31 var
+scheme 2877:2888 <> BorrowShared_ind
+scheme 2877:2888 <> BorrowShared_sind
+ind 3699:3710 <> ReturnShared
+constr 3783:3804 <> RS_Success_StillShared
+constr 4162:4187 <> RS_Success_BackToExclusive
+R3726:3728 sip_model <> Pid def
+binder 3713:3722 <> p_borrower:38
+R3739:3744 sip_model <> PageId def
+binder 3732:3735 <> page:39
+R3756:3766 sip_model <> SystemState def
+binder 3748:3749 <> s1:40
+binder 3751:3752 <> s2:41
+binder 3821:3828 <> new_list:44
+R3868:3877 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3854:3856 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3848:3852 sip_model <> state proj
+R3838:3839 sip_model <> s1:40 var
+R3841:3844 sip_model <> page:39 var
+R3857:3867 sip_model <> SharedOwned constr
+R3920:3929 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3878:3879 Coq.Lists.List <> In def
+R3903:3918 sip_model <> shared_borrowers proj
+R3893:3894 sip_model <> s1:40 var
+R3896:3899 sip_model <> page:39 var
+R3881:3890 sip_model <> p_borrower:38 var
+R3996:4006 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3938:3940 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3930:3937 sip_model <> new_list:44 var
+R3941:3946 Coq.Lists.List <> remove def
+R3979:3994 sip_model <> shared_borrowers proj
+R3969:3970 sip_model <> s1:40 var
+R3972:3975 sip_model <> page:39 var
+R3957:3966 sip_model <> p_borrower:38 var
+R3948:3955 Coq.ZArith.BinInt Z eq_dec def
+R4021:4030 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4015:4018 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R4007:4014 sip_model <> new_list:44 var
+R4019:4020 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4113:4122 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4033:4035 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4031:4032 sip_model <> s2:41 var
+R4036:4046 sip_model <> update_page def
+R4048:4049 sip_model <> s1:40 var
+R4051:4054 sip_model <> page:39 var
+R4057:4067 sip_model <> mkPageState constr
+R4080:4084 sip_model <> owner proj
+R4070:4071 sip_model <> s1:40 var
+R4073:4076 sip_model <> page:39 var
+R4087:4097 sip_model <> SharedOwned constr
+R4099:4106 sip_model <> new_list:44 var
+R4108:4111 Coq.Init.Datatypes <> None constr
+R4123:4134 sip_model <> ReturnShared:42 ind
+R4155:4156 sip_model <> s2:41 var
+R4152:4153 sip_model <> s1:40 var
+R4147:4150 sip_model <> page:39 var
+R4136:4145 sip_model <> p_borrower:38 var
+R4228:4237 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4214:4216 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4208:4212 sip_model <> state proj
+R4198:4199 sip_model <> s1:40 var
+R4201:4204 sip_model <> page:39 var
+R4217:4227 sip_model <> SharedOwned constr
+R4280:4289 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4238:4239 Coq.Lists.List <> In def
+R4263:4278 sip_model <> shared_borrowers proj
+R4253:4254 sip_model <> s1:40 var
+R4256:4259 sip_model <> page:39 var
+R4241:4250 sip_model <> p_borrower:38 var
+R4350:4359 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4345:4347 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4290:4295 Coq.Lists.List <> remove def
+R4328:4343 sip_model <> shared_borrowers proj
+R4318:4319 sip_model <> s1:40 var
+R4321:4324 sip_model <> page:39 var
+R4306:4315 sip_model <> p_borrower:38 var
+R4297:4304 Coq.ZArith.BinInt Z eq_dec def
+R4348:4349 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4434:4443 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4362:4364 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4360:4361 sip_model <> s2:41 var
+R4365:4375 sip_model <> update_page def
+R4377:4378 sip_model <> s1:40 var
+R4380:4383 sip_model <> page:39 var
+R4386:4396 sip_model <> mkPageState constr
+R4409:4413 sip_model <> owner proj
+R4399:4400 sip_model <> s1:40 var
+R4402:4405 sip_model <> page:39 var
+R4416:4424 sip_model <> Exclusive constr
+R4426:4427 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4429:4432 Coq.Init.Datatypes <> None constr
+R4444:4455 sip_model <> ReturnShared:42 ind
+R4476:4477 sip_model <> s2:41 var
+R4473:4474 sip_model <> s1:40 var
+R4468:4471 sip_model <> page:39 var
+R4457:4466 sip_model <> p_borrower:38 var
+scheme 3699:3710 <> ReturnShared_ind
+scheme 3699:3710 <> ReturnShared_sind
+ind 4491:4499 <> BorrowMut
+constr 4588:4597 <> BM_Success
+R4512:4514 sip_model <> Pid def
+binder 4502:4508 <> p_owner:45
+R4531:4533 sip_model <> Pid def
+binder 4518:4527 <> p_borrower:46
+R4544:4549 sip_model <> PageId def
+binder 4537:4540 <> page:47
+R4561:4571 sip_model <> SystemState def
+binder 4553:4554 <> s1:48
+binder 4556:4557 <> s2:49
+R4639:4648 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4624:4626 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4618:4622 sip_model <> owner proj
+R4608:4609 sip_model <> s1:48 var
+R4611:4614 sip_model <> page:47 var
+R4627:4630 Coq.Init.Datatypes <> Some constr
+R4632:4638 sip_model <> p_owner:45 var
+R4678:4687 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4666:4668 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4660:4664 sip_model <> state proj
+R4650:4651 sip_model <> s1:48 var
+R4653:4656 sip_model <> page:47 var
+R4669:4677 sip_model <> Exclusive constr
+R4770:4779 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4690:4692 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4688:4689 sip_model <> s2:49 var
+R4693:4703 sip_model <> update_page def
+R4705:4706 sip_model <> s1:48 var
+R4708:4711 sip_model <> page:47 var
+R4714:4724 sip_model <> mkPageState constr
+R4727:4730 Coq.Init.Datatypes <> Some constr
+R4732:4738 sip_model <> p_owner:45 var
+R4741:4747 sip_model <> MutLent constr
+R4749:4750 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4753:4756 Coq.Init.Datatypes <> Some constr
+R4758:4767 sip_model <> p_borrower:46 var
+R4780:4788 sip_model <> BorrowMut:50 ind
+R4817:4818 sip_model <> s2:49 var
+R4814:4815 sip_model <> s1:48 var
+R4809:4812 sip_model <> page:47 var
+R4798:4807 sip_model <> p_borrower:46 var
+R4790:4796 sip_model <> p_owner:45 var
+scheme 4491:4499 <> BorrowMut_rect
+scheme 4491:4499 <> BorrowMut_ind
+scheme 4491:4499 <> BorrowMut_rec
+scheme 4491:4499 <> BorrowMut_sind
+ind 4832:4840 <> ReturnMut
+constr 4913:4922 <> RM_Success
+R4856:4858 sip_model <> Pid def
+binder 4843:4852 <> p_borrower:52
+R4869:4874 sip_model <> PageId def
+binder 4862:4865 <> page:53
+R4886:4896 sip_model <> SystemState def
+binder 4878:4879 <> s1:54
+binder 4881:4882 <> s2:55
+R4959:4968 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4949:4951 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4943:4947 sip_model <> state proj
+R4933:4934 sip_model <> s1:54 var
+R4936:4939 sip_model <> page:53 var
+R4952:4958 sip_model <> MutLent constr
+R5011:5020 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4993:4995 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4980:4991 sip_model <> mut_borrower proj
+R4970:4971 sip_model <> s1:54 var
+R4973:4976 sip_model <> page:53 var
+R4996:4999 Coq.Init.Datatypes <> Some constr
+R5001:5010 sip_model <> p_borrower:52 var
+R5095:5104 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5023:5025 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5021:5022 sip_model <> s2:55 var
+R5026:5036 sip_model <> update_page def
+R5038:5039 sip_model <> s1:54 var
+R5041:5044 sip_model <> page:53 var
+R5047:5057 sip_model <> mkPageState constr
+R5070:5074 sip_model <> owner proj
+R5060:5061 sip_model <> s1:54 var
+R5063:5066 sip_model <> page:53 var
+R5077:5085 sip_model <> Exclusive constr
+R5087:5088 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5090:5093 Coq.Init.Datatypes <> None constr
+R5105:5113 sip_model <> ReturnMut:56 ind
+R5134:5135 sip_model <> s2:55 var
+R5131:5132 sip_model <> s1:54 var
+R5126:5129 sip_model <> page:53 var
+R5115:5124 sip_model <> p_borrower:52 var
+scheme 4832:4840 <> ReturnMut_rect
+scheme 4832:4840 <> ReturnMut_ind
+scheme 4832:4840 <> ReturnMut_rec
+scheme 4832:4840 <> ReturnMut_sind
+ind 5149:5156 <> Transfer
+constr 5234:5249 <> Transfer_Success
+R5166:5168 sip_model <> Pid def
+binder 5159:5162 <> from:58
+R5177:5179 sip_model <> Pid def
+binder 5172:5173 <> to:59
+R5190:5195 sip_model <> PageId def
+binder 5183:5186 <> page:60
+R5207:5217 sip_model <> SystemState def
+binder 5199:5200 <> s1:61
+binder 5202:5203 <> s2:62
+R5288:5297 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5276:5278 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5270:5274 sip_model <> owner proj
+R5260:5261 sip_model <> s1:61 var
+R5263:5266 sip_model <> page:60 var
+R5279:5282 Coq.Init.Datatypes <> Some constr
+R5284:5287 sip_model <> from:58 var
+R5327:5336 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5315:5317 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5309:5313 sip_model <> state proj
+R5299:5300 sip_model <> s1:61 var
+R5302:5305 sip_model <> page:60 var
+R5318:5326 sip_model <> Exclusive constr
+R5403:5412 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5339:5341 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5337:5338 sip_model <> s2:62 var
+R5342:5352 sip_model <> update_page def
+R5354:5355 sip_model <> s1:61 var
+R5357:5360 sip_model <> page:60 var
+R5363:5373 sip_model <> mkPageState constr
+R5376:5379 Coq.Init.Datatypes <> Some constr
+R5381:5382 sip_model <> to:59 var
+R5385:5393 sip_model <> Exclusive constr
+R5395:5396 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5398:5401 Coq.Init.Datatypes <> None constr
+R5413:5420 sip_model <> Transfer:63 ind
+R5438:5439 sip_model <> s2:62 var
+R5435:5436 sip_model <> s1:61 var
+R5430:5433 sip_model <> page:60 var
+R5427:5428 sip_model <> to:59 var
+R5422:5425 sip_model <> from:58 var
+scheme 5149:5156 <> Transfer_rect
+scheme 5149:5156 <> Transfer_ind
+scheme 5149:5156 <> Transfer_rec
+scheme 5149:5156 <> Transfer_sind
+ind 5472:5475 <> Step
+constr 5513:5524 <> Step_Acquire
+constr 5578:5589 <> Step_Release
+constr 5643:5659 <> Step_BorrowShared
+constr 5722:5738 <> Step_ReturnShared
+constr 5797:5810 <> Step_BorrowMut
+constr 5870:5883 <> Step_ReturnMut
+constr 5939:5951 <> Step_Transfer
+R5486:5496 sip_model <> SystemState def
+binder 5478:5479 <> s1:65
+binder 5481:5482 <> s2:66
+binder 5535:5535 <> p:69
+binder 5537:5538 <> pg:70
+R5559:5562 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5541:5547 sip_model <> Acquire ind
+R5549:5549 sip_model <> p:69 var
+R5551:5552 sip_model <> pg:70 var
+R5554:5555 sip_model <> s1:65 var
+R5557:5558 sip_model <> s2:66 var
+R5563:5566 sip_model <> Step:67 ind
+R5571:5572 sip_model <> s2:66 var
+R5568:5569 sip_model <> s1:65 var
+binder 5600:5600 <> p:71
+binder 5602:5603 <> pg:72
+R5624:5627 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5606:5612 sip_model <> Release ind
+R5614:5614 sip_model <> p:71 var
+R5616:5617 sip_model <> pg:72 var
+R5619:5620 sip_model <> s1:65 var
+R5622:5623 sip_model <> s2:66 var
+R5628:5631 sip_model <> Step:67 ind
+R5636:5637 sip_model <> s2:66 var
+R5633:5634 sip_model <> s1:65 var
+binder 5670:5670 <> o:73
+binder 5672:5672 <> b:74
+binder 5674:5675 <> pg:75
+R5703:5706 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5678:5689 sip_model <> BorrowShared ind
+R5691:5691 sip_model <> o:73 var
+R5693:5693 sip_model <> b:74 var
+R5695:5696 sip_model <> pg:75 var
+R5698:5699 sip_model <> s1:65 var
+R5701:5702 sip_model <> s2:66 var
+R5707:5710 sip_model <> Step:67 ind
+R5715:5716 sip_model <> s2:66 var
+R5712:5713 sip_model <> s1:65 var
+binder 5749:5749 <> b:76
+binder 5751:5752 <> pg:77
+R5778:5781 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5755:5766 sip_model <> ReturnShared ind
+R5768:5768 sip_model <> b:76 var
+R5770:5771 sip_model <> pg:77 var
+R5773:5774 sip_model <> s1:65 var
+R5776:5777 sip_model <> s2:66 var
+R5782:5785 sip_model <> Step:67 ind
+R5790:5791 sip_model <> s2:66 var
+R5787:5788 sip_model <> s1:65 var
+binder 5821:5821 <> o:78
+binder 5823:5823 <> b:79
+binder 5825:5826 <> pg:80
+R5851:5854 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5829:5837 sip_model <> BorrowMut ind
+R5839:5839 sip_model <> o:78 var
+R5841:5841 sip_model <> b:79 var
+R5843:5844 sip_model <> pg:80 var
+R5846:5847 sip_model <> s1:65 var
+R5849:5850 sip_model <> s2:66 var
+R5855:5858 sip_model <> Step:67 ind
+R5863:5864 sip_model <> s2:66 var
+R5860:5861 sip_model <> s1:65 var
+binder 5894:5894 <> b:81
+binder 5896:5897 <> pg:82
+R5920:5923 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5900:5908 sip_model <> ReturnMut ind
+R5910:5910 sip_model <> b:81 var
+R5912:5913 sip_model <> pg:82 var
+R5915:5916 sip_model <> s1:65 var
+R5918:5919 sip_model <> s2:66 var
+R5924:5927 sip_model <> Step:67 ind
+R5932:5933 sip_model <> s2:66 var
+R5929:5930 sip_model <> s1:65 var
+binder 5962:5962 <> f:83
+binder 5964:5964 <> t:84
+binder 5966:5967 <> pg:85
+R5991:5994 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5970:5977 sip_model <> Transfer ind
+R5979:5979 sip_model <> f:83 var
+R5981:5981 sip_model <> t:84 var
+R5983:5984 sip_model <> pg:85 var
+R5986:5987 sip_model <> s1:65 var
+R5989:5990 sip_model <> s2:66 var
+R5995:5998 sip_model <> Step:67 ind
+R6003:6004 sip_model <> s2:66 var
+R6000:6001 sip_model <> s1:65 var
+scheme 5472:5475 <> Step_ind
+scheme 5472:5475 <> Step_sind
+def 6250:6262 <> Inv_Coherence
+R6269:6279 sip_model <> SystemState def
+binder 6265:6265 <> s:86
+binder 6301:6302 <> pg:87
+R6323:6327 sip_model <> state proj
+R6316:6316 sip_model <> s:86 var
+R6318:6319 sip_model <> pg:87 var
+R6341:6344 sip_model <> Free constr
+R6370:6373 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6363:6365 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6357:6361 sip_model <> owner proj
+R6350:6350 sip_model <> s:86 var
+R6352:6353 sip_model <> pg:87 var
+R6366:6369 Coq.Init.Datatypes <> None constr
+R6404:6407 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6399:6401 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6382:6397 sip_model <> shared_borrowers proj
+R6375:6375 sip_model <> s:86 var
+R6377:6378 sip_model <> pg:87 var
+R6402:6403 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6429:6431 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6416:6427 sip_model <> mut_borrower proj
+R6409:6409 sip_model <> s:86 var
+R6411:6412 sip_model <> pg:87 var
+R6432:6435 Coq.Init.Datatypes <> None constr
+R6443:6451 sip_model <> Exclusive constr
+R6478:6481 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6470:6473 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R6464:6468 sip_model <> owner proj
+R6457:6457 sip_model <> s:86 var
+R6459:6460 sip_model <> pg:87 var
+R6474:6477 Coq.Init.Datatypes <> None constr
+R6512:6515 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6507:6509 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6490:6505 sip_model <> shared_borrowers proj
+R6483:6483 sip_model <> s:86 var
+R6485:6486 sip_model <> pg:87 var
+R6510:6511 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6537:6539 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6524:6535 sip_model <> mut_borrower proj
+R6517:6517 sip_model <> s:86 var
+R6519:6520 sip_model <> pg:87 var
+R6540:6543 Coq.Init.Datatypes <> None constr
+R6551:6561 sip_model <> SharedOwned constr
+R6588:6591 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6580:6583 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R6574:6578 sip_model <> owner proj
+R6567:6567 sip_model <> s:86 var
+R6569:6570 sip_model <> pg:87 var
+R6584:6587 Coq.Init.Datatypes <> None constr
+R6623:6626 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6617:6620 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R6600:6615 sip_model <> shared_borrowers proj
+R6593:6593 sip_model <> s:86 var
+R6595:6596 sip_model <> pg:87 var
+R6621:6622 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6648:6650 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6635:6646 sip_model <> mut_borrower proj
+R6628:6628 sip_model <> s:86 var
+R6630:6631 sip_model <> pg:87 var
+R6651:6654 Coq.Init.Datatypes <> None constr
+R6662:6668 sip_model <> MutLent constr
+R6695:6698 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6687:6690 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R6681:6685 sip_model <> owner proj
+R6674:6674 sip_model <> s:86 var
+R6676:6677 sip_model <> pg:87 var
+R6691:6694 Coq.Init.Datatypes <> None constr
+R6729:6732 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6724:6726 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6707:6722 sip_model <> shared_borrowers proj
+R6700:6700 sip_model <> s:86 var
+R6702:6703 sip_model <> pg:87 var
+R6727:6728 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6754:6757 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R6741:6752 sip_model <> mut_borrower proj
+R6734:6734 sip_model <> s:86 var
+R6736:6737 sip_model <> pg:87 var
+R6758:6761 Coq.Init.Datatypes <> None constr
+def 6806:6813 <> CanWrite
+R6820:6822 sip_model <> Pid def
+binder 6816:6816 <> p:88
+R6831:6836 sip_model <> PageId def
+binder 6826:6827 <> pg:89
+R6844:6854 sip_model <> SystemState def
+binder 6840:6840 <> s:90
+R6869:6869 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6923:6930 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6989:6989 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6893:6896 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6884:6886 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6878:6882 sip_model <> owner proj
+R6871:6871 sip_model <> s:90 var
+R6873:6874 sip_model <> pg:89 var
+R6887:6890 Coq.Init.Datatypes <> Some constr
+R6892:6892 sip_model <> p:88 var
+R6911:6913 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6905:6909 sip_model <> state proj
+R6898:6898 sip_model <> s:90 var
+R6900:6901 sip_model <> pg:89 var
+R6914:6922 sip_model <> Exclusive constr
+R6961:6964 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6952:6954 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6939:6950 sip_model <> mut_borrower proj
+R6932:6932 sip_model <> s:90 var
+R6934:6935 sip_model <> pg:89 var
+R6955:6958 Coq.Init.Datatypes <> Some constr
+R6960:6960 sip_model <> p:88 var
+R6979:6981 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6973:6977 sip_model <> state proj
+R6966:6966 sip_model <> s:90 var
+R6968:6969 sip_model <> pg:89 var
+R6982:6988 sip_model <> MutLent constr
+def 7004:7018 <> Inv_WriteSafety
+R7025:7035 sip_model <> SystemState def
+binder 7021:7021 <> s:91
+binder 7057:7058 <> pg:92
+binder 7060:7061 <> p1:93
+binder 7063:7064 <> p2:94
+R7087:7090 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7071:7078 sip_model <> CanWrite def
+R7080:7081 sip_model <> p1:93 var
+R7083:7084 sip_model <> pg:92 var
+R7086:7086 sip_model <> s:91 var
+R7107:7110 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7091:7098 sip_model <> CanWrite def
+R7100:7101 sip_model <> p2:94 var
+R7103:7104 sip_model <> pg:92 var
+R7106:7106 sip_model <> s:91 var
+R7113:7115 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7111:7112 sip_model <> p1:93 var
+R7116:7117 sip_model <> p2:94 var
+def 7153:7159 <> CanRead
+R7166:7168 sip_model <> Pid def
+binder 7162:7162 <> p:95
+R7177:7182 sip_model <> PageId def
+binder 7172:7173 <> pg:96
+R7190:7200 sip_model <> SystemState def
+binder 7186:7186 <> s:97
+R7230:7235 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7215:7222 sip_model <> CanWrite def
+R7224:7224 sip_model <> p:95 var
+R7226:7227 sip_model <> pg:96 var
+R7229:7229 sip_model <> s:97 var
+R7236:7236 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7292:7299 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7330:7330 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7265:7268 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7251:7253 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7245:7249 sip_model <> state proj
+R7238:7238 sip_model <> s:97 var
+R7240:7241 sip_model <> pg:96 var
+R7254:7264 sip_model <> SharedOwned constr
+R7283:7285 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7277:7281 sip_model <> owner proj
+R7270:7270 sip_model <> s:97 var
+R7272:7273 sip_model <> pg:96 var
+R7286:7289 Coq.Init.Datatypes <> Some constr
+R7291:7291 sip_model <> p:95 var
+R7300:7301 Coq.Lists.List <> In def
+R7313:7328 sip_model <> shared_borrowers proj
+R7306:7306 sip_model <> s:97 var
+R7308:7309 sip_model <> pg:96 var
+R7303:7303 sip_model <> p:95 var
+def 7345:7363 <> Inv_NoReadWriteRace
+R7370:7380 sip_model <> SystemState def
+binder 7366:7366 <> s:98
+binder 7402:7403 <> pg:99
+binder 7405:7406 <> p1:100
+binder 7408:7409 <> p2:101
+R7432:7435 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7416:7423 sip_model <> CanWrite def
+R7425:7426 sip_model <> p1:100 var
+R7428:7429 sip_model <> pg:99 var
+R7431:7431 sip_model <> s:98 var
+R7451:7454 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7436:7442 sip_model <> CanRead def
+R7444:7445 sip_model <> p2:101 var
+R7447:7448 sip_model <> pg:99 var
+R7450:7450 sip_model <> s:98 var
+R7457:7459 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7455:7456 sip_model <> p1:100 var
+R7460:7461 sip_model <> p2:101 var
+def 7476:7485 <> ValidState
+R7492:7502 sip_model <> SystemState def
+binder 7488:7488 <> s:102
+R7532:7535 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7517:7529 sip_model <> Inv_Coherence def
+R7531:7531 sip_model <> s:102 var
+R7553:7556 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7536:7550 sip_model <> Inv_WriteSafety def
+R7552:7552 sip_model <> s:102 var
+R7557:7575 sip_model <> Inv_NoReadWriteRace def
+R7577:7577 sip_model <> s:102 var
+prf 7801:7820 <> Coherence_Frame_Step
+binder 7833:7834 <> s1:103
+binder 7836:7837 <> pg:104
+binder 7839:7842 <> page:105
+binder 7844:7849 <> new_ps:106
+R7872:7879 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7856:7868 sip_model <> Inv_Coherence def
+R7870:7871 sip_model <> s1:103 var
+R7890:7897 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7882:7885 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R7880:7881 sip_model <> pg:104 var
+R7886:7889 sip_model <> page:105 var
+R7908:7918 sip_model <> update_page def
+R7920:7921 sip_model <> s1:103 var
+R7923:7926 sip_model <> page:105 var
+R7928:7933 sip_model <> new_ps:106 var
+binder 7902:7903 <> s2:107
+R7957:7961 sip_model <> state proj
+R7949:7950 sip_model <> s2:107 var
+R7952:7953 sip_model <> pg:104 var
+R7975:7978 sip_model <> Free constr
+R8005:8008 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7998:8000 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7992:7996 sip_model <> owner proj
+R7984:7985 sip_model <> s2:107 var
+R7987:7988 sip_model <> pg:104 var
+R8001:8004 Coq.Init.Datatypes <> None constr
+R8040:8043 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8035:8037 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8018:8033 sip_model <> shared_borrowers proj
+R8010:8011 sip_model <> s2:107 var
+R8013:8014 sip_model <> pg:104 var
+R8038:8039 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R8066:8068 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8053:8064 sip_model <> mut_borrower proj
+R8045:8046 sip_model <> s2:107 var
+R8048:8049 sip_model <> pg:104 var
+R8069:8072 Coq.Init.Datatypes <> None constr
+R8080:8088 sip_model <> Exclusive constr
+R8116:8119 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8108:8111 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8102:8106 sip_model <> owner proj
+R8094:8095 sip_model <> s2:107 var
+R8097:8098 sip_model <> pg:104 var
+R8112:8115 Coq.Init.Datatypes <> None constr
+R8151:8154 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8146:8148 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8129:8144 sip_model <> shared_borrowers proj
+R8121:8122 sip_model <> s2:107 var
+R8124:8125 sip_model <> pg:104 var
+R8149:8150 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R8177:8179 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8164:8175 sip_model <> mut_borrower proj
+R8156:8157 sip_model <> s2:107 var
+R8159:8160 sip_model <> pg:104 var
+R8180:8183 Coq.Init.Datatypes <> None constr
+R8191:8201 sip_model <> SharedOwned constr
+R8229:8232 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8221:8224 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8215:8219 sip_model <> owner proj
+R8207:8208 sip_model <> s2:107 var
+R8210:8211 sip_model <> pg:104 var
+R8225:8228 Coq.Init.Datatypes <> None constr
+R8265:8268 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8259:8262 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8242:8257 sip_model <> shared_borrowers proj
+R8234:8235 sip_model <> s2:107 var
+R8237:8238 sip_model <> pg:104 var
+R8263:8264 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R8291:8293 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8278:8289 sip_model <> mut_borrower proj
+R8270:8271 sip_model <> s2:107 var
+R8273:8274 sip_model <> pg:104 var
+R8294:8297 Coq.Init.Datatypes <> None constr
+R8305:8311 sip_model <> MutLent constr
+R8339:8342 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8331:8334 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8325:8329 sip_model <> owner proj
+R8317:8318 sip_model <> s2:107 var
+R8320:8321 sip_model <> pg:104 var
+R8335:8338 Coq.Init.Datatypes <> None constr
+R8374:8377 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8369:8371 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8352:8367 sip_model <> shared_borrowers proj
+R8344:8345 sip_model <> s2:107 var
+R8347:8348 sip_model <> pg:104 var
+R8372:8373 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R8400:8403 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8387:8398 sip_model <> mut_borrower proj
+R8379:8380 sip_model <> s2:107 var
+R8382:8383 sip_model <> pg:104 var
+R8404:8407 Coq.Init.Datatypes <> None constr
+R8472:8484 sip_model <> Inv_Coherence def
+R8539:8554 sip_model <> update_page_miss thm
+R8539:8554 sip_model <> update_page_miss thm
+R8539:8554 sip_model <> update_page_miss thm
+R8539:8554 sip_model <> update_page_miss thm
+R8583:8591 Coq.ZArith.BinInt Z neq_sym thm
+R8583:8591 Coq.ZArith.BinInt Z neq_sym thm
+prf 8618:8643 <> WriteSafety_Preserved_Miss
+binder 8656:8657 <> s1:108
+binder 8659:8660 <> pg:109
+binder 8662:8665 <> page:110
+binder 8667:8672 <> new_ps:111
+binder 8674:8675 <> p1:112
+binder 8677:8678 <> p2:113
+R8701:8704 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8683:8697 sip_model <> Inv_WriteSafety def
+R8699:8700 sip_model <> s1:108 var
+R8715:8720 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8707:8710 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8705:8706 sip_model <> pg:109 var
+R8711:8714 sip_model <> page:110 var
+R8764:8769 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8721:8728 sip_model <> CanWrite def
+R8730:8731 sip_model <> p1:112 var
+R8733:8734 sip_model <> pg:109 var
+R8737:8747 sip_model <> update_page def
+R8749:8750 sip_model <> s1:108 var
+R8752:8755 sip_model <> page:110 var
+R8757:8762 sip_model <> new_ps:111 var
+R8813:8818 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8770:8777 sip_model <> CanWrite def
+R8779:8780 sip_model <> p2:113 var
+R8782:8783 sip_model <> pg:109 var
+R8786:8796 sip_model <> update_page def
+R8798:8799 sip_model <> s1:108 var
+R8801:8804 sip_model <> page:110 var
+R8806:8811 sip_model <> new_ps:111 var
+R8821:8823 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8819:8820 sip_model <> p1:112 var
+R8824:8825 sip_model <> p2:113 var
+R8897:8904 sip_model <> CanWrite def
+R8920:8935 sip_model <> update_page_miss thm
+R8920:8935 sip_model <> update_page_miss thm
+R8920:8935 sip_model <> update_page_miss thm
+R8920:8935 sip_model <> update_page_miss thm
+R8920:8935 sip_model <> update_page_miss thm
+prf 8984:9008 <> RaceSafety_Preserved_Miss
+binder 9021:9022 <> s1:114
+binder 9024:9025 <> pg:115
+binder 9027:9030 <> page:116
+binder 9032:9037 <> new_ps:117
+binder 9039:9040 <> p1:118
+binder 9042:9043 <> p2:119
+R9070:9073 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9048:9066 sip_model <> Inv_NoReadWriteRace def
+R9068:9069 sip_model <> s1:114 var
+R9084:9089 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9076:9079 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R9074:9075 sip_model <> pg:115 var
+R9080:9083 sip_model <> page:116 var
+R9133:9138 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9090:9097 sip_model <> CanWrite def
+R9099:9100 sip_model <> p1:118 var
+R9102:9103 sip_model <> pg:115 var
+R9106:9116 sip_model <> update_page def
+R9118:9119 sip_model <> s1:114 var
+R9121:9124 sip_model <> page:116 var
+R9126:9131 sip_model <> new_ps:117 var
+R9181:9186 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9139:9145 sip_model <> CanRead def
+R9147:9148 sip_model <> p2:119 var
+R9150:9151 sip_model <> pg:115 var
+R9154:9164 sip_model <> update_page def
+R9166:9167 sip_model <> s1:114 var
+R9169:9172 sip_model <> page:116 var
+R9174:9179 sip_model <> new_ps:117 var
+R9189:9191 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R9187:9188 sip_model <> p1:118 var
+R9192:9193 sip_model <> p2:119 var
+R9263:9269 sip_model <> CanRead def
+R9284:9291 sip_model <> CanWrite def
+R9309:9324 sip_model <> update_page_miss thm
+R9309:9324 sip_model <> update_page_miss thm
+R9309:9324 sip_model <> update_page_miss thm
+R9309:9324 sip_model <> update_page_miss thm
+R9309:9324 sip_model <> update_page_miss thm
+R9699:9709 sip_model <> update_page def
+R9699:9709 sip_model <> update_page def
+R9769:9779 sip_model <> update_page def
+R9769:9779 sip_model <> update_page def
+R9846:9849 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R9846:9849 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R9864:9874 sip_model <> update_page def
+R9864:9874 sip_model <> update_page def
+R9953:9956 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R9953:9956 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R9973:9983 sip_model <> update_page def
+R9973:9983 sip_model <> update_page def
+R10072:10075 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R10072:10075 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R10090:10100 sip_model <> update_page def
+R10090:10100 sip_model <> update_page def
+R10195:10198 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R10195:10198 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R10215:10225 sip_model <> update_page def
+R10215:10225 sip_model <> update_page def
+R10263:10278 sip_model <> update_page_miss thm
+R10289:10297 Coq.ZArith.BinInt Z neq_sym thm
+R10133:10148 sip_model <> update_page_miss thm
+R10159:10167 Coq.ZArith.BinInt Z neq_sym thm
+R10021:10036 sip_model <> update_page_miss thm
+R9907:9922 sip_model <> update_page_miss thm
+R9810:9824 sip_model <> update_page_hit thm
+R9735:9749 sip_model <> update_page_hit thm
+R10589:10591 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R10570:10580 sip_model <> mkPageState constr
+R10592:10602 sip_model <> mkPageState constr
+R10589:10591 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R10570:10580 sip_model <> mkPageState constr
+R10592:10602 sip_model <> mkPageState constr
+R10668:10671 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R10668:10671 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R11056:11060 sip_model <> state proj
+R11408:11415 sip_model <> CanWrite def
+R12028:12035 sip_model <> CanWrite def
+R12038:12044 sip_model <> CanRead def
+R12989:13001 sip_model <> Inv_Coherence def
+R13037:13044 Coq.ZArith.BinInt Z eq_dec def
+R13126:13145 sip_model <> Coherence_Frame_Step thm
+R13244:13258 sip_model <> Inv_WriteSafety def
+R13365:13372 Coq.ZArith.BinInt Z eq_dec def
+R13492:13499 sip_model <> CanWrite def
+R13557:13572 sip_model <> update_page_miss thm
+R13613:13628 sip_model <> update_page_miss thm
+R13661:13668 sip_model <> CanWrite def
+R13775:13793 sip_model <> Inv_NoReadWriteRace def
+R13841:13848 Coq.ZArith.BinInt Z eq_dec def
+R13958:13964 sip_model <> CanRead def
+R13967:13974 sip_model <> CanWrite def
+R14029:14044 sip_model <> update_page_miss thm
+R14084:14099 sip_model <> update_page_miss thm
+R14131:14137 sip_model <> CanRead def
+R14150:14157 sip_model <> CanWrite def
+R14310:14319 sip_model <> ValidState def
+prf 14911:14939 <> transition_preserves_validity
+binder 14952:14953 <> s1:120
+binder 14955:14956 <> s2:121
+R14972:14975 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R14959:14968 sip_model <> ValidState def
+R14970:14971 sip_model <> s1:120 var
+R14986:14989 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R14976:14979 sip_model <> Step ind
+R14981:14982 sip_model <> s1:120 var
+R14984:14985 sip_model <> s2:121 var
+R14990:14999 sip_model <> ValidState def
+R15001:15002 sip_model <> s2:121 var
+R15229:15238 sip_model <> ValidState def
+R15420:15434 sip_model <> Inv_WriteSafety def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15568:15575 sip_model <> CanWrite def
+R15861:15868 sip_model <> CanWrite def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16160:16178 sip_model <> Inv_NoReadWriteRace def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R16359:16366 sip_model <> CanWrite def
+R16369:16375 sip_model <> CanRead def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17734:17741 sip_model <> CanWrite def
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17871:17877 sip_model <> CanRead def
+R17903:17910 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R15481:15488 Coq.ZArith.BinInt Z eq_dec def
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15902:15917 sip_model <> update_page_miss thm
+R15928:15936 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R15976:15991 sip_model <> update_page_miss thm
+R16002:16010 Coq.ZArith.BinInt Z neq_sym thm
+R16046:16053 sip_model <> CanWrite def
+R16223:16230 Coq.ZArith.BinInt Z eq_dec def
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17243:17246 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17235:17236 Coq.Lists.List <> In def
+R17241:17242 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R17247:17251 Coq.Init.Logic <> False ind
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17769:17784 sip_model <> update_page_miss thm
+R17795:17803 Coq.ZArith.BinInt Z neq_sym thm
+R17838:17845 sip_model <> CanWrite def
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R17938:17953 sip_model <> update_page_miss thm
+R17964:17972 Coq.ZArith.BinInt Z neq_sym thm
+R18007:18014 sip_model <> CanWrite def
+R18038:18044 sip_model <> CanRead def
+R18720:18721 Coq.Lists.List <> In def
+R18725:18726 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R18720:18721 Coq.Lists.List <> In def
+R18725:18726 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R18744:18749 Coq.Lists.List <> in_nil thm
+R18809:18810 Coq.Lists.List <> In def
+R18814:18815 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R18809:18810 Coq.Lists.List <> In def
+R18814:18815 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R18914:18917 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R18914:18917 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R18953:18956 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R18953:18956 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R18991:18992 Coq.Lists.List <> In def
+R18998:19001 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R18991:18992 Coq.Lists.List <> In def
+R18998:19001 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R19087:19088 Coq.Lists.List <> In def
+R19092:19093 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R19087:19088 Coq.Lists.List <> In def
+R19092:19093 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R19129:19131 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19129:19131 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19140:19142 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19140:19142 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19021:19026 Coq.Lists.List <> in_inv thm
+R19463:19465 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19463:19465 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19497:19499 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19497:19499 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19508:19510 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R19508:19510 Coq.Init.Logic <> ::type_scope:x_'='_x not

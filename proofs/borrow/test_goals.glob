@@ -1,0 +1,26 @@
+DIGEST f24555bae7822259b353086b732fd293
+Ftest_goals
+R15:20 Coq.ZArith.ZArith <> <> lib
+R22:25 Coq.Lists.List <> <> lib
+R35:47 Coq.Lists.List ListNotations <> mod
+prf 129:139 <> in_nil_test
+R155:155 Coq.Numbers.BinNums <> Z ind
+binder 151:151 <> p:1
+R166:169 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R159:160 Coq.Lists.List <> In def
+R164:165 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R162:162 test_goals <> p:1 var
+R170:174 Coq.Init.Logic <> False ind
+prf 253:264 <> in_singleton
+R282:282 Coq.Numbers.BinNums <> Z ind
+binder 276:276 <> p:2
+binder 278:278 <> x:3
+R294:297 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R286:287 Coq.Lists.List <> In def
+R291:291 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R293:293 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R292:292 test_goals <> x:3 var
+R289:289 test_goals <> p:2 var
+R299:301 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R298:298 test_goals <> p:2 var
+R302:302 test_goals <> x:3 var

@@ -1,0 +1,195 @@
+DIGEST 3619a48cb2de50d61500977fb695fe22
+Fproofs.capability.CapabilityModel
+R84:97 Coq.Lists.List <> <> lib
+R115:132 Coq.Arith.PeanoNat <> <> lib
+R142:154 Coq.Lists.List ListNotations <> mod
+R173:202 proofs.capability.PermsBitmask <> <> lib
+sec 214:228 <> CapabilityModel
+rec 239:248 <> Capability
+proj 257:262 <> cap_id
+proj 273:281 <> cap_perms
+proj 317:326 <> cap_parent
+R266:268 Coq.Init.Datatypes <> nat ind
+R285:287 Coq.Init.Datatypes <> nat ind
+R330:335 Coq.Init.Datatypes <> option ind
+R337:339 Coq.Init.Datatypes <> nat ind
+def 356:364 <> cap_table
+R369:372 Coq.Init.Datatypes <> list ind
+R374:383 proofs.capability.CapabilityModel <> Capability rec
+def 424:431 <> find_cap
+R439:447 proofs.capability.CapabilityModel <> cap_table def
+binder 434:435 <> ct:5
+R456:458 Coq.Init.Datatypes <> nat ind
+binder 451:452 <> id:6
+R463:468 Coq.Init.Datatypes <> option ind
+R470:479 proofs.capability.CapabilityModel <> Capability rec
+R492:493 proofs.capability.CapabilityModel <> ct:5 var
+R504:505 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R510:513 Coq.Init.Datatypes <> None constr
+R520:523 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R533:539 Coq.Arith.PeanoNat Nat eqb def
+R542:547 proofs.capability.CapabilityModel <> cap_id proj
+R552:553 proofs.capability.CapabilityModel <> id:6 var
+R572:579 proofs.capability.CapabilityModel <> find_cap:7 def
+R584:585 proofs.capability.CapabilityModel <> id:6 var
+R560:563 Coq.Init.Datatypes <> Some constr
+prf 601:611 <> find_cap_id
+binder 624:625 <> ct:9
+binder 627:628 <> id:10
+binder 630:630 <> c:11
+R660:667 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R651:653 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R637:644 proofs.capability.CapabilityModel <> find_cap def
+R646:647 proofs.capability.CapabilityModel <> ct:9 var
+R649:650 proofs.capability.CapabilityModel <> id:10 var
+R654:657 Coq.Init.Datatypes <> Some constr
+R659:659 proofs.capability.CapabilityModel <> c:11 var
+R676:678 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R668:673 proofs.capability.CapabilityModel <> cap_id proj
+R675:675 proofs.capability.CapabilityModel <> c:11 var
+R679:680 proofs.capability.CapabilityModel <> id:10 var
+R762:768 Coq.Arith.PeanoNat Nat eqb def
+R771:776 proofs.capability.CapabilityModel <> cap_id proj
+R762:768 Coq.Arith.PeanoNat Nat eqb def
+R771:776 proofs.capability.CapabilityModel <> cap_id proj
+R828:837 Coq.Arith.PeanoNat Nat eqb_eq thm
+R828:837 Coq.Arith.PeanoNat Nat eqb_eq thm
+ind 945:956 <> derived_from
+constr 1015:1025 <> DeriveIntro
+R964:972 proofs.capability.CapabilityModel <> cap_table def
+binder 959:960 <> ct:12
+R987:990 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R977:986 proofs.capability.CapabilityModel <> Capability rec
+R1001:1004 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R991:1000 proofs.capability.CapabilityModel <> Capability rec
+binder 1040:1044 <> child:15
+binder 1046:1051 <> parent:16
+R1099:1108 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1076:1078 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1060:1069 proofs.capability.CapabilityModel <> cap_parent proj
+R1071:1075 proofs.capability.CapabilityModel <> child:15 var
+R1079:1082 Coq.Init.Datatypes <> Some constr
+R1085:1090 proofs.capability.CapabilityModel <> cap_id proj
+R1092:1097 proofs.capability.CapabilityModel <> parent:16 var
+R1158:1167 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1109:1120 proofs.capability.PermsBitmask <> perms_subset def
+R1123:1131 proofs.capability.CapabilityModel <> cap_perms proj
+R1133:1137 proofs.capability.CapabilityModel <> child:15 var
+R1141:1149 proofs.capability.CapabilityModel <> cap_perms proj
+R1151:1156 proofs.capability.CapabilityModel <> parent:16 var
+R1168:1179 proofs.capability.CapabilityModel <> derived_from:13 ind
+R1190:1195 proofs.capability.CapabilityModel <> parent:16 var
+R1184:1188 proofs.capability.CapabilityModel <> child:15 var
+R1181:1182 proofs.capability.CapabilityModel <> ct:12 var
+scheme 945:956 <> derived_from_ind
+scheme 945:956 <> derived_from_sind
+prf 1205:1226 <> derived_perm_monotonic
+binder 1239:1240 <> ct:17
+binder 1242:1242 <> c:18
+binder 1244:1244 <> p:19
+R1270:1277 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1251:1262 proofs.capability.CapabilityModel <> derived_from ind
+R1264:1265 proofs.capability.CapabilityModel <> ct:17 var
+R1267:1267 proofs.capability.CapabilityModel <> c:18 var
+R1269:1269 proofs.capability.CapabilityModel <> p:19 var
+R1278:1289 proofs.capability.PermsBitmask <> perms_subset def
+R1292:1300 proofs.capability.CapabilityModel <> cap_perms proj
+R1302:1302 proofs.capability.CapabilityModel <> c:18 var
+R1306:1314 proofs.capability.CapabilityModel <> cap_perms proj
+R1316:1316 proofs.capability.CapabilityModel <> p:19 var
+def 1471:1486 <> derivation_valid
+R1494:1502 proofs.capability.CapabilityModel <> cap_table def
+binder 1489:1490 <> ct:20
+R1514:1523 proofs.capability.CapabilityModel <> Capability rec
+binder 1506:1510 <> child:21
+R1544:1553 proofs.capability.CapabilityModel <> cap_parent proj
+R1555:1559 proofs.capability.CapabilityModel <> child:21 var
+R1570:1573 Coq.Init.Datatypes <> None constr
+R1578:1582 Coq.Init.Logic <> False ind
+R1588:1591 Coq.Init.Datatypes <> Some constr
+R1612:1619 proofs.capability.CapabilityModel <> find_cap def
+R1621:1622 proofs.capability.CapabilityModel <> ct:20 var
+R1641:1644 Coq.Init.Datatypes <> None constr
+R1649:1653 Coq.Init.Logic <> False ind
+R1663:1666 Coq.Init.Datatypes <> Some constr
+R1688:1699 proofs.capability.PermsBitmask <> perms_subset def
+R1702:1710 proofs.capability.CapabilityModel <> cap_perms proj
+R1712:1716 proofs.capability.CapabilityModel <> child:21 var
+R1720:1728 proofs.capability.CapabilityModel <> cap_perms proj
+prf 1762:1798 <> derivation_valid_implies_parent_found
+binder 1811:1812 <> ct:22
+binder 1814:1818 <> child:23
+binder 1820:1822 <> pid:24
+R1856:1863 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1845:1847 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1829:1838 proofs.capability.CapabilityModel <> cap_parent proj
+R1840:1844 proofs.capability.CapabilityModel <> child:23 var
+R1848:1851 Coq.Init.Datatypes <> Some constr
+R1853:1855 proofs.capability.CapabilityModel <> pid:24 var
+R1889:1896 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1864:1879 proofs.capability.CapabilityModel <> derivation_valid def
+R1881:1882 proofs.capability.CapabilityModel <> ct:22 var
+R1884:1888 proofs.capability.CapabilityModel <> child:23 var
+R1897:1903 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R1910:1911 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 1904:1909 <> parent:25
+R1927:1929 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1912:1919 proofs.capability.CapabilityModel <> find_cap def
+R1921:1922 proofs.capability.CapabilityModel <> ct:22 var
+R1924:1926 proofs.capability.CapabilityModel <> pid:24 var
+R1930:1933 Coq.Init.Datatypes <> Some constr
+R1935:1940 proofs.capability.CapabilityModel <> parent:25 var
+R1997:2012 proofs.capability.CapabilityModel <> derivation_valid def
+R2066:2073 proofs.capability.CapabilityModel <> find_cap def
+R2066:2073 proofs.capability.CapabilityModel <> find_cap def
+prf 2131:2158 <> derivation_valid_perm_subset
+binder 2171:2172 <> ct:26
+binder 2174:2178 <> child:27
+binder 2180:2182 <> pid:28
+binder 2184:2189 <> parent:29
+R2223:2230 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2212:2214 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2196:2205 proofs.capability.CapabilityModel <> cap_parent proj
+R2207:2211 proofs.capability.CapabilityModel <> child:27 var
+R2215:2218 Coq.Init.Datatypes <> Some constr
+R2220:2222 proofs.capability.CapabilityModel <> pid:28 var
+R2260:2267 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2246:2248 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2231:2238 proofs.capability.CapabilityModel <> find_cap def
+R2240:2241 proofs.capability.CapabilityModel <> ct:26 var
+R2243:2245 proofs.capability.CapabilityModel <> pid:28 var
+R2249:2252 Coq.Init.Datatypes <> Some constr
+R2254:2259 proofs.capability.CapabilityModel <> parent:29 var
+R2293:2300 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2268:2283 proofs.capability.CapabilityModel <> derivation_valid def
+R2285:2286 proofs.capability.CapabilityModel <> ct:26 var
+R2288:2292 proofs.capability.CapabilityModel <> child:27 var
+R2301:2312 proofs.capability.PermsBitmask <> perms_subset def
+R2315:2323 proofs.capability.CapabilityModel <> cap_perms proj
+R2325:2329 proofs.capability.CapabilityModel <> child:27 var
+R2333:2341 proofs.capability.CapabilityModel <> cap_perms proj
+R2343:2348 proofs.capability.CapabilityModel <> parent:29 var
+R2416:2431 proofs.capability.CapabilityModel <> derivation_valid def
+prf 2505:2537 <> derivation_invalid_without_parent
+binder 2550:2551 <> ct:30
+binder 2553:2557 <> child:31
+binder 2559:2561 <> pid:32
+R2595:2602 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2584:2586 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2568:2577 proofs.capability.CapabilityModel <> cap_parent proj
+R2579:2583 proofs.capability.CapabilityModel <> child:31 var
+R2587:2590 Coq.Init.Datatypes <> Some constr
+R2592:2594 proofs.capability.CapabilityModel <> pid:32 var
+R2625:2632 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2618:2620 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2603:2610 proofs.capability.CapabilityModel <> find_cap def
+R2612:2613 proofs.capability.CapabilityModel <> ct:30 var
+R2615:2617 proofs.capability.CapabilityModel <> pid:32 var
+R2621:2624 Coq.Init.Datatypes <> None constr
+R2658:2660 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2633:2648 proofs.capability.CapabilityModel <> derivation_valid def
+R2650:2651 proofs.capability.CapabilityModel <> ct:30 var
+R2653:2657 proofs.capability.CapabilityModel <> child:31 var
+R2661:2665 Coq.Init.Logic <> False ind
+R2718:2733 proofs.capability.CapabilityModel <> derivation_valid def
+R2782:2796 proofs.capability.CapabilityModel CapabilityModel <> sec
