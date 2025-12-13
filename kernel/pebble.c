@@ -1,11 +1,13 @@
-#include "pebble.h"
-#include "blind_ledger.h"
-#include "dat.h"
-#include "error.h"
-#include "fns.h"
+#include "u.h"
 #include "lib.h"
 #include "mem.h"
-#include "u.h"
+#include "dat.h"
+#include "fns.h"
+#include "error.h"
+
+#include "pebble.h"
+#include "blind_ledger.h"
+
 
 Lock pebble_global_lock;
 int pebble_enabled = 1;

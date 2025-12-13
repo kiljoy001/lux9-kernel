@@ -1,11 +1,12 @@
 /* qbe_buffer.c - Simple buffer implementation for QBE IL text */
 
-#include "qbe_buffer.h"
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
-#include "portlib.h"
-#include "u.h"
+
+#include "qbe_buffer.h"
 
 #define INITIAL_CAPACITY 4096
 #define GROWTH_FACTOR 2

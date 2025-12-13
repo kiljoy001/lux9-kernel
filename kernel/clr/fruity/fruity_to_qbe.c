@@ -3,43 +3,22 @@
  * Simplified translator: just emit QBE stubs for now
  */
 
-/* #include "../../include/u.h" - Removed to avoid redefinitions */
-#define _U_H_
-#define nil ((void *)0)
-
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef unsigned int uint;
-typedef unsigned long ulong;
-typedef unsigned long long uvlong;
-typedef long long vlong;
-typedef unsigned long usize;
-typedef unsigned long uintptr;
-typedef unsigned char u8int;
-typedef unsigned short u16int;
-typedef unsigned int u32int;
-typedef unsigned long long u64int;
-typedef signed char s8int;
-typedef signed short s16int;
-typedef signed int s32int;
-typedef signed long long s64int;
-typedef __builtin_va_list va_list;
-
-/* Structs Qid, Dir, Waitmsg are defined in portlib.h / dat.h */
-/* #include <string.h> - Removed for kernel build */
-
-#include "../../9front-pc64/mem.h"
+#include "../../include/u.h"
+#include "../../include/portlib.h"
+#include "../../include/mem.h"
 #include "../../include/dat.h"
 #include "../../include/fns.h"
 
-#include "blind_ledger.h"
-#include "exchange.h"
+#include "../../include/blind_ledger.h"
+#include "../../include/exchange.h"
 #include "fruity_to_qbe.h"
-#include "hhdm.h"
+#include "../../include/hhdm.h"
 #include "qbe_buffer.h"
 
-/* Emit QBE IL header */
-static void emit_header(QBEBuffer *buf) {
+#include "qbe_buffer.h"
+
+    /* Emit QBE IL header */
+    static void emit_header(QBEBuffer *buf) {
   qbe_buffer_printf(buf, "# QBE IL generated from Fruity IR\n\n");
   qbe_buffer_printf(buf, "# Pebble Runtime ABI\n");
   qbe_buffer_printf(

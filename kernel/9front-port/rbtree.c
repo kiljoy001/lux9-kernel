@@ -4,13 +4,11 @@
  * Based on Linux kernel's lib/rbtree.c
  * Provides O(log n) operations for Blind Ledger capability lookups.
  */
-
-#include "../include/rbtree.h"
-#include "dat.h"
-#include "mem.h"
-#include "portlib.h"
 #include "u.h"
-
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "../include/rbtree.h"
 /*
  * Rotate left at node
  */

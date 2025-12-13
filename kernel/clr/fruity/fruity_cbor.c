@@ -3,11 +3,13 @@
  * Simplified implementation for kernel - handles core structures
  */
 
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
-#include "portlib.h"
-#include "u.h"
+
+#include "fruity_ir.h"
 
 #include "fruity_ir.h"
 

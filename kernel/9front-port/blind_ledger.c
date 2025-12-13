@@ -6,17 +6,17 @@
  * millions) Secondary index: Hash table for PA reverse lookups (O(1) average)
  */
 
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include <error.h>
+
 #include "blind_ledger.h"
 #include "../include/rbtree.h"
 #include "crypto.h"
-#include "dat.h"
-#include "fns.h"
-#include "mem.h"
-#include "portlib.h"
 #include "siphash.h"
-#include "u.h"
-#include <error.h>
-
 // =========================================================================
 //  Internal Data Structures
 // =========================================================================

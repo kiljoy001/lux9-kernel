@@ -1,10 +1,10 @@
-/* VM Detection Implementation */
-/* Rely on -include u.h and portlib.h from makefile */
-
-#include "vmdetect.h"
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
+#include "vmdetect.h"
+
 
 #define cpu_relax() asm volatile("rep; nop" ::: "memory")
 

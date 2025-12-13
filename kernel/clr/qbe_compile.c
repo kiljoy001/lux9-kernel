@@ -4,67 +4,14 @@
  * All QBE temporaries (%tN) are mapped to stack slots [rbp - N*8].
  */
 
-/* #include "u.h" removed */
-#define _U_H_
-#define nil ((void *)0)
-
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef unsigned int uint;
-typedef unsigned long ulong;
-typedef unsigned long long uvlong;
-typedef long long vlong;
-typedef unsigned long usize;
-typedef unsigned long uintptr;
-typedef unsigned char u8int;
-typedef unsigned short u16int;
-typedef unsigned int u32int;
-typedef unsigned long long u64int;
-typedef signed char s8int;
-typedef signed short s16int;
-typedef signed int s32int;
-typedef signed long long s64int;
-typedef __builtin_va_list va_list;
-
-typedef struct Qid Qid;
-typedef struct Dir Dir;
-typedef struct Waitmsg Waitmsg;
-typedef struct Fmt Fmt;
-struct Qid {
-  uvlong path;
-  ulong vers;
-  uchar type;
-};
-struct Dir {
-  ushort type;
-  uint dev;
-  Qid qid;
-  ulong mode;
-  ulong atime;
-  ulong mtime;
-  vlong length;
-  char *name;
-  char *uid;
-  char *gid;
-  char *muid;
-};
-#define ERRMAX 128
-struct Waitmsg {
-  int pid;
-  ulong time[3];
-  char msg[ERRMAX];
-};
-
-#include <string.h>
-extern long strtol(char *, char **, int);
-extern int snprint(char *, int, char *, ...);
-
+#include "../include/u.h"
+#include "../include/portlib.h"
 #include "../9front-pc64/mem.h"
 #include "../include/dat.h"
 #include "../include/fns.h"
-#define USED(x) (void)(x)
 
 #include "qbe_compile.h"
+
 
 /* Symbol table for labels */
 typedef struct Symbol {
