@@ -13,6 +13,7 @@
 /* Forward declarations */
 struct Proc;
 struct Fcall;
+typedef struct Fcall Fcall;
 
 /*
  * Operation Types for Classification
@@ -27,6 +28,16 @@ typedef enum {
   OP_TYPE_SECURITY,     /* Security-critical operations */
   OP_TYPE_CONSENSUS,    /* Consensus-related operations */
 } OperationType;
+
+/*
+ * Consensus Depth Levels
+ */
+typedef enum {
+  DEPTH_NONE = 0, /* No consensus needed - local/immediate */
+  DEPTH_LOCAL,    /* Local node only */
+  DEPTH_CLUSTER,  /* Cluster-level consensus */
+  DEPTH_GLOBAL,   /* Full global consensus */
+} ConsensusDepth;
 
 /*
  * Rollback State for Optimistic Execution
@@ -135,7 +146,7 @@ void rollback_cleanup(RollbackRegistry *reg);
 void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag);
 
 /* Callback type for verification completion */
-typedef void (*VerifyCallback)(uint op_id, int success, float confidence);
+typedef void (*VerifyCallback)(uint op_id, int success, int confidence);
 
 /* Register verification callback */
 void register_verify_callback(VerifyCallback cb);

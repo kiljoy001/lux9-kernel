@@ -5,7 +5,7 @@
  * All 9P messages flow through GHOSTDAG for total ordering.
  */
 
-#include <u.h>
+#include "u.h"
 #include "portlib.h"
 
 /* Manual typedefs (portlib.h gives structs but not always typedefs used by
@@ -17,9 +17,8 @@ typedef struct Waitmsg Waitmsg;
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "9p_router.h"
 #include "ghostdag_kernel.h"
-
+#include "9p_router.h"
 /* Registry of GhostDAG instances */
 static GhostDAG *ghostdags[GHOSTDAG_MAX_DAGS];
 static Lock registry_lock;
@@ -491,4 +490,219 @@ void ghostdag_stats(GhostDAG *dag, uvlong *total, uvlong *blue, uvlong *red) {
     *blue = dag->gd_blue_msgs;
   if (red != nil)
     *red = dag->gd_red_msgs;
+}
+
+/*
+ * Submit 9P message with completion callback
+ */
+uint ghostdag_submit_async(GhostDAG *dag, Proc *caller, Fcall *t, char *path,
+                           GhostdagCallback cb, void *cb_arg) {
+  GhostPayload p;
+  GhostMsg *msg;
+  GhostMsg *tail;
+  uint id;
+
+  if (dag == nil)
+    dag = ghostdag;
+  if (dag == nil || !dag->gd_initialized)
+    return 0;
+
+  p.type = GHOSTDAG_MSG_9P;
+  p.fcall = t;
+
+  lock_dag(dag);
+
+  msg = ghostdag_alloc(dag, caller, path);
+  if (msg == nil) {
+    unlock_dag(dag);
+    return 0;
+  }
+
+  msg->gm_payload = p;
+  msg->gm_callback = cb;
+  msg->gm_callback_arg = cb_arg;
+
+  tail = dag->gd_tail;
+  if (tail != nil) {
+    msg->gm_parents[0] = tail->gm_id;
+    msg->gm_parent_count = 1;
+  }
+
+  id = msg->gm_id;
+  ghostdag_enqueue(dag, msg);
+  dag->gd_total_msgs++;
+
+  ghostdag_color(dag, msg);
+
+  if (msg->gm_color == GHOSTDAG_COLOR_BLUE) {
+    msg->gm_state = GHOSTDAG_STATE_ORDERED;
+    msg->gm_global_seq = ++dag->gd_global_seq;
+    wakeup(&dag->gd_rendez);
+  }
+
+  unlock_dag(dag);
+  return id;
+}
+
+/*
+ * Find message by ID
+ */
+GhostMsg *ghostdag_find_by_id(GhostDAG *dag, uint id) {
+  GhostMsg *msg;
+
+  if (dag == nil)
+    dag = ghostdag;
+  if (dag == nil)
+    return nil;
+
+  lock_dag(dag);
+  for (msg = dag->gd_head; msg != nil; msg = msg->gm_next) {
+    if (msg->gm_id == id) {
+      unlock_dag(dag);
+      return msg;
+    }
+  }
+  unlock_dag(dag);
+  return nil;
+}
+
+/*
+ * Set callback on existing message
+ */
+void ghostdag_set_callback(GhostMsg *msg, GhostdagCallback cb, void *cb_arg) {
+  if (msg == nil)
+    return;
+  msg->gm_callback = cb;
+  msg->gm_callback_arg = cb_arg;
+}
+
+/*
+ * Fire callbacks for all ready messages
+ * Returns number of callbacks fired
+ */
+int ghostdag_fire_completions(GhostDAG *dag) {
+  GhostMsg *msg, *next;
+  int fired = 0;
+  Fcall reply;
+
+  if (dag == nil)
+    dag = ghostdag;
+  if (dag == nil)
+    return 0;
+
+  lock_dag(dag);
+  for (msg = dag->gd_head; msg != nil; msg = next) {
+    next = msg->gm_next;
+
+    if (msg->gm_state != GHOSTDAG_STATE_ORDERED)
+      continue;
+    if (!ghostdag_can_deliver(dag, msg))
+      continue;
+
+    /* Process the message */
+    if (msg->gm_payload.type == GHOSTDAG_MSG_9P && msg->gm_caller) {
+      memset(&reply, 0, sizeof(reply));
+      unlock_dag(dag);
+      p9_dispatch(msg->gm_caller, msg->gm_payload.fcall, &reply);
+      lock_dag(dag);
+    }
+
+    msg->gm_state = GHOSTDAG_STATE_DELIVERED;
+    msg->gm_ordered_time = seconds();
+
+    /* Fire callback if registered */
+    if (msg->gm_callback != nil) {
+      unlock_dag(dag);
+      msg->gm_callback(msg, GHOSTDAG_CB_SUCCESS, msg->gm_callback_arg);
+      lock_dag(dag);
+      fired++;
+    }
+
+    /* Remove from DAG */
+    ghostdag_dequeue(dag, msg);
+    msg->gm_state = GHOSTDAG_STATE_COMPLETE;
+
+    /* Free payload if raw */
+    if (msg->gm_payload.type == GHOSTDAG_MSG_RAW && msg->gm_payload.raw.data) {
+      xfree(msg->gm_payload.raw.data);
+    }
+    xfree(msg);
+  }
+  unlock_dag(dag);
+
+  return fired;
+}
+
+/*
+ * Check consensus depth for an operation
+ * Returns: 0 on success, -1 if message not found
+ * confidence_out is 0-100 scale (no SSE/float in kernel)
+ */
+int ghostdag_check_consensus_depth(GhostDAG *dag, uint op_id,
+                                   ConsensusDepth required_depth,
+                                   int *confidence_out) {
+  GhostMsg *msg;
+  int confidence;
+
+  if (dag == nil)
+    dag = ghostdag;
+  if (dag == nil)
+    return -1;
+
+  msg = ghostdag_find_by_id(dag, op_id);
+  if (msg == nil)
+    return -1;
+
+  /* Calculate confidence based on message state and consensus depth */
+  if (msg->gm_state >= GHOSTDAG_STATE_DELIVERED) {
+    confidence = 100;
+  } else if (msg->gm_state >= GHOSTDAG_STATE_ORDERED) {
+    /* Ordered but not yet delivered - high confidence */
+    confidence = 95;
+  } else if (msg->gm_color == GHOSTDAG_COLOR_BLUE) {
+    /* Blue (optimistic) - moderate confidence based on anticone */
+    confidence = 80 - (int)msg->gm_anticone_size * 5;
+    if (confidence < 50)
+      confidence = 50;
+  } else {
+    /* Red (pessimistic) - lower confidence */
+    confidence = 30;
+  }
+
+  /* Adjust for required depth */
+  USED(required_depth); /* May adjust confidence threshold in future */
+
+  if (confidence_out != nil)
+    *confidence_out = confidence;
+
+  return 0;
+}
+
+/*
+ * Submit async with depth parameter (alternative signature for
+ * consensus_depth.c) Returns: 0 on success, -1 on error
+ */
+int ghostdag_submit_async_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
+                                char *path, ConsensusDepth depth,
+                                uint *msg_id_out) {
+  uint msg_id;
+
+  USED(r); /* Reply will be filled by GHOSTDAG processing */
+  USED(
+      depth); /* Depth is used for rollback registration in consensus_depth.c */
+
+  if (dag == nil)
+    dag = ghostdag;
+  if (dag == nil || t == nil)
+    return -1;
+
+  /* Submit via existing async mechanism */
+  msg_id = ghostdag_submit_async(dag, caller, t, path, nil, nil);
+  if (msg_id == 0)
+    return -1;
+
+  if (msg_id_out != nil)
+    *msg_id_out = msg_id;
+
+  return 0;
 }

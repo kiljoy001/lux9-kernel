@@ -81,4 +81,41 @@ int env_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 
+/*
+ * Async 9P Operations (Phase 3)
+ */
+typedef struct Fcall Fcall;
+
+/* Completion callback type */
+typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);
+
+/* Async operation tracking */
+typedef struct AsyncP9Op {
+  uint op_id;                    /* GHOSTDAG message ID */
+  Fcall *request;                /* Original request (copied) */
+  Fcall *reply;                  /* Reply when ready */
+  P9CompletionCallback callback; /* Completion callback */
+  void *callback_arg;            /* Callback argument */
+  uvlong submit_time;            /* When submitted */
+  int status;                    /* P9_STATUS_* */
+  struct AsyncP9Op *next;        /* Linked list for per-process tracking */
+} AsyncP9Op;
+
+/* Async completion status codes */
+#define P9_ASYNC_SUCCESS 0
+#define P9_ASYNC_PENDING 1
+#define P9_ASYNC_TIMEOUT 2
+#define P9_ASYNC_ROLLBACK 3
+#define P9_ASYNC_ERROR 4
+
+/* Async Router API */
+int p9_handle_doorbell_async(Proc *p);
+uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
+                     void *arg);
+int p9_check_async(Proc *p, uint op_id, Fcall *reply_out);
+void p9_cancel_async(Proc *p, uint op_id);
+
+/* Fire all ready async completions for a process */
+int p9_fire_completions(Proc *p);
+
 #endif /* _9P_ROUTER_H_ */

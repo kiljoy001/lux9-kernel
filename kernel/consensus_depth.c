@@ -4,7 +4,7 @@
  * Operation classification and depth-based routing for GHOSTDAG.
  */
 
-#include <u.h>
+#include "u.h"
 #include "portlib.h"
 
 typedef struct Qid Qid;
@@ -12,9 +12,10 @@ typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
 #include "consensus_depth.h"
+#include "ghostdag_kernel.h"
+#include "mem.h"
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
 
 /* Global rollback registry */
 RollbackRegistry *global_rollback_registry = nil;
@@ -484,7 +485,7 @@ void register_verify_callback(VerifyCallback cb) { verify_cb = cb; }
  */
 void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag) {
   OpRollbackEntry *entry;
-  float confidence;
+  int confidence;
   int result;
 
   if (reg == nil)
@@ -506,20 +507,20 @@ void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag) {
       continue;
     }
 
-    /* Check if we've reached required confidence */
+    /* Check if we've reached required confidence (0-100 scale) */
     int verified = 0;
     switch (entry->required_depth) {
     case DEPTH_NONE:
       verified = 1; /* Always verified */
       break;
     case DEPTH_LOCAL:
-      verified = (confidence >= 0.9f);
+      verified = (confidence >= 90);
       break;
     case DEPTH_CLUSTER:
-      verified = (confidence >= 0.8f);
+      verified = (confidence >= 80);
       break;
     case DEPTH_GLOBAL:
-      verified = (confidence >= 0.95f);
+      verified = (confidence >= 95);
       break;
     }
 
@@ -559,7 +560,7 @@ int route_with_explicit_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
     reg = global_rollback_registry;
 
   /* Submit to GHOSTDAG with optimistic execution */
-  result = ghostdag_submit_async(dag, caller, t, r, path, depth, &msg_id);
+  result = ghostdag_submit_async_depth(dag, caller, t, r, path, depth, &msg_id);
   if (result < 0)
     return result;
 

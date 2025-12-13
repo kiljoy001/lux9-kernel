@@ -4,7 +4,7 @@
  * Routes 9P messages from Exchange Pages to kernel services.
  */
 
-#include <u.h>
+#include "u.h"
 #include "portlib.h"
 
 /* Manual typedefs (portlib.h gives structs but not always typedefs used by
@@ -13,12 +13,11 @@ typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
-#include "9p_router.h"
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "9p_router.h"
 #include "proc_packet.h"
-
 /* Stub definitions for proc FSM (until full FSM is implemented) */
 /* EV_* and proc_state are already defined in proc_packet.h */
 
@@ -1001,4 +1000,205 @@ int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   r->type = Rerror;
   r->ename = "not implemented";
   return -1;
+}
+
+/*
+ * Async 9P Operations (Phase 3)
+ *
+ * Integrates with GHOSTDAG consensus depth classification.
+ */
+#include "consensus_depth.h"
+#include "ghostdag_kernel.h"
+
+/* Forward declaration - global rollback registry from consensus_depth.c */
+extern RollbackRegistry *global_rollback_registry;
+
+/*
+ * Callback wrapper that fires when GHOSTDAG completes message ordering
+ */
+static void p9_ghostdag_callback(GhostMsg *msg, int status, void *arg) {
+  AsyncP9Op *op = (AsyncP9Op *)arg;
+
+  if (op == nil)
+    return;
+
+  /* Map GHOSTDAG status to P9 async status */
+  if (status == GHOSTDAG_CB_SUCCESS)
+    op->status = P9_ASYNC_SUCCESS;
+  else if (status == GHOSTDAG_CB_ROLLBACK)
+    op->status = P9_ASYNC_ROLLBACK;
+  else
+    op->status = P9_ASYNC_ERROR;
+
+  /* Fire the user-provided callback if present */
+  if (op->callback != nil) {
+    op->callback(&op->reply, op->callback_arg, op->status);
+  }
+}
+
+/*
+ * Submit 9P operation asynchronously through GHOSTDAG
+ */
+uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
+                     void *arg) {
+  AsyncP9Op *op;
+  uint op_id;
+  ConsensusDepth depth;
+
+  if (p == nil || t == nil)
+    return 0;
+
+  /* Allocate async operation tracking struct */
+  op = xalloc(sizeof(AsyncP9Op));
+  if (op == nil)
+    return 0;
+
+  memset(op, 0, sizeof(AsyncP9Op));
+
+  /* Copy request */
+  memmove(&op->request, t, sizeof(Fcall));
+  op->callback = cb;
+  op->callback_arg = arg;
+  op->submit_time = seconds();
+  op->status = P9_ASYNC_PENDING;
+
+  /* Classify operation to determine consensus depth */
+  depth = classify_operation(t, path);
+
+  /* For DEPTH_NONE operations, execute immediately (optimistic) */
+  if (depth == DEPTH_NONE) {
+    p9_dispatch(p, t, &op->reply);
+    op->status = P9_ASYNC_SUCCESS;
+    if (cb)
+      cb(&op->reply, arg, P9_ASYNC_SUCCESS);
+    xfree(op);
+    return 0; /* No async tracking needed */
+  }
+
+  /* Submit to GHOSTDAG with callback */
+  op_id = ghostdag_submit_async(ghostdag, p, t, path, p9_ghostdag_callback, op);
+  if (op_id == 0) {
+    xfree(op);
+    return 0;
+  }
+
+  op->op_id = op_id;
+
+  /* Register for potential rollback if needed */
+  if (global_rollback_registry != nil && depth >= DEPTH_CLUSTER) {
+    rollback_register(global_rollback_registry, op_id, depth, p, t, &op->reply);
+  }
+
+  return op_id;
+}
+
+/*
+ * Handle doorbell asynchronously using consensus depth classification
+ */
+int p9_handle_doorbell_async(Proc *p) {
+  P9Control *ctl;
+  uchar *reqbuf;
+  Fcall t, r;
+  int n;
+  char path[256];
+  ConsensusDepth depth;
+
+  if (p == nil || p->p9page == nil)
+    return -1;
+
+  ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+  if (ctl->doorbell == 0)
+    return 0; /* No request pending */
+
+  /* Clear doorbell */
+  ctl->doorbell = 0;
+  ctl->status = P9_STATUS_PENDING;
+
+  /* Parse request from exchange page */
+  reqbuf = (uchar *)p->p9page + P9_REQUEST_OFFSET;
+  memset(&t, 0, sizeof(t));
+  n = convM2S(reqbuf, P9_REQUEST_SIZE, &t);
+  if (n <= 0) {
+    ctl->status = P9_STATUS_ERROR;
+    return -1;
+  }
+
+  /* Get path for classification */
+  if (t.type == Tattach)
+    strncpy(path, t.aname, sizeof(path) - 1);
+  else
+    strncpy(path, "/", sizeof(path) - 1);
+
+  /* Classify the operation */
+  depth = classify_operation(&t, path);
+
+  /* For immediate/local operations, use synchronous path */
+  if (depth == DEPTH_NONE) {
+    memset(&r, 0, sizeof(r));
+    p9_dispatch(p, &t, &r);
+
+    /* Write reply to exchange page */
+    convS2M(&r, (uchar *)p->p9page + P9_REPLY_OFFSET, P9_REPLY_SIZE);
+    ctl->status = P9_STATUS_COMPLETE;
+    return 1;
+  }
+
+  /* Submit asynchronously for consensus */
+  p9_submit_async(p, &t, path, nil, nil);
+  return 1;
+}
+
+/*
+ * Check if an async operation has completed
+ */
+int p9_check_async(Proc *p, uint op_id, Fcall *reply_out) {
+  GhostMsg *msg;
+
+  USED(p);
+
+  if (op_id == 0)
+    return P9_ASYNC_ERROR;
+
+  msg = ghostdag_find_by_id(ghostdag, op_id);
+  if (msg == nil)
+    return P9_ASYNC_SUCCESS; /* Already completed and removed */
+
+  if (msg->gm_state >= GHOSTDAG_STATE_DELIVERED) {
+    if (reply_out != nil && msg->gm_callback_arg != nil) {
+      AsyncP9Op *op = (AsyncP9Op *)msg->gm_callback_arg;
+      memmove(reply_out, &op->reply, sizeof(Fcall));
+    }
+    return P9_ASYNC_SUCCESS;
+  }
+
+  return P9_ASYNC_PENDING;
+}
+
+/*
+ * Cancel an async operation
+ */
+void p9_cancel_async(Proc *p, uint op_id) {
+  GhostMsg *msg;
+
+  USED(p);
+
+  if (op_id == 0)
+    return;
+
+  msg = ghostdag_find_by_id(ghostdag, op_id);
+  if (msg != nil) {
+    /* Mark for rollback if registered */
+    if (global_rollback_registry != nil) {
+      rollback_trigger(global_rollback_registry, op_id);
+    }
+  }
+}
+
+/*
+ * Fire all ready async completions for a process
+ */
+int p9_fire_completions(Proc *p) {
+  USED(p);
+  /* Delegate to GHOSTDAG fire_completions */
+  return ghostdag_fire_completions(ghostdag);
 }

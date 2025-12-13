@@ -13,6 +13,10 @@
 /* Forward declarations */
 struct Proc;
 struct Fcall;
+struct Rendez;
+typedef struct Proc Proc;
+typedef struct Fcall Fcall;
+typedef struct Rendez Rendez;
 
 /*
  * GHOSTDAG Configuration
@@ -85,6 +89,10 @@ typedef struct GhostMsg {
   uvlong gm_global_seq;   /* Global sequence number */
   uvlong gm_ordered_time; /* When ordering determined */
 
+  /* Completion callback for async operations */
+  void (*gm_callback)(struct GhostMsg *, int status, void *arg);
+  void *gm_callback_arg;
+
   /* Linked list */
   struct GhostMsg *gm_next;
   struct GhostMsg *gm_prev;
@@ -116,7 +124,7 @@ typedef struct GhostDAG {
   uvlong gd_avg_latency;
 
   /* Synchronization for readers */
-  Rendez gd_rendez;
+  Rendez *gd_rendez;
 
   /* State */
   int gd_initialized;
@@ -198,5 +206,50 @@ typedef GhostDAG ghostdag_state_t;
 ghostdag_state_t *ghostdag_state_create(uint k_param);
 uint ghostdag_add_message(ghostdag_state_t *state, Proc *p, Fcall *t,
                           char *path);
+
+/*
+ * Completion Callback API
+ */
+typedef void (*GhostdagCallback)(GhostMsg *msg, int status, void *arg);
+
+/* Submit 9P message with completion callback */
+uint ghostdag_submit_async(GhostDAG *dag, Proc *caller, Fcall *t, char *path,
+                           GhostdagCallback cb, void *cb_arg);
+
+/* Find message by ID */
+GhostMsg *ghostdag_find_by_id(GhostDAG *dag, uint id);
+
+/* Set callback on existing message */
+void ghostdag_set_callback(GhostMsg *msg, GhostdagCallback cb, void *cb_arg);
+
+/* Fire callbacks for all ready messages (call from scheduler) */
+int ghostdag_fire_completions(GhostDAG *dag);
+
+/* Callback status codes */
+#define GHOSTDAG_CB_SUCCESS 0
+#define GHOSTDAG_CB_TIMEOUT 1
+#define GHOSTDAG_CB_ROLLBACK 2
+#define GHOSTDAG_CB_ERROR 3
+
+/*
+ * Consensus Depth Integration (for consensus_depth.c)
+ * Note: ConsensusDepth is defined as enum in consensus_depth.h
+ * Functions here use int for compatibility when consensus_depth.h is not
+ * included
+ */
+
+/* Check consensus depth for an operation - confidence is 0-100 scale
+ * depth argument is ConsensusDepth enum value (compatible with int) */
+int ghostdag_check_consensus_depth(GhostDAG *dag, uint op_id,
+                                   int required_depth, int *confidence_out);
+
+/* Submit async with depth parameter (alternative signature for
+ * consensus_depth.c)
+ * t and r are Fcall* but declared as void* for header independence */
+int ghostdag_submit_async_depth(GhostDAG *dag, Proc *caller, void *t, void *r,
+                                char *path, int depth, uint *msg_id_out);
+
+/* Macro alias for backwards compatibility */
+#define ghostdag_submit_async_ex ghostdag_submit_async_depth
 
 #endif /* _GHOSTDAG_KERNEL_H_ */

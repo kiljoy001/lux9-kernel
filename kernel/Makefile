@@ -40,7 +40,7 @@ FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c famil
 CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
 CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
 CLR_QBE_C := clr/qbe_compile.c clr/qbe/clr_p9_internal.c
-MISC_KERNEL_C := ../kernel/ghostdag_kernel.c ../kernel/9p_router.c
+MISC_KERNEL_C := ../kernel/ghostdag_kernel.c ../kernel/9p_router.c ../kernel/consensus_depth.c
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
