@@ -26,7 +26,7 @@ typedef ulong *syscall_va_list;
  * The sys*() routines needn't poperror() as they return directly to syscall().
  */
 
-static void unlockfgrp(Fgrp *f) {
+void unlockfgrp(Fgrp *f) {
   int ex;
 
   ex = f->exceed;
@@ -36,7 +36,7 @@ static void unlockfgrp(Fgrp *f) {
     pprint("warning: process exceeds %d file descriptors\n", ex);
 }
 
-static int growfd(Fgrp *f, int fd) /* fd is always >= 0 */
+int growfd(Fgrp *f, int fd) /* fd is always >= 0 */
 {
   Chan **newfd, **oldfd;
   uchar *newflag, *oldflag;

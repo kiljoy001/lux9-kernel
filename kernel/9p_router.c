@@ -224,59 +224,61 @@ static int check_permission(Proc *p, int required_perm) {
   return (tok.permissions & required_perm) != 0;
 }
 
-/* Fid Tracking */
-typedef struct P9Fid {
-    ulong pid;
-    u32int fid;
-    int type; /* 1=proc, 2=dev, 3=env, 4=srv, 5=mnt */
-    struct P9Fid *next;
-} P9Fid;
+/* 
+ * FID Management via Fgrp (Stateless Router)
+ * We reuse the kernel's file descriptor table to map 9P FIDs.
+ * Virtual router endpoints are represented by Channels with type = -1.
+ */
 
-#define FID_HASH 64
-static P9Fid *fid_table[FID_HASH];
-static Lock fid_lock;
+#define ROUTER_CHAN_TYPE -1
+#define TYPE_PROC 1
+#define TYPE_DEV 2
+#define TYPE_ENV 3
+#define TYPE_SRV 4
+#define TYPE_MNT 5
 
-static void fid_put(ulong pid, u32int fid, int type) {
-    int h = (pid + fid) % FID_HASH;
-    lock(&fid_lock);
-    P9Fid *f = xalloc(sizeof(P9Fid));
-    if (f) {
-        f->pid = pid;
-        f->fid = fid;
-        f->type = type;
-        f->next = fid_table[h];
-        fid_table[h] = f;
+static int install_fid(int fid, int type) {
+    Chan *c;
+    Fgrp *f = up->fgrp;
+    
+    c = newchan();
+    if (c == nil) return -1;
+    c->type = ROUTER_CHAN_TYPE; /* Mark as virtual router channel */
+    c->qid.path = type;         /* Store handler type in Qid path */
+    c->mode = ORDWR;
+    c->ref = 1;
+
+    lock(&f->lock);
+    if (fid < 0 || growfd(f, fid) < 0) {
+        unlockfgrp(f);
+        cclose(c);
+        return -1;
     }
-    unlock(&fid_lock);
+    if (fid > f->maxfd) f->maxfd = fid;
+    if (f->fd[fid]) cclose(f->fd[fid]);
+    f->fd[fid] = c;
+    f->flag[fid] = 0;
+    unlockfgrp(f);
+    return 0;
 }
 
-static int fid_get_type(ulong pid, u32int fid) {
-    int h = (pid + fid) % FID_HASH;
+static int get_fid_type(int fid) {
+    Chan *c;
+    Fgrp *f = up->fgrp;
     int type = 0;
-    lock(&fid_lock);
-    for (P9Fid *f = fid_table[h]; f != nil; f = f->next) {
-        if (f->pid == pid && f->fid == fid) {
-            type = f->type;
-            break;
+
+    lock(&f->lock);
+    if (fid >= 0 && fid <= f->maxfd && (c = f->fd[fid]) != nil) {
+        if (c->type == ROUTER_CHAN_TYPE) {
+            type = (int)c->qid.path;
         }
     }
-    unlock(&fid_lock);
+    unlock(&f->lock);
     return type;
 }
 
-static void fid_remove(ulong pid, u32int fid) {
-    int h = (pid + fid) % FID_HASH;
-    lock(&fid_lock);
-    P9Fid **prev = &fid_table[h];
-    for (P9Fid *f = *prev; f != nil; f = f->next) {
-        if (f->pid == pid && f->fid == fid) {
-            *prev = f->next;
-            xfree(f);
-            break;
-        }
-        prev = &f->next;
-    }
-    unlock(&fid_lock);
+static void remove_fid(int fid) {
+    fdclose(fid, 0);
 }
 
 /*
@@ -287,24 +289,30 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
   if (t->type == Tattach) {
       /* Determine type from path */
-      if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0) type = 1;
-      else if (path_match(t->aname, "/dev/") || strcmp(t->aname, "/dev") == 0) type = 2;
-      else if (path_match(t->aname, "/env/") || strcmp(t->aname, "/env") == 0) type = 3;
-      else if (path_match(t->aname, "/srv/") || strcmp(t->aname, "/srv") == 0) type = 4;
-      else if (path_match(t->aname, "/mnt/") || strcmp(t->aname, "/mnt") == 0) type = 5;
+      if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0) type = TYPE_PROC;
+      else if (path_match(t->aname, "/dev/") || strcmp(t->aname, "/dev") == 0) type = TYPE_DEV;
+      else if (path_match(t->aname, "/env/") || strcmp(t->aname, "/env") == 0) type = TYPE_ENV;
+      else if (path_match(t->aname, "/srv/") || strcmp(t->aname, "/srv") == 0) type = TYPE_SRV;
+      else if (path_match(t->aname, "/mnt/") || strcmp(t->aname, "/mnt") == 0) type = TYPE_MNT;
       
-      if (type > 0) fid_put(p->pid, t->fid, type);
+      if (type > 0) {
+          if (install_fid(t->fid, type) < 0) {
+              r->type = Rerror;
+              r->ename = "fid allocation failed";
+              return -1;
+          }
+      }
   } else {
       /* Lookup type from fid */
-      type = fid_get_type(p->pid, t->fid);
-      if (t->type == Tclunk) fid_remove(p->pid, t->fid);
+      type = get_fid_type(t->fid);
+      if (t->type == Tclunk) remove_fid(t->fid);
   }
 
-  if (type == 1) return proc_9p_handle(p, t, r);
-  if (type == 2) return dev_9p_handle(p, t, r);
-  if (type == 3) return env_9p_handle(p, t, r);
-  if (type == 4) return srv_9p_handle(p, t, r);
-  if (type == 5) return mnt_9p_handle(p, t, r);
+  if (type == TYPE_PROC) return proc_9p_handle(p, t, r);
+  if (type == TYPE_DEV) return dev_9p_handle(p, t, r);
+  if (type == TYPE_ENV) return env_9p_handle(p, t, r);
+  if (type == TYPE_SRV) return srv_9p_handle(p, t, r);
+  if (type == TYPE_MNT) return mnt_9p_handle(p, t, r);
 
   r->type = Rerror;
   r->ename = "fid not found or unknown path";

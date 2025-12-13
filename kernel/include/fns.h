@@ -227,6 +227,8 @@ _Noreturn void	namelenerror(char*, int, char*);
 int		needpages(void*);
 Chan*		newchan(void);
 Egrp*		newegrp(void);
+int		growfd(Fgrp*, int);
+void	unlockfgrp(Fgrp*);
 int		newfd(Chan*, int);
 Mhead*		newmhead(Chan*);
 Mount*		newmount(Chan*, int, char*);
