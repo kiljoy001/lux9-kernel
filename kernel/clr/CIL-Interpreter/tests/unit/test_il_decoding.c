@@ -291,6 +291,66 @@ TEST(test_extended_opcodes) {
     return TEST_PASSED;
 }
 
+// Test arithmetic overflow operations
+TEST(test_arithmetic_overflow_opcodes) {
+    // Create bytecode with arithmetic overflow operations
+    uint8_t bytecode[] = {
+        0xD6,  // ADD_OVF (no operand)
+        0xD8,  // MUL_OVF (no operand) 
+        0xDA,  // SUB_OVF (no operand)
+        0xDC,  // DIV_OVF (no operand)
+    };
+    
+    // Create decoder
+    cil_decoder_t* decoder = create_cil_decoder(bytecode, sizeof(bytecode));
+    TEST_ASSERT_NOT_NULL(decoder);
+    
+    // Test ADD_OVF
+    cil_instruction_t* inst = decode_next_instruction(decoder);
+    TEST_ASSERT_NOT_NULL(inst);
+    TEST_ASSERT_EQUAL(CIL_OPCODE_ADD_OVF, inst->opcode);
+    TEST_ASSERT_EQUAL(CIL_OPERAND_NONE, inst->operand_type);
+    TEST_ASSERT_EQUAL(1, inst->size);
+    TEST_ASSERT_STRING_EQUAL("add.ovf", get_opcode_name(inst->opcode));
+    free(inst);
+    
+    // Test MUL_OVF
+    inst = decode_next_instruction(decoder);
+    TEST_ASSERT_NOT_NULL(inst);
+    TEST_ASSERT_EQUAL(CIL_OPCODE_MUL_OVF, inst->opcode);
+    TEST_ASSERT_EQUAL(CIL_OPERAND_NONE, inst->operand_type);
+    TEST_ASSERT_EQUAL(1, inst->size);
+    TEST_ASSERT_STRING_EQUAL("mul.ovf", get_opcode_name(inst->opcode));
+    free(inst);
+    
+    // Test SUB_OVF
+    inst = decode_next_instruction(decoder);
+    TEST_ASSERT_NOT_NULL(inst);
+    TEST_ASSERT_EQUAL(CIL_OPCODE_SUB_OVF, inst->opcode);
+    TEST_ASSERT_EQUAL(CIL_OPERAND_NONE, inst->operand_type);
+    TEST_ASSERT_EQUAL(1, inst->size);
+    TEST_ASSERT_STRING_EQUAL("sub.ovf", get_opcode_name(inst->opcode));
+    free(inst);
+    
+    // Test DIV_OVF
+    inst = decode_next_instruction(decoder);
+    TEST_ASSERT_NOT_NULL(inst);
+    TEST_ASSERT_EQUAL(CIL_OPCODE_DIV_OVF, inst->opcode);
+    TEST_ASSERT_EQUAL(CIL_OPERAND_NONE, inst->operand_type);
+    TEST_ASSERT_EQUAL(1, inst->size);
+    TEST_ASSERT_STRING_EQUAL("div.ovf", get_opcode_name(inst->opcode));
+    free(inst);
+    
+    // Should be no more instructions
+    inst = decode_next_instruction(decoder);
+    TEST_ASSERT_NULL(inst);
+    
+    // Clean up
+    destroy_cil_decoder(decoder);
+    
+    return TEST_PASSED;
+}
+
 int main(void) {
     printf("=== IL Decoding Tests ===\n\n");
     
@@ -343,12 +403,20 @@ int main(void) {
         .next = NULL
     };
     
+    static test_case_t test_arithmetic_overflow = {
+        .suite_name = "il_decoding",
+        .test_name = "test_arithmetic_overflow_opcodes",
+        .test_func = test_arithmetic_overflow_opcodes_wrapper,
+        .next = NULL
+    };
+    
     test_register_case(&test_simple);
     test_register_case(&test_byte);
     test_register_case(&test_int);
     test_register_case(&test_branch);
     test_register_case(&test_switch);
     test_register_case(&test_extended);
+    test_register_case(&test_arithmetic_overflow);
     
     // Run tests
     test_set_verbose(1);

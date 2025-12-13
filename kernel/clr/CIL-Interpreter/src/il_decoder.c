@@ -117,6 +117,16 @@ cil_operand_type_t get_opcode_operand_type(cil_opcode_t opcode) {
         case CIL_OPCODE_CLT_UN:
         case CIL_OPCODE_ENDFILTER:
         case CIL_OPCODE_RETHROW:
+        
+        // Arithmetic overflow operations
+        case CIL_OPCODE_ADD_OVF:
+        case CIL_OPCODE_ADD_OVF_UN:
+        case CIL_OPCODE_MUL_OVF:
+        case CIL_OPCODE_MUL_OVF_UN:
+        case CIL_OPCODE_SUB_OVF:
+        case CIL_OPCODE_SUB_OVF_UN:
+        case CIL_OPCODE_DIV_OVF:
+        case CIL_OPCODE_DIV_OVF_UN:
             return CIL_OPERAND_NONE;
             
         // Byte operand opcodes
@@ -456,6 +466,17 @@ const char* get_opcode_name(cil_opcode_t opcode) {
         case CIL_OPCODE_PREFIX2: return "prefix2";
         case CIL_OPCODE_PREFIX1: return "prefix1";
         case CIL_OPCODE_PREFIXREF: return "prefixref";
+        
+        // Arithmetic overflow operations
+        case CIL_OPCODE_ADD_OVF: return "add.ovf";
+        case CIL_OPCODE_ADD_OVF_UN: return "add.ovf.un";
+        case CIL_OPCODE_MUL_OVF: return "mul.ovf";
+        case CIL_OPCODE_MUL_OVF_UN: return "mul.ovf.un";
+        case CIL_OPCODE_SUB_OVF: return "sub.ovf";
+        case CIL_OPCODE_SUB_OVF_UN: return "sub.ovf.un";
+        case CIL_OPCODE_DIV_OVF: return "div.ovf";
+        case CIL_OPCODE_DIV_OVF_UN: return "div.ovf.un";
+        
         default: return "unknown";
     }
 }
