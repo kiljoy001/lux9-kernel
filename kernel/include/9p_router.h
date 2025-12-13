@@ -23,10 +23,12 @@ typedef struct Fcall Fcall;
 /* Fixed user virtual address for the Exchange Page */
 #define EXCHANGE_PAGE_ADDR 0x7FFFFFFF0000ULL
 
+#include "atomic.h"
+
 /* Control Block (at offset 0xF00) */
 typedef struct P9Control {
-  volatile uint doorbell;
-  volatile uint status;
+  uint doorbell; /* Access via atomic_load/store */
+  uint status;   /* Access via atomic_load/store */
   volatile uint req_head;
   volatile uint req_tail;
   volatile uint rep_head;
