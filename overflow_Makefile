@@ -1,0 +1,67 @@
+# Makefile for ECMA-335 Overflow Detection Module
+# Copyright (c) 2025 GHOSTDAG IPC Consensus System
+
+CC = gcc
+CFLAGS = -std=c99 -Wall -Wextra -O2
+LDFLAGS = -lm
+
+# Source files
+OVERFLOW_SRC = overflow.c
+OVERFLOW_HDR = overflow.h
+TEST_SRC = overflow_conv_test.c
+
+# Object files
+OVERFLOW_OBJ = overflow.o
+
+# Executables
+TEST_EXE = overflow_conv_test
+
+# Default target
+all: $(TEST_EXE)
+
+# Compile overflow module
+$(OVERFLOW_OBJ): $(OVERFLOW_SRC) $(OVERFLOW_HDR)
+	$(CC) $(CFLAGS) -c $(OVERFLOW_SRC) -o $(OVERFLOW_OBJ)
+
+# Build test executable
+$(TEST_EXE): $(TEST_SRC) $(OVERFLOW_OBJ)
+	$(CC) $(CFLAGS) $(TEST_SRC) $(OVERFLOW_OBJ) -o $(TEST_EXE) $(LDFLAGS)
+
+# Run tests
+test: $(TEST_EXE)
+	@echo "Running ECMA-335 Overflow Detection Tests..."
+	./$(TEST_EXE)
+
+# Clean build artifacts
+clean:
+	rm -f $(OVERFLOW_OBJ) $(TEST_EXE)
+
+# Clean everything including test outputs
+distclean: clean
+	rm -f overflow_conv_test
+
+# Install headers and library (if needed for integration)
+install: $(OVERFLOW_OBJ)
+	@echo "Installing overflow detection module..."
+	@mkdir -p ../include
+	cp $(OVERFLOW_HDR) ../include/
+	@mkdir -p ../lib
+	cp $(OVERFLOW_OBJ) ../lib/liboverflow.o
+
+# Show help
+help:
+	@echo "ECMA-335 Overflow Detection Module Makefile"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all      - Build overflow module and tests (default)"
+	@echo "  test     - Build and run comprehensive test suite"
+	@echo "  clean    - Remove build artifacts"
+	@echo "  distclean- Remove all generated files"
+	@echo "  install  - Install headers and library"
+	@echo "  help     - Show this help message"
+	@echo ""
+	@echo "This module implements ECMA-335 compliant overflow detection"
+	@echo "for arithmetic operations (add.ovf, sub.ovf, mul.ovf) and"
+	@echo "conversion operations (conv.ovf.*) to complete ORSI 1b."
+
+.PHONY: all test clean distclean install help
