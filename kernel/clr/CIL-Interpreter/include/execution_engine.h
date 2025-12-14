@@ -220,6 +220,18 @@ bool vm_store_field(vm_execution_state_t* state, void* obj, uint32_t field_offse
 bool vm_load_indirect(vm_value_t* addr, vm_type_t load_type, vm_value_t* result);
 bool vm_store_indirect(vm_value_t* addr, vm_value_t* value);
 bool vm_new_array(vm_value_t* size, vm_value_t* result);
+bool vm_load_array_element(vm_value_t* array, vm_value_t* index, vm_type_t element_type, vm_value_t* result);
+bool vm_store_array_element(vm_value_t* array, vm_value_t* index, vm_type_t element_type, vm_value_t* value);
+bool vm_load_array_element_address(vm_value_t* array, vm_value_t* index, vm_value_t* result);
+bool vm_get_array_length(vm_value_t* array, vm_value_t* result);
+bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
+bool vm_store_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* value);
+bool vm_load_static_field(vm_value_t* field_token, vm_value_t* result);
+bool vm_store_static_field(vm_value_t* field_token, vm_value_t* value);
+bool vm_load_field_address(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
+bool vm_load_static_field_address(vm_value_t* field_token, vm_value_t* result);
+bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result);
+bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result);
 bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
 bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
 

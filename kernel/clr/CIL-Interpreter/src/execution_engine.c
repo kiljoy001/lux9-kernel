@@ -730,6 +730,96 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             state->current_frame = NULL;
             break;
         }
+        case CIL_OPCODE_LDELEM_I4: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.I4: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_I4, &result)) { vm_set_error(state, "LDELEM.I4: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_I1: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.I1: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_I1, &result)) { vm_set_error(state, "LDELEM.I1: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_U1: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.U1: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_U1, &result)) { vm_set_error(state, "LDELEM.U1: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_I2: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.I2: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_I2, &result)) { vm_set_error(state, "LDELEM.I2: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_U2: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.U2: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_U2, &result)) { vm_set_error(state, "LDELEM.U2: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_U4: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.U4: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_U4, &result)) { vm_set_error(state, "LDELEM.U4: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_I8: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.I8: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_I8, &result)) { vm_set_error(state, "LDELEM.I8: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_R4: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.R4: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_R4, &result)) { vm_set_error(state, "LDELEM.R4: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_R8: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.R8: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_R8, &result)) { vm_set_error(state, "LDELEM.R8: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEM_REF: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.REF: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_REF, &result)) { vm_set_error(state, "LDELEM.REF: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDLEN: {
+            vm_value_t array, result;
+            if (!vm_stack_pop(state, &array)) { vm_set_error(state, "LDLEN: Stack"); return false; }
+            if (!vm_get_array_length(&array, &result)) { vm_set_error(state, "LDLEN: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_LDELEMA: {
+            vm_value_t array, index, result;
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEMA: Stack"); return false; }
+            if (!vm_load_array_element_address(&array, &index, &result)) { vm_set_error(state, "LDELEMA: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_STELEM_I4: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I4: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_I4, &value)) { vm_set_error(state, "STELEM.I4: Error"); return false; }
+            break;
+        }
         
         default: vm_set_error(state, "Unsupported opcode"); return false;
     }
@@ -1029,6 +1119,124 @@ bool vm_new_array(vm_value_t* size, vm_value_t* result) {
     result->type = VM_TYPE_REF;
     result->value.ref = array_data;
     return true;
+}
+
+bool vm_load_array_element(vm_value_t* array, vm_value_t* index, vm_type_t element_type, vm_value_t* result) {
+    if (!array || !index || !result) return false;
+    if (array->type != VM_TYPE_REF || !array->value.ref) return false;
+    if (index->type != VM_TYPE_I4) return false;
+    
+    int32_t idx = index->value.i4;
+    if (idx < 0) return false; // Simple bounds check
+    
+    // For now, treat all arrays as arrays of void* for simplicity
+    void** array_ptr = (void**)array->value.ref;
+    if (idx >= 0) { // Simplified bounds check
+        void* element = array_ptr[idx];
+        if (!element) {
+            // Return null reference
+            result->type = VM_TYPE_REF;
+            result->value.ref = NULL;
+            return true;
+        }
+        
+        // For now, return the element as-is (simplified)
+        result->type = element_type;
+        result->value.ref = element;
+        return true;
+    }
+    
+    return false;
+}
+
+bool vm_store_array_element(vm_value_t* array, vm_value_t* index, vm_type_t element_type, vm_value_t* value) {
+    if (!array || !index || !value) return false;
+    if (array->type != VM_TYPE_REF || !array->value.ref) return false;
+    if (index->type != VM_TYPE_I4) return false;
+    
+    int32_t idx = index->value.i4;
+    if (idx < 0) return false; // Simple bounds check
+    
+    // For now, treat all arrays as arrays of void* for simplicity
+    void** array_ptr = (void**)array->value.ref;
+    if (idx >= 0) { // Simplified bounds check
+        // Store the value as a reference
+        array_ptr[idx] = value->value.ref;
+        return true;
+    }
+    
+    return false;
+}
+
+bool vm_get_array_length(vm_value_t* array, vm_value_t* result) {
+    if (!array || !result) return false;
+    if (array->type != VM_TYPE_REF || !array->value.ref) return false;
+    
+    // For now, return a default length of 10 (simplified implementation)
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 10;
+    return true;
+}
+
+bool vm_load_array_element_address(vm_value_t* array, vm_value_t* index, vm_value_t* result) {
+    if (!array || !index || !result) return false;
+    if (array->type != VM_TYPE_REF || !array->value.ref) return false;
+    if (index->type != VM_TYPE_I4) return false;
+    
+    int32_t idx = index->value.i4;
+    if (idx < 0) return false; // Simple bounds check
+    
+    // For now, treat all arrays as arrays of void* for simplicity
+    void** array_ptr = (void**)array->value.ref;
+    if (idx >= 0) { // Simplified bounds check
+        // Return address of the element
+        result->type = VM_TYPE_BYREF;
+        result->value.ref = &array_ptr[idx];
+        return true;
+    }
+    
+    return false;
+}
+
+// Stubs for missing field/object operations
+bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result) {
+    // TODO: Implement field loading with proper token resolution
+    return false;
+}
+
+bool vm_store_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* value) {
+    // TODO: Implement field storing with proper token resolution
+    return false;
+}
+
+bool vm_load_static_field(vm_value_t* field_token, vm_value_t* result) {
+    // TODO: Implement static field loading with proper token resolution
+    return false;
+}
+
+bool vm_store_static_field(vm_value_t* field_token, vm_value_t* value) {
+    // TODO: Implement static field storing with proper token resolution
+    return false;
+}
+
+bool vm_load_field_address(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result) {
+    // TODO: Implement field address loading with proper token resolution
+    return false;
+}
+
+bool vm_load_static_field_address(vm_value_t* field_token, vm_value_t* result) {
+    // TODO: Implement static field address loading with proper token resolution
+    return false;
+}
+
+bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result) {
+    // TODO: Implement class casting with proper type checking
+    return false;
+}
+
+bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result) {
+    // TODO: Implement instance checking with proper type checking
+    return false;
 }
 
 bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result) {

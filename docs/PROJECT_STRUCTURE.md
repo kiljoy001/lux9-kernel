@@ -86,7 +86,7 @@ Development and testing utilities:
 ## Userspace Directory
 
 User space components and servers:
-- **Go servers**: ext4fs, memfs, and other file system servers
+- **Servers**: ext4fs, memfs, and other file system servers
 - **Testing utilities**: exchange_test, exchange_9p_test
 - **Init utilities**: Basic user space initialization
 - **Documentation**: Userspace-specific documentation

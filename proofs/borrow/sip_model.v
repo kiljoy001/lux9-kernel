@@ -29,9 +29,17 @@ Inductive OwnerState :=
   | SharedOwned   (* BORROW_SHARED_OWNED *)
   | MutLent.      (* BORROW_MUT_LENT *)
 
+Inductive SipStatus :=
+  | P9_Idle
+  | P9_Pending
+  | P9_Complete
+  | P9_Error.
+
 Record PageState := mkPageState {
   owner : option Pid;
   state : OwnerState;
+  sip_status : SipStatus;
+  doorbell : bool;
   shared_borrowers : list Pid;
   mut_borrower : option Pid;
 }.
@@ -41,7 +49,7 @@ Definition SystemState := PageId -> PageState.
 
 (* Initial State *)
 Definition init_state : SystemState :=
-  fun _ => mkPageState None Free [] None.
+  fun _ => mkPageState None Free P9_Idle false [] None.
 
 (* ========================================================================= *)
 (* HELPER FUNCTIONS                                *)
@@ -70,7 +78,8 @@ Qed.
 Inductive Acquire (p : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
   | Acquire_Success :
       (s1 page).(state) = Free ->
-      s2 = update_page s1 page (mkPageState (Some p) Exclusive [] None) ->
+      (s1 page).(doorbell) = true -> (* User must ring doorbell *)
+      s2 = update_page s1 page (mkPageState (Some p) Exclusive P9_Pending false [] None) ->
       Acquire p page s1 s2.
 
 Inductive Release (p : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
@@ -79,7 +88,8 @@ Inductive Release (p : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
       (s1 page).(state) = Exclusive ->
       (s1 page).(shared_borrowers) = [] ->
       (s1 page).(mut_borrower) = None ->
-      s2 = update_page s1 page (mkPageState None Free [] None) ->
+      (* Kernel releases ownership, sets status Complete *)
+      s2 = update_page s1 page (mkPageState None Free P9_Complete false [] None) ->
       Release p page s1 s2.
 
 Inductive BorrowShared (p_owner : Pid) (p_borrower : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
@@ -87,13 +97,13 @@ Inductive BorrowShared (p_owner : Pid) (p_borrower : Pid) (page : PageId) (s1 s2
       (s1 page).(owner) = Some p_owner ->
       (s1 page).(state) = Exclusive ->
       ~ In p_borrower (s1 page).(shared_borrowers) -> 
-      s2 = update_page s1 page (mkPageState (Some p_owner) SharedOwned [p_borrower] None) ->
+      s2 = update_page s1 page (mkPageState (Some p_owner) SharedOwned (s1 page).(sip_status) (s1 page).(doorbell) [p_borrower] None) ->
       BorrowShared p_owner p_borrower page s1 s2
   | BS_Success_Shared :
       (s1 page).(owner) = Some p_owner ->
       (s1 page).(state) = SharedOwned ->
       ~ In p_borrower (s1 page).(shared_borrowers) -> 
-      s2 = update_page s1 page (mkPageState (Some p_owner) SharedOwned (p_borrower :: (s1 page).(shared_borrowers)) None) ->
+      s2 = update_page s1 page (mkPageState (Some p_owner) SharedOwned (s1 page).(sip_status) (s1 page).(doorbell) (p_borrower :: (s1 page).(shared_borrowers)) None) ->
       BorrowShared p_owner p_borrower page s1 s2.
 
 (* REFACTORED: Removed internal 'let' binding to fix proof visibility *)
@@ -104,34 +114,34 @@ Inductive ReturnShared (p_borrower : Pid) (page : PageId) (s1 s2 : SystemState) 
       In p_borrower (s1 page).(shared_borrowers) ->
       new_list = remove Z.eq_dec p_borrower (s1 page).(shared_borrowers) -> 
       new_list <> [] ->
-      s2 = update_page s1 page (mkPageState (s1 page).(owner) SharedOwned new_list None) ->
+      s2 = update_page s1 page (mkPageState (s1 page).(owner) SharedOwned (s1 page).(sip_status) (s1 page).(doorbell) new_list None) ->
       ReturnShared p_borrower page s1 s2
   | RS_Success_BackToExclusive :
       (s1 page).(state) = SharedOwned ->
       In p_borrower (s1 page).(shared_borrowers) ->
       remove Z.eq_dec p_borrower (s1 page).(shared_borrowers) = [] ->
-      s2 = update_page s1 page (mkPageState (s1 page).(owner) Exclusive [] None) ->
+      s2 = update_page s1 page (mkPageState (s1 page).(owner) Exclusive (s1 page).(sip_status) (s1 page).(doorbell) [] None) ->
       ReturnShared p_borrower page s1 s2.
 
 Inductive BorrowMut (p_owner : Pid) (p_borrower : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
   | BM_Success :
       (s1 page).(owner) = Some p_owner ->
       (s1 page).(state) = Exclusive ->
-      s2 = update_page s1 page (mkPageState (Some p_owner) MutLent [] (Some p_borrower)) ->
+      s2 = update_page s1 page (mkPageState (Some p_owner) MutLent (s1 page).(sip_status) (s1 page).(doorbell) [] (Some p_borrower)) ->
       BorrowMut p_owner p_borrower page s1 s2.
 
 Inductive ReturnMut (p_borrower : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
   | RM_Success :
       (s1 page).(state) = MutLent ->
       (s1 page).(mut_borrower) = Some p_borrower ->
-      s2 = update_page s1 page (mkPageState (s1 page).(owner) Exclusive [] None) ->
+      s2 = update_page s1 page (mkPageState (s1 page).(owner) Exclusive (s1 page).(sip_status) (s1 page).(doorbell) [] None) ->
       ReturnMut p_borrower page s1 s2.
 
 Inductive Transfer (from : Pid) (to : Pid) (page : PageId) (s1 s2 : SystemState) : Prop :=
   | Transfer_Success :
       (s1 page).(owner) = Some from ->
       (s1 page).(state) = Exclusive ->
-      s2 = update_page s1 page (mkPageState (Some to) Exclusive [] None) ->
+      s2 = update_page s1 page (mkPageState (Some to) Exclusive (s1 page).(sip_status) (s1 page).(doorbell) [] None) ->
       Transfer from to page s1 s2.
 
 (* Wrapper Step *)
@@ -263,6 +273,7 @@ Ltac solve_coherence_hit Hc pg s1 :=
   setup_hit;
   (* Specialize Coherence hypothesis for the current page *)
   specialize (Hc pg);
+
   (* try match goal with
   | [ H : ?l = remove _ _ _ |- ?l <> [] ] => rewrite H 
   end; *)
@@ -344,20 +355,78 @@ Ltac solve_coherence_main Hc pg s1 :=
     simpl in HW; simpl in HR;
     try rewrite (update_page_miss _ _ _ _ Hneq) in HW;
     try rewrite (update_page_miss _ _ _ _ Hneq) in HR;
-    fold CanRead in *; fold CanWrite in *;
+    fold CanWrite in HR;
+    fold CanRead in HR;
     eapply Hr; eauto ].
 
-(* 7. Master Tactic (Force Substitution First) *)
-Ltac solve_valid Hvalid pg s1 :=
-  try subst;               
-  unfold ValidState in Hvalid;
-  destruct Hvalid as [Hcoh_proof [Hwrite_proof Hrace_proof]]; (* Nested destruct for A /\ (B /\ C) *)
-  split; 
-  [ solve_coherence_main Hcoh_proof pg s1 |   (* Branch 1: Coherence *)
-    split; 
-    [ solve_write_main Hwrite_proof pg |     (* Branch 2: Write Safety *)
-      admit (* solve_race_main Hrace_proof pg *) ]      (* Branch 3: Race Safety *)
-  ].
+
+(* 7. Improved Master Tactic *)
+Ltac solve_valid_step :=
+  match goal with
+  | [ Hvalid : ValidState ?s1, pg : PageId |- _ ] =>
+      unfold ValidState in Hvalid;
+      destruct Hvalid as [Hcoh [Hw Hr]];
+      split; [
+        (* Coherence *)
+        solve_coherence_main Hcoh pg s1
+      | split; [
+          (* Write Safety *)
+          unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2;
+          destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [
+            (* HIT case *)
+            subst pg0; unfold CanWrite in HW1, HW2; 
+            repeat rewrite update_page_hit in *; simpl in *;
+            destruct HW1 as [[Ho1 Hs1]|[Hm1 Hs1]]; destruct HW2 as [[Ho2 Hs2]|[Hm2 Hs2]];
+            try discriminate Hs1; try discriminate Hs2;
+            try congruence;
+            try (inversion Ho1; inversion Ho2; subst; reflexivity);
+            try (inversion Hm1; inversion Hm2; subst; reflexivity);
+            try (rewrite Ho1 in Ho2; injection Ho2; intro Heq; subst; reflexivity);
+            try (rewrite Hm1 in Hm2; injection Hm2; intro Heq; subst; reflexivity);
+            try (rewrite Ho1 in Hm2; discriminate);
+            try (rewrite Hm1 in Ho2; discriminate)
+          | (* MISS case *)
+            unfold CanWrite in HW1, HW2;
+            rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1;
+            rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2;
+            fold CanWrite in HW1, HW2;
+            apply (Hw pg0 p1 p2 HW1 HW2)
+          ]
+        | (* Race Safety *)
+          unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR;
+          destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [
+            (* HIT case *)
+            subst pg0; unfold CanWrite, CanRead in HW, HR; 
+            repeat rewrite update_page_hit in *; simpl in *;
+            destruct HW as [[Ho_w Hs_w]|[Hm_w Hs_w]];
+            try discriminate Hs_w;
+            try (
+                destruct HR as [HR_W | [[HR_Sh HR_O] | HR_In]];
+                try (destruct HR_W as [[Ho_r Hs_r]|[Hm_r Hs_r]];
+                     try congruence;
+                     try (inversion Ho_w; inversion Ho_r; subst; reflexivity);
+                     try (rewrite Ho_w in Ho_r; injection Ho_r; intro Heq; subst; reflexivity);
+                     try discriminate);
+                try (rewrite Hs_w in HR_Sh; discriminate);
+                try (match goal with | [ H: In _ [] |- _ ] => apply in_nil in H; destruct H end);
+                try (simpl in HR_In; destruct HR_In; auto);
+                try (subst; auto)
+            );
+            try (destruct Hm_w; discriminate)
+          | (* MISS case *)
+            unfold CanWrite in HW;
+            rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW;
+            fold CanWrite in HW;
+            unfold CanRead in HR;
+            unfold CanWrite in HR;
+            rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR;
+            fold CanWrite in HR;
+            fold CanRead in HR;
+            apply (Hr pg0 p1 p2 HW HR)
+          ]
+        ]
+      ]
+  end.
 
 (* ========================================================================= *)
 (* MAIN THEOREM                                *)
@@ -368,112 +437,192 @@ Theorem transition_preserves_validity :
 Proof.
   intros s1 s2 Hvalid Hstep.
   destruct Hstep as [ p pg H | p pg H | o b pg H | b pg H | o b pg H | b pg H | f t pg H ].
-  all: inversion H; subst.
-  (* Common proof pattern for each transition *)
-  all: (
-    unfold ValidState in Hvalid;
-    destruct Hvalid as [Hcoh [Hw Hr]];
-    split; [
-      (* Coherence *)
-      solve_coherence_main Hcoh pg s1
-    | split; [
-        (* Write Safety *)
-        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2;
-        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [
-          (* HIT case *)
-          subst pg0; unfold CanWrite in HW1, HW2; simpl in *;
-          destruct HW1 as [[Ho1 _]|Hm1]; destruct HW2 as [[Ho2 _]|Hm2];
-          try (rewrite Ho1 in Ho2; injection Ho2; auto);
-          try (destruct Hm1; discriminate);
-          try (destruct Hm2; discriminate)
-        | (* MISS case *)
-          unfold CanWrite in HW1, HW2;
-          rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1;
-          rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2;
-          fold CanWrite in HW1, HW2;
-          apply (Hw pg0 p1 p2 HW1 HW2)
-        ]
-        | (* Race Safety *)
-        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR;
-        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [
-          (* HIT case: pg0 = pg, so we're looking at the modified page *)
-          subst pg0; unfold CanWrite, CanRead in HW, HR; simpl in *;
-          (* HW: p1 can write to the new page state *)
-          (* HR: p2 can read from the new page state *)
-          (* Need to prove p1 = p2 *)
-          (* Key insight: CanWrite requires state=Exclusive or state=MutLent *)
-          (* For SharedOwned: CanWrite is False, so HW is vacuously false *)
-          destruct HW as [[Ho_w Hs_w]|[Hm_w Hs_w]];
-          (* Case 1: owner with Exclusive - state must match or discriminate *)
-          try (
-            destruct HR as [HR_W | [[HR_Sh HR_O] | HR_In]];
-            try (destruct HR_W as [[Ho_r Hs_r]|[Hm_r Hs_r]];
-                 try (rewrite Ho_w in Ho_r; injection Ho_r; auto);
-                 try discriminate);
-            try (rewrite Hs_w in HR_Sh; discriminate);
-            (* HR_In: In p2 shared - for Exclusive, shared=[] so In is False *)
-            try (cut (In p2 [] -> False); [intro HF; exfalso; apply HF; exact HR_In | intro HIn; destruct HIn]);
-            try (simpl in HR_In; destruct HR_In; auto);
-            try (subst; auto)
-          );
-          (* Case 2: mut borrower - state must be MutLent but we may have Exclusive/SharedOwned *)
-          try (destruct Hm_w; discriminate);
-          (* Case 3: If state is SharedOwned, both CanWrite cases fail *)
-          try (rewrite Hs_w in *; discriminate)
-        | (* MISS case *)
-          unfold CanWrite in HW;
-          rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW;
-          fold CanWrite in HW;
-          unfold CanRead in HR;
-          unfold CanWrite in HR;
-          rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR;
-          fold CanWrite in HR;
-          fold CanRead in HR;
-          apply (Hr pg0 p1 p2 HW HR)
-        ]
-      ]
-    ]
-  ).
-  (* Most cases solved by automated tactics. Remaining goals involve subtle 
-     cases in Race Safety where CanRead includes shared borrower membership.
-     The core invariants (Coherence, Write Safety frame, Race Safety frame) are proven.
-     TODO: Complete the remaining Race Safety hit cases for SharedOwned state. *)
-  all: try reflexivity.
-  all: try assumption.
-  all: try auto.
-  all: try congruence.
-  all: try tauto.
-  all: try discriminate.
-  all: try (exfalso; discriminate).
-  all: try (simpl in *; intuition; try discriminate; try congruence; auto).
-  all: try (match goal with | [ H: In _ [] |- _ ] => apply in_nil in H; destruct H end).
-  all: try (match goal with | [ H: In _ [] |- _ ] => destruct H end).
-  all: try firstorder.
-  all: try (repeat match goal with
-    | [ H: _ \/ _ |- _ ] => destruct H
-    | [ H: _ /\ _ |- _ ] => destruct H
-    | [ H: In _ (_ :: _) |- _ ] => apply in_inv in H; destruct H; try subst; try symmetry; auto
-    | [ H: In _ [] |- _ ] => destruct H
-    | [ H: ?x = ?y |- ?y = ?x ] => symmetry; exact H
-    end; try discriminate; try congruence; auto).
-  all: try (intuition; subst; auto; try discriminate; try congruence).
-  all: try (exfalso; intuition).
-  all: try (symmetry; auto).
-  all: try (symmetry; assumption).
-  all: try (symmetry; congruence).
-  all: try (match goal with 
-    | [ |- _ = _ ] => congruence
-    | [ H: ?a = ?b |- ?b = ?a ] => symmetry; exact H
-    end).
-  (* Test remaining goals one by one *)
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-  - reflexivity.
-Qed.
+  
+  (* Apply tactic to each transition, handling splits from inversion *)
+  - (* Acquire *) 
+    inversion H; subst.
+    unfold ValidState in Hvalid. destruct Hvalid as [Hcoh [Hw Hr]].
+    split.
+    + (* Coherence *) solve_coherence_main Hcoh pg s1.
+    + split.
+      * (* Write Safety *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *; simpl in *. 
+           repeat rewrite update_page_hit in *. simpl in *.
+           destruct HW1 as [[Ho1 Hs1]|[Hm1 Hs1]]; 
+           destruct HW2 as [[Ho2 Hs2]|[Hm2 Hs2]].
+           { inversion Ho1; inversion Ho2; subst; reflexivity. }
+           { discriminate Hs2. }
+           { discriminate Hs1. }
+           { discriminate Hs1. }
+        -- (* Miss *)
+           unfold CanWrite in *. 
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2.
+           eapply Hw; eauto.
+      * (* Race Safety *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; 
+           unfold CanRead in *; unfold CanWrite in *. (* Correct order *)
+           remember (mkPageState (Some p1) Exclusive P9_Pending false [] None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew.
+           try rewrite Hrew in HW; try rewrite Hrew in HR.
+           simpl in *. 
+           admit. (* Acquire Stuck on rewrite *)
+        -- (* Miss *)
+           unfold CanWrite in HW.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW.
+           fold CanWrite in HW.
+           unfold CanRead, CanWrite in HR.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR.
+           fold CanWrite in HR. fold CanRead in HR.
+           eapply Hr; eauto.
+  - (* Release *) 
+    inversion H; subst.
+    unfold ValidState in Hvalid. destruct Hvalid as [Hcoh [Hw Hr]].
+    split.
+    + (* Coherence *) solve_coherence_main Hcoh pg s1.
+    + split.
+      * (* Write Safety *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *; 
+           repeat rewrite update_page_hit in *. simpl in *.
+           destruct HW1 as [[Ho1 Hs1]|[Hm1 Hs1]]; try discriminate Hs1.
+        -- (* Miss *)
+           unfold CanWrite in *. 
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2.
+           eapply Hw; eauto.
+      * (* Race Safety *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite, CanRead in *.
+           repeat rewrite update_page_hit in *. simpl in *.
+           destruct HW as [[Ho_w Hs_w]|[Hm_w Hs_w]]; try discriminate Hs_w.
+        -- (* Miss *)
+           unfold CanWrite in HW.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW.
+           fold CanWrite in HW.
+           unfold CanRead, CanWrite in HR.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR.
+           fold CanWrite in HR. fold CanRead in HR.
+           eapply Hr; eauto.
+  - (* BorrowShared *)
+    inversion H; subst.
+    unfold ValidState in Hvalid; destruct Hvalid as [Hcoh [Hw Hr]];
+    split.
+    + (* Coherence 1 *) solve_coherence_main Hcoh pg s1; try admit.
+    + split.
+      * (* Write 1 *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *.
+           remember (mkPageState (Some o) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) [b] None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew.
+           try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW1 as [H_f|H_f]; destruct H_f as [_ H_f]; discriminate H_f.
+        -- (* Miss *)
+           unfold CanWrite in *.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1;
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2;
+           eapply Hw; eauto.
+      * (* Race 1 *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanRead in *; unfold CanWrite in *.
+           remember (mkPageState (Some o) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) [b] None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew.
+           try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW as [H_f|H_f]; destruct H_f as [_ H_f]; discriminate H_f.
+        -- (* Miss *)
+           unfold CanWrite in HW. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW.
+           fold CanWrite in HW. unfold CanRead, CanWrite in HR. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR.
+           fold CanWrite in HR. fold CanRead in HR. eapply Hr; eauto.
+    unfold ValidState in Hvalid; destruct Hvalid as [Hcoh [Hw Hr]];
+    split.
+    + (* Coherence 2 *) solve_coherence_main Hcoh pg s1; try admit.
+    + split.
+      * (* Write 2 *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *.
+           remember (mkPageState (Some o) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) (b :: (s1 pg).(shared_borrowers)) None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew.
+           try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW1 as [H_f|H_f]; inversion H_f; try congruence; try discriminate.
+        -- (* Miss *)
+           unfold CanWrite in *. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2. eapply Hw; eauto.
+      * (* Race 2 *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanRead in *; unfold CanWrite in *.
+           remember (mkPageState (Some o) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) (b :: (s1 pg).(shared_borrowers)) None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew.
+           try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW as [H_f|H_f]; inversion H_f; try congruence; try discriminate.
+        -- (* Miss *)
+           unfold CanWrite in HW. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW.
+           fold CanWrite in HW. unfold CanRead, CanWrite in HR. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HR.
+           fold CanWrite in HR. fold CanRead in HR. eapply Hr; eauto.
+  - (* ReturnShared *)
+    inversion H as [L Hst Hin Hrem Hneq_list Hs2 | Hst Hin Hrem Hs2]; subst.
+    unfold ValidState in Hvalid; destruct Hvalid as [Hcoh [Hw Hr]];
+    split.
+    + (* Coherence RS 1 (StillShared) *) solve_coherence_main Hcoh pg s1; try admit.
+    + split.
+       * (* Write *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
+        destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *.
+           remember (mkPageState (s1 pg).(owner) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) _ None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew. try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW1 as [H_f|H_f]; destruct H_f as [_ H_f]; discriminate H_f.
+        -- (* Miss *) unfold CanWrite in *. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1.
+           rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2. eapply Hw; eauto.
+      * (* Race *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR. destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanRead, CanWrite in *.
+           remember (mkPageState (s1 pg).(owner) SharedOwned (s1 pg).(sip_status) (s1 pg).(doorbell) _ None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew. try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. destruct HW as [H_f|H_f]; destruct H_f as [_ H_f]; discriminate H_f.
+        -- (* Miss *) unfold CanRead in *. unfold CanWrite in *. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in *.
+           eapply Hr; eauto.
+    unfold ValidState in Hvalid; destruct Hvalid as [Hcoh [Hw Hr]];
+    split.
+    + (* Coherence RS 2 (BackToExclusive) *) solve_coherence_main Hcoh pg s1; try admit.
+    + split.
+      * (* Write *)
+        unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2. destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanWrite in *.
+           remember (mkPageState (s1 pg).(owner) Exclusive (s1 pg).(sip_status) (s1 pg).(doorbell) [] None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew. try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *. (* subst is safe here *)
+           destruct HW1 as [Ho1|Hm1]; destruct HW2 as [Ho2|Hm2].
+           { destruct Ho1, Ho2. inversion H_0. inversion H_2. subst. reflexivity. }
+           { destruct Ho1, Hm2. inversion H_2. }
+           { destruct Hm1, Ho2. inversion H_0. }
+           { destruct Hm1, Hm2. inversion H_0. }
+        -- (* Miss *) unfold CanWrite in *. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in *. eapply Hw; eauto.
+      * (* Race *)
+        unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR. destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
+        -- (* Hit *) subst; unfold CanRead, CanWrite in *.
+           remember (mkPageState (s1 pg).(owner) Exclusive (s1 pg).(sip_status) (s1 pg).(doorbell) [] None) as new_ps in *.
+           pose proof (update_page_hit s1 pg new_ps) as Hrew. try rewrite Hrew in *. simpl in *.
+           subst new_ps; simpl in *.
+           (* Writer is Owner. Reader must be Owner. *)
+           destruct HW as [H_writer|H_writer].
+           ++ destruct H_writer as [Ho_w Hs_w]. destruct HR as [H_read|[H_read|H_read]].
+              { destruct H_read as [Ho_r Hs_r]. inversion Ho_w; inversion Ho_r; subst; reflexivity. } (* Reader is Writer *)
+              { destruct H_read as [_ H_state]. inversion H_state. } (* SharedOwned mistmatch *)
+              { destruct H_read as [H_in _]. inversion H_in. } (* In list [] *)
+           ++ destruct H_writer as [_ H_state]. inversion H_state.
+         -- (* Miss *) unfold CanRead in *. unfold CanWrite in *. rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in *. eapply Hr; eauto.
+  - (* BorrowMut *) inversion H; subst. all: admit.
+  - (* ReturnMut *) inversion H; subst. all: admit.
+  - (* Transfer *) inversion H; subst. all: admit.
+Admitted.
+```

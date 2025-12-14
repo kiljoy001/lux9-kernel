@@ -1,0 +1,56 @@
+DIGEST b97fbe3001341fdcdabfd5cd0dec4542
+Fproofs.capability.LedgerInvariants
+R93:106 Coq.Lists.List <> <> lib
+R124:141 Coq.Arith.PeanoNat <> <> lib
+R159:171 Coq.Bool.Bool <> <> lib
+R181:193 Coq.Lists.List ListNotations <> mod
+R212:241 proofs.capability.PermsBitmask <> <> lib
+R259:291 proofs.capability.CapabilityModel <> <> lib
+R309:341 proofs.capability.DerivationChain <> <> lib
+R359:393 proofs.capability.ChainDecidability <> <> lib
+sec 405:420 <> LedgerInvariants
+prf 491:505 <> find_cap_unique
+binder 518:519 <> ct:1
+binder 521:522 <> id:2
+binder 524:525 <> c1:3
+binder 527:528 <> c2:4
+R559:566 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R549:551 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R535:542 proofs.capability.CapabilityModel <> find_cap def
+R544:545 proofs.capability.LedgerInvariants <> ct:1 var
+R547:548 proofs.capability.LedgerInvariants <> id:2 var
+R552:555 Coq.Init.Datatypes <> Some constr
+R557:558 proofs.capability.LedgerInvariants <> c1:3 var
+R591:598 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R581:583 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R567:574 proofs.capability.CapabilityModel <> find_cap def
+R576:577 proofs.capability.LedgerInvariants <> ct:1 var
+R579:580 proofs.capability.LedgerInvariants <> id:2 var
+R584:587 Coq.Init.Datatypes <> Some constr
+R589:590 proofs.capability.LedgerInvariants <> c2:4 var
+R601:603 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R599:600 proofs.capability.LedgerInvariants <> c1:3 var
+R604:605 proofs.capability.LedgerInvariants <> c2:4 var
+R691:697 Coq.Arith.PeanoNat Nat eqb def
+R700:705 proofs.capability.CapabilityModel <> cap_id proj
+R691:697 Coq.Arith.PeanoNat Nat eqb def
+R700:705 proofs.capability.CapabilityModel <> cap_id proj
+prf 879:913 <> derived_chain_table_perms_monotonic
+binder 926:927 <> ct:5
+binder 929:929 <> c:6
+binder 931:933 <> anc:7
+R968:975 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R940:958 proofs.capability.ChainDecidability <> derived_chain_table ind
+R960:961 proofs.capability.LedgerInvariants <> ct:5 var
+R963:963 proofs.capability.LedgerInvariants <> c:6 var
+R965:967 proofs.capability.LedgerInvariants <> anc:7 var
+R976:987 proofs.capability.PermsBitmask <> perms_subset def
+R990:998 proofs.capability.CapabilityModel <> cap_perms proj
+R1000:1000 proofs.capability.LedgerInvariants <> c:6 var
+R1004:1012 proofs.capability.CapabilityModel <> cap_perms proj
+R1014:1016 proofs.capability.LedgerInvariants <> anc:7 var
+R1073:1089 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R1073:1089 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R1103:1120 proofs.capability.PermsBitmask <> perms_subset_trans thm
+R1103:1120 proofs.capability.PermsBitmask <> perms_subset_trans thm
+R1140:1155 proofs.capability.LedgerInvariants LedgerInvariants <> sec

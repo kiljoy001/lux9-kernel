@@ -5,8 +5,8 @@
  * All 9P messages flow through GHOSTDAG for total ordering.
  */
 
-#include "u.h"
 #include "portlib.h"
+#include "u.h"
 
 /* Manual typedefs (portlib.h gives structs but not always typedefs used by
  * kernel) */
@@ -14,11 +14,12 @@ typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
-#include "mem.h"
+#include "9p_router.h"
+#include "consensus_depth.h"
 #include "dat.h"
 #include "fns.h"
 #include "ghostdag_kernel.h"
-#include "9p_router.h"
+#include "mem.h"
 /* Registry of GhostDAG instances */
 static GhostDAG *ghostdags[GHOSTDAG_MAX_DAGS];
 static Lock registry_lock;
@@ -331,6 +332,16 @@ static int _ghostdag_submit(GhostDAG *dag, Proc *caller, GhostPayload payload,
     msg->gm_state = GHOSTDAG_STATE_ORDERED;
     msg->gm_global_seq = ++dag->gd_global_seq;
     wakeup(&dag->gd_rendez);
+  } else {
+    /* Critical Fix: Fail-Fast on RED (Saturation prevention) */
+    /* Remove from DAG immediately */
+    ghostdag_dequeue(dag, msg);
+    dag->gd_total_msgs--;
+    dag->gd_red_msgs--;
+
+    unlock_dag(dag);
+    xfree(msg);
+    return -1;
   }
 
   unlock_dag(dag);
@@ -538,6 +549,15 @@ uint ghostdag_submit_async(GhostDAG *dag, Proc *caller, Fcall *t, char *path,
     msg->gm_state = GHOSTDAG_STATE_ORDERED;
     msg->gm_global_seq = ++dag->gd_global_seq;
     wakeup(&dag->gd_rendez);
+  } else {
+    /* Critical Fix: Fail-Fast on RED (Saturation prevention) */
+    ghostdag_dequeue(dag, msg);
+    dag->gd_total_msgs--;
+    dag->gd_red_msgs--;
+
+    unlock_dag(dag);
+    xfree(msg);
+    return 0; /* Error */
   }
 
   unlock_dag(dag);
@@ -639,8 +659,7 @@ int ghostdag_fire_completions(GhostDAG *dag) {
  * confidence_out is 0-100 scale (no SSE/float in kernel)
  */
 int ghostdag_check_consensus_depth(GhostDAG *dag, uint op_id,
-                                   ConsensusDepth required_depth,
-                                   int *confidence_out) {
+                                   int required_depth, int *confidence_out) {
   GhostMsg *msg;
   int confidence;
 
@@ -682,9 +701,9 @@ int ghostdag_check_consensus_depth(GhostDAG *dag, uint op_id,
  * Submit async with depth parameter (alternative signature for
  * consensus_depth.c) Returns: 0 on success, -1 on error
  */
-int ghostdag_submit_async_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
-                                char *path, ConsensusDepth depth,
-                                uint *msg_id_out) {
+int ghostdag_submit_async_depth(GhostDAG *dag, Proc *caller, void *t, void *r,
+                                char *path, int depth, uint *msg_id_out) {
+  Fcall *fcall_t = (Fcall *)t;
   uint msg_id;
 
   USED(r); /* Reply will be filled by GHOSTDAG processing */
@@ -693,11 +712,11 @@ int ghostdag_submit_async_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
 
   if (dag == nil)
     dag = ghostdag;
-  if (dag == nil || t == nil)
+  if (dag == nil || fcall_t == nil)
     return -1;
 
   /* Submit via existing async mechanism */
-  msg_id = ghostdag_submit_async(dag, caller, t, path, nil, nil);
+  msg_id = ghostdag_submit_async(dag, caller, fcall_t, path, nil, nil);
   if (msg_id == 0)
     return -1;
 
