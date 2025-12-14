@@ -23,6 +23,15 @@
  *   0x400-0x4FF: Control flow (CALL, RET, JUMP, BRANCH)
  *   0x500-0x5FF: Stack and local operations
  */
+#define FRUITY_BEQ    0x410
+#define FRUITY_BNE    0x411
+#define FRUITY_BLT    0x412
+#define FRUITY_BLE    0x413
+#define FRUITY_BGT    0x414
+#define FRUITY_BGE    0x415
+#define FRUITY_BTRUE  0x416
+#define FRUITY_BFALSE 0x417
+
 typedef enum {
   /* ===== Standard Operations (0x000-0x0FF) ===== */
   FRUITY_NOP = 0x000, /* No operation */
@@ -156,25 +165,44 @@ typedef enum {
    */
   FRUITY_CALL = 0x400,
 
+  /* CALLI - Indirect function call
+   * Source: MSIL 'calli'
+   * Stack: arg1, arg2, ..., argN, fn_ptr → result
+   */
+  FRUITY_CALLI = 0x401,
+
   /* RET - Return from function
    * Stack: result → (caller stack)
    */
-  FRUITY_RET = 0x401,
+  FRUITY_RET = 0x402,
 
   /* JUMP - Unconditional branch
+   * Source: MSIL 'br', 'br.s'
    * Stack: (unchanged)
    */
-  FRUITY_JUMP = 0x402,
+  FRUITY_JUMP = 0x403,
 
-  /* Branch instructions */
-  FRUITY_BEQ = 0x410,    /* Branch if equal */
-  FRUITY_BNE = 0x411,    /* Branch if not equal */
-  FRUITY_BLT = 0x412,    /* Branch if less than */
-  FRUITY_BLE = 0x413,    /* Branch if less or equal */
-  FRUITY_BGT = 0x414,    /* Branch if greater than */
-  FRUITY_BGE = 0x415,    /* Branch if greater or equal */
-  FRUITY_BTRUE = 0x416,  /* Branch if true */
-  FRUITY_BFALSE = 0x417, /* Branch if false */
+  /* SWITCH - Jump table branch
+   * Source: MSIL 'switch'
+   * Operand: immediate int32 (number of targets)
+   * Stack: index → (branch)
+   * Note: Targets are stored in subsequent data/instructions
+   */
+  FRUITY_SWITCH = 0x404,
+
+  /* LDFTN - Load function pointer
+   * Source: MSIL 'ldftn'
+   * Stack: → fn_ptr
+   */
+  FRUITY_LDFTN = 0x405,
+
+  /* LDVIRTFTN - Load virtual function pointer
+   * Source: MSIL 'ldvirtftn'
+   * Stack: obj_ref → fn_ptr
+   */
+  FRUITY_LDVIRTFTN = 0x406,
+
+  /* Branch instructions (conditional jumps) */
 
   /* ===== Stack and Local Operations (0x500-0x5FF) ===== */
 
@@ -215,6 +243,130 @@ typedef enum {
    * Stack: obj_ref, field_offset, value → ∅
    */
   FRUITY_STORE_FIELD = 0x505,
+
+  /* LOAD_IND - Load indirect from address
+   * Maps to: *ptr
+   * Source: MSIL 'ldind.*'
+   * Effect: Loads value from address
+   * Stack: ptr → value
+   */
+  FRUITY_LOAD_IND = 0x506,
+
+  /* STORE_IND - Store indirect to address
+   * Maps to: *ptr = val
+   * Source: MSIL 'stind.*'
+   * Effect: Stores value to address
+   * Stack: ptr, value → ∅
+   */
+  FRUITY_STORE_IND = 0x507,
+
+  /* MEMCPY - Copy block of memory
+   * Maps to: memcpy(dest, src, size)
+   * Source: MSIL 'cpblk'
+   * Stack: dest, src, size → ∅
+   */
+  FRUITY_MEMCPY = 0x508,
+
+  /* MEMSET - Initialize block of memory
+   * Maps to: memset(dest, val, size)
+   * Source: MSIL 'initblk'
+   * Stack: dest, val, size → ∅
+   */
+  FRUITY_MEMSET = 0x509,
+
+  /* ===== Object Model Operations (0x600-0x6FF) ===== */
+
+  /* CASTCLASS - Cast object to type
+   * Maps to: runtime type check
+   * Source: MSIL 'castclass'
+   * Effect: Checks type, returns object or throws InvalidCastException
+   * Stack: obj_ref → obj_ref
+   */
+  FRUITY_CASTCLASS = 0x600,
+
+  /* ISINST - Type check
+   * Maps to: runtime type check
+   * Source: MSIL 'isinst'
+   * Effect: Checks type, returns object or null
+   * Stack: obj_ref → obj_ref (or null)
+   */
+  FRUITY_ISINST = 0x601,
+
+  /* BOX - Box value type
+   * Maps to: clr_box()
+   * Source: MSIL 'box'
+   * Effect: Allocates object (LIME), copies value
+   * Stack: value → obj_ref
+   */
+  FRUITY_BOX = 0x602,
+
+  /* UNBOX - Get address of value in boxed object
+   * Maps to: clr_unbox()
+   * Source: MSIL 'unbox'
+   * Effect: Returns managed pointer to value
+   * Stack: obj_ref → managed_ptr
+   */
+  FRUITY_UNBOX = 0x603,
+
+  /* UNBOX_ANY - Unbox value to stack
+   * Maps to: clr_unbox_any()
+   * Source: MSIL 'unbox.any'
+   * Effect: Unboxes value type to stack
+   * Stack: obj_ref → value
+   */
+  FRUITY_UNBOX_ANY = 0x604,
+
+  /* INITOBJ - Initialize value type at address
+   * Maps to: memset(0) or constructor
+   * Source: MSIL 'initobj'
+   * Effect: Initializes memory
+   * Stack: dest_ptr → ∅
+   */
+  FRUITY_INITOBJ = 0x605,
+
+  /* CPOBJ - Copy value type
+   * Maps to: memcpy()
+   * Source: MSIL 'cpobj'
+   * Effect: Copies value from source to dest
+   * Stack: dest_ptr, src_ptr → ∅
+   */
+  FRUITY_CPOBJ = 0x606,
+
+  /* LDOBJ - Load value type from address
+   * Maps to: memcpy() to stack
+   * Source: MSIL 'ldobj'
+   * Effect: Loads value from address
+   * Stack: src_ptr → value
+   */
+  FRUITY_LDOBJ = 0x607,
+
+  /* STOBJ - Store value type to address
+   * Maps to: memcpy() from stack
+   * Source: MSIL 'stobj'
+   * Effect: Stores value to address
+   * Stack: dest_ptr, value → ∅
+   */
+  FRUITY_STOBJ = 0x608,
+
+  /* ===== Typed Reference Operations (0x680-0x6FF) ===== */
+
+  /* MKREFANY - Make typed reference
+   * Source: MSIL 'mkrefany'
+   * Stack: ptr, type_token → typed_ref
+   */
+  FRUITY_MKREFANY = 0x680,
+
+  /* REFANYVAL - Get value from typed reference
+   * Source: MSIL 'refanyval'
+   * Stack: typed_ref, type_token → ptr
+   */
+  FRUITY_REFANYVAL = 0x681,
+
+  /* REFANYTYPE - Get type from typed reference
+   * Source: MSIL 'refanytype'
+   * Stack: typed_ref → type_token
+   */
+  FRUITY_REFANYTYPE = 0x682,
 
   /* ===== Exception Handling (0x700-0x7FF) ===== */
 
