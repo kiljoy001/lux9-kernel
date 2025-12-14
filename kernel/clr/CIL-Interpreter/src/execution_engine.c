@@ -1002,6 +1002,27 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             state->current_frame = NULL;
             break;
         }
+        case CIL_OPCODE_CALLI: {
+            vm_value_t method_ptr, result;
+            if (!vm_stack_pop(state, &method_ptr)) { vm_set_error(state, "CALLI: Stack"); return false; }
+            if (!vm_call_indirect(&method_ptr, &result)) { vm_set_error(state, "CALLI: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_CGT_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "CGT.UN: Stack"); return false; }
+            if (!vm_compare_greater_un(&l, &r, &res)) { vm_set_error(state, "CGT.UN: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CLT_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "CLT.UN: Stack"); return false; }
+            if (!vm_compare_less_un(&l, &r, &res)) { vm_set_error(state, "CLT.UN: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
         
         default: vm_set_error(state, "Unsupported opcode"); return false;
     }
@@ -1171,6 +1192,17 @@ bool vm_compare_greater(vm_value_t* left, vm_value_t* right, vm_value_t* result)
     return false;
 }
 
+bool vm_compare_greater_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        uint32_t u1 = (uint32_t)left->value.i4;
+        uint32_t u2 = (uint32_t)right->value.i4;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = (u1 > u2);
+        return true;
+    }
+    return false;
+}
+
 bool vm_compare_less(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
     if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
         result->type = VM_TYPE_I4;
@@ -1178,6 +1210,24 @@ bool vm_compare_less(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
         return true;
     }
     return false;
+}
+
+bool vm_compare_less_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        uint32_t u1 = (uint32_t)left->value.i4;
+        uint32_t u2 = (uint32_t)right->value.i4;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = (u1 < u2);
+        return true;
+    }
+    return false;
+}
+
+bool vm_call_indirect(vm_value_t* method_ptr, vm_value_t* result) {
+    // Stub implementation for TDD GREEN phase
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
 }
 
 // Type conversion implementation

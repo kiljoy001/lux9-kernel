@@ -155,6 +155,11 @@ vm_value_t vm_make_r8(double value);
 vm_value_t vm_make_ref(void* value);
 vm_value_t vm_make_null(void);
 
+// Error handling functions
+void vm_set_error(vm_execution_state_t* state, const char* message);
+const char* vm_get_error(vm_execution_state_t* state);
+bool vm_has_error(vm_execution_state_t* state);
+
 // Type conversion
 bool vm_convert(vm_value_t* source, vm_type_t target_type, vm_value_t* result);
 bool vm_is_valid_conversion(vm_type_t source, vm_type_t target);
@@ -210,7 +215,9 @@ bool vm_symbolic_simplify(vm_value_t* expr, vm_value_t* result);
 // Comparison operations
 bool vm_compare_equal(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_compare_greater(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_compare_greater_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_compare_less(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_compare_less_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 
 // Memory operations
 bool vm_alloc_object(vm_execution_state_t* state, uint32_t size, void** result);
@@ -262,5 +269,6 @@ bool vm_load_field_address(vm_value_t* obj, vm_value_t* field_token, vm_value_t*
 bool vm_load_static_field_address(vm_value_t* field_token, vm_value_t* result);
 bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result);
 bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result);
+bool vm_call_indirect(vm_value_t* method_ptr, vm_value_t* result);
 
 #endif // EXECUTION_ENGINE_H
