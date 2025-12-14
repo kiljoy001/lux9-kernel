@@ -248,6 +248,12 @@ bool vm_load_array_element_any(vm_value_t* array, vm_value_t* index, vm_value_t*
 bool vm_store_array_element_any(vm_value_t* array, vm_value_t* index, vm_value_t* type_token, vm_value_t* value);
 bool vm_constrained_prefix(vm_value_t* type_token);
 bool vm_end_filter(vm_value_t* value);
+
+// Missing function declarations
+bool vm_new_object(vm_value_t* constructor_token, vm_value_t* result);
+bool vm_load_string_constant(vm_value_t* string_token, vm_value_t* result);
+bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
+bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
 bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
 bool vm_store_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* value);
 bool vm_load_static_field(vm_value_t* field_token, vm_value_t* result);
@@ -256,25 +262,5 @@ bool vm_load_field_address(vm_value_t* obj, vm_value_t* field_token, vm_value_t*
 bool vm_load_static_field_address(vm_value_t* field_token, vm_value_t* result);
 bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result);
 bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result);
-bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
-bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
-
-// Error handling
-void vm_set_error(vm_execution_state_t* state, const char* message);
-const char* vm_get_error(vm_execution_state_t* state);
-bool vm_has_error(vm_execution_state_t* state);
-void vm_clear_error(vm_execution_state_t* state);
-
-// Type system utilities
-bool vm_is_integer_type(vm_type_t type);
-bool vm_is_floating_point_type(vm_type_t type);
-bool vm_is_reference_type(vm_type_t type);
-bool vm_is_signed_type(vm_type_t type);
-const char* vm_type_name(vm_type_t type);
-
-// Statistics
-uint32_t vm_get_instruction_count(vm_execution_state_t* state);
-uint32_t vm_get_stack_depth(vm_execution_state_t* state);
-uint32_t vm_get_max_stack_depth(vm_execution_state_t* state);
 
 #endif // EXECUTION_ENGINE_H
