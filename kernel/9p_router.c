@@ -308,15 +308,30 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       if (t->type == Tclunk) remove_fid(t->fid);
   }
 
-  if (type == TYPE_PROC) return proc_9p_handle(p, t, r);
-  if (type == TYPE_DEV) return dev_9p_handle(p, t, r);
-  if (type == TYPE_ENV) return env_9p_handle(p, t, r);
-  if (type == TYPE_SRV) return srv_9p_handle(p, t, r);
-  if (type == TYPE_MNT) return mnt_9p_handle(p, t, r);
+  int ret = -1;
+  if (type == TYPE_PROC) ret = proc_9p_handle(p, t, r);
+  else if (type == TYPE_DEV) ret = dev_9p_handle(p, t, r);
+  else if (type == TYPE_ENV) ret = env_9p_handle(p, t, r);
+  else if (type == TYPE_SRV) ret = srv_9p_handle(p, t, r);
+  else if (type == TYPE_MNT) ret = mnt_9p_handle(p, t, r);
+  else {
+      r->type = Rerror;
+      r->ename = "fid not found or unknown path";
+      return -1;
+  }
 
-  r->type = Rerror;
-  r->ename = "fid not found or unknown path";
-  return -1;
+  /* Propagate handler type to newfid on successful Walk */
+  if (ret == 0 && t->type == Twalk && r->type == Rwalk) {
+      /* If walk succeeded (all names consumed), newfid inherits the handler type */
+      if (r->nwqid == t->nwname) {
+          /* If newfid == fid, it's already set (cloning or walking self). 
+             If distinct, we must install it. */
+          if (t->newfid != t->fid) {
+              install_fid(t->newfid, type);
+          }
+      }
+  }
+  return ret;
 }
 
 /*
