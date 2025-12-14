@@ -1509,7 +1509,7 @@ static void semwakeup(Segment *s, long *a, long n) {
 }
 
 /* Add delta to semaphore and wake up waiters as appropriate. */
-static long semrelease(Segment *s, long *addr, long delta) {
+long semrelease(Segment *s, long *addr, long delta) {
   long value;
 
   do
@@ -1536,7 +1536,7 @@ static int semawoke(void *p) {
 }
 
 /* Acquire semaphore (subtract 1). */
-static int semacquire(Segment *s, long *addr, int block) {
+int semacquire(Segment *s, long *addr, int block) {
   int acquired;
   Sema phore;
 

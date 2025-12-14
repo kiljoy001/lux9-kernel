@@ -697,15 +697,64 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             state->current_frame->ip += (ip->operand.branch_offset_short - 1);
             break;
         }
-        case CIL_OPCODE_BEQ: {
+        case CIL_OPCODE_BEQ_S: {
             vm_value_t v2, v1;
-            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BEQ: Stack"); return false; }
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BEQ.S: Stack"); return false; }
             
             bool eq = false;
-            // Simplified equality check for I4
             if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 == v2.value.i4) eq = true;
             
-            if (eq) state->current_frame->ip += (ip->operand.branch_offset - 1);
+            if (eq) state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BGE_S: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BGE.S: Stack"); return false; }
+            
+            bool cond = false;
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 >= v2.value.i4) cond = true;
+            
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BGT_S: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BGT.S: Stack"); return false; }
+            
+            bool cond = false;
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 > v2.value.i4) cond = true;
+            
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BLE_S: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BLE.S: Stack"); return false; }
+            
+            bool cond = false;
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 <= v2.value.i4) cond = true;
+            
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BLT_S: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BLT.S: Stack"); return false; }
+            
+            bool cond = false;
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 < v2.value.i4) cond = true;
+            
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BGE: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BGE: Stack"); return false; }
+            
+            bool cond = false;
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 >= v2.value.i4) cond = true;
+            
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset - 1);
             break;
         }
         case CIL_OPCODE_BRTRUE: {

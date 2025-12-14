@@ -1,4 +1,4 @@
-DIGEST ea9c3be883aab46419e1167dc393be76
+DIGEST 2b568a6d9f199eb1e55bb4e6978540bc
 Fproofs.capability.ChainDecidability
 R119:132 Coq.Lists.List <> <> lib
 R150:167 Coq.Arith.PeanoNat <> <> lib
@@ -153,4 +153,142 @@ R2677:2685 proofs.capability.CapabilityModel <> cap_perms proj
 R2692:2695 Coq.Init.Datatypes <> true constr
 R2713:2733 proofs.capability.Decidability <> perms_subsetb_correct thm
 R2713:2733 proofs.capability.Decidability <> perms_subsetb_correct thm
-R2803:2819 proofs.capability.ChainDecidability ChainDecidability <> sec
+ind 2872:2883 <> dct_depth_of
+constr 2949:2962 <> DCT_Depth_Refl
+constr 3000:3013 <> DCT_Depth_Step
+R2891:2899 proofs.capability.CapabilityModel <> cap_table def
+binder 2886:2887 <> ct:22
+R2914:2917 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2904:2913 proofs.capability.CapabilityModel <> Capability rec
+R2928:2931 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2918:2927 proofs.capability.CapabilityModel <> Capability rec
+R2935:2938 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2932:2934 Coq.Init.Datatypes <> nat ind
+binder 2973:2973 <> c:25
+R2976:2987 proofs.capability.ChainDecidability <> dct_depth_of:23 ind
+R2994:2994 proofs.capability.ChainDecidability <> c:25 var
+R2992:2992 proofs.capability.ChainDecidability <> c:25 var
+R2989:2990 proofs.capability.ChainDecidability <> ct:22 var
+binder 3024:3024 <> c:26
+binder 3026:3026 <> p:27
+binder 3028:3030 <> pid:28
+binder 3032:3032 <> g:29
+binder 3034:3034 <> n:30
+R3064:3071 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3053:3055 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3041:3050 proofs.capability.CapabilityModel <> cap_parent proj
+R3052:3052 proofs.capability.ChainDecidability <> c:26 var
+R3056:3059 Coq.Init.Datatypes <> Some constr
+R3061:3063 proofs.capability.ChainDecidability <> pid:28 var
+R3096:3103 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3087:3089 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3072:3079 proofs.capability.CapabilityModel <> find_cap def
+R3081:3082 proofs.capability.ChainDecidability <> ct:22 var
+R3084:3086 proofs.capability.ChainDecidability <> pid:28 var
+R3090:3093 Coq.Init.Datatypes <> Some constr
+R3095:3095 proofs.capability.ChainDecidability <> p:27 var
+R3144:3151 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3104:3115 proofs.capability.PermsBitmask <> perms_subset def
+R3118:3126 proofs.capability.CapabilityModel <> cap_perms proj
+R3128:3128 proofs.capability.ChainDecidability <> c:26 var
+R3132:3140 proofs.capability.CapabilityModel <> cap_perms proj
+R3142:3142 proofs.capability.ChainDecidability <> p:27 var
+R3173:3180 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3152:3163 proofs.capability.ChainDecidability <> dct_depth_of:23 ind
+R3172:3172 proofs.capability.ChainDecidability <> n:30 var
+R3170:3170 proofs.capability.ChainDecidability <> g:29 var
+R3168:3168 proofs.capability.ChainDecidability <> p:27 var
+R3165:3166 proofs.capability.ChainDecidability <> ct:22 var
+R3181:3192 proofs.capability.ChainDecidability <> dct_depth_of:23 ind
+R3202:3202 Coq.Init.Datatypes <> S constr
+R3204:3204 proofs.capability.ChainDecidability <> n:30 var
+R3199:3199 proofs.capability.ChainDecidability <> g:29 var
+R3197:3197 proofs.capability.ChainDecidability <> c:26 var
+R3194:3195 proofs.capability.ChainDecidability <> ct:22 var
+scheme 2872:2883 <> dct_depth_of_ind
+scheme 2872:2883 <> dct_depth_of_sind
+prf 3215:3243 <> derived_chain_table_has_depth
+binder 3256:3257 <> ct:31
+binder 3259:3259 <> c:32
+binder 3261:3263 <> anc:33
+R3298:3305 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3270:3288 proofs.capability.ChainDecidability <> derived_chain_table ind
+R3290:3291 proofs.capability.ChainDecidability <> ct:31 var
+R3293:3293 proofs.capability.ChainDecidability <> c:32 var
+R3295:3297 proofs.capability.ChainDecidability <> anc:33 var
+R3306:3312 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R3314:3315 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 3313:3313 <> n:34
+R3316:3327 proofs.capability.ChainDecidability <> dct_depth_of ind
+R3329:3330 proofs.capability.ChainDecidability <> ct:31 var
+R3332:3332 proofs.capability.ChainDecidability <> c:32 var
+R3334:3336 proofs.capability.ChainDecidability <> anc:33 var
+R3338:3338 proofs.capability.ChainDecidability <> n:34 var
+R3469:3469 Coq.Init.Datatypes <> S constr
+R3469:3469 Coq.Init.Datatypes <> S constr
+prf 3508:3530 <> dct_depth_fuel_suffices
+binder 3543:3544 <> ct:35
+binder 3546:3546 <> c:36
+binder 3548:3550 <> anc:37
+binder 3552:3552 <> n:38
+R3582:3589 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3559:3570 proofs.capability.ChainDecidability <> dct_depth_of ind
+R3572:3573 proofs.capability.ChainDecidability <> ct:35 var
+R3575:3575 proofs.capability.ChainDecidability <> c:36 var
+R3577:3579 proofs.capability.ChainDecidability <> anc:37 var
+R3581:3581 proofs.capability.ChainDecidability <> n:38 var
+R3619:3621 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3590:3603 proofs.capability.ChainDecidability <> derived_chainb def
+R3606:3606 Coq.Init.Datatypes <> S constr
+R3608:3608 proofs.capability.ChainDecidability <> n:38 var
+R3611:3612 proofs.capability.ChainDecidability <> ct:35 var
+R3614:3614 proofs.capability.ChainDecidability <> c:36 var
+R3616:3618 proofs.capability.ChainDecidability <> anc:37 var
+R3622:3625 Coq.Init.Datatypes <> true constr
+R3669:3680 Coq.Arith.PeanoNat Nat eqb_refl thm
+R3669:3680 Coq.Arith.PeanoNat Nat eqb_refl thm
+R3669:3680 Coq.Arith.PeanoNat Nat eqb_refl thm
+R3710:3716 Coq.Arith.PeanoNat Nat eqb def
+R3719:3724 proofs.capability.CapabilityModel <> cap_id proj
+R3730:3735 proofs.capability.CapabilityModel <> cap_id proj
+R3710:3716 Coq.Arith.PeanoNat Nat eqb def
+R3719:3724 proofs.capability.CapabilityModel <> cap_id proj
+R3730:3735 proofs.capability.CapabilityModel <> cap_id proj
+R3865:3867 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3824:3836 proofs.capability.Decidability <> perms_subsetb def
+R3839:3847 proofs.capability.CapabilityModel <> cap_perms proj
+R3853:3861 proofs.capability.CapabilityModel <> cap_perms proj
+R3868:3871 Coq.Init.Datatypes <> true constr
+R3894:3914 proofs.capability.Decidability <> perms_subsetb_correct thm
+R3865:3867 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3824:3836 proofs.capability.Decidability <> perms_subsetb def
+R3839:3847 proofs.capability.CapabilityModel <> cap_perms proj
+R3853:3861 proofs.capability.CapabilityModel <> cap_perms proj
+R3868:3871 Coq.Init.Datatypes <> true constr
+R3894:3914 proofs.capability.Decidability <> perms_subsetb_correct thm
+prf 3998:4030 <> derived_chain_table_bool_complete
+binder 4043:4044 <> ct:39
+binder 4046:4046 <> c:40
+binder 4048:4050 <> anc:41
+R4057:4075 proofs.capability.ChainDecidability <> derived_chain_table ind
+R4077:4078 proofs.capability.ChainDecidability <> ct:39 var
+R4080:4080 proofs.capability.ChainDecidability <> c:40 var
+R4082:4084 proofs.capability.ChainDecidability <> anc:41 var
+binder 4053:4053 <> h:42
+R4092:4098 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R4103:4104 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 4099:4102 <> fuel:43
+R4133:4135 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4105:4118 proofs.capability.ChainDecidability <> derived_chainb def
+R4120:4123 proofs.capability.ChainDecidability <> fuel:43 var
+R4125:4126 proofs.capability.ChainDecidability <> ct:39 var
+R4128:4128 proofs.capability.ChainDecidability <> c:40 var
+R4130:4132 proofs.capability.ChainDecidability <> anc:41 var
+R4136:4139 Coq.Init.Datatypes <> true constr
+R4182:4210 proofs.capability.ChainDecidability <> derived_chain_table_has_depth thm
+R4182:4210 proofs.capability.ChainDecidability <> derived_chain_table_has_depth thm
+R4242:4242 Coq.Init.Datatypes <> S constr
+R4242:4242 Coq.Init.Datatypes <> S constr
+R4256:4278 proofs.capability.ChainDecidability <> dct_depth_fuel_suffices thm
+R4256:4278 proofs.capability.ChainDecidability <> dct_depth_fuel_suffices thm
+R4303:4319 proofs.capability.ChainDecidability ChainDecidability <> sec

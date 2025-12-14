@@ -80,4 +80,52 @@ Proof.
       exact Hfuel.
 Qed.
 
+(* Depth as a relation: length of a table-respecting chain. *)
+Inductive dct_depth_of (ct : cap_table) : Capability -> Capability -> nat -> Prop :=
+| DCT_Depth_Refl : forall c, dct_depth_of ct c c 0
+| DCT_Depth_Step : forall c p pid g n,
+    cap_parent c = Some pid ->
+    find_cap ct pid = Some p ->
+    perms_subset (cap_perms c) (cap_perms p) ->
+    dct_depth_of ct p g n ->
+    dct_depth_of ct c g (S n).
+
+Lemma derived_chain_table_has_depth :
+  forall ct c anc,
+    derived_chain_table ct c anc ->
+    exists n, dct_depth_of ct c anc n.
+Proof.
+  intros ct c anc H.
+  induction H.
+  - exists 0; constructor.
+  - destruct IHderived_chain_table as [n Hn].
+    exists (S n); econstructor; eauto.
+Qed.
+
+Lemma dct_depth_fuel_suffices :
+  forall ct c anc n,
+    dct_depth_of ct c anc n ->
+    derived_chainb (S n) ct c anc = true.
+Proof.
+  induction 1; simpl.
+  - rewrite Nat.eqb_refl; reflexivity.
+  - destruct (Nat.eqb (cap_id c) (cap_id g)) eqn:Heq; simpl.
+    + reflexivity.
+    + rewrite H, H0.
+      assert (Hperm_true : perms_subsetb (cap_perms c) (cap_perms p) = true) by
+          (apply perms_subsetb_correct; exact H1).
+      rewrite Hperm_true.
+      exact IHdct_depth_of.
+Qed.
+
+Corollary derived_chain_table_bool_complete :
+  forall ct c anc (h : derived_chain_table ct c anc),
+    exists fuel, derived_chainb fuel ct c anc = true.
+Proof.
+  intros ct c anc h.
+  destruct (derived_chain_table_has_depth _ _ _ h) as [n Hn].
+  exists (S n).
+  apply dct_depth_fuel_suffices; assumption.
+Qed.
+
 End ChainDecidability.

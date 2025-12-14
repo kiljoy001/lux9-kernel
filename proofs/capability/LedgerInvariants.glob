@@ -1,4 +1,4 @@
-DIGEST b97fbe3001341fdcdabfd5cd0dec4542
+DIGEST f0fb1d85f7e088b2dbffd4c4a70f9662
 Fproofs.capability.LedgerInvariants
 R93:106 Coq.Lists.List <> <> lib
 R124:141 Coq.Arith.PeanoNat <> <> lib
@@ -8,49 +8,113 @@ R212:241 proofs.capability.PermsBitmask <> <> lib
 R259:291 proofs.capability.CapabilityModel <> <> lib
 R309:341 proofs.capability.DerivationChain <> <> lib
 R359:393 proofs.capability.ChainDecidability <> <> lib
-sec 405:420 <> LedgerInvariants
-prf 491:505 <> find_cap_unique
-binder 518:519 <> ct:1
-binder 521:522 <> id:2
-binder 524:525 <> c1:3
-binder 527:528 <> c2:4
-R559:566 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R549:551 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R535:542 proofs.capability.CapabilityModel <> find_cap def
-R544:545 proofs.capability.LedgerInvariants <> ct:1 var
-R547:548 proofs.capability.LedgerInvariants <> id:2 var
-R552:555 Coq.Init.Datatypes <> Some constr
-R557:558 proofs.capability.LedgerInvariants <> c1:3 var
-R591:598 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R581:583 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R567:574 proofs.capability.CapabilityModel <> find_cap def
-R576:577 proofs.capability.LedgerInvariants <> ct:1 var
-R579:580 proofs.capability.LedgerInvariants <> id:2 var
-R584:587 Coq.Init.Datatypes <> Some constr
-R589:590 proofs.capability.LedgerInvariants <> c2:4 var
-R601:603 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R599:600 proofs.capability.LedgerInvariants <> c1:3 var
-R604:605 proofs.capability.LedgerInvariants <> c2:4 var
-R691:697 Coq.Arith.PeanoNat Nat eqb def
-R700:705 proofs.capability.CapabilityModel <> cap_id proj
-R691:697 Coq.Arith.PeanoNat Nat eqb def
-R700:705 proofs.capability.CapabilityModel <> cap_id proj
-prf 879:913 <> derived_chain_table_perms_monotonic
-binder 926:927 <> ct:5
-binder 929:929 <> c:6
-binder 931:933 <> anc:7
-R968:975 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R940:958 proofs.capability.ChainDecidability <> derived_chain_table ind
-R960:961 proofs.capability.LedgerInvariants <> ct:5 var
-R963:963 proofs.capability.LedgerInvariants <> c:6 var
-R965:967 proofs.capability.LedgerInvariants <> anc:7 var
-R976:987 proofs.capability.PermsBitmask <> perms_subset def
-R990:998 proofs.capability.CapabilityModel <> cap_perms proj
-R1000:1000 proofs.capability.LedgerInvariants <> c:6 var
-R1004:1012 proofs.capability.CapabilityModel <> cap_perms proj
-R1014:1016 proofs.capability.LedgerInvariants <> anc:7 var
-R1073:1089 proofs.capability.PermsBitmask <> perms_subset_refl thm
-R1073:1089 proofs.capability.PermsBitmask <> perms_subset_refl thm
-R1103:1120 proofs.capability.PermsBitmask <> perms_subset_trans thm
-R1103:1120 proofs.capability.PermsBitmask <> perms_subset_trans thm
-R1140:1155 proofs.capability.LedgerInvariants LedgerInvariants <> sec
+R403:417 proofs.capability.CapabilityModel <> <> mod
+sec 429:444 <> LedgerInvariants
+prf 515:529 <> find_cap_unique
+binder 542:543 <> ct:1
+binder 545:546 <> id:2
+binder 548:549 <> c1:3
+binder 551:552 <> c2:4
+R583:590 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R573:575 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R559:566 proofs.capability.CapabilityModel <> find_cap def
+R568:569 proofs.capability.LedgerInvariants <> ct:1 var
+R571:572 proofs.capability.LedgerInvariants <> id:2 var
+R576:579 Coq.Init.Datatypes <> Some constr
+R581:582 proofs.capability.LedgerInvariants <> c1:3 var
+R615:622 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R605:607 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R591:598 proofs.capability.CapabilityModel <> find_cap def
+R600:601 proofs.capability.LedgerInvariants <> ct:1 var
+R603:604 proofs.capability.LedgerInvariants <> id:2 var
+R608:611 Coq.Init.Datatypes <> Some constr
+R613:614 proofs.capability.LedgerInvariants <> c2:4 var
+R625:627 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R623:624 proofs.capability.LedgerInvariants <> c1:3 var
+R628:629 proofs.capability.LedgerInvariants <> c2:4 var
+R715:721 Coq.Arith.PeanoNat Nat eqb def
+R724:729 proofs.capability.CapabilityModel <> cap_id proj
+R715:721 Coq.Arith.PeanoNat Nat eqb def
+R724:729 proofs.capability.CapabilityModel <> cap_id proj
+prf 903:937 <> derived_chain_table_perms_monotonic
+binder 950:951 <> ct:5
+binder 953:953 <> c:6
+binder 955:957 <> anc:7
+R992:999 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R964:982 proofs.capability.ChainDecidability <> derived_chain_table ind
+R984:985 proofs.capability.LedgerInvariants <> ct:5 var
+R987:987 proofs.capability.LedgerInvariants <> c:6 var
+R989:991 proofs.capability.LedgerInvariants <> anc:7 var
+R1000:1011 proofs.capability.PermsBitmask <> perms_subset def
+R1014:1022 proofs.capability.CapabilityModel <> cap_perms proj
+R1024:1024 proofs.capability.LedgerInvariants <> c:6 var
+R1028:1036 proofs.capability.CapabilityModel <> cap_perms proj
+R1038:1040 proofs.capability.LedgerInvariants <> anc:7 var
+R1097:1113 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R1097:1113 proofs.capability.PermsBitmask <> perms_subset_refl thm
+R1127:1144 proofs.capability.PermsBitmask <> perms_subset_trans thm
+R1127:1144 proofs.capability.PermsBitmask <> perms_subset_trans thm
+prf 1258:1282 <> no_step_if_parent_missing
+binder 1295:1296 <> ct:8
+binder 1298:1298 <> c:9
+binder 1300:1302 <> pid:10
+binder 1304:1306 <> anc:11
+R1336:1343 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1325:1327 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1313:1322 proofs.capability.CapabilityModel <> cap_parent proj
+R1324:1324 proofs.capability.LedgerInvariants <> c:9 var
+R1328:1331 Coq.Init.Datatypes <> Some constr
+R1333:1335 proofs.capability.LedgerInvariants <> pid:10 var
+R1366:1373 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1359:1361 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1344:1351 proofs.capability.CapabilityModel <> find_cap def
+R1353:1354 proofs.capability.LedgerInvariants <> ct:8 var
+R1356:1358 proofs.capability.LedgerInvariants <> pid:10 var
+R1362:1365 Coq.Init.Datatypes <> None constr
+R1382:1389 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1377:1380 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R1374:1376 proofs.capability.LedgerInvariants <> anc:11 var
+R1381:1381 proofs.capability.LedgerInvariants <> c:9 var
+R1418:1421 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1390:1408 proofs.capability.ChainDecidability <> derived_chain_table ind
+R1410:1411 proofs.capability.LedgerInvariants <> ct:8 var
+R1413:1413 proofs.capability.LedgerInvariants <> c:9 var
+R1415:1417 proofs.capability.LedgerInvariants <> anc:11 var
+R1422:1426 Coq.Init.Logic <> False ind
+R1580:1582 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1580:1582 Coq.Init.Logic <> ::type_scope:x_'='_x not
+prf 1761:1794 <> derivation_valid_preserved_by_cons
+binder 1807:1808 <> ct:12
+binder 1810:1814 <> child:13
+binder 1816:1820 <> extra:14
+binder 1822:1824 <> pid:15
+R1858:1865 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1847:1849 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1831:1840 proofs.capability.CapabilityModel <> cap_parent proj
+R1842:1846 proofs.capability.LedgerInvariants <> child:13 var
+R1850:1853 Coq.Init.Datatypes <> Some constr
+R1855:1857 proofs.capability.LedgerInvariants <> pid:15 var
+R1885:1892 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1878:1881 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R1866:1871 proofs.capability.CapabilityModel <> cap_id proj
+R1873:1877 proofs.capability.LedgerInvariants <> extra:14 var
+R1882:1884 proofs.capability.LedgerInvariants <> pid:15 var
+R1918:1925 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1893:1908 proofs.capability.CapabilityModel <> derivation_valid def
+R1910:1911 proofs.capability.LedgerInvariants <> ct:12 var
+R1913:1917 proofs.capability.LedgerInvariants <> child:13 var
+R1926:1941 proofs.capability.CapabilityModel <> derivation_valid def
+R1949:1952 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1944:1948 proofs.capability.LedgerInvariants <> extra:14 var
+R1953:1954 proofs.capability.LedgerInvariants <> ct:12 var
+R1957:1961 proofs.capability.LedgerInvariants <> child:13 var
+R2026:2041 proofs.capability.CapabilityModel <> derivation_valid def
+R2091:2097 Coq.Arith.PeanoNat Nat eqb def
+R2100:2105 proofs.capability.CapabilityModel <> cap_id proj
+R2091:2097 Coq.Arith.PeanoNat Nat eqb def
+R2100:2105 proofs.capability.CapabilityModel <> cap_id proj
+R2138:2147 Coq.Arith.PeanoNat Nat eqb_eq thm
+R2138:2147 Coq.Arith.PeanoNat Nat eqb_eq thm
+R2194:2201 proofs.capability.CapabilityModel <> find_cap def
+R2194:2201 proofs.capability.CapabilityModel <> find_cap def
+R2277:2292 proofs.capability.LedgerInvariants LedgerInvariants <> sec
