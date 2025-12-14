@@ -856,143 +856,24 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             vm_stack_push(state, &result);
             break;
         }
-        case CIL_OPCODE_LDLEN: {
-            vm_value_t array, result;
-            if (!vm_stack_pop(state, &array)) { vm_set_error(state, "LDLEN: Stack"); return false; }
-            if (!vm_get_array_length(&array, &result)) { vm_set_error(state, "LDLEN: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_LDELEMA: {
+        case CIL_OPCODE_LDELEM_I: {
             vm_value_t array, index, result;
-            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEMA: Stack"); return false; }
-            if (!vm_load_array_element_address(&array, &index, &result)) { vm_set_error(state, "LDELEMA: Error"); return false; }
+            if (!vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.I: Stack"); return false; }
+            if (!vm_load_array_element(&array, &index, VM_TYPE_I, &result)) { vm_set_error(state, "LDELEM.I: Error"); return false; }
             vm_stack_push(state, &result);
             break;
         }
-        case CIL_OPCODE_STELEM_I4: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I4: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_I4, &value)) { vm_set_error(state, "STELEM.I4: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_I1: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I1: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_I1, &value)) { vm_set_error(state, "STELEM.I1: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_I2: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I2: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_I2, &value)) { vm_set_error(state, "STELEM.I2: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_I8: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I8: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_I8, &value)) { vm_set_error(state, "STELEM.I8: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_R4: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.R4: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_R4, &value)) { vm_set_error(state, "STELEM.R4: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_R8: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.R8: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_R8, &value)) { vm_set_error(state, "STELEM.R8: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_REF: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.REF: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_REF, &value)) { vm_set_error(state, "STELEM.REF: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_STELEM_I: {
-            vm_value_t array, index, value;
-            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I: Stack"); return false; }
-            if (!vm_store_array_element(&array, &index, VM_TYPE_I, &value)) { vm_set_error(state, "STELEM.I: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_VOLATILE: {
-            // Memory barrier - no operation needed for now
-            break;
-        }
-        case CIL_OPCODE_UNALIGNED: {
-            // Unaligned memory access indicator - no operation needed for now
-            break;
-        }
-        case CIL_OPCODE_TAIL: {
-            // Tail call optimization indicator - no operation needed for now
-            break;
-        }
-        case CIL_OPCODE_READONLY: {
-            // Readonly prefix - no operation needed for now
-            break;
-        }
-        case CIL_OPCODE_CPBLK: {
-            vm_value_t src, dest, len;
-            if (!vm_stack_pop(state, &len) || !vm_stack_pop(state, &dest) || !vm_stack_pop(state, &src)) { vm_set_error(state, "CPBLK: Stack"); return false; }
-            if (!vm_copy_memory(&src, &dest, &len)) { vm_set_error(state, "CPBLK: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_INITBLK: {
-            vm_value_t addr, value, len;
-            if (!vm_stack_pop(state, &len) || !vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "INITBLK: Stack"); return false; }
-            if (!vm_init_memory(&addr, &value, &len)) { vm_set_error(state, "INITBLK: Error"); return false; }
-            break;
-        }
-        case CIL_OPCODE_SYM_CREATE: {
-            vm_value_t var_name, result;
-            if (!vm_stack_pop(state, &var_name)) { vm_set_error(state, "SYM_CREATE: Stack"); return false; }
-            if (!vm_symbolic_create(&var_name, &result)) { vm_set_error(state, "SYM_CREATE: Error"); return false; }
+        case CIL_OPCODE_LDELEM_ANY: {
+            vm_value_t array, index, type_token, result;
+            if (!vm_stack_pop(state, &type_token) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "LDELEM.ANY: Stack"); return false; }
+            if (!vm_load_array_element_any(&array, &index, &type_token, &result)) { vm_set_error(state, "LDELEM.ANY: Error"); return false; }
             vm_stack_push(state, &result);
             break;
         }
-        case CIL_OPCODE_SYM_EXPR: {
-            vm_value_t left, right, result;
-            if (!vm_stack_pop(state, &right) || !vm_stack_pop(state, &left)) { vm_set_error(state, "SYM_EXPR: Stack"); return false; }
-            if (!vm_symbolic_expr(&left, &right, &result)) { vm_set_error(state, "SYM_EXPR: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_SYM_DIFF: {
-            vm_value_t expr, var, result;
-            if (!vm_stack_pop(state, &var) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_DIFF: Stack"); return false; }
-            if (!vm_symbolic_differentiate(&expr, &var, &result)) { vm_set_error(state, "SYM_DIFF: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_SYM_INTEGRATE: {
-            vm_value_t expr, var, result;
-            if (!vm_stack_pop(state, &var) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_INTEGRATE: Stack"); return false; }
-            if (!vm_symbolic_integrate(&expr, &var, &result)) { vm_set_error(state, "SYM_INTEGRATE: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_SYM_SIMPLIFY: {
-            vm_value_t expr, result;
-            if (!vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_SIMPLIFY: Stack"); return false; }
-            if (!vm_symbolic_simplify(&expr, &result)) { vm_set_error(state, "SYM_SIMPLIFY: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_SYM_EVAL: {
-            vm_value_t expr, env, result;
-            if (!vm_stack_pop(state, &env) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_EVAL: Stack"); return false; }
-            if (!vm_symbolic_eval(&expr, &env, &result)) { vm_set_error(state, "SYM_EVAL: Error"); return false; }
-            vm_stack_push(state, &result);
-            break;
-        }
-        case CIL_OPCODE_SYM_MATCH: {
-            vm_value_t pattern, expr, result;
-            if (!vm_stack_pop(state, &expr) || !vm_stack_pop(state, &pattern)) { vm_set_error(state, "SYM_MATCH: Stack"); return false; }
-            if (!vm_symbolic_match(&pattern, &expr, &result)) { vm_set_error(state, "SYM_MATCH: Error"); return false; }
-            vm_stack_push(state, &result);
+        case CIL_OPCODE_STELEM_ANY: {
+            vm_value_t array, index, type_token, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &type_token) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.ANY: Stack"); return false; }
+            if (!vm_store_array_element_any(&array, &index, &type_token, &value)) { vm_set_error(state, "STELEM.ANY: Error"); return false; }
             break;
         }
         

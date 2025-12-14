@@ -242,6 +242,8 @@ bool vm_call_indirect(vm_value_t* method_ptr, vm_value_t* result);
 bool vm_call_virtual(vm_value_t* method_token, vm_value_t* result);
 bool vm_throw_exception(vm_value_t* exception_obj);
 bool vm_rethrow_exception(vm_value_t* exception_obj);
+bool vm_load_array_element_any(vm_value_t* array, vm_value_t* index, vm_value_t* type_token, vm_value_t* result);
+bool vm_store_array_element_any(vm_value_t* array, vm_value_t* index, vm_value_t* type_token, vm_value_t* value);
 bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
 bool vm_store_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* value);
 bool vm_load_static_field(vm_value_t* field_token, vm_value_t* result);
