@@ -305,6 +305,9 @@ const uint8_t *il_get_blob(il_assembly_t *assembly, uint32_t index,
 /* Get user string from #US heap (returns newly allocated char*) */
 char *il_get_user_string(il_assembly_t *assembly, uint32_t index);
 
+/* Get raw UTF-16 user string from #US heap */
+const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index, uint32_t *length);
+
 /* Free assembly */
 void il_free_assembly(il_assembly_t *assembly);
 

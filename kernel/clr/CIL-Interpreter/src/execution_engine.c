@@ -543,7 +543,10 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         }
         case CIL_OPCODE_LDSTR: {
             vm_value_t string_token, result;
-            if (!vm_load_string_constant(&string_token, &result)) { vm_set_error(state, "LDSTR: Error"); return false; }
+                        if (!vm_load_string_constant(state, &string_token, &result)) {
+                            vm_set_error(state, "LDSTR: Error loading string");
+                            return false;
+                        }
             vm_stack_push(state, &result);
             break;
         }
@@ -1696,6 +1699,19 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
 
 extern void *clr_resolve_internal_call(const char *cls, const char *method);
 
+bool vm_local_alloc(vm_value_t* size, vm_value_t* result) {
+    // Stub
+    result->type = VM_TYPE_I;
+    result->value.i = 0;
+    return true;
+}
+
+bool vm_symbolic_create(vm_value_t* var_name, vm_value_t* result) { return false; }
+bool vm_symbolic_expr(vm_value_t* left, vm_value_t* right, vm_value_t* result) { return false; }
+bool vm_symbolic_differentiate(vm_value_t* expr, vm_value_t* var, vm_value_t* result) { return false; }
+bool vm_symbolic_integrate(vm_value_t* expr, vm_value_t* var, vm_value_t* result) { return false; }
+bool vm_symbolic_simplify(vm_value_t* expr, vm_value_t* result) { return false; }
+
 // Method invocation implementations
 bool vm_call_method(vm_execution_state_t* state, vm_value_t* method_token, vm_value_t* result) {
     if (!state || !state->assembly) {
@@ -1907,6 +1923,29 @@ bool vm_store_local(vm_value_t* local_index, vm_value_t* value) {
 }
 
 // Memory operations
+bool vm_alloc_object(vm_execution_state_t* state, uint32_t size, void** result) {
+    if (size == 0) return false;
+    void* ptr = malloc(size);
+    if (ptr == NULL) {
+        if (state) vm_set_error(state, "Out of memory");
+        return false;
+    }
+    memset(ptr, 0, size);
+    *result = ptr;
+    return true;
+}
+
+bool vm_free_object(vm_execution_state_t* state, void* obj) {
+    if (obj) free(obj);
+    return true;
+}
+
+bool vm_load_field(vm_execution_state_t* state, void* obj, uint32_t field_offset, vm_value_t* result) {
+    // Stub
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
+}
 bool vm_copy_memory(vm_value_t* src, vm_value_t* dest, vm_value_t* len) {
     // Simplified implementation for copying memory
     return true;
@@ -2305,10 +2344,28 @@ bool vm_new_array(vm_value_t* size, vm_value_t* result) {
     return true;
 }
 
-bool vm_load_string_constant(vm_value_t* string_token, vm_value_t* result) {
-    // Simplified stub implementation
-    result->type = VM_TYPE_REF;
-    result->value.ref = NULL;
+bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_token, vm_value_t* result) {
+    if (!state || !state->assembly) return false;
+    
+    uint32_t index = (uint32_t)string_token->value.i4;
+    uint32_t length = 0;
+    const uint16_t* raw_chars = il_get_user_string_raw((il_assembly_t*)state->assembly, index, &length);
+    
+    // Size = sizeof(clr_string_t) + length * sizeof(uint16_t)
+    size_t total_size = sizeof(clr_string_t) + length * sizeof(uint16_t);
+    void* obj;
+    if (!vm_alloc_object(state, total_size, &obj)) return false;
+    
+    clr_string_t* str = (clr_string_t*)obj;
+    str->length = length;
+    // str->header.type_token = ... (TODO: Resolve System.String token)
+    
+    if (length > 0 && raw_chars) {
+        memcpy(str->chars, raw_chars, length * sizeof(uint16_t));
+    }
+    
+    result->type = VM_TYPE_STRING;
+    result->value.ref = obj;
     return true;
 }
 

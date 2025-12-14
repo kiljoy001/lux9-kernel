@@ -406,6 +406,39 @@ const uint8_t *il_get_blob(il_assembly_t *assembly, uint32_t index,
   return blob_ptr;
 }
 
+const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index, uint32_t *length) {
+  if (index >= assembly->us_heap_size) {
+    if (length) *length = 0;
+    return NULL;
+  }
+
+  uint8_t *ptr = &assembly->us_heap[index];
+  uint32_t bytes = 0;
+
+  /* Decode compressed size */
+  if ((ptr[0] & 0x80) == 0) {
+    bytes = ptr[0];
+    ptr += 1;
+  } else if ((ptr[0] & 0xC0) == 0x80) {
+    bytes = ((ptr[0] & 0x3F) << 8) | ptr[1];
+    ptr += 2;
+  } else if ((ptr[0] & 0xE0) == 0xC0) {
+    bytes = ((ptr[0] & 0x1F) << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
+    ptr += 4;
+  }
+
+  if (bytes == 0) {
+    if (length) *length = 0;
+    return (const uint16_t*)ptr; // Empty string
+  }
+
+  /* Last byte is terminal flag */
+  if (bytes > 0) bytes--;
+
+  if (length) *length = bytes / 2;
+  return (const uint16_t*)ptr;
+}
+
 char *il_get_user_string(il_assembly_t *assembly, uint32_t index) {
   if (index >= assembly->us_heap_size) {
     return NULL;
