@@ -278,6 +278,13 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         case CIL_OPCODE_LDC_I4_M1: { vm_value_t v = vm_make_i4(-1); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_0: { vm_value_t v = vm_make_i4(0); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_1: { vm_value_t v = vm_make_i4(1); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_2: { vm_value_t v = vm_make_i4(2); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_3: { vm_value_t v = vm_make_i4(3); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_4: { vm_value_t v = vm_make_i4(4); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_5: { vm_value_t v = vm_make_i4(5); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_6: { vm_value_t v = vm_make_i4(6); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_7: { vm_value_t v = vm_make_i4(7); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_8: { vm_value_t v = vm_make_i4(8); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_S: { vm_value_t v = vm_make_i4(ip->operand.byte_val); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4:   { vm_value_t v = vm_make_i4(ip->operand.int_val); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I8:   { vm_value_t v = vm_make_i8(ip->operand.long_val); vm_stack_push(state, &v); break; }

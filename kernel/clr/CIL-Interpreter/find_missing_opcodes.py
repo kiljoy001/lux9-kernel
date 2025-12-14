@@ -43,7 +43,7 @@ print(f"Total defined opcodes: {len(defined_opcodes)}")
 print(f"Implemented opcodes: {len(implemented_opcodes)}")
 print(f"Missing opcodes: {len(missing_opcodes)}")
 print(f"\nFirst 10 missing opcodes:")
-for i, opcode in enumerate(sorted(missing_opcodes):
+for i, opcode in enumerate(sorted(missing_opcodes)):
     if i < 10:
         print(f"  {opcode}")
     else:
