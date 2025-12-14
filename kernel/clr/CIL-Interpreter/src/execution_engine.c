@@ -1922,6 +1922,110 @@ bool vm_store_local(vm_value_t* local_index, vm_value_t* value) {
     return true;
 }
 
+// Generics Support
+
+static uint32_t vm_decode_typedef_or_ref(uint32_t encoded) {
+    uint32_t tag = encoded & 0x3;
+    uint32_t index = encoded >> 2;
+    uint32_t table = 0;
+    
+    switch (tag) {
+        case 0: table = 0x02; break; // TypeDef
+        case 1: table = 0x01; break; // TypeRef
+        case 2: table = 0x1B; break; // TypeSpec
+        default: return 0;
+    }
+    return (table << 24) | index;
+}
+
+clr_runtime_type_t* vm_parse_type_signature(void* assembly_ptr, const uint8_t** sig_ptr, vm_generic_context_t* context) {
+    il_assembly_t* assembly = (il_assembly_t*)assembly_ptr;
+    const uint8_t* p = *sig_ptr;
+    
+    uint8_t elem_type = *p++;
+    
+    // Handle primitive types immediately without allocation if we cache them
+    // For now, allocate
+    clr_runtime_type_t* type = (clr_runtime_type_t*)calloc(1, sizeof(clr_runtime_type_t));
+    if (!type) return NULL;
+    
+    type->element_type = elem_type;
+    
+    switch (elem_type) {
+        case 0x15: // GENERICINST
+        {
+            uint8_t class_or_val = *p++; // 0x11 (VALUETYPE) or 0x12 (CLASS)
+            (void)class_or_val;
+            
+            uint32_t token_encoded = il_decode_compressed_uint(&p);
+            type->token = vm_decode_typedef_or_ref(token_encoded);
+            
+            uint32_t arg_count = il_decode_compressed_uint(&p);
+            type->num_generic_args = arg_count;
+            type->generic_args = (clr_runtime_type_t**)calloc(arg_count, sizeof(clr_runtime_type_t*));
+            
+            for (uint32_t i = 0; i < arg_count; i++) {
+                type->generic_args[i] = vm_parse_type_signature(assembly, &p, context);
+            }
+            break;
+        }
+        case 0x13: // VAR (Generic Class Arg)
+        {
+            uint32_t number = il_decode_compressed_uint(&p);
+            if (context && number < context->class_type_arg_count) {
+                free(type);
+                *sig_ptr = p;
+                return context->class_type_args[number]; // Return actual type from context
+            }
+            // If no context, return the VAR type itself (open generic)
+            break;
+        }
+        case 0x1E: // MVAR (Generic Method Arg)
+        {
+            uint32_t number = il_decode_compressed_uint(&p);
+            if (context && number < context->method_type_arg_count) {
+                free(type);
+                *sig_ptr = p;
+                return context->method_type_args[number];
+            }
+            break;
+        }
+        default:
+            // Primitive types or simple VALUETYPE/CLASS
+            if (elem_type == 0x11 || elem_type == 0x12) {
+                 uint32_t token_encoded = il_decode_compressed_uint(&p);
+                 type->token = vm_decode_typedef_or_ref(token_encoded);
+            }
+            break;
+    }
+    
+    *sig_ptr = p;
+    return type;
+}
+
+clr_runtime_type_t* vm_resolve_type_token(void* assembly_ptr, uint32_t token, vm_generic_context_t* context) {
+    il_assembly_t* assembly = (il_assembly_t*)assembly_ptr;
+    uint32_t table = (token >> 24) & 0xFF;
+    uint32_t index = token & 0x00FFFFFF;
+    
+    if (table == 0x1B) { // TypeSpec
+        typespec_row_t* row = il_get_typespec(assembly, index);
+        if (!row) return NULL;
+        
+        uint32_t sig_len;
+        const uint8_t* sig = il_get_blob(assembly, row->signature, &sig_len);
+        if (!sig) return NULL;
+        
+        return vm_parse_type_signature(assembly, &sig, context);
+    }
+    
+    // Normal TypeDef/TypeRef
+    clr_runtime_type_t* type = (clr_runtime_type_t*)calloc(1, sizeof(clr_runtime_type_t));
+    type->token = token;
+    type->element_type = VM_TYPE_CLASS; // Default
+    return type;
+}
+
 // Memory operations
 bool vm_alloc_object(vm_execution_state_t* state, uint32_t size, void** result) {
     if (size == 0) return false;
@@ -2370,9 +2474,13 @@ bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_tok
 }
 
 bool vm_new_object(vm_value_t* constructor_token, vm_value_t* result) {
-    // Simplified stub implementation
-    result->type = VM_TYPE_REF;
-    result->value.ref = NULL;
+    // 1. Get Method Token
+    // 2. Get Parent Type of Method (using il_get_method_parent_type_name logic but for Type)
+    //    We need il_get_method_parent_token
+    
+    // For now, simple stub
+    result->type = VM_TYPE_OBJECT;
+    result->value.ref = malloc(16); // Dummy alloc
     return true;
 }
 

@@ -377,6 +377,23 @@ const char *il_get_string(il_assembly_t *assembly, uint32_t index) {
   return (const char *)&assembly->strings_heap[index];
 }
 
+uint32_t il_decode_compressed_uint(const uint8_t **data) {
+  const uint8_t *ptr = *data;
+  uint32_t val = 0;
+  
+  if ((*ptr & 0x80) == 0) {
+    val = *ptr;
+    *data += 1;
+  } else if ((*ptr & 0xC0) == 0x80) {
+    val = ((*ptr & 0x3F) << 8) | ptr[1];
+    *data += 2;
+  } else if ((*ptr & 0xE0) == 0xC0) {
+    val = ((*ptr & 0x1F) << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
+    *data += 4;
+  }
+  return val;
+}
+
 const uint8_t *il_get_blob(il_assembly_t *assembly, uint32_t index,
                            uint32_t *size_out) {
   if (index >= assembly->blob_heap_size) {

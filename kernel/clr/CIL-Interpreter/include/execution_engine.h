@@ -103,6 +103,28 @@ typedef struct vm_stack {
     struct vm_stack* next;
 } vm_stack_t;
 
+// Runtime Type Representation (for Generics)
+typedef struct clr_runtime_type clr_runtime_type_t;
+struct clr_runtime_type {
+    vm_type_t element_type;      // Underlying type (OBJECT, I4, etc.)
+    uint32_t token;              // TypeDef or TypeRef token
+    uint32_t num_generic_args;   // Number of generic arguments
+    clr_runtime_type_t** generic_args; // Array of pointers to type arguments
+    
+    // Cached info
+    uint32_t size;               // Size in bytes
+    void* vtable;                // VTable for this instantiation
+};
+
+// Generic Context (Class and Method instantiations)
+typedef struct {
+    uint32_t class_type_arg_count;
+    clr_runtime_type_t** class_type_args;
+    
+    uint32_t method_type_arg_count;
+    clr_runtime_type_t** method_type_args;
+} vm_generic_context_t;
+
 // VM Frame (method execution context)
 typedef struct vm_frame {
     cil_instruction_t* ip;              // Instruction pointer
@@ -113,6 +135,7 @@ typedef struct vm_frame {
     uint32_t arg_count;             // Number of arguments
     struct vm_frame* caller_frame;    // Previous frame
     size_t return_address;          // Return address in caller
+    vm_generic_context_t generic_context; // Context for generic parameters (!0, !!0)
 } vm_frame_t;
 
 // VM Execution State
@@ -278,7 +301,7 @@ bool vm_end_filter(vm_value_t* value);
 
 // Missing function declarations
 bool vm_new_object(vm_value_t* constructor_token, vm_value_t* result);
-bool vm_load_string_constant(vm_value_t* string_token, vm_value_t* result);
+bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_token, vm_value_t* result);
 bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
 bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
 bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
@@ -324,5 +347,9 @@ bool vm_get_array_length(vm_value_t* array, vm_value_t* result);
 bool vm_symbolic_eval(vm_value_t* expr, vm_value_t* env, vm_value_t* result);
 bool vm_symbolic_match(vm_value_t* pattern, vm_value_t* expr, vm_value_t* result);
 bool vm_symbolic_rewrite(vm_value_t* expr, vm_value_t* rules, vm_value_t* result);
+
+// Generics Support
+clr_runtime_type_t* vm_parse_type_signature(void* assembly, const uint8_t** sig_ptr, vm_generic_context_t* context);
+clr_runtime_type_t* vm_resolve_type_token(void* assembly, uint32_t token, vm_generic_context_t* context);
 
 #endif // EXECUTION_ENGINE_H
