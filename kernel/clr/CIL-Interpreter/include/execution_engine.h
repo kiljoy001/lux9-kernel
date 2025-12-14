@@ -164,6 +164,9 @@ bool vm_add(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_subtract(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_multiply(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 bool vm_divide(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_divide_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_remainder(vm_value_t* left, vm_value_t* right, vm_value_t* result);
+bool vm_remainder_un(vm_value_t* left, vm_value_t* right, vm_value_t* result);
 
 // Bitwise operations
 bool vm_and(vm_value_t* left, vm_value_t* right, vm_value_t* result);
@@ -214,6 +217,11 @@ bool vm_alloc_object(vm_execution_state_t* state, uint32_t size, void** result);
 bool vm_free_object(vm_execution_state_t* state, void* obj);
 bool vm_load_field(vm_execution_state_t* state, void* obj, uint32_t field_offset, vm_value_t* result);
 bool vm_store_field(vm_execution_state_t* state, void* obj, uint32_t field_offset, vm_value_t* value);
+bool vm_load_indirect(vm_value_t* addr, vm_type_t load_type, vm_value_t* result);
+bool vm_store_indirect(vm_value_t* addr, vm_value_t* value);
+bool vm_new_array(vm_value_t* size, vm_value_t* result);
+bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
+bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
 
 // Error handling
 void vm_set_error(vm_execution_state_t* state, const char* message);

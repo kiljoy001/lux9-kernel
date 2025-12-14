@@ -170,6 +170,48 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             vm_stack_push(state, &res);
             break;
         }
+        case CIL_OPCODE_DIV_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "DIV_UN: Stack"); return false; }
+            if (!vm_divide_un(&l, &r, &res)) { vm_set_error(state, "DIV_UN: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_REM: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "REM: Stack"); return false; }
+            if (!vm_remainder(&l, &r, &res)) { vm_set_error(state, "REM: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_REM_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "REM_UN: Stack"); return false; }
+            if (!vm_remainder_un(&l, &r, &res)) { vm_set_error(state, "REM_UN: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_SHL: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "SHL: Stack"); return false; }
+            if (!vm_shl(&l, &r, &res)) { vm_set_error(state, "SHL: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_SHR: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "SHR: Stack"); return false; }
+            if (!vm_shr(&l, &r, &res)) { vm_set_error(state, "SHR: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_SHR_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "SHR_UN: Stack"); return false; }
+            if (!vm_shr_un(&l, &r, &res)) { vm_set_error(state, "SHR_UN: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
 
         // Bitwise
         case CIL_OPCODE_AND: {
@@ -232,10 +274,331 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         }
 
         // Constants
+        case CIL_OPCODE_LDNULL: { vm_value_t v = vm_make_null(); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I4_M1: { vm_value_t v = vm_make_i4(-1); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_0: { vm_value_t v = vm_make_i4(0); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_1: { vm_value_t v = vm_make_i4(1); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4_S: { vm_value_t v = vm_make_i4(ip->operand.byte_val); vm_stack_push(state, &v); break; }
         case CIL_OPCODE_LDC_I4:   { vm_value_t v = vm_make_i4(ip->operand.int_val); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_I8:   { vm_value_t v = vm_make_i8(ip->operand.long_val); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_R4:   { vm_value_t v = vm_make_r4(*(float*)&ip->operand.token); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_LDC_R8:   { vm_value_t v = vm_make_r8(*(double*)&ip->operand.long_val); vm_stack_push(state, &v); break; }
+        case CIL_OPCODE_CONV_I1: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.I1: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_I1, &res)) { vm_set_error(state, "CONV.I1: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_I2: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.I2: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_I2, &res)) { vm_set_error(state, "CONV.I2: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_I4: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.I4: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_I4, &res)) { vm_set_error(state, "CONV.I4: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_I8: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.I8: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_I8, &res)) { vm_set_error(state, "CONV.I8: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_U4: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.U4: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_U4, &res)) { vm_set_error(state, "CONV.U4: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_U8: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.U8: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_U8, &res)) { vm_set_error(state, "CONV.U8: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_R4: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.R4: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_R4, &res)) { vm_set_error(state, "CONV.R4: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CONV_R8: {
+            vm_value_t v, res;
+            if (!vm_stack_pop(state, &v)) { vm_set_error(state, "CONV.R8: Stack"); return false; }
+            if (!vm_convert(&v, VM_TYPE_R8, &res)) { vm_set_error(state, "CONV.R8: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_ADD_OVF: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "ADD.OVF: Stack"); return false; }
+            if (!vm_add_ovf(&l, &r, &res)) { vm_set_error(state, "ADD.OVF: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_ADD_OVF_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "ADD.OVF.UN: Stack"); return false; }
+            if (!vm_add_ovf_un(&l, &r, &res)) { vm_set_error(state, "ADD.OVF.UN: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_MUL_OVF: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "MUL.OVF: Stack"); return false; }
+            if (!vm_multiply_ovf(&l, &r, &res)) { vm_set_error(state, "MUL.OVF: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_MUL_OVF_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "MUL.OVF.UN: Stack"); return false; }
+            if (!vm_multiply_ovf_un(&l, &r, &res)) { vm_set_error(state, "MUL.OVF.UN: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_SUB_OVF: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "SUB.OVF: Stack"); return false; }
+            if (!vm_subtract_ovf(&l, &r, &res)) { vm_set_error(state, "SUB.OVF: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_SUB_OVF_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "SUB.OVF.UN: Stack"); return false; }
+            if (!vm_subtract_ovf_un(&l, &r, &res)) { vm_set_error(state, "SUB.OVF.UN: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_DIV_OVF: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "DIV.OVF: Stack"); return false; }
+            if (!vm_divide_ovf(&l, &r, &res)) { vm_set_error(state, "DIV.OVF: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_DIV_OVF_UN: {
+            vm_value_t r, l, res;
+            if (!vm_stack_pop(state, &r) || !vm_stack_pop(state, &l)) { vm_set_error(state, "DIV.OVF.UN: Stack"); return false; }
+            if (!vm_divide_ovf_un(&l, &r, &res)) { vm_set_error(state, "DIV.OVF.UN: Overflow"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_I1: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.I1: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_I1, &res)) { vm_set_error(state, "LDIND.I1: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_U1: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.U1: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_U1, &res)) { vm_set_error(state, "LDIND.U1: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_I2: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.I2: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_I2, &res)) { vm_set_error(state, "LDIND.I2: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_U2: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.U2: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_U2, &res)) { vm_set_error(state, "LDIND.U2: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_I4: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.I4: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_I4, &res)) { vm_set_error(state, "LDIND.I4: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_U4: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.U4: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_U4, &res)) { vm_set_error(state, "LDIND.U4: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_I8: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.I8: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_I8, &res)) { vm_set_error(state, "LDIND.I8: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_I: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.I: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_I, &res)) { vm_set_error(state, "LDIND.I: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_R4: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.R4: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_R4, &res)) { vm_set_error(state, "LDIND.R4: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_R8: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.R8: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_R8, &res)) { vm_set_error(state, "LDIND.R8: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDIND_REF: {
+            vm_value_t addr, res;
+            if (!vm_stack_pop(state, &addr)) { vm_set_error(state, "LDIND.REF: Stack"); return false; }
+            if (!vm_load_indirect(&addr, VM_TYPE_REF, &res)) { vm_set_error(state, "LDIND.REF: Memory"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_STIND_REF: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.REF: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.REF: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_I1: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.I1: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.I1: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_I2: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.I2: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.I2: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_I4: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.I4: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.I4: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_I8: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.I8: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.I8: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_R4: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.R4: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.R4: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STIND_R8: {
+            vm_value_t addr, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "STIND.R8: Stack"); return false; }
+            if (!vm_store_indirect(&addr, &value)) { vm_set_error(state, "STIND.R8: Memory"); return false; }
+            break;
+        }
+        case CIL_OPCODE_NEWOBJ: {
+            // TODO: Implement NEWOBJ - requires method resolution and object allocation
+            vm_set_error(state, "NEWOBJ: Not yet implemented");
+            return false;
+        }
+        case CIL_OPCODE_NEWARR: {
+            vm_value_t size, res;
+            if (!vm_stack_pop(state, &size)) { vm_set_error(state, "NEWARR: Stack"); return false; }
+            if (!vm_new_array(&size, &res)) { vm_set_error(state, "NEWARR: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDSTR: {
+            // TODO: Implement LDSTR - requires string pool management
+            vm_set_error(state, "LDSTR: Not yet implemented");
+            return false;
+        }
+        case CIL_OPCODE_BOX: {
+            vm_value_t value, box_type, res;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &box_type)) { vm_set_error(state, "BOX: Stack"); return false; }
+            if (!vm_box_value(&value, &box_type, &res)) { vm_set_error(state, "BOX: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_UNBOX: {
+            vm_value_t obj, unbox_type, res;
+            if (!vm_stack_pop(state, &obj) || !vm_stack_pop(state, &unbox_type)) { vm_set_error(state, "UNBOX: Stack"); return false; }
+            if (!vm_unbox_value(&obj, &unbox_type, &res)) { vm_set_error(state, "UNBOX: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDFLD: {
+            vm_value_t obj, field_token, res;
+            if (!vm_stack_pop(state, &obj) || !vm_stack_pop(state, &field_token)) { vm_set_error(state, "LDFLD: Stack"); return false; }
+            if (!vm_load_field_object(&obj, &field_token, &res)) { vm_set_error(state, "LDFLD: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_STFLD: {
+            vm_value_t obj, field_token, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &field_token) || !vm_stack_pop(state, &obj)) { vm_set_error(state, "STFLD: Stack"); return false; }
+            if (!vm_store_field_object(&obj, &field_token, &value)) { vm_set_error(state, "STFLD: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_LDSFLD: {
+            vm_value_t field_token, res;
+            if (!vm_stack_pop(state, &field_token)) { vm_set_error(state, "LDSFLD: Stack"); return false; }
+            if (!vm_load_static_field(&field_token, &res)) { vm_set_error(state, "LDSFLD: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_STSFLD: {
+            vm_value_t field_token, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &field_token)) { vm_set_error(state, "STSFLD: Stack"); return false; }
+            if (!vm_store_static_field(&field_token, &value)) { vm_set_error(state, "STSFLD: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_LDFLDA: {
+            vm_value_t obj, field_token, res;
+            if (!vm_stack_pop(state, &obj) || !vm_stack_pop(state, &field_token)) { vm_set_error(state, "LDFLDA: Stack"); return false; }
+            if (!vm_load_field_address(&obj, &field_token, &res)) { vm_set_error(state, "LDFLDA: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_LDSFLDA: {
+            vm_value_t field_token, res;
+            if (!vm_stack_pop(state, &field_token)) { vm_set_error(state, "LDSFLDA: Stack"); return false; }
+            if (!vm_load_static_field_address(&field_token, &res)) { vm_set_error(state, "LDSFLDA: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_CASTCLASS: {
+            vm_value_t obj, cast_type, res;
+            if (!vm_stack_pop(state, &obj) || !vm_stack_pop(state, &cast_type)) { vm_set_error(state, "CASTCLASS: Stack"); return false; }
+            if (!vm_cast_class(&obj, &cast_type, &res)) { vm_set_error(state, "CASTCLASS: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
+        case CIL_OPCODE_ISINST: {
+            vm_value_t obj, test_type, res;
+            if (!vm_stack_pop(state, &obj) || !vm_stack_pop(state, &test_type)) { vm_set_error(state, "ISINST: Stack"); return false; }
+            if (!vm_is_instance(&obj, &test_type, &res)) { vm_set_error(state, "ISINST: Error"); return false; }
+            vm_stack_push(state, &res);
+            break;
+        }
         case CIL_OPCODE_DUP: {
             vm_value_t v;
             if (!vm_stack_peek(state, &v)) { vm_set_error(state, "DUP: Stack"); return false; }
@@ -268,6 +631,19 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         case CIL_OPCODE_LDARG_S: {
             if (ip->operand.byte_val >= state->current_frame->arg_count) { vm_set_error(state, "LDARG.S: Index"); return false; }
             vm_stack_push(state, &state->current_frame->args[ip->operand.byte_val]); break;
+        }
+        case CIL_OPCODE_LDARGA_S: {
+            if (ip->operand.byte_val >= state->current_frame->arg_count) { vm_set_error(state, "LDARGA.S: Index"); return false; }
+            vm_value_t addr;
+            addr.type = VM_TYPE_I;
+            addr.value.i = (intptr_t)&state->current_frame->args[ip->operand.byte_val];
+            vm_stack_push(state, &addr);
+            break;
+        }
+        case CIL_OPCODE_STARG_S: {
+            if (ip->operand.byte_val >= state->current_frame->arg_count) { vm_set_error(state, "STARG.S: Index"); return false; }
+            if (!vm_stack_pop(state, &state->current_frame->args[ip->operand.byte_val])) return false;
+            break;
         }
 
         // Locals
@@ -312,7 +688,48 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             if (!vm_stack_pop(state, &state->current_frame->locals[ip->operand.byte_val])) return false; break;
         }
 
-        case CIL_OPCODE_RET: state->current_frame = NULL; break;
+        // ==================== BRANCHING ====================
+        case CIL_OPCODE_BR: {
+            state->current_frame->ip += (ip->operand.branch_offset - 1);
+            break;
+        }
+        case CIL_OPCODE_BR_S: {
+            state->current_frame->ip += (ip->operand.branch_offset_short - 1);
+            break;
+        }
+        case CIL_OPCODE_BEQ: {
+            vm_value_t v2, v1;
+            if (!vm_stack_pop(state, &v2) || !vm_stack_pop(state, &v1)) { vm_set_error(state, "BEQ: Stack"); return false; }
+            
+            bool eq = false;
+            // Simplified equality check for I4
+            if (v1.type == VM_TYPE_I4 && v2.type == VM_TYPE_I4 && v1.value.i4 == v2.value.i4) eq = true;
+            
+            if (eq) state->current_frame->ip += (ip->operand.branch_offset - 1);
+            break;
+        }
+        case CIL_OPCODE_BRTRUE: {
+            vm_value_t val;
+            if (!vm_stack_pop(state, &val)) { vm_set_error(state, "BRTRUE: Stack"); return false; }
+            bool cond = false;
+            if (val.type == VM_TYPE_I4) cond = (val.value.i4 != 0);
+            /* Simplified for test */
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset - 1);
+            break;
+        }
+        case CIL_OPCODE_BRFALSE: {
+            vm_value_t val;
+            if (!vm_stack_pop(state, &val)) { vm_set_error(state, "BRFALSE: Stack"); return false; }
+            bool cond = false;
+            if (val.type == VM_TYPE_I4) cond = (val.value.i4 == 0);
+            if (cond) state->current_frame->ip += (ip->operand.branch_offset - 1);
+            break;
+        }
+
+        case CIL_OPCODE_RET: {
+            state->current_frame = NULL;
+            break;
+        }
         
         default: vm_set_error(state, "Unsupported opcode"); return false;
     }
@@ -336,6 +753,27 @@ bool vm_divide(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
     if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) { 
         if (right->value.i4 == 0) return false;
         result->type = VM_TYPE_I4; result->value.i4 = left->value.i4 / right->value.i4; return true; 
+    }
+    return false;
+}
+bool vm_divide_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) { 
+        if (right->value.u4 == 0) return false;
+        result->type = VM_TYPE_U4; result->value.u4 = left->value.u4 / right->value.u4; return true; 
+    }
+    return false;
+}
+bool vm_remainder(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) { 
+        if (right->value.i4 == 0) return false;
+        result->type = VM_TYPE_I4; result->value.i4 = left->value.i4 % right->value.i4; return true; 
+    }
+    return false;
+}
+bool vm_remainder_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) { 
+        if (right->value.u4 == 0) return false;
+        result->type = VM_TYPE_U4; result->value.u4 = left->value.u4 % right->value.u4; return true; 
     }
     return false;
 }
@@ -406,10 +844,329 @@ bool vm_compare_less(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
     }
 }
 
+// Type conversion implementation
+bool vm_convert(vm_value_t* source, vm_type_t target_type, vm_value_t* result) {
+    if (!source || !result) return false;
+    
+    result->type = target_type;
+    
+    switch(target_type) {
+        case VM_TYPE_I1:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.i1 = source->value.i1; return true;
+                case VM_TYPE_I2: result->value.i1 = (int8_t)source->value.i2; return true;
+                case VM_TYPE_I4: result->value.i1 = (int8_t)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.i1 = (int8_t)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.i1 = (int8_t)source->value.u1; return true;
+                case VM_TYPE_U2: result->value.i1 = (int8_t)source->value.u2; return true;
+                case VM_TYPE_U4: result->value.i1 = (int8_t)source->value.u4; return true;
+                case VM_TYPE_U8: result->value.i1 = (int8_t)source->value.u8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_I2:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.i2 = source->value.i1; return true;
+                case VM_TYPE_I2: result->value.i2 = source->value.i2; return true;
+                case VM_TYPE_I4: result->value.i2 = (int16_t)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.i2 = (int16_t)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.i2 = source->value.u1; return true;
+                case VM_TYPE_U2: result->value.i2 = source->value.u2; return true;
+                case VM_TYPE_U4: result->value.i2 = (int16_t)source->value.u4; return true;
+                case VM_TYPE_U8: result->value.i2 = (int16_t)source->value.u8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_I4:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.i4 = source->value.i1; return true;
+                case VM_TYPE_I2: result->value.i4 = source->value.i2; return true;
+                case VM_TYPE_I4: result->value.i4 = source->value.i4; return true;
+                case VM_TYPE_I8: result->value.i4 = (int32_t)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.i4 = source->value.u1; return true;
+                case VM_TYPE_U2: result->value.i4 = source->value.u2; return true;
+                case VM_TYPE_U4: result->value.i4 = (int32_t)source->value.u4; return true;
+                case VM_TYPE_U8: result->value.i4 = (int32_t)source->value.u8; return true;
+                case VM_TYPE_R4: result->value.i4 = (int32_t)source->value.r4; return true;
+                case VM_TYPE_R8: result->value.i4 = (int32_t)source->value.r8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_I8:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.i8 = source->value.i1; return true;
+                case VM_TYPE_I2: result->value.i8 = source->value.i2; return true;
+                case VM_TYPE_I4: result->value.i8 = source->value.i4; return true;
+                case VM_TYPE_I8: result->value.i8 = source->value.i8; return true;
+                case VM_TYPE_U1: result->value.i8 = source->value.u1; return true;
+                case VM_TYPE_U2: result->value.i8 = source->value.u2; return true;
+                case VM_TYPE_U4: result->value.i8 = source->value.u4; return true;
+                case VM_TYPE_U8: result->value.i8 = (int64_t)source->value.u8; return true;
+                case VM_TYPE_R4: result->value.i8 = (int64_t)source->value.r4; return true;
+                case VM_TYPE_R8: result->value.i8 = (int64_t)source->value.r8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_U4:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.u4 = (uint32_t)source->value.i1; return true;
+                case VM_TYPE_I2: result->value.u4 = (uint32_t)source->value.i2; return true;
+                case VM_TYPE_I4: result->value.u4 = (uint32_t)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.u4 = (uint32_t)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.u4 = source->value.u1; return true;
+                case VM_TYPE_U2: result->value.u4 = source->value.u2; return true;
+                case VM_TYPE_U4: result->value.u4 = source->value.u4; return true;
+                case VM_TYPE_U8: result->value.u4 = (uint32_t)source->value.u8; return true;
+                case VM_TYPE_R4: result->value.u4 = (uint32_t)source->value.r4; return true;
+                case VM_TYPE_R8: result->value.u4 = (uint32_t)source->value.r8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_U8:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.u8 = (uint64_t)source->value.i1; return true;
+                case VM_TYPE_I2: result->value.u8 = (uint64_t)source->value.i2; return true;
+                case VM_TYPE_I4: result->value.u8 = (uint64_t)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.u8 = (uint64_t)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.u8 = source->value.u1; return true;
+                case VM_TYPE_U2: result->value.u8 = source->value.u2; return true;
+                case VM_TYPE_U4: result->value.u8 = source->value.u4; return true;
+                case VM_TYPE_U8: result->value.u8 = source->value.u8; return true;
+                case VM_TYPE_R4: result->value.u8 = (uint64_t)source->value.r4; return true;
+                case VM_TYPE_R8: result->value.u8 = (uint64_t)source->value.r8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_R4:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.r4 = (float)source->value.i1; return true;
+                case VM_TYPE_I2: result->value.r4 = (float)source->value.i2; return true;
+                case VM_TYPE_I4: result->value.r4 = (float)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.r4 = (float)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.r4 = (float)source->value.u1; return true;
+                case VM_TYPE_U2: result->value.r4 = (float)source->value.u2; return true;
+                case VM_TYPE_U4: result->value.r4 = (float)source->value.u4; return true;
+                case VM_TYPE_U8: result->value.r4 = (float)source->value.u8; return true;
+                case VM_TYPE_R4: result->value.r4 = source->value.r4; return true;
+                case VM_TYPE_R8: result->value.r4 = (float)source->value.r8; return true;
+                default: return false;
+            }
+            
+        case VM_TYPE_R8:
+            switch(source->type) {
+                case VM_TYPE_I1: result->value.r8 = (double)source->value.i1; return true;
+                case VM_TYPE_I2: result->value.r8 = (double)source->value.i2; return true;
+                case VM_TYPE_I4: result->value.r8 = (double)source->value.i4; return true;
+                case VM_TYPE_I8: result->value.r8 = (double)source->value.i8; return true;
+                case VM_TYPE_U1: result->value.r8 = (double)source->value.u1; return true;
+                case VM_TYPE_U2: result->value.r8 = (double)source->value.u2; return true;
+                case VM_TYPE_U4: result->value.r8 = (double)source->value.u4; return true;
+                case VM_TYPE_U8: result->value.r8 = (double)source->value.u8; return true;
+                case VM_TYPE_R4: result->value.r8 = (double)source->value.r4; return true;
+                case VM_TYPE_R8: result->value.r8 = source->value.r8; return true;
+                default: return false;
+            }
+            
+        default:
+    return false;
+}
+
+// Memory access operations
+bool vm_load_indirect(vm_value_t* addr, vm_type_t load_type, vm_value_t* result) {
+    if (!addr || !result) return false;
+    if (addr->type != VM_TYPE_I && addr->type != VM_TYPE_REF) return false;
+    if (!addr->value.ref) return false;
+    
+    result->type = load_type;
+    
+    switch(load_type) {
+        case VM_TYPE_I1: result->value.i1 = *(int8_t*)addr->value.ref; return true;
+        case VM_TYPE_U1: result->value.u1 = *(uint8_t*)addr->value.ref; return true;
+        case VM_TYPE_I2: result->value.i2 = *(int16_t*)addr->value.ref; return true;
+        case VM_TYPE_U2: result->value.u2 = *(uint16_t*)addr->value.ref; return true;
+        case VM_TYPE_I4: result->value.i4 = *(int32_t*)addr->value.ref; return true;
+        case VM_TYPE_U4: result->value.u4 = *(uint32_t*)addr->value.ref; return true;
+        case VM_TYPE_I8: result->value.i8 = *(int64_t*)addr->value.ref; return true;
+        case VM_TYPE_I: result->value.i = *(intptr_t*)addr->value.ref; return true;
+        case VM_TYPE_R4: result->value.r4 = *(float*)addr->value.ref; return true;
+        case VM_TYPE_R8: result->value.r8 = *(double*)addr->value.ref; return true;
+        case VM_TYPE_REF: result->value.ref = *(void**)addr->value.ref; return true;
+        default: return false;
+    }
+}
+
+bool vm_store_indirect(vm_value_t* addr, vm_value_t* value) {
+    if (!addr || !value) return false;
+    if (addr->type != VM_TYPE_I && addr->type != VM_TYPE_REF) return false;
+    if (!addr->value.ref) return false;
+    
+    switch(value->type) {
+        case VM_TYPE_I1: *(int8_t*)addr->value.ref = value->value.i1; return true;
+        case VM_TYPE_U1: *(uint8_t*)addr->value.ref = value->value.u1; return true;
+        case VM_TYPE_I2: *(int16_t*)addr->value.ref = value->value.i2; return true;
+        case VM_TYPE_U2: *(uint16_t*)addr->value.ref = value->value.u2; return true;
+        case VM_TYPE_I4: *(int32_t*)addr->value.ref = value->value.i4; return true;
+        case VM_TYPE_U4: *(uint32_t*)addr->value.ref = value->value.u4; return true;
+        case VM_TYPE_I8: *(int64_t*)addr->value.ref = value->value.i8; return true;
+        case VM_TYPE_I: *(intptr_t*)addr->value.ref = value->value.i; return true;
+        case VM_TYPE_R4: *(float*)addr->value.ref = value->value.r4; return true;
+        case VM_TYPE_R8: *(double*)addr->value.ref = value->value.r8; return true;
+        case VM_TYPE_REF: *(void**)addr->value.ref = value->value.ref; return true;
+        default: return false;
+    }
+}
+
+// Object management operations
+bool vm_new_array(vm_value_t* size, vm_value_t* result) {
+    if (!size || !result) return false;
+    if (size->type != VM_TYPE_I4) return false;
+    if (size->value.i4 < 0) return false;
+    
+    // Simple array allocation - allocate memory for elements
+    uint32_t element_count = size->value.i4;
+    void* array_data = malloc(element_count * sizeof(void*)); // Array of pointers
+    
+    result->type = VM_TYPE_REF;
+    result->value.ref = array_data;
+    return true;
+}
+
+bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result) {
+    if (!value || !result) return false;
+    
+    // Simple boxing - allocate memory for the value
+    size_t value_size = 0;
+    switch(value->type) {
+        case VM_TYPE_I1: case VM_TYPE_U1: value_size = sizeof(int8_t); break;
+        case VM_TYPE_I2: case VM_TYPE_U2: value_size = sizeof(int16_t); break;
+        case VM_TYPE_I4: case VM_TYPE_U4: value_size = sizeof(int32_t); break;
+        case VM_TYPE_I8: case VM_TYPE_U8: value_size = sizeof(int64_t); break;
+        case VM_TYPE_R4: value_size = sizeof(float); break;
+        case VM_TYPE_R8: value_size = sizeof(double); break;
+        default: return false;
+    }
+    
+    void* boxed_data = malloc(value_size);
+    if (!boxed_data) return false;
+    
+    // Copy the value
+    memcpy(boxed_data, &value->value, value_size);
+    
+    result->type = VM_TYPE_REF;
+    result->value.ref = boxed_data;
+    return true;
+}
+
+bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result) {
+    if (!obj || !result) return false;
+    if (obj->type != VM_TYPE_REF || !obj->value.ref) return false;
+    
+    // Simple unboxing - assume the type is correct
+    result->type = VM_TYPE_I4; // Default to int32 for simplicity
+    result->value.i4 = *(int32_t*)obj->value.ref;
+    return true;
+}
+
 // Stubs for linker satisfaction
-bool vm_shl(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
-bool vm_shr(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
-bool vm_shr_un(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
+bool vm_shl(vm_value_t* a, vm_value_t* b, vm_value_t* c) {
+    if (a->type == VM_TYPE_I4 && b->type == VM_TYPE_I4) {
+        c->type = VM_TYPE_I4;
+        c->value.i4 = a->value.i4 << b->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_shr(vm_value_t* a, vm_value_t* b, vm_value_t* c) {
+    if (a->type == VM_TYPE_I4 && b->type == VM_TYPE_I4) {
+        c->type = VM_TYPE_I4;
+        c->value.i4 = a->value.i4 >> b->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_shr_un(vm_value_t* a, vm_value_t* b, vm_value_t* c) { 
+    // TODO: Implement unsigned right shift
+    return false; 
+}
+bool vm_add_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        int64_t temp = (int64_t)left->value.i4 + (int64_t)right->value.i4;
+        if (temp < INT32_MIN || temp > INT32_MAX) return false;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = left->value.i4 + right->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_add_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) {
+        uint64_t temp = (uint64_t)left->value.u4 + (uint64_t)right->value.u4;
+        if (temp > UINT32_MAX) return false;
+        result->type = VM_TYPE_U4;
+        result->value.u4 = left->value.u4 + right->value.u4;
+        return true;
+    }
+    return false;
+}
+bool vm_multiply_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        int64_t temp = (int64_t)left->value.i4 * (int64_t)right->value.i4;
+        if (temp < INT32_MIN || temp > INT32_MAX) return false;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = left->value.i4 * right->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_multiply_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) {
+        uint64_t temp = (uint64_t)left->value.u4 * (uint64_t)right->value.u4;
+        if (temp > UINT32_MAX) return false;
+        result->type = VM_TYPE_U4;
+        result->value.u4 = left->value.u4 * right->value.u4;
+        return true;
+    }
+    return false;
+}
+bool vm_subtract_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        int64_t temp = (int64_t)left->value.i4 - (int64_t)right->value.i4;
+        if (temp < INT32_MIN || temp > INT32_MAX) return false;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = left->value.i4 - right->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_subtract_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) {
+        if (left->value.u4 < right->value.u4) return false;
+        result->type = VM_TYPE_U4;
+        result->value.u4 = left->value.u4 - right->value.u4;
+        return true;
+    }
+    return false;
+}
+bool vm_divide_ovf(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    // Division overflow only occurs with INT32_MIN / -1
+    if (left->type == VM_TYPE_I4 && right->type == VM_TYPE_I4) {
+        if (right->value.i4 == 0) return false;
+        if (left->value.i4 == INT32_MIN && right->value.i4 == -1) return false;
+        result->type = VM_TYPE_I4;
+        result->value.i4 = left->value.i4 / right->value.i4;
+        return true;
+    }
+    return false;
+}
+bool vm_divide_ovf_un(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    if (left->type == VM_TYPE_U4 && right->type == VM_TYPE_U4) {
+        if (right->value.u4 == 0) return false;
+        result->type = VM_TYPE_U4;
+        result->value.u4 = left->value.u4 / right->value.u4;
+        return true;
+    }
+    return false;
+}
 bool vm_add_ovf(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
 bool vm_sub_ovf(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
 bool vm_mul_ovf(vm_value_t* a, vm_value_t* b, vm_value_t* c) { return false; }
