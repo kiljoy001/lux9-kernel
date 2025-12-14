@@ -820,6 +820,125 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             if (!vm_store_array_element(&array, &index, VM_TYPE_I4, &value)) { vm_set_error(state, "STELEM.I4: Error"); return false; }
             break;
         }
+        case CIL_OPCODE_STELEM_I1: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I1: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_I1, &value)) { vm_set_error(state, "STELEM.I1: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_I2: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I2: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_I2, &value)) { vm_set_error(state, "STELEM.I2: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_I8: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I8: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_I8, &value)) { vm_set_error(state, "STELEM.I8: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_R4: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.R4: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_R4, &value)) { vm_set_error(state, "STELEM.R4: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_R8: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.R8: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_R8, &value)) { vm_set_error(state, "STELEM.R8: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_REF: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.REF: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_REF, &value)) { vm_set_error(state, "STELEM.REF: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_STELEM_I: {
+            vm_value_t array, index, value;
+            if (!vm_stack_pop(state, &value) || !vm_stack_pop(state, &index) || !vm_stack_pop(state, &array)) { vm_set_error(state, "STELEM.I: Stack"); return false; }
+            if (!vm_store_array_element(&array, &index, VM_TYPE_I, &value)) { vm_set_error(state, "STELEM.I: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_VOLATILE: {
+            // Memory barrier - no operation needed for now
+            break;
+        }
+        case CIL_OPCODE_UNALIGNED: {
+            // Unaligned memory access indicator - no operation needed for now
+            break;
+        }
+        case CIL_OPCODE_TAIL: {
+            // Tail call optimization indicator - no operation needed for now
+            break;
+        }
+        case CIL_OPCODE_READONLY: {
+            // Readonly prefix - no operation needed for now
+            break;
+        }
+        case CIL_OPCODE_CPBLK: {
+            vm_value_t src, dest, len;
+            if (!vm_stack_pop(state, &len) || !vm_stack_pop(state, &dest) || !vm_stack_pop(state, &src)) { vm_set_error(state, "CPBLK: Stack"); return false; }
+            if (!vm_copy_memory(&src, &dest, &len)) { vm_set_error(state, "CPBLK: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_INITBLK: {
+            vm_value_t addr, value, len;
+            if (!vm_stack_pop(state, &len) || !vm_stack_pop(state, &value) || !vm_stack_pop(state, &addr)) { vm_set_error(state, "INITBLK: Stack"); return false; }
+            if (!vm_init_memory(&addr, &value, &len)) { vm_set_error(state, "INITBLK: Error"); return false; }
+            break;
+        }
+        case CIL_OPCODE_SYM_CREATE: {
+            vm_value_t var_name, result;
+            if (!vm_stack_pop(state, &var_name)) { vm_set_error(state, "SYM_CREATE: Stack"); return false; }
+            if (!vm_symbolic_create(&var_name, &result)) { vm_set_error(state, "SYM_CREATE: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_EXPR: {
+            vm_value_t left, right, result;
+            if (!vm_stack_pop(state, &right) || !vm_stack_pop(state, &left)) { vm_set_error(state, "SYM_EXPR: Stack"); return false; }
+            if (!vm_symbolic_expr(&left, &right, &result)) { vm_set_error(state, "SYM_EXPR: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_DIFF: {
+            vm_value_t expr, var, result;
+            if (!vm_stack_pop(state, &var) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_DIFF: Stack"); return false; }
+            if (!vm_symbolic_differentiate(&expr, &var, &result)) { vm_set_error(state, "SYM_DIFF: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_INTEGRATE: {
+            vm_value_t expr, var, result;
+            if (!vm_stack_pop(state, &var) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_INTEGRATE: Stack"); return false; }
+            if (!vm_symbolic_integrate(&expr, &var, &result)) { vm_set_error(state, "SYM_INTEGRATE: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_SIMPLIFY: {
+            vm_value_t expr, result;
+            if (!vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_SIMPLIFY: Stack"); return false; }
+            if (!vm_symbolic_simplify(&expr, &result)) { vm_set_error(state, "SYM_SIMPLIFY: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_EVAL: {
+            vm_value_t expr, env, result;
+            if (!vm_stack_pop(state, &env) || !vm_stack_pop(state, &expr)) { vm_set_error(state, "SYM_EVAL: Stack"); return false; }
+            if (!vm_symbolic_eval(&expr, &env, &result)) { vm_set_error(state, "SYM_EVAL: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
+        case CIL_OPCODE_SYM_MATCH: {
+            vm_value_t pattern, expr, result;
+            if (!vm_stack_pop(state, &expr) || !vm_stack_pop(state, &pattern)) { vm_set_error(state, "SYM_MATCH: Stack"); return false; }
+            if (!vm_symbolic_match(&pattern, &expr, &result)) { vm_set_error(state, "SYM_MATCH: Error"); return false; }
+            vm_stack_push(state, &result);
+            break;
+        }
         
         default: vm_set_error(state, "Unsupported opcode"); return false;
     }
@@ -1237,6 +1356,176 @@ bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result) {
 bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result) {
     // TODO: Implement instance checking with proper type checking
     return false;
+}
+
+// Memory management operations
+bool vm_convert_ovf_un(vm_value_t* value, vm_type_t target_type, vm_value_t* result) {
+    // TODO: Implement overflow-checked unsigned conversion
+    if (!value || !result) return false;
+    
+    // Simplified implementation - basic type conversion
+    switch (target_type) {
+        case VM_TYPE_I1:
+            result->type = VM_TYPE_I1;
+            result->value.i1 = (int8_t)value->value.u8; // Simplified
+            return true;
+        case VM_TYPE_I2:
+            result->type = VM_TYPE_I2;
+            result->value.i2 = (int16_t)value->value.u8; // Simplified
+            return true;
+        case VM_TYPE_I4:
+            result->type = VM_TYPE_I4;
+            result->value.i4 = (int32_t)value->value.u8; // Simplified
+            return true;
+        case VM_TYPE_I8:
+            result->type = VM_TYPE_I8;
+            result->value.i8 = (int64_t)value->value.u8; // Simplified
+            return true;
+        case VM_TYPE_U1:
+            result->type = VM_TYPE_U1;
+            result->value.u1 = (uint8_t)value->value.u8; // Simplified
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool vm_local_alloc(vm_value_t* size, vm_value_t* result) {
+    // TODO: Implement local memory allocation
+    if (!size || !result) return false;
+    if (size->type != VM_TYPE_I4) return false;
+    
+    uint32_t alloc_size = size->value.i4;
+    void* mem = malloc(alloc_size);
+    if (!mem) return false;
+    
+    result->type = VM_TYPE_REF;
+    result->value.ref = mem;
+    return true;
+}
+
+bool vm_init_object(vm_value_t* addr, vm_value_t* type_token) {
+    // TODO: Implement object initialization
+    if (!addr || !type_token) return false;
+    if (!addr->value.ref) return false;
+    
+    // Simplified initialization - zero memory
+    memset(addr->value.ref, 0, 8); // Zero first 8 bytes
+    return true;
+}
+
+bool vm_size_of(vm_value_t* type_token, vm_value_t* result) {
+    // TODO: Implement sizeof operation with proper type resolution
+    if (!type_token || !result) return false;
+    
+    // Simplified implementation - return default size
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 4; // Default size
+    return true;
+}
+
+bool vm_ref_any_type(vm_value_t* typed_ref, vm_value_t* result) {
+    // TODO: Implement reference any type extraction
+    if (!typed_ref || !result) return false;
+    
+    // Simplified implementation - return I4 as type token
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0x12345678; // Placeholder type token
+    return true;
+}
+
+bool vm_copy_memory(vm_value_t* src, vm_value_t* dest, vm_value_t* len) {
+    // TODO: Implement memory copy operation
+    if (!src || !dest || !len) return false;
+    if (!src->value.ref || !dest->value.ref) return false;
+    if (len->type != VM_TYPE_I4) return false;
+    
+    // Simplified memory copy
+    memcpy(dest->value.ref, src->value.ref, len->value.i4);
+    return true;
+}
+
+bool vm_init_memory(vm_value_t* addr, vm_value_t* value, vm_value_t* len) {
+    // TODO: Implement memory initialization operation
+    if (!addr || !value || !len) return false;
+    if (!addr->value.ref) return false;
+    if (len->type != VM_TYPE_I4) return false;
+    
+    // Simplified memory initialization
+    memset(addr->value.ref, value->value.i1, len->value.i4);
+    return true;
+}
+
+bool vm_symbolic_create(vm_value_t* var_name, vm_value_t* result) {
+    // TODO: Implement symbolic variable creation
+    if (!var_name || !result) return false;
+    
+    // Simplified implementation - create placeholder symbolic variable
+    result->type = VM_TYPE_REF;
+    result->value.ref = malloc(sizeof(int)); // Placeholder
+    if (result->value.ref) {
+        *(int*)result->value.ref = 12345; // Symbolic variable ID
+        return true;
+    }
+    return false;
+}
+
+bool vm_symbolic_expr(vm_value_t* left, vm_value_t* right, vm_value_t* result) {
+    // TODO: Implement symbolic expression building
+    if (!left || !right || !result) return false;
+    
+    // Simplified implementation - return left operand
+    *result = *left;
+    return true;
+}
+
+bool vm_symbolic_differentiate(vm_value_t* expr, vm_value_t* var, vm_value_t* result) {
+    // TODO: Implement symbolic differentiation
+    if (!expr || !var || !result) return false;
+    
+    // Simplified implementation - return zero derivative
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
+}
+
+bool vm_symbolic_integrate(vm_value_t* expr, vm_value_t* var, vm_value_t* result) {
+    // TODO: Implement symbolic integration
+    if (!expr || !var || !result) return false;
+    
+    // Simplified implementation - return zero integral
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
+}
+
+bool vm_symbolic_simplify(vm_value_t* expr, vm_value_t* result) {
+    // TODO: Implement symbolic simplification
+    if (!expr || !result) return false;
+    
+    // Simplified implementation - return expression as-is
+    *result = *expr;
+    return true;
+}
+
+bool vm_symbolic_eval(vm_value_t* expr, vm_value_t* env, vm_value_t* result) {
+    // TODO: Implement symbolic evaluation
+    if (!expr || !env || !result) return false;
+    
+    // Simplified implementation - return zero
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
+}
+
+bool vm_symbolic_match(vm_value_t* pattern, vm_value_t* expr, vm_value_t* result) {
+    // TODO: Implement symbolic pattern matching
+    if (!pattern || !expr || !result) return false;
+    
+    // Simplified implementation - return false (no match)
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return true;
 }
 
 bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result) {
