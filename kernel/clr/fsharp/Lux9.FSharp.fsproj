@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="FSharp.Core.fs" />
+    <Compile Include="Lux9Kernel.fs" />
   </ItemGroup>
 
   <ItemGroup>

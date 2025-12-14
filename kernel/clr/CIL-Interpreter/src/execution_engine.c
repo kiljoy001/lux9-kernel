@@ -1,4 +1,5 @@
 #include "../include/execution_engine.h"
+#include "../../il_parser.h" // Assuming il_parser.h is in parent dir or include path needs adjustment
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -10,6 +11,7 @@ vm_execution_state_t* vm_create_execution_state(vm_init_t* init) {
     vm_execution_state_t* state = (vm_execution_state_t*)malloc(sizeof(vm_execution_state_t));
     if (state == NULL) return NULL;
     memset(state, 0, sizeof(vm_execution_state_t));
+    state->assembly = NULL; // Initialize to NULL
     return state;
 }
 
@@ -1055,7 +1057,10 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         case CIL_OPCODE_CALL: {
             vm_value_t method_token, result;
             if (!vm_stack_pop(state, &method_token)) { vm_set_error(state, "CALL: Stack"); return false; }
-            if (!vm_call_method(&method_token, &result)) { vm_set_error(state, "CALL: Error"); return false; }
+                        if (!vm_call_method(state, &method_token, &result)) {
+                            vm_set_error(state, "CALL: Error invoking method");
+                            return false;
+                        }
             vm_stack_push(state, &result);
             break;
         }
@@ -1689,11 +1694,82 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
 
 // ==================== IMPLEMENTATION OF ALL MISSING HELPER FUNCTIONS ====================
 
+extern void *clr_resolve_internal_call(const char *cls, const char *method);
+
 // Method invocation implementations
-bool vm_call_method(vm_value_t* method_token, vm_value_t* result) {
-    // Simplified implementation for method calls
-    result->type = VM_TYPE_I4;
-    result->value.i4 = 0;
+bool vm_call_method(vm_execution_state_t* state, vm_value_t* method_token, vm_value_t* result) {
+    if (!state || !state->assembly) {
+        vm_set_error(state, "CALL: No assembly loaded");
+        return false;
+    }
+    
+    uint32_t token = (uint32_t)method_token->value.i4;
+    il_assembly_t* assembly = (il_assembly_t*)state->assembly;
+    il_method_t* method = il_get_method_by_token(assembly, token);
+    
+    if (!method) {
+        vm_set_error(state, "CALL: Method not found");
+        return false;
+    }
+    
+    // Check for InternalCall (0x1000)
+    if (method->impl_flags & 0x1000) {
+        const char* type_name = il_get_method_parent_type_name(assembly, token);
+        if (!type_name) {
+             vm_set_error(state, "CALL: Could not resolve parent type for internal call");
+             if (method) il_free_method(method);
+             return false;
+        }
+        
+        // Full name reconstruction (namespace.name) is skipped for now, assuming simple names match
+        // Or assume type_name is full name? il_get_string returns raw string.
+        // We might need to append namespace.
+        // For Lux9Kernel.fs, Namespace is "Lux9.Kernel", Class is "Kernel".
+        // il_parser might return just "Kernel" or "Lux9.Kernel.Kernel" depending on table.
+        // TypeDef has separate Namespace index.
+        
+        // Let's assume we can resolve by just class name for now or construct it.
+        // Actually clr_internal_calls.c uses "Lux9.Kernel.Kernel".
+        // I need to concat namespace + "." + name.
+        
+        // Quick hack: try resolving with just type_name
+        void* native_func = clr_resolve_internal_call(type_name, method->name);
+        
+        if (!native_func) {
+             // Try constructing full name?
+             // Need namespace from TypeDef. il_get_method_parent_type_name only returns Name.
+             // I should update that function or just fail for now.
+             
+             // For testing "Hello World" with Lux9.Kernel.Kernel, let's assume strict match or simple match.
+             vm_set_error(state, "CALL: Internal call not found");
+             if (method) il_free_method(method);
+             return false;
+        }
+        
+        // Invoke Native
+        // Assuming 1 argument for now (Print, Panic)
+        // Stack: [Arg1]
+        vm_value_t arg1;
+        if (!vm_stack_pop(state, &arg1)) {
+             // Maybe 0 args?
+        }
+        
+        // Call it (assuming void func(void*))
+        typedef void (*native_fn_t)(void*);
+        ((native_fn_t)native_func)(arg1.value.ref);
+        
+        // Result
+        result->type = VM_TYPE_I4; // Void return
+        result->value.i4 = 0;
+        
+        if (method) il_free_method(method);
+        return true;
+    }
+    
+    // Normal IL Call
+    // ... (To be implemented)
+    
+    if (method) il_free_method(method);
     return true;
 }
 

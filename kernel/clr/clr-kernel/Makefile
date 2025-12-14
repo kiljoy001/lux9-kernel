@@ -8,6 +8,7 @@ LDFLAGS = -nostdlib -static
 # Source files - NOW WITH PEBBLE INTEGRATION + FRUITY IR
 SOURCES = clr_kernel.c \
           clr_pebble_integration.c \
+          clr_internal_calls.c \
           ../clr-implementation/clr_runtime.c
 
 # Object files

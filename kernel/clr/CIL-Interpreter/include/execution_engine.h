@@ -78,6 +78,25 @@ typedef struct {
     } value;
 } vm_value_t;
 
+// Object Layout Definitions
+typedef struct {
+    void* vtable;           // Pointer to method table
+    uint32_t type_token;    // Metadata token for the type
+    uint32_t sync_block;    // Sync block index / hash code
+} clr_object_header_t;
+
+typedef struct {
+    clr_object_header_t header;
+    uint32_t length;
+    uint16_t chars[];       // Flexible array member
+} clr_string_t;
+
+typedef struct {
+    clr_object_header_t header;
+    uint32_t length;
+    uint8_t data[];         // Flexible array member
+} clr_array_t;
+
 // VM Stack
 typedef struct vm_stack {
     vm_value_t value;
@@ -104,6 +123,7 @@ typedef struct {
     const char* error_message;     // Error description
     uint32_t instruction_count;    // Instructions executed
     uint32_t stack_depth_max;    // Maximum stack depth
+    void* assembly;              // Pointer to il_assembly_t (void* to avoid circular dependency)
 } vm_execution_state_t;
 
 // VM Initialization
@@ -271,7 +291,7 @@ bool vm_cast_class(vm_value_t* obj, vm_value_t* cast_type, vm_value_t* result);
 bool vm_is_instance(vm_value_t* obj, vm_value_t* test_type, vm_value_t* result);
 bool vm_call_indirect(vm_value_t* method_ptr, vm_value_t* result);
 bool vm_call_virtual(vm_value_t* method_token, vm_value_t* result);
-bool vm_call_method(vm_value_t* method_token, vm_value_t* result);
+bool vm_call_method(vm_execution_state_t* state, vm_value_t* method_token, vm_value_t* result);
 bool vm_load_function_ptr(vm_value_t* method_token, vm_value_t* result);
 bool vm_load_virtual_function_ptr(vm_value_t* obj, vm_value_t* method_token, vm_value_t* result);
 bool vm_load_object(vm_value_t* addr, vm_value_t* result);

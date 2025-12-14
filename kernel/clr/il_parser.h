@@ -126,6 +126,7 @@ typedef enum {
   TABLE_METHODDEF = 0x06,
   TABLE_PARAM = 0x08,
   TABLE_MEMBERREF = 0x0A,
+  TABLE_TYPESPEC = 0x1B,
   TABLE_ASSEMBLY = 0x20,
   TABLE_ASSEMBLYREF = 0x23
 } metadata_table_kind_t;
@@ -151,6 +152,25 @@ typedef struct {
   uint32_t signature_index; /* Index into #Blob heap */
   uint32_t param_list;      /* Index into Param table */
 } methoddef_row_t;
+
+typedef struct {
+  uint32_t resolution_scope; /* Index into Module, ModuleRef, AssemblyRef, or TypeRef */
+  uint32_t name_index;       /* Index into #Strings heap */
+  uint32_t namespace_index;  /* Index into #Strings heap */
+} typeref_row_t;
+
+typedef struct {
+  uint32_t flags;
+  uint32_t name_index;       /* Index into #Strings heap */
+  uint32_t namespace_index;  /* Index into #Strings heap */
+  uint32_t extends;          /* Index into TypeDef, TypeRef, or TypeSpec */
+  uint32_t field_list;       /* Index into Field table */
+  uint32_t method_list;      /* Index into MethodDef table */
+} typedef_row_t;
+
+typedef struct {
+  uint32_t signature; /* Index into #Blob heap */
+} typespec_row_t;
 
 /* ========== Exception Clause Types (ECMA-335 II.25.4.6) ========== */
 
@@ -180,6 +200,7 @@ typedef struct {
   size_t il_code_size;
   uint32_t max_stack;
   uint32_t local_var_sig_token;
+  uint16_t impl_flags;    // MethodImplAttributes
   uint8_t flags; /* Tiny or fat format */
 
   /* Exception handling */
@@ -224,6 +245,14 @@ typedef struct {
   // Methods cache
   il_method_t *methods;
   size_t method_count;
+
+  // Types cache
+  typeref_row_t *typerefs;
+  size_t typeref_count;
+  typedef_row_t *typedefs;
+  size_t typedef_count;
+  typespec_row_t *typespecs;
+  size_t typespec_count;
 } il_assembly_t;
 
 /* ========== Error Codes ========== */
@@ -253,6 +282,18 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name);
 
 /* Get method by MethodDef token */
 il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token);
+
+/* Get the name of the type that owns the given method token */
+const char *il_get_method_parent_type_name(il_assembly_t *assembly, uint32_t method_token);
+
+/* Get TypeRef row (1-based index) */
+typeref_row_t *il_get_typeref(il_assembly_t *assembly, uint32_t rid);
+
+/* Get TypeDef row (1-based index) */
+typedef_row_t *il_get_typedef(il_assembly_t *assembly, uint32_t rid);
+
+/* Get TypeSpec row (1-based index) */
+typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid);
 
 /* Get string from #Strings heap */
 const char *il_get_string(il_assembly_t *assembly, uint32_t index);
