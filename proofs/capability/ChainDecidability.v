@@ -128,4 +128,16 @@ Proof.
   apply dct_depth_fuel_suffices; assumption.
 Qed.
 
+(* Abstract chain completeness: any table-respecting chain yields a boolean success
+   and therefore an abstract derived_chain witness. *)
+Corollary derived_chain_bool_complete :
+  forall ct c anc (h : derived_chain_table ct c anc),
+    exists fuel, derived_chainb fuel ct c anc = true /\ derived_chain ct c anc.
+Proof.
+  intros ct c anc h.
+  destruct (derived_chain_table_bool_complete _ _ _ h) as [fuel Hbool].
+  exists fuel; split; auto.
+  apply derived_chain_table_implies_derived_chain; assumption.
+Qed.
+
 End ChainDecidability.

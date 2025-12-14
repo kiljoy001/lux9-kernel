@@ -1,4 +1,4 @@
-DIGEST 2b568a6d9f199eb1e55bb4e6978540bc
+DIGEST c717aa202bb7f1b1a2b7eeade05d089f
 Fproofs.capability.ChainDecidability
 R119:132 Coq.Lists.List <> <> lib
 R150:167 Coq.Arith.PeanoNat <> <> lib
@@ -291,4 +291,32 @@ R4242:4242 Coq.Init.Datatypes <> S constr
 R4242:4242 Coq.Init.Datatypes <> S constr
 R4256:4278 proofs.capability.ChainDecidability <> dct_depth_fuel_suffices thm
 R4256:4278 proofs.capability.ChainDecidability <> dct_depth_fuel_suffices thm
-R4303:4319 proofs.capability.ChainDecidability ChainDecidability <> sec
+prf 4448:4474 <> derived_chain_bool_complete
+binder 4487:4488 <> ct:44
+binder 4490:4490 <> c:45
+binder 4492:4494 <> anc:46
+R4501:4519 proofs.capability.ChainDecidability <> derived_chain_table ind
+R4521:4522 proofs.capability.ChainDecidability <> ct:44 var
+R4524:4524 proofs.capability.ChainDecidability <> c:45 var
+R4526:4528 proofs.capability.ChainDecidability <> anc:46 var
+binder 4497:4497 <> h:47
+R4536:4542 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R4547:4548 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 4543:4546 <> fuel:48
+R4584:4587 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R4577:4579 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4549:4562 proofs.capability.ChainDecidability <> derived_chainb def
+R4564:4567 proofs.capability.ChainDecidability <> fuel:48 var
+R4569:4570 proofs.capability.ChainDecidability <> ct:44 var
+R4572:4572 proofs.capability.ChainDecidability <> c:45 var
+R4574:4576 proofs.capability.ChainDecidability <> anc:46 var
+R4580:4583 Coq.Init.Datatypes <> true constr
+R4588:4600 proofs.capability.DerivationChain <> derived_chain ind
+R4602:4603 proofs.capability.ChainDecidability <> ct:44 var
+R4605:4605 proofs.capability.ChainDecidability <> c:45 var
+R4607:4609 proofs.capability.ChainDecidability <> anc:46 var
+R4652:4684 proofs.capability.ChainDecidability <> derived_chain_table_bool_complete thm
+R4652:4684 proofs.capability.ChainDecidability <> derived_chain_table_bool_complete thm
+R4748:4788 proofs.capability.ChainDecidability <> derived_chain_table_implies_derived_chain thm
+R4748:4788 proofs.capability.ChainDecidability <> derived_chain_table_implies_derived_chain thm
+R4813:4829 proofs.capability.ChainDecidability ChainDecidability <> sec

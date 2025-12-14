@@ -1,0 +1,985 @@
+DIGEST 866a6163cbdf4b6b5d140d326c64e855
+Fproofs.borrow.borrow_core
+R188:201 Coq.Lists.List <> <> lib
+R219:235 Coq.ZArith.ZArith <> <> lib
+R253:265 Coq.Bool.Bool <> <> lib
+R283:316 Coq.Logic.FunctionalExtensionality <> <> lib
+R326:338 Coq.Lists.List ListNotations <> mod
+def 547:549 <> Pid
+R554:554 Coq.Numbers.BinNums <> Z ind
+def 568:573 <> PageId
+R578:578 Coq.Numbers.BinNums <> Z ind
+ind 592:601 <> OwnerState
+constr 610:613 <> Free
+constr 619:627 <> Exclusive
+constr 633:643 <> SharedOwned
+constr 649:655 <> MutLent
+scheme 592:601 <> OwnerState_rect
+scheme 592:601 <> OwnerState_ind
+scheme 592:601 <> OwnerState_rec
+scheme 592:601 <> OwnerState_sind
+ind 669:677 <> SipStatus
+constr 686:692 <> P9_Idle
+constr 698:707 <> P9_Pending
+constr 713:723 <> P9_Complete
+constr 729:736 <> P9_Error
+scheme 669:677 <> SipStatus_rect
+scheme 669:677 <> SipStatus_ind
+scheme 669:677 <> SipStatus_rec
+scheme 669:677 <> SipStatus_sind
+rec 747:755 <> PageState
+proj 776:780 <> owner
+proj 798:802 <> state
+proj 820:829 <> sip_status
+proj 846:853 <> doorbell
+proj 865:880 <> shared_borrowers
+proj 896:907 <> mut_borrower
+R784:789 Coq.Init.Datatypes <> option ind
+R791:793 proofs.borrow.borrow_core <> Pid def
+R806:815 proofs.borrow.borrow_core <> OwnerState ind
+R833:841 proofs.borrow.borrow_core <> SipStatus ind
+R857:860 Coq.Init.Datatypes <> bool ind
+R884:887 Coq.Init.Datatypes <> list ind
+R889:891 proofs.borrow.borrow_core <> Pid def
+R911:916 Coq.Init.Datatypes <> option ind
+R918:920 proofs.borrow.borrow_core <> Pid def
+def 938:948 <> SystemState
+R959:962 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R953:958 proofs.borrow.borrow_core <> PageId def
+R963:971 proofs.borrow.borrow_core <> PageState rec
+def 986:995 <> init_state
+R999:1009 proofs.borrow.borrow_core <> SystemState def
+R1025:1035 proofs.borrow.borrow_core <> mkPageState constr
+R1037:1040 Coq.Init.Datatypes <> None constr
+R1042:1045 proofs.borrow.borrow_core <> Free constr
+R1047:1053 proofs.borrow.borrow_core <> P9_Idle constr
+R1055:1059 Coq.Init.Datatypes <> false constr
+R1061:1062 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R1064:1067 Coq.Init.Datatypes <> None constr
+def 1257:1267 <> update_page
+R1274:1284 proofs.borrow.borrow_core <> SystemState def
+binder 1270:1270 <> s:12
+R1292:1297 proofs.borrow.borrow_core <> PageId def
+binder 1288:1288 <> p:13
+R1310:1318 proofs.borrow.borrow_core <> PageState rec
+binder 1301:1306 <> new_ps:14
+R1323:1333 proofs.borrow.borrow_core <> SystemState def
+binder 1344:1345 <> p':15
+R1353:1357 Coq.ZArith.BinInt Z eqb def
+R1359:1359 proofs.borrow.borrow_core <> p:13 var
+R1361:1362 proofs.borrow.borrow_core <> p':15 var
+R1381:1381 proofs.borrow.borrow_core <> s:12 var
+R1383:1384 proofs.borrow.borrow_core <> p':15 var
+R1369:1374 proofs.borrow.borrow_core <> new_ps:14 var
+prf 1394:1408 <> update_page_hit
+binder 1421:1421 <> s:16
+binder 1423:1424 <> pg:17
+binder 1426:1431 <> new_ps:18
+R1460:1462 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1434:1444 proofs.borrow.borrow_core <> update_page def
+R1446:1446 proofs.borrow.borrow_core <> s:16 var
+R1448:1449 proofs.borrow.borrow_core <> pg:17 var
+R1451:1456 proofs.borrow.borrow_core <> new_ps:18 var
+R1458:1459 proofs.borrow.borrow_core <> pg:17 var
+R1463:1468 proofs.borrow.borrow_core <> new_ps:18 var
+R1493:1503 proofs.borrow.borrow_core <> update_page def
+R1514:1523 Coq.ZArith.BinInt Z eqb_refl thm
+R1514:1523 Coq.ZArith.BinInt Z eqb_refl thm
+R1514:1523 Coq.ZArith.BinInt Z eqb_refl thm
+prf 1551:1566 <> update_page_miss
+binder 1579:1579 <> s:19
+binder 1581:1582 <> pg:20
+binder 1584:1586 <> pg0:21
+binder 1588:1593 <> new_ps:22
+R1605:1608 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1598:1601 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R1596:1597 proofs.borrow.borrow_core <> pg:20 var
+R1602:1604 proofs.borrow.borrow_core <> pg0:21 var
+R1636:1638 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1609:1619 proofs.borrow.borrow_core <> update_page def
+R1621:1621 proofs.borrow.borrow_core <> s:19 var
+R1623:1624 proofs.borrow.borrow_core <> pg:20 var
+R1626:1631 proofs.borrow.borrow_core <> new_ps:22 var
+R1633:1635 proofs.borrow.borrow_core <> pg0:21 var
+R1639:1639 proofs.borrow.borrow_core <> s:19 var
+R1641:1643 proofs.borrow.borrow_core <> pg0:21 var
+R1670:1680 proofs.borrow.borrow_core <> update_page def
+R1689:1697 Coq.ZArith.BinInt Z eqb_neq thm
+R1689:1697 Coq.ZArith.BinInt Z eqb_neq thm
+ind 1936:1947 <> BorrowShared
+constr 2036:2055 <> BS_Success_Exclusive
+constr 2384:2400 <> BS_Success_Shared
+R1960:1962 proofs.borrow.borrow_core <> Pid def
+binder 1950:1956 <> p_owner:23
+R1979:1981 proofs.borrow.borrow_core <> Pid def
+binder 1966:1975 <> p_borrower:24
+R1992:1997 proofs.borrow.borrow_core <> PageId def
+binder 1985:1988 <> page:25
+R2009:2019 proofs.borrow.borrow_core <> SystemState def
+binder 2001:2002 <> s1:26
+binder 2004:2005 <> s2:27
+R2097:2106 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2082:2084 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2076:2080 proofs.borrow.borrow_core <> owner proj
+R2066:2067 proofs.borrow.borrow_core <> s1:26 var
+R2069:2072 proofs.borrow.borrow_core <> page:25 var
+R2085:2088 Coq.Init.Datatypes <> Some constr
+R2090:2096 proofs.borrow.borrow_core <> p_owner:23 var
+R2136:2145 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2124:2126 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2118:2122 proofs.borrow.borrow_core <> state proj
+R2108:2109 proofs.borrow.borrow_core <> s1:26 var
+R2111:2114 proofs.borrow.borrow_core <> page:25 var
+R2127:2135 proofs.borrow.borrow_core <> Exclusive constr
+R2190:2199 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2146:2147 Coq.Init.Logic <> ::type_scope:'~'_x not
+R2148:2149 Coq.Lists.List <> In def
+R2173:2188 proofs.borrow.borrow_core <> shared_borrowers proj
+R2163:2164 proofs.borrow.borrow_core <> s1:26 var
+R2166:2169 proofs.borrow.borrow_core <> page:25 var
+R2151:2160 proofs.borrow.borrow_core <> p_borrower:24 var
+R2327:2336 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2202:2204 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2200:2201 proofs.borrow.borrow_core <> s2:27 var
+R2205:2215 proofs.borrow.borrow_core <> update_page def
+R2217:2218 proofs.borrow.borrow_core <> s1:26 var
+R2220:2223 proofs.borrow.borrow_core <> page:25 var
+R2226:2236 proofs.borrow.borrow_core <> mkPageState constr
+R2239:2242 Coq.Init.Datatypes <> Some constr
+R2244:2250 proofs.borrow.borrow_core <> p_owner:23 var
+R2253:2263 proofs.borrow.borrow_core <> SharedOwned constr
+R2276:2285 proofs.borrow.borrow_core <> sip_status proj
+R2266:2267 proofs.borrow.borrow_core <> s1:26 var
+R2269:2272 proofs.borrow.borrow_core <> page:25 var
+R2299:2306 proofs.borrow.borrow_core <> doorbell proj
+R2289:2290 proofs.borrow.borrow_core <> s1:26 var
+R2292:2295 proofs.borrow.borrow_core <> page:25 var
+R2309:2309 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R2320:2320 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R2310:2319 proofs.borrow.borrow_core <> p_borrower:24 var
+R2322:2325 Coq.Init.Datatypes <> None constr
+R2337:2348 proofs.borrow.borrow_core <> BorrowShared:28 ind
+R2377:2378 proofs.borrow.borrow_core <> s2:27 var
+R2374:2375 proofs.borrow.borrow_core <> s1:26 var
+R2369:2372 proofs.borrow.borrow_core <> page:25 var
+R2358:2367 proofs.borrow.borrow_core <> p_borrower:24 var
+R2350:2356 proofs.borrow.borrow_core <> p_owner:23 var
+R2442:2451 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2427:2429 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2421:2425 proofs.borrow.borrow_core <> owner proj
+R2411:2412 proofs.borrow.borrow_core <> s1:26 var
+R2414:2417 proofs.borrow.borrow_core <> page:25 var
+R2430:2433 Coq.Init.Datatypes <> Some constr
+R2435:2441 proofs.borrow.borrow_core <> p_owner:23 var
+R2483:2492 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2469:2471 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2463:2467 proofs.borrow.borrow_core <> state proj
+R2453:2454 proofs.borrow.borrow_core <> s1:26 var
+R2456:2459 proofs.borrow.borrow_core <> page:25 var
+R2472:2482 proofs.borrow.borrow_core <> SharedOwned constr
+R2537:2546 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2493:2494 Coq.Init.Logic <> ::type_scope:'~'_x not
+R2495:2496 Coq.Lists.List <> In def
+R2520:2535 proofs.borrow.borrow_core <> shared_borrowers proj
+R2510:2511 proofs.borrow.borrow_core <> s1:26 var
+R2513:2516 proofs.borrow.borrow_core <> page:25 var
+R2498:2507 proofs.borrow.borrow_core <> p_borrower:24 var
+R2706:2715 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2549:2551 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2547:2548 proofs.borrow.borrow_core <> s2:27 var
+R2552:2562 proofs.borrow.borrow_core <> update_page def
+R2564:2565 proofs.borrow.borrow_core <> s1:26 var
+R2567:2570 proofs.borrow.borrow_core <> page:25 var
+R2573:2583 proofs.borrow.borrow_core <> mkPageState constr
+R2586:2589 Coq.Init.Datatypes <> Some constr
+R2591:2597 proofs.borrow.borrow_core <> p_owner:23 var
+R2600:2610 proofs.borrow.borrow_core <> SharedOwned constr
+R2623:2632 proofs.borrow.borrow_core <> sip_status proj
+R2613:2614 proofs.borrow.borrow_core <> s1:26 var
+R2616:2619 proofs.borrow.borrow_core <> page:25 var
+R2646:2653 proofs.borrow.borrow_core <> doorbell proj
+R2636:2637 proofs.borrow.borrow_core <> s1:26 var
+R2639:2642 proofs.borrow.borrow_core <> page:25 var
+R2667:2670 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2657:2666 proofs.borrow.borrow_core <> p_borrower:24 var
+R2682:2697 proofs.borrow.borrow_core <> shared_borrowers proj
+R2672:2673 proofs.borrow.borrow_core <> s1:26 var
+R2675:2678 proofs.borrow.borrow_core <> page:25 var
+R2701:2704 Coq.Init.Datatypes <> None constr
+R2716:2727 proofs.borrow.borrow_core <> BorrowShared:28 ind
+R2756:2757 proofs.borrow.borrow_core <> s2:27 var
+R2753:2754 proofs.borrow.borrow_core <> s1:26 var
+R2748:2751 proofs.borrow.borrow_core <> page:25 var
+R2737:2746 proofs.borrow.borrow_core <> p_borrower:24 var
+R2729:2735 proofs.borrow.borrow_core <> p_owner:23 var
+scheme 1936:1947 <> BorrowShared_ind
+scheme 1936:1947 <> BorrowShared_sind
+ind 2771:2782 <> ReturnShared
+constr 2855:2876 <> RS_Success_StillShared
+constr 3277:3302 <> RS_Success_BackToExclusive
+R2798:2800 proofs.borrow.borrow_core <> Pid def
+binder 2785:2794 <> p_borrower:30
+R2811:2816 proofs.borrow.borrow_core <> PageId def
+binder 2804:2807 <> page:31
+R2828:2838 proofs.borrow.borrow_core <> SystemState def
+binder 2820:2821 <> s1:32
+binder 2823:2824 <> s2:33
+binder 2893:2900 <> new_list:36
+R2940:2949 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2926:2928 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2920:2924 proofs.borrow.borrow_core <> state proj
+R2910:2911 proofs.borrow.borrow_core <> s1:32 var
+R2913:2916 proofs.borrow.borrow_core <> page:31 var
+R2929:2939 proofs.borrow.borrow_core <> SharedOwned constr
+R2992:3001 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2950:2951 Coq.Lists.List <> In def
+R2975:2990 proofs.borrow.borrow_core <> shared_borrowers proj
+R2965:2966 proofs.borrow.borrow_core <> s1:32 var
+R2968:2971 proofs.borrow.borrow_core <> page:31 var
+R2953:2962 proofs.borrow.borrow_core <> p_borrower:30 var
+R3068:3077 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3010:3012 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3002:3009 proofs.borrow.borrow_core <> new_list:36 var
+R3013:3018 Coq.Lists.List <> remove def
+R3051:3066 proofs.borrow.borrow_core <> shared_borrowers proj
+R3041:3042 proofs.borrow.borrow_core <> s1:32 var
+R3044:3047 proofs.borrow.borrow_core <> page:31 var
+R3029:3038 proofs.borrow.borrow_core <> p_borrower:30 var
+R3020:3027 Coq.ZArith.BinInt Z eq_dec def
+R3092:3101 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3086:3089 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R3078:3085 proofs.borrow.borrow_core <> new_list:36 var
+R3090:3091 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3228:3237 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3104:3106 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3102:3103 proofs.borrow.borrow_core <> s2:33 var
+R3107:3117 proofs.borrow.borrow_core <> update_page def
+R3119:3120 proofs.borrow.borrow_core <> s1:32 var
+R3122:3125 proofs.borrow.borrow_core <> page:31 var
+R3128:3138 proofs.borrow.borrow_core <> mkPageState constr
+R3151:3155 proofs.borrow.borrow_core <> owner proj
+R3141:3142 proofs.borrow.borrow_core <> s1:32 var
+R3144:3147 proofs.borrow.borrow_core <> page:31 var
+R3158:3168 proofs.borrow.borrow_core <> SharedOwned constr
+R3181:3190 proofs.borrow.borrow_core <> sip_status proj
+R3171:3172 proofs.borrow.borrow_core <> s1:32 var
+R3174:3177 proofs.borrow.borrow_core <> page:31 var
+R3204:3211 proofs.borrow.borrow_core <> doorbell proj
+R3194:3195 proofs.borrow.borrow_core <> s1:32 var
+R3197:3200 proofs.borrow.borrow_core <> page:31 var
+R3214:3221 proofs.borrow.borrow_core <> new_list:36 var
+R3223:3226 Coq.Init.Datatypes <> None constr
+R3238:3249 proofs.borrow.borrow_core <> ReturnShared:34 ind
+R3270:3271 proofs.borrow.borrow_core <> s2:33 var
+R3267:3268 proofs.borrow.borrow_core <> s1:32 var
+R3262:3265 proofs.borrow.borrow_core <> page:31 var
+R3251:3260 proofs.borrow.borrow_core <> p_borrower:30 var
+R3343:3352 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3329:3331 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3323:3327 proofs.borrow.borrow_core <> state proj
+R3313:3314 proofs.borrow.borrow_core <> s1:32 var
+R3316:3319 proofs.borrow.borrow_core <> page:31 var
+R3332:3342 proofs.borrow.borrow_core <> SharedOwned constr
+R3395:3404 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3353:3354 Coq.Lists.List <> In def
+R3378:3393 proofs.borrow.borrow_core <> shared_borrowers proj
+R3368:3369 proofs.borrow.borrow_core <> s1:32 var
+R3371:3374 proofs.borrow.borrow_core <> page:31 var
+R3356:3365 proofs.borrow.borrow_core <> p_borrower:30 var
+R3465:3474 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3460:3462 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3405:3410 Coq.Lists.List <> remove def
+R3443:3458 proofs.borrow.borrow_core <> shared_borrowers proj
+R3433:3434 proofs.borrow.borrow_core <> s1:32 var
+R3436:3439 proofs.borrow.borrow_core <> page:31 var
+R3421:3430 proofs.borrow.borrow_core <> p_borrower:30 var
+R3412:3419 Coq.ZArith.BinInt Z eq_dec def
+R3463:3464 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3593:3602 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3477:3479 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3475:3476 proofs.borrow.borrow_core <> s2:33 var
+R3480:3490 proofs.borrow.borrow_core <> update_page def
+R3492:3493 proofs.borrow.borrow_core <> s1:32 var
+R3495:3498 proofs.borrow.borrow_core <> page:31 var
+R3501:3511 proofs.borrow.borrow_core <> mkPageState constr
+R3524:3528 proofs.borrow.borrow_core <> owner proj
+R3514:3515 proofs.borrow.borrow_core <> s1:32 var
+R3517:3520 proofs.borrow.borrow_core <> page:31 var
+R3531:3539 proofs.borrow.borrow_core <> Exclusive constr
+R3552:3561 proofs.borrow.borrow_core <> sip_status proj
+R3542:3543 proofs.borrow.borrow_core <> s1:32 var
+R3545:3548 proofs.borrow.borrow_core <> page:31 var
+R3575:3582 proofs.borrow.borrow_core <> doorbell proj
+R3565:3566 proofs.borrow.borrow_core <> s1:32 var
+R3568:3571 proofs.borrow.borrow_core <> page:31 var
+R3585:3586 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3588:3591 Coq.Init.Datatypes <> None constr
+R3603:3614 proofs.borrow.borrow_core <> ReturnShared:34 ind
+R3635:3636 proofs.borrow.borrow_core <> s2:33 var
+R3632:3633 proofs.borrow.borrow_core <> s1:32 var
+R3627:3630 proofs.borrow.borrow_core <> page:31 var
+R3616:3625 proofs.borrow.borrow_core <> p_borrower:30 var
+scheme 2771:2782 <> ReturnShared_ind
+scheme 2771:2782 <> ReturnShared_sind
+ind 3650:3658 <> BorrowMut
+constr 3747:3756 <> BM_Success
+R3671:3673 proofs.borrow.borrow_core <> Pid def
+binder 3661:3667 <> p_owner:37
+R3690:3692 proofs.borrow.borrow_core <> Pid def
+binder 3677:3686 <> p_borrower:38
+R3703:3708 proofs.borrow.borrow_core <> PageId def
+binder 3696:3699 <> page:39
+R3720:3730 proofs.borrow.borrow_core <> SystemState def
+binder 3712:3713 <> s1:40
+binder 3715:3716 <> s2:41
+R3798:3807 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3783:3785 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3777:3781 proofs.borrow.borrow_core <> owner proj
+R3767:3768 proofs.borrow.borrow_core <> s1:40 var
+R3770:3773 proofs.borrow.borrow_core <> page:39 var
+R3786:3789 Coq.Init.Datatypes <> Some constr
+R3791:3797 proofs.borrow.borrow_core <> p_owner:37 var
+R3837:3846 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3825:3827 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3819:3823 proofs.borrow.borrow_core <> state proj
+R3809:3810 proofs.borrow.borrow_core <> s1:40 var
+R3812:3815 proofs.borrow.borrow_core <> page:39 var
+R3828:3836 proofs.borrow.borrow_core <> Exclusive constr
+R3973:3982 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3849:3851 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3847:3848 proofs.borrow.borrow_core <> s2:41 var
+R3852:3862 proofs.borrow.borrow_core <> update_page def
+R3864:3865 proofs.borrow.borrow_core <> s1:40 var
+R3867:3870 proofs.borrow.borrow_core <> page:39 var
+R3873:3883 proofs.borrow.borrow_core <> mkPageState constr
+R3886:3889 Coq.Init.Datatypes <> Some constr
+R3891:3897 proofs.borrow.borrow_core <> p_owner:37 var
+R3900:3906 proofs.borrow.borrow_core <> MutLent constr
+R3919:3928 proofs.borrow.borrow_core <> sip_status proj
+R3909:3910 proofs.borrow.borrow_core <> s1:40 var
+R3912:3915 proofs.borrow.borrow_core <> page:39 var
+R3942:3949 proofs.borrow.borrow_core <> doorbell proj
+R3932:3933 proofs.borrow.borrow_core <> s1:40 var
+R3935:3938 proofs.borrow.borrow_core <> page:39 var
+R3952:3953 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3956:3959 Coq.Init.Datatypes <> Some constr
+R3961:3970 proofs.borrow.borrow_core <> p_borrower:38 var
+R3983:3991 proofs.borrow.borrow_core <> BorrowMut:42 ind
+R4020:4021 proofs.borrow.borrow_core <> s2:41 var
+R4017:4018 proofs.borrow.borrow_core <> s1:40 var
+R4012:4015 proofs.borrow.borrow_core <> page:39 var
+R4001:4010 proofs.borrow.borrow_core <> p_borrower:38 var
+R3993:3999 proofs.borrow.borrow_core <> p_owner:37 var
+scheme 3650:3658 <> BorrowMut_rect
+scheme 3650:3658 <> BorrowMut_ind
+scheme 3650:3658 <> BorrowMut_rec
+scheme 3650:3658 <> BorrowMut_sind
+ind 4035:4043 <> ReturnMut
+constr 4116:4125 <> RM_Success
+R4059:4061 proofs.borrow.borrow_core <> Pid def
+binder 4046:4055 <> p_borrower:44
+R4072:4077 proofs.borrow.borrow_core <> PageId def
+binder 4065:4068 <> page:45
+R4089:4099 proofs.borrow.borrow_core <> SystemState def
+binder 4081:4082 <> s1:46
+binder 4084:4085 <> s2:47
+R4162:4171 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4152:4154 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4146:4150 proofs.borrow.borrow_core <> state proj
+R4136:4137 proofs.borrow.borrow_core <> s1:46 var
+R4139:4142 proofs.borrow.borrow_core <> page:45 var
+R4155:4161 proofs.borrow.borrow_core <> MutLent constr
+R4214:4223 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4196:4198 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4183:4194 proofs.borrow.borrow_core <> mut_borrower proj
+R4173:4174 proofs.borrow.borrow_core <> s1:46 var
+R4176:4179 proofs.borrow.borrow_core <> page:45 var
+R4199:4202 Coq.Init.Datatypes <> Some constr
+R4204:4213 proofs.borrow.borrow_core <> p_borrower:44 var
+R4342:4351 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4226:4228 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4224:4225 proofs.borrow.borrow_core <> s2:47 var
+R4229:4239 proofs.borrow.borrow_core <> update_page def
+R4241:4242 proofs.borrow.borrow_core <> s1:46 var
+R4244:4247 proofs.borrow.borrow_core <> page:45 var
+R4250:4260 proofs.borrow.borrow_core <> mkPageState constr
+R4273:4277 proofs.borrow.borrow_core <> owner proj
+R4263:4264 proofs.borrow.borrow_core <> s1:46 var
+R4266:4269 proofs.borrow.borrow_core <> page:45 var
+R4280:4288 proofs.borrow.borrow_core <> Exclusive constr
+R4301:4310 proofs.borrow.borrow_core <> sip_status proj
+R4291:4292 proofs.borrow.borrow_core <> s1:46 var
+R4294:4297 proofs.borrow.borrow_core <> page:45 var
+R4324:4331 proofs.borrow.borrow_core <> doorbell proj
+R4314:4315 proofs.borrow.borrow_core <> s1:46 var
+R4317:4320 proofs.borrow.borrow_core <> page:45 var
+R4334:4335 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4337:4340 Coq.Init.Datatypes <> None constr
+R4352:4360 proofs.borrow.borrow_core <> ReturnMut:48 ind
+R4381:4382 proofs.borrow.borrow_core <> s2:47 var
+R4378:4379 proofs.borrow.borrow_core <> s1:46 var
+R4373:4376 proofs.borrow.borrow_core <> page:45 var
+R4362:4371 proofs.borrow.borrow_core <> p_borrower:44 var
+scheme 4035:4043 <> ReturnMut_rect
+scheme 4035:4043 <> ReturnMut_ind
+scheme 4035:4043 <> ReturnMut_rec
+scheme 4035:4043 <> ReturnMut_sind
+ind 4396:4403 <> Transfer
+constr 4481:4496 <> Transfer_Success
+R4413:4415 proofs.borrow.borrow_core <> Pid def
+binder 4406:4409 <> from:50
+R4424:4426 proofs.borrow.borrow_core <> Pid def
+binder 4419:4420 <> to:51
+R4437:4442 proofs.borrow.borrow_core <> PageId def
+binder 4430:4433 <> page:52
+R4454:4464 proofs.borrow.borrow_core <> SystemState def
+binder 4446:4447 <> s1:53
+binder 4449:4450 <> s2:54
+R4535:4544 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4523:4525 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4517:4521 proofs.borrow.borrow_core <> owner proj
+R4507:4508 proofs.borrow.borrow_core <> s1:53 var
+R4510:4513 proofs.borrow.borrow_core <> page:52 var
+R4526:4529 Coq.Init.Datatypes <> Some constr
+R4531:4534 proofs.borrow.borrow_core <> from:50 var
+R4574:4583 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4562:4564 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4556:4560 proofs.borrow.borrow_core <> state proj
+R4546:4547 proofs.borrow.borrow_core <> s1:53 var
+R4549:4552 proofs.borrow.borrow_core <> page:52 var
+R4565:4573 proofs.borrow.borrow_core <> Exclusive constr
+R4694:4703 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4586:4588 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4584:4585 proofs.borrow.borrow_core <> s2:54 var
+R4589:4599 proofs.borrow.borrow_core <> update_page def
+R4601:4602 proofs.borrow.borrow_core <> s1:53 var
+R4604:4607 proofs.borrow.borrow_core <> page:52 var
+R4610:4620 proofs.borrow.borrow_core <> mkPageState constr
+R4623:4626 Coq.Init.Datatypes <> Some constr
+R4628:4629 proofs.borrow.borrow_core <> to:51 var
+R4632:4640 proofs.borrow.borrow_core <> Exclusive constr
+R4653:4662 proofs.borrow.borrow_core <> sip_status proj
+R4643:4644 proofs.borrow.borrow_core <> s1:53 var
+R4646:4649 proofs.borrow.borrow_core <> page:52 var
+R4676:4683 proofs.borrow.borrow_core <> doorbell proj
+R4666:4667 proofs.borrow.borrow_core <> s1:53 var
+R4669:4672 proofs.borrow.borrow_core <> page:52 var
+R4686:4687 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4689:4692 Coq.Init.Datatypes <> None constr
+R4704:4711 proofs.borrow.borrow_core <> Transfer:55 ind
+R4729:4730 proofs.borrow.borrow_core <> s2:54 var
+R4726:4727 proofs.borrow.borrow_core <> s1:53 var
+R4721:4724 proofs.borrow.borrow_core <> page:52 var
+R4718:4719 proofs.borrow.borrow_core <> to:51 var
+R4713:4716 proofs.borrow.borrow_core <> from:50 var
+scheme 4396:4403 <> Transfer_rect
+scheme 4396:4403 <> Transfer_ind
+scheme 4396:4403 <> Transfer_rec
+scheme 4396:4403 <> Transfer_sind
+ind 4744:4753 <> StepBorrow
+constr 4791:4807 <> Step_BorrowShared
+constr 4876:4892 <> Step_ReturnShared
+constr 4957:4970 <> Step_BorrowMut
+constr 5036:5049 <> Step_ReturnMut
+constr 5111:5123 <> Step_Transfer
+R4764:4774 proofs.borrow.borrow_core <> SystemState def
+binder 4756:4757 <> s1:57
+binder 4759:4760 <> s2:58
+binder 4818:4818 <> o:61
+binder 4820:4820 <> b:62
+binder 4822:4823 <> pg:63
+R4851:4854 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4826:4837 proofs.borrow.borrow_core <> BorrowShared ind
+R4839:4839 proofs.borrow.borrow_core <> o:61 var
+R4841:4841 proofs.borrow.borrow_core <> b:62 var
+R4843:4844 proofs.borrow.borrow_core <> pg:63 var
+R4846:4847 proofs.borrow.borrow_core <> s1:57 var
+R4849:4850 proofs.borrow.borrow_core <> s2:58 var
+R4855:4864 proofs.borrow.borrow_core <> StepBorrow:59 ind
+R4869:4870 proofs.borrow.borrow_core <> s2:58 var
+R4866:4867 proofs.borrow.borrow_core <> s1:57 var
+binder 4903:4903 <> b:64
+binder 4905:4906 <> pg:65
+R4932:4935 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4909:4920 proofs.borrow.borrow_core <> ReturnShared ind
+R4922:4922 proofs.borrow.borrow_core <> b:64 var
+R4924:4925 proofs.borrow.borrow_core <> pg:65 var
+R4927:4928 proofs.borrow.borrow_core <> s1:57 var
+R4930:4931 proofs.borrow.borrow_core <> s2:58 var
+R4936:4945 proofs.borrow.borrow_core <> StepBorrow:59 ind
+R4950:4951 proofs.borrow.borrow_core <> s2:58 var
+R4947:4948 proofs.borrow.borrow_core <> s1:57 var
+binder 4981:4981 <> o:66
+binder 4983:4983 <> b:67
+binder 4985:4986 <> pg:68
+R5011:5014 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4989:4997 proofs.borrow.borrow_core <> BorrowMut ind
+R4999:4999 proofs.borrow.borrow_core <> o:66 var
+R5001:5001 proofs.borrow.borrow_core <> b:67 var
+R5003:5004 proofs.borrow.borrow_core <> pg:68 var
+R5006:5007 proofs.borrow.borrow_core <> s1:57 var
+R5009:5010 proofs.borrow.borrow_core <> s2:58 var
+R5015:5024 proofs.borrow.borrow_core <> StepBorrow:59 ind
+R5029:5030 proofs.borrow.borrow_core <> s2:58 var
+R5026:5027 proofs.borrow.borrow_core <> s1:57 var
+binder 5060:5060 <> b:69
+binder 5062:5063 <> pg:70
+R5086:5089 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5066:5074 proofs.borrow.borrow_core <> ReturnMut ind
+R5076:5076 proofs.borrow.borrow_core <> b:69 var
+R5078:5079 proofs.borrow.borrow_core <> pg:70 var
+R5081:5082 proofs.borrow.borrow_core <> s1:57 var
+R5084:5085 proofs.borrow.borrow_core <> s2:58 var
+R5090:5099 proofs.borrow.borrow_core <> StepBorrow:59 ind
+R5104:5105 proofs.borrow.borrow_core <> s2:58 var
+R5101:5102 proofs.borrow.borrow_core <> s1:57 var
+binder 5134:5134 <> f:71
+binder 5136:5136 <> t:72
+binder 5138:5139 <> pg:73
+R5163:5166 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5142:5149 proofs.borrow.borrow_core <> Transfer ind
+R5151:5151 proofs.borrow.borrow_core <> f:71 var
+R5153:5153 proofs.borrow.borrow_core <> t:72 var
+R5155:5156 proofs.borrow.borrow_core <> pg:73 var
+R5158:5159 proofs.borrow.borrow_core <> s1:57 var
+R5161:5162 proofs.borrow.borrow_core <> s2:58 var
+R5167:5176 proofs.borrow.borrow_core <> StepBorrow:59 ind
+R5181:5182 proofs.borrow.borrow_core <> s2:58 var
+R5178:5179 proofs.borrow.borrow_core <> s1:57 var
+scheme 4744:4753 <> StepBorrow_ind
+scheme 4744:4753 <> StepBorrow_sind
+def 5375:5387 <> Inv_Coherence
+R5394:5404 proofs.borrow.borrow_core <> SystemState def
+binder 5390:5390 <> s:74
+binder 5426:5427 <> pg:75
+R5448:5452 proofs.borrow.borrow_core <> state proj
+R5441:5441 proofs.borrow.borrow_core <> s:74 var
+R5443:5444 proofs.borrow.borrow_core <> pg:75 var
+R5466:5469 proofs.borrow.borrow_core <> Free constr
+R5495:5498 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5488:5490 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5482:5486 proofs.borrow.borrow_core <> owner proj
+R5475:5475 proofs.borrow.borrow_core <> s:74 var
+R5477:5478 proofs.borrow.borrow_core <> pg:75 var
+R5491:5494 Coq.Init.Datatypes <> None constr
+R5529:5532 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5524:5526 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5507:5522 proofs.borrow.borrow_core <> shared_borrowers proj
+R5500:5500 proofs.borrow.borrow_core <> s:74 var
+R5502:5503 proofs.borrow.borrow_core <> pg:75 var
+R5527:5528 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5554:5556 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5541:5552 proofs.borrow.borrow_core <> mut_borrower proj
+R5534:5534 proofs.borrow.borrow_core <> s:74 var
+R5536:5537 proofs.borrow.borrow_core <> pg:75 var
+R5557:5560 Coq.Init.Datatypes <> None constr
+R5568:5576 proofs.borrow.borrow_core <> Exclusive constr
+R5603:5606 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5595:5598 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5589:5593 proofs.borrow.borrow_core <> owner proj
+R5582:5582 proofs.borrow.borrow_core <> s:74 var
+R5584:5585 proofs.borrow.borrow_core <> pg:75 var
+R5599:5602 Coq.Init.Datatypes <> None constr
+R5637:5640 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5632:5634 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5615:5630 proofs.borrow.borrow_core <> shared_borrowers proj
+R5608:5608 proofs.borrow.borrow_core <> s:74 var
+R5610:5611 proofs.borrow.borrow_core <> pg:75 var
+R5635:5636 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5662:5664 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5649:5660 proofs.borrow.borrow_core <> mut_borrower proj
+R5642:5642 proofs.borrow.borrow_core <> s:74 var
+R5644:5645 proofs.borrow.borrow_core <> pg:75 var
+R5665:5668 Coq.Init.Datatypes <> None constr
+R5676:5686 proofs.borrow.borrow_core <> SharedOwned constr
+R5713:5716 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5705:5708 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5699:5703 proofs.borrow.borrow_core <> owner proj
+R5692:5692 proofs.borrow.borrow_core <> s:74 var
+R5694:5695 proofs.borrow.borrow_core <> pg:75 var
+R5709:5712 Coq.Init.Datatypes <> None constr
+R5748:5751 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5742:5745 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5725:5740 proofs.borrow.borrow_core <> shared_borrowers proj
+R5718:5718 proofs.borrow.borrow_core <> s:74 var
+R5720:5721 proofs.borrow.borrow_core <> pg:75 var
+R5746:5747 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5773:5775 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5760:5771 proofs.borrow.borrow_core <> mut_borrower proj
+R5753:5753 proofs.borrow.borrow_core <> s:74 var
+R5755:5756 proofs.borrow.borrow_core <> pg:75 var
+R5776:5779 Coq.Init.Datatypes <> None constr
+R5787:5793 proofs.borrow.borrow_core <> MutLent constr
+R5820:5823 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5812:5815 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5806:5810 proofs.borrow.borrow_core <> owner proj
+R5799:5799 proofs.borrow.borrow_core <> s:74 var
+R5801:5802 proofs.borrow.borrow_core <> pg:75 var
+R5816:5819 Coq.Init.Datatypes <> None constr
+R5854:5857 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5849:5851 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5832:5847 proofs.borrow.borrow_core <> shared_borrowers proj
+R5825:5825 proofs.borrow.borrow_core <> s:74 var
+R5827:5828 proofs.borrow.borrow_core <> pg:75 var
+R5852:5853 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R5879:5882 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5866:5877 proofs.borrow.borrow_core <> mut_borrower proj
+R5859:5859 proofs.borrow.borrow_core <> s:74 var
+R5861:5862 proofs.borrow.borrow_core <> pg:75 var
+R5883:5886 Coq.Init.Datatypes <> None constr
+def 5909:5916 <> CanWrite
+R5923:5925 proofs.borrow.borrow_core <> Pid def
+binder 5919:5919 <> p:76
+R5934:5939 proofs.borrow.borrow_core <> PageId def
+binder 5929:5930 <> pg:77
+R5947:5957 proofs.borrow.borrow_core <> SystemState def
+binder 5943:5943 <> s:78
+R5972:5972 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6026:6033 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6092:6092 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R5996:5999 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5987:5989 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5981:5985 proofs.borrow.borrow_core <> owner proj
+R5974:5974 proofs.borrow.borrow_core <> s:78 var
+R5976:5977 proofs.borrow.borrow_core <> pg:77 var
+R5990:5993 Coq.Init.Datatypes <> Some constr
+R5995:5995 proofs.borrow.borrow_core <> p:76 var
+R6014:6016 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6008:6012 proofs.borrow.borrow_core <> state proj
+R6001:6001 proofs.borrow.borrow_core <> s:78 var
+R6003:6004 proofs.borrow.borrow_core <> pg:77 var
+R6017:6025 proofs.borrow.borrow_core <> Exclusive constr
+R6064:6067 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6055:6057 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6042:6053 proofs.borrow.borrow_core <> mut_borrower proj
+R6035:6035 proofs.borrow.borrow_core <> s:78 var
+R6037:6038 proofs.borrow.borrow_core <> pg:77 var
+R6058:6061 Coq.Init.Datatypes <> Some constr
+R6063:6063 proofs.borrow.borrow_core <> p:76 var
+R6082:6084 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6076:6080 proofs.borrow.borrow_core <> state proj
+R6069:6069 proofs.borrow.borrow_core <> s:78 var
+R6071:6072 proofs.borrow.borrow_core <> pg:77 var
+R6085:6091 proofs.borrow.borrow_core <> MutLent constr
+def 6107:6121 <> Inv_WriteSafety
+R6128:6138 proofs.borrow.borrow_core <> SystemState def
+binder 6124:6124 <> s:79
+binder 6160:6161 <> pg:80
+binder 6163:6164 <> p1:81
+binder 6166:6167 <> p2:82
+R6190:6193 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6174:6181 proofs.borrow.borrow_core <> CanWrite def
+R6183:6184 proofs.borrow.borrow_core <> p1:81 var
+R6186:6187 proofs.borrow.borrow_core <> pg:80 var
+R6189:6189 proofs.borrow.borrow_core <> s:79 var
+R6210:6213 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6194:6201 proofs.borrow.borrow_core <> CanWrite def
+R6203:6204 proofs.borrow.borrow_core <> p2:82 var
+R6206:6207 proofs.borrow.borrow_core <> pg:80 var
+R6209:6209 proofs.borrow.borrow_core <> s:79 var
+R6216:6218 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6214:6215 proofs.borrow.borrow_core <> p1:81 var
+R6219:6220 proofs.borrow.borrow_core <> p2:82 var
+def 6235:6241 <> CanRead
+R6248:6250 proofs.borrow.borrow_core <> Pid def
+binder 6244:6244 <> p:83
+R6259:6264 proofs.borrow.borrow_core <> PageId def
+binder 6254:6255 <> pg:84
+R6272:6282 proofs.borrow.borrow_core <> SystemState def
+binder 6268:6268 <> s:85
+R6312:6317 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6297:6304 proofs.borrow.borrow_core <> CanWrite def
+R6306:6306 proofs.borrow.borrow_core <> p:83 var
+R6308:6309 proofs.borrow.borrow_core <> pg:84 var
+R6311:6311 proofs.borrow.borrow_core <> s:85 var
+R6318:6318 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6374:6381 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6412:6412 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R6347:6350 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6333:6335 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6327:6331 proofs.borrow.borrow_core <> state proj
+R6320:6320 proofs.borrow.borrow_core <> s:85 var
+R6322:6323 proofs.borrow.borrow_core <> pg:84 var
+R6336:6346 proofs.borrow.borrow_core <> SharedOwned constr
+R6365:6367 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6359:6363 proofs.borrow.borrow_core <> owner proj
+R6352:6352 proofs.borrow.borrow_core <> s:85 var
+R6354:6355 proofs.borrow.borrow_core <> pg:84 var
+R6368:6371 Coq.Init.Datatypes <> Some constr
+R6373:6373 proofs.borrow.borrow_core <> p:83 var
+R6382:6383 Coq.Lists.List <> In def
+R6395:6410 proofs.borrow.borrow_core <> shared_borrowers proj
+R6388:6388 proofs.borrow.borrow_core <> s:85 var
+R6390:6391 proofs.borrow.borrow_core <> pg:84 var
+R6385:6385 proofs.borrow.borrow_core <> p:83 var
+def 6427:6445 <> Inv_NoReadWriteRace
+R6452:6462 proofs.borrow.borrow_core <> SystemState def
+binder 6448:6448 <> s:86
+binder 6484:6485 <> pg:87
+binder 6487:6488 <> p1:88
+binder 6490:6491 <> p2:89
+R6514:6517 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6498:6505 proofs.borrow.borrow_core <> CanWrite def
+R6507:6508 proofs.borrow.borrow_core <> p1:88 var
+R6510:6511 proofs.borrow.borrow_core <> pg:87 var
+R6513:6513 proofs.borrow.borrow_core <> s:86 var
+R6533:6536 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6518:6524 proofs.borrow.borrow_core <> CanRead def
+R6526:6527 proofs.borrow.borrow_core <> p2:89 var
+R6529:6530 proofs.borrow.borrow_core <> pg:87 var
+R6532:6532 proofs.borrow.borrow_core <> s:86 var
+R6539:6541 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6537:6538 proofs.borrow.borrow_core <> p1:88 var
+R6542:6543 proofs.borrow.borrow_core <> p2:89 var
+def 6558:6567 <> ValidState
+R6574:6584 proofs.borrow.borrow_core <> SystemState def
+binder 6570:6570 <> s:90
+R6614:6617 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6599:6611 proofs.borrow.borrow_core <> Inv_Coherence def
+R6613:6613 proofs.borrow.borrow_core <> s:90 var
+R6635:6638 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6618:6632 proofs.borrow.borrow_core <> Inv_WriteSafety def
+R6634:6634 proofs.borrow.borrow_core <> s:90 var
+R6639:6657 proofs.borrow.borrow_core <> Inv_NoReadWriteRace def
+R6659:6659 proofs.borrow.borrow_core <> s:90 var
+def 6865:6877 <> coherent_page
+R6885:6893 proofs.borrow.borrow_core <> PageState rec
+binder 6880:6881 <> ps:91
+R6918:6922 proofs.borrow.borrow_core <> state proj
+R6914:6915 proofs.borrow.borrow_core <> ps:91 var
+R6934:6937 proofs.borrow.borrow_core <> Free constr
+R6959:6962 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6952:6954 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6946:6950 proofs.borrow.borrow_core <> owner proj
+R6942:6943 proofs.borrow.borrow_core <> ps:91 var
+R6955:6958 Coq.Init.Datatypes <> None constr
+R6989:6992 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6984:6986 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6967:6982 proofs.borrow.borrow_core <> shared_borrowers proj
+R6963:6964 proofs.borrow.borrow_core <> ps:91 var
+R6987:6988 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R7010:7012 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6997:7008 proofs.borrow.borrow_core <> mut_borrower proj
+R6993:6994 proofs.borrow.borrow_core <> ps:91 var
+R7013:7016 Coq.Init.Datatypes <> None constr
+R7022:7030 proofs.borrow.borrow_core <> Exclusive constr
+R7035:7041 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7043:7044 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 7042:7042 <> p:92
+R7064:7067 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7055:7057 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7049:7053 proofs.borrow.borrow_core <> owner proj
+R7045:7046 proofs.borrow.borrow_core <> ps:91 var
+R7058:7061 Coq.Init.Datatypes <> Some constr
+R7063:7063 proofs.borrow.borrow_core <> p:92 var
+R7094:7097 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7089:7091 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7072:7087 proofs.borrow.borrow_core <> shared_borrowers proj
+R7068:7069 proofs.borrow.borrow_core <> ps:91 var
+R7092:7093 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R7115:7117 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7102:7113 proofs.borrow.borrow_core <> mut_borrower proj
+R7098:7099 proofs.borrow.borrow_core <> ps:91 var
+R7118:7121 Coq.Init.Datatypes <> None constr
+R7127:7137 proofs.borrow.borrow_core <> SharedOwned constr
+R7142:7148 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7152:7153 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 7149:7149 <> p:93
+binder 7151:7151 <> l:94
+R7173:7176 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7164:7166 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7158:7162 proofs.borrow.borrow_core <> owner proj
+R7154:7155 proofs.borrow.borrow_core <> ps:91 var
+R7167:7170 Coq.Init.Datatypes <> Some constr
+R7172:7172 proofs.borrow.borrow_core <> p:93 var
+R7202:7205 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7198:7200 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7181:7196 proofs.borrow.borrow_core <> shared_borrowers proj
+R7177:7178 proofs.borrow.borrow_core <> ps:91 var
+R7201:7201 proofs.borrow.borrow_core <> l:94 var
+R7213:7216 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7207:7210 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R7206:7206 proofs.borrow.borrow_core <> l:94 var
+R7211:7212 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R7234:7236 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7221:7232 proofs.borrow.borrow_core <> mut_borrower proj
+R7217:7218 proofs.borrow.borrow_core <> ps:91 var
+R7237:7240 Coq.Init.Datatypes <> None constr
+R7246:7252 proofs.borrow.borrow_core <> MutLent constr
+R7257:7263 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7267:7268 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 7264:7264 <> p:95
+binder 7266:7266 <> m:96
+R7288:7291 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7279:7281 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7273:7277 proofs.borrow.borrow_core <> owner proj
+R7269:7270 proofs.borrow.borrow_core <> ps:91 var
+R7282:7285 Coq.Init.Datatypes <> Some constr
+R7287:7287 proofs.borrow.borrow_core <> p:95 var
+R7318:7321 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7313:7315 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7296:7311 proofs.borrow.borrow_core <> shared_borrowers proj
+R7292:7293 proofs.borrow.borrow_core <> ps:91 var
+R7316:7317 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R7339:7341 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7326:7337 proofs.borrow.borrow_core <> mut_borrower proj
+R7322:7323 proofs.borrow.borrow_core <> ps:91 var
+R7342:7345 Coq.Init.Datatypes <> Some constr
+R7347:7347 proofs.borrow.borrow_core <> m:96 var
+prf 7363:7396 <> coherent_page_implies_write_unique
+binder 7409:7410 <> ps:97
+R7433:7440 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7417:7429 proofs.borrow.borrow_core <> coherent_page def
+R7431:7432 proofs.borrow.borrow_core <> ps:97 var
+binder 7448:7449 <> p1:98
+binder 7451:7452 <> p2:99
+R7461:7461 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7570:7580 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7508:7518 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7482:7485 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7472:7474 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7466:7470 proofs.borrow.borrow_core <> owner proj
+R7462:7463 proofs.borrow.borrow_core <> ps:97 var
+R7475:7478 Coq.Init.Datatypes <> Some constr
+R7480:7481 proofs.borrow.borrow_core <> p1:98 var
+R7496:7498 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7490:7494 proofs.borrow.borrow_core <> state proj
+R7486:7487 proofs.borrow.borrow_core <> ps:97 var
+R7499:7507 proofs.borrow.borrow_core <> Exclusive constr
+R7546:7549 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7536:7538 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7523:7534 proofs.borrow.borrow_core <> mut_borrower proj
+R7519:7520 proofs.borrow.borrow_core <> ps:97 var
+R7539:7542 Coq.Init.Datatypes <> Some constr
+R7544:7545 proofs.borrow.borrow_core <> p1:98 var
+R7560:7562 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7554:7558 proofs.borrow.borrow_core <> state proj
+R7550:7551 proofs.borrow.borrow_core <> ps:97 var
+R7563:7569 proofs.borrow.borrow_core <> MutLent constr
+R7581:7581 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7690:7700 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7628:7638 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R7602:7605 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7592:7594 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7586:7590 proofs.borrow.borrow_core <> owner proj
+R7582:7583 proofs.borrow.borrow_core <> ps:97 var
+R7595:7598 Coq.Init.Datatypes <> Some constr
+R7600:7601 proofs.borrow.borrow_core <> p2:99 var
+R7616:7618 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7610:7614 proofs.borrow.borrow_core <> state proj
+R7606:7607 proofs.borrow.borrow_core <> ps:97 var
+R7619:7627 proofs.borrow.borrow_core <> Exclusive constr
+R7666:7669 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7656:7658 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7643:7654 proofs.borrow.borrow_core <> mut_borrower proj
+R7639:7640 proofs.borrow.borrow_core <> ps:97 var
+R7659:7662 Coq.Init.Datatypes <> Some constr
+R7664:7665 proofs.borrow.borrow_core <> p2:99 var
+R7680:7682 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7674:7678 proofs.borrow.borrow_core <> state proj
+R7670:7671 proofs.borrow.borrow_core <> ps:97 var
+R7683:7689 proofs.borrow.borrow_core <> MutLent constr
+R7703:7705 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7701:7702 proofs.borrow.borrow_core <> p1:98 var
+R7706:7707 proofs.borrow.borrow_core <> p2:99 var
+R7756:7760 proofs.borrow.borrow_core <> state proj
+R7756:7760 proofs.borrow.borrow_core <> state proj
+prf 8143:8170 <> coherent_page_implies_no_rwr
+binder 8183:8184 <> ps:100
+R8207:8214 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8191:8203 proofs.borrow.borrow_core <> coherent_page def
+R8205:8206 proofs.borrow.borrow_core <> ps:100 var
+binder 8222:8223 <> p1:101
+binder 8225:8226 <> p2:102
+R8235:8235 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8344:8354 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8282:8292 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8256:8259 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8246:8248 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8240:8244 proofs.borrow.borrow_core <> owner proj
+R8236:8237 proofs.borrow.borrow_core <> ps:100 var
+R8249:8252 Coq.Init.Datatypes <> Some constr
+R8254:8255 proofs.borrow.borrow_core <> p1:101 var
+R8270:8272 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8264:8268 proofs.borrow.borrow_core <> state proj
+R8260:8261 proofs.borrow.borrow_core <> ps:100 var
+R8273:8281 proofs.borrow.borrow_core <> Exclusive constr
+R8320:8323 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8310:8312 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8297:8308 proofs.borrow.borrow_core <> mut_borrower proj
+R8293:8294 proofs.borrow.borrow_core <> ps:100 var
+R8313:8316 Coq.Init.Datatypes <> Some constr
+R8318:8319 proofs.borrow.borrow_core <> p1:101 var
+R8334:8336 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8328:8332 proofs.borrow.borrow_core <> state proj
+R8324:8325 proofs.borrow.borrow_core <> ps:100 var
+R8337:8343 proofs.borrow.borrow_core <> MutLent constr
+R8355:8355 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8566:8576 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8356:8356 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8466:8477 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8403:8414 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8377:8380 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8367:8369 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8361:8365 proofs.borrow.borrow_core <> owner proj
+R8357:8358 proofs.borrow.borrow_core <> ps:100 var
+R8370:8373 Coq.Init.Datatypes <> Some constr
+R8375:8376 proofs.borrow.borrow_core <> p2:102 var
+R8391:8393 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8385:8389 proofs.borrow.borrow_core <> state proj
+R8381:8382 proofs.borrow.borrow_core <> ps:100 var
+R8394:8402 proofs.borrow.borrow_core <> Exclusive constr
+R8442:8445 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8432:8434 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8419:8430 proofs.borrow.borrow_core <> mut_borrower proj
+R8415:8416 proofs.borrow.borrow_core <> ps:100 var
+R8435:8438 Coq.Init.Datatypes <> Some constr
+R8440:8441 proofs.borrow.borrow_core <> p2:102 var
+R8456:8458 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8450:8454 proofs.borrow.borrow_core <> state proj
+R8446:8447 proofs.borrow.borrow_core <> ps:100 var
+R8459:8465 proofs.borrow.borrow_core <> MutLent constr
+R8478:8478 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8527:8538 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R8503:8506 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R8489:8491 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8483:8487 proofs.borrow.borrow_core <> state proj
+R8479:8480 proofs.borrow.borrow_core <> ps:100 var
+R8492:8502 proofs.borrow.borrow_core <> SharedOwned constr
+R8517:8519 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8511:8515 proofs.borrow.borrow_core <> owner proj
+R8507:8508 proofs.borrow.borrow_core <> ps:100 var
+R8520:8523 Coq.Init.Datatypes <> Some constr
+R8525:8526 proofs.borrow.borrow_core <> p2:102 var
+R8539:8540 Coq.Lists.List <> In def
+R8549:8564 proofs.borrow.borrow_core <> shared_borrowers proj
+R8545:8546 proofs.borrow.borrow_core <> ps:100 var
+R8542:8543 proofs.borrow.borrow_core <> p2:102 var
+R8579:8581 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8577:8578 proofs.borrow.borrow_core <> p1:101 var
+R8582:8583 proofs.borrow.borrow_core <> p2:102 var
+R8632:8644 proofs.borrow.borrow_core <> coherent_page def
+R8667:8671 proofs.borrow.borrow_core <> state proj
+R8667:8671 proofs.borrow.borrow_core <> state proj
+prf 9677:9698 <> update_preserves_valid
+binder 9711:9711 <> s:103
+binder 9713:9714 <> pg:104
+binder 9716:9721 <> new_ps:105
+R9748:9755 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9728:9740 proofs.borrow.borrow_core <> coherent_page def
+R9742:9747 proofs.borrow.borrow_core <> new_ps:105 var
+R9768:9775 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9756:9765 proofs.borrow.borrow_core <> ValidState def
+R9767:9767 proofs.borrow.borrow_core <> s:103 var
+R9776:9785 proofs.borrow.borrow_core <> ValidState def
+R9788:9798 proofs.borrow.borrow_core <> update_page def
+R9800:9800 proofs.borrow.borrow_core <> s:103 var
+R9802:9803 proofs.borrow.borrow_core <> pg:104 var
+R9805:9810 proofs.borrow.borrow_core <> new_ps:105 var
+R9911:9923 proofs.borrow.borrow_core <> Inv_Coherence def
+R9952:9959 Coq.ZArith.BinInt Z eq_dec def
+R9952:9959 Coq.ZArith.BinInt Z eq_dec def
+R10005:10019 proofs.borrow.borrow_core <> update_page_hit thm
+R10005:10019 proofs.borrow.borrow_core <> update_page_hit thm
+R10005:10019 proofs.borrow.borrow_core <> update_page_hit thm
+R10063:10067 proofs.borrow.borrow_core <> state proj

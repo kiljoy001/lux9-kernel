@@ -26,6 +26,62 @@ struct BorrowPool borrowpool;
 /* SipHash key for DoS-resistant hashing (generated at boot from TPM/RDRAND) */
 static hsiphash_key_t borrow_hash_key;
 
+/* Borrow FSM events: enforce state transitions centrally (hard FSM). */
+static int
+borrow_fsm_transition(struct BorrowOwner *owner, enum BorrowState next)
+{
+	if (owner == nil)
+		return 0;
+
+	/* Idempotent transitions are allowed. */
+	if (owner->state == next)
+		return 1;
+
+	switch (owner->state) {
+	case BORROW_FREE:
+		if (next == BORROW_EXCLUSIVE) {
+			owner->state = next;
+			return 1;
+		}
+		break;
+	case BORROW_EXCLUSIVE:
+		if (next == BORROW_FREE && owner->shared_count == 0 && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		if (next == BORROW_SHARED_OWNED && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		if (next == BORROW_MUT_LENT && owner->shared_count == 0 && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		if (next == BORROW_EXCLUSIVE) {
+			return 1;
+		}
+		break;
+	case BORROW_SHARED_OWNED:
+		if (next == BORROW_EXCLUSIVE && owner->shared_count == 0 && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		if (next == BORROW_FREE && owner->shared_count == 0 && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		break;
+	case BORROW_MUT_LENT:
+		if (next == BORROW_EXCLUSIVE && owner->mut_borrower == nil) {
+			owner->state = next;
+			return 1;
+		}
+		break;
+	}
+
+	return 0;
+}
+
 /* Helper to get cryptographically secure random nonce (3-tier fallback) */
 static u64int
 get_random_nonce(void)
@@ -222,7 +278,10 @@ borrow_acquire(Proc *p, uintptr key)
 	}
 
 	owner->owner = p;
-	owner->state = BORROW_EXCLUSIVE;
+	if (!borrow_fsm_transition(owner, BORROW_EXCLUSIVE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EALREADY;
+	}
 	owner->acquired_ns = todget(nil, nil);
 
 	/* Rotate capability key on new acquisition - CRITICAL: Must have secure randomness */
@@ -280,7 +339,10 @@ borrow_release(Proc *p, uintptr key)
 	}
 
 	owner->owner = nil;
-	owner->state = BORROW_FREE;
+	if (!borrow_fsm_transition(owner, BORROW_FREE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	borrowpool.nowners--;
 
 	/* FIX MEMORY LEAK: Remove and free the owner entry from hash table */
@@ -334,6 +396,10 @@ borrow_transfer(Proc *from, Proc *to, uintptr key)
 	}
 
 	owner->owner = to;
+	if (!borrow_fsm_transition(owner, BORROW_EXCLUSIVE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	owner->acquired_ns = todget(nil, nil);
 
 	/* Rotate capability key on transfer to prevent sender from retaining access */
@@ -397,6 +463,10 @@ borrow_broker_transfer(Proc *sender, Proc *receiver, uintptr phys_addr, struct I
 
 	/* 5. The Transfer (Effect) */
 	owner->owner = receiver;
+	if (!borrow_fsm_transition(owner, BORROW_EXCLUSIVE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	owner->acquired_ns = todget(nil, nil);
 
 	/* Rotate key for receiver - CRITICAL: Must have secure randomness */
@@ -487,7 +557,10 @@ borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key)
 	own->shared_count++;
 	own->borrow_count++;
 	if (own->state == BORROW_EXCLUSIVE) {
-		own->state = BORROW_SHARED_OWNED;
+		if (!borrow_fsm_transition(own, BORROW_SHARED_OWNED)) {
+			iunlock(&borrowpool.lock);
+			return BORROW_EBORROWED;
+		}
 	}
 	if (own->shared_count == 1) {
 		borrowpool.nshared++;
@@ -530,7 +603,11 @@ borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key)
 	}
 
 	own->mut_borrower = borrower;
-	own->state = BORROW_MUT_LENT;
+	if (!borrow_fsm_transition(own, BORROW_MUT_LENT)) {
+		own->mut_borrower = nil;
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	own->borrow_count++;
 	borrowpool.nmut++;
 
@@ -591,7 +668,10 @@ borrow_return_shared(Proc *borrower, uintptr key)
 
 			own->shared_count--;
 			if (own->shared_count == 0) {
-				own->state = BORROW_EXCLUSIVE;
+				if (!borrow_fsm_transition(own, BORROW_EXCLUSIVE)) {
+					iunlock(&borrowpool.lock);
+					return BORROW_EBORROWED;
+				}
 				borrowpool.nshared--;
 			}
 
@@ -629,7 +709,10 @@ borrow_return_mut(Proc *borrower, uintptr key)
 	}
 
 	own->mut_borrower = nil;
-	own->state = BORROW_EXCLUSIVE;
+	if (!borrow_fsm_transition(own, BORROW_EXCLUSIVE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	borrowpool.nmut--;
 
 	iunlock(&borrowpool.lock);
@@ -769,19 +852,20 @@ borrow_cleanup_process(Proc *p)
 						xfree(sb);
 					}
 				}
-			owner->shared_list = nil;
-			owner->owner = nil;
-			owner->state = BORROW_FREE;
-			owner->shared_count = 0;
-			owner->mut_borrower = nil;
-			borrowpool.nowners--;
-			cleaned++;
+				owner->shared_list = nil;
+				owner->owner = nil;
+				owner->shared_count = 0;
+				owner->mut_borrower = nil;
+				if (borrow_fsm_transition(owner, BORROW_FREE)) {
+					borrowpool.nowners--;
+					cleaned++;
+				}
 			}
 
 			if (owner->mut_borrower == p) {
 				owner->mut_borrower = nil;
 				if (owner->state == BORROW_MUT_LENT) {
-					owner->state = BORROW_EXCLUSIVE;
+					borrow_fsm_transition(owner, BORROW_EXCLUSIVE);
 				}
 				borrowpool.nmut--;
 				cleaned++;
@@ -803,8 +887,9 @@ borrow_cleanup_process(Proc *p)
 					}
 					owner->shared_count--;
 					if (owner->shared_count == 0 && owner->state == BORROW_SHARED_OWNED) {
-						owner->state = BORROW_EXCLUSIVE;
-						borrowpool.nshared--;
+						if (borrow_fsm_transition(owner, BORROW_EXCLUSIVE)) {
+							borrowpool.nshared--;
+						}
 					}
 					cleaned++;
 				} else {
@@ -921,7 +1006,10 @@ borrow_acquire_system(uintptr key, enum BorrowSystemOwner owner)
 
 	own->system_owner = owner;
 	own->is_system_owned = 1;
-	own->state = BORROW_EXCLUSIVE;
+	if (!borrow_fsm_transition(own, BORROW_EXCLUSIVE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EALREADY;
+	}
 	/* Skip timestamp during early boot (before xinit) to avoid timer init */
 	if (xinit_done) {
 		own->acquired_ns = todget(nil, nil);
@@ -970,7 +1058,10 @@ borrow_release_system(uintptr key, enum BorrowSystemOwner owner)
 	}
 
 	own->is_system_owned = 0;
-	own->state = BORROW_FREE;
+	if (!borrow_fsm_transition(own, BORROW_FREE)) {
+		iunlock(&borrowpool.lock);
+		return BORROW_EBORROWED;
+	}
 	borrowpool.nowners--;
 
 	/* Remove and free the owner entry from hash table */
