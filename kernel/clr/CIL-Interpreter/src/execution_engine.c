@@ -528,9 +528,19 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
         
         // Object operations
         case CIL_OPCODE_NEWOBJ: {
-            vm_value_t constructor_token, result;
-            if (!vm_stack_pop(state, &constructor_token)) { vm_set_error(state, "NEWOBJ: Stack"); return false; }
-            if (!vm_new_object(&constructor_token, &result)) { vm_set_error(state, "NEWOBJ: Error"); return false; }
+            vm_value_t constructor_token_val;
+            if (!vm_stack_pop(state, &constructor_token_val)) { vm_set_error(state, "NEWOBJ: Stack underflow"); return false; }
+            
+            // Resolve the type from the constructor token
+            // The token in the CIL is a MethodDef token. We need the TypeDef that owns it.
+            // For now, let's assume constructor_token_val directly holds the TypeDef token for simplicity in this TDD.
+            // In real code, we'd resolve constructor_token to its parent TypeDef, then resolve that TypeDef.
+            clr_runtime_type_t* resolved_type = vm_resolve_type_token(state->assembly, constructor_token_val.value.i4, &state->current_frame->generic_context);
+
+            if (!resolved_type) { vm_set_error(state, "NEWOBJ: Could not resolve type"); return false; }
+
+            vm_value_t result;
+            if (!vm_new_object(state, resolved_type, &result)) { vm_set_error(state, "NEWOBJ: Error allocating object"); return false; }
             vm_stack_push(state, &result);
             break;
         }
@@ -1944,15 +1954,13 @@ clr_runtime_type_t* vm_parse_type_signature(void* assembly_ptr, const uint8_t** 
     
     uint8_t elem_type = *p++;
     
-    // Handle primitive types immediately without allocation if we cache them
-    // For now, allocate
     clr_runtime_type_t* type = (clr_runtime_type_t*)calloc(1, sizeof(clr_runtime_type_t));
     if (!type) return NULL;
     
     type->element_type = elem_type;
     
     switch (elem_type) {
-        case 0x15: // GENERICINST
+        case 0x15: // ELEMENT_TYPE_GENERICINST
         {
             uint8_t class_or_val = *p++; // 0x11 (VALUETYPE) or 0x12 (CLASS)
             (void)class_or_val;
@@ -1969,7 +1977,7 @@ clr_runtime_type_t* vm_parse_type_signature(void* assembly_ptr, const uint8_t** 
             }
             break;
         }
-        case 0x13: // VAR (Generic Class Arg)
+        case 0x13: // ELEMENT_TYPE_VAR (Generic Class Arg)
         {
             uint32_t number = il_decode_compressed_uint(&p);
             if (context && number < context->class_type_arg_count) {
@@ -1977,10 +1985,10 @@ clr_runtime_type_t* vm_parse_type_signature(void* assembly_ptr, const uint8_t** 
                 *sig_ptr = p;
                 return context->class_type_args[number]; // Return actual type from context
             }
-            // If no context, return the VAR type itself (open generic)
+            type->token = number; // Store the generic parameter number if no context
             break;
         }
-        case 0x1E: // MVAR (Generic Method Arg)
+        case 0x1E: // ELEMENT_TYPE_MVAR (Generic Method Arg)
         {
             uint32_t number = il_decode_compressed_uint(&p);
             if (context && number < context->method_type_arg_count) {
@@ -1988,14 +1996,18 @@ clr_runtime_type_t* vm_parse_type_signature(void* assembly_ptr, const uint8_t** 
                 *sig_ptr = p;
                 return context->method_type_args[number];
             }
+            type->token = number; // Store the generic parameter number if no context
             break;
         }
+        case 0x11: // ELEMENT_TYPE_VALUETYPE
+        case 0x12: // ELEMENT_TYPE_CLASS
+        {
+             uint32_t token_encoded = il_decode_compressed_uint(&p);
+             type->token = vm_decode_typedef_or_ref(token_encoded);
+             break;
+        }
         default:
-            // Primitive types or simple VALUETYPE/CLASS
-            if (elem_type == 0x11 || elem_type == 0x12) {
-                 uint32_t token_encoded = il_decode_compressed_uint(&p);
-                 type->token = vm_decode_typedef_or_ref(token_encoded);
-            }
+            // Primitive types
             break;
     }
     
@@ -2021,8 +2033,18 @@ clr_runtime_type_t* vm_resolve_type_token(void* assembly_ptr, uint32_t token, vm
     
     // Normal TypeDef/TypeRef
     clr_runtime_type_t* type = (clr_runtime_type_t*)calloc(1, sizeof(clr_runtime_type_t));
+    if (!type) return NULL;
     type->token = token;
-    type->element_type = VM_TYPE_CLASS; // Default
+    type->element_type = VM_TYPE_OBJECT; // Default for objects
+    type->size = 16; // Default object size for now. Real size resolution is complex.
+    
+    if (table == 0x02) { // TypeDef
+        if (token == 0x02000001) { // System.Object
+            type->size = sizeof(clr_object_header_t);
+        } else {
+            // Need to parse TypeDef for real size (later)
+        }
+    }
     return type;
 }
 
@@ -2473,14 +2495,19 @@ bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_tok
     return true;
 }
 
-bool vm_new_object(vm_value_t* constructor_token, vm_value_t* result) {
-    // 1. Get Method Token
-    // 2. Get Parent Type of Method (using il_get_method_parent_type_name logic but for Type)
-    //    We need il_get_method_parent_token
-    
-    // For now, simple stub
+bool vm_new_object(vm_execution_state_t* state, clr_runtime_type_t* type, vm_value_t* result) {
+    if (!state || !type) return false;
+
+    void* obj;
+    // Assume type->size is already resolved for now
+    if (!vm_alloc_object(state, type->size, &obj)) return false;
+
+    clr_object_header_t* header = (clr_object_header_t*)obj;
+    header->type_token = type->token; // Store TypeDef token
+    header->vtable = type->vtable;     // Store resolved vtable
+
     result->type = VM_TYPE_OBJECT;
-    result->value.ref = malloc(16); // Dummy alloc
+    result->value.ref = obj;
     return true;
 }
 
