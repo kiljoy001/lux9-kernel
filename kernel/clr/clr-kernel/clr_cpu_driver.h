@@ -109,7 +109,7 @@ typedef enum {
     MSG_TASKLET_MIGRATE,    /* Move tasklet to different CPU */
     MSG_MEMORY_GRANT,       /* Grant memory capability */
     MSG_CHANNEL_CREATE,     /* Create inter-tasklet channel */
-    MSG_CONSENSUS_VOTE,     /* GHOSTDAG consensus message */
+    MSG_CONSENSUS_VOTE,     /* MSGORD consensus message */
     MSG_CACHE_INVALIDATE,   /* TLB/cache coherency */
 } ipc_msg_type_t;
 
@@ -216,7 +216,7 @@ typedef struct heterogeneous_cpu {
  * 1. NO SHARED STATE: Each CPU has completely independent kernel
  * 2. MESSAGE PASSING ONLY: All coordination via explicit messages
  * 3. REPLICATION: Namespace, capabilities replicated per CPU
- * 4. AGREEMENT PROTOCOLS: Use GHOSTDAG for consensus
+ * 4. AGREEMENT PROTOCOLS: Use MSGORD for consensus
  * 5. HARDWARE NEUTRAL: Abstract all hardware specifics
  * 6. USER-LEVEL SCHEDULING: Dispatchers handle threading
  * 7. CAPABILITY-BASED: All resources accessed via capabilities

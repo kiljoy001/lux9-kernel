@@ -1,6 +1,6 @@
 (* Dynamic DAG + FSM Kernel Compatibility Proofs
    
-   This proof file demonstrates that the dynamic GHOSTDAG + FSM system:
+   This proof file demonstrates that the dynamic MSGORD + FSM system:
    1. Maintains kernel memory constraints for all modes (8-26 bytes)
    2. Preserves IPC message ordering properties
    3. Provides correct FSM state transitions
@@ -200,20 +200,20 @@ Proof.
   destruct mode; unfold dag_mode_size; lia.
 Qed.
 
-(* Theorem 9: Memory savings vs full GHOSTDAG+FSM *)
-Definition FULL_GHOSTDAG_FSM_SIZE : Z := 264.
+(* Theorem 9: Memory savings vs full MSGORD+FSM *)
+Definition FULL_MSGORD_FSM_SIZE : Z := 264.
 
 Definition memory_savings (mode : dag_mode) : Z :=
-  FULL_GHOSTDAG_FSM_SIZE - total_overhead mode.
+  FULL_MSGORD_FSM_SIZE - total_overhead mode.
 
 Theorem significant_memory_savings :
   forall (mode : dag_mode),
   memory_savings mode >= 238 /\
-  total_overhead mode * 100 / FULL_GHOSTDAG_FSM_SIZE <= 10.
+  total_overhead mode * 100 / FULL_MSGORD_FSM_SIZE <= 10.
 Proof.
   intro mode.
   destruct mode; unfold memory_savings, total_overhead, dag_mode_size, 
-                         FSM_STATE_SIZE, FULL_GHOSTDAG_FSM_SIZE;
+                         FSM_STATE_SIZE, FULL_MSGORD_FSM_SIZE;
   split; simpl; lia.
 Qed.
 
@@ -347,7 +347,7 @@ Qed.
 
 (* Performance analysis *)
 Definition performance_improvement (mode : dag_mode) : nat :=
-  (memory_savings mode * 100) / FULL_GHOSTDAG_FSM_SIZE.
+  (memory_savings mode * 100) / FULL_MSGORD_FSM_SIZE.
 
 Theorem performance_analysis :
   forall (mode : dag_mode),
@@ -356,7 +356,7 @@ Proof.
   intro mode.
   unfold performance_improvement.
   destruct mode; unfold memory_savings, total_overhead, dag_mode_size,
-                         FSM_STATE_SIZE, FULL_GHOSTDAG_FSM_SIZE;
+                         FSM_STATE_SIZE, FULL_MSGORD_FSM_SIZE;
   (* All modes save > 90% memory *)
   lia.
 Qed.

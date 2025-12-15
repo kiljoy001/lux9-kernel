@@ -1,0 +1,354 @@
+DIGEST 043d573d80ee79dddfe627ff427565a0
+FLuxProofs.msgord.msgord_correctness
+R149:162 Coq.Lists.List <> <> lib
+R180:194 Coq.Arith.Arith <> <> lib
+R212:230 Coq.Logic.Classical <> <> lib
+R248:261 Coq.Program.Wf <> <> lib
+rec 308:323 <> msgord_lite_meta
+proj 339:344 <> msg_id
+proj 355:363 <> parent_id
+proj 374:382 <> timestamp
+R348:350 Coq.Init.Datatypes <> nat ind
+R367:369 Coq.Init.Datatypes <> nat ind
+R386:388 Coq.Init.Datatypes <> nat ind
+def 437:456 <> msgord_message_order
+R465:480 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+binder 459:459 <> a:5
+binder 461:461 <> b:6
+R520:526 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R575:575 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R506:508 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R495:503 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R505:505 LuxProofs.msgord.msgord_correctness <> a:5 var
+R509:517 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R519:519 LuxProofs.msgord.msgord_correctness <> b:6 var
+R552:555 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R538:540 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R527:535 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R537:537 LuxProofs.msgord.msgord_correctness <> a:5 var
+R541:549 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R551:551 LuxProofs.msgord.msgord_correctness <> b:6 var
+R564:566 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R556:561 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R563:563 LuxProofs.msgord.msgord_correctness <> a:5 var
+R567:572 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R574:574 LuxProofs.msgord.msgord_correctness <> b:6 var
+ax 617:635 <> timestamp_monotonic
+binder 646:647 <> t1:7
+binder 649:650 <> t2:8
+R660:663 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R655:657 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R653:654 LuxProofs.msgord.msgord_correctness <> t1:7 var
+R658:659 LuxProofs.msgord.msgord_correctness <> t2:8 var
+R666:669 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R664:665 LuxProofs.msgord.msgord_correctness <> t1:7 var
+R670:671 LuxProofs.msgord.msgord_correctness <> t2:8 var
+ax 680:692 <> msg_id_unique
+binder 703:704 <> m1:11
+binder 706:707 <> m2:12
+R731:734 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R719:721 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R710:715 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R717:718 LuxProofs.msgord.msgord_correctness <> m1:11 var
+R722:727 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R729:730 LuxProofs.msgord.msgord_correctness <> m2:12 var
+R737:739 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R735:736 LuxProofs.msgord.msgord_correctness <> m1:11 var
+R740:741 LuxProofs.msgord.msgord_correctness <> m2:12 var
+prf 804:826 <> msgord_order_transitive
+binder 840:840 <> a:15
+binder 842:842 <> b:16
+binder 844:844 <> c:17
+R874:880 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R850:869 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R871:871 LuxProofs.msgord.msgord_correctness <> a:15 var
+R873:873 LuxProofs.msgord.msgord_correctness <> b:16 var
+R905:911 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R881:900 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R902:902 LuxProofs.msgord.msgord_correctness <> b:16 var
+R904:904 LuxProofs.msgord.msgord_correctness <> c:17 var
+R912:931 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R933:933 LuxProofs.msgord.msgord_correctness <> a:15 var
+R935:935 LuxProofs.msgord.msgord_correctness <> c:17 var
+R976:995 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R1108:1119 Coq.Arith.PeanoNat Nat lt_trans thm
+R1122:1130 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1136:1144 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1150:1158 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1108:1119 Coq.Arith.PeanoNat Nat lt_trans thm
+R1122:1130 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1136:1144 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1150:1158 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1380:1391 Coq.Arith.PeanoNat Nat lt_trans thm
+R1394:1399 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1405:1410 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1416:1421 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1380:1391 Coq.Arith.PeanoNat Nat lt_trans thm
+R1394:1399 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1405:1410 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1416:1421 LuxProofs.msgord.msgord_correctness <> msg_id proj
+prf 1496:1519 <> msgord_order_irreflexive
+binder 1532:1532 <> a:18
+R1535:1536 Coq.Init.Logic <> ::type_scope:'~'_x not
+R1537:1556 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R1558:1558 LuxProofs.msgord.msgord_correctness <> a:18 var
+R1560:1560 LuxProofs.msgord.msgord_correctness <> a:18 var
+R1590:1609 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R1672:1684 Coq.Arith.PeanoNat Nat lt_irrefl thm
+R1687:1695 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1672:1684 Coq.Arith.PeanoNat Nat lt_irrefl thm
+R1687:1695 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1725:1737 Coq.Arith.PeanoNat Nat lt_irrefl thm
+R1740:1745 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1725:1737 Coq.Arith.PeanoNat Nat lt_irrefl thm
+R1740:1745 LuxProofs.msgord.msgord_correctness <> msg_id proj
+ax 1815:1829 <> message_counter
+R1833:1835 Coq.Init.Datatypes <> nat ind
+def 1850:1865 <> msgord_assign_id
+R1878:1880 Coq.Init.Datatypes <> nat ind
+binder 1868:1874 <> counter:21
+R1890:1905 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+binder 1884:1886 <> msg:22
+R1910:1925 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+R1935:1940 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1935:1940 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1935:1940 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R1963:1971 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R1963:1971 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R1996:2004 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1996:2004 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R1952:1954 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R1945:1951 LuxProofs.msgord.msgord_correctness <> counter:21 var
+R1976:1984 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R1986:1988 LuxProofs.msgord.msgord_correctness <> msg:22 var
+R2009:2017 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R2019:2021 LuxProofs.msgord.msgord_correctness <> msg:22 var
+prf 2080:2097 <> counter_uniqueness
+binder 2110:2111 <> c1:23
+binder 2113:2114 <> c2:24
+binder 2116:2117 <> m1:25
+binder 2119:2120 <> m2:26
+R2133:2138 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2127:2130 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R2125:2126 LuxProofs.msgord.msgord_correctness <> c1:23 var
+R2131:2132 LuxProofs.msgord.msgord_correctness <> c2:24 var
+R2170:2173 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R2139:2144 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2147:2162 LuxProofs.msgord.msgord_correctness <> msgord_assign_id def
+R2164:2165 LuxProofs.msgord.msgord_correctness <> c1:23 var
+R2167:2168 LuxProofs.msgord.msgord_correctness <> m1:25 var
+R2174:2179 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2182:2197 LuxProofs.msgord.msgord_correctness <> msgord_assign_id def
+R2199:2200 LuxProofs.msgord.msgord_correctness <> c2:24 var
+R2202:2203 LuxProofs.msgord.msgord_correctness <> m2:26 var
+R2289:2304 Coq.Arith.PeanoNat Nat add_cancel_r thm
+R2289:2304 Coq.Arith.PeanoNat Nat add_cancel_r thm
+def 2386:2400 <> consensus_valid
+R2410:2413 Coq.Init.Datatypes <> list ind
+R2415:2430 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+binder 2403:2406 <> msgs:27
+binder 2452:2453 <> m1:28
+binder 2455:2456 <> m2:29
+R2469:2472 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2459:2460 Coq.Lists.List <> In def
+R2465:2468 LuxProofs.msgord.msgord_correctness <> msgs:27 var
+R2462:2463 LuxProofs.msgord.msgord_correctness <> m1:28 var
+R2483:2489 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2473:2474 Coq.Lists.List <> In def
+R2479:2482 LuxProofs.msgord.msgord_correctness <> msgs:27 var
+R2476:2477 LuxProofs.msgord.msgord_correctness <> m2:29 var
+R2511:2514 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2499:2501 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2490:2495 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2497:2498 LuxProofs.msgord.msgord_correctness <> m1:28 var
+R2502:2507 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2509:2510 LuxProofs.msgord.msgord_correctness <> m2:29 var
+R2517:2519 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2515:2516 LuxProofs.msgord.msgord_correctness <> m1:28 var
+R2520:2521 LuxProofs.msgord.msgord_correctness <> m2:29 var
+prf 2585:2615 <> add_message_preserves_consensus
+binder 2628:2631 <> msgs:30
+binder 2633:2639 <> new_msg:31
+R2664:2669 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2644:2658 LuxProofs.msgord.msgord_correctness <> consensus_valid def
+R2660:2663 LuxProofs.msgord.msgord_correctness <> msgs:30 var
+R2670:2670 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2720:2726 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+binder 2678:2678 <> m:32
+R2690:2693 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2681:2682 Coq.Lists.List <> In def
+R2686:2689 LuxProofs.msgord.msgord_correctness <> msgs:30 var
+R2684:2684 LuxProofs.msgord.msgord_correctness <> m:32 var
+R2702:2705 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R2694:2699 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2701:2701 LuxProofs.msgord.msgord_correctness <> m:32 var
+R2706:2711 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R2713:2719 LuxProofs.msgord.msgord_correctness <> new_msg:31 var
+R2727:2741 LuxProofs.msgord.msgord_correctness <> consensus_valid def
+R2751:2754 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2744:2750 LuxProofs.msgord.msgord_correctness <> new_msg:31 var
+R2755:2758 LuxProofs.msgord.msgord_correctness <> msgs:30 var
+R2818:2832 LuxProofs.msgord.msgord_correctness <> consensus_valid def
+def 3221:3243 <> constant_time_operation
+R3266:3269 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3250:3265 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+R3270:3272 Coq.Init.Datatypes <> nat ind
+binder 3246:3246 <> f:33
+R3287:3293 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R3295:3296 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 3294:3294 <> k:34
+binder 3304:3304 <> m:35
+R3310:3313 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R3307:3307 LuxProofs.msgord.msgord_correctness <> f:33 var
+R3309:3309 LuxProofs.msgord.msgord_correctness <> m:35 var
+R3314:3314 LuxProofs.msgord.msgord_correctness <> k:34 var
+prf 3364:3388 <> msgord_lite_constant_time
+R3394:3416 LuxProofs.msgord.msgord_correctness <> constant_time_operation def
+binder 3423:3423 <> m:36
+R3448:3470 LuxProofs.msgord.msgord_correctness <> constant_time_operation def
+prf 3567:3598 <> message_processing_deterministic
+binder 3611:3612 <> m1:37
+binder 3614:3615 <> m2:38
+binder 3617:3623 <> counter:39
+binder 3625:3626 <> ts:40
+R3692:3697 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3633:3638 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3689:3691 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3631:3632 LuxProofs.msgord.msgord_correctness <> m1:37 var
+R3639:3644 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3639:3644 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3639:3644 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3658:3666 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R3658:3666 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R3674:3682 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R3674:3682 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R3649:3655 LuxProofs.msgord.msgord_correctness <> counter:39 var
+R3687:3688 LuxProofs.msgord.msgord_correctness <> ts:40 var
+R3759:3764 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3700:3705 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3756:3758 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3698:3699 LuxProofs.msgord.msgord_correctness <> m2:38 var
+R3706:3711 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3706:3711 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3706:3711 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R3725:3733 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R3725:3733 LuxProofs.msgord.msgord_correctness <> parent_id proj
+R3741:3749 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R3741:3749 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R3716:3722 LuxProofs.msgord.msgord_correctness <> counter:39 var
+R3754:3755 LuxProofs.msgord.msgord_correctness <> ts:40 var
+R3767:3769 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3765:3766 LuxProofs.msgord.msgord_correctness <> m1:37 var
+R3770:3771 LuxProofs.msgord.msgord_correctness <> m2:38 var
+prf 3895:3912 <> msgord_lite_safety
+binder 3925:3928 <> msgs:41
+R3953:3958 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3933:3947 LuxProofs.msgord.msgord_correctness <> consensus_valid def
+R3949:3952 LuxProofs.msgord.msgord_correctness <> msgs:41 var
+binder 3966:3967 <> m1:42
+binder 3969:3970 <> m2:43
+R3983:3986 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3973:3974 Coq.Lists.List <> In def
+R3979:3982 LuxProofs.msgord.msgord_correctness <> msgs:41 var
+R3976:3977 LuxProofs.msgord.msgord_correctness <> m1:42 var
+R3997:4002 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3987:3988 Coq.Lists.List <> In def
+R3993:3996 LuxProofs.msgord.msgord_correctness <> msgs:41 var
+R3990:3991 LuxProofs.msgord.msgord_correctness <> m2:43 var
+R4029:4032 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R4003:4022 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R4024:4025 LuxProofs.msgord.msgord_correctness <> m1:42 var
+R4027:4028 LuxProofs.msgord.msgord_correctness <> m2:43 var
+R4059:4062 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R4033:4052 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R4054:4055 LuxProofs.msgord.msgord_correctness <> m2:43 var
+R4057:4058 LuxProofs.msgord.msgord_correctness <> m1:42 var
+R4065:4067 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4063:4064 LuxProofs.msgord.msgord_correctness <> m1:42 var
+R4068:4069 LuxProofs.msgord.msgord_correctness <> m2:43 var
+R4132:4141 Coq.Arith.PeanoNat Nat eq_dec thm
+R4144:4152 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4159:4167 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4132:4141 Coq.Arith.PeanoNat Nat eq_dec thm
+R4144:4152 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4159:4167 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4213:4222 Coq.Arith.PeanoNat Nat eq_dec thm
+R4225:4230 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4237:4242 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4213:4222 Coq.Arith.PeanoNat Nat eq_dec thm
+R4225:4230 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4237:4242 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4353:4364 Coq.Arith.PeanoNat Nat lt_total def
+R4367:4372 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4379:4384 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4353:4364 Coq.Arith.PeanoNat Nat lt_total def
+R4367:4372 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4379:4384 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R4439:4458 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R4538:4557 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R4630:4641 Coq.Arith.PeanoNat Nat lt_total def
+R4644:4652 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4659:4667 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4630:4641 Coq.Arith.PeanoNat Nat lt_total def
+R4644:4652 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4659:4667 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R4720:4739 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R4807:4826 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+prf 4994:5016 <> msgord_lite_correctness
+binder 5029:5032 <> msgs:44
+R5057:5062 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5037:5051 LuxProofs.msgord.msgord_correctness <> consensus_valid def
+R5053:5056 LuxProofs.msgord.msgord_correctness <> msgs:44 var
+binder 5070:5071 <> m1:45
+binder 5073:5074 <> m2:46
+R5087:5090 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5077:5078 Coq.Lists.List <> In def
+R5083:5086 LuxProofs.msgord.msgord_correctness <> msgs:44 var
+R5080:5081 LuxProofs.msgord.msgord_correctness <> m1:45 var
+R5101:5108 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5091:5092 Coq.Lists.List <> In def
+R5097:5100 LuxProofs.msgord.msgord_correctness <> msgs:44 var
+R5094:5095 LuxProofs.msgord.msgord_correctness <> m2:46 var
+R5135:5138 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R5109:5128 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R5130:5131 LuxProofs.msgord.msgord_correctness <> m1:45 var
+R5133:5134 LuxProofs.msgord.msgord_correctness <> m2:46 var
+R5165:5168 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R5139:5158 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R5160:5161 LuxProofs.msgord.msgord_correctness <> m2:46 var
+R5163:5164 LuxProofs.msgord.msgord_correctness <> m1:45 var
+R5171:5173 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5169:5170 LuxProofs.msgord.msgord_correctness <> m1:45 var
+R5174:5175 LuxProofs.msgord.msgord_correctness <> m2:46 var
+R5193:5210 LuxProofs.msgord.msgord_correctness <> msgord_lite_safety thm
+R5193:5210 LuxProofs.msgord.msgord_correctness <> msgord_lite_safety thm
+prf 5308:5330 <> msgord_lite_total_order
+R5351:5366 LuxProofs.msgord.msgord_correctness <> msgord_lite_meta rec
+binder 5343:5344 <> m1:47
+binder 5346:5347 <> m2:48
+R5399:5402 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R5373:5392 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R5394:5395 LuxProofs.msgord.msgord_correctness <> m1:47 var
+R5397:5398 LuxProofs.msgord.msgord_correctness <> m2:48 var
+R5429:5432 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R5403:5422 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R5424:5425 LuxProofs.msgord.msgord_correctness <> m2:48 var
+R5427:5428 LuxProofs.msgord.msgord_correctness <> m1:47 var
+R5435:5437 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5433:5434 LuxProofs.msgord.msgord_correctness <> m1:47 var
+R5438:5439 LuxProofs.msgord.msgord_correctness <> m2:48 var
+R5474:5493 LuxProofs.msgord.msgord_correctness <> msgord_message_order def
+R5508:5524 Coq.Arith.PeanoNat Nat lt_trichotomy thm
+R5527:5535 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R5542:5550 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R5508:5524 Coq.Arith.PeanoNat Nat lt_trichotomy thm
+R5527:5535 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R5542:5550 LuxProofs.msgord.msgord_correctness <> timestamp proj
+R5618:5634 Coq.Arith.PeanoNat Nat lt_trichotomy thm
+R5637:5642 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R5649:5654 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R5618:5634 Coq.Arith.PeanoNat Nat lt_trichotomy thm
+R5637:5642 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R5649:5654 LuxProofs.msgord.msgord_correctness <> msg_id proj
+R5754:5766 LuxProofs.msgord.msgord_correctness <> msg_id_unique prfax
+R5754:5766 LuxProofs.msgord.msgord_correctness <> msg_id_unique prfax

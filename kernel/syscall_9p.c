@@ -2,7 +2,7 @@
  * Pure 9P Syscall Elimination Layer
  *
  * Replaces traditional syscalls with direct 9P protocol dispatch.
- * All I/O operations route through the 9P router with GHOSTDAG ordering.
+ * All I/O operations route through the 9P router with MSGORD ordering.
  *
  * Phase 6: Complete syscall removal
  */
@@ -38,7 +38,7 @@ enum {
  *
  * Called from trap handler when VectorSYSCALL fires.
  * Translates legacy syscall arguments into 9P Fcall messages.
- * Routes through p9_dispatch() with Pebble security and GHOSTDAG ordering.
+ * Routes through p9_dispatch() with Pebble security and MSGORD ordering.
  *
  * Returns: result in ureg->ax, -1 on error
  */

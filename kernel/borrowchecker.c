@@ -27,11 +27,41 @@ struct BorrowPool borrowpool;
 static hsiphash_key_t borrow_hash_key;
 
 /* Borrow FSM events: enforce state transitions centrally (hard FSM). */
+static void
+borrow_check_invariants(struct BorrowOwner *owner, const char *ctx)
+{
+	if (owner == nil)
+		panic("borrow: nil owner in %s", ctx);
+
+	switch (owner->state) {
+	case BORROW_FREE:
+		if (owner->owner != nil || owner->shared_count != 0 || owner->shared_list != nil || owner->mut_borrower != nil)
+			panic("borrow: invalid FREE state key=%p ctx=%s", owner->key, ctx);
+		break;
+	case BORROW_EXCLUSIVE:
+		if (owner->shared_count != 0 || owner->shared_list != nil || owner->mut_borrower != nil)
+			panic("borrow: invalid EXCLUSIVE state key=%p ctx=%s", owner->key, ctx);
+		break;
+	case BORROW_SHARED_OWNED:
+		if (owner->shared_count <= 0 || owner->shared_list == nil || owner->mut_borrower != nil)
+			panic("borrow: invalid SHARED state key=%p ctx=%s", owner->key, ctx);
+		break;
+	case BORROW_MUT_LENT:
+		if (owner->mut_borrower == nil || owner->shared_count != 0 || owner->shared_list != nil)
+			panic("borrow: invalid MUT_LENT state key=%p ctx=%s", owner->key, ctx);
+		break;
+	default:
+		panic("borrow: unknown state %d key=%p ctx=%s", owner->state, owner->key, ctx);
+	}
+}
+
 static int
 borrow_fsm_transition(struct BorrowOwner *owner, enum BorrowState next)
 {
 	if (owner == nil)
 		return 0;
+
+	borrow_check_invariants(owner, "transition-pre");
 
 	/* Idempotent transitions are allowed. */
 	if (owner->state == next)
@@ -77,6 +107,8 @@ borrow_fsm_transition(struct BorrowOwner *owner, enum BorrowState next)
 			return 1;
 		}
 		break;
+	default:
+		panic("borrow_fsm_transition: invalid current state %d key=%p next=%d", owner->state, owner->key, next);
 	}
 
 	return 0;

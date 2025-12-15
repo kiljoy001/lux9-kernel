@@ -234,7 +234,7 @@ static inline int clr_object_has_snapshot(clr_object_t *obj) {
  * - Receiver verifies white + accepts exchange pages
  * - Ownership physically transferred (zero-copy)
  *
- * GHOSTDAG ordering ensures message order across tasklets.
+ * MSGORD ordering ensures message order across tasklets.
  */
 
 typedef struct clr_exchange_msg {
@@ -252,7 +252,7 @@ typedef struct clr_exchange_msg {
   ulong npages;
 
   /* Message ordering */
-  u32int dag_id; /* GHOSTDAG ordering */
+  u32int dag_id; /* MSGORD ordering */
 
   /* Intrusive list */
   struct clr_exchange_msg *next;

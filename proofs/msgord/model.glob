@@ -1,0 +1,292 @@
+DIGEST c5f1aee707e6b52d84aad4a31dbf0cf0
+Fmodel
+R163:176 Coq.Lists.List <> <> lib
+R194:210 Coq.ZArith.ZArith <> <> lib
+R228:240 Coq.Bool.Bool <> <> lib
+R258:260 Coq.micromega.Lia <> <> lib
+R270:282 Coq.Lists.List ListNotations <> mod
+def 554:558 <> MsgId
+R563:563 Coq.Numbers.BinNums <> Z ind
+def 577:583 <> K_PARAM
+R587:587 Coq.Numbers.BinNums <> Z ind
+ind 641:645 <> Color
+constr 654:657 <> Blue
+constr 663:665 <> Red
+scheme 641:645 <> Color_rect
+scheme 641:645 <> Color_ind
+scheme 641:645 <> Color_rec
+scheme 641:645 <> Color_sind
+ind 679:686 <> MsgState
+constr 695:701 <> Pending
+constr 742:748 <> Ordered
+constr 789:797 <> Delivered
+constr 838:845 <> Complete
+scheme 679:686 <> MsgState_rect
+scheme 679:686 <> MsgState_ind
+scheme 679:686 <> MsgState_rec
+scheme 679:686 <> MsgState_sind
+rec 890:897 <> GhostMsg
+proj 912:916 <> gm_id
+proj 929:938 <> gm_parents
+proj 956:963 <> gm_color
+proj 976:983 <> gm_state
+R920:924 model <> MsgId def
+R942:945 Coq.Init.Datatypes <> list ind
+R947:951 model <> MsgId def
+R967:971 model <> Color ind
+R987:994 model <> MsgState ind
+def 1097:1104 <> GhostDAG
+R1109:1112 Coq.Init.Datatypes <> list ind
+R1114:1121 model <> GhostMsg rec
+def 1434:1442 <> is_parent
+R1451:1458 model <> GhostMsg rec
+binder 1445:1447 <> msg:10
+R1474:1478 model <> MsgId def
+binder 1462:1470 <> target_id:11
+R1483:1486 Coq.Init.Datatypes <> bool ind
+R1493:1499 Coq.Lists.List <> existsb def
+R1539:1548 model <> gm_parents proj
+R1534:1536 model <> msg:10 var
+binder 1506:1508 <> pid:12
+R1513:1517 Coq.ZArith.BinInt Z eqb def
+R1519:1521 model <> pid:12 var
+R1523:1531 model <> target_id:11 var
+def 1562:1578 <> ghostdag_anticone
+R1587:1594 model <> GhostDAG def
+binder 1581:1583 <> dag:13
+R1604:1611 model <> GhostMsg rec
+binder 1598:1600 <> msg:14
+R1616:1616 Coq.Numbers.BinNums <> Z ind
+R1629:1631 model <> dag:13 var
+R1642:1643 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R1656:1659 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1692:1708 model <> ghostdag_anticone:15 def
+R1715:1717 model <> msg:14 var
+binder 1678:1687 <> count_rest:17
+R1775:1779 Coq.ZArith.BinInt Z eqb def
+R1785:1789 model <> gm_id proj
+R1797:1801 model <> gm_id proj
+R1792:1794 model <> msg:14 var
+R1907:1914 model <> gm_state proj
+R1932:1938 model <> Pending constr
+R2080:2086 Coq.Lists.List <> existsb def
+R2127:2136 model <> gm_parents proj
+R2122:2124 model <> msg:14 var
+binder 2093:2095 <> pid:18
+R2100:2104 Coq.ZArith.BinInt Z eqb def
+R2106:2108 model <> pid:18 var
+R2114:2118 model <> gm_id proj
+R2201:2203 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2204:2213 model <> count_rest:17 var
+R2158:2167 model <> count_rest:17 var
+R2230:2239 model <> count_rest:17 var
+R1809:1818 model <> count_rest:17 var
+def 2326:2340 <> determine_color
+R2349:2356 model <> GhostDAG def
+binder 2343:2345 <> dag:19
+R2366:2373 model <> GhostMsg rec
+binder 2360:2362 <> msg:20
+R2378:2382 model <> Color ind
+R2417:2421 Coq.ZArith.BinInt <> ::Z_scope:x_'<=?'_x not
+R2392:2408 model <> ghostdag_anticone def
+R2410:2412 model <> dag:19 var
+R2414:2416 model <> msg:20 var
+R2422:2428 model <> K_PARAM def
+R2445:2447 model <> Red constr
+R2435:2438 model <> Blue constr
+def 2591:2605 <> ghostdag_submit
+R2614:2621 model <> GhostDAG def
+binder 2608:2610 <> dag:21
+R2634:2638 model <> MsgId def
+binder 2625:2630 <> new_id:22
+R2643:2650 model <> GhostDAG def
+R2963:2967 model <> mkMsg constr
+R2969:2974 model <> new_id:22 var
+R2976:2977 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R2979:2982 model <> Blue constr
+R2984:2990 model <> Pending constr
+binder 2952:2958 <> raw_msg:23
+R3270:3273 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3263:3269 model <> raw_msg:23 var
+R3274:3276 model <> dag:21 var
+binder 3247:3258 <> dag_with_msg:24
+R3316:3330 model <> determine_color def
+R3332:3343 model <> dag_with_msg:24 var
+R3345:3351 model <> raw_msg:23 var
+binder 3307:3311 <> color:25
+R3391:3395 model <> color:25 var
+R3406:3409 model <> Blue constr
+R3438:3442 model <> mkMsg constr
+R3444:3449 model <> new_id:22 var
+R3451:3452 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3454:3457 model <> Blue constr
+R3459:3465 model <> Ordered constr
+binder 3425:3433 <> final_msg:27
+R3485:3488 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3476:3484 model <> final_msg:27 var
+R3489:3491 model <> dag:21 var
+R3514:3516 model <> Red constr
+R3528:3530 model <> dag:21 var
+def 3768:3784 <> check_parent_safe
+R3793:3800 model <> GhostDAG def
+binder 3787:3789 <> dag:28
+R3810:3814 model <> MsgId def
+binder 3804:3806 <> pid:29
+R3819:3822 Coq.Init.Datatypes <> bool ind
+R3835:3838 Coq.Lists.List <> find def
+R3871:3873 model <> dag:28 var
+binder 3845:3845 <> m:30
+R3850:3854 Coq.ZArith.BinInt Z eqb def
+R3859:3863 model <> gm_id proj
+R3856:3856 model <> m:30 var
+R3866:3868 model <> pid:29 var
+R3884:3887 Coq.Init.Datatypes <> Some constr
+R3920:3927 model <> gm_state proj
+R3943:3951 model <> Delivered constr
+R3955:3962 model <> Complete constr
+R3967:3970 Coq.Init.Datatypes <> true constr
+R3967:3970 Coq.Init.Datatypes <> true constr
+R3985:3989 Coq.Init.Datatypes <> false constr
+R4005:4008 Coq.Init.Datatypes <> None constr
+R4013:4016 Coq.Init.Datatypes <> true constr
+def 4083:4093 <> can_deliver
+R4102:4109 model <> GhostDAG def
+binder 4096:4098 <> dag:31
+R4119:4126 model <> GhostMsg rec
+binder 4113:4115 <> msg:32
+R4131:4134 Coq.Init.Datatypes <> bool ind
+R4141:4147 Coq.Lists.List <> forallb def
+R4178:4187 model <> gm_parents proj
+R4173:4175 model <> msg:32 var
+R4150:4166 model <> check_parent_safe def
+R4168:4170 model <> dag:31 var
+ind 4260:4272 <> ProcessResult
+constr 4281:4288 <> NoAction
+constr 4309:4317 <> Processed
+R4295:4302 model <> GhostDAG def
+binder 4291:4291 <> d:35
+R4324:4331 model <> GhostDAG def
+binder 4320:4320 <> d:36
+R4340:4344 model <> MsgId def
+binder 4335:4336 <> id:37
+scheme 4260:4272 <> ProcessResult_rect
+scheme 4260:4272 <> ProcessResult_ind
+scheme 4260:4272 <> ProcessResult_rec
+scheme 4260:4272 <> ProcessResult_sind
+def 4358:4377 <> ghostdag_process_one
+R4386:4393 model <> GhostDAG def
+binder 4380:4382 <> dag:38
+R4398:4410 model <> ProcessResult ind
+R4423:4425 model <> dag:38 var
+R4436:4437 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4442:4449 model <> NoAction constr
+R4451:4452 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4461:4464 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4613:4620 model <> gm_state proj
+R4636:4642 model <> Ordered constr
+R4705:4715 model <> can_deliver def
+R4717:4719 model <> dag:38 var
+R4946:4965 model <> ghostdag_process_one:39 def
+R4992:4999 model <> NoAction constr
+R5006:5013 model <> NoAction constr
+R5019:5022 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5044:5052 model <> Processed constr
+R5070:5078 model <> Processed constr
+R5084:5087 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4817:4825 model <> Processed constr
+R4837:4841 model <> gm_id proj
+R5194:5213 model <> ghostdag_process_one:39 def
+R5237:5244 model <> NoAction constr
+R5251:5258 model <> NoAction constr
+R5264:5267 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5286:5294 model <> Processed constr
+R5312:5320 model <> Processed constr
+R5326:5329 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+def 5657:5666 <> msg_in_dag
+R5673:5680 model <> GhostDAG def
+binder 5669:5669 <> d:41
+R5689:5693 model <> MsgId def
+binder 5684:5685 <> id:42
+R5708:5713 Coq.Lists.List <> Exists ind
+R5741:5741 model <> d:41 var
+binder 5720:5720 <> m:43
+R5734:5736 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5728:5732 model <> gm_id proj
+R5725:5725 model <> m:43 var
+R5737:5738 model <> id:42 var
+def 5868:5879 <> Inv_BlueOnly
+R5888:5895 model <> GhostDAG def
+binder 5882:5884 <> dag:44
+binder 5917:5917 <> m:45
+R5928:5931 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5920:5921 Coq.Lists.List <> In def
+R5925:5927 model <> dag:44 var
+R5923:5923 model <> m:45 var
+R5944:5946 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5935:5942 model <> gm_color proj
+R5932:5932 model <> m:45 var
+R5947:5950 model <> Blue constr
+prf 5962:5983 <> no_red_messages_in_dag
+binder 5996:5998 <> dag:46
+R6019:6024 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6003:6014 model <> Inv_BlueOnly def
+R6016:6018 model <> dag:46 var
+R6040:6054 model <> ghostdag_submit def
+R6056:6058 model <> dag:46 var
+binder 6029:6035 <> new_dag:47
+R6069:6080 model <> Inv_BlueOnly def
+R6082:6088 model <> new_dag:47 var
+R6126:6137 model <> Inv_BlueOnly def
+R6154:6168 model <> ghostdag_submit def
+R6192:6206 model <> determine_color def
+R6234:6237 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6209:6213 model <> mkMsg constr
+R6219:6220 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6222:6225 model <> Blue constr
+R6227:6233 model <> Pending constr
+R6244:6248 model <> mkMsg constr
+R6254:6255 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6257:6260 model <> Blue constr
+R6262:6268 model <> Pending constr
+R6192:6206 model <> determine_color def
+R6234:6237 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6209:6213 model <> mkMsg constr
+R6219:6220 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6222:6225 model <> Blue constr
+R6227:6233 model <> Pending constr
+R6244:6248 model <> mkMsg constr
+R6254:6255 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6257:6260 model <> Blue constr
+R6262:6268 model <> Pending constr
+prf 6613:6634 <> empty_dag_accepts_blue
+binder 6647:6652 <> new_id:48
+R6668:6669 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+binder 6661:6663 <> dag:49
+R6691:6705 model <> ghostdag_submit def
+R6707:6709 model <> dag:49 var
+R6711:6716 model <> new_id:48 var
+binder 6680:6686 <> new_dag:50
+R6723:6729 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R6731:6732 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 6730:6730 <> m:51
+R6745:6748 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R6733:6734 Coq.Lists.List <> In def
+R6738:6744 model <> new_dag:50 var
+R6736:6736 model <> m:51 var
+R6758:6760 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6752:6756 model <> gm_id proj
+R6749:6749 model <> m:51 var
+R6761:6766 model <> new_id:48 var
+R6814:6828 model <> ghostdag_submit def
+R6831:6845 model <> determine_color def
+R6856:6872 model <> ghostdag_anticone def
+R6883:6887 Coq.ZArith.BinInt Z leb def
+R6900:6904 model <> mkMsg constr
+R6913:6914 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6916:6919 model <> Blue constr
+R6921:6927 model <> Ordered constr
+R6900:6904 model <> mkMsg constr
+R6913:6914 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R6916:6919 model <> Blue constr
+R6921:6927 model <> Ordered constr
+R7026:7027 Coq.Lists.List <> In def

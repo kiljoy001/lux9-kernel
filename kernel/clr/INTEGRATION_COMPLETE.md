@@ -67,7 +67,7 @@ clr_kernel_send_message():
   1. Issue white token for receiver
   2. Prepare exchange pages (get physical handles)
   3. Add to channel queue
-  4. GHOSTDAG ordering
+  4. MSGORD ordering
 
 clr_kernel_receive_message():
   1. Verify white token

@@ -202,7 +202,7 @@ static void process_inter_core_message(cpu_driver_t *driver,
             break;
             
         case MSG_CONSENSUS_VOTE:
-            /* Process GHOSTDAG vote */
+            /* Process MSGORD vote */
             process_consensus_vote(driver->local_kernel->dag_state,
                                   msg->payload.consensus.dag_node,
                                   msg->payload.consensus.vote);

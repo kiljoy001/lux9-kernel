@@ -141,8 +141,8 @@ clr_kernel_init(size_t heap_size, uint32_t k_parameter)
 	sys->channel_count = 0;
 	sys->next_channel_id = 1;
 
-	/* Initialize GHOSTDAG state */
-	sys->dag_state = ghostdag_state_create(k_parameter);
+	/* Initialize MSGORD state */
+	sys->dag_state = msgord_state_create(k_parameter);
 
 	/* Initialize FSM router */
 	sys->fsm_router = fsm_packet_router_create();
@@ -382,8 +382,8 @@ clr_kernel_send_message(clr_kernel_system_t *sys,
 		msg->npages = 0;
 	}
 
-	/* Assign GHOSTDAG ID for ordering */
-	msg->dag_id = ghostdag_add_message(sys->dag_state,
+	/* Assign MSGORD ID for ordering */
+	msg->dag_id = msgord_add_message(sys->dag_state,
 	                                    channel->sender,
 	                                    channel->receiver);
 
@@ -419,7 +419,7 @@ clr_kernel_receive_message(clr_kernel_system_t *sys,
 		return channel->is_blocking ? CLR_ERROR_STACK_UNDERFLOW : CLR_SUCCESS;
 	}
 
-	/* Get message respecting GHOSTDAG ordering */
+	/* Get message respecting MSGORD ordering */
 	msg = remove_message_from_channel(channel);
 	if(msg == nil){
 		*payload_obj = nil;
@@ -594,7 +594,7 @@ clr_kernel_main_loop(clr_kernel_system_t *sys)
 				break;
 
 			case TASKLET_BLOCKED:
-				/* Wait for GHOSTDAG consensus */
+				/* Wait for MSGORD consensus */
 				/* Transition to EXECUTING when ready */
 				break;
 			}

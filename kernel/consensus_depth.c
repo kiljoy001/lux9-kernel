@@ -1,7 +1,7 @@
 /*
  * Lux9 Selective Consensus Depth Implementation
  *
- * Operation classification and depth-based routing for GHOSTDAG.
+ * Operation classification and depth-based routing for MSGORD.
  */
 
 #include "u.h"
@@ -12,7 +12,7 @@ typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
 #include "consensus_depth.h"
-#include "ghostdag_kernel.h"
+#include "msgord.h"
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
@@ -275,8 +275,8 @@ OpRollbackEntry *rollback_register(RollbackRegistry *reg, uint op_id,
   /* Check high water mark */
   if (reg->count >= reg->max_entries) {
     /* Force synchronous verification before adding more */
-    if (ghostdag != nil) {
-      verify_pending_operations(reg, ghostdag);
+    if (msgord != nil) {
+      verify_pending_operations(reg, msgord);
     }
   }
 
@@ -483,7 +483,7 @@ void register_verify_callback(VerifyCallback cb) { verify_cb = cb; }
 /*
  * Verify all pending operations against their required depth
  */
-void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag) {
+void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
   OpRollbackEntry *entry;
   int confidence;
   int result;
@@ -499,7 +499,7 @@ void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag) {
       continue;
 
     /* Check consensus depth for this operation */
-    result = ghostdag_check_consensus_depth(dag, entry->op_id,
+    result = msgord_check_consensus_depth(dag, entry->op_id,
                                             entry->required_depth, &confidence);
 
     if (result < 0) {
@@ -542,25 +542,25 @@ void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag) {
  * Depth-Based Routing
  */
 
-int route_with_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
+int route_with_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
                      char *path, RollbackRegistry *reg) {
   ConsensusDepth depth = classify_operation(t, path);
   return route_with_explicit_depth(dag, caller, t, r, path, depth, reg);
 }
 
-int route_with_explicit_depth(GhostDAG *dag, Proc *caller, Fcall *t, Fcall *r,
+int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
                               char *path, ConsensusDepth depth,
                               RollbackRegistry *reg) {
   uint msg_id;
   int result;
 
   if (dag == nil)
-    dag = ghostdag;
+    dag = msgord;
   if (reg == nil)
     reg = global_rollback_registry;
 
-  /* Submit to GHOSTDAG with optimistic execution */
-  result = ghostdag_submit_async_depth(dag, caller, t, r, path, depth, &msg_id);
+  /* Submit to MSGORD with optimistic execution */
+  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id);
   if (result < 0)
     return result;
 

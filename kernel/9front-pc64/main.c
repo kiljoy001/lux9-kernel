@@ -315,11 +315,11 @@ void main_after_cr3(void) {
   tpminit();
   print("=== TPM Driver Initialized ===\n");
 
-  /* Initialize GHOSTDAG consensus subsystem */
-  extern void ghostdag_init(uint k_param);
-  print("=== Initializing GHOSTDAG Consensus ===\n");
-  ghostdag_init(3); /* k=3 for robust ordering */
-  print("=== GHOSTDAG Consensus Initialized ===\n");
+  /* Initialize MSGORD consensus subsystem */
+  extern void msgord_init(uint k_param);
+  print("=== Initializing MSGORD Consensus ===\n");
+  msgord_init(3); /* k=3 for robust ordering */
+  print("=== MSGORD Consensus Initialized ===\n");
 
   /* Initialize crypto subsystem early for testing */
   extern int crypto_tpm_key_init(void);

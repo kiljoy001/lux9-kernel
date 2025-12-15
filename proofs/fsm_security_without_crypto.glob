@@ -1,0 +1,417 @@
+DIGEST 9940b98100d502ba3d76f74eb670a9c2
+FLuxProofs.fsm_security_without_crypto
+R167:180 Coq.Lists.List <> <> lib
+R198:210 Coq.Bool.Bool <> <> lib
+R228:242 Coq.Arith.Arith <> <> lib
+R260:262 Coq.micromega.Lia <> <> lib
+R272:284 Coq.Lists.List ListNotations <> mod
+ind 337:355 <> scheduling_decision
+constr 371:381 <> KeepCurrent
+constr 409:416 <> SwitchTo
+constr 451:457 <> Migrate
+R385:403 LuxProofs.fsm_security_without_crypto <> scheduling_decision:1 ind
+R423:426 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R420:422 Coq.Init.Datatypes <> nat ind
+R427:445 LuxProofs.fsm_security_without_crypto <> scheduling_decision:1 ind
+R464:467 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R461:463 Coq.Init.Datatypes <> nat ind
+R471:474 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R468:470 Coq.Init.Datatypes <> nat ind
+R475:493 LuxProofs.fsm_security_without_crypto <> scheduling_decision:1 ind
+scheme 337:355 <> scheduling_decision_rect
+scheme 337:355 <> scheduling_decision_ind
+scheme 337:355 <> scheduling_decision_rec
+scheme 337:355 <> scheduling_decision_sind
+ind 507:518 <> thread_state
+constr 534:539 <> TH_RUN
+constr 560:566 <> TH_WAIT
+constr 587:596 <> TH_BLOCKED
+constr 617:625 <> TH_ZOMBIE
+R543:554 LuxProofs.fsm_security_without_crypto <> thread_state:3 ind
+R570:581 LuxProofs.fsm_security_without_crypto <> thread_state:3 ind
+R600:611 LuxProofs.fsm_security_without_crypto <> thread_state:3 ind
+R629:640 LuxProofs.fsm_security_without_crypto <> thread_state:3 ind
+scheme 507:518 <> thread_state_rect
+scheme 507:518 <> thread_state_ind
+scheme 507:518 <> thread_state_rec
+scheme 507:518 <> thread_state_sind
+mod 681:699 <> CryptoImpossibility
+rec 763:780 CryptoImpossibility crypto_constraints
+proj 798:808 CryptoImpossibility kernel_size
+proj 850:868 CryptoImpossibility crypto_library_size
+proj 902:919 CryptoImpossibility ipc_latency_budget
+proj 954:974 CryptoImpossibility crypto_operation_cost
+proj 1008:1032 CryptoImpossibility key_management_complexity
+R812:814 Coq.Init.Datatypes <> nat ind
+R872:874 Coq.Init.Datatypes <> nat ind
+R923:925 Coq.Init.Datatypes <> nat ind
+R978:980 Coq.Init.Datatypes <> nat ind
+R1036:1038 Coq.Init.Datatypes <> nat ind
+def 1156:1172 CryptoImpossibility crypto_unsuitable
+R1179:1196 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_constraints rec
+binder 1175:1175 <> c:11
+R1238:1263 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R1228:1230 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R1216:1226 LuxProofs.fsm_security_without_crypto CryptoImpossibility kernel_size proj
+R1213:1213 LuxProofs.fsm_security_without_crypto <> c:11 var
+R1297:1326 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R1287:1289 Coq.Init.Peano <> ::nat_scope:x_'>'_x not
+R1267:1285 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_library_size proj
+R1264:1264 LuxProofs.fsm_security_without_crypto <> c:11 var
+R1352:1354 Coq.Init.Peano <> ::nat_scope:x_'>'_x not
+R1330:1350 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_operation_cost proj
+R1327:1327 LuxProofs.fsm_security_without_crypto <> c:11 var
+R1357:1359 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R1363:1380 LuxProofs.fsm_security_without_crypto CryptoImpossibility ipc_latency_budget proj
+R1360:1360 LuxProofs.fsm_security_without_crypto <> c:11 var
+prf 1487:1517 CryptoImpossibility crypto_constraints_incompatible
+R1536:1553 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_constraints rec
+binder 1532:1532 <> c:12
+R1581:1638 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1562:1578 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_unsuitable def
+R1580:1580 LuxProofs.fsm_security_without_crypto <> c:12 var
+R1662:1664 Coq.Init.Peano <> ::nat_scope:x_'>'_x not
+R1642:1660 LuxProofs.fsm_security_without_crypto CryptoImpossibility crypto_library_size proj
+R1639:1639 LuxProofs.fsm_security_without_crypto <> c:12 var
+R1668:1678 LuxProofs.fsm_security_without_crypto CryptoImpossibility kernel_size proj
+R1665:1665 LuxProofs.fsm_security_without_crypto <> c:12 var
+R1809:1827 LuxProofs.fsm_security_without_crypto CryptoImpossibility <> mod
+mod 1894:1906 <> CapabilityFSM
+ind 1977:1990 CapabilityFSM fsm_capability
+constr 2008:2019 CapabilityFSM FSM_CAP_NONE
+constr 2044:2055 CapabilityFSM FSM_CAP_READ
+constr 2115:2132 CapabilityFSM FSM_CAP_TRANSITION
+constr 2199:2216 CapabilityFSM FSM_CAP_PRIVILEGED
+R2023:2036 LuxProofs.fsm_security_without_crypto <> fsm_capability:13 ind
+R2062:2065 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2059:2061 Coq.Init.Datatypes <> nat ind
+R2066:2079 LuxProofs.fsm_security_without_crypto <> fsm_capability:13 ind
+R2139:2142 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2136:2138 Coq.Init.Datatypes <> nat ind
+R2146:2149 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2143:2145 Coq.Init.Datatypes <> nat ind
+R2150:2163 LuxProofs.fsm_security_without_crypto <> fsm_capability:13 ind
+R2220:2233 LuxProofs.fsm_security_without_crypto <> fsm_capability:13 ind
+scheme 1977:1990 CapabilityFSM fsm_capability_rect
+scheme 1977:1990 CapabilityFSM fsm_capability_ind
+scheme 1977:1990 CapabilityFSM fsm_capability_rec
+scheme 1977:1990 CapabilityFSM fsm_capability_sind
+rec 2308:2323 CapabilityFSM capability_token
+proj 2341:2349 CapabilityFSM cap_index
+proj 2413:2426 CapabilityFSM cap_generation
+proj 2483:2491 CapabilityFSM cap_check
+R2353:2355 Coq.Init.Datatypes <> nat ind
+R2430:2432 Coq.Init.Datatypes <> nat ind
+R2495:2497 Coq.Init.Datatypes <> nat ind
+rec 2602:2617 CapabilityFSM kernel_cap_table
+proj 2635:2638 CapabilityFSM caps
+proj 2676:2686 CapabilityFSM generations
+proj 2704:2713 CapabilityFSM next_index
+R2642:2645 Coq.Init.Datatypes <> list ind
+R2648:2653 Coq.Init.Datatypes <> option ind
+R2655:2668 LuxProofs.fsm_security_without_crypto CapabilityFSM fsm_capability ind
+R2690:2693 Coq.Init.Datatypes <> list ind
+R2695:2697 Coq.Init.Datatypes <> nat ind
+R2717:2719 Coq.Init.Datatypes <> nat ind
+def 2813:2831 CapabilityFSM validate_capability
+R2842:2857 LuxProofs.fsm_security_without_crypto CapabilityFSM kernel_cap_table rec
+binder 2834:2838 <> table:23
+R2902:2917 LuxProofs.fsm_security_without_crypto CapabilityFSM capability_token rec
+binder 2894:2898 <> token:24
+R2922:2925 Coq.Init.Datatypes <> bool ind
+R2940:2942 Coq.Lists.List <> nth def
+R2975:2978 Coq.Init.Datatypes <> None constr
+R2969:2972 LuxProofs.fsm_security_without_crypto CapabilityFSM caps proj
+R2962:2966 LuxProofs.fsm_security_without_crypto <> table:23 var
+R2951:2959 LuxProofs.fsm_security_without_crypto CapabilityFSM cap_index proj
+R2944:2948 LuxProofs.fsm_security_without_crypto <> token:24 var
+R2991:2994 Coq.Init.Datatypes <> None constr
+R2999:3003 Coq.Init.Datatypes <> false constr
+R3011:3014 Coq.Init.Datatypes <> Some constr
+R3081:3087 Coq.Arith.PeanoNat Nat eqb def
+R3090:3092 Coq.Lists.List <> nth def
+R3119:3129 LuxProofs.fsm_security_without_crypto CapabilityFSM generations proj
+R3112:3116 LuxProofs.fsm_security_without_crypto <> table:23 var
+R3101:3109 LuxProofs.fsm_security_without_crypto CapabilityFSM cap_index proj
+R3094:3098 LuxProofs.fsm_security_without_crypto <> token:24 var
+R3159:3172 LuxProofs.fsm_security_without_crypto CapabilityFSM cap_generation proj
+R3152:3156 LuxProofs.fsm_security_without_crypto <> token:24 var
+R3191:3203 LuxProofs.fsm_security_without_crypto CapabilityFSM <> mod
+mod 3263:3279 <> MonotonicSecurity
+ind 3348:3361 MonotonicSecurity security_level
+constr 3379:3388 MonotonicSecurity SEC_PUBLIC
+constr 3439:3451 MonotonicSecurity SEC_PROTECTED
+constr 3500:3513 MonotonicSecurity SEC_PRIVILEGED
+constr 3557:3567 MonotonicSecurity SEC_TAINTED
+R3392:3405 LuxProofs.fsm_security_without_crypto <> security_level:25 ind
+R3455:3468 LuxProofs.fsm_security_without_crypto <> security_level:25 ind
+R3517:3530 LuxProofs.fsm_security_without_crypto <> security_level:25 ind
+R3571:3584 LuxProofs.fsm_security_without_crypto <> security_level:25 ind
+scheme 3348:3361 MonotonicSecurity security_level_rect
+scheme 3348:3361 MonotonicSecurity security_level_ind
+scheme 3348:3361 MonotonicSecurity security_level_rec
+scheme 3348:3361 MonotonicSecurity security_level_sind
+def 3696:3714 MonotonicSecurity security_transition
+R3727:3740 LuxProofs.fsm_security_without_crypto MonotonicSecurity security_level ind
+binder 3717:3719 <> old:27
+binder 3721:3723 <> new:28
+R3745:3748 Coq.Init.Datatypes <> bool ind
+R3768:3770 LuxProofs.fsm_security_without_crypto <> new:28 var
+R3763:3765 LuxProofs.fsm_security_without_crypto <> old:27 var
+R3783:3792 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PUBLIC constr
+R3800:3803 Coq.Init.Datatypes <> true constr
+R3811:3823 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PROTECTED constr
+R3826:3838 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PROTECTED constr
+R3843:3846 Coq.Init.Datatypes <> true constr
+R3854:3866 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PROTECTED constr
+R3869:3882 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PRIVILEGED constr
+R3887:3890 Coq.Init.Datatypes <> true constr
+R3900:3912 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PROTECTED constr
+R3915:3925 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R3930:3933 Coq.Init.Datatypes <> true constr
+R3941:3954 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PRIVILEGED constr
+R3957:3970 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PRIVILEGED constr
+R3975:3978 Coq.Init.Datatypes <> true constr
+R3986:3999 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_PRIVILEGED constr
+R4002:4012 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R4017:4020 Coq.Init.Datatypes <> true constr
+R4028:4038 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R4041:4051 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R4056:4059 Coq.Init.Datatypes <> true constr
+R4075:4079 Coq.Init.Datatypes <> false constr
+prf 4172:4189 MonotonicSecurity taint_is_permanent
+binder 4204:4208 <> level:31
+R4261:4270 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4254:4256 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4217:4235 LuxProofs.fsm_security_without_crypto MonotonicSecurity security_transition def
+R4237:4247 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R4249:4253 LuxProofs.fsm_security_without_crypto <> level:31 var
+R4257:4260 Coq.Init.Datatypes <> true constr
+R4276:4278 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4271:4275 LuxProofs.fsm_security_without_crypto <> level:31 var
+R4279:4289 LuxProofs.fsm_security_without_crypto MonotonicSecurity SEC_TAINTED constr
+R4415:4431 LuxProofs.fsm_security_without_crypto MonotonicSecurity <> mod
+mod 4491:4506 <> ZeroKnowledgeFSM
+ind 4578:4588 ZeroKnowledgeFSM zkfsm_proof
+constr 4606:4616 ZeroKnowledgeFSM ZK_DECISION
+constr 4678:4690 ZeroKnowledgeFSM ZK_CONSTRAINT
+constr 4756:4767 ZeroKnowledgeFSM ZK_COMPOSITE
+R4623:4626 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4620:4622 Coq.Init.Datatypes <> nat ind
+R4627:4637 LuxProofs.fsm_security_without_crypto <> zkfsm_proof:32 ind
+R4694:4694 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4706:4710 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4698:4701 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4695:4697 Coq.Init.Datatypes <> nat ind
+R4702:4705 Coq.Init.Datatypes <> bool ind
+R4711:4721 LuxProofs.fsm_security_without_crypto <> zkfsm_proof:32 ind
+R4787:4790 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4771:4774 Coq.Init.Datatypes <> list ind
+R4776:4786 LuxProofs.fsm_security_without_crypto <> zkfsm_proof:32 ind
+R4791:4801 LuxProofs.fsm_security_without_crypto <> zkfsm_proof:32 ind
+scheme 4578:4588 ZeroKnowledgeFSM zkfsm_proof_rect
+scheme 4578:4588 ZeroKnowledgeFSM zkfsm_proof_ind
+scheme 4578:4588 ZeroKnowledgeFSM zkfsm_proof_rec
+scheme 4578:4588 ZeroKnowledgeFSM zkfsm_proof_sind
+def 4886:4900 ZeroKnowledgeFSM verify_decision
+R4911:4921 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM zkfsm_proof ind
+binder 4903:4907 <> proof:34
+R4964:4982 LuxProofs.fsm_security_without_crypto <> scheduling_decision ind
+binder 4953:4960 <> decision:35
+R4987:4990 Coq.Init.Datatypes <> bool ind
+R5005:5009 LuxProofs.fsm_security_without_crypto <> proof:34 var
+R5022:5032 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM ZK_DECISION constr
+R5061:5068 LuxProofs.fsm_security_without_crypto <> decision:35 var
+R5085:5095 LuxProofs.fsm_security_without_crypto <> KeepCurrent constr
+R5100:5106 Coq.Arith.PeanoNat Nat eqb def
+R5129:5136 LuxProofs.fsm_security_without_crypto <> SwitchTo constr
+R5143:5149 Coq.Arith.PeanoNat Nat eqb def
+R5172:5178 LuxProofs.fsm_security_without_crypto <> Migrate constr
+R5187:5193 Coq.Arith.PeanoNat Nat eqb def
+R5229:5233 Coq.Init.Datatypes <> false constr
+prf 5320:5337 ZeroKnowledgeFSM zk_reveals_nothing
+R5361:5372 LuxProofs.fsm_security_without_crypto <> thread_state ind
+binder 5353:5357 <> state:38
+R5384:5394 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM zkfsm_proof ind
+binder 5376:5380 <> proof:39
+R5404:5422 LuxProofs.fsm_security_without_crypto <> scheduling_decision ind
+binder 5398:5400 <> dec:40
+R5464:5532 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5457:5459 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5432:5446 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM verify_decision def
+R5448:5452 LuxProofs.fsm_security_without_crypto <> proof:39 var
+R5454:5456 LuxProofs.fsm_security_without_crypto <> dec:40 var
+R5460:5463 Coq.Init.Datatypes <> true constr
+R5533:5540 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R5567:5577 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R5555:5566 LuxProofs.fsm_security_without_crypto <> thread_state ind
+binder 5541:5551 <> other_state:41
+R5598:5660 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R5589:5592 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5578:5588 LuxProofs.fsm_security_without_crypto <> other_state:41 var
+R5593:5597 LuxProofs.fsm_security_without_crypto <> state:38 var
+R5686:5688 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R5661:5675 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM verify_decision def
+R5677:5681 LuxProofs.fsm_security_without_crypto <> proof:39 var
+R5683:5685 LuxProofs.fsm_security_without_crypto <> dec:40 var
+R5689:5692 Coq.Init.Datatypes <> true constr
+R5824:5829 LuxProofs.fsm_security_without_crypto <> TH_RUN constr
+R5834:5840 LuxProofs.fsm_security_without_crypto <> TH_WAIT constr
+R5861:5866 LuxProofs.fsm_security_without_crypto <> TH_RUN constr
+R5824:5829 LuxProofs.fsm_security_without_crypto <> TH_RUN constr
+R5834:5840 LuxProofs.fsm_security_without_crypto <> TH_WAIT constr
+R5861:5866 LuxProofs.fsm_security_without_crypto <> TH_RUN constr
+R5993:6008 LuxProofs.fsm_security_without_crypto ZeroKnowledgeFSM <> mod
+mod 6067:6082 <> PhysicalSecurity
+rec 6151:6166 PhysicalSecurity memory_isolation
+proj 6184:6195 PhysicalSecurity kernel_pages
+proj 6252:6261 PhysicalSecurity user_pages
+proj 6318:6327 PhysicalSecurity ipc_buffer
+proj 6379:6393 PhysicalSecurity page_table_root
+R6199:6202 Coq.Init.Datatypes <> list ind
+R6204:6206 Coq.Init.Datatypes <> nat ind
+R6265:6268 Coq.Init.Datatypes <> list ind
+R6270:6272 Coq.Init.Datatypes <> nat ind
+R6331:6333 Coq.Init.Datatypes <> nat ind
+R6397:6399 Coq.Init.Datatypes <> nat ind
+def 6502:6519 PhysicalSecurity fsm_in_kernel_only
+R6528:6543 LuxProofs.fsm_security_without_crypto PhysicalSecurity memory_isolation rec
+binder 6522:6524 <> mem:49
+R6593:6595 Coq.Init.Datatypes <> nat ind
+binder 6579:6589 <> fsm_address:50
+R6600:6603 Coq.Init.Datatypes <> bool ind
+R6612:6618 Coq.Lists.List <> existsb def
+R6647:6658 LuxProofs.fsm_security_without_crypto PhysicalSecurity kernel_pages proj
+R6642:6644 LuxProofs.fsm_security_without_crypto <> mem:49 var
+R6621:6627 Coq.Arith.PeanoNat Nat eqb def
+R6629:6639 LuxProofs.fsm_security_without_crypto <> fsm_address:50 var
+rec 6718:6735 PhysicalSecurity secure_ipc_message
+proj 6753:6760 PhysicalSecurity msg_data
+proj 6804:6815 PhysicalSecurity msg_decision
+proj 6866:6874 PhysicalSecurity msg_proof
+R6764:6767 Coq.Init.Datatypes <> list ind
+R6769:6771 Coq.Init.Datatypes <> nat ind
+R6819:6821 Coq.Init.Datatypes <> nat ind
+R6878:6880 Coq.Init.Datatypes <> nat ind
+prf 7004:7032 PhysicalSecurity physical_security_unforgeable
+R7054:7069 LuxProofs.fsm_security_without_crypto PhysicalSecurity memory_isolation rec
+binder 7048:7050 <> mem:55
+R7079:7096 LuxProofs.fsm_security_without_crypto PhysicalSecurity secure_ipc_message rec
+binder 7073:7075 <> msg:56
+R7152:7152 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7301:7365 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+binder 7160:7168 <> user_addr:57
+binder 7170:7180 <> kernel_addr:58
+R7220:7231 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7191:7192 Coq.Lists.List <> In def
+R7209:7218 LuxProofs.fsm_security_without_crypto PhysicalSecurity user_pages proj
+R7204:7206 LuxProofs.fsm_security_without_crypto <> mem:55 var
+R7194:7202 LuxProofs.fsm_security_without_crypto <> user_addr:57 var
+R7265:7276 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7232:7233 Coq.Lists.List <> In def
+R7252:7263 LuxProofs.fsm_security_without_crypto PhysicalSecurity kernel_pages proj
+R7247:7249 LuxProofs.fsm_security_without_crypto <> mem:55 var
+R7235:7245 LuxProofs.fsm_security_without_crypto <> kernel_addr:58 var
+R7286:7289 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R7277:7285 LuxProofs.fsm_security_without_crypto <> user_addr:57 var
+R7290:7300 LuxProofs.fsm_security_without_crypto <> kernel_addr:58 var
+R7366:7372 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7404:7413 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7397:7400 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7394:7396 Coq.Init.Datatypes <> nat ind
+R7401:7403 Coq.Init.Datatypes <> nat ind
+binder 7373:7390 <> kernel_computation:59
+R7432:7434 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7419:7430 LuxProofs.fsm_security_without_crypto PhysicalSecurity msg_decision proj
+R7414:7416 LuxProofs.fsm_security_without_crypto <> msg:56 var
+R7435:7452 LuxProofs.fsm_security_without_crypto <> kernel_computation:59 var
+R7459:7467 LuxProofs.fsm_security_without_crypto PhysicalSecurity msg_proof proj
+R7454:7456 LuxProofs.fsm_security_without_crypto <> msg:56 var
+R7714:7725 LuxProofs.fsm_security_without_crypto PhysicalSecurity msg_decision proj
+R7714:7725 LuxProofs.fsm_security_without_crypto PhysicalSecurity msg_decision proj
+R7761:7776 LuxProofs.fsm_security_without_crypto PhysicalSecurity <> mod
+mod 7837:7852 <> TemporalSecurity
+rec 7914:7925 TemporalSecurity temporal_fsm
+proj 7943:7954 TemporalSecurity fsm_decision
+proj 7983:7995 TemporalSecurity fsm_timestamp
+proj 8038:8049 TemporalSecurity fsm_validity
+proj 8099:8107 TemporalSecurity fsm_nonce
+R7958:7976 LuxProofs.fsm_security_without_crypto <> scheduling_decision ind
+R7999:8001 Coq.Init.Datatypes <> nat ind
+R8053:8055 Coq.Init.Datatypes <> nat ind
+R8111:8113 Coq.Init.Datatypes <> nat ind
+def 8204:8220 TemporalSecurity is_valid_temporal
+R8229:8240 LuxProofs.fsm_security_without_crypto TemporalSecurity temporal_fsm rec
+binder 8223:8225 <> fsm:65
+R8259:8261 Coq.Init.Datatypes <> nat ind
+binder 8244:8255 <> current_time:66
+R8266:8269 Coq.Init.Datatypes <> bool ind
+R8278:8278 Coq.Arith.PeanoNat <> ::nat_scope:x_'<?'_x not
+R8313:8317 Coq.Arith.PeanoNat <> ::nat_scope:x_'<?'_x not
+R8291:8293 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R8279:8290 LuxProofs.fsm_security_without_crypto <> current_time:66 var
+R8299:8311 LuxProofs.fsm_security_without_crypto TemporalSecurity fsm_timestamp proj
+R8294:8296 LuxProofs.fsm_security_without_crypto <> fsm:65 var
+R8323:8334 LuxProofs.fsm_security_without_crypto TemporalSecurity fsm_validity proj
+R8318:8320 LuxProofs.fsm_security_without_crypto <> fsm:65 var
+prf 8402:8418 TemporalSecurity temporal_security
+R8440:8451 LuxProofs.fsm_security_without_crypto TemporalSecurity temporal_fsm rec
+binder 8434:8436 <> fsm:67
+R8480:8482 Coq.Init.Datatypes <> nat ind
+binder 8455:8465 <> attack_time:68
+binder 8467:8476 <> forge_time:69
+R8523:8562 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8510:8512 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R8497:8508 LuxProofs.fsm_security_without_crypto TemporalSecurity fsm_validity proj
+R8492:8494 LuxProofs.fsm_security_without_crypto <> fsm:67 var
+R8513:8522 LuxProofs.fsm_security_without_crypto <> forge_time:69 var
+R8633:8635 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8563:8579 LuxProofs.fsm_security_without_crypto TemporalSecurity is_valid_temporal def
+R8581:8583 LuxProofs.fsm_security_without_crypto <> fsm:67 var
+R8619:8621 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R8605:8607 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R8591:8603 LuxProofs.fsm_security_without_crypto TemporalSecurity fsm_timestamp proj
+R8586:8588 LuxProofs.fsm_security_without_crypto <> fsm:67 var
+R8608:8618 LuxProofs.fsm_security_without_crypto <> attack_time:68 var
+R8622:8631 LuxProofs.fsm_security_without_crypto <> forge_time:69 var
+R8636:8640 Coq.Init.Datatypes <> false constr
+R8699:8715 LuxProofs.fsm_security_without_crypto TemporalSecurity is_valid_temporal def
+R8728:8738 Coq.Arith.PeanoNat Nat ltb_nlt thm
+R8728:8738 Coq.Arith.PeanoNat Nat ltb_nlt thm
+def 8814:8831 TemporalSecurity practical_validity
+R8835:8837 Coq.Init.Datatypes <> nat ind
+R8873:8888 LuxProofs.fsm_security_without_crypto TemporalSecurity <> mod
+mod 8944:8958 <> LayeredSecurity
+rec 9015:9031 LayeredSecurity secure_fsm_system
+proj 9087:9101 LayeredSecurity memory_isolated
+proj 9157:9173 LayeredSecurity uses_capabilities
+proj 9230:9247 LayeredSecurity enforces_monotonic
+proj 9303:9314 LayeredSecurity time_bounded
+proj 9374:9388 LayeredSecurity reveals_minimal
+R9105:9108 Coq.Init.Datatypes <> bool ind
+R9177:9180 Coq.Init.Datatypes <> bool ind
+R9251:9254 Coq.Init.Datatypes <> bool ind
+R9318:9321 Coq.Init.Datatypes <> bool ind
+R9392:9395 Coq.Init.Datatypes <> bool ind
+prf 9464:9490 LayeredSecurity layered_security_sufficient
+R9511:9527 LuxProofs.fsm_security_without_crypto LayeredSecurity secure_fsm_system rec
+binder 9505:9507 <> sys:76
+R9564:9573 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9557:9559 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R9541:9555 LuxProofs.fsm_security_without_crypto LayeredSecurity memory_isolated proj
+R9536:9538 LuxProofs.fsm_security_without_crypto <> sys:76 var
+R9560:9563 Coq.Init.Datatypes <> true constr
+R9604:9613 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9597:9599 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R9579:9595 LuxProofs.fsm_security_without_crypto LayeredSecurity uses_capabilities proj
+R9574:9576 LuxProofs.fsm_security_without_crypto <> sys:76 var
+R9600:9603 Coq.Init.Datatypes <> true constr
+R9639:9693 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9632:9634 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R9619:9630 LuxProofs.fsm_security_without_crypto LayeredSecurity time_bounded proj
+R9614:9616 LuxProofs.fsm_security_without_crypto <> sys:76 var
+R9635:9638 Coq.Init.Datatypes <> true constr
+R9694:9697 Coq.Init.Logic <> True ind
+R9806:9806 Coq.Init.Logic <> I constr
+R9806:9806 Coq.Init.Logic <> I constr
+R9823:9837 LuxProofs.fsm_security_without_crypto LayeredSecurity <> mod

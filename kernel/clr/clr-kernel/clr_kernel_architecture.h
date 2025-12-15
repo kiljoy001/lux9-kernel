@@ -15,14 +15,14 @@
 #include "../../include/u.h"
 #include "../clr-implementation/clr_runtime.h"
 #include "../ipc/ipc_kmsg.h"
-#include "../ipc/ghostdag_kernel.h"
+#include "../ipc/msgord.h"
 #include "../ipc/fsm_packet.h"
 #include "../../include/pebble.h"
 #include "../../include/exchange.h"
 #include "clr_pebble_integration.h"
 
 #define CLR_DEFAULT_HEAP_SIZE (32 * 1024 * 1024) // 32MB for CLR managed heap
-#define CLR_DEFAULT_DAG_K 8                     // Default k-parameter for GHOSTDAG
+#define CLR_DEFAULT_DAG_K 8                     // Default k-parameter for MSGORD
 
 /* ========== CLR Tasklet Definitions ========== */
 
@@ -38,7 +38,7 @@ typedef struct clr_tasklet {
     struct clr_pebble_state *state;   /* Pebble-backed execution state */
 
     channel_id_t channel;         /* Inter-tasklet communication channel */
-    uint32_t dag_node_id;         /* Associated GHOSTDAG node */
+    uint32_t dag_node_id;         /* Associated MSGORD node */
 
     /* FSM state for tasklet lifecycle */
     enum {
@@ -77,7 +77,7 @@ typedef struct tasklet_message {
     ExchangeHandle *exchange_handles; /* Physical page handles */
     size_t npages;                    /* Number of pages */
 
-    uint32_t dag_id;              /* GHOSTDAG message ID for ordering */
+    uint32_t dag_id;              /* MSGORD message ID for ordering */
 
     /* FSM packet integration */
     fsm_packet_t *fsm_packet;     /* Optional FSM packet wrapper */
@@ -94,7 +94,7 @@ typedef struct tasklet_channel {
     tasklet_id_t sender;
     tasklet_id_t receiver;
 
-    /* Message queue with GHOSTDAG ordering (intrusive list) */
+    /* Message queue with MSGORD ordering (intrusive list) */
     tasklet_message_t *queue_head;
     tasklet_message_t *queue_tail;
     size_t count;
@@ -123,8 +123,8 @@ typedef struct clr_kernel_system {
     size_t channel_count;
     channel_id_t next_channel_id;
 
-    /* GHOSTDAG consensus state */
-    ghostdag_state_t *dag_state;
+    /* MSGORD consensus state */
+    msgord_state_t *dag_state;
 
     /* FSM packet router */
     fsm_packet_router_t *fsm_router;
@@ -169,7 +169,7 @@ clr_result_t clr_kernel_execute_instruction(
     const clr_instruction_t *instruction
 );
 
-/* Send message through channel (respects GHOSTDAG ordering) */
+/* Send message through channel (respects MSGORD ordering) */
 clr_result_t clr_kernel_send_message(
     clr_kernel_system_t *sys,
     channel_id_t channel,
@@ -177,7 +177,7 @@ clr_result_t clr_kernel_send_message(
     size_t count
 );
 
-/* Receive message from channel (respects GHOSTDAG ordering) */
+/* Receive message from channel (respects MSGORD ordering) */
 clr_result_t clr_kernel_receive_message(
     clr_kernel_system_t *sys,
     channel_id_t channel,
@@ -204,7 +204,7 @@ bool clr_kernel_tasklet_can_progress(
 /* Verify tasklet isolation */
 bool clr_kernel_verify_isolation(const clr_kernel_system_t *sys);
 
-/* Verify message ordering via GHOSTDAG */
+/* Verify message ordering via MSGORD */
 bool clr_kernel_verify_message_ordering(const clr_kernel_system_t *sys);
 
 /* Verify no deadlocks in FSM */

@@ -93,7 +93,7 @@ typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);
 
 /* Async operation tracking */
 typedef struct AsyncP9Op {
-  uint op_id;                    /* GHOSTDAG message ID */
+  uint op_id;                    /* MSGORD message ID */
   Fcall *request;                /* Original request (copied) */
   Fcall *reply;                  /* Reply when ready */
   P9CompletionCallback callback; /* Completion callback */

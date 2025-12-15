@@ -1,14 +1,14 @@
 /*
  * Lux9 Selective Consensus Depth
  *
- * Operation classification and depth-based routing for GHOSTDAG.
+ * Operation classification and depth-based routing for MSGORD.
  * Implements "all nodes, all the way down" with variable depth.
  */
 
 #ifndef _CONSENSUS_DEPTH_H_
 #define _CONSENSUS_DEPTH_H_
 
-#include "ghostdag_kernel.h"
+#include "msgord.h"
 
 /* Forward declarations */
 struct Proc;
@@ -55,7 +55,7 @@ typedef enum {
  * Tracks optimistically executed operations for potential rollback.
  */
 typedef struct OpRollbackEntry {
-  uint op_id;                    /* GHOSTDAG message ID */
+  uint op_id;                    /* MSGORD message ID */
   RollbackState state;           /* Current rollback state */
   ConsensusDepth required_depth; /* Required consensus depth */
   OperationType op_type;         /* Classification of operation */
@@ -143,7 +143,7 @@ void rollback_cleanup(RollbackRegistry *reg);
  */
 
 /* Check all pending operations against their required depth */
-void verify_pending_operations(RollbackRegistry *reg, GhostDAG *dag);
+void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag);
 
 /* Callback type for verification completion */
 typedef void (*VerifyCallback)(uint op_id, int success, int confidence);
@@ -156,11 +156,11 @@ void register_verify_callback(VerifyCallback cb);
  */
 
 /* Route operation with automatic depth classification */
-int route_with_depth(GhostDAG *dag, struct Proc *caller, Fcall *t, Fcall *r,
+int route_with_depth(MsgOrd *dag, struct Proc *caller, Fcall *t, Fcall *r,
                      char *path, RollbackRegistry *reg);
 
 /* Route with explicit depth override */
-int route_with_explicit_depth(GhostDAG *dag, struct Proc *caller, Fcall *t,
+int route_with_explicit_depth(MsgOrd *dag, struct Proc *caller, Fcall *t,
                               Fcall *r, char *path, ConsensusDepth depth,
                               RollbackRegistry *reg);
 

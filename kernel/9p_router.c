@@ -123,7 +123,7 @@ int p9_validate_pebble(PebbleToken *tok, char *path, int access) {
 }
 
 #include "blind_ledger.h"
-#include "ghostdag_kernel.h"
+#include "msgord.h"
 
 /*
  * Session Pebble Management
@@ -335,7 +335,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 }
 
 /*
- * Main entry point: Submit to GHOSTDAG for ordering
+ * Main entry point: Submit to MSGORD for ordering
  * The message will be dispatched by p9_process_queue() later.
  */
 int p9_route(Proc *p, Fcall *t, Fcall *r) {
@@ -347,14 +347,14 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
     path = "/"; /* TODO: Need full path for correct DAG dependency? */
 
   /* Submit for ordering */
-  if (ghostdag_submit(nil, p, t, path) < 0) {
+  if (msgord_submit(nil, p, t, path) < 0) {
     r->type = Rerror;
-    r->ename = "ghostdag queue full";
+    r->ename = "msgord queue full";
     return -1;
   }
 
   /*
-   * IMPORTANT: With GHOSTDAG, we don't process immediately.
+   * IMPORTANT: With MSGORD, we don't process immediately.
    * We return "pending" status if async, or wait if sync.
    * For now, to keep existing code working, we construct a synchronous wait
    * loop. In a pure event-loop kernel, we would return immediately.
@@ -364,11 +364,11 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
    * TEMPORARY HACK: Process strictly (flush the queue) to simulate synchronous
    * behavior until the scheduler is fully event-driven.
    */
-  ghostdag_process_all(nil);
+  msgord_process_all(nil);
 
   /*
-   * Note: 'r' is populated by p9_dispatch called via ghostdag_process_all ->
-   * ghostdag_process_one The hack above ensures 'r' is filled before we return.
+   * Note: 'r' is populated by p9_dispatch called via msgord_process_all ->
+   * msgord_process_one The hack above ensures 'r' is filled before we return.
    */
 
   return 0;
@@ -444,7 +444,7 @@ int p9_handle_doorbell(Proc *p) {
     return -1;
   }
 
-  /* Dispatch through 9P router with GHOSTDAG ordering */
+  /* Dispatch through 9P router with MSGORD ordering */
   memset(&r, 0, sizeof(r));
   result = p9_dispatch(p, &t, &r);
 
@@ -778,7 +778,7 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     }
     
     /* /proc/self/wait */
-    /* This blocks! In pure 9P router, we should ideally handle this async/GhostDAG.
+    /* This blocks! In pure 9P router, we should ideally handle this async/MsgOrd.
        For now, we block, which is allowed but stalls the 9P worker for this proc. */
     if (0 /* path == 2 */) { 
         Waitmsg w;
@@ -1452,27 +1452,27 @@ int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Async 9P Operations (Phase 3)
  *
- * Integrates with GHOSTDAG consensus depth classification.
+ * Integrates with MSGORD consensus depth classification.
  */
 #include "consensus_depth.h"
-#include "ghostdag_kernel.h"
+#include "msgord.h"
 
 /* Forward declaration - global rollback registry from consensus_depth.c */
 extern RollbackRegistry *global_rollback_registry;
 
 /*
- * Callback wrapper that fires when GHOSTDAG completes message ordering
+ * Callback wrapper that fires when MSGORD completes message ordering
  */
-static void p9_ghostdag_callback(GhostMsg *msg, int status, void *arg) {
+static void p9_msgord_callback(OrdMsg *msg, int status, void *arg) {
   AsyncP9Op *op = (AsyncP9Op *)arg;
 
   if (op == nil)
     return;
 
-  /* Map GHOSTDAG status to P9 async status */
-  if (status == GHOSTDAG_CB_SUCCESS)
+  /* Map MSGORD status to P9 async status */
+  if (status == MSGORD_CB_SUCCESS)
     op->status = P9_ASYNC_SUCCESS;
-  else if (status == GHOSTDAG_CB_ROLLBACK)
+  else if (status == MSGORD_CB_ROLLBACK)
     op->status = P9_ASYNC_ROLLBACK;
   else
     op->status = P9_ASYNC_ERROR;
@@ -1484,7 +1484,7 @@ static void p9_ghostdag_callback(GhostMsg *msg, int status, void *arg) {
 }
 
 /*
- * Submit 9P operation asynchronously through GHOSTDAG
+ * Submit 9P operation asynchronously through MSGORD
  */
 uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
                      void *arg) {
@@ -1522,8 +1522,8 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
     return 0; /* No async tracking needed */
   }
 
-  /* Submit to GHOSTDAG with callback */
-  op_id = ghostdag_submit_async(ghostdag, p, t, path, p9_ghostdag_callback, op);
+  /* Submit to MSGORD with callback */
+  op_id = msgord_submit_async(msgord, p, t, path, p9_msgord_callback, op);
   if (op_id == 0) {
     xfree(op);
     return 0;
@@ -1605,18 +1605,18 @@ int p9_handle_doorbell_async(Proc *p) {
  * Check if an async operation has completed
  */
 int p9_check_async(Proc *p, uint op_id, Fcall *reply_out) {
-  GhostMsg *msg;
+  OrdMsg *msg;
 
   USED(p);
 
   if (op_id == 0)
     return P9_ASYNC_ERROR;
 
-  msg = ghostdag_find_by_id(ghostdag, op_id);
+  msg = msgord_find_by_id(msgord, op_id);
   if (msg == nil)
     return P9_ASYNC_SUCCESS; /* Already completed and removed */
 
-  if (msg->gm_state >= GHOSTDAG_STATE_DELIVERED) {
+  if (msg->gm_state >= MSGORD_STATE_DELIVERED) {
     if (reply_out != nil && msg->gm_callback_arg != nil) {
       AsyncP9Op *op = (AsyncP9Op *)msg->gm_callback_arg;
       memmove(reply_out, &op->reply, sizeof(Fcall));
@@ -1631,14 +1631,14 @@ int p9_check_async(Proc *p, uint op_id, Fcall *reply_out) {
  * Cancel an async operation
  */
 void p9_cancel_async(Proc *p, uint op_id) {
-  GhostMsg *msg;
+  OrdMsg *msg;
 
   USED(p);
 
   if (op_id == 0)
     return;
 
-  msg = ghostdag_find_by_id(ghostdag, op_id);
+  msg = msgord_find_by_id(msgord, op_id);
   if (msg != nil) {
     /* Mark for rollback if registered */
     if (global_rollback_registry != nil) {
@@ -1652,6 +1652,6 @@ void p9_cancel_async(Proc *p, uint op_id) {
  */
 int p9_fire_completions(Proc *p) {
   USED(p);
-  /* Delegate to GHOSTDAG fire_completions */
-  return ghostdag_fire_completions(ghostdag);
+  /* Delegate to MSGORD fire_completions */
+  return msgord_fire_completions(msgord);
 }

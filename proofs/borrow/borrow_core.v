@@ -178,15 +178,12 @@ Lemma coherent_page_implies_write_unique :
       p1 = p2.
 Proof.
   intros ps _ p1 p2 H1 H2.
-  destruct (state ps); simpl in *.
-  - destruct H1 as [[? ?]|[? ?]]; discriminate.
-  - destruct H1 as [[Ho1 _]|[Hm1 Hs1]]; try discriminate.
-    destruct H2 as [[Ho2 _]|[Hm2 Hs2]]; try discriminate.
-    congruence.
-  - destruct H1 as [[? ?]|[? ?]]; discriminate.
-  - destruct H1 as [[? ?]|[Hm1 _]]; try discriminate.
-    destruct H2 as [[? ?]|[Hm2 _]]; try discriminate.
-    congruence.
+  destruct (state ps); simpl in *;
+    try (destruct H1 as [[? ?]|[? ?]]; discriminate);
+    try (destruct H1 as [[? ?]|[Hm1 _]]; try discriminate;
+         destruct H2 as [[? ?]|[Hm2 _]]; try discriminate; congruence);
+    try (destruct H1 as [[Ho1 _]|[Hm1 Hs1]]; try discriminate;
+         destruct H2 as [[Ho2 _]|[Hm2 Hs2]]; try discriminate; congruence).
 Qed.
 
 Lemma coherent_page_implies_no_rwr :
@@ -204,21 +201,43 @@ Proof.
   intros ps Hcoh p1 p2 HW HR.
   unfold coherent_page in Hcoh.
   destruct (state ps) eqn:Hst; simpl in *.
-  - destruct HW as [[? ?]|[? ?]]; discriminate.
-  - destruct Hcoh as [p0 [Ho0 [Hsh0 Hm0]]].
-    destruct HW as [[Ho1 _]|[Hm1 Hs1]]; try discriminate.
-    destruct HR as [HR1|[HR2|HR3]].
-    + destruct HR1 as [[Ho2 _]|[Hm2 Hs2]]; try discriminate; congruence.
-    + destruct HR2 as [Hst' Hown]; discriminate.
-    + rewrite Hsh0 in HR3; contradiction.
-  - destruct Hcoh as [p0 [l0 [Ho0 [Hsh0 [Hneq0 Hm0]]]]].
-    destruct HW as [[? ?]|[? ?]]; discriminate.
-  - destruct Hcoh as [p0 [m0 [Ho0 [Hsh0 Hm0]]]].
-    destruct HW as [[Ho1 Hs1]|[Hm1 _]]; try discriminate.
-    destruct HR as [HR1|[HR2|HR3]].
-    + destruct HR1 as [[Ho2 Hs2]|[Hm2 Hs2]]; try discriminate; congruence.
-    + destruct HR2 as [Hst' Hown]; discriminate.
-    + rewrite Hsh0 in HR3; contradiction.
+  all: try (destruct HW as [[? ?]|[? ?]]; discriminate).
+  all: try (
+    destruct Hcoh as [p0 [Ho0 [Hsh0 Hm0]]];
+    destruct HW as [[Ho1 _]|[Hm1 Hs1]]; try discriminate;
+    destruct HR as [HR1|[HR2|HR3]];
+    [destruct HR1 as [[Ho2 _]|[Hm2 Hs2]]; try discriminate; congruence
+    |destruct HR2 as [Hst' Hown]; discriminate
+    |rewrite Hsh0 in HR3; contradiction]).
+  all: try (
+    destruct Hcoh as [p0 [m0 [Ho0 [Hsh0 Hm0]]]];
+    destruct HW as [[Ho1 Hs1]|[Hm1 _]]; try discriminate;
+    destruct HR as [HR1|[HR2|HR3]];
+    [destruct HR1 as [[Ho2 Hs2]|[Hm2 Hs2]]; try discriminate; congruence
+    |destruct HR2 as [Hst' Hown]; discriminate
+    |rewrite Hsh0 in HR3; contradiction]).
+Qed.
+
+Lemma coherent_page_inv_coherence :
+  forall ps,
+    coherent_page ps ->
+    match ps.(state) with
+    | Free => ps.(owner) = None /\ ps.(shared_borrowers) = [] /\ ps.(mut_borrower) = None
+    | Exclusive => ps.(owner) <> None /\ ps.(shared_borrowers) = [] /\ ps.(mut_borrower) = None
+    | SharedOwned => ps.(owner) <> None /\ ps.(shared_borrowers) <> [] /\ ps.(mut_borrower) = None
+    | MutLent => ps.(owner) <> None /\ ps.(shared_borrowers) = [] /\ ps.(mut_borrower) <> None
+    end.
+Proof.
+  intros ps Hc.
+  destruct ps as [o st ss db sh mut]; simpl in *.
+  destruct st; simpl in *;
+    [destruct Hc as [? [? ?]]; tauto
+    |destruct Hc as [p [Ho [Hsh Hm]]]; cbn in *;
+       split; [rewrite Ho; discriminate|]; split; [exact Hsh|exact Hm]
+    |destruct Hc as [p [l [Ho [Hsh [Hn Hm]]]]]; cbn in *;
+       split; [rewrite Ho; discriminate|]; split; [rewrite Hsh; exact Hn|exact Hm]
+    |destruct Hc as [p [m [Ho [Hsh Hm]]]]; cbn in *;
+       split; [rewrite Ho; discriminate|]; split; [exact Hsh|rewrite Hm; discriminate] ].
 Qed.
 
 (* ========================================================================= *)
@@ -231,31 +250,140 @@ Lemma update_preserves_valid :
     ValidState s ->
     ValidState (update_page s pg new_ps).
 Proof.
-  intros s pg new_ps Hcoh [Hcohw [Hwrite Hrace]].
-  split.
-  { (* coherence *)
-    unfold Inv_Coherence; intros pg0.
-    destruct (Z.eq_dec pg0 pg) as [Heq|Hneq].
-    - subst. rewrite update_page_hit. destruct new_ps; simpl in Hcoh; destruct state; simpl in *; try tauto; try (destruct Hcoh as [? [? ?]]; tauto); try (destruct Hcoh as [? [? [? ?]]]; tauto).
-    - rewrite update_page_miss; auto; apply Hcohw.
-  }
-  split.
-  { (* write safety *)
-    unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
-    destruct (Z.eq_dec pg0 pg) as [Heq|Hneq].
-    - subst. rewrite update_page_hit in HW1, HW2.
-      apply coherent_page_implies_write_unique with (ps:=new_ps); assumption.
-    - rewrite update_page_miss in HW1, HW2 by auto.
-      apply Hwrite; assumption.
-  }
-  { (* race safety *)
-    unfold Inv_NoReadWriteRace; intros pg0 p1 p2 HW HR.
-    destruct (Z.eq_dec pg0 pg) as [Heq|Hneq].
-    - subst. rewrite update_page_hit in HW, HR.
-      apply coherent_page_implies_no_rwr with (ps:=new_ps); assumption.
-    - rewrite update_page_miss in HW, HR by auto.
-      apply Hrace; assumption.
-  }
+  intros s pg new_ps Hcoh [Hcoher [Hws Hnrwr]].
+  unfold ValidState; repeat split.
+  
+  (* Inv_Coherence *)
+  - unfold Inv_Coherence. intro pg0.
+    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
+    + subst. rewrite update_page_hit.
+      apply coherent_page_inv_coherence. exact Hcoh.
+    + rewrite (update_page_miss s pg pg0 new_ps Hneq).
+      apply Hcoher.
+  
+  (* Inv_WriteSafety *)
+  - unfold Inv_WriteSafety. intros pg0 p1 p2 Hw1 Hw2.
+    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
+    + subst. unfold CanWrite in Hw1, Hw2.
+      rewrite update_page_hit in Hw1, Hw2.
+      apply (coherent_page_implies_write_unique new_ps Hcoh p1 p2 Hw1 Hw2).
+    + assert (CanWrite p1 pg0 s) as Hw1'.
+      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw1. exact Hw1. }
+      assert (CanWrite p2 pg0 s) as Hw2'.
+      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw2. exact Hw2. }
+      apply (Hws pg0 p1 p2 Hw1' Hw2').
+  
+  (* Inv_NoReadWriteRace *)
+  - unfold Inv_NoReadWriteRace. intros pg0 p1 p2 Hw Hr.
+    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
+    + subst. unfold CanWrite in Hw. unfold CanRead in Hr. unfold CanWrite in Hr.
+      rewrite update_page_hit in Hw, Hr.
+      apply (coherent_page_implies_no_rwr new_ps Hcoh p1 p2 Hw Hr).
+    + assert (CanWrite p1 pg0 s) as Hw'.
+      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw. exact Hw. }
+      assert (CanRead p2 pg0 s) as Hr'.
+      { unfold CanRead, CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hr. exact Hr. }
+      apply (Hnrwr pg0 p1 p2 Hw' Hr').
+Qed.
+
+(* Helper: any transition's new PageState is coherent *)
+
+Lemma borrow_shared_coherent :
+  forall o b pg s1 s2,
+    ValidState s1 ->
+    BorrowShared o b pg s1 s2 ->
+    coherent_page (s2 pg).
+Proof.
+  intros o b pg s1 s2 [Hcoh _] Hbs.
+  inversion Hbs; subst.
+  - (* BS_Success_Exclusive *)
+    rewrite update_page_hit. simpl.
+    exists o, [b]. repeat split; try reflexivity. discriminate.
+  - (* BS_Success_Shared *)
+    rewrite update_page_hit. simpl.
+    exists o, (b :: shared_borrowers (s1 pg)).
+    repeat split; try reflexivity. discriminate.
+Qed.
+
+Lemma return_shared_coherent :
+  forall b pg s1 s2,
+    ValidState s1 ->
+    ReturnShared b pg s1 s2 ->
+    coherent_page (s2 pg).
+Proof.
+  intros b pg s1 s2 [Hcoh _] Hrs.
+  inversion Hrs.
+  - (* RS_Success_StillShared *)
+    subst. rewrite update_page_hit. simpl.
+    specialize (Hcoh pg). rewrite H in Hcoh.
+    simpl in Hcoh. destruct Hcoh as [Hown [Hsh Hm]].
+    exists (match owner (s1 pg) with Some p => p | None => 0 end).
+    exists (remove Z.eq_dec b (shared_borrowers (s1 pg))).
+    repeat split; try reflexivity.
+    + destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+    + exact H2.
+  - (* RS_Success_BackToExclusive *)
+    subst. rewrite update_page_hit. simpl.
+    specialize (Hcoh pg). rewrite H in Hcoh.
+    simpl in Hcoh. destruct Hcoh as [Hown _].
+    exists (match owner (s1 pg) with Some p => p | None => 0 end).
+    repeat split.
+    destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+Qed.
+
+Lemma borrow_mut_coherent :
+  forall o b pg s1 s2,
+    ValidState s1 ->
+    BorrowMut o b pg s1 s2 ->
+    coherent_page (s2 pg).
+Proof.
+  intros o b pg s1 s2 [Hcoh _] Hbm.
+  inversion Hbm; subst.
+  rewrite update_page_hit. simpl.
+  exists o; exists b; repeat split; reflexivity.
+Qed.
+
+Lemma return_mut_coherent :
+  forall b pg s1 s2,
+    ValidState s1 ->
+    ReturnMut b pg s1 s2 ->
+    coherent_page (s2 pg).
+Proof.
+  intros b pg s1 s2 [Hcoh _] Hrm.
+  inversion Hrm; subst.
+  rewrite update_page_hit. simpl.
+  specialize (Hcoh pg). destruct (state (s1 pg)) eqn:Hst; try discriminate.
+  simpl in Hcoh. destruct Hcoh as [Hown _].
+  exists (match owner (s1 pg) with Some p => p | None => 0 end).
+  repeat split.
+  destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+Qed.
+
+Lemma transfer_coherent :
+  forall f t pg s1 s2,
+    ValidState s1 ->
+    Transfer f t pg s1 s2 ->
+    coherent_page (s2 pg).
+Proof.
+  intros f t pg s1 s2 [Hcoh _] Ht.
+  inversion Ht; subst.
+  rewrite update_page_hit. simpl.
+  exists t. repeat split; reflexivity.
+Qed.
+
+(* Helper: extract the page and new state from each step *)
+Lemma step_borrow_is_update :
+  forall s1 s2,
+    StepBorrow s1 s2 ->
+    exists pg new_ps, s2 = update_page s1 pg new_ps.
+Proof.
+  intros s1 s2 Hstep.
+  destruct Hstep.
+  - inversion H; subst; exists pg; eexists; reflexivity.
+  - inversion H; subst; exists pg; eexists; reflexivity.
+  - inversion H; subst; exists pg; eexists; reflexivity.
+  - inversion H; subst; exists pg; eexists; reflexivity.
+  - inversion H; subst; exists pg; eexists; reflexivity.
 Qed.
 
 Lemma borrow_step_preserves_valid :
@@ -265,6 +393,49 @@ Lemma borrow_step_preserves_valid :
     ValidState s2.
 Proof.
   intros s1 s2 Hvalid Hstep.
-  inversion Hstep; subst; inversion H; subst; try (eapply update_preserves_valid; [|apply Hvalid]).
-  all: repeat constructor; eauto.
+  destruct Hstep.
+  - (* Step_BorrowShared *)
+    inversion H; subst.
+    + apply update_preserves_valid; [|exact Hvalid].
+      simpl. exists o, [b]. repeat split; try reflexivity. discriminate.
+    + apply update_preserves_valid; [|exact Hvalid].
+      simpl. exists o, (b :: shared_borrowers (s1 pg)).
+      repeat split; try reflexivity. discriminate.
+  - (* Step_ReturnShared *)
+    inversion H; subst.
+    + apply update_preserves_valid; [|exact Hvalid].
+      simpl. destruct Hvalid as [Hcoh _].
+      specialize (Hcoh pg). rewrite H0 in Hcoh. simpl in Hcoh.
+      destruct Hcoh as [Hown [Hsh Hm]].
+      exists (match owner (s1 pg) with Some p => p | None => 0 end).
+      exists (remove Z.eq_dec b (shared_borrowers (s1 pg))).
+      repeat split; try reflexivity.
+      * destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+      * assumption.
+    + apply update_preserves_valid; [|exact Hvalid].
+      simpl. destruct Hvalid as [Hcoh _].
+      specialize (Hcoh pg). rewrite H0 in Hcoh. simpl in Hcoh.
+      destruct Hcoh as [Hown _].
+      exists (match owner (s1 pg) with Some p => p | None => 0 end).
+      repeat split.
+      destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+  - (* Step_BorrowMut *)
+    inversion H; subst.
+    apply update_preserves_valid; [|exact Hvalid].
+    simpl. exists o, b. repeat split; reflexivity.
+  - (* Step_ReturnMut *)
+    inversion H; subst.
+    apply update_preserves_valid; [|exact Hvalid].
+    simpl. destruct Hvalid as [Hcoh _].
+    specialize (Hcoh pg). rewrite H0 in Hcoh. simpl in Hcoh.
+    destruct Hcoh as [Hown _].
+    exists (match owner (s1 pg) with Some p => p | None => 0 end).
+    repeat split.
+    destruct (owner (s1 pg)) eqn:Ho; [reflexivity|contradiction].
+  - (* Step_Transfer *)
+    inversion H; subst.
+    apply update_preserves_valid; [|exact Hvalid].
+    simpl. exists t. repeat split; reflexivity.
 Qed.
+
+
