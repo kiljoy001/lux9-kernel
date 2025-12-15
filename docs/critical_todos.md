@@ -71,7 +71,7 @@ Last updated: 2025-12-15
 | File | Line | Issue | Status |
 |:-----|:-----|:------|:-------|
 | `9front-pc64/main.c` | 378 | Fix devenv create path | ⚪ Boot order (not bug) |
-| `9front-port/proc.c` | 794 | Implement /dev/sip for white tokens | ⚪ Future enhancement |
+| `9front-port/proc.c` | 794 | Implement /dev/sip for white tokens | ✅ Implemented |
 | `9front-port/sysproc.c` | 1969 | Store fruity_module_t* in devclr | ⚪ Future enhancement |
 | `9front-pc64/globals.c` | 81 | fprint stub | ✅ Implemented |
 | `9front-pc64/globals.c` | 209 | Swap system stubs | ✅ Implemented |

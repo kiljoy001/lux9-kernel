@@ -790,10 +790,13 @@ Proc *newproc(void) {
 
   pebbleprocinit(p);
 
-  /* Initialize with all capabilities for development
-   * TODO: Once /dev/sip is implemented, processes should start with
-   * zero capabilities and explicitly request them via SIP control */
-  p->capabilities = 0xFFFFFFFF;
+  /* Capability-Based Security: Processes start with zero capabilities
+   * and must explicitly request them via /dev/sip or inherit from parent.
+   * The init process (pid 1) and kernel processes get all capabilities. */
+  if (p->pid <= 1 || p->kp)
+    p->capabilities = 0xFFFFFFFF; /* Kernel/init gets all caps */
+  else
+    p->capabilities = 0; /* User processes start isolated */
 
   /* Phase 6: Allocate 9P exchange page for pure 9P architecture
    * This page is mapped into userspace for direct 9P message passing */
