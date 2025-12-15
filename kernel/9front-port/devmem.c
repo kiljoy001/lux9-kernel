@@ -6,262 +6,257 @@
  * capabilities and address ranges.
  */
 
-#include	"u.h"
+#include "dat.h"
+#include "fns.h"
+#include "mem.h"
 #include "portlib.h"
-#include	"mem.h"
-#include	"dat.h"
-#include	"fns.h"
+#include "u.h"
 #include <error.h>
 
-enum
-{
-	Qdir = 0,
-	Qmem,
-	Qio,
+enum {
+  Qdir = 0,
+  Qmem,
+  Qio,
 };
 
 static Dirtab memdir[] = {
-	".",		{Qdir, 0, QTDIR},	0,	DMDIR|0555,
-	"mem",		{Qmem},			0,	0600,
-	"io",		{Qio},			0,	0600,
+    ".",   {Qdir, 0, QTDIR},
+    0,     DMDIR | 0555,
+    "mem", {Qmem},
+    0,     0600,
+    "io",  {Qio},
+    0,     0600,
 };
 
 /*
  * Capability definitions
  * These match the SIP capability system
  */
-enum
-{
-	CapDeviceAccess	= 1<<1,		/* Access to /dev/mem for MMIO */
-	CapIOPort		= 1<<2,		/* Access to /dev/io for I/O ports */
+enum {
+  CapDeviceAccess = 1 << 1, /* Access to /dev/mem for MMIO */
+  CapIOPort = 1 << 2,       /* Access to /dev/io for I/O ports */
 };
 
 /*
  * MMIO address validation
  * Prevents access to kernel memory and enforces valid device ranges
  */
-static int
-isvalidmmio(uintptr pa, usize len)
-{
-	uintptr end;
+static int isvalidmmio(uintptr pa, usize len) {
+  uintptr end;
 
-	/* Check for overflow */
-	end = pa + len;
-	if(end < pa)
-		return 0;
+  /* Check for overflow */
+  end = pa + len;
+  if (end < pa)
+    return 0;
 
-	/*
-	 * On x86-64, typical MMIO ranges are:
-	 * - 0xA0000-0xFFFFF: VGA/BIOS (legacy)
-	 * - 0xFEC00000-0xFEE00000: APIC
-	 * - 0xE0000000-0xFFFFFFFF: PCI devices
-	 * - Above 4GB: More PCI devices
-	 *
-	 * Block access to low RAM (0-640K is definitely RAM)
-	 * Block access to kernel virtual addresses
-	 */
+  /*
+   * On x86-64, typical MMIO ranges are:
+   * - 0xA0000-0xFFFFF: VGA/BIOS (legacy)
+   * - 0xFEC00000-0xFEE00000: APIC
+   * - 0xE0000000-0xFFFFFFFF: PCI devices
+   * - Above 4GB: More PCI devices
+   *
+   * Block access to low RAM (0-640K is definitely RAM)
+   * Block access to kernel virtual addresses
+   */
 
-	/* Don't allow access to low RAM (first 640K) */
-	if(pa < 0xA0000 && end > 0)
-		return 0;
+  /* Don't allow access to low RAM (first 640K) */
+  if (pa < 0xA0000 && end > 0)
+    return 0;
 
-	/* Don't allow access to main RAM region (640K-16M is often RAM) */
-	if(pa >= 0xA0000 && pa < 0x1000000 && end <= 0x1000000) {
-		/* Allow VGA/BIOS region (0xA0000-0x100000) */
-		if(pa >= 0xA0000 && end <= 0x100000)
-			return 1;
-		/* Block everything else in low memory */
-		return 0;
-	}
+  /* Don't allow access to main RAM region (640K-16M is often RAM) */
+  if (pa >= 0xA0000 && pa < 0x1000000 && end <= 0x1000000) {
+    /* Allow VGA/BIOS region (0xA0000-0x100000) */
+    if (pa >= 0xA0000 && end <= 0x100000)
+      return 1;
+    /* Block everything else in low memory */
+    return 0;
+  }
 
-	/* Allow typical PCI MMIO ranges */
-	if(pa >= 0xE0000000)
-		return 1;
+  /* Allow typical PCI MMIO ranges */
+  if (pa >= 0xE0000000)
+    return 1;
 
-	/* For other ranges, be conservative */
-	return 0;
+  /* For other ranges, be conservative */
+  return 0;
 }
 
 /*
  * Check if process has required capability
  */
-static void
-checkcap(ulong required)
-{
-	if(up == nil)
-		return;	/* kernel processes have full access */
+static void checkcap(ulong required) {
+  if (up == nil)
+    return; /* kernel processes have full access */
 
-	if((up->capabilities & required) != required)
-		error("insufficient capabilities for /dev/mem access");
+  if ((up->capabilities & required) != required)
+    error("insufficient capabilities for /dev/mem access");
 }
 
-static Chan*
-memattach(char *spec)
-{
-	return devattach('m', spec);
+static Chan *memattach(char *spec) { return devattach('m', spec); }
+
+static Walkqid *memwalk(Chan *c, Chan *nc, char **name, int nname) {
+  return devwalk(c, nc, name, nname, memdir, nelem(memdir), devgen);
 }
 
-static Walkqid*
-memwalk(Chan *c, Chan *nc, char **name, int nname)
-{
-	return devwalk(c, nc, name, nname, memdir, nelem(memdir), devgen);
+static int memstat(Chan *c, uchar *dp, int n) {
+  return devstat(c, dp, n, memdir, nelem(memdir), devgen);
 }
 
-static int
-memstat(Chan *c, uchar *dp, int n)
-{
-	return devstat(c, dp, n, memdir, nelem(memdir), devgen);
+static Chan *memopen(Chan *c, int omode) {
+  switch ((ulong)c->qid.path) {
+  case Qmem:
+    checkcap(CapDeviceAccess);
+    break;
+  case Qio:
+    checkcap(CapIOPort);
+    break;
+  }
+
+  c = devopen(c, omode, memdir, nelem(memdir), devgen);
+  c->offset = 0;
+  return c;
 }
 
-static Chan*
-memopen(Chan *c, int omode)
-{
-	switch((ulong)c->qid.path){
-	case Qmem:
-		checkcap(CapDeviceAccess);
-		break;
-	case Qio:
-		checkcap(CapIOPort);
-		break;
-	}
+static void memclose(Chan *c) { USED(c); }
 
-	c = devopen(c, omode, memdir, nelem(memdir), devgen);
-	c->offset = 0;
-	return c;
+static long memread(Chan *c, void *va, long n, vlong off) {
+  uintptr pa;
+  uchar *a;
+  long i;
+
+  switch ((ulong)c->qid.path) {
+  case Qdir:
+    return devdirread(c, va, n, memdir, nelem(memdir), devgen);
+
+  case Qmem:
+    /* Check capability */
+    checkcap(CapDeviceAccess);
+
+    /* Validate address range */
+    pa = (uintptr)off;
+    if (!isvalidmmio(pa, n))
+      error("invalid MMIO address");
+
+    /* Read from physical memory */
+    a = va;
+    for (i = 0; i < n; i++) {
+      /*
+       * Use HHDM mapping for high addresses to avoid KADDR panic
+       * For addresses below KZERO threshold, we can still use KADDR
+       */
+      uintptr phys_addr = pa + i;
+      if (phys_addr >= (uintptr)-KZERO) {
+        /* Use HHDM mapping for high addresses */
+        extern uintptr saved_limine_hhdm_offset;
+        a[i] = *(uchar *)(phys_addr + saved_limine_hhdm_offset);
+      } else {
+        /* Use KADDR for lower addresses */
+        a[i] = *(uchar *)KADDR(phys_addr);
+      }
+    }
+    return n;
+
+  case Qio:
+    /* I/O port access */
+    checkcap(CapIOPort);
+    {
+      ushort port = (ushort)off;
+      uchar *buf = va;
+      long i;
+
+      /* Validate port range (0-65535) */
+      if (off > 0xFFFF || off + n > 0x10000)
+        error("I/O port out of range");
+
+      /* Read bytes from I/O ports */
+      for (i = 0; i < n; i++) {
+        __asm__ volatile("inb %1, %0"
+                         : "=a"(buf[i])
+                         : "Nd"((ushort)(port + i)));
+      }
+    }
+    return n;
+
+  default:
+    error(Egreg);
+    return 0;
+  }
 }
 
-static void
-memclose(Chan *c)
-{
-	USED(c);
+static long memwrite(Chan *c, void *va, long n, vlong off) {
+  uintptr pa;
+  uchar *a;
+  long i;
+
+  switch ((ulong)c->qid.path) {
+  case Qdir:
+    error(Eperm);
+    return 0;
+
+  case Qmem:
+    /* Check capability */
+    checkcap(CapDeviceAccess);
+
+    /* Validate address range */
+    pa = (uintptr)off;
+    if (!isvalidmmio(pa, n))
+      error("invalid MMIO address");
+
+    /* Write to physical memory */
+    a = va;
+    for (i = 0; i < n; i++) {
+      /*
+       * Use HHDM mapping for high addresses to avoid KADDR panic
+       * For addresses below KZERO threshold, we can still use KADDR
+       */
+      uintptr phys_addr = pa + i;
+      if (phys_addr >= (uintptr)-KZERO) {
+        /* Use HHDM mapping for high addresses */
+        extern uintptr saved_limine_hhdm_offset;
+        *(volatile uchar *)(phys_addr + saved_limine_hhdm_offset) = a[i];
+      } else {
+        /* Use KADDR for lower addresses */
+        *(volatile uchar *)KADDR(phys_addr) = a[i];
+      }
+    }
+
+    /* Ensure writes complete before returning */
+    coherence();
+    return n;
+
+  case Qio:
+    /* I/O port access */
+    checkcap(CapIOPort);
+    {
+      ushort port = (ushort)off;
+      uchar *buf = va;
+      long i;
+
+      /* Validate port range (0-65535) */
+      if (off > 0xFFFF || off + n > 0x10000)
+        error("I/O port out of range");
+
+      /* Write bytes to I/O ports */
+      for (i = 0; i < n; i++) {
+        __asm__ volatile("outb %0, %1"
+                         :
+                         : "a"(buf[i]), "Nd"((ushort)(port + i)));
+      }
+    }
+    return n;
+
+  default:
+    error(Eperm);
+    return 0;
+  }
 }
 
-static long
-memread(Chan *c, void *va, long n, vlong off)
-{
-	uintptr pa;
-	uchar *a;
-	long i;
-
-	switch((ulong)c->qid.path){
-	case Qdir:
-		return devdirread(c, va, n, memdir, nelem(memdir), devgen);
-
-	case Qmem:
-		/* Check capability */
-		checkcap(CapDeviceAccess);
-
-		/* Validate address range */
-		pa = (uintptr)off;
-		if(!isvalidmmio(pa, n))
-			error("invalid MMIO address");
-
-		/* Read from physical memory */
-		a = va;
-		for(i = 0; i < n; i++){
-			/*
-			 * Use HHDM mapping for high addresses to avoid KADDR panic
-			 * For addresses below KZERO threshold, we can still use KADDR
-			 */
-			uintptr phys_addr = pa + i;
-			if(phys_addr >= (uintptr)-KZERO) {
-				/* Use HHDM mapping for high addresses */
-				extern uintptr saved_limine_hhdm_offset;
-				a[i] = *(uchar*)(phys_addr + saved_limine_hhdm_offset);
-			} else {
-				/* Use KADDR for lower addresses */
-				a[i] = *(uchar*)KADDR(phys_addr);
-			}
-		}
-		return n;
-
-	case Qio:
-		/* I/O port access - TODO */
-		error("I/O port access not yet implemented");
-		return 0;
-
-	default:
-		error(Egreg);
-		return 0;
-	}
-}
-
-static long
-memwrite(Chan *c, void *va, long n, vlong off)
-{
-	uintptr pa;
-	uchar *a;
-	long i;
-
-	switch((ulong)c->qid.path){
-	case Qdir:
-		error(Eperm);
-		return 0;
-
-	case Qmem:
-		/* Check capability */
-		checkcap(CapDeviceAccess);
-
-		/* Validate address range */
-		pa = (uintptr)off;
-		if(!isvalidmmio(pa, n))
-			error("invalid MMIO address");
-
-		/* Write to physical memory */
-		a = va;
-		for(i = 0; i < n; i++){
-			/*
-			 * Use HHDM mapping for high addresses to avoid KADDR panic
-			 * For addresses below KZERO threshold, we can still use KADDR
-			 */
-			uintptr phys_addr = pa + i;
-			if(phys_addr >= (uintptr)-KZERO) {
-				/* Use HHDM mapping for high addresses */
-				extern uintptr saved_limine_hhdm_offset;
-				*(volatile uchar*)(phys_addr + saved_limine_hhdm_offset) = a[i];
-			} else {
-				/* Use KADDR for lower addresses */
-				*(volatile uchar*)KADDR(phys_addr) = a[i];
-			}
-		}
-
-		/* Ensure writes complete before returning */
-		coherence();
-		return n;
-
-	case Qio:
-		/* I/O port access - TODO */
-		error("I/O port access not yet implemented");
-		return 0;
-
-	default:
-		error(Eperm);
-		return 0;
-	}
-}
-
-static void
-memreset(void)
-{
-}
+static void memreset(void) {}
 
 Dev memdevtab = {
-	'm',
-	"mem",
+    'm',      "mem",
 
-	memreset,
-	devinit,
-	devshutdown,
-	memattach,
-	memwalk,
-	memstat,
-	memopen,
-	devcreate,
-	memclose,
-	memread,
-	devbread,
-	memwrite,
-	devbwrite,
-	devremove,
-	devwstat,
+    memreset, devinit,  devshutdown, memattach, memwalk,
+    memstat,  memopen,  devcreate,   memclose,  memread,
+    devbread, memwrite, devbwrite,   devremove, devwstat,
 };

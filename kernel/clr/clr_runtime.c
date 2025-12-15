@@ -150,23 +150,86 @@ void *clr_string_from_literal(u32int us_index) {
 }
 
 /*
- * clr_newobj - Allocate new object (Stub)
+ * clr_get_type_size - Get size of a type from its metadata token
+ * Token format: upper byte = table index, lower 3 bytes = row index
+ * Tables: 0x01=TypeRef, 0x02=TypeDef, 0x1B=TypeSpec
  */
-void *clr_newobj(u32int token) {
-    /* TODO: Resolve type token to get size */
-    /* For now, just allocate a fixed size */
-    USED(token);
-    return xalloc(64);
+static ulong clr_get_type_size(u32int token) {
+  u8int table = (token >> 24) & 0xFF;
+  u32int row = token & 0x00FFFFFF;
+
+  USED(table);
+  USED(row);
+
+  /* Common primitive type tokens (from System namespace) */
+  /* These are based on CorElementType values often embedded in signatures */
+  switch (token & 0xFF) {
+  case 0x01:
+    return 0; /* ELEMENT_TYPE_VOID */
+  case 0x02:
+    return 1; /* ELEMENT_TYPE_BOOLEAN */
+  case 0x03:
+    return 2; /* ELEMENT_TYPE_CHAR */
+  case 0x04:
+    return 1; /* ELEMENT_TYPE_I1 */
+  case 0x05:
+    return 1; /* ELEMENT_TYPE_U1 */
+  case 0x06:
+    return 2; /* ELEMENT_TYPE_I2 */
+  case 0x07:
+    return 2; /* ELEMENT_TYPE_U2 */
+  case 0x08:
+    return 4; /* ELEMENT_TYPE_I4 */
+  case 0x09:
+    return 4; /* ELEMENT_TYPE_U4 */
+  case 0x0A:
+    return 8; /* ELEMENT_TYPE_I8 */
+  case 0x0B:
+    return 8; /* ELEMENT_TYPE_U8 */
+  case 0x0C:
+    return 4; /* ELEMENT_TYPE_R4 */
+  case 0x0D:
+    return 8; /* ELEMENT_TYPE_R8 */
+  case 0x0E:
+    return 8; /* ELEMENT_TYPE_STRING (ptr) */
+  case 0x18:
+    return 8; /* ELEMENT_TYPE_I (native int) */
+  case 0x19:
+    return 8; /* ELEMENT_TYPE_U (native uint) */
+  case 0x1C:
+    return 8; /* ELEMENT_TYPE_OBJECT (ptr) */
+  default:
+    return 64; /* Unknown - use default object size */
+  }
 }
 
 /*
- * clr_newarr - Allocate new array (Stub)
+ * clr_newobj - Allocate new object
+ */
+void *clr_newobj(u32int token) {
+  ulong size = clr_get_type_size(token);
+  if (size < 16)
+    size = 16; /* Minimum object size (header + vtable) */
+  return xalloc(size);
+}
+
+/*
+ * clr_newarr - Allocate new array
  */
 void *clr_newarr(u32int token, u32int count) {
-    /* TODO: Resolve element type size */
-    USED(token);
-    ulong element_size = 8; /* Assume 64-bit for now */
-    return xalloc(sizeof(ulong) + count * element_size);
+  ulong element_size = clr_get_type_size(token);
+  if (element_size == 0)
+    element_size = 8; /* Default to pointer size */
+
+  /* Array layout: [length:4][type_ptr:8][elements...] */
+  ulong header_size = sizeof(u32int) + sizeof(uintptr);
+  ulong total = header_size + count * element_size;
+
+  void *arr = xalloc(total);
+  if (arr) {
+    *(u32int *)arr = count; /* Store length */
+  }
+  return arr;
 }
 
 /*
