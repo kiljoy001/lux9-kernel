@@ -39,7 +39,7 @@ REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
 FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
 CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
 CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
-CLR_QBE_C := clr/qbe_compile.c clr/qbe/clr_p9_internal.c clr/clr_tasklet.c clr/clr_channel.c clr/clr_tasklet_execute.c
+CLR_QBE_C := clr/qbe_compile.c clr/qbe/clr_p9_internal.c clr/clr_tasklet.c clr/clr_channel.c clr/clr_tasklet_execute.c clr/clr_codepage.c
 MISC_KERNEL_C := ../kernel/msgord.c ../kernel/9p_router.c ../kernel/consensus_depth.c ../kernel/proc_fsm.c ../kernel/proc_state_dag.c ../kernel/syscall_9p.c
 
 # Object files
@@ -56,7 +56,7 @@ FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transact
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o
+CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o
 MISC_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(MISC_KERNEL_C))
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(MISC_KERNEL_O)
@@ -230,6 +230,10 @@ clr_channel.o: clr/clr_channel.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clr_tasklet_execute.o: clr/clr_tasklet_execute.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_codepage.o: clr/clr_codepage.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

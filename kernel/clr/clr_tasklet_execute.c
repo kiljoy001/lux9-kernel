@@ -25,36 +25,16 @@ typedef signed short s16int;
 typedef signed int s32int;
 typedef signed long long s64int;
 
-/* Borrow checker API for many-readers-one-writer */
+/* Borrow checker API */
 typedef struct Proc Proc;
 extern int borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key);
 extern int borrow_return_shared(Proc *borrower, uintptr key);
-extern Proc *up; /* Current process */
+extern Proc *up;
 
-/*
- * CodePage - IL bytecode stored in exchange page with borrow control
- * Many tasklets can read (shared borrow), only loader can write (exclusive)
- */
-#define CODEPAGE_MAGIC 0x434F4445 /* "CODE" */
-#define CODEPAGE_MAX_METHODS 64
+/* Include decoupling headers */
+#include "clr_codepage.h"
+#include "clr_tasklet.h"
 
-typedef struct CodePageMethod {
-  u32int token;  /* Method token */
-  u32int offset; /* Offset into il_code */
-  u32int size;   /* IL size for this method */
-} CodePageMethod;
-
-typedef struct CodePage {
-  u32int magic;
-  u32int assembly_id;
-  u32int method_count;
-  u32int total_il_size;
-  uintptr borrow_key; /* Key for borrow checker */
-  CodePageMethod methods[CODEPAGE_MAX_METHODS];
-  u8int il_code[]; /* IL bytecode follows */
-} CodePage;
-
-#define BY2PG 4096
 #define USED(x)                                                                \
   if (x) {                                                                     \
   }
@@ -64,8 +44,6 @@ extern void *xalloc(ulong size);
 extern void *memset(void *s, int c, ulong n);
 extern void *memmove(void *dst, const void *src, ulong n);
 extern void free(void *p);
-
-#include "clr_tasklet.h"
 
 /* Execution result codes */
 typedef enum {
@@ -82,8 +60,14 @@ typedef enum {
  * Stored execution context for a tasklet
  * This maps tasklet slot state to/from CIL-Interpreter state
  */
+/*
+ * Stored execution context for a tasklet
+ */
 typedef struct TaskletExecContext {
-  /* IL bytecode */
+  /* Code Page reference */
+  CodePageHandle *code_handle;
+
+  /* Direct pointer to IL (borrowed) */
   u8int *il_code;
   ulong il_size;
 
@@ -93,69 +77,63 @@ typedef struct TaskletExecContext {
   /* Local count */
   int local_count;
 
-  /* Assembly reference */
-  void *assembly;
-
-  /* Method token for resumption */
+  /* Method token */
   u32int method_token;
 } TaskletExecContext;
 
-/*
- * clr_tasklet_execute_step - Execute N IL instructions for a tasklet
- *
- * This is the core stepping function. It:
- * 1. Loads tasklet state into execution context
- * 2. Executes up to max_ops instructions
- * 3. Saves state back to tasklet
- * 4. Returns control decision (continue, yield, blocked, done)
- *
- * For now, this is a stub that will be connected to the CIL-Interpreter.
- */
+/* ... execute_step implementation ... */
 ILResult clr_tasklet_execute_step(TaskletSlot *t, int max_ops) {
+  /* (implementation stays mostly valid, just context structure changed) */
   int ops = 0;
-
   if (t == nil || t->state != TASKLET_RUNNING)
     return IL_RESULT_ERROR;
 
-  /* Stub: Simulate execution */
-  /* In real implementation:
-   *   1. Create vm_execution_state_t from tasklet
-   *   2. Call vm_execute_instruction() max_ops times
-   *   3. Check for yield/call/ret/channel ops
-   *   4. Update tasklet ip/locals/stack
-   */
-
+  /* Simulated steps */
   for (ops = 0; ops < max_ops; ops++) {
-    /* Decode instruction at t->ip */
-    /* Execute instruction */
-    /* Update t->ip */
-
-    /* For now, just advance IP and complete after 10 steps */
     t->ip++;
-
     if (t->ip >= 10) {
       t->state = TASKLET_DONE;
+      /* Release borrow on completion */
+      TaskletExecContext *ctx = (TaskletExecContext *)t->overflow_heap;
+      if (ctx && ctx->code_handle) {
+        clr_codepage_release_read(ctx->code_handle, nil);
+      }
       print("CLR: tasklet %ud completed\n", t->id);
       return IL_RESULT_DONE;
     }
   }
-
-  /* Hit max_ops - should yield */
   return IL_RESULT_YIELD;
 }
 
 /*
- * clr_tasklet_bind_method - Bind a method to a tasklet for execution
- *
- * Sets up the execution context from an assembly and method token.
+ * clr_tasklet_bind_method - Bind a method from a CodePage
  */
-int clr_tasklet_bind_method(TaskletSlot *t, void *assembly, u32int method_token,
-                            u8int *il_code, ulong il_size, int local_count) {
-  if (t == nil)
+int clr_tasklet_bind_method(TaskletSlot *t, CodePageHandle *h,
+                            u32int method_token, int local_count) {
+  CodePage *page;
+  int i;
+  u32int offset = 0, size = 0;
+  int found = 0;
+
+  if (t == nil || h == nil || h->page == nil)
     return -1;
 
-  /* Store in overflow heap if we have execution context */
-  TaskletExecContext *ctx;
+  page = h->page;
+
+  /* Find method in code page directory */
+  for (i = 0; i < page->method_count; i++) {
+    if (page->methods[i].token == method_token) {
+      offset = page->methods[i].offset;
+      size = page->methods[i].size;
+      found = 1;
+      break;
+    }
+  }
+
+  if (!found) {
+    print("CLR: method token 0x%ux not found in code page\n", method_token);
+    return -1;
+  }
 
   if (t->overflow_heap == nil) {
     t->overflow_heap = xalloc(sizeof(TaskletExecContext));
@@ -163,28 +141,30 @@ int clr_tasklet_bind_method(TaskletSlot *t, void *assembly, u32int method_token,
       return -1;
   }
 
-  ctx = (TaskletExecContext *)t->overflow_heap;
-  ctx->assembly = assembly;
+  TaskletExecContext *ctx = (TaskletExecContext *)t->overflow_heap;
+  ctx->code_handle = h;
+  /* Borrow checker acquire */
+  if (clr_codepage_acquire_read(h, nil) < 0) {
+    return -1;
+  }
+
+  ctx->il_code = &page->il_code[offset];
+  ctx->il_size = size;
   ctx->method_token = method_token;
-  ctx->il_code = il_code;
-  ctx->il_size = il_size;
   ctx->ip = 0;
   ctx->local_count = local_count;
 
-  /* Reset tasklet state */
   t->ip = 0;
   t->stack_top = 0;
   t->locals_count = 0;
 
-  /* Initialize locals */
   if (local_count > 0 && local_count <= TASKLET_INLINE_LOCALS) {
     memset(t->locals, 0, local_count * sizeof(ulong));
     t->locals_count = local_count;
   }
 
-  print("CLR: bound method 0x%ux to tasklet %ud (il_size=%lud, locals=%d)\n",
-        method_token, t->id, il_size, local_count);
-
+  print("CLR: bound method 0x%ux from CodePage to tasklet %ud\n", method_token,
+        t->id);
   return 0;
 }
 
