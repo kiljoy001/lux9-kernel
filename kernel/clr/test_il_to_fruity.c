@@ -43,6 +43,13 @@ void print_fruity_instruction(fruity_instruction_t *instr)
 	case FRUITY_RET: printf("FRUITY_RET"); break;
 	case FRUITY_LIME: printf("FRUITY_LIME 0x%08x", instr->operand.value.token); break;
 	case FRUITY_JUMP: printf("FRUITY_JUMP"); break;
+	case FRUITY_SWITCH: {
+		printf("FRUITY_SWITCH (%u targets)", instr->operand.value.switch_targets->count);
+		for(u32int i=0; i<instr->operand.value.switch_targets->count; i++) {
+			printf(" -> Block %u", instr->operand.value.switch_targets->targets[i]->block_id);
+		}
+		break;
+	}
 	default: printf("UNKNOWN(%d)", instr->opcode); break;
 	}
 	printf("\n");

@@ -27,6 +27,12 @@ typedef struct fruity_basic_block fruity_basic_block_t;
 typedef struct fruity_function fruity_function_t;
 typedef struct fruity_module fruity_module_t;
 
+/* Switch targets structure */
+typedef struct {
+  u32int count;
+  fruity_basic_block_t **targets;
+} fruity_switch_targets_t;
+
 /* ===== Instruction Operand ===== */
 
 typedef enum {
@@ -41,6 +47,7 @@ typedef enum {
   FRUITY_OP_TYPE,    /* Type token (ECMA-335 metadata) */
   FRUITY_OP_METHOD,  /* Method token */
   FRUITY_OP_BRANCH,  /* Branch target (basic block) */
+  FRUITY_OP_SWITCH,  /* Switch targets */
   FRUITY_OP_TASKLET, /* Tasklet ID (for GRAPE) */
 } fruity_operand_type_t;
 
@@ -52,6 +59,7 @@ typedef union {
   u32int index;                 /* Local/arg/field index */
   u32int token;                 /* Type/method token */
   fruity_basic_block_t *target; /* Branch target */
+  fruity_switch_targets_t *switch_targets; /* Switch targets */
   tasklet_id_t tasklet;         /* For GRAPE opcode */
 } fruity_operand_value_t;
 

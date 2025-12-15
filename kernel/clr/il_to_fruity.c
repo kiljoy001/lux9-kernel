@@ -264,6 +264,30 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
       offset += 5;
       break;
 
+    case IL_SWITCH: {
+      if (offset + 5 > il_size) {
+        ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+        return -1;
+      }
+      uint32_t n = *(uint32_t *)&il[offset + 1];
+      uint32_t switch_len = 5 + n * 4;
+      if (offset + switch_len > il_size) {
+        ctx->last_error = IL_TO_FRUITY_ERROR_INVALID_IL;
+        return -1;
+      }
+      
+      uint32_t base_offset = offset + switch_len;
+      for (uint32_t i = 0; i < n; i++) {
+          int32_t target_delta = *(int32_t*)&il[offset + 5 + i * 4];
+          if (add_branch_target(ctx, base_offset + target_delta) != 0) return -1;
+      }
+      /* Fallthrough target (default) */
+      if (add_branch_target(ctx, base_offset) != 0) return -1;
+      
+      offset += switch_len;
+      break;
+    }
+
     case IL_RET:
     case IL_THROW:
     case IL_ENDFINALLY:
@@ -413,6 +437,7 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
     /* Five-byte instructions */
     case IL_LDC_I4:
     case IL_CALL:
+    case IL_CALLVIRT:
     case IL_CALLI:
     case IL_LDSTR:
     case IL_NEWOBJ:
@@ -487,6 +512,9 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
       break;
 
     default:
+#ifndef KERNEL
+      printf("identify_basic_blocks: Unsupported opcode: 0x%02x at offset 0x%04x\n", opcode, (unsigned int)offset);
+#endif
       /* Unknown/unsupported opcode */
       ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
       return -1;
@@ -1174,8 +1202,35 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
       return -1;
     }
     
-    operand.type = FRUITY_OP_IMM_I32;
-    operand.value.i32 = (int32_t)n;
+    /* Allocate switch targets */
+    fruity_switch_targets_t *targets = calloc(1, sizeof(fruity_switch_targets_t));
+    if (!targets) {
+        ctx->last_error = IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
+        return -1;
+    }
+    targets->count = n;
+    targets->targets = calloc(n, sizeof(fruity_basic_block_t*));
+    if (!targets->targets) {
+        free(targets);
+        ctx->last_error = IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
+        return -1;
+    }
+
+    uint32_t base_offset = offset + switch_len;
+    for (uint32_t i = 0; i < n; i++) {
+        int32_t target_delta = *(int32_t*)&il[offset + 5 + i * 4];
+        fruity_basic_block_t *bb = get_block_at_offset(ctx, base_offset + target_delta);
+        if (!bb) {
+            free(targets->targets);
+            free(targets);
+            ctx->last_error = IL_TO_FRUITY_ERROR_CFG;
+            return -1;
+        }
+        targets->targets[i] = bb;
+    }
+    
+    operand.type = FRUITY_OP_SWITCH;
+    operand.value.switch_targets = targets;
     instr = create_fruity_instruction(FRUITY_SWITCH, operand, offset);
     *offset_ptr += switch_len;
     break;
@@ -1479,6 +1534,9 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
   }
 
   default:
+#ifndef KERNEL
+    printf("Unsupported opcode: 0x%02x at offset 0x%04x\n", opcode, (unsigned int)offset);
+#endif
     ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
     return -1;
   }

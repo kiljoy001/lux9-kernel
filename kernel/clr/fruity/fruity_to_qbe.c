@@ -132,6 +132,33 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         break;
 
       /* Control Flow */
+      case FRUITY_SWITCH: {
+        fruity_switch_targets_t *targets = instr->operand.value.switch_targets;
+        int val_reg = tmp_counter--; /* Value to switch on */
+        
+        if (!targets) break;
+
+        for (u32int i = 0; i < targets->count; i++) {
+            fruity_basic_block_t *target = targets->targets[i];
+            u32int target_id = target ? target->block_id : 0;
+            int cmp_reg = ++tmp_counter;
+            
+            /* Check if val == i */
+            qbe_buffer_printf(buf, "    %%t%d =w ceqw %%t%d, %d\n", cmp_reg, val_reg, i);
+            
+            /* If match, jump to target. Else jump to next check (local label) */
+            if (i < targets->count - 1) {
+                qbe_buffer_printf(buf, "    jnz %%t%d, @bb%u, @sw_%u_%u\n", cmp_reg, target_id, bb->block_id, i+1);
+                qbe_buffer_printf(buf, "@sw_%u_%u\n", bb->block_id, i+1);
+            } else {
+                /* Last check. If match, jump target. Else fallthrough (default) */
+                u32int next_id = bb->next ? bb->next->block_id : 0;
+                qbe_buffer_printf(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cmp_reg, target_id, next_id);
+            }
+            tmp_counter--; /* Consume cmp_reg */
+        }
+      } break;
+
       case FRUITY_JUMP:
         if (instr->operand.value.target)
           qbe_buffer_printf(buf, "    jmp @bb%d\n",

@@ -523,7 +523,7 @@ static uint32_t get_table_row_size(il_assembly_t *assembly, int table_id) {
 
   switch (table_id) {
   case TABLE_MODULE: // 0x00
-    return 2 + (string_wide ? 4 : 2) * 3 + (guid_wide ? 4 : 2) * 3;
+    return 2 + (string_wide ? 4 : 2) + (guid_wide ? 4 : 2) * 3;
   case TABLE_TYPEREF: // 0x01
   {
     metadata_table_kind_t refs[] = {TABLE_MODULE, 0x1A /*ModuleRef*/,
