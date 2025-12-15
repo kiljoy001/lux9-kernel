@@ -115,12 +115,22 @@ static int next_token(char **s, char *buf, int len) {
 extern void clr_console_write(void *);
 extern void clr_console_writeline(void *);
 
-/* Stub pebble_alloc for CLR runtime - uses xalloc until Pebble API is wired */
-static void *pebble_alloc_stub(ulong size, void *type_hint) {
+/* CLR Memory Allocation
+ *
+ * TODO: Integrate with Pebble system once CLR has proper white token
+ * verification infrastructure. Currently uses xalloc directly.
+ *
+ * To properly integrate with Pebble:
+ * 1. CLR needs to request white tokens via pebble_issue_white()
+ * 2. Verify white tokens via pebble_white_verify()
+ * 3. Only then call pebble_black_alloc() with proper UserCapability
+ */
+static void *pebble_alloc_clr(ulong size, void *type_hint) {
   USED(type_hint);
+  /* Use xalloc until CLR has proper Pebble integration */
   return xalloc(size);
 }
-#define pebble_alloc pebble_alloc_stub
+#define pebble_alloc pebble_alloc_clr
 
 /* System.Object / System.String Internals */
 extern int clr_object_gethashcode(void *);
@@ -530,6 +540,113 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           emit_byte(&code, 0x89);
           emit_byte(&code, 0x85);
           emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "and") == 0) {
+          /* and %a, %b */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* and rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x23);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "or") == 0) {
+          /* or %a, %b */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* or rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x0B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "xor") == 0) {
+          /* xor %a, %b */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* xor rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x33);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "rem") == 0 || strcmp(token, "urem") == 0) {
+          /* rem - modulo using idiv, result in rdx */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* xor rdx, rdx (for unsigned) or cqo (for signed) - use cqo */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x99); /* cqo */
+          /* idiv [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xF7);
+          emit_byte(&code, 0xBD);
+          emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rdx (remainder) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x95);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "div") == 0) {
+          /* signed division */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x99); /* cqo */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xF7);
+          emit_byte(&code, 0xBD);
+          emit_dword(&code, -(src2 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
         } else if (strcmp(token, "udiv") == 0) {
           /* div: idiv (signed) or div (unsigned) - for now alias to idiv logic
            */
@@ -918,8 +1035,8 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           emit_byte(&code, 0x85);
           emit_dword(&code, -(dest_id * 8));
         } else if (strcmp(token, "call") == 0) {
-          /* call $func(...) */
-          /* Parse function name */
+          /* call $func(arg1, arg2, ...) with AMD64 ABI */
+          /* AMD64 ABI: first 6 integer args in rdi, rsi, rdx, rcx, r8, r9 */
           p = skip_ws(p);
           if (*p == '$')
             p++; /* Skip $ */
@@ -931,9 +1048,122 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           }
           func_name[i] = 0;
 
+          /* Parse arguments inside (...) */
+          int arg_temps[6] = {0};
+          int arg_count = 0;
+
+          p = skip_ws(p);
+          if (*p == '(') {
+            p++; /* Skip ( */
+            while (*p && *p != ')' && arg_count < 6) {
+              p = skip_ws(p);
+              if (*p == '%') {
+                arg_temps[arg_count++] = parse_temp(&p);
+              } else if (*p >= '0' && *p <= '9') {
+                /* Immediate - store as negative temp ID (special marker) */
+                arg_temps[arg_count++] =
+                    -parse_imm(&p) - 1; /* -1 to distinguish from temp 0 */
+              }
+              p = skip_ws(p);
+              if (*p == ',')
+                p++;
+            }
+            if (*p == ')')
+              p++;
+          }
+
+          /* Emit argument moves per AMD64 ABI */
+          /* rdi=arg0, rsi=arg1, rdx=arg2, rcx=arg3, r8=arg4, r9=arg5 */
+          for (int a = 0; a < arg_count; a++) {
+            int temp_id = arg_temps[a];
+            if (temp_id < 0) {
+              /* Immediate value: mov reg, imm */
+              int imm = -(temp_id + 1);
+              switch (a) {
+              case 0: /* mov rdi, imm */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0xBF);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              case 1: /* mov rsi, imm */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0xBE);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              case 2: /* mov rdx, imm */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0xBA);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              case 3: /* mov rcx, imm */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0xB9);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              case 4: /* mov r8, imm */
+                emit_byte(&code, 0x49);
+                emit_byte(&code, 0xB8);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              case 5: /* mov r9, imm */
+                emit_byte(&code, 0x49);
+                emit_byte(&code, 0xB9);
+                emit_dword(&code, imm);
+                emit_dword(&code, 0);
+                break;
+              }
+            } else {
+              /* Load from stack slot, then move to arg register */
+              /* First load to rax: mov rax, [rbp-temp*8] */
+              emit_byte(&code, 0x48);
+              emit_byte(&code, 0x8B);
+              emit_byte(&code, 0x85);
+              emit_dword(&code, -(temp_id * 8));
+
+              /* Then move rax to appropriate register */
+              switch (a) {
+              case 0: /* mov rdi, rax */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC7);
+                break;
+              case 1: /* mov rsi, rax */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC6);
+                break;
+              case 2: /* mov rdx, rax */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC2);
+                break;
+              case 3: /* mov rcx, rax */
+                emit_byte(&code, 0x48);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC1);
+                break;
+              case 4: /* mov r8, rax */
+                emit_byte(&code, 0x49);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC0);
+                break;
+              case 5: /* mov r9, rax */
+                emit_byte(&code, 0x49);
+                emit_byte(&code, 0x89);
+                emit_byte(&code, 0xC1);
+                break;
+              }
+            }
+          }
+
           void *addr = resolve_kernel_symbol(func_name);
           if (addr) {
-            /* mov rax, addr */
+            /* mov rax, addr (64-bit immediate) */
             emit_byte(&code, 0x48);
             emit_byte(&code, 0xB8);
             emit_dword(&code, (uintptr)addr & 0xFFFFFFFF); /* Low 32 */
@@ -942,9 +1172,15 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
             /* call rax */
             emit_byte(&code, 0xFF);
             emit_byte(&code, 0xD0);
+
+            /* Store return value (in rax) to dest temp */
+            emit_byte(&code, 0x48);
+            emit_byte(&code, 0x89);
+            emit_byte(&code, 0x85);
+            emit_dword(&code, -(dest_id * 8));
           }
 
-          /* Consume rest of line (args, etc.) */
+          /* Consume rest of line */
           while (*p && *p != '\n')
             p++;
         }
@@ -972,7 +1208,6 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
         emit_byte(&code, 0x48);
         emit_byte(&code, 0x89);
         emit_byte(&code, 0x08);
-
       } else if (strncmp(p, "storew", 6) == 0 &&
                  (p[6] == ' ' || p[6] == '\t')) {
         p += 6;
@@ -995,7 +1230,6 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
         /* mov [rax], ecx ; store 32-bit */
         emit_byte(&code, 0x89);
         emit_byte(&code, 0x08);
-
       } else if (strncmp(p, "ret", 3) == 0) {
         /* ... existing ret ... */
         p += 3;

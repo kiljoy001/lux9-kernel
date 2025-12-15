@@ -240,6 +240,32 @@ Proof.
        split; [rewrite Ho; discriminate|]; split; [exact Hsh|rewrite Hm; discriminate] ].
 Qed.
 
+Lemma canwrite_miss :
+  forall s pg pg0 new_ps p,
+    pg <> pg0 ->
+    CanWrite p pg0 (update_page s pg new_ps) ->
+    CanWrite p pg0 s.
+Proof.
+  intros s pg pg0 new_ps p Hneq Hcw.
+  unfold CanWrite in *.
+  rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hcw.
+  exact Hcw.
+Qed.
+
+Lemma canread_miss :
+  forall s pg pg0 new_ps p,
+    pg <> pg0 ->
+    CanRead p pg0 (update_page s pg new_ps) ->
+    CanRead p pg0 s.
+Proof.
+  intros s pg pg0 new_ps p Hneq Hcr.
+  unfold CanRead in *.
+  destruct Hcr as [Hw|[Hsh|Hin]].
+  - left; apply (canwrite_miss s pg pg0 new_ps p Hneq Hw).
+  - right; left; rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hsh; exact Hsh.
+  - right; right; rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hin; exact Hin.
+Qed.
+
 (* ========================================================================= *)
 (* PRESERVATION FOR BORROW-LEVEL STEPS *)
 (* ========================================================================= *)
@@ -251,40 +277,39 @@ Lemma update_preserves_valid :
     ValidState (update_page s pg new_ps).
 Proof.
   intros s pg new_ps Hcoh [Hcoher [Hws Hnrwr]].
-  unfold ValidState; repeat split.
-  
-  (* Inv_Coherence *)
-  - unfold Inv_Coherence. intro pg0.
-    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
-    + subst. rewrite update_page_hit.
-      apply coherent_page_inv_coherence. exact Hcoh.
-    + rewrite (update_page_miss s pg pg0 new_ps Hneq).
-      apply Hcoher.
-  
-  (* Inv_WriteSafety *)
-  - unfold Inv_WriteSafety. intros pg0 p1 p2 Hw1 Hw2.
-    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
-    + subst. unfold CanWrite in Hw1, Hw2.
-      rewrite update_page_hit in Hw1, Hw2.
-      apply (coherent_page_implies_write_unique new_ps Hcoh p1 p2 Hw1 Hw2).
-    + assert (CanWrite p1 pg0 s) as Hw1'.
-      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw1. exact Hw1. }
-      assert (CanWrite p2 pg0 s) as Hw2'.
-      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw2. exact Hw2. }
-      apply (Hws pg0 p1 p2 Hw1' Hw2').
-  
-  (* Inv_NoReadWriteRace *)
-  - unfold Inv_NoReadWriteRace. intros pg0 p1 p2 Hw Hr.
-    destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
-    + subst. unfold CanWrite in Hw. unfold CanRead in Hr. unfold CanWrite in Hr.
-      rewrite update_page_hit in Hw, Hr.
-      apply (coherent_page_implies_no_rwr new_ps Hcoh p1 p2 Hw Hr).
-    + assert (CanWrite p1 pg0 s) as Hw'.
-      { unfold CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw. exact Hw. }
-      assert (CanRead p2 pg0 s) as Hr'.
-      { unfold CanRead, CanWrite in *. rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hr. exact Hr. }
-      apply (Hnrwr pg0 p1 p2 Hw' Hr').
+  unfold ValidState.
+  split.
+  { (* Inv_Coherence *)
+    unfold Inv_Coherence; intro pg0.
+    destruct (Z.eq_dec pg pg0) as [Heq|Hneq];
+      [subst; rewrite update_page_hit; apply coherent_page_inv_coherence; assumption
+      |rewrite (update_page_miss s pg pg0 new_ps Hneq); apply Hcoher]. }
+  { split.
+    { (* Inv_WriteSafety *)
+      unfold Inv_WriteSafety; intros pg0 p1 p2 Hw1 Hw2; unfold CanWrite in *.
+      destruct (Z.eq_dec pg pg0) as [Heq|Hneq];
+        [subst; rewrite update_page_hit in Hw1, Hw2; eapply coherent_page_implies_write_unique; eauto
+        |rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw1;
+         rewrite (update_page_miss s pg pg0 new_ps Hneq) in Hw2;
+         apply (Hws pg0 p1 p2 Hw1 Hw2)]. }
+    { (* Inv_NoReadWriteRace *)
+      unfold Inv_NoReadWriteRace; intros pg0 p1 p2 Hw Hr.
+      unfold CanRead in *. unfold CanWrite in *.
+      destruct (Z.eq_dec pg pg0) as [Heq|Hneq].
+      - subst.
+        rewrite update_page_hit in Hw, Hr.
+        eapply coherent_page_implies_no_rwr.
+        { exact Hcoh. }
+        { exact Hw. }
+        { exact Hr. }
+      - assert (update_page s pg new_ps pg0 = s pg0) as Hupd by (apply update_page_miss; exact Hneq).
+        rewrite Hupd in Hw; rewrite Hupd in Hr.
+        fold CanWrite in Hw. fold CanWrite in Hr. fold CanRead in Hr.
+        eapply Hnrwr; eassumption.
+    }
+  }
 Qed.
+
 
 (* Helper: any transition's new PageState is coherent *)
 
@@ -437,5 +462,3 @@ Proof.
     apply update_preserves_valid; [|exact Hvalid].
     simpl. exists t. repeat split; reflexivity.
 Qed.
-
-

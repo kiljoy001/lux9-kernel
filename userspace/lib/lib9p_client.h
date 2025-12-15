@@ -8,6 +8,7 @@
 #ifndef _LIB9P_CLIENT_H_
 #define _LIB9P_CLIENT_H_
 
+#include <fcall.h>
 #include <libc.h>
 #include <u.h>
 

@@ -40,6 +40,7 @@ FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c famil
 CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
 CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
 CLR_QBE_C := clr/qbe_compile.c clr/qbe/clr_p9_internal.c clr/clr_tasklet.c clr/clr_channel.c clr/clr_tasklet_execute.c clr/clr_codepage.c
+CLR_INTERP_C := clr/CIL-Interpreter/src/execution_engine.c clr/CIL-Interpreter/src/il_decoder.c
 MISC_KERNEL_C := ../kernel/msgord.c ../kernel/9p_router.c ../kernel/consensus_depth.c ../kernel/proc_fsm.c ../kernel/proc_state_dag.c ../kernel/syscall_9p.c
 
 # Object files
@@ -57,9 +58,10 @@ AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
 CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o
+CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
 MISC_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(MISC_KERNEL_C))
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(MISC_KERNEL_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(CLR_INTERP_O) $(MISC_KERNEL_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -81,6 +83,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
           -I../port \
           -I.. \
           -Iclr/libmcu-cbor \
+          -Iclr/qbe \
           -Iclr/fruity \
           -D_PLAN9_SOURCE \
           -D__PLAN9_KERNEL__ \
@@ -234,6 +237,18 @@ clr_tasklet_execute.o: clr/clr_tasklet_execute.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clr_codepage.o: clr/clr_codepage.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+execution_engine.o: clr/CIL-Interpreter/src/execution_engine.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+il_decoder.o: clr/CIL-Interpreter/src/il_decoder.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_internal_calls.o: clr/clr-kernel/clr_internal_calls.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

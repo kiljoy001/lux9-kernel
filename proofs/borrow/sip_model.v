@@ -529,7 +529,7 @@ Proof.
            unfold Inv_WriteSafety; intros pg0 p1 p2 HW1 HW2.
            destruct (Z.eq_dec pg0 pg) as [Heq|Hneq]; [subst|].
            ++ unfold CanWrite in *. repeat rewrite update_page_hit in *. simpl in *.
-              destruct HW1 as [[_Hs1]|[_ Hs1]]; discriminate Hs1.
+              destruct HW1 as [[_ Hs1]|[_ Hs1]]; discriminate Hs1.
            ++ unfold CanWrite in *.
               rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW1.
               rewrite (update_page_miss _ _ _ _ (Z.neq_sym _ _ Hneq)) in HW2.
@@ -640,7 +640,8 @@ Proof.
            ++ unfold CanWrite, CanRead in *. repeat rewrite update_page_hit in *. simpl in *.
               destruct HW as [[Ho_w _]|[_ Hs_w]]; try discriminate Hs_w.
               destruct HR as [HR_W|[HR_Sh|HR_In]].
-              ** destruct HR_W as [[Ho_r _]|[_ Hs_r]]; try discriminate Hs_r. congruence.
+              ** destruct HR_W as [[Ho_r _]|[_ Hs_r]]; try discriminate Hs_r.
+                 congruence.
               ** destruct HR_Sh as [Hs_r _]. discriminate Hs_r.
               ** destruct HR_In.
            ++ unfold CanWrite in HW.

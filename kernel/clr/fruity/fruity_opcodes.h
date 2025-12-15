@@ -23,34 +23,44 @@
  *   0x400-0x4FF: Control flow (CALL, RET, JUMP, BRANCH)
  *   0x500-0x5FF: Stack and local operations
  */
-#define FRUITY_BEQ    0x410
-#define FRUITY_BNE    0x411
-#define FRUITY_BLT    0x412
-#define FRUITY_BLE    0x413
-#define FRUITY_BGT    0x414
-#define FRUITY_BGE    0x415
-#define FRUITY_BTRUE  0x416
+#define FRUITY_BEQ 0x410
+#define FRUITY_BNE 0x411
+#define FRUITY_BLT 0x412
+#define FRUITY_BLE 0x413
+#define FRUITY_BGT 0x414
+#define FRUITY_BGE 0x415
+#define FRUITY_BTRUE 0x416
 #define FRUITY_BFALSE 0x417
 
 typedef enum {
   /* ===== Standard Operations (0x000-0x0FF) ===== */
-  FRUITY_NOP = 0x000, /* No operation */
+  FRUITY_NOP = 0x000,   /* No operation */
+  FRUITY_BREAK = 0x001, /* Debugger break */
 
   /* Arithmetic */
-  FRUITY_ADD = 0x010, /* Add two values */
-  FRUITY_SUB = 0x011, /* Subtract */
-  FRUITY_MUL = 0x012, /* Multiply */
-  FRUITY_DIV = 0x013, /* Divide */
-  FRUITY_REM = 0x014, /* Remainder */
-  FRUITY_NEG = 0x015, /* Negate */
+  FRUITY_ADD = 0x010,     /* Add two values */
+  FRUITY_SUB = 0x011,     /* Subtract */
+  FRUITY_MUL = 0x012,     /* Multiply */
+  FRUITY_DIV = 0x013,     /* Divide */
+  FRUITY_REM = 0x014,     /* Remainder */
+  FRUITY_NEG = 0x015,     /* Negate */
+  FRUITY_DIV_UN = 0x016,  /* Divide unsigned */
+  FRUITY_REM_UN = 0x017,  /* Remainder unsigned */
+  FRUITY_ADD_OVF = 0x018, /* Add check overflow */
+  FRUITY_ADD_OVF_UN = 0x019,
+  FRUITY_MUL_OVF = 0x01A, /* Mul check overflow */
+  FRUITY_MUL_OVF_UN = 0x01B,
+  FRUITY_SUB_OVF = 0x01C,
+  FRUITY_SUB_OVF_UN = 0x01D,
 
   /* Bitwise */
-  FRUITY_AND = 0x020, /* Bitwise AND */
-  FRUITY_OR = 0x021,  /* Bitwise OR */
-  FRUITY_XOR = 0x022, /* Bitwise XOR */
-  FRUITY_NOT = 0x023, /* Bitwise NOT */
-  FRUITY_SHL = 0x024, /* Shift left */
-  FRUITY_SHR = 0x025, /* Shift right */
+  FRUITY_AND = 0x020,    /* Bitwise AND */
+  FRUITY_OR = 0x021,     /* Bitwise OR */
+  FRUITY_XOR = 0x022,    /* Bitwise XOR */
+  FRUITY_NOT = 0x023,    /* Bitwise NOT */
+  FRUITY_SHL = 0x024,    /* Shift left */
+  FRUITY_SHR = 0x025,    /* Shift right */
+  FRUITY_SHR_UN = 0x026, /* Shift right unsigned */
 
   /* Comparison */
   FRUITY_CEQ = 0x030, /* Compare equal */
@@ -214,43 +224,70 @@ typedef enum {
 
   /* ===== Stack and Local Operations (0x500-0x5FF) ===== */
 
-  /* LOAD_LOCAL - Load local variable
-   * For value types: simple copy
-   * For reference types: VANILLA (issue white token)
+  /* LOAD_LOCAL - Load value from local variable
+   * Source: MSIL 'ldloc', 'ldloc.s', 'ldloc.0'...'ldloc.3'
    * Stack: → value
    */
-  FRUITY_LOAD_LOCAL = 0x500,
+  FRUITY_LOAD_LOCAL = 0x510,
 
-  /* STORE_LOCAL - Store to local variable
-   * For value types: simple store
-   * For reference types: BURN old, VANILLA new (or LEMON if move)
+  /* LOAD_LOCAL_ADDR - Load address of local variable
+   * Source: MSIL 'ldloca', 'ldloca.s'
+   * Stack: → &local
+   */
+  FRUITY_LOAD_LOCAL_ADDR = 0x511,
+
+  /* STORE_LOCAL - Store value to local variable
+   * Source: MSIL 'stloc', 'stloc.s', 'stloc.0'...'stloc.3'
    * Stack: value → ∅
    */
-  FRUITY_STORE_LOCAL = 0x501,
+  FRUITY_STORE_LOCAL = 0x512,
 
-  /* LOAD_ARG - Load argument
-   * Same semantics as LOAD_LOCAL
+  /* LOAD_ARG - Load argument value
+   * Source: MSIL 'ldarg', 'ldarg.s', 'ldarg.0'...'ldarg.3'
    * Stack: → value
    */
-  FRUITY_LOAD_ARG = 0x502,
+  FRUITY_LOAD_ARG = 0x513,
 
-  /* STORE_ARG - Store to argument (by-ref parameters)
-   * Same semantics as STORE_LOCAL
+  /* LOAD_ARG_ADDR - Load argument address
+   * Source: MSIL 'ldarga', 'ldarga.s'
+   * Stack: → &arg
+   */
+  FRUITY_LOAD_ARG_ADDR = 0x514,
+
+  /* STORE_ARG - Store value to argument
+   * Source: MSIL 'starg', 'starg.s'
    * Stack: value → ∅
    */
-  FRUITY_STORE_ARG = 0x503,
+  FRUITY_STORE_ARG = 0x515,
 
-  /* LOAD_FIELD - Load object field
-   * For reference fields: VANILLA (issue white token)
-   * Stack: obj_ref, field_offset → value
+  /* LOAD_FIELD - Load field from object
+   * Source: MSIL 'ldfld'
+   * Stack: obj_ref → value
    */
-  FRUITY_LOAD_FIELD = 0x504,
+  FRUITY_LOAD_FIELD = 0x520,
 
-  /* STORE_FIELD - Store to object field
-   * For reference fields: BURN old, VANILLA new
-   * Stack: obj_ref, field_offset, value → ∅
+  /* STORE_FIELD - Store value to object field
+   * Source: MSIL 'stfld'
+   * Stack: obj_ref, value → ∅
    */
-  FRUITY_STORE_FIELD = 0x505,
+  FRUITY_STORE_FIELD = 0x521,
+
+  /* LOAD_STATIC - Load static field
+   * Source: MSIL 'ldsfld'
+   * Stack: → value
+   */
+  FRUITY_LOAD_STATIC = 0x522,
+
+  /* STORE_STATIC - Store static field
+   * Source: MSIL 'stsfld'
+   * Stack: value → ∅
+   */
+  FRUITY_STORE_STATIC = 0x523,
+
+  /* LOAD_FIELD_ADDR - Load address of object field
+   * Stack: obj_ref, field_offset → addr
+   */
+  FRUITY_LDFLDA = 0x50A,
 
   /* LOAD_IND - Load indirect from address
    * Maps to: *ptr
@@ -424,15 +461,30 @@ typedef enum {
    * Effect: Returns filter result (0=reject, 1=accept)
    * Stack: int32 → (filter evaluated)
    */
-  FRUITY_ENDFILTER = 0x704,
+  /* ===== Prefixes (0xB00-0xBFF) ===== */
+  FRUITY_PREFIX_CONSTRAINED = 0xB00, /* constrained. */
+  FRUITY_PREFIX_READONLY = 0xB01,    /* readonly. */
+  FRUITY_PREFIX_NO = 0xB02,          /* no. */
+  FRUITY_PREFIX_TAIL = 0xB03,        /* tail. */
+  FRUITY_PREFIX_UNALIGNED = 0xB04,   /* unaligned. */
+  FRUITY_PREFIX_VOLATILE = 0xB05,    /* volatile. */
 
   /* ===== Array Operations (0x800-0x8FF) ===== */
 
-  FRUITY_NEWARR = 0x800,  /* New array */
-  FRUITY_LDLEN = 0x801,   /* Load array length */
-  FRUITY_LDELEM = 0x802,  /* Load array element */
-  FRUITY_STELEM = 0x803,  /* Store array element */
-  FRUITY_LDELEMA = 0x804, /* Load element address */
+  FRUITY_NEWARR = 0x800, /* New array */
+  FRUITY_LDLEN = 0x801,  /* Load array length */
+
+  /* ===== Metadata & Reflection (0x900-0x9FF) ===== */
+  FRUITY_SIZEOF = 0x900,  /* Size of type */
+  FRUITY_LDTOKEN = 0x901, /* Load metadata token handle */
+  FRUITY_ARGLIST = 0x902, /* Load argument iterator */
+  FRUITY_JMP = 0x903,     /* Jump to method */
+
+  /* ===== Safety Checks (0xA00-0xAFF) ===== */
+  FRUITY_CKFINITE = 0xA00, /* Check finite float */
+  FRUITY_LDELEM = 0x802,   /* Load array element */
+  FRUITY_STELEM = 0x803,   /* Store array element */
+  FRUITY_LDELEMA = 0x804,  /* Load element address */
 
 } fruity_opcode_t;
 

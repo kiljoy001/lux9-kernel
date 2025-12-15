@@ -190,7 +190,7 @@ TEST(test_ldc_r4_operation) {
     vm_value_t top;
     TEST_ASSERT_TRUE(vm_stack_pop(state, &top));
     TEST_ASSERT_EQUAL(VM_TYPE_R4, top.type);
-    TEST_ASSERT_FLOAT_EQUAL(3.14f, top.value.r4, 0.001f);
+    TEST_ASSERT_FLOAT_EQUAL_TOLERANCE(3.14f, top.value.r4, 0.001f);
     
     vm_destroy_execution_state(state);
     return TEST_PASSED;
@@ -213,7 +213,7 @@ TEST(test_ldc_r8_operation) {
     vm_value_t top;
     TEST_ASSERT_TRUE(vm_stack_pop(state, &top));
     TEST_ASSERT_EQUAL(VM_TYPE_R8, top.type);
-    TEST_ASSERT_FLOAT_EQUAL(3.141592653589793, top.value.r8, 0.0000001);
+    TEST_ASSERT_FLOAT_EQUAL_TOLERANCE(3.141592653589793, top.value.r8, 0.0000001);
     
     vm_destroy_execution_state(state);
     return TEST_PASSED;
@@ -379,21 +379,21 @@ int main(void) {
     printf("TDD RED Phase: Testing missing opcodes that should initially fail\n\n");
     
     // Register all test cases
-    test_register_case(&test_rem_operation);
-    test_register_case(&test_rem_un_operation);
-    test_register_case(&test_shl_operation);
-    test_register_case(&test_shr_operation);
-    test_register_case(&test_shr_un_operation);
-    test_register_case(&test_ldc_i8_operation);
-    test_register_case(&test_ldc_r4_operation);
-    test_register_case(&test_ldc_r8_operation);
-    test_register_case(&test_ldnull_operation);
-    test_register_case(&test_ldc_i4_m1_operation);
-    test_register_case(&test_ldc_i4_s_extended_range);
-    test_register_case(&test_starg_0_operation);
-    test_register_case(&test_starg_s_operation);
-    test_register_case(&test_ldc_i4_s_negative_values);
-    test_register_case(&test_neg_operation);
+    test_register_case(&test_rem_operation_wrapper);
+    test_register_case(&test_rem_un_operation_wrapper);
+    test_register_case(&test_shl_operation_wrapper);
+    test_register_case(&test_shr_operation_wrapper);
+    test_register_case(&test_shr_un_operation_wrapper);
+    test_register_case(&test_ldc_i8_operation_wrapper);
+    test_register_case(&test_ldc_r4_operation_wrapper);
+    test_register_case(&test_ldc_r8_operation_wrapper);
+    test_register_case(&test_ldnull_operation_wrapper);
+    test_register_case(&test_ldc_i4_m1_operation_wrapper);
+    test_register_case(&test_ldc_i4_s_extended_range_wrapper);
+    test_register_case(&test_starg_0_operation_wrapper);
+    test_register_case(&test_starg_s_operation_wrapper);
+    test_register_case(&test_ldc_i4_s_negative_values_wrapper);
+    test_register_case(&test_neg_operation_wrapper);
     
     // Run all tests
     test_run_all();

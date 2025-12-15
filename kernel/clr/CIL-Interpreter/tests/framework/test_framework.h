@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 
 // Test result types
 typedef enum {
@@ -128,6 +129,24 @@ typedef struct {
     do { \
         if (memcmp(expected, actual, size) != 0) { \
             printf("  FAIL: %s:%d Memory mismatch\n", __FILE__, __LINE__); \
+            return TEST_FAILED; \
+        } \
+    } while(0)
+
+#define TEST_ASSERT_FLOAT_EQUAL(expected, actual) \
+    do { \
+        if (fabsf((expected) - (actual)) > 0.0001f) { \
+            printf("  FAIL: %s:%d Expected %f, got %f\n", \
+                   __FILE__, __LINE__, (double)(expected), (double)(actual)); \
+            return TEST_FAILED; \
+        } \
+    } while(0)
+
+#define TEST_ASSERT_FLOAT_EQUAL_TOLERANCE(expected, actual, tolerance) \
+    do { \
+        if (fabsf((expected) - (actual)) > (tolerance)) { \
+            printf("  FAIL: %s:%d Expected %f, got %f (tolerance %f)\n", \
+                   __FILE__, __LINE__, (double)(expected), (double)(actual), (double)(tolerance)); \
             return TEST_FAILED; \
         } \
     } while(0)

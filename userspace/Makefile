@@ -32,6 +32,8 @@ GOBUILD := $(GO) build $(GO_BUILD_FLAGS)
 
 # C build settings
 CFLAGS := -Wall -Wextra -O2 -fPIC \
+          -Wno-implicit-function-declaration \
+          -Wno-incompatible-pointer-types \
           -I./include \
           -I./lib \
           -I../../kernel/include \
@@ -43,7 +45,7 @@ LDFLAGS := -shared -Wl,-soname,
 .PHONY: all clean test install help init-asm
 
 # Main userspace build
-all: init-c initrd
+all: init-c test_9p_client initrd
 
 init-asm: $(BIN_DIR)/init-asm
 
@@ -61,7 +63,19 @@ $(BIN_DIR)/init: init_minimal/init.c | $(BIN_DIR) libs
 	@$(CC) -nostdlib -static -ffreestanding -m64 -O2 \
 	    -fcf-protection=none \
 	    -I./lux-c/include \
-	    -o $@ $< lux-c/crt0.o lux-c/liblux-c.a
+	    -o $@ $^ lux-c/crt0.o lux-c/liblux-c.a
+
+# Test 9P Client
+test_9p_client_build: $(BIN_DIR)/test_9p_client
+
+$(BIN_DIR)/test_9p_client: test_9p_client.c lib/lib9p_client.c | $(BIN_DIR) libs
+	@echo "Building Test 9P Client..."
+	@$(CC) -nostdlib -static -ffreestanding -m64 -O2 \
+	    -fcf-protection=none \
+	    -I./include \
+	    -I./lux-c/include \
+	    -I../../kernel/include \
+	    -o $@ $< lib/lib9p_client.c lux-c/crt0.o lux-c/liblux-c.a
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
@@ -97,6 +111,8 @@ $(BUILD_DIR)/initrd.tar: init-c libs
 	@cp ../bin/init $(INITRD_DIR)/bin/init
 	# Copy CLR Init
 	@cp ../kernel/clr/test/bin/Debug/net9.0/init.dll $(INITRD_DIR)/boot/Init.dll
+	# Copy test_9p_client
+	@cp ../bin/test_9p_client $(INITRD_DIR)/bin/test_9p_client
 	# Create tar
 	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
 	@echo "Initrd created: $@"

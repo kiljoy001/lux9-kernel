@@ -12,6 +12,14 @@
 #include <stddef.h>
 
 /* Basic integer types */
+#ifndef __cplusplus
+#ifndef bool
+typedef int bool;
+#define true 1
+#define false 0
+#endif
+#endif
+
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
@@ -20,6 +28,8 @@ typedef signed char int8_t;
 typedef signed short int16_t;
 typedef signed int int32_t;
 typedef signed long long int64_t;
+typedef long intptr_t;
+typedef unsigned long uintptr_t;
 
 /* inttypes.h printf format macros */
 #define PRIi32 "d"
@@ -65,12 +75,13 @@ typedef unsigned long long bits;
 #define toupper(c) (islower(c) ? (c) - ('a' - 'A') : (c))
 
 /* Standard library replacements */
+#ifndef assert
 #define assert(x)                                                              \
-  do {                                                                         \
-    if (!(x)) {                                                                \
-      die("assertion failed: %s at %s:%d", #x, __FILE__, __LINE__);            \
-    }                                                                          \
-  } while (0)
+  if (!(x)) {                                                                  \
+    print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);                \
+    panic("assertion failed");                                                 \
+  }
+#endif
 
 #define abort() die("QBE abort at %s:%d", __FILE__, __LINE__)
 
@@ -109,14 +120,16 @@ extern FILE *exchange_stderr;
 /* String functions - declare what we need */
 /* String functions - declare what we need */
 /* #ifndef _PORTLIB_H_ */
-/* extern size_t strlen(const char *s); */
-/* extern int strcmp(const char *s1, const char *s2); */
-/* extern int strncmp(const char *s1, const char *s2, size_t n); */
-/* extern int memcmp(const void *s1, const void *s2, size_t n); */
+extern long strlen(char *s); /* Match lib.h signature approximately */
+extern int strcmp(char *s1, char *s2);
+extern int strncmp(char *s1, char *s2, long n);
+extern int memcmp(void *s1, void *s2, size_t n);
+extern char *strdup(const char *s);
 /* #endif */
-extern void *memcpy(void *dest, const void *src, size_t n);
-/* #ifndef _PORTLIB_H_ */
-/* extern void *memmove(void *dest, const void *src, size_t n); */
+
+/* Map memcpy to memmove for Plan 9 kernel environment */
+#define memcpy(dest, src, n) memmove(dest, src, n)
+extern void *memmove(void *dest, void *src, size_t n);
 extern void *memset(void *s, int c, size_t n);
 /* extern char *strcpy(char *dest, const char *src); */
 /* extern char *strncpy(char *dest, const char *src, size_t n); */
@@ -126,10 +139,21 @@ extern int snprintf(char *str, size_t size, const char *format, ...);
 extern int sprintf(char *str, const char *format, ...);
 
 /* stdlib functions */
-extern void *malloc(size_t size);
-extern void *calloc(size_t nmemb, size_t size);
+/* Kernel allocator declarations */
+extern void *xalloc(unsigned long size);
+extern void *xallocz(unsigned long size, int clear);
+extern void xfree(void *ptr);
+extern unsigned long msize(void *ptr);
+
+/* Memory allocation shims */
+#define malloc(n) xalloc(n)
+#define calloc(n, s) xallocz((n) * (s), 1)
+#define free(p) xfree(p)
+
 extern void *realloc(void *ptr, size_t size);
-extern void free(void *ptr);
+
+/* Redefine to avoid conflict if any */
+/* #define realloc(p, s) realloc(p, s) */
 /* #ifndef _PORTLIB_H_ */
 /* extern void qsort(void *base, size_t nmemb, size_t size, */
 /*                   int (*compar)(const void *, const void *)); */

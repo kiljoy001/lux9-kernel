@@ -693,6 +693,11 @@ struct Proc {
   /* 9P Exchange Page for pure 9P architecture */
   void *p9page; /* Exchange page for 9P messages */
 
+  /* 9P FID tracking for syscall translation layer */
+  u32int fid_counter;     /* Next FID to allocate for this process */
+  u32int dot_fid;         /* FID for current working directory */
+  vlong fid_offsets[256]; /* Offset per FID for read/write/seek tracking */
+
   ulong pid;
   ulong noteid; /* Equivalent of note group */
   ulong parentpid;

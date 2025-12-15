@@ -24,11 +24,15 @@ typedef signed char s8int;
 typedef signed short s16int;
 typedef signed int s32int;
 typedef signed long long s64int;
+#define BY2PG 4096
 
-/* Borrow checker API */
-typedef struct Proc Proc;
-extern int borrow_borrow_shared(Proc *owner, Proc *borrower, uintptr key);
-extern int borrow_return_shared(Proc *borrower, uintptr key);
+/* Include VM Engine */
+#include "CIL-Interpreter/include/execution_engine.h"
+#include "CIL-Interpreter/include/il_decoder.h"
+
+#include <borrowchecker.h>
+/* Forward decls */
+
 extern Proc *up;
 
 /* Include decoupling headers */
@@ -41,8 +45,7 @@ extern Proc *up;
 
 extern int print(char *fmt, ...);
 extern void *xalloc(ulong size);
-extern void *memset(void *s, int c, ulong n);
-extern void *memmove(void *dst, const void *src, ulong n);
+
 extern void free(void *p);
 
 /* Execution result codes */
@@ -81,32 +84,111 @@ typedef struct TaskletExecContext {
   u32int method_token;
 } TaskletExecContext;
 
+/*
+ * TaskletHeap - 4KB exchange page for execution state
+ * Holds execution context, extended locals, and eval stack.
+ */
+typedef struct TaskletHeap {
+  /* Execution Context */
+  TaskletExecContext ctx;
+
+  /* Extended storage */
+
+  /* VM Engine State */
+  vm_execution_state_t vm_state;
+  vm_frame_t vm_frame;
+
+  /* Decoder State */
+  cil_decoder_t decoder;
+
+  /* Flat Storage */
+  /* 128 stack slots * 16 bytes = 2048 bytes */
+  vm_value_t stack_mem[128];
+  /* 64 locals * 16 bytes = 1024 bytes */
+  vm_value_t locals_mem[64];
+
+  /* Remainder for parsing buffers etc */
+} TaskletHeap;
+
 /* ... execute_step implementation ... */
+
+/* ... struct definitions ... */
+
+/* Helper to read integer values from IL stream */
+static s32int read_i4(u8int *il, ulong ip) {
+  /* TODO: Endianness */
+  return *(s32int *)(il + ip);
+}
+
+static s8int read_i1(u8int *il, ulong ip) { return *(s8int *)(il + ip); }
+
 ILResult clr_tasklet_execute_step(TaskletSlot *t, int max_ops) {
-  /* (implementation stays mostly valid, just context structure changed) */
   int ops = 0;
-  if (t == nil || t->state != TASKLET_RUNNING)
+  TaskletHeap *heap;
+  cil_instruction_t inst;
+
+  if (t == nil || t->state != TASKLET_RUNNING || t->overflow_heap == nil)
     return IL_RESULT_ERROR;
 
-  /* Simulated steps */
+  heap = (TaskletHeap *)t->overflow_heap;
+
+  /* Sync decoder to IP */
+  heap->decoder.offset = t->ip;
+
   for (ops = 0; ops < max_ops; ops++) {
-    t->ip++;
-    if (t->ip >= 10) {
+    /* Decode Next */
+    if (!has_more_instructions(&heap->decoder)) {
       t->state = TASKLET_DONE;
-      /* Release borrow on completion */
-      TaskletExecContext *ctx = (TaskletExecContext *)t->overflow_heap;
-      if (ctx && ctx->code_handle) {
-        clr_codepage_release_read(ctx->code_handle, nil);
-      }
-      print("CLR: tasklet %ud completed\n", t->id);
+      if (heap->ctx.code_handle)
+        clr_codepage_release_read(heap->ctx.code_handle, nil);
       return IL_RESULT_DONE;
     }
+
+    if (!decode_instruction_to_buffer(&heap->decoder, &inst)) {
+      print("CLR: Decode error at %d\n", t->ip);
+      return IL_RESULT_ERROR;
+    }
+
+    /* Handle Flow Control manually (Raw Offsets) */
+    if (inst.opcode == CIL_OPCODE_BR || inst.opcode == CIL_OPCODE_BR_S) {
+      s32int offset =
+          (inst.opcode == CIL_OPCODE_BR)
+              ? inst.operand.branch_offset
+              : /* wait, decode puts int in int_val? Checking header */
+              inst.operand.branch_offset_short;
+
+      /* Decoder already advanced offset past this instr */
+      /* Branch target is relative to NEXT instruction */
+      /* ECMA-335: offsets are from the start of the instruction following the
+       * current one. */
+      /* decoder.offset IS pointing to next instr now. */
+      t->ip = heap->decoder.offset + offset;
+      heap->decoder.offset = t->ip; /* Jump */
+      continue;
+    }
+
+    /* Handle ALU/Stack via Engine */
+    heap->vm_frame.ip = &inst;
+    if (!vm_execute_instruction(&heap->vm_state)) {
+      print("CLR: VM Error: %s\n", heap->vm_state.error_message
+                                       ? heap->vm_state.error_message
+                                       : "Unknown");
+      return IL_RESULT_ERROR;
+    }
+
+    /* Advance IP */
+    t->ip = heap->decoder.offset;
   }
+  /* Stub for execution engine internal calls */
+
   return IL_RESULT_YIELD;
 }
 
 /*
- * clr_tasklet_bind_method - Bind a method from a CodePage
+ * clr_tasklet_bind_method - Bind a method to a tasklet for execution
+ *
+ * Sets up the execution context from an assembly and method token.
+ * Allocates a full 4KB overflow heap page for execution state.
  */
 int clr_tasklet_bind_method(TaskletSlot *t, CodePageHandle *h,
                             u32int method_token, int local_count) {
@@ -135,13 +217,17 @@ int clr_tasklet_bind_method(TaskletSlot *t, CodePageHandle *h,
     return -1;
   }
 
+  /* Allocate full 4KB page for heap */
   if (t->overflow_heap == nil) {
-    t->overflow_heap = xalloc(sizeof(TaskletExecContext));
+    t->overflow_heap = xalloc(BY2PG);
     if (t->overflow_heap == nil)
       return -1;
+    memset(t->overflow_heap, 0, BY2PG);
   }
 
-  TaskletExecContext *ctx = (TaskletExecContext *)t->overflow_heap;
+  TaskletHeap *heap = (TaskletHeap *)t->overflow_heap;
+  TaskletExecContext *ctx = &heap->ctx;
+
   ctx->code_handle = h;
   /* Borrow checker acquire */
   if (clr_codepage_acquire_read(h, nil) < 0) {
@@ -154,17 +240,19 @@ int clr_tasklet_bind_method(TaskletSlot *t, CodePageHandle *h,
   ctx->ip = 0;
   ctx->local_count = local_count;
 
+  /* Reset tasklet state */
   t->ip = 0;
   t->stack_top = 0;
   t->locals_count = 0;
 
+  /* Initialize locals */
   if (local_count > 0 && local_count <= TASKLET_INLINE_LOCALS) {
     memset(t->locals, 0, local_count * sizeof(ulong));
     t->locals_count = local_count;
   }
 
-  print("CLR: bound method 0x%ux from CodePage to tasklet %ud\n", method_token,
-        t->id);
+  print("CLR: bound method 0x%ux from CodePage to tasklet %ud (heap=4KB)\n",
+        method_token, t->id);
   return 0;
 }
 

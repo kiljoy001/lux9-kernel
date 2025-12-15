@@ -7,6 +7,9 @@
 #ifndef _9P_ROUTER_H_
 #define _9P_ROUTER_H_
 
+/* Include base types */
+#include "u.h"
+
 /* Forward declarations */
 typedef struct Proc Proc;
 typedef struct Fcall Fcall;

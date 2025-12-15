@@ -1,4 +1,10 @@
 #pragma once
+
+/* Include base types and architecture constants first */
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
+
 typedef struct Conf Conf;
 typedef struct Confmem Confmem;
 typedef struct FPssestate FPssestate;

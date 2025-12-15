@@ -7,7 +7,20 @@
  */
 
 #include "lib9p_client.h"
-#include <string.h>
+#include <stdarg.h>
+#include <u.h>
+
+/* Explicit prototypes matching libc.h/fcall.h EXACTLY to avoid conflicts */
+extern void *memmove(void *dest, void *src, ulong n); /* const removed */
+extern void *memset(void *s, int c, ulong n);
+extern char *strncpy(char *dest, char *src, long n); /* long, not ulong */
+extern char *strcpy(char *dest, char *src);          /* const removed */
+extern char *strrchr(char *s, int c);                /* const removed */
+
+extern uint convM2S(uchar *ap, uint nap, Fcall *f);
+extern uint convS2M(Fcall *f, uchar *ap, uint nap);
+extern uint convM2D(uchar *ap, uint nap, Dir *d, char *strs);
+extern uint convD2M(Dir *d, uchar *ap, uint nap);
 
 /* Exchange page pointers (set by p9_init) */
 static volatile P9Control *ctl;
@@ -308,7 +321,7 @@ int p9_stat(int fid, Dir *d) {
   /* Parse stat buffer into Dir */
   if (r.stat && r.nstat > 0) {
     char strs[256];
-    if (convM2D(r.stat, r.nstat, d, strs) == 0) {
+    if (convM2D((uchar *)r.stat, r.nstat, d, strs) == 0) {
       strcpy(errstr_buf, "convM2D failed");
       return -1;
     }
@@ -334,7 +347,7 @@ int p9_wstat(int fid, Dir *d) {
 
   t.type = Twstat;
   t.fid = (u32int)fid;
-  t.stat = statbuf;
+  t.stat = (void *)statbuf;
   t.nstat = (ushort)n;
 
   if (p9_transact(&t, &r) < 0)

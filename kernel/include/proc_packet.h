@@ -60,6 +60,8 @@ enum ProcEvent {
   EV_IRETURN,     /* Intr -> IntrReturn */
   EV_RESUME,      /* IntrReturn -> Running */
   EV_QLOCK,       /* Running -> Queueing */
+  EV_QLOCK_R,     /* Running -> QueueingR */
+  EV_QLOCK_W,     /* Running -> QueueingW */
   EV_QUNLOCK,     /* Queueing -> Ready */
   EV_STOP,        /* Running -> Stopped */
   EV_CONT,        /* Stopped -> Ready */

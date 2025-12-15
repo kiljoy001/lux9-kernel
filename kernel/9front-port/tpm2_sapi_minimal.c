@@ -23,8 +23,14 @@
 extern int tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp,
                         usize *resp_len);
 
+static int verbose_tpm(void) { return getconf("debug.tpm") != nil; }
+
 void tpm_dump_buffer(const char *prefix, u8int *buffer, usize len) {
   usize i;
+  if (!verbose_tpm())
+    return;
+  if (!verbose_tpm())
+    return;
   print("%s", prefix);
   for (i = 0; i < len; i++) {
     if (i > 0 && i % 16 == 0)

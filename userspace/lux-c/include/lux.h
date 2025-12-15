@@ -11,7 +11,53 @@ typedef long long vlong;
 typedef unsigned long long uvlong;
 typedef unsigned long usize;
 typedef long isize;
-typedef void* uintptr;
+typedef void *uintptr;
+
+/* Plan 9 Compatibility Types */
+typedef u8 uchar;
+typedef u16 ushort;
+typedef u32 uint;
+typedef u32 u32int;
+#ifndef nil
+#define nil ((void *)0)
+#endif
+
+typedef struct Qid {
+  uvlong path;
+  ulong vers;
+  uchar type;
+} Qid;
+
+typedef struct Dir {
+  ushort type;
+  uint dev;
+  Qid qid;
+  ulong mode;
+  ulong atime;
+  ulong mtime;
+  vlong length;
+  char *name;
+  char *uid;
+  char *gid;
+  char *muid;
+} Dir;
+
+typedef struct Fmt Fmt;
+struct Fmt {
+  uchar runes;
+  void *start;
+  void *to;
+  void *stop;
+  int (*flush)(Fmt *);
+  void *farg;
+  int nfmt;
+  /* va_list is compiler specific, let's use __builtin_va_list */
+  __builtin_va_list args;
+  int r;
+  int width;
+  int prec;
+  ulong flags;
+};
 
 /* Syscall numbers - from kernel/include/sys.h */
 #define SYS_SYSR1 0
@@ -35,28 +81,28 @@ typedef void* uintptr;
 #define SYS_AWAIT 54
 
 /* File mode flags */
-#define OREAD   0
-#define OWRITE  1
-#define ORDWR   2
-#define OEXEC   3
-#define OTRUNC  0x0010
-#define OCEXEC  0x0020
+#define OREAD 0
+#define OWRITE 1
+#define ORDWR 2
+#define OEXEC 3
+#define OTRUNC 0x0010
+#define OCEXEC 0x0020
 #define ORCLOSE 0x0040
 
 /* Mount flags */
-#define MREPL   0
+#define MREPL 0
 #define MBEFORE 1
-#define MAFTER  2
+#define MAFTER 2
 #define MCREATE 4
 
 /* Rfork flags */
-#define RFNAMEG  (1<<0)
-#define RFENVG   (1<<1)
-#define RFFDG    (1<<2)
-#define RFNOTEG  (1<<3)
-#define RFPROC   (1<<4)
-#define RFMEM    (1<<5)
-#define RFNOWAIT (1<<6)
+#define RFNAMEG (1 << 0)
+#define RFENVG (1 << 1)
+#define RFFDG (1 << 2)
+#define RFNOTEG (1 << 3)
+#define RFPROC (1 << 4)
+#define RFMEM (1 << 5)
+#define RFNOWAIT (1 << 6)
 
 /* System call interface - implemented in syscall.S */
 extern long _syscall(long num, ...);

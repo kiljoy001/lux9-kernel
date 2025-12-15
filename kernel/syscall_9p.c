@@ -39,7 +39,6 @@ enum {
   SEGATTACH = 47,
   SEGDETACH = 48,
   SEGFREE = 49,
-  FD2PATH = 23, /* Already there but duplicated? No, line 30 */
   NOTIFY = 28,
   NOTED = 29,
 };
@@ -637,19 +636,109 @@ void syscall_to_9p(Ureg *ureg) {
     break;
 
   case SEGBRK:
-    /* SEGBRK(nb, addr) -> Write "segbrk addr" */
+    /* SEGBRK(addr, seg) -> Write "segbrk addr seg" to /proc/self/ctl */
     t.type = Tattach;
     t.aname = "/proc/self/ctl";
     t.fid = up->fid_counter++;
     t.afid = NOFID;
     t.uname = up->user;
 
-    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+      result = -1;
       break;
+    }
 
     {
       char cmd[64];
-      snprint(cmd, sizeof(cmd), "segbrk %d %p", (int)args[0], (void *)args[1]);
+      void *addr = (void *)args[0];
+      int seg = (int)args[1];
+
+      /* Format: segbrk <addr_hex> <seg_idx> */
+      snprint(cmd, sizeof(cmd), "segbrk %p %d", addr, seg);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        result = -1;
+        break;
+      }
+
+      /*
+       * On success, return the new break address.
+       * Ideally we'd query the kernel for the actual new break,
+       * but assuming success means 'addr' is now valid (if addr != 0).
+       * If addr == 0 (query), the write doesn't return the value.
+       * We'd need to inspect up->seg[seg] directly or read /proc/self/segment.
+       * For now, return addr.
+       */
+      result = (ulong)addr;
+    }
+    break;
+
+  case SEGATTACH:
+    /* SEGATTACH(attr, class, va, len) -> Write to /proc/self/segment */
+    t.type = Tattach;
+    t.aname = "/proc/self/segment";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+      result = -1;
+      break;
+    }
+
+    {
+      char cmd[128];
+      int attr = (int)args[0];
+      char *class = (char *)args[1];
+      void *va = (void *)args[2];
+      ulong len = args[3];
+
+      /* Format: attach <attr> <class> <va_hex> <len> */
+      snprint(cmd, sizeof(cmd), "attach %d %s %p %lud", attr,
+              class ? class : "memory", va, len);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        result = -1;
+        break;
+      }
+
+      /* Return the virtual address of the attached segment */
+      result = (uintptr)va;
+    }
+    break;
+
+  case SEGDETACH:
+    /* SEGDETACH(addr) -> Write to /proc/self/segment */
+    t.type = Tattach;
+    t.aname = "/proc/self/segment";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+      result = -1;
+      break;
+    }
+
+    {
+      char cmd[64];
+      void *addr = (void *)args[0];
+
+      snprint(cmd, sizeof(cmd), "detach %p", addr);
 
       memset(&t, 0, sizeof(t));
       t.type = Twrite;
@@ -667,32 +756,83 @@ void syscall_to_9p(Ureg *ureg) {
     }
     break;
 
-  case SEGATTACH:
-    /* SEGATTACH stub */
-    print("syscall_to_9p: segattach stubbed\n");
-    result = -1;
-    break;
-
-  case SEGDETACH:
-    /* SEGDETACH stub */
-    print("syscall_to_9p: segdetach stubbed\n");
-    result = 0;
-    break;
-
   case SEGFREE:
-    /* SEGFREE stub */
-    print("syscall_to_9p: segfree stubbed\n");
-    result = 0;
+    /* SEGFREE(addr, len) -> Write to /proc/self/segment */
+    t.type = Tattach;
+    t.aname = "/proc/self/segment";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+      result = -1;
+      break;
+    }
+
+    {
+      char cmd[64];
+      void *addr = (void *)args[0];
+      ulong len = args[1];
+
+      snprint(cmd, sizeof(cmd), "free %p %lud", addr, len);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        result = -1;
+        break;
+      }
+
+      result = 0;
+    }
     break;
 
   case FD2PATH:
-    /* FD2PATH stub */
-    result = -1;
+    /* FD2PATH(fd, buf, nbuf) -> Tstat + extract path from qid */
+    {
+      u32int fid = (u32int)args[0];
+      char *buf = (char *)args[1];
+      int nbuf = (int)args[2];
+
+      memset(&t, 0, sizeof(t));
+      t.type = Tstat;
+      t.fid = fid;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        result = -1;
+        break;
+      }
+
+      /* Extract name from stat buffer (offset after size+type+dev+qid) */
+      if (r.stat && r.nstat >= 49) {
+        /* Dir structure: 2(size) + 2(type) + 4(dev) + 13(qid) + 4(mode) +
+         * 4(atime) + 4(mtime) + 8(length) + 2+name... */
+        int nameoff = 2 + 2 + 4 + 13 + 4 + 4 + 4 + 8;
+        if (nameoff + 2 < r.nstat) {
+          int namelen = GBIT16(r.stat + nameoff);
+          if (namelen > 0 && nameoff + 2 + namelen <= r.nstat) {
+            int n = namelen < nbuf - 1 ? namelen : nbuf - 1;
+            memmove(buf, r.stat + nameoff + 2, n);
+            buf[n] = 0;
+            result = n;
+          }
+        }
+      }
+      if (result < 0) {
+        /* Fallback: return fid as string */
+        result = snprint(buf, nbuf, "/fd/%ud", fid);
+      }
+    }
     break;
 
   case NOTIFY:
   case NOTED:
-    /* NOTIFY/NOTED stub */
+    /* NOTIFY/NOTED - note handling is process-local */
     result = 0;
     break;
 

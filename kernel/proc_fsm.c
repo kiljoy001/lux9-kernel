@@ -5,12 +5,12 @@
  * All state changes MUST go through proc_event().
  */
 
-#include <u.h>
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
 #include "proc_packet.h"
+#include <u.h>
 
 /*
  * State names for debugging
@@ -87,7 +87,7 @@ static ProcTransition fsm_transitions[] = {
 
     /* Scheduling */
     {PS_Ready, EV_SCHEDULE, PS_Running, guard_mach_set},
-    {PS_Running, EV_YIELD, PS_Ready, nil},
+    {PS_Running, EV_YIELD, PS_Scheding, nil},
     {PS_Scheding, EV_SCHEDULE, PS_Running, guard_mach_set},
     {PS_Scheding, EV_READY, PS_Ready, nil},
 
@@ -98,9 +98,10 @@ static ProcTransition fsm_transitions[] = {
     /* QLock waiting */
     {PS_Running, EV_QLOCK, PS_Queueing, nil},
     {PS_Queueing, EV_QUNLOCK, PS_Ready, nil},
-    {PS_Running, EV_QLOCK, PS_QueueingR, nil},
+    {PS_Running, EV_QLOCK_R, PS_QueueingR, nil},
     {PS_QueueingR, EV_QUNLOCK, PS_Ready, nil},
-    {PS_Running, EV_QLOCK, PS_QueueingW, nil},
+
+    {PS_Running, EV_QLOCK_W, PS_QueueingW, nil},
     {PS_QueueingW, EV_QUNLOCK, PS_Ready, nil},
 
     /* Rendezvous */
@@ -156,9 +157,7 @@ int proc_verify(Proc *p) {
 /*
  * Update header checksum
  */
-void proc_seal(Proc *p) {
-  p->hdr_checksum = proc_crc16((uchar *)p, 6);
-}
+void proc_seal(Proc *p) { p->hdr_checksum = proc_crc16((uchar *)p, 6); }
 
 /*
  * Find transition in table

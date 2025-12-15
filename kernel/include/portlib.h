@@ -1,6 +1,9 @@
 #ifndef _PORTLIB_H_
 #define _PORTLIB_H_
 
+/* Include base types */
+#include "u.h"
+
 /*
  * functions (possibly) linked in, complete, from libc.
  */

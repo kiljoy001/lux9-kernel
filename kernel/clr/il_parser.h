@@ -11,8 +11,14 @@
 #ifndef IL_PARSER_H
 #define IL_PARSER_H
 
+#ifdef USERSPACE_TEST
 #include <stddef.h>
 #include <stdint.h>
+#else
+#include <kernel_compat.h>
+#endif
+/* #include <stddef.h> */
+/* #include <stdint.h> */
 
 /* ========== PE/COFF Structures ========== */
 
@@ -154,18 +160,19 @@ typedef struct {
 } methoddef_row_t;
 
 typedef struct {
-  uint32_t resolution_scope; /* Index into Module, ModuleRef, AssemblyRef, or TypeRef */
+  uint32_t resolution_scope; /* Index into Module, ModuleRef, AssemblyRef, or
+                                TypeRef */
   uint32_t name_index;       /* Index into #Strings heap */
   uint32_t namespace_index;  /* Index into #Strings heap */
 } typeref_row_t;
 
 typedef struct {
   uint32_t flags;
-  uint32_t name_index;       /* Index into #Strings heap */
-  uint32_t namespace_index;  /* Index into #Strings heap */
-  uint32_t extends;          /* Index into TypeDef, TypeRef, or TypeSpec */
-  uint32_t field_list;       /* Index into Field table */
-  uint32_t method_list;      /* Index into MethodDef table */
+  uint32_t name_index;      /* Index into #Strings heap */
+  uint32_t namespace_index; /* Index into #Strings heap */
+  uint32_t extends;         /* Index into TypeDef, TypeRef, or TypeSpec */
+  uint32_t field_list;      /* Index into Field table */
+  uint32_t method_list;     /* Index into MethodDef table */
 } typedef_row_t;
 
 typedef struct {
@@ -200,8 +207,8 @@ typedef struct {
   size_t il_code_size;
   uint32_t max_stack;
   uint32_t local_var_sig_token;
-  uint16_t impl_flags;    // MethodImplAttributes
-  uint8_t flags; /* Tiny or fat format */
+  uint16_t impl_flags; // MethodImplAttributes
+  uint8_t flags;       /* Tiny or fat format */
 
   /* Exception handling */
   exception_clause_t *exception_clauses;
@@ -284,7 +291,8 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name);
 il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token);
 
 /* Get the name of the type that owns the given method token */
-const char *il_get_method_parent_type_name(il_assembly_t *assembly, uint32_t method_token);
+const char *il_get_method_parent_type_name(il_assembly_t *assembly,
+                                           uint32_t method_token);
 
 /* Get TypeRef row (1-based index) */
 typeref_row_t *il_get_typeref(il_assembly_t *assembly, uint32_t rid);
@@ -306,7 +314,8 @@ const uint8_t *il_get_blob(il_assembly_t *assembly, uint32_t index,
 char *il_get_user_string(il_assembly_t *assembly, uint32_t index);
 
 /* Get raw UTF-16 user string from #US heap */
-const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index, uint32_t *length);
+const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index,
+                                       uint32_t *length);
 
 /* Decode compressed unsigned integer from blob */
 uint32_t il_decode_compressed_uint(const uint8_t **data);

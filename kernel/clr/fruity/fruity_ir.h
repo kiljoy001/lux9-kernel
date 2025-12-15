@@ -45,6 +45,7 @@ typedef enum {
   FRUITY_OP_ARG,     /* Argument index */
   FRUITY_OP_FIELD,   /* Field offset */
   FRUITY_OP_TYPE,    /* Type token (ECMA-335 metadata) */
+  FRUITY_OP_TOKEN,   /* Generic metadata token (method/field/etc) */
   FRUITY_OP_METHOD,  /* Method token */
   FRUITY_OP_BRANCH,  /* Branch target (basic block) */
   FRUITY_OP_SWITCH,  /* Switch targets */
@@ -56,11 +57,11 @@ typedef union {
   s64int i64;
   float r32;
   double r64;
-  u32int index;                 /* Local/arg/field index */
-  u32int token;                 /* Type/method token */
-  fruity_basic_block_t *target; /* Branch target */
+  u32int index;                            /* Local/arg/field index */
+  u32int token;                            /* Type/method token */
+  fruity_basic_block_t *target;            /* Branch target */
   fruity_switch_targets_t *switch_targets; /* Switch targets */
-  tasklet_id_t tasklet;         /* For GRAPE opcode */
+  tasklet_id_t tasklet;                    /* For GRAPE opcode */
 } fruity_operand_value_t;
 
 typedef struct {

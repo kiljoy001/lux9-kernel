@@ -47,6 +47,12 @@ typedef ulong *syscall_va_list;
 #include "../clr/qbe_compile.h"
 #include "exchange.h"
 
+extern void crypto_blake2b_final(crypto_blake2b_ctx *ctx, u8int *out);
+#include "proc_packet.h"
+
+/* FSM Integration */
+extern int proc_event(Proc *p, int event);
+
 static void hash_binary(Chan *tc) {
   crypto_blake2b_ctx ctx;
   u8int buf[4096];
@@ -1380,7 +1386,8 @@ uintptr sysrendezvous(void *list_void) {
   up->rendval = new;
   up->rendhash = *l;
   *l = up;
-  up->state = Rendezvous;
+  /* up->state = Rendezvous; -- REPLACED BY FSM */
+  proc_event(up, EV_RENDEZ);
   unlock(up->rgrp);
 
   sched();

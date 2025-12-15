@@ -154,7 +154,7 @@ static il_error_t parse_pe_header(il_assembly_t *assembly) {
 
   // Parse COFF header
   uint8_t *coff_ptr = &data[pe_offset + 4];
-  memcpy(&assembly->coff_header, coff_ptr, sizeof(pe_coff_header_t));
+  memmove(&assembly->coff_header, coff_ptr, sizeof(pe_coff_header_t));
 
   // Parse optional header (handle both PE32 and PE32+)
   uint8_t *opt_ptr = coff_ptr + sizeof(pe_coff_header_t);
@@ -208,7 +208,7 @@ static il_error_t parse_pe_header(il_assembly_t *assembly) {
   uint8_t *section_ptr =
       opt_ptr + assembly->coff_header.size_of_optional_header;
   for (uint16_t i = 0; i < assembly->section_count; i++) {
-    memcpy(&assembly->sections[i], section_ptr, sizeof(pe_section_header_t));
+    memmove(&assembly->sections[i], section_ptr, sizeof(pe_section_header_t));
     section_ptr += sizeof(pe_section_header_t);
   }
 
@@ -231,8 +231,8 @@ static il_error_t parse_cli_header(il_assembly_t *assembly) {
     return IL_ERROR_INVALID_CLI;
   }
 
-  memcpy(&assembly->cli_header, &assembly->data[cli_offset],
-         sizeof(cli_header_t));
+  memmove(&assembly->cli_header, &assembly->data[cli_offset],
+          sizeof(cli_header_t));
 
   return IL_OK;
 }
@@ -380,7 +380,7 @@ const char *il_get_string(il_assembly_t *assembly, uint32_t index) {
 uint32_t il_decode_compressed_uint(const uint8_t **data) {
   const uint8_t *ptr = *data;
   uint32_t val = 0;
-  
+
   if ((*ptr & 0x80) == 0) {
     val = *ptr;
     *data += 1;
@@ -423,9 +423,11 @@ const uint8_t *il_get_blob(il_assembly_t *assembly, uint32_t index,
   return blob_ptr;
 }
 
-const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index, uint32_t *length) {
+const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index,
+                                       uint32_t *length) {
   if (index >= assembly->us_heap_size) {
-    if (length) *length = 0;
+    if (length)
+      *length = 0;
     return NULL;
   }
 
@@ -445,15 +447,18 @@ const uint16_t *il_get_user_string_raw(il_assembly_t *assembly, uint32_t index, 
   }
 
   if (bytes == 0) {
-    if (length) *length = 0;
-    return (const uint16_t*)ptr; // Empty string
+    if (length)
+      *length = 0;
+    return (const uint16_t *)ptr; // Empty string
   }
 
   /* Last byte is terminal flag */
-  if (bytes > 0) bytes--;
+  if (bytes > 0)
+    bytes--;
 
-  if (length) *length = bytes / 2;
-  return (const uint16_t*)ptr;
+  if (length)
+    *length = bytes / 2;
+  return (const uint16_t *)ptr;
 }
 
 char *il_get_user_string(il_assembly_t *assembly, uint32_t index) {
@@ -505,8 +510,7 @@ char *il_get_user_string(il_assembly_t *assembly, uint32_t index) {
 /* ========== Metadata Table Helpers ========== */
 
 static uint32_t get_coded_index_size(il_assembly_t *assembly, int tag_bits,
-                                     metadata_table_kind_t *tables,
-                                     int count) {
+                                     metadata_table_kind_t *tables, int count) {
   uint32_t max_rows = 0;
   for (int i = 0; i < count; i++) {
     uint32_t rows = assembly->tables_header.row_counts[tables[i]];
@@ -594,7 +598,7 @@ static uint8_t *il_get_table_start(il_assembly_t *assembly,
         // Warning: Unknown table size, cannot proceed accurately
         // For robustness, we might want to error out or guess
         // For now, return NULL if we can't skip past an unknown table
-        return NULL; 
+        return NULL;
       }
       ptr += rows * row_size;
     }
@@ -617,7 +621,7 @@ static uint32_t read_table_index(uint8_t **ptr, int wide) {
 }
 
 static typeref_row_t *parse_typeref_table(il_assembly_t *assembly,
-                                            size_t *row_count_out) {
+                                          size_t *row_count_out) {
   size_t row_count = assembly->tables_header.row_counts[TABLE_TYPEREF];
   if (row_count == 0) {
     *row_count_out = 0;
@@ -632,7 +636,7 @@ static typeref_row_t *parse_typeref_table(il_assembly_t *assembly,
 
   // Index sizes
   int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
-  
+
   metadata_table_kind_t refs[] = {TABLE_MODULE, 0x1A /*ModuleRef*/,
                                   TABLE_ASSEMBLYREF, TABLE_TYPEREF};
   uint32_t scope_idx_size = get_coded_index_size(assembly, 2, refs, 4);
@@ -656,7 +660,7 @@ static typeref_row_t *parse_typeref_table(il_assembly_t *assembly,
 }
 
 static typedef_row_t *parse_typedef_table(il_assembly_t *assembly,
-                                            size_t *row_count_out) {
+                                          size_t *row_count_out) {
   size_t row_count = assembly->tables_header.row_counts[TABLE_TYPEDEF];
   if (row_count == 0) {
     *row_count_out = 0;
@@ -671,13 +675,15 @@ static typedef_row_t *parse_typedef_table(il_assembly_t *assembly,
 
   // Index sizes
   int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
-  
-  metadata_table_kind_t extends[] = {TABLE_TYPEDEF, TABLE_TYPEREF, TABLE_TYPESPEC};
+
+  metadata_table_kind_t extends[] = {TABLE_TYPEDEF, TABLE_TYPEREF,
+                                     TABLE_TYPESPEC};
   uint32_t extends_idx_size = get_coded_index_size(assembly, 2, extends, 3);
   int extends_wide = (extends_idx_size == 4);
 
   int field_wide = assembly->tables_header.row_counts[TABLE_FIELD] >= 0x10000;
-  int method_wide = assembly->tables_header.row_counts[TABLE_METHODDEF] >= 0x10000;
+  int method_wide =
+      assembly->tables_header.row_counts[TABLE_METHODDEF] >= 0x10000;
 
   // Allocate
   typedef_row_t *rows = IL_MALLOC(sizeof(typedef_row_t) * row_count);
@@ -948,7 +954,7 @@ il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token) {
   // Parse method body
   il_method_t *method = parse_method(assembly, row->rva, method_name);
   if (method) {
-      method->impl_flags = row->impl_flags;
+    method->impl_flags = row->impl_flags;
   }
 
   IL_FREE(methods);
@@ -979,12 +985,14 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
 }
 
 typeref_row_t *il_get_typeref(il_assembly_t *assembly, uint32_t rid) {
-  if (rid == 0) return NULL;
-  
+  if (rid == 0)
+    return NULL;
+
   if (assembly->typerefs == NULL) {
-    assembly->typerefs = parse_typeref_table(assembly, &assembly->typeref_count);
+    assembly->typerefs =
+        parse_typeref_table(assembly, &assembly->typeref_count);
   }
-  
+
   if (assembly->typerefs && rid <= assembly->typeref_count) {
     return &assembly->typerefs[rid - 1];
   }
@@ -992,10 +1000,12 @@ typeref_row_t *il_get_typeref(il_assembly_t *assembly, uint32_t rid) {
 }
 
 typedef_row_t *il_get_typedef(il_assembly_t *assembly, uint32_t rid) {
-  if (rid == 0) return NULL;
+  if (rid == 0)
+    return NULL;
 
   if (assembly->typedefs == NULL) {
-    assembly->typedefs = parse_typedef_table(assembly, &assembly->typedef_count);
+    assembly->typedefs =
+        parse_typedef_table(assembly, &assembly->typedef_count);
   }
 
   if (assembly->typedefs && rid <= assembly->typedef_count) {
@@ -1005,10 +1015,12 @@ typedef_row_t *il_get_typedef(il_assembly_t *assembly, uint32_t rid) {
 }
 
 typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid) {
-  if (rid == 0) return NULL;
+  if (rid == 0)
+    return NULL;
 
   if (assembly->typespecs == NULL) {
-    assembly->typespecs = parse_typespec_table(assembly, &assembly->typespec_count);
+    assembly->typespecs =
+        parse_typespec_table(assembly, &assembly->typespec_count);
   }
 
   if (assembly->typespecs && rid <= assembly->typespec_count) {
@@ -1017,26 +1029,29 @@ typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid) {
   return NULL;
 }
 
-const char *il_get_method_parent_type_name(il_assembly_t *assembly, uint32_t method_token) {
+const char *il_get_method_parent_type_name(il_assembly_t *assembly,
+                                           uint32_t method_token) {
   uint32_t row_index = method_token & 0x00FFFFFF;
-  
+
   if (assembly->typedefs == NULL) {
-    assembly->typedefs = parse_typedef_table(assembly, &assembly->typedef_count);
+    assembly->typedefs =
+        parse_typedef_table(assembly, &assembly->typedef_count);
   }
-  
-  if (!assembly->typedefs) return NULL;
-  
+
+  if (!assembly->typedefs)
+    return NULL;
+
   for (size_t i = 0; i < assembly->typedef_count; i++) {
     uint32_t start = assembly->typedefs[i].method_list;
     uint32_t end;
-    
+
     if (i + 1 < assembly->typedef_count) {
-      end = assembly->typedefs[i+1].method_list;
+      end = assembly->typedefs[i + 1].method_list;
     } else {
       // Last type, extends to end of MethodDef table
       end = assembly->tables_header.row_counts[TABLE_METHODDEF] + 1;
     }
-    
+
     if (row_index >= start && row_index < end) {
       // Found parent type
       return il_get_string(assembly, assembly->typedefs[i].name_index);
@@ -1175,10 +1190,13 @@ void il_free_assembly(il_assembly_t *assembly) {
       }
       IL_FREE(assembly->methods);
     }
-    if (assembly->typerefs) IL_FREE(assembly->typerefs);
-    if (assembly->typedefs) IL_FREE(assembly->typedefs);
-    if (assembly->typespecs) IL_FREE(assembly->typespecs);
-    
+    if (assembly->typerefs)
+      IL_FREE(assembly->typerefs);
+    if (assembly->typedefs)
+      IL_FREE(assembly->typedefs);
+    if (assembly->typespecs)
+      IL_FREE(assembly->typespecs);
+
     if (assembly->data) {
       IL_FREE((void *)assembly->data);
     }

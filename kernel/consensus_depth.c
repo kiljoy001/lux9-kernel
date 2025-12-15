@@ -59,7 +59,8 @@ static OperationType classify_by_fcall_type(Fcall *t) {
   /* Read/Write depend on path */
   case Tread:
   case Twrite:
-    return OP_TYPE_LOCAL_FILE; /* Refined by path checks in get_operation_type */
+    return OP_TYPE_LOCAL_FILE; /* Refined by path checks in get_operation_type
+                                */
 
   /* Remove may need consensus */
   case Tremove:
@@ -418,44 +419,24 @@ int rollback_trigger(RollbackRegistry *reg, uint op_id) {
 }
 
 /*
- * Execute rollback for a single entry
- * TODO: This needs integration with specific operation types
+ * Execute rollback for a single entry.
+ * Strategy: KILL the process. Consensus failure is treated as fatal.
  */
 int rollback_execute(OpRollbackEntry *entry) {
-  Fcall error_reply;
-
   if (entry == nil)
     return -1;
 
-  /* For now, we send an error reply to the caller if possible */
   if (entry->caller != nil) {
-    memset(&error_reply, 0, sizeof(error_reply));
-    error_reply.type = Rerror;
-    error_reply.tag =
-        (entry->original_request != nil) ? entry->original_request->tag : 0;
-    error_reply.ename = "consensus failed - operation rolled back";
+    if(getconf("debug.consensus"))
+      print("consensus_depth: KILLING pid %lud due to consensus failure\n",
+            entry->caller->pid);
 
-    /* Write error_reply to caller's exchange page */
-    if (entry->caller->p9page != nil) {
-      /* Assuming exchange_post_reply or similar mechanism exists */
-      /* As per 'devexchange.c', usually we write to the ring buffer. */
-      /* If we don't have the exact function, we can try a generic p9 dispatch
-       * reply or note it. */
-      /* But wait, if the process is blocked on this, we need to wake it up? */
-      /* Optimistic assumes async. The client polls or gets an interrupt. */
-      /* Let's try to post to the exchange page if available. */
-      /* If not, we might need to kill the process if it relied on this critical
-       * consensus? */
-      /* For now, let's log and try to error. */
-      print("consensus_depth: rollback sending error to %s pid %d\n",
-            entry->caller->text, entry->caller->pid);
-
-      /* Stub: We need a reliable way to signal. */
-      /* Given the previous context, let's assume valid access to p9page is
-       * tricky here without includes. */
-      /* We'll assume the error reply is sufficient log for now and maybe kill
-       * if critical? */
-    }
+    /*
+     * Send a fatal note (NDebug) to terminate the process.
+     * This is a hard failure - the process attempted an operation
+     * that could not achieve consensus (e.g., conflicting writes).
+     */
+    postnote(entry->caller, 1, "consensus failure", NDebug);
   }
 
   return 0;
@@ -552,9 +533,10 @@ void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
       uvlong now = (uvlong)seconds();
       if (now > entry->submit_time + 30) { /* 30 second timeout */
         unlock(&registry_lock);
-        print("consensus_depth: op %ud timed out (depth=%d conf=%d), "
-              "triggering rollback\n",
-              entry->op_id, entry->required_depth, confidence);
+        if(getconf("debug.consensus"))
+          print("consensus_depth: op %ud timed out (depth=%d conf=%d), "
+                "triggering rollback\n",
+                entry->op_id, entry->required_depth, confidence);
         rollback_trigger(reg, entry->op_id);
         lock(&registry_lock);
       }
@@ -602,6 +584,7 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
  */
 void consensus_depth_init(void) {
   rollback_registry_init(&_global_registry, 256);
-  print("consensus_depth: initialized with max_entries=%ud\n",
-        _global_registry.max_entries);
+  if(getconf("debug.consensus"))
+    print("consensus_depth: initialized with max_entries=%ud\n",
+          _global_registry.max_entries);
 }

@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include <string.h>
+#include <u.h>
 #include "libc.h"
 #include "fcall.h"
 
