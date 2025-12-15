@@ -8,6 +8,10 @@
 #include "monocypher.h"
 
 extern char* getconf(char*);
+extern int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
+		u16int auth_len, u8int *blob_out, u16int *blob_len_out);
+extern int tpm2_unseal_from_blob(const u8int *blob, u16int blob_len, const u8int *auth,
+		u16int auth_len, u8int *data_out, u16int *data_len_out);
 
 enum
 {
@@ -38,6 +42,9 @@ typedef struct SecureRamdisk {
 	uchar	nonce[24];		/* XChaCha20 nonce */
 	void	*pebble_handle;	/* Pebble Black allocation handle */
 	int		initialized;	/* 1 = password set, 0 = not initialized */
+	int		tpm_sealed;		/* 1 if TPM sealed blob is present */
+	uchar	tpm_blob[512];	/* Sealed blob */
+	u16int	tpm_blob_len;	/* Length of sealed blob */
 } SecureRamdisk;
 
 static SecureRamdisk secure_rd;
@@ -416,6 +423,8 @@ ramwrite(Chan *c, void *va, long n, vlong off)
 				error("vault not initialized");
 			if(!secure_rd.locked)
 				error("vault already unlocked");
+			if(secure_rd.tpm_sealed)
+				error("vault sealed to TPM - use tpmunlock");
 			if(argc != 2)
 				error("usage: unlock <password>");
 
@@ -464,6 +473,52 @@ ramwrite(Chan *c, void *va, long n, vlong off)
 			return n;
 		}
 
+		/* Command: tpmseal (seal current or new master key to TPM SRK) */
+		if(strcmp(argv[0], "tpmseal") == 0) {
+			int rc;
+			u16int blob_len = 0;
+			if(secure_rd.size == 0 || secure_rd.data == nil)
+				error("vault not initialized");
+			/* If not initialized, create a random master key and mark initialized */
+			if(!secure_rd.initialized) {
+				extern void genrandom(uchar *buf, int nbytes);
+				genrandom(secure_rd.master_key, sizeof(secure_rd.master_key));
+				secure_rd.initialized = 1;
+				secure_rd.locked = 0;
+			}
+			/* Seal master key to TPM SRK (no auth) */
+			rc = tpm2_seal_to_srk(secure_rd.master_key, sizeof(secure_rd.master_key),
+				nil, 0, secure_rd.tpm_blob, &blob_len);
+			if(rc < 0) {
+				error("tpmseal failed");
+			}
+			secure_rd.tpm_blob_len = blob_len;
+			secure_rd.tpm_sealed = 1;
+			print("ramdisk: master key sealed to TPM (%d bytes)\n", blob_len);
+			return n;
+		}
+
+		/* Command: tpmunlock (unseal master key and decrypt) */
+		if(strcmp(argv[0], "tpmunlock") == 0) {
+			u16int key_len = sizeof(secure_rd.master_key);
+			int rc;
+			if(!secure_rd.tpm_sealed)
+				error("no TPM-sealed key present");
+			if(!secure_rd.locked)
+				error("vault already unlocked");
+			rc = tpm2_unseal_from_blob(secure_rd.tpm_blob, secure_rd.tpm_blob_len,
+				nil, 0, secure_rd.master_key, &key_len);
+			if(rc < 0 || key_len != sizeof(secure_rd.master_key)) {
+				error("tpmunlock failed");
+			}
+			/* Decrypt vault */
+			xchacha20_crypt(secure_rd.data, secure_rd.size,
+							secure_rd.master_key, secure_rd.nonce);
+			secure_rd.locked = 0;
+			print("ramdisk: vault unlocked via TPM\n");
+			return n;
+		}
+
 		/* Command: wipe */
 		if(strcmp(argv[0], "wipe") == 0) {
 			if(secure_rd.data == nil)
@@ -475,6 +530,9 @@ ramwrite(Chan *c, void *va, long n, vlong off)
 			/* Wipe master key */
 			crypto_wipe(secure_rd.master_key, sizeof(secure_rd.master_key));
 			crypto_wipe(secure_rd.salt, sizeof(secure_rd.salt));
+			memset(secure_rd.tpm_blob, 0, sizeof(secure_rd.tpm_blob));
+			secure_rd.tpm_blob_len = 0;
+			secure_rd.tpm_sealed = 0;
 
 			secure_rd.initialized = 0;
 			secure_rd.locked = 1;
