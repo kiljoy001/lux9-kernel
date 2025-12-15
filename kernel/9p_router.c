@@ -433,7 +433,6 @@ typedef struct P9RouteContext {
 static void p9_route_reply_callback(OrdMsg *msg, int status, void *arg) {
   P9RouteContext *ctx = (P9RouteContext *)arg;
   Fcall reply;
-  USED(status); /* TODO: handle MSGORD_CB_ROLLBACK etc. */
 
   if (ctx == nil || ctx->caller == nil) {
     if (ctx)
@@ -441,9 +440,15 @@ static void p9_route_reply_callback(OrdMsg *msg, int status, void *arg) {
     return;
   }
 
-  /* Dispatch the message to the appropriate handler */
+  /* Handle MSGORD status */
   memset(&reply, 0, sizeof(reply));
-  if (msg->gm_payload.type == MSGORD_MSG_9P && msg->gm_payload.fcall != nil) {
+  if (status == MSGORD_CB_ROLLBACK) {
+    /* Transaction was rolled back - return error */
+    reply.type = Rerror;
+    reply.ename = "transaction rolled back";
+  } else if (msg->gm_payload.type == MSGORD_MSG_9P &&
+             msg->gm_payload.fcall != nil) {
+    /* Dispatch the message to the appropriate handler */
     p9_dispatch(ctx->caller, msg->gm_payload.fcall, &reply);
   } else {
     reply.type = Rerror;
@@ -1070,11 +1075,40 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     r->count = 0;
     return 0;
 
-  case Tstat:
-    /* TODO: implement proper stat */
+  case Tstat: {
+    /* Build Dir structure and convert to wire format */
+    Dir d;
+    uchar statbuf[256];
+    int n;
+
+    memset(&d, 0, sizeof(d));
+    d.qid.path = type;
+    d.qid.type = (type == PROC_ROOT) ? QTDIR : 0;
+    d.qid.vers = 0;
+    d.mode = (type == PROC_ROOT) ? (DMDIR | 0555) : 0444;
+    d.atime = seconds();
+    d.mtime = d.atime;
+    d.length = 0;
+    d.name = (type == PROC_ROOT)     ? "."
+             : (type == PROC_STATUS) ? "status"
+             : (type == PROC_CTL)    ? "ctl"
+             : (type == PROC_WAIT)   ? "wait"
+                                     : "unknown";
+    d.uid = "kernel";
+    d.gid = "kernel";
+    d.muid = "kernel";
+
+    n = convD2M(&d, statbuf, sizeof(statbuf));
+    if (n <= 0) {
+      r->type = Rerror;
+      r->ename = "stat conversion failed";
+      return -1;
+    }
     r->type = Rstat;
-    r->nstat = 0;
+    r->nstat = n;
+    r->stat = statbuf;
     return 0;
+  }
 
   case Tclunk:
     r->type = Rclunk;
