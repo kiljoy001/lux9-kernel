@@ -57,7 +57,8 @@ PROCSTATEDAG_C := kernel/proc_state_dag.c
 PROCFSM_C := kernel/proc_fsm.c
 P9ROUTER_C := kernel/9p_router.c
 # SYSCALL9P_C removed - Phase 6: TRUE syscall elimination via exchange page doorbell
-GHOSTDAG_C := kernel/ghostdag_kernel.c
+# GHOSTDAG renamed to msgord - see MSGORD_C below
+MSGORD_C := kernel/msgord.c
 CONSENSUS_DEPTH_C := kernel/consensus_depth.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
@@ -95,7 +96,8 @@ PROCSTATEDAG_O := $(PROCSTATEDAG_C:.c=.o)
 PROCFSM_O := $(PROCFSM_C:.c=.o)
 P9ROUTER_O := $(P9ROUTER_C:.c=.o)
 # SYSCALL9P_O removed - Phase 6 pure 9P via doorbell
-GHOSTDAG_O := $(GHOSTDAG_C:.c=.o)
+# GHOSTDAG_O removed - using MSGORD_O
+MSGORD_O := $(MSGORD_C:.c=.o)
 CONSENSUS_DEPTH_O := $(CONSENSUS_DEPTH_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 PEBBLE_O := $(PEBBLE_C:.c=.o)
@@ -106,9 +108,9 @@ CLR_O := $(CLR_C:.c=.o)
 # External archives
 QBE_A := kernel/clr/qbe/qbe.a
 
-QBE_GHOSTDAG_O = kernel/ghostdag_kernel.o
+# QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(GHOSTDAG_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(QBE_A)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(QBE_A)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help

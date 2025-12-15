@@ -35,6 +35,17 @@ int main(int argc, char **argv) {
     // Dump assembly info
     il_dump_assembly_info(assembly);
 
+    // Dump sections
+    printf("\n=== Section Headers ===\n");
+    for (int i = 0; i < assembly->section_count; i++) {
+        pe_section_header_t *sect = &assembly->sections[i];
+        printf("Section %d: %.8s\n", i, sect->name);
+        printf("  VirtualAddress:   0x%08x\n", sect->virtual_address);
+        printf("  VirtualSize:      0x%08x\n", sect->virtual_size);
+        printf("  PointerToRawData: 0x%08x\n", sect->pointer_to_raw_data);
+        printf("  SizeOfRawData:    0x%08x\n", sect->size_of_raw_data);
+    }
+
     // Try to get entry point method
     printf("\n=== Entry Point ===\n");
     printf("Token: 0x%08x\n", assembly->cli_header.entry_point_token);

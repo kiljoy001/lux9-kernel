@@ -51,6 +51,19 @@ typedef unsigned long long bits;
 #define UINT_MAX 4294967295U
 #endif
 
+/* ctype.h replacements - simple ASCII-only versions */
+#define isdigit(c) ((c) >= '0' && (c) <= '9')
+#define isalpha(c) (((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z'))
+#define isalnum(c) (isdigit(c) || isalpha(c))
+#define isspace(c)                                                             \
+  ((c) == ' ' || (c) == '\t' || (c) == '\n' || (c) == '\r' || (c) == '\f' ||   \
+   (c) == '\v')
+#define isblank(c) ((c) == ' ' || (c) == '\t')
+#define isupper(c) ((c) >= 'A' && (c) <= 'Z')
+#define islower(c) ((c) >= 'a' && (c) <= 'z')
+#define tolower(c) (isupper(c) ? (c) + ('a' - 'A') : (c))
+#define toupper(c) (islower(c) ? (c) - ('a' - 'A') : (c))
+
 /* Standard library replacements */
 #define assert(x)                                                              \
   do {                                                                         \

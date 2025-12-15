@@ -150,6 +150,26 @@ void *clr_string_from_literal(u32int us_index) {
 }
 
 /*
+ * clr_newobj - Allocate new object (Stub)
+ */
+void *clr_newobj(u32int token) {
+    /* TODO: Resolve type token to get size */
+    /* For now, just allocate a fixed size */
+    USED(token);
+    return xalloc(64);
+}
+
+/*
+ * clr_newarr - Allocate new array (Stub)
+ */
+void *clr_newarr(u32int token, u32int count) {
+    /* TODO: Resolve element type size */
+    USED(token);
+    ulong element_size = 8; /* Assume 64-bit for now */
+    return xalloc(sizeof(ulong) + count * element_size);
+}
+
+/*
  * clr_find_entry_point - Find the Main() method in an assembly
  */
 static il_method_t *clr_find_entry_point(il_assembly_t *assembly) {

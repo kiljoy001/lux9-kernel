@@ -4,14 +4,13 @@
  * All QBE temporaries (%tN) are mapped to stack slots [rbp - N*8].
  */
 
-#include "../include/u.h"
-#include "../include/portlib.h"
 #include "../9front-pc64/mem.h"
 #include "../include/dat.h"
 #include "../include/fns.h"
+#include "../include/portlib.h"
+#include "../include/u.h"
 
 #include "qbe_compile.h"
-
 
 /* Symbol table for labels */
 typedef struct Symbol {
@@ -169,8 +168,21 @@ extern void clr_span_copy(void *dst, void *src, int elementSize, int count);
 extern int clr_decimal_add96(u32int *a, u32int *b, u32int *result);
 extern u32int clr_decimal_mul32(u32int *a, u32int multiplier, u32int *result);
 
+/* CLR Runtime Internals */
+extern void *clr_string_from_literal(u32int);
+extern void *clr_newobj(u32int);
+extern void *clr_newarr(u32int, u32int);
+
 /* Simple symbol resolver */
 static void *resolve_kernel_symbol(char *name) {
+  /* Runtime Helpers */
+  if (strcmp(name, "clr_string_from_literal") == 0)
+    return (void *)clr_string_from_literal;
+  if (strcmp(name, "clr_newobj") == 0)
+    return (void *)clr_newobj;
+  if (strcmp(name, "clr_newarr") == 0)
+    return (void *)clr_newarr;
+
   /* Console */
   if (strcmp(name, "System_Console_Internal_Write") == 0)
     return (void *)clr_console_write;
@@ -620,6 +632,411 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           emit_byte(&code, 0x33);
           emit_byte(&code, 0x85);
           emit_dword(&code, -(src2 * 8));
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "loadl") == 0) {
+          /* loadl %dest, %ptr - load 64-bit from memory */
+          int ptr_id = parse_temp(&p);
+          /* mov rax, [rbp-ptr*8] ; get pointer */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(ptr_id * 8));
+          /* mov rax, [rax] ; load from pointer */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x00);
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "loadw") == 0) {
+          /* loadw %dest, %ptr - load 32-bit from memory */
+          int ptr_id = parse_temp(&p);
+          /* mov rax, [rbp-ptr*8] ; get pointer */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(ptr_id * 8));
+          /* mov eax, [rax] ; load 32-bit from pointer */
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x00);
+          /* mov [rbp-dest*8], rax (zero-extended) */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "storel") == 0) {
+          /* storel %val, %ptr - store 64-bit to memory */
+          int val_id = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int ptr_id = parse_temp(&p);
+          /* mov rax, [rbp-ptr*8] ; get pointer */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(ptr_id * 8));
+          /* mov rcx, [rbp-val*8] ; get value */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x8D);
+          emit_dword(&code, -(val_id * 8));
+          /* mov [rax], rcx ; store */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x08);
+        } else if (strcmp(token, "storew") == 0) {
+          /* storew %val, %ptr - store 32-bit to memory */
+          int val_id = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int ptr_id = parse_temp(&p);
+          /* mov rax, [rbp-ptr*8] ; get pointer */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(ptr_id * 8));
+          /* mov ecx, [rbp-val*8] ; get value (32-bit) */
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x8D);
+          emit_dword(&code, -(val_id * 8));
+          /* mov [rax], ecx ; store 32-bit */
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x08);
+        } else if (strcmp(token, "alloc8") == 0 ||
+                   strcmp(token, "alloc4") == 0) {
+          /* alloc8 N - already handled by 512-byte frame, just use slot */
+          /* The dest temp IS the allocated storage (rbp - dest*8) */
+          /* lea rax, [rbp - dest*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8D);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+          /* Store the address in the slot itself */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+          /* Skip the size argument */
+          while (*p && *p != '\n' && *p != ' ')
+            p++;
+        } else if (strcmp(token, "ceqw") == 0 || strcmp(token, "ceql") == 0) {
+          /* ceqw %a, %b - compare equal */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* cmp rax, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* sete al */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x94);
+          emit_byte(&code, 0xC0);
+          /* movzx eax, al */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "cnew") == 0 || strcmp(token, "cnel") == 0) {
+          /* cnew %a, %b - compare not equal */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setne al */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x95);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "csltw") == 0 || strcmp(token, "csltl") == 0) {
+          /* csltw - signed less than */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setl al (signed less) */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x9C);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "csgtw") == 0 || strcmp(token, "csgtl") == 0) {
+          /* csgtw - signed greater than */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setg al (signed greater) */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x9F);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "cslew") == 0 || strcmp(token, "cslel") == 0) {
+          /* cslew - signed less or equal */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setle al */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x9E);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "csgew") == 0 || strcmp(token, "csgel") == 0) {
+          /* csgew - signed greater or equal */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setge al */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x9D);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "cultw") == 0 || strcmp(token, "cultl") == 0) {
+          /* cultw - unsigned less than */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* setb al (unsigned below) */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x92);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "cugtw") == 0 || strcmp(token, "cugtl") == 0) {
+          /* cugtw - unsigned greater than */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x3B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src2 * 8));
+          /* seta al (unsigned above) */
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0x97);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x0F);
+          emit_byte(&code, 0xB6);
+          emit_byte(&code, 0xC0);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "shl") == 0) {
+          /* shl %a, %b - shift left */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* mov rcx, [rbp-src2*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x8D);
+          emit_dword(&code, -(src2 * 8));
+          /* shl rax, cl */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xD3);
+          emit_byte(&code, 0xE0);
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "shr") == 0) {
+          /* shr %a, %b - logical shift right */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x8D);
+          emit_dword(&code, -(src2 * 8));
+          /* shr rax, cl */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xD3);
+          emit_byte(&code, 0xE8);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "sar") == 0) {
+          /* sar %a, %b - arithmetic shift right */
+          int src1 = parse_temp(&p);
+          while (*p == ',' || *p == ' ')
+            p++;
+          int src2 = parse_temp(&p);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x8D);
+          emit_dword(&code, -(src2 * 8));
+          /* sar rax, cl */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xD3);
+          emit_byte(&code, 0xF8);
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "neg") == 0) {
+          /* neg %a - negate */
+          int src1 = parse_temp(&p);
+          /* mov rax, [rbp-src1*8] */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* neg rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0xF7);
+          emit_byte(&code, 0xD8);
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "extsw") == 0) {
+          /* extsw - extend signed word to long */
+          int src1 = parse_temp(&p);
+          /* mov eax, [rbp-src1*8] ; load 32-bit */
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
+          /* cdqe ; sign-extend eax to rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x98);
+          /* mov [rbp-dest*8], rax */
+          emit_byte(&code, 0x48);
+          emit_byte(&code, 0x89);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(dest_id * 8));
+        } else if (strcmp(token, "extuw") == 0) {
+          /* extuw - extend unsigned word to long (zero-extend) */
+          int src1 = parse_temp(&p);
+          /* mov eax, [rbp-src1*8] ; automatically zero-extended */
+          emit_byte(&code, 0x8B);
+          emit_byte(&code, 0x85);
+          emit_dword(&code, -(src1 * 8));
           /* mov [rbp-dest*8], rax */
           emit_byte(&code, 0x48);
           emit_byte(&code, 0x89);
