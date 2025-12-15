@@ -31,6 +31,17 @@ enum {
   SEEK = 39,
   STAT = 42,
   FSTAT = 43,
+  BIND = 2,
+  MOUNT = 1,
+  UNMOUNT = 35,
+  WSTAT = 41,
+  SEGBRK = 40,
+  SEGATTACH = 47,
+  SEGDETACH = 48,
+  SEGFREE = 49,
+  FD2PATH = 23, /* Already there but duplicated? No, line 30 */
+  NOTIFY = 28,
+  NOTED = 29,
 };
 
 /*
@@ -213,8 +224,26 @@ void syscall_to_9p(Ureg *ureg) {
       if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
         break;
 
-      /* Result is new PID in response */
-      result = 0; /* TODO: parse PID from response */
+      result = 0;
+      /*
+       * Parse PID from response body (newly created pid)
+       * rfork writes to ctl file return the new pid as text
+       */
+      if (r.count > 0 && r.data != nil) {
+        /* Ensure null termination for safety, though r.data might not be */
+        /* Assuming r.data points to a small buffer from p9_dispatch which we
+         * can read */
+        /* p9_dispatch returns data in r.data, we need to treat it as string */
+        char pidbuf[32];
+        int len = r.count < sizeof(pidbuf) - 1 ? r.count : sizeof(pidbuf) - 1;
+        memmove(pidbuf, r.data, len);
+        pidbuf[len] = 0;
+        result = strtoul(pidbuf, 0, 0);
+      }
+
+      /* Free response data if allocated by p9_dispatch/handlers */
+      if (r.data && r.count > 0)
+        free(r.data);
     }
     break;
 
@@ -468,15 +497,203 @@ void syscall_to_9p(Ureg *ureg) {
         break;
 
       /* Remove the file */
+    }
+    break;
+
+  case BIND:
+    /* BIND(new, old, flags) -> Write "bind new old flags" to /mnt/ctl */
+    t.type = Tattach;
+    t.aname = "/mnt/ctl";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+      break;
+
+    {
+      char cmd[512];
+      snprint(cmd, sizeof(cmd), "bind %s %s %d", (char *)args[0],
+              (char *)args[1], (int)args[2]);
+
       memset(&t, 0, sizeof(t));
-      t.type = Tremove;
-      t.fid = up->fid_counter - 1;
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
 
       if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
         break;
 
       result = 0;
     }
+    break;
+
+  case MOUNT:
+    /* MOUNT(fd, old, flags, aname) -> Write "mount fd old flags aname" */
+    t.type = Tattach;
+    t.aname = "/mnt/ctl";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+      break;
+
+    {
+      char cmd[512];
+      char *aname = (char *)args[3];
+      if (aname == nil)
+        aname = "";
+
+      snprint(cmd, sizeof(cmd), "mount %d %s %d %s", (int)args[0],
+              (char *)args[1], (int)args[2], aname);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
+
+      result = 0;
+    }
+    break;
+
+  case UNMOUNT:
+    /* UNMOUNT(name, old) -> Write "unmount name old" */
+    t.type = Tattach;
+    t.aname = "/mnt/ctl";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+      break;
+
+    {
+      char cmd[512];
+      char *name = (char *)args[0];
+      if (name == nil)
+        name = "";
+      char *old = (char *)args[1];
+      if (old == nil)
+        old = "";
+
+      snprint(cmd, sizeof(cmd), "unmount %s %s", name, old);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
+
+      result = 0;
+    }
+    break;
+
+  case WSTAT:
+    /* WSTAT(path, buf, n) -> Tattach + Twstat */
+    {
+      char *path = (char *)args[0];
+      uchar *buf = (uchar *)args[1];
+      int nbuf = (int)args[2];
+
+      t.type = Tattach;
+      t.aname = path;
+      t.fid = up->fid_counter++;
+      t.afid = NOFID;
+      t.uname = up->user;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
+
+      /* Twstat */
+      memset(&t, 0, sizeof(t));
+      t.type = Twstat;
+      t.fid = up->fid_counter - 1;
+      t.stat = buf;
+      t.nstat = nbuf;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
+
+      result = nbuf;
+
+      /* Clunk */
+      memset(&t, 0, sizeof(t));
+      t.type = Tclunk;
+      t.fid = up->fid_counter - 1;
+      p9_dispatch(up, &t, &r);
+    }
+    break;
+
+  case SEGBRK:
+    /* SEGBRK(nb, addr) -> Write "segbrk addr" */
+    t.type = Tattach;
+    t.aname = "/proc/self/ctl";
+    t.fid = up->fid_counter++;
+    t.afid = NOFID;
+    t.uname = up->user;
+
+    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+      break;
+
+    {
+      char cmd[64];
+      snprint(cmd, sizeof(cmd), "segbrk %d %p", (int)args[0], (void *)args[1]);
+
+      memset(&t, 0, sizeof(t));
+      t.type = Twrite;
+      t.fid = r.qid.path;
+      t.offset = 0;
+      t.count = strlen(cmd);
+      t.data = cmd;
+
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        result = -1;
+        break;
+      }
+
+      result = 0;
+    }
+    break;
+
+  case SEGATTACH:
+    /* SEGATTACH stub */
+    print("syscall_to_9p: segattach stubbed\n");
+    result = -1;
+    break;
+
+  case SEGDETACH:
+    /* SEGDETACH stub */
+    print("syscall_to_9p: segdetach stubbed\n");
+    result = 0;
+    break;
+
+  case SEGFREE:
+    /* SEGFREE stub */
+    print("syscall_to_9p: segfree stubbed\n");
+    result = 0;
+    break;
+
+  case FD2PATH:
+    /* FD2PATH stub */
+    result = -1;
+    break;
+
+  case NOTIFY:
+  case NOTED:
+    /* NOTIFY/NOTED stub */
+    result = 0;
     break;
 
   default:
