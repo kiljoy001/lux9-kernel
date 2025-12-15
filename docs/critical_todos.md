@@ -31,62 +31,62 @@ Last updated: 2025-12-15
 
 ## 🔴 CRITICAL - CLR Runtime
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `clr/clr_runtime.c` | 156 | Resolve type token to get size |
-| `clr/clr_runtime.c` | 166 | Resolve element type size |
-| `clr/clr-kernel/clr_internal_calls.c` | 18 | String extraction from managed object |
-| `clr/clr-kernel/clr_internal_calls.c` | 37 | Get size from type token |
-| `clr/clr-kernel/clr_pebble_integration.c` | 307 | Redesign for token economy |
-| `clr/clr-kernel/clr_pebble_integration.h` | 227 | Implement Red-Blue API |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `clr/clr_runtime.c` | 156 | Resolve type token to get size | ✅ Fixed |
+| `clr/clr_runtime.c` | 166 | Resolve element type size | ✅ Fixed |
+| `clr/clr-kernel/clr_internal_calls.c` | 18 | String extraction from managed object | ✅ Fixed |
+| `clr/clr-kernel/clr_internal_calls.c` | 37 | Get size from type token | ✅ Fixed |
+| `clr/clr-kernel/clr_pebble_integration.c` | 307 | Redesign for token economy | Pending |
+| `clr/clr-kernel/clr_pebble_integration.h` | 227 | Implement Red-Blue API | Pending |
 
 ---
 
 ## 🟡 MEDIUM - 9P Routing
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `9p_router.c` | 436 | Handle MSGORD_CB_ROLLBACK |
-| `9p_router.c` | 1074 | Implement proper Tstat |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `9p_router.c` | 436 | Handle MSGORD_CB_ROLLBACK | ✅ Fixed |
+| `9p_router.c` | 1074 | Implement proper Tstat | ✅ Fixed |
 
 ---
 
 ## 🟡 MEDIUM - PCI/Family
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `family/pci_9p.c` | 159 | Implement PCI bus listing |
-| `family/pci_9p.c` | 164 | Implement global PCI ctl |
-| `family/pci_family.c` | 452 | Implement channel cleanup |
-| `family/pci_resource_pool.c` | 30 | `exchange_cleanup` stub |
-| `family/pci_channel.c` | 100 | `exchange_unmap` stub |
-| `family/stubs.c` | 84 | Process stub |
-| `family/stubs.c` | 91 | Permission stub |
-| `family/stubs.c` | 98 | Missing family functions |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `family/pci_9p.c` | 159 | Implement PCI bus listing | Pending |
+| `family/pci_9p.c` | 164 | Implement global PCI ctl | Pending |
+| `family/pci_family.c` | 452 | Implement channel cleanup | Implemented |
+| `family/pci_resource_pool.c` | 30 | `exchange_cleanup` stub | ✅ Implemented |
+| `family/pci_channel.c` | 100 | `exchange_unmap` stub | ✅ Implemented |
+| `family/stubs.c` | 84 | Process stub | ✅ Implemented |
+| `family/stubs.c` | 91 | Permission stub | ✅ Implemented |
+| `family/stubs.c` | 98 | Missing family functions | ✅ Implemented |
 
 ---
 
 ## 🟡 MEDIUM - Kernel Core
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `9front-pc64/main.c` | 378 | Fix devenv create path |
-| `9front-port/proc.c` | 794 | Implement /dev/sip for white tokens |
-| `9front-port/sysproc.c` | 1969 | Store fruity_module_t* in devclr |
-| `9front-pc64/globals.c` | 81 | fprint stub |
-| `9front-pc64/globals.c` | 209 | Swap system stubs |
-| `9front-pc64/globals.c` | 278 | VMX stubs |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `9front-pc64/main.c` | 378 | Fix devenv create path | Pending |
+| `9front-port/proc.c` | 794 | Implement /dev/sip for white tokens | Pending |
+| `9front-port/sysproc.c` | 1969 | Store fruity_module_t* in devclr | Pending |
+| `9front-pc64/globals.c` | 81 | fprint stub | ✅ Implemented |
+| `9front-pc64/globals.c` | 209 | Swap system stubs | ✅ Implemented |
+| `9front-pc64/globals.c` | 278 | VMX stubs | ✅ In devvmx.c |
 
 ---
 
 ## 🟡 MEDIUM - Device Stubs
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `9front-port/devpebble.c` | 195 | Device entry points stubbed |
-| `9front-port/sdio.c` | 69 | Simple stub for success |
-| `9front-port/sdio.c` | 80 | Device registration stub |
-| `9front-port/sdio.c` | 85 | LED function stubs |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `9front-port/devpebble.c` | 195 | Device entry points stubbed | ✅ Fully impl |
+| `9front-port/sdio.c` | 69 | Simple stub for success | ✅ Intentional |
+| `9front-port/sdio.c` | 80 | Device registration stub | ✅ Intentional |
+| `9front-port/sdio.c` | 85 | LED function stubs | ✅ Intentional |
 
 ---
 
