@@ -55,8 +55,8 @@ Last updated: 2025-12-15
 
 | File | Line | Issue | Status |
 |:-----|:-----|:------|:-------|
-| `family/pci_9p.c` | 159 | Implement PCI bus listing | Pending |
-| `family/pci_9p.c` | 164 | Implement global PCI ctl | Pending |
+| `family/pci_9p.c` | 159 | Implement PCI bus listing | ✅ Fixed |
+| `family/pci_9p.c` | 164 | Implement global PCI ctl | ✅ Fixed |
 | `family/pci_family.c` | 452 | Implement channel cleanup | Implemented |
 | `family/pci_resource_pool.c` | 30 | `exchange_cleanup` stub | ✅ Implemented |
 | `family/pci_channel.c` | 100 | `exchange_unmap` stub | ✅ Implemented |
