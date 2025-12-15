@@ -130,6 +130,9 @@ typedef struct clr_object {
   ulong exchange_npages;
   int is_prepared; /* Prepared for exchange? */
 
+  /* Speculative Execution */
+  PebbleRed *red_snapshot; /* Red token holding snapshot (if any) */
+
   /* Concurrency */
   Lock lock; /* Protects white_list modifications */
 
