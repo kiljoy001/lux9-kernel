@@ -302,8 +302,8 @@ bool vm_end_filter(vm_value_t* value);
 // Missing function declarations
 bool vm_new_object(vm_execution_state_t* state, clr_runtime_type_t* type, vm_value_t* result);
 bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_token, vm_value_t* result);
-bool vm_box_value(vm_value_t* value, vm_value_t* box_type, vm_value_t* result);
-bool vm_unbox_value(vm_value_t* obj, vm_value_t* unbox_type, vm_value_t* result);
+bool vm_box_value(vm_execution_state_t* state, vm_value_t* value, vm_value_t* box_type_token, vm_value_t* result);
+bool vm_unbox_value(vm_execution_state_t* state, vm_value_t* obj, vm_value_t* unbox_type_token, vm_value_t* result);
 bool vm_load_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* result);
 bool vm_store_field_object(vm_value_t* obj, vm_value_t* field_token, vm_value_t* value);
 bool vm_load_static_field(vm_value_t* field_token, vm_value_t* result);

@@ -561,16 +561,18 @@ bool vm_execute_instruction(vm_execution_state_t* state) {
             break;
         }
         case CIL_OPCODE_BOX: {
-            vm_value_t value, box_type, result;
-            if (!vm_stack_pop(state, &value)) { vm_set_error(state, "BOX: Stack"); return false; }
-            if (!vm_box_value(&value, &box_type, &result)) { vm_set_error(state, "BOX: Error"); return false; }
+            vm_value_t value, box_type_token, result;
+            if (!vm_stack_pop(state, &value)) { vm_set_error(state, "BOX: Stack underflow"); return false; }
+            if (!vm_stack_pop(state, &box_type_token)) { vm_set_error(state, "BOX: Stack underflow (missing type token)"); return false; }
+            if (!vm_box_value(state, &value, &box_type_token, &result)) { vm_set_error(state, "BOX: Error"); return false; }
             vm_stack_push(state, &result);
             break;
         }
         case CIL_OPCODE_UNBOX: {
-            vm_value_t obj, unbox_type, result;
-            if (!vm_stack_pop(state, &obj)) { vm_set_error(state, "UNBOX: Stack"); return false; }
-            if (!vm_unbox_value(&obj, &unbox_type, &result)) { vm_set_error(state, "UNBOX: Error"); return false; }
+            vm_value_t obj, unbox_type_token, result;
+            if (!vm_stack_pop(state, &obj)) { vm_set_error(state, "UNBOX: Stack underflow"); return false; }
+            if (!vm_stack_pop(state, &unbox_type_token)) { vm_set_error(state, "UNBOX: Stack underflow (missing type token)"); return false; }
+            if (!vm_unbox_value(state, &obj, &unbox_type_token, &result)) { vm_set_error(state, "UNBOX: Error"); return false; }
             vm_stack_push(state, &result);
             break;
         }
@@ -2036,13 +2038,35 @@ clr_runtime_type_t* vm_resolve_type_token(void* assembly_ptr, uint32_t token, vm
     if (!type) return NULL;
     type->token = token;
     type->element_type = VM_TYPE_OBJECT; // Default for objects
-    type->size = 16; // Default object size for now. Real size resolution is complex.
     
-    if (table == 0x02) { // TypeDef
-        if (token == 0x02000001) { // System.Object
+    // Resolve basic element type for sizing
+    if (table == 0x02 || table == 0x01) { // TypeDef or TypeRef
+        // Need to read the TypeDef table entry to get flags and base type, fields.
+        // For simplicity, hardcode some common types.
+        if (token == (TABLE_TYPEDEF << 24 | 1)) { // System.Object
             type->size = sizeof(clr_object_header_t);
+        } else if (token == (TABLE_TYPEDEF << 24 | 2)) { // System.String
+            type->size = sizeof(clr_string_t);
+            type->element_type = VM_TYPE_STRING;
+        } else if (token == (TABLE_TYPEDEF << 24 | 3)) { // System.Array
+            type->size = sizeof(clr_array_t);
+            type->element_type = VM_TYPE_ARRAY;
         } else {
-            // Need to parse TypeDef for real size (later)
+            type->size = 16; // Default object size for unknown types
+        }
+    } else if (table == 0x1B) { // TypeSpec (GenericInst)
+        // Size of generic types depends on generic arguments.
+        // For List<int>, it's size of List<> + size of int (recursively).
+        // For now, use a dummy size. Real sizing needs type layout info.
+        type->size = 24; // Dummy size for List<int>
+    } else { // Primitive types (0x08 for I4 etc. from ELEMENT_TYPE)
+        switch(type->element_type) {
+            case VM_TYPE_I4: type->size = 4; break;
+            case VM_TYPE_I8: type->size = 8; break;
+            case VM_TYPE_R4: type->size = 4; break;
+            case VM_TYPE_R8: type->size = 8; break;
+            case VM_TYPE_REF: type->size = sizeof(void*); break;
+            default: type->size = 0; break;
         }
     }
     return type;
@@ -2495,19 +2519,63 @@ bool vm_load_string_constant(vm_execution_state_t* state, vm_value_t* string_tok
     return true;
 }
 
-bool vm_new_object(vm_execution_state_t* state, clr_runtime_type_t* type, vm_value_t* result) {
-    if (!state || !type) return false;
+bool vm_box_value(vm_execution_state_t* state, vm_value_t* value, vm_value_t* box_type_token, vm_value_t* result) {
+    if (!state || !value || !box_type_token || !result) return false;
 
-    void* obj;
-    // Assume type->size is already resolved for now
-    if (!vm_alloc_object(state, type->size, &obj)) return false;
+    // Resolve the type to be boxed
+    clr_runtime_type_t* resolved_type = vm_resolve_type_token(state->assembly, box_type_token->value.i4, NULL);
+    if (!resolved_type) {
+        vm_set_error(state, "BOX: Could not resolve type");
+        return false;
+    }
 
-    clr_object_header_t* header = (clr_object_header_t*)obj;
-    header->type_token = type->token; // Store TypeDef token
-    header->vtable = type->vtable;     // Store resolved vtable
+    // Calculate total size: object header + size of value type
+    uint32_t total_size = sizeof(clr_object_header_t) + resolved_type->size;
+    
+    void* obj_ptr;
+    if (!vm_alloc_object(state, total_size, &obj_ptr)) return false;
+
+    clr_object_header_t* header = (clr_object_header_t*)obj_ptr;
+    header->type_token = resolved_type->token; // Store token of boxed type
+    // header->vtable = ... // Resolved later
+    
+    // Copy the value into the allocated space after the header
+    void* data_ptr = (uint8_t*)obj_ptr + sizeof(clr_object_header_t);
+    // This is simplified: assumes value fits into resolved_type->size directly.
+    // In reality, it needs to handle different vm_value_t types and copy appropriately.
+    memcpy(data_ptr, &value->value, resolved_type->size); // Copy raw value bytes
 
     result->type = VM_TYPE_OBJECT;
-    result->value.ref = obj;
+    result->value.ref = obj_ptr;
+    return true;
+}
+
+bool vm_unbox_value(vm_execution_state_t* state, vm_value_t* obj, vm_value_t* unbox_type_token, vm_value_t* result) {
+    if (!state || !obj || !unbox_type_token || !result) return false;
+    if (obj->type != VM_TYPE_OBJECT || obj->value.ref == NULL) {
+        vm_set_error(state, "UNBOX: Object reference is null or not an object");
+        return false;
+    }
+
+    clr_object_header_t* header = (clr_object_header_t*)obj->value.ref;
+
+    // Resolve the target unbox type
+    clr_runtime_type_t* resolved_type = vm_resolve_type_token(state->assembly, unbox_type_token->value.i4, NULL);
+    if (!resolved_type) {
+        vm_set_error(state, "UNBOX: Could not resolve target type");
+        return false;
+    }
+
+    // Type check (simplified: assume header->type_token matches resolved_type->token)
+    if (header->type_token != resolved_type->token) {
+        vm_set_error(state, "UNBOX: Type mismatch");
+        return false;
+    }
+
+    // Return pointer to the value type data inside the boxed object
+    void* data_ptr = (uint8_t*)obj->value.ref + sizeof(clr_object_header_t);
+    result->type = VM_TYPE_PTR; // Or the actual value type, but ECMA-335 unbox returns managed pointer
+    result->value.ref = data_ptr;
     return true;
 }
 
