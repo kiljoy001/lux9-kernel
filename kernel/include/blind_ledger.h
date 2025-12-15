@@ -218,4 +218,12 @@ BlindLedgerError ledger_get_derivation_proof(const UserCapability *cap,
  */
 BlindLedgerError ledger_verify_derivation_proof(const DerivationProof *proof);
 
+/*
+ * Lookup by PA and owner (O(1) average via secondary index)
+ * Returns BLIND_LEDGER_OK if found, BLIND_LEDGER_ENOTFOUND otherwise.
+ */
+BlindLedgerError ledger_lookup_by_pa_and_owner(uintptr pa, Proc *owner,
+                                               UserCapability *out_cap,
+                                               BlindLedgerEntry *out_entry);
+
 #endif /* BLIND_LEDGER_H */
