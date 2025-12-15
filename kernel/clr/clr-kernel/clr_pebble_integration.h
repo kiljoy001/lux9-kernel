@@ -223,9 +223,7 @@ int clr_object_rollback(clr_heap_t *heap, clr_object_t *obj);
 
 /* Check if object has snapshot */
 static inline int clr_object_has_snapshot(clr_object_t *obj) {
-  USED(obj);
-  /* TODO: Implement once Red-Blue API is available */
-  return 0;
+  return (obj != nil && obj->red_snapshot != nil) ? 1 : 0;
 }
 
 /* ========== Zero-Copy Message Passing ========== */

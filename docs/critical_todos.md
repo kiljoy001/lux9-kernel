@@ -37,8 +37,8 @@ Last updated: 2025-12-15
 | `clr/clr_runtime.c` | 166 | Resolve element type size | ✅ Fixed |
 | `clr/clr-kernel/clr_internal_calls.c` | 18 | String extraction from managed object | ✅ Fixed |
 | `clr/clr-kernel/clr_internal_calls.c` | 37 | Get size from type token | ✅ Fixed |
-| `clr/clr-kernel/clr_pebble_integration.c` | 307 | Redesign for token economy | Pending |
-| `clr/clr-kernel/clr_pebble_integration.h` | 227 | Implement Red-Blue API | Pending |
+| `clr/clr-kernel/clr_pebble_integration.c` | 307 | Redesign for token economy | ✅ Implemented |
+| `clr/clr-kernel/clr_pebble_integration.h` | 227 | Implement Red-Blue API | ✅ Implemented |
 
 ---
 

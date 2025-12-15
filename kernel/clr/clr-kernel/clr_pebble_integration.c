@@ -297,16 +297,13 @@ void clr_object_free_internal(clr_heap_t *heap, clr_object_t *obj) {
  * - Used for block device I/O transaction safety (NOT for IPC - use exchange
  * pages)
  *
- * Correct Flow:
- * 1. Allocate Blue from colorless bank (for block I/O working buffer)
- * 2. Allocate Red from colorless bank (for snapshot/rollback)
- * 3. Perform block I/O into Blue
- * 4. On success: Free Blue→colorless, Free Red→colorless (commit)
- * 5. On failure: Copy Red→Blue, Free both→colorless (rollback)
+ * Implemented Flow:
+ * 1. clr_object_snapshot() - Allocate Red from colorless bank (snapshot)
+ * 2. Perform block I/O into object data
+ * 3. clr_object_commit() - Free Red→colorless (accept changes)
+ *    OR clr_object_rollback() - Copy Red→Black, Free Red→colorless (revert)
  *
- * TODO: This requires redesign to respect token economy.
- * Current Pebble Blue/Red API uses "matching_red" shadow model which
- * violates circular economy by not properly tracking separate allocations.
+ * The Red-Blue API is now implemented using pebble_red_alloc/free.
  */
 
 int clr_object_snapshot(clr_heap_t *heap, clr_object_t *obj) {
