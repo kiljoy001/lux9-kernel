@@ -195,23 +195,31 @@ ramreset(void)
 	}
 
 	if(secure_rd.size > 0) {
-		/* Allocate via xalloc (TODO: use Pebble Black for non-swappable) */
-		secure_rd.data = xalloc(secure_rd.size);
-		if(secure_rd.data == nil) {
-			print("ramdisk: failed to allocate secure vault\n");
+		/* Allocate via Pebble Black for non-swappable backing */
+		secure_rd.pebble_handle = pebble_alloc_black(secure_rd.size);
+		if(secure_rd.pebble_handle == nil) {
+			print("ramdisk: failed to allocate secure vault (Pebble Black)\n");
 			secure_rd.size = 0;
 		} else {
-			extern void genrandom(uchar *buf, int nbytes);
+			secure_rd.data = pebble_addr(secure_rd.pebble_handle);
+			if(secure_rd.data == nil) {
+				print("ramdisk: failed to map Pebble Black allocation\n");
+				pebble_free(secure_rd.pebble_handle);
+				secure_rd.pebble_handle = nil;
+				secure_rd.size = 0;
+			} else {
+				extern void genrandom(uchar *buf, int nbytes);
 
-			/* Generate random salt and nonce */
-			genrandom(secure_rd.salt, 16);
-			genrandom(secure_rd.nonce, 24);
+				/* Generate random salt and nonce */
+				genrandom(secure_rd.salt, 16);
+				genrandom(secure_rd.nonce, 24);
 
-			/* Zero vault data */
-			memset(secure_rd.data, 0, secure_rd.size);
+				/* Zero vault data */
+				memset(secure_rd.data, 0, secure_rd.size);
 
-			print("ramdisk: secure vault %lud MB allocated (Argon2id + XChaCha20)\n",
-				  secure_rd.size/(1024*1024));
+				print("ramdisk: secure vault %lud MB allocated (Pebble Black, Argon2id + XChaCha20)\n",
+					  secure_rd.size/(1024*1024));
+			}
 		}
 	}
 }
