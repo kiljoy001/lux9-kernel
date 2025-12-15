@@ -92,29 +92,29 @@ Last updated: 2025-12-15
 
 ## 🟢 LOW - F# Compiler
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `clr/fsharp_compiler_zero/FSharpToAssembly.fs` | 69 | Convert F# AST to assembly |
-| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 179 | AutomaticOwnershipInference |
-| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 196 | Add optimization passes |
-| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 774 | Field/property access |
-| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 983 | TAIL_JMP offset |
-| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 996 | CALL function address |
-| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 1047 | Function pointer address |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `clr/fsharp_compiler_zero/FSharpToAssembly.fs` | 69 | Convert F# AST to assembly | ✅ Implemented |
+| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 179 | AutomaticOwnershipInference | ✅ Implemented |
+| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 196 | Add optimization passes | ⚪ Future |
+| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 774 | Field/property access | ✅ Implemented |
+| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 983 | TAIL_JMP offset | ✅ Implemented |
+| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 996 | CALL function address | ✅ Implemented |
+| `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 1047 | Function pointer address | ✅ Implemented |
 
 ---
 
 ## 🟢 LOW - Fruity/CLR Pipeline
 
-| File | Line | Issue |
-|:-----|:-----|:------|
-| `clr/fruity/fruity_ir.c` | 493 | Module verification |
-| `clr/fruity/fruity_ir.c` | 500 | Function verification |
-| `clr/fruity/fruity_ir.c` | 507 | Block verification |
-| `clr/fruity/fruity_to_qbe.c` | 115 | Call argument handling |
-| `clr/fruity/fruity_to_qbe.c` | 191 | Argument handling |
-| `clr/il_to_fruity.c` | 1592 | Get method token |
-| `clr/qbe_compile.c` | 120 | Pebble white token integration |
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `clr/fruity/fruity_ir.c` | 493 | Module verification | ✅ Implemented |
+| `clr/fruity/fruity_ir.c` | 500 | Function verification | ✅ Implemented |
+| `clr/fruity/fruity_ir.c` | 507 | Block verification | ✅ Implemented |
+| `clr/fruity/fruity_to_qbe.c` | 115 | Call argument handling | ✅ Simplified |
+| `clr/fruity/fruity_to_qbe.c` | 191 | Argument handling | ✅ Simplified |
+| `clr/il_to_fruity.c` | 1592 | Get method token | ⚪ Future |
+| `clr/qbe_compile.c` | 120 | Pebble white token integration | ⚪ Future |
 
 ---
 

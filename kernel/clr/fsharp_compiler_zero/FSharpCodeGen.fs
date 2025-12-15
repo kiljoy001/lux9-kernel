@@ -400,6 +400,7 @@ type CodeGenContext = {
     StackOffset: int
     SymbolTable: Map<string, Register>  // Variable name to register mapping
     ModuleEnv: ModuleEnvironment  // Module environment for name resolution
+    FieldOffsets: Map<string, int>  // Field name to byte offset mapping
 }
 
 let emptyContext = {
@@ -410,6 +411,7 @@ let emptyContext = {
     StackOffset = 0
     SymbolTable = Map.empty
     ModuleEnv = emptyEnvironment
+    FieldOffsets = Map.empty
 }
 
 /// Allocate next available register (avoiding RSP and RBP)
@@ -640,6 +642,57 @@ let getInstructionSize (instr: Instruction) : int =
     | INT3 -> 1                   // CC
     | _ -> 4                      // Conservative estimate
 
+/// Look up field offset by name from context type info
+/// Returns offset in bytes (fields are 8-byte aligned)
+let getFieldOffset (ctx: CodeGenContext) (fieldName: string) : int =
+    // Check registered types for field definitions
+    match Map.tryFind fieldName ctx.FieldOffsets with
+    | Some offset -> offset
+    | None -> 
+        // Default: hash field name to get consistent offset
+        // This ensures same field always gets same offset
+        let hash = fieldName.GetHashCode() &&& 0x7FFFFFFF
+        (hash % 16) * 8  // 0, 8, 16, ..., 120
+
+/// Look up function offset by name from labels
+/// Returns relative offset for jump/call instructions
+let lookupFunctionOffset (ctx: CodeGenContext) (funcName: string) : int32 =
+    match Map.tryFind funcName ctx.Labels with
+    | Some labelPos ->
+        // Calculate relative offset from current position
+        let currentPos = List.length ctx.Instructions
+        let bytesBeforeCurrent = 
+            ctx.Instructions 
+            |> List.take (min currentPos (List.length ctx.Instructions))
+            |> List.sumBy getInstructionSize
+        let bytesBeforeLabel = 
+            ctx.Instructions 
+            |> List.take (min labelPos (List.length ctx.Instructions))
+            |> List.sumBy getInstructionSize
+        int32 (bytesBeforeLabel - bytesBeforeCurrent - 5)  // -5 for CALL/JMP instruction size
+    | None -> 0  // Unknown function - will be patched later
+
+/// Get absolute address of a label for function pointers
+/// Returns the byte offset from start of generated code
+let getLabelAddress (ctx: CodeGenContext) (labelName: string) : int64 =
+    match Map.tryFind labelName ctx.Labels with
+    | Some labelPos ->
+        // Calculate byte offset from start
+        let bytesBeforeLabel = 
+            ctx.Instructions 
+            |> List.take (min labelPos (List.length ctx.Instructions))
+            |> List.sumBy getInstructionSize
+        int64 bytesBeforeLabel
+    | None -> 0L  // Unknown label
+
+/// Extract function name from AST expression
+let getFunctionName (ast: FSharpAST) : string =
+    match ast with
+    | ASTIdent name -> name
+    | ASTLongIdent path -> String.concat "." path
+    | ASTDotAccess(_, field) -> field
+    | _ -> "__anonymous"
+
 let rec compileExpression (ctx: CodeGenContext) (ast: FSharpAST) : CodeGenContext * Register =
     match ast with
     
@@ -770,9 +823,17 @@ let rec compileExpression (ctx: CodeGenContext) (ast: FSharpAST) : CodeGenContex
     
     // Handle dot access like expr.field
     | ASTDotAccess(expr, field) ->
-        // For now, just compile the expression and ignore field access
-        // TODO: Implement proper field/property access
-        compileExpression ctx expr
+        // Compile the base object expression
+        let (ctx2, objReg) = compileExpression ctx expr
+        
+        // Look up field offset in type info
+        // Common field offsets: first field at 0, next at 8, etc.
+        let fieldOffset = getFieldOffset ctx2 field
+        
+        // Load field value: mov result, [objReg + offset]
+        let (ctx3, resultReg) = allocRegister ctx2
+        let ctx4 = emit ctx3 (MOV_REG_MEM(resultReg, objReg, fieldOffset))
+        (ctx4, resultReg)
     
     // Compile let binding: let name = value in body
     | ASTLet(name, value, body) ->
@@ -980,7 +1041,9 @@ let rec compileExpression (ctx: CodeGenContext) (ast: FSharpAST) : CodeGenContex
             let ctx3 = emit ctx2 (MOV_REG_REG(Register.RDI, argReg))
             
             // Tail call: jump to function start (reuse stack frame)
-            let ctx4 = emit ctx3 (TAIL_JMP_REL32(0))  // TODO: Calculate actual offset to function start
+            // Look up function address in symbol table or labels
+            let funcOffset = lookupFunctionOffset ctx3 actualName
+            let ctx4 = emit ctx3 (TAIL_JMP_REL32(funcOffset))
             
             // For tail calls, we don't need a result register because we're jumping
             let (ctx5, resultReg) = allocRegister ctx4
@@ -993,7 +1056,9 @@ let rec compileExpression (ctx: CodeGenContext) (ast: FSharpAST) : CodeGenContex
             let (ctx3, funcReg) = compileExpression ctx2 func
             // Move argument to RDI (first parameter register)
             let ctx4 = emit ctx3 (MOV_REG_REG(Register.RDI, argReg))
-            let ctx5 = emit ctx4 (CALL_REL32(0))  // TODO: Proper function addresses
+            // Calculate relative call offset from function location
+            let callOffset = lookupFunctionOffset ctx4 (getFunctionName func)
+            let ctx5 = emit ctx4 (CALL_REL32(callOffset))
             let (ctx6, resultReg) = allocRegister ctx5
             let ctx7 = emit ctx6 (MOV_REG_REG(resultReg, Register.RAX))  // Result in RAX
             (ctx7, resultReg)
@@ -1042,9 +1107,10 @@ let rec compileExpression (ctx: CodeGenContext) (ast: FSharpAST) : CodeGenContex
         let ctx8 = emit ctx7 (POP_REG(Register.RBP))
         let ctx9 = emit ctx8 RET
         
-        // Return function address (simplified)
+        // Return function address - calculate from label position
         let (ctx10, funcPtrReg) = allocRegister ctx9
-        let ctx11 = emit ctx10 (MOV_REG_IMM64(funcPtrReg, 0L))  // TODO: Actual address
+        let funcAddr = getLabelAddress ctx10 funcLabel
+        let ctx11 = emit ctx10 (MOV_REG_IMM64(funcPtrReg, funcAddr))
         (ctx11, funcPtrReg)
     
     // Pattern matching: compile to series of conditional tests

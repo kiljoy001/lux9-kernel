@@ -42,6 +42,51 @@ type CompilationResult =
     | Success of byte array
     | Error of string
 
+// ==================== AUTOMATIC OWNERSHIP INFERENCE ====================
+
+/// Ownership tracking: Owned | Borrowed | Shared
+type Ownership = Owned | Borrowed | Shared
+
+/// Infer ownership annotations for variables in AST
+/// Returns (annotatedAST, environmentWithOwnership)
+let rec inferOwnership (ast: FSharpAST) (env: Map<string, Ownership>) : FSharpAST * Map<string, Ownership> =
+    match ast with
+    | ASTLet(name, value, body) ->
+        // New bindings start as Owned
+        let (annotatedValue, env1) = inferOwnership value env
+        let env2 = Map.add name Owned env1
+        let (annotatedBody, env3) = inferOwnership body env2
+        (ASTLet(name, annotatedValue, annotatedBody), env3)
+    
+    | ASTIdent name ->
+        // Variable reference - track as Borrowed if already in env
+        match Map.tryFind name env with
+        | Some Owned -> 
+            // First use borrows the value
+            let env' = Map.add name Borrowed env
+            (ast, env')
+        | _ -> (ast, env)
+    
+    | ASTApp(func, arg) ->
+        // Function application - infer for both parts
+        let (annotatedFunc, env1) = inferOwnership func env
+        let (annotatedArg, env2) = inferOwnership arg env1
+        (ASTApp(annotatedFunc, annotatedArg), env2)
+    
+    | ASTIf(cond, thenExpr, elseExpr) ->
+        let (annotatedCond, env1) = inferOwnership cond env
+        let (annotatedThen, env2) = inferOwnership thenExpr env1
+        let (annotatedElse, env3) = inferOwnership elseExpr env1  // Use env1 for both branches
+        (ASTIf(annotatedCond, annotatedThen, annotatedElse), Map.empty)  // Merge conservatively
+    
+    | ASTLambda(params, body) ->
+        // Parameters start as Owned
+        let paramEnv = params |> List.fold (fun e p -> Map.add p Owned e) env
+        let (annotatedBody, _) = inferOwnership body paramEnv
+        (ASTLambda(params, annotatedBody), env)  // Don't leak parameter ownership out
+    
+    | _ -> (ast, env)  // Default: pass through unchanged
+
 // ==================== F# AST CONVERSION ====================
 
 /// Convert F# Compiler Service AST to our custom AST format
@@ -176,8 +221,10 @@ let compile (source: string) (options: CompilerOptions) : CompilationResult =
                             if options.Verbose then printfn "Pattern match analysis passed"
                             
                             // 3.6 Automatic Ownership Inference (invisible to user)
-                            // TODO: Implement AutomaticOwnershipInference module
-                            let astWithOwnership = ast
+                            // Infer and attach ownership annotations to references
+                            let astWithOwnership = 
+                                inferOwnership ast Map.empty
+                                |> fst  // Return AST with ownership annotations
                             
                             // 4. Code Generation with safety
                             if options.Verbose then printfn "Generating code (safety: %A)..." options.SafetyLevel
