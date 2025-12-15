@@ -232,7 +232,31 @@ long long clr_p9_stat(unsigned int fid) {
     return -1;
   }
 
-  /* For now, return 0 - proper Tstat handling needs Dir parsing */
-  /* TODO: Parse Dir structure from r.stat to get length */
+  /* Parse Dir structure from stat response to extract file length */
+  /* Dir wire format (Plan 9 convention):
+   * 2 bytes: size (not including these 2 bytes)
+   * 2 bytes: type (kernel use)
+   * 4 bytes: dev
+   * 1 byte: qid.type
+   * 4 bytes: qid.vers
+   * 8 bytes: qid.path
+   * 4 bytes: mode
+   * 4 bytes: atime
+   * 4 bytes: mtime
+   * 8 bytes: length  <- this is what we want, at offset 33
+   * ... name, uid, gid, muid strings after that
+   */
+  if (r.data != NULL && r.count >= 41) {
+    unsigned char *dir = (unsigned char *)r.data;
+    /* Skip first 2 bytes (stat size field not included in our data) */
+    /* Length is at offset 33 from start of stat data */
+    long long length = 0;
+    unsigned char *lenptr = dir + 33;
+    for (int i = 0; i < 8; i++) {
+      length |= ((long long)lenptr[i]) << (i * 8);
+    }
+    return length;
+  }
+
   return 0;
 }

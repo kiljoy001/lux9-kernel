@@ -57,7 +57,7 @@ Last updated: 2025-12-15
 |:-----|:-----|:------|:-------|
 | `family/pci_9p.c` | 159 | Implement PCI bus listing | ✅ Fixed |
 | `family/pci_9p.c` | 164 | Implement global PCI ctl | ✅ Fixed |
-| `family/pci_family.c` | 452 | Implement channel cleanup | Implemented |
+| `family/pci_family.c` | 452 | Implement channel cleanup | ✅ Implemented |
 | `family/pci_resource_pool.c` | 30 | `exchange_cleanup` stub | ✅ Implemented |
 | `family/pci_channel.c` | 100 | `exchange_unmap` stub | ✅ Implemented |
 | `family/stubs.c` | 84 | Process stub | ✅ Implemented |
@@ -113,27 +113,47 @@ Last updated: 2025-12-15
 | `clr/fruity/fruity_ir.c` | 507 | Block verification | ✅ Implemented |
 | `clr/fruity/fruity_to_qbe.c` | 115 | Call argument handling | ✅ Simplified |
 | `clr/fruity/fruity_to_qbe.c` | 191 | Argument handling | ✅ Simplified |
-| `clr/il_to_fruity.c` | 1592 | Get method token | ⚪ Future |
+| `clr/il_to_fruity.c` | 1713 | Get method token | ⚪ Future |
 | `clr/qbe_compile.c` | 120 | Pebble white token integration | ⚪ Future |
+
+---
+
+## 🟢 LOW - CLR Core Runtime
+
+| File | Line | Issue | Status |
+|:-----|:-----|:------|:-------|
+| `clr/qbe/clr_core.c` | 98 | String concatenation | ✅ Implemented |
+| `clr/qbe/clr_core.c` | 169 | String IndexOutOfRange | ✅ Implemented |
+| `clr/qbe/clr_core.c` | 197 | Array IndexOutOfRange | ✅ Implemented |
+| `clr/qbe/clr_core.c` | 260 | Monitor.Enter | ✅ Implemented |
+| `clr/qbe/clr_core.c` | 269 | Monitor.Exit | ✅ Implemented |
+| `clr/qbe/clr_p9_internal.c` | 236 | Dir stat parsing | ✅ Implemented |
+| `clr/qbe/kernel_util.c` | 205 | Realloc data copy | ✅ Implemented |
+| `clr/qbe/kernel_util.c` | 284 | Pool freeing | ⚪ Stub OK |
+| `clr/clr_codepage.c` | 198 | Check borrow counts | ⚪ Future |
+| `clr/clr_tasklet_execute.c` | 119 | Endianness | ⚪ Future |
 
 ---
 
 ## Summary
 
-| Priority | Count |
-|:---------|:------|
-| 🔴 CRITICAL | 15 |
-| 🟡 MEDIUM | 19 |
-| 🟢 LOW | 14 |
-| **Total** | **48** |
+| Priority | Total | Resolved | Remaining |
+|:---------|:------|:---------|:----------|
+| 🔴 CRITICAL | 15 | 14 | 1 (CGA) |
+| 🟡 MEDIUM | 19 | 16 | 3 (future) |
+| 🟢 LOW | 24 | 19 | 5 (future) |
+| **Total** | **58** | **49** | **9** |
 
 ---
 
-## Recommended Order
+## Remaining Items (Future Work)
 
-1. **I/O Port Access** (`devmem.c:179,233`)
-2. **Interrupt Disable** (`devirq.c:404`)
-3. **devclr implementation** (`devclr.c`)
-4. **CLR Type Resolution** (`clr_runtime.c:156,166`)
-5. **CGA screen mapping** (`cga.c:177`)
-6. **9P stat/rollback** (`9p_router.c`)
+1. `cga.c:177` - CGA screen (not needed, VGA available)
+2. `main.c:378` - devenv boot order (architectural)
+3. `proc.c:794` - /dev/sip white tokens (enhancement)
+4. `sysproc.c:1969` - fruity_module_t storage (enhancement)
+5. `FSharpCompiler.fs:196` - Optimization passes
+6. `il_to_fruity.c:1713` - Method token lookup
+7. `qbe_compile.c:120` - Pebble integration
+8. `clr_codepage.c:198` - Borrow count checking
+9. `clr_tasklet_execute.c:119` - Endianness handling

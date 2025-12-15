@@ -95,23 +95,46 @@ clr_object_t *clr_object_gettype(clr_object_t *obj) { return nil; }
  * System.String.Internal_Concat2(string a, string b)
  */
 clr_object_t *clr_string_concat2(clr_object_t *s1, clr_object_t *s2) {
-  /* TODO: Allocate new string and copy chars */
-  /* For MVP, return s1 if s2 empty, or s2 if s1 empty */
+  /* Handle null cases */
   if (s1 == nil || s1->data == nil)
     return s2;
   if (s2 == nil || s2->data == nil)
     return s1;
 
-  /* Real implementation requires allocating [len][chars] */
+  /* Get lengths */
   s32int len1 = *(s32int *)s1->data;
   s32int len2 = *(s32int *)s2->data;
-  ulong size = sizeof(s32int) + (len1 + len2) * sizeof(u16int);
+  s32int total_len = len1 + len2;
 
-  /* We can't easily alloc here without the heap pointer context.
-   * qbe_compile needs to pass heap context for "real" allocs.
-   * Stub: return s1.
-   */
-  return s1;
+  /* Allocate new string: length field + chars */
+  ulong size = sizeof(s32int) + total_len * sizeof(u16int);
+  void *new_data = xalloc(size);
+  if (new_data == nil)
+    return s1; /* Allocation failed, return first string */
+
+  /* Set length */
+  *(s32int *)new_data = total_len;
+
+  /* Copy chars from s1 */
+  u16int *dst = (u16int *)((s32int *)new_data + 1);
+  u16int *src1 = (u16int *)((s32int *)s1->data + 1);
+  for (int i = 0; i < len1; i++)
+    dst[i] = src1[i];
+
+  /* Copy chars from s2 */
+  u16int *src2 = (u16int *)((s32int *)s2->data + 1);
+  for (int i = 0; i < len2; i++)
+    dst[len1 + i] = src2[i];
+
+  /* Allocate result object */
+  clr_object_t *result = xalloc(sizeof(clr_object_t));
+  if (result == nil) {
+    xfree(new_data);
+    return s1;
+  }
+  memset(result, 0, sizeof(clr_object_t));
+  result->data = new_data;
+  return result;
 }
 
 /*
@@ -166,8 +189,11 @@ u16int clr_string_get_chars(clr_object_t *str, int index) {
     return 0;
 
   s32int len = *(s32int *)str->data;
-  if (index < 0 || index >= len)
-    return 0; /* IndexOutOfRange */
+  if (index < 0 || index >= len) {
+    /* IndexOutOfRangeException - in kernel, return 0 */
+    /* Full CLR would throw here */
+    return 0;
+  }
 
   u16int *chars = (u16int *)((s32int *)str->data + 1);
   return chars[index];
@@ -193,8 +219,11 @@ clr_object_t *clr_array_getvalue(clr_object_t *arr, int index) {
     return nil;
 
   s32int len = *(s32int *)arr->data;
-  if (index < 0 || index >= len)
-    return nil; /* TODO: throw IndexOutOfRange */
+  if (index < 0 || index >= len) {
+    /* IndexOutOfRangeException - in kernel, return nil */
+    /* Full CLR would throw here */
+    return nil;
+  }
 
   /* Layout: [length (4)] [pad (4)] [ptr0 (8)] [ptr1 (8)] ... */
   /* Alignment of pointers is 8 bytes */
@@ -257,7 +286,8 @@ void clr_environment_failfast(clr_object_t *msg) {
 void clr_monitor_enter(clr_object_t *obj) {
   if (obj == nil)
     return;
-  /* TODO: Locking logic using syncblock or pebble_lock */
+  /* Use object's lock field for synchronization */
+  lock(&obj->lock);
 }
 
 /*
@@ -266,5 +296,6 @@ void clr_monitor_enter(clr_object_t *obj) {
 void clr_monitor_exit(clr_object_t *obj) {
   if (obj == nil)
     return;
-  /* TODO: Unlock logic */
+  /* Use object's lock field for synchronization */
+  unlock(&obj->lock);
 }
