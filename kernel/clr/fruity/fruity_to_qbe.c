@@ -182,6 +182,23 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
                             next_id, target_id); /* Swap for FALSE */
       } break;
 
+      case FRUITY_LOAD_STRING:
+        qbe_buffer_printf(buf, "    %%t%d =l call $clr_string_from_literal(w %d)\n",
+                          ++tmp_counter, instr->operand.value.i32);
+        break;
+
+      case FRUITY_NEWOBJ:
+        /* TODO: Argument handling */
+        qbe_buffer_printf(buf, "    %%t%d =l call $clr_newobj(w %d)\n",
+                          ++tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_NEWARR:
+        /* Reuse stack slot for result (size -> array) */
+        qbe_buffer_printf(buf, "    %%t%d =l call $clr_newarr(w %d, w %%t%d)\n",
+                          tmp_counter, instr->operand.value.token, tmp_counter);
+        break;
+
       case FRUITY_LIME:
         /* call l $lux_alloc(w %size, w %type) */
         /* Assume size is on top of stack */

@@ -113,6 +113,14 @@ typedef enum {
    */
   FRUITY_POP = 0x104,
 
+  /* LOAD_STRING - Load string literal
+   * Maps to: clr_string_from_literal()
+   * Source: MSIL 'ldstr'
+   * Effect: Returns managed string object (White Token)
+   * Stack: → string_ref
+   */
+  FRUITY_LOAD_STRING = 0x105,
+
   /* ===== Transactional Operations (0x200-0x2FF) ===== */
 
   /* CHERRY - Create Red snapshot (Begin transaction)
@@ -347,6 +355,14 @@ typedef enum {
    * Stack: dest_ptr, value → ∅
    */
   FRUITY_STOBJ = 0x608,
+
+  /* NEWOBJ - Create new object
+   * Maps to: clr_newobj()
+   * Source: MSIL 'newobj'
+   * Effect: Allocates object, calls constructor
+   * Stack: args... → obj_ref
+   */
+  FRUITY_NEWOBJ = 0x609,
 
   /* ===== Typed Reference Operations (0x680-0x6FF) ===== */
 

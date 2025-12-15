@@ -39,6 +39,9 @@ void print_fruity_instruction(fruity_instruction_t *instr)
 	case FRUITY_XOR: printf("FRUITY_XOR"); break;
 	case FRUITY_NOT: printf("FRUITY_NOT"); break;
 	case FRUITY_NEG: printf("FRUITY_NEG"); break;
+	case FRUITY_LOAD_STRING: printf("FRUITY_LOAD_STRING 0x%08x", instr->operand.value.i32); break;
+	case FRUITY_NEWOBJ: printf("FRUITY_NEWOBJ 0x%08x", instr->operand.value.token); break;
+	case FRUITY_NEWARR: printf("FRUITY_NEWARR 0x%08x", instr->operand.value.token); break;
 	case FRUITY_CALL: printf("FRUITY_CALL 0x%08x", instr->operand.value.token); break;
 	case FRUITY_RET: printf("FRUITY_RET"); break;
 	case FRUITY_LIME: printf("FRUITY_LIME 0x%08x", instr->operand.value.token); break;

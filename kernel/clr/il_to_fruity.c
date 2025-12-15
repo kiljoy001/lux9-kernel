@@ -767,10 +767,18 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     break;
 
   case IL_NEWOBJ:
+    operand.type = FRUITY_OP_METHOD;
+    operand.value.token = *(uint32_t *)&il[offset + 1];
+    instr = create_fruity_instruction(FRUITY_NEWOBJ, operand, offset);
+    if (instr) instr->pebble_effects.creates_white = 1;
+    *offset_ptr += 5;
+    break;
+
   case IL_NEWARR:
     operand.type = FRUITY_OP_TYPE;
     operand.value.token = *(uint32_t *)&il[offset + 1];
-    instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
+    instr = create_fruity_instruction(FRUITY_NEWARR, operand, offset);
+    if (instr) instr->pebble_effects.creates_white = 1;
     *offset_ptr += 5;
     break;
 
@@ -781,14 +789,10 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     uint32_t us_index = us_token & 0x00FFFFFF;
 
     /* Store string index in operand for later resolution */
-    /* The native runtime will use this to create a managed string */
     operand.type = FRUITY_OP_IMM_I32;
     operand.value.i32 = us_index;
 
-    /* LDSTR becomes a CALL to clr_string_from_literal(us_index) */
-    /* For now, emit as a custom opcode that will be handled specially */
-    instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
-    /* Mark this as a string allocation specifically */
+    instr = create_fruity_instruction(FRUITY_LOAD_STRING, operand, offset);
     if (instr)
       instr->pebble_effects.creates_white = 1;
 
