@@ -22,6 +22,31 @@ struct CompileContext {
 
 Lock clr_system_lock;
 
+typedef struct XchgSlot XchgSlot;
+struct XchgSlot {
+  uintptr token; /* Opaque token exposed to callers */
+  void *page;    /* BY2PG buffer */
+  int inuse;
+};
+
+static XchgSlot xchg_slots[64];
+static ulong xchg_token_counter = 1;
+static Lock xchg_lock;
+
+/* Resolve an exchange token to a physical handle (kernel view) */
+uintptr clr_token_to_handle(uintptr token) {
+  uintptr pa = 0;
+  lock(&xchg_lock);
+  for (int i = 0; i < nelem(xchg_slots); i++) {
+    if (xchg_slots[i].inuse && xchg_slots[i].token == token) {
+      pa = PADDR(xchg_slots[i].page);
+      break;
+    }
+  }
+  unlock(&xchg_lock);
+  return pa;
+}
+
 // Qid Enums for /dev/clr filesystem hierarchy
 enum {
   Qdir,     // /dev/clr
@@ -67,6 +92,10 @@ enum {
   QmemoryGcStatus,       // /dev/clr/memory/gc_status
   QmemoryPebbleSnapshot, // /dev/clr/memory/pebble_snapshot
   Qexecute,              // /dev/clr/execute - write DLL to execute
+
+  QxchgDir,       // /dev/clr/xchg
+  QxchgReadPage,  // /dev/clr/xchg/readpage  (returns exchange page handle)
+  QxchgWritePage, // /dev/clr/xchg/writepage (returns exchange page handle)
 };
 
 // Main Dirtab for /dev/clr
@@ -112,6 +141,18 @@ static Dirtab clrdir[] = {
     {Qexecute},
     0,
     0220,
+    "xchg",
+    {QxchgDir, 0, QTDIR},
+    0,
+    DMDIR | 0555,
+    "readpage",
+    {QxchgReadPage},
+    0,
+    0444,
+    "writepage",
+    {QxchgWritePage},
+    0,
+    0220,
 };
 
 // Generic device driver initialization
@@ -152,6 +193,8 @@ static int clrgen(Chan *c, char *name, Dirtab *tab, int ntab, int i, Dir *dp) {
       return devgen(c, name, tab, ntab, i, dp);
     if (strcmp(name, "memory") == 0)
       return devgen(c, name, tab, ntab, i, dp);
+    if (strcmp(name, "xchg") == 0)
+      return devgen(c, name, tab, ntab, i, dp);
     if (strcmp(name, "new") ==
         0) { // For /dev/clr/assemblies/new, /dev/clr/tasklets/new, etc.
       // This is not a static entry, but rather a pseudo-file for creation
@@ -189,6 +232,21 @@ static int clrgen(Chan *c, char *name, Dirtab *tab, int ntab, int i, Dir *dp) {
       return 1;
     }
     // Dynamic channel_id entries
+    break;
+
+  case QxchgDir: // /dev/clr/xchg/
+    if (strcmp(name, "readpage") == 0) {
+      qid.path = QxchgReadPage;
+      qid.type = QTFILE;
+      devdir(c, qid, name, BY2PG, up->user, 0444, dp);
+      return 1;
+    }
+    if (strcmp(name, "writepage") == 0) {
+      qid.path = QxchgWritePage;
+      qid.type = QTFILE;
+      devdir(c, qid, name, BY2PG, up->user, 0220, dp);
+      return 1;
+    }
     break;
 
     // Default: No match, return 0
@@ -234,6 +292,35 @@ static Chan *clropen(Chan *c, int omode) {
     if (omode & OWRITE)
       error(Eperm);
     break;
+  case QxchgReadPage:
+  case QxchgWritePage: {
+    void *page;
+    int slot = -1;
+
+    page = xalloc(BY2PG);
+    if (page == nil)
+      error(Enomem);
+    memset(page, 0, BY2PG);
+
+    lock(&xchg_lock);
+    for (int i = 0; i < nelem(xchg_slots); i++) {
+      if (!xchg_slots[i].inuse) {
+        slot = i;
+        xchg_slots[i].inuse = 1;
+        xchg_slots[i].page = page;
+        xchg_slots[i].token = ++xchg_token_counter;
+        break;
+      }
+    }
+    unlock(&xchg_lock);
+
+    if (slot < 0) {
+      xfree(page);
+      error(Enomem);
+    }
+    c->aux = (void *)(uintptr)slot;
+    break;
+  }
   }
 
   c = devopen(c, omode, clrdir, nelem(clrdir), clrgen);
@@ -251,6 +338,27 @@ static void clrclose(Chan *c) {
       if (ctx->module != nil)
         fruity_module_destroy(ctx->module);
       free(ctx);
+      c->aux = nil;
+    }
+    break;
+  case QxchgReadPage:
+  case QxchgWritePage:
+    if (c->aux != nil) {
+      int slot = (int)(uintptr)c->aux;
+      if (slot >= 0 && slot < nelem(xchg_slots)) {
+        lock(&xchg_lock);
+        if (xchg_slots[slot].inuse) {
+          void *page = xchg_slots[slot].page;
+          xchg_slots[slot].inuse = 0;
+          xchg_slots[slot].page = nil;
+          xchg_slots[slot].token = 0;
+          unlock(&xchg_lock);
+          if (page != nil)
+            xfree(page);
+        } else {
+          unlock(&xchg_lock);
+        }
+      }
       c->aux = nil;
     }
     break;
@@ -272,6 +380,21 @@ static long clrread(Chan *c, void *buf, long n, vlong off) {
   case QmemoryHeapUsage:
     snprint(buf, n, "Heap Size: 0MB\nHeap Used: 0KB\n");
     return strlen(buf);
+  case QxchgReadPage:
+  case QxchgWritePage: {
+    if (c->aux == nil)
+      error(Eio);
+    int slot = (int)(uintptr)c->aux;
+    if (slot < 0 || slot >= nelem(xchg_slots) || !xchg_slots[slot].inuse)
+      error(Eio);
+    if (off == 0) {
+      return snprint(buf, n, "token:0x%p", (void *)xchg_slots[slot].token);
+    }
+    if (n > BY2PG)
+      n = BY2PG;
+    memmove(buf, xchg_slots[slot].page, n);
+    return n;
+  }
   default:
     error(Egreg);
   }
@@ -328,6 +451,13 @@ static long clrwrite(Chan *c, void *va, long n, vlong off) {
 
   case QchannelsNew:
     /* Stub: Write channel parameters to create a new channel */
+    return n;
+  case QxchgWritePage:
+    if (c->aux == nil)
+      error(Eio);
+    if (n > BY2PG)
+      n = BY2PG;
+    memmove(c->aux, a, n);
     return n;
 
   default:

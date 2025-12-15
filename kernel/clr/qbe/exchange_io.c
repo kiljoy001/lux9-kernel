@@ -92,10 +92,37 @@ ExchangeFILE *exchange_fmemopen_handle(uintptr handle, const char *mode) {
 
 /* Open exchange file (placeholder - will integrate with 9P) */
 ExchangeFILE *exchange_fopen(const char *path, const char *mode) {
-  /* TODO: Integrate with /dev/clr/compile/ 9P hierarchy */
-  (void)path;
-  (void)mode;
-  return NULL; /* Not yet implemented */
+  uintptr handle = 0;
+
+  if (!path || !mode)
+    return NULL;
+
+  /*
+   * Lightweight convention until devclr wiring is finished:
+   * if path looks like "handle:0x<physaddr>", treat it as an exchange
+   * page physical handle and map directly.
+   */
+  if (strncmp(path, "handle:", 7) == 0) {
+    handle = strtoull(path + 7, nil, 0);
+    if (handle != 0)
+      return exchange_fmemopen_handle(handle, mode);
+  }
+
+  /*
+   * Token-based open: path "token:<hex>" resolves to an exchange page slot
+   * provided by /dev/clr/xchg. We delegate to a kernel helper that maps
+   * the token to a physical handle.
+   */
+  if (strncmp(path, "token:", 6) == 0) {
+    extern uintptr clr_token_to_handle(uintptr token);
+    uintptr token = strtoull(path + 6, nil, 0);
+    handle = clr_token_to_handle(token);
+    if (handle != 0)
+      return exchange_fmemopen_handle(handle, mode);
+  }
+
+  /* No other back-end yet. */
+  return NULL;
 }
 
 /* Close exchange file */
@@ -103,7 +130,7 @@ int exchange_fclose(ExchangeFILE *fp) {
   if (!fp)
     return EOF;
 
-  /* TODO: Send exchange page back if needed */
+  /* Ownership of the underlying page stays with caller; only free wrapper. */
   xfree(fp);
   return 0;
 }

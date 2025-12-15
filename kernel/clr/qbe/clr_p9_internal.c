@@ -37,7 +37,7 @@ typedef struct Fcall {
     /* Qid and other fields handled by real p9_dispatch */
 } Fcall;
 
-/* Global fid counter - TODO: make per-process */
+/* Global fid counter (atomic increment to avoid reuse races across calls) */
 static unsigned int next_fid = 1;
 
 /*
@@ -54,8 +54,8 @@ unsigned int clr_p9_attach(const char *path)
     if (path == NULL)
         return 0;
 
-    /* Allocate new fid */
-    fid = next_fid++;
+    /* Allocate new fid atomically */
+    fid = __sync_fetch_and_add(&next_fid, 1);
 
     /* Build Tattach message */
     memset(&t, 0, sizeof(t));

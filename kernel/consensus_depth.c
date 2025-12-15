@@ -59,7 +59,7 @@ static OperationType classify_by_fcall_type(Fcall *t) {
   /* Read/Write depend on path */
   case Tread:
   case Twrite:
-    return OP_TYPE_UNKNOWN; /* Need path info */
+    return OP_TYPE_LOCAL_FILE; /* Refined by path checks in get_operation_type */
 
   /* Remove may need consensus */
   case Tremove:
