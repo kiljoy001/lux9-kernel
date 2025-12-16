@@ -13,7 +13,7 @@ Last updated: 2025-12-15
 | `9front-port/devirq.c` | 404 | `intrdisable()` not implemented | ✅ Fixed |
 | `9front-port/devmem.c` | 179 | I/O port read not implemented | ✅ Fixed |
 | `9front-port/devmem.c` | 233 | I/O port write not implemented | ✅ Fixed |
-| `9front-pc64/cga.c` | 177 | CGA screen memory not mapped yet | ⚪ N/A (VGA available, CGA is legacy) |
+| `9front-pc64/cga.c` | 177 | CGA screen memory not mapped yet | ✅ Disabled (fbconsole used) |
 
 ---
 
