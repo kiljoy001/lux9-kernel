@@ -1632,7 +1632,7 @@ void kproc(char *name, void (*func)(void *), void *arg) {
     p->slash = up->slash;
     p->dot = up->slash; /* unlike fork, do not inherit the dot for kprocs */
     if (p->dot != nil)
-      incref(p->dot);
+      incref((Ref *)&p->dot->ref);
   } else {
     p->slash = nil;
     p->dot = nil;

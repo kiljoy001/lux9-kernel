@@ -306,7 +306,7 @@ copypath(Path *p)
 	for(i=0; i<pp->mlen; i++){
 		pp->mtpt[i] = p->mtpt[i];
 		if(pp->mtpt[i] != nil)
-			incref(pp->mtpt[i]);
+			incref((Ref *)&pp->mtpt[i]->ref);
 	}
 
 	return pp;
@@ -909,7 +909,7 @@ cclone(Chan *c)
 	nc = wq->clone;
 	free(wq);
 	if((nc->path = c->path) != nil) {
-		incref(c->path);
+		incref((Ref *)&c->path->ref);
 	}
 	return nc;
 }
@@ -1662,7 +1662,7 @@ case '#':
 			if(c->path == nil)
 				c->path = newpath("/");
 			cnew->path = c->path;
-			incref(cnew->path);
+			incref((Ref *)&cnew->path->ref);
 
 			cnew = devtab[cnew->type]->create(cnew, e.elems[e.nelems-1], omode&~(OEXCL|OCEXEC), perm);
 			if(omode & ORCLOSE)

@@ -330,11 +330,13 @@ void main_after_cr3(void) {
   extern void tpm_test_run(void);
   tpm_test_run();
 
+  /* Initialize device drivers BEFORE spawning proc0 */
+  chandevinit();
+  uartputs("DEBUG: chandevinit complete\n", 30);
+
+  /* Now spawn proc0 - devices are ready */
   userinit();
   uartputs("DEBUG: userinit complete\n", 28);
-
-  /* Initialize device drivers (creates closeproc kproc) */
-  chandevinit();
 
   /* Debug: show scheduler state before entering schedinit */
   extern ulong runvec;
