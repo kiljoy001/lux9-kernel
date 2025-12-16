@@ -217,7 +217,19 @@ static void ramreset(void) {
 
   if (secure_rd.size > 0) {
     /* Allocate via Pebble Black for non-swappable backing */
-    if (pebble_black_alloc(secure_rd.size, &secure_rd.capability) == 0) {
+    int pebble_ok = 0;
+    /* pebble_black_alloc requires a process context (up != nil) */
+    if (up != nil) {
+      if (!waserror()) {
+        /* pebble_black_alloc raises error() on failure */
+        if (pebble_black_alloc(secure_rd.size, &secure_rd.capability) == 0) {
+          pebble_ok = 1;
+        }
+        poperror();
+      }
+    }
+
+    if (pebble_ok) {
       /*
        * The actual backing memory address is accessed through the
        * Pebble Black lookup mechanism. The memory is allocated by
