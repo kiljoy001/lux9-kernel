@@ -512,15 +512,17 @@ void syscall(Ureg *ureg) {
           scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
 
   /* Phase 6: Pure 9P - TRUE syscall elimination
-   * TEMPORARILY DISABLED: Crashing in vm_stack_pop.
-   * Fallback to legacy syscalls for C-based init verification. */
-  if (1 || p9_handle_doorbell(up) < 0) {
+   * Re-enabled to use doorbell/9P mechanism instead of legacy syscalls */
+  print("SYSCALL: Attempting doorbell for syscall %d\n", scallnr);
+  if (p9_handle_doorbell(up) < 0) {
     /* Fallback: Doorbell not rung? Try legacy syscall dispatch */
-    /* This allows 'init' (Phase 5) to boot while we build Phase 6 userspace */
+    print("SYSCALL: Doorbell failed, falling back to legacy dosyscall\n");
     dosyscall(
         scallnr,
         (Sargs *)(ureg->sp), /* No offset - SYSCALL doesn't push return addr */
         (uintptr *)(&ureg->ax));
+  } else {
+    print("SYSCALL: Doorbell succeeded\n");
   }
 
   /* Debug: after 9P dispatch */
