@@ -5,6 +5,11 @@ main(int argc, char *argv[])
 {
 	int fd;
 
+	/* Close any inherited file descriptors to ensure we get 0, 1, 2 */
+	close(0);
+	close(1);
+	close(2);
+
 	/* First, we need to open console for stdin/stdout/stderr */
 	/* Bind #c (console device) to /dev */
 	if(bind("#c", "/dev", MREPL) < 0) {

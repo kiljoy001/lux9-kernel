@@ -1796,10 +1796,14 @@ uintptr syspebblebluediscard(void *list_void) {
 #include <systab.h>
 
 int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
-  print("DEBUG: dosyscall enter scallnr=%ld\n", scallnr);
+  extern void uartputs(char *, int);
+  char buf[128];
+  snprint(buf, sizeof(buf), "DEBUG: dosyscall enter scallnr=%ld\n", scallnr);
+  uartputs(buf, strlen(buf));
+
   if (scallnr == EXEC) {
-    print("DEBUG: dosyscall enter scallnr=%ld\n", scallnr);
-    print("DEBUG: handler address %p\n", systab[scallnr]);
+    snprint(buf, sizeof(buf), "DEBUG: dosyscall EXEC handler address %p\n", systab[scallnr]);
+    uartputs(buf, strlen(buf));
   }
   vlong startns, stopns;
   uintptr ret;
