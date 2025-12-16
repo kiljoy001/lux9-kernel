@@ -159,35 +159,9 @@ void die_(char *file, char *s, ...) {
   panic("QBE error in %s: %s", file, buf);
 }
 
-/* Memory allocation wrappers */
-void *malloc(size_t size) { return xalloc(size); }
-
-void *calloc(size_t nmemb, size_t size) { return xallocz(nmemb * size); }
-
-void *realloc(void *ptr, size_t size) {
-  void *new_ptr;
-
-  if (!ptr)
-    return malloc(size);
-
-  if (size == 0) {
-    free(ptr);
-    return NULL;
-  }
-
-  new_ptr = malloc(size);
-  if (new_ptr) {
-    /* Copy old data - use size as upper bound since we don't track old size */
-    /* This is safe because we're copying to a buffer of exactly 'size' bytes */
-    /* The old buffer is at least as large as whatever was written to it */
-    memcpy(new_ptr, ptr, size);
-    free(ptr);
-  }
-
-  return new_ptr;
-}
-
-void free(void *ptr) { xfree(ptr); }
+/* Memory allocation: use kernel's standard malloc/free from alloc.c
+ * which uses poolalloc/poolfree. Do NOT redefine malloc/free here
+ * as it causes conflicts with the kernel's allocator. */
 
 /* exit - for kernel, panic */
 void exit(int status) { panic("QBE called exit(%d)", status); }
