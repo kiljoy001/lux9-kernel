@@ -219,7 +219,8 @@ ILResult clr_tasklet_execute_step(TaskletSlot *t, int max_ops) {
     /* Advance IP */
     t->ip = heap->decoder.offset;
   }
-  /* Stub for execution engine internal calls */
+  /* Internal calls are resolved via clr_resolve_internal_call() in
+   * execution_engine */
 
   return IL_RESULT_YIELD;
 }

@@ -4482,7 +4482,7 @@ bool vm_store_indirect(vm_value_t *addr, vm_value_t *value) {
   }
 }
 
-// Stub implementations for complex operations
+// Implementation of complex VM operations
 bool vm_load_array_element(vm_value_t *array, vm_value_t *index,
                            vm_type_t element_type, vm_value_t *result) {
   /* Load element from array at given index */

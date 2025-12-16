@@ -1,13 +1,13 @@
 /* Global kernel variables */
-#include "u.h"
-#include <lib.h>
-#include "mem.h"
 #include "dat.h"
+#include "error.h"
 #include "fns.h"
 #include "io.h"
-#include "ureg.h"
+#include "mem.h"
 #include "pci.h"
-#include "error.h"
+#include "u.h"
+#include "ureg.h"
+#include <lib.h>
 
 /* Memory constants defined in memory_9front.c */
 extern u64int MemMin; /* set by bootargsinit() */
@@ -78,8 +78,24 @@ void (*sd_microdelay)(int) = nil;
 
 /* libc9 formatting support */
 int _fmtFdFlush(Fmt *f) {
-  /* Stub for now - would write buffered format output to FD */
-  (void)f;
+  /* Write buffered format output to file descriptor */
+  if (f == nil || f->start == nil)
+    return 0;
+
+  int n = f->to - f->start;
+  if (n > 0 && f->farg != nil) {
+    /* f->farg typically contains the FD as a pointer */
+    /* In kernel context, use write syscall or kwrite */
+    /* For now, output to console via print */
+    char *buf = f->start;
+    char save = buf[n];
+    buf[n] = 0;
+    print("%s", buf);
+    buf[n] = save;
+  }
+
+  /* Reset buffer */
+  f->to = f->start;
   return 0;
 }
 
