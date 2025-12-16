@@ -217,8 +217,12 @@ static void proc0(void *arg) {
   print("BOOT[proc0]: text page mapped, k=%p\n", k);
   if (k == nil)
     panic("proc0: kmap failed");
+
+  /* TODO: Load and compile CLR init from /boot/boot
+   * For now, use legacy initcode[] until CLR userspace execution is working */
   memmove((uchar *)VA(k), initcode, sizeof(initcode));
   memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
+
   print("BOOT[proc0]: unmapping text page\n");
   kunmap(k);
   if (p->pa == 0)
