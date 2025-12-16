@@ -3,9 +3,11 @@
  * Provides Rust-style ownership and borrowing for locks, memory, I/O, etc.
  */
 
-#include "lock.h"
-
 #pragma once
+
+/* Need kernel types before lock.h */
+#include "lock.h"
+#include "u.h"
 
 /* Borrow states - based on Rust borrow semantics */
 enum BorrowState {

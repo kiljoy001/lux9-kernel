@@ -1,14 +1,13 @@
 #include "u.h"
 #include <lib.h>
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
-#include "io.h"
-#include "ureg.h"
 #include "../../limine.h"
 #include "borrowchecker.h"
+#include "dat.h"
 #include "exchange.h"
+#include "fns.h"
 #include "initrd.h"
+#include "io.h"
+#include "mem.h"
 #include "pageown.h"
 #include "pci.h"
 #include "pebble.h"
@@ -374,20 +373,18 @@ void init0(void) {
 
   randominit();
 
-  /* Setup environment variables - currently disabled due to devenv issues */
-  /* TODO: Fix devenv create path then enable:
-  if(!waserror()){
-          snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
-          ksetenv("terminal", buf, 0);
-          ksetenv("cputype", "amd64", 0);
-          ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
-          setconfenv();
-          poperror();
-          print("BOOT[init0]: environment setup completed\n");
+  /* Setup environment variables - now enabled with fixed egrp initialization */
+  if (!waserror()) {
+    snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+    ksetenv("terminal", buf, 0);
+    ksetenv("cputype", "amd64", 0);
+    ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
+    setconfenv();
+    poperror();
+    print("BOOT[init0]: environment setup completed\n");
   } else {
-          print("BOOT[init0]: environment setup failed: %r\n");
+    print("BOOT[init0]: environment setup failed: %r\n");
   }
-  */
 
   kproc("alarm", alarmkproc, 0);
 
