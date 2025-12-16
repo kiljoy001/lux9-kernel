@@ -75,6 +75,7 @@ CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
           -O0 -g3 -gdwarf-4 \
           -ffreestanding -fno-stack-protector \
           -fno-stack-check -fno-lto -fno-pie \
+          -fno-strict-aliasing \
           -m64 -march=x86-64 -mcmodel=kernel \
           -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
           -mno-red-zone \

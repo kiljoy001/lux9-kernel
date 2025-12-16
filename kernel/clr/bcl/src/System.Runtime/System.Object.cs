@@ -183,12 +183,58 @@ namespace System
     }
 
     [StructLayout(LayoutKind.Sequential, Size = 4, Pack = 4)]
-    public unsafe struct Int32
+    public unsafe struct Int32 : IComparable, IComparable<int>, IEquatable<int>
     {
         internal fixed byte m_value[4];
         
         public const int MinValue = -2147483648;
         public const int MaxValue = 2147483647;
+
+        public int CompareTo(object value)
+        {
+            if (value == null) return 1;
+            if (value is int i)
+            {
+                int val;
+                fixed (byte* p = m_value) val = *(int*)p;
+                if (val < i) return -1;
+                if (val > i) return 1;
+                return 0;
+            }
+            throw new ArgumentException("Argument must be Int32");
+        }
+
+        public int CompareTo(int value)
+        {
+            int val;
+            fixed (byte* p = m_value) val = *(int*)p;
+            if (val < value) return -1;
+            if (val > value) return 1;
+            return 0;
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is int i)
+            {
+                return Equals(i);
+            }
+            return false;
+        }
+
+        public bool Equals(int obj)
+        {
+            int val;
+            fixed (byte* p = m_value) val = *(int*)p;
+            return val == obj;
+        }
+
+        public override int GetHashCode()
+        {
+            int val;
+            fixed (byte* p = m_value) val = *(int*)p;
+            return val;
+        }
         
         public override string ToString() => "Int32";
         

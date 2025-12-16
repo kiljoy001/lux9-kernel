@@ -423,21 +423,31 @@ void init0(void) {
    * Open console for stdin, stdout, stderr
    * Use #c/cons directly since /dev not bound yet
    */
+  /*
+   * Open console for stdin, stdout, stderr
+   * Use #c/cons directly since /dev not bound yet
+   */
   if (waserror())
     panic("init0: cannot open console: %r");
-  kopen("#c/cons", OREAD);  /* fd 0 - stdin */
+  uartputs("init0: calling kopen(stdin)\n", 26);
+  kopen("#c/cons", OREAD); /* fd 0 - stdin */
+  uartputs("init0: calling kopen(stdout)\n", 27);
   kopen("#c/cons", OWRITE); /* fd 1 - stdout */
+  uartputs("init0: calling kopen(stderr)\n", 27);
   kopen("#c/cons", OWRITE); /* fd 2 - stderr */
   poperror();
 
+  uartputs("init0: calling randominit\n", 24);
   randominit();
 
-  /* Setup environment variables - now enabled with fixed egrp initialization */
+  /* Setup environment variables */
   if (!waserror()) {
     snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+    uartputs("init0: calling ksetenv\n", 21);
     ksetenv("terminal", buf, 0);
     ksetenv("cputype", "amd64", 0);
     ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
+    uartputs("init0: calling setconfenv\n", 24);
     setconfenv();
     poperror();
     print("BOOT[init0]: environment setup completed\n");
@@ -445,6 +455,7 @@ void init0(void) {
     print("BOOT[init0]: environment setup failed: %r\n");
   }
 
+  uartputs("init0: calling kproc(alarm)\n", 26);
   kproc("alarm", alarmkproc, 0);
 
   sp = (char **)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0]) * 4);
@@ -456,6 +467,7 @@ void init0(void) {
   fpukexit(nil);
   if (m->proc == nil)
     panic("BOOT[init0]: m->proc is NULL before touser()!");
+  uartputs("init0: calling touser\n", 22);
   touser(sp);
 }
 

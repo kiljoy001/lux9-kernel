@@ -55,7 +55,7 @@ long incref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    print("incref: NULL Ref from pc=%#p\n", getcallerpc(&r));
+    panic("incref: NULL Ref from pc=%#p", getcallerpc(&r));
     return 0;
   }
 
@@ -69,6 +69,11 @@ long incref(Ref *r) {
 long decref(Ref *r) {
   long old, new;
 
+  if (r == nil) {
+    panic("decref: dangling ref pc=%#p", getcallerpc(&r));
+    return 0;
+  }
+
   do {
     old = r->ref;
     if (old <= 0)
@@ -76,6 +81,24 @@ long decref(Ref *r) {
     new = old - 1;
   } while (!cmpswap(&r->ref, old, new));
   return new;
+}
+
+/* External boot state for debugging */
+extern int current_boot_state;
+
+/*
+ * Safe path incref: Ensures path is not NULL before incref.
+ * If path is NULL, creates a default "/" path.
+ * Logs boot state for debugging.
+ */
+Path *pathincref(Path *p) {
+  if (p == nil) {
+    print("pathincref: WARNING path nil at boot_state=%d, creating default\n",
+          current_boot_state);
+    p = newpath("/");
+  }
+  incref(&p->ref);
+  return p;
 }
 
 /*
@@ -839,6 +862,9 @@ Chan *cclone(Chan *c) {
   free(wq);
   if ((nc->path = c->path) != nil) {
     incref((Ref *)&c->path->ref);
+  } else {
+    print("cclone: c->path is nil for c=%p type=%d dev=%d boot_state=%d\n", c,
+          c->type, c->dev, current_boot_state);
   }
   return nc;
 }
@@ -948,9 +974,17 @@ int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   Walkqid *wq;
 
   c = *cp;
-  incref(c);
-  path = c->path;
-  incref(path);
+  incref(c); /* Checks c!=nil implicitly effectively - namec handles passed nil?
+                No walk guarantees c valid from namec */
+  /* if (c==nil) panic("walk: c is nil"); - handled by caller or incref */
+
+  if (c->path == nil) {
+    print("walk: c=%p type=%d dev=%d qid.path=%llx\n", c, c->type, c->dev,
+          c->qid.path);
+    panic("walk: c->path is nil");
+  }
+  path = pathincref(c->path);
+  c->path = path; /* Update in case pathincref created a new path */
   mh = nil;
 
   /*
@@ -1156,30 +1190,53 @@ static void growparse(Elemlist *e) {
  * reject, e.g., "/adm/users/." when /adm/users is a file
  * rather than a directory.
  */
+extern void uartputs(char *, int);
+
 static void parsename(char *aname, Elemlist *e) {
   char *name, *slash;
+
+  if (aname == nil)
+    panic("parsename: aname is nil!");
+  if (e == nil)
+    panic("parsename: e is nil!");
 
   kstrdup(&e->name, aname);
   name = e->name;
   e->nelems = 0;
   e->elems = nil;
   e->off = smalloc(sizeof(int));
+
+  if (e->off == nil) {
+    uartputs("PANIC: smalloc returned nil!\n", 25);
+    panic("parsename: smalloc nil");
+  }
+
+  // uartputs("DEBUG: parsename allocated off\n", 30);
+
   e->off[0] = skipslash(name) - name;
   for (;;) {
     name = skipslash(name);
     if (*name == '\0') {
+      if (e->off == nil)
+        panic("loop tail nil");
       e->off[e->nelems] = name + strlen(name) - e->name;
       e->mustbedir = 1;
       break;
     }
     growparse(e);
+    if (e->elems == nil)
+      panic("elems nil");
     e->elems[e->nelems++] = name;
     slash = utfrune(name, '/');
     if (slash == nil) {
+      if (e->off == nil)
+        panic("slash nil nil");
       e->off[e->nelems] = name + strlen(name) - e->name;
       e->mustbedir = 0;
       break;
     }
+    if (e->off == nil)
+      panic("check nil");
     e->off[e->nelems] = slash - e->name;
     *slash++ = '\0';
     name = slash;
@@ -1260,9 +1317,6 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
   char *err;
   char *name;
 
-  /* DEBUG: print("namec: looking up '%s' amode=%d omode=%d\n", aname, amode,
-   * omode); */
-
   if (aname[0] == '\0')
     error("empty file name");
   aname = validnamedup(aname, 1);
@@ -1305,6 +1359,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
   switch (name[0]) {
   case '/':
     c = up->slash;
+    if (c == nil)
+      panic("namec: up->slash is nil for %s", name);
     incref(c);
     break;
 
@@ -1328,10 +1384,18 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     }
 
     c = devtab[t]->attach(up->genbuf + n);
+    if (c == nil)
+      panic("namec: attach returned nil for %s", name);
+    if (c->path == nil)
+      print(
+          "namec: WARNING attach returned chan type=%d with nil path for %s\n",
+          t, aname);
     break;
 
   default:
     c = up->dot;
+    if (c == nil)
+      panic("namec: up->dot is nil for %s", name);
     incref(c);
     break;
   }
@@ -1420,7 +1484,14 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
   Open:
     /* save&update the name; domount might change c */
     path = c->path;
-    incref(path);
+    if (path == nil) {
+      /* Channel has no path (e.g., freshly attached device), create a default
+       */
+      c->path = newpath("/");
+      path = c->path;
+    }
+    path = pathincref(path);
+    c->path = path; /* Update in case pathincref created a new path */
     if (waserror()) {
       pathclose(path);
       nexterror();
@@ -1499,11 +1570,22 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
      */
     e.nelems++;
     e.nerror++;
-    if (walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0) {
-      if (omode & OEXCL)
-        error(Eexist);
-      omode |= OTRUNC;
-      goto Open;
+    /* Save the parent directory channel before walking the last element.
+     * walk() destroys c and sets *cp = nil on failure, but we need c
+     * for the create path below. */
+    {
+      Chan *parent = c;
+      incref(parent);
+      if (walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0) {
+        /* File exists - try to open with truncation */
+        cclose(parent);
+        if (omode & OEXCL)
+          error(Eexist);
+        omode |= OTRUNC;
+        goto Open;
+      }
+      /* Walk failed (file doesn't exist) - restore parent channel */
+      c = parent;
     }
 
     /*
@@ -1532,8 +1614,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
      * This is hardly as common as the create/create race, and is really
      * not too much worse than what might happen if (B) got a hold of a
      * file descriptor and then the file was removed -- either way (B) can't do
-     * anything with the result of the create call.  So we don't care about this
-     * race.
+     * anything with the result of the create call.  So we don't care about
+     * this race.
      *
      * Applications that care about more fine-grained decision of the races
      * can use the OEXCL flag to get at the underlying create(5) semantics;
@@ -1554,6 +1636,12 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
         cnew = createdir(cnew, m);
       else {
         cnew = c;
+        if (cnew == nil) {
+          print("namec Acreate: c is nil at findmount-false path, "
+                "boot_state=%d\n",
+                current_boot_state);
+          panic("namec Acreate: c is nil when trying to incref for create");
+        }
         incref(cnew);
       }
 
@@ -1569,6 +1657,10 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
       if (c->path == nil)
         c->path = newpath("/");
       cnew->path = c->path;
+      if (cnew->path == nil)
+        panic("namec create: cnew->path still nil after c->path assignment, "
+              "c=%p type=%d",
+              c, c->type);
       incref((Ref *)&cnew->path->ref);
 
       cnew = devtab[cnew->type]->create(cnew, e.elems[e.nelems - 1],

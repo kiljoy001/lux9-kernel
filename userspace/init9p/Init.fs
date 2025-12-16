@@ -22,18 +22,18 @@ let sendToKernel (message: byte[]) : byte[] =
 
 /// 9P Protocol Helpers
 module P9 =
-    let mutable tag : ushort = 0ush
+    let mutable tag : uint16 = 0us
 
     let nextTag () =
-        tag <- tag + 1ush
+        tag <- tag + 1us
         tag
 
     let putByte (b: byte) (buf: byte[]) (offset: int) =
         buf.[offset] <- b
         offset + 1
 
-    let putShort (s: ushort) (buf: byte[]) (offset: int) =
-        buf.[offset] <- byte (s &&& 0xFFush)
+    let putShort (s: uint16) (buf: byte[]) (offset: int) =
+        buf.[offset] <- byte (s &&& 0xFFus)
         buf.[offset+1] <- byte (s >>> 8)
         offset + 2
 
@@ -46,8 +46,8 @@ module P9 =
 
     let putString (s: string) (buf: byte[]) (offset: int) =
         let bytes = System.Text.Encoding.UTF8.GetBytes(s)
-        let off = putShort (ushort bytes.Length) buf offset
-        Buffer.BlockCopy(bytes, 0, buf, off, bytes.Length)
+        let off = putShort (uint16 bytes.Length) buf offset
+        Array.Copy(bytes, 0, buf, off, bytes.Length)
         off + bytes.Length
 
     // Basic Tversion
@@ -55,7 +55,7 @@ module P9 =
         let buf = Array.zeroCreate<byte> (4 + 1 + 2 + 4 + 2 + version.Length)
         let mutable off = 4 // Skip size for now
         off <- putByte 100uy buf off // Tversion
-        off <- putShort 65535ush buf off // NOTAG
+        off <- putShort 65535us buf off // NOTAG
         off <- putInt msize buf off
         off <- putString version buf off
         putInt (off) buf 0 |> ignore
@@ -78,14 +78,14 @@ module P9 =
     // Twalk
     let tWalk (fid: int) (newfid: int) (names: string[]) =
         let mutable size = 4 + 1 + 2 + 4 + 4 + 2
-        for n in names do size <- size + 2 + System.Text.Encoding.UTF8.GetByteCount(n)
+        for n in names do size <- size + 2 + System.Text.Encoding.UTF8.GetBytes(n).Length
         let buf = Array.zeroCreate<byte> size
         let mutable off = 4
         off <- putByte 110uy buf off // Twalk
         off <- putShort (nextTag()) buf off
         off <- putInt fid buf off
         off <- putInt newfid buf off
-        off <- putShort (ushort names.Length) buf off
+        off <- putShort (uint16 names.Length) buf off
         for n in names do off <- putString n buf off
         putInt off buf 0 |> ignore
         buf
@@ -97,6 +97,19 @@ module P9 =
         off <- putByte 112uy buf off // Topen
         off <- putShort (nextTag()) buf off
         off <- putInt fid buf off
+        off <- putByte mode buf off
+        putInt off buf 0 |> ignore
+        buf
+
+    // Tcreate
+    let tCreate (fid: int) (name: string) (perm: int) (mode: byte) =
+        let buf = Array.zeroCreate<byte> (4 + 1 + 2 + 4 + (2 + name.Length) + 4 + 1)
+        let mutable off = 4
+        off <- putByte 114uy buf off // Tcreate
+        off <- putShort (nextTag()) buf off
+        off <- putInt fid buf off
+        off <- putString name buf off
+        off <- putInt perm buf off
         off <- putByte mode buf off
         putInt off buf 0 |> ignore
         buf
@@ -120,7 +133,8 @@ module P9 =
         buf.[off+7] <- byte ((offset >>> 56) &&& 0xFFUL)
         off <- off + 8
         off <- putInt data.Length buf off
-        Buffer.BlockCopy(data, 0, buf, off, data.Length)
+        off <- putInt data.Length buf off
+        Array.Copy(data, 0, buf, off, data.Length)
         putInt (off + data.Length) buf 0 |> ignore
         buf
         
@@ -160,6 +174,28 @@ let setupNamespace () =
         let _ = sendToKernel msgOpen
         printfn "[INIT] Opened ctl"
         
+        // Ensure /dev and /proc exist in root
+        // Clone root (Fid 1) to Fid 3
+        let _ = sendToKernel (P9.tWalk 1 3 [||])
+        // Create /dev (DMDIR = 0x80000000)
+        // 0x80000000 | 0755
+        // Tcreate(fid, name, perm, mode)
+        // Note: Tcreate requires parent fid, creates file, and modifies fid to new file.
+        // We catch exception in case it already exists (create fails)
+        try
+            let _ = sendToKernel (P9.tCreate 3 "dev" -2147483189 0uy) // DMDIR | 0755
+            printfn "[INIT] Created /dev"
+        with _ -> printfn "[INIT] /dev likely exists"
+        let _ = sendToKernel (P9.tClunk 3) // Close fid 3
+
+        // Clone root (Fid 1) to Fid 3
+        let _ = sendToKernel (P9.tWalk 1 3 [||])
+        try
+            let _ = sendToKernel (P9.tCreate 3 "proc" -2147483189 0uy)
+            printfn "[INIT] Created /proc"
+        with _ -> printfn "[INIT] /proc likely exists"
+        let _ = sendToKernel (P9.tClunk 3)
+
         // 4. Write "bind #c /dev 0"
         let cmd1 = System.Text.Encoding.UTF8.GetBytes("bind #c /dev 0")
         let msgWrite1 = P9.tWrite 2 0UL cmd1
@@ -175,6 +211,7 @@ let setupNamespace () =
         // Cleanup
         let _ = sendToKernel (P9.tClunk 2)
         let _ = sendToKernel (P9.tClunk 1)
+        ()
         
     with ex ->
         printfn "[INIT] Namespace setup FAILED: %s" ex.Message
