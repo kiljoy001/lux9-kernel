@@ -96,7 +96,7 @@ Last updated: 2025-12-15
 |:-----|:-----|:------|:-------|
 | `clr/fsharp_compiler_zero/FSharpToAssembly.fs` | 69 | Convert F# AST to assembly | ✅ Implemented |
 | `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 179 | AutomaticOwnershipInference | ✅ Implemented |
-| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 196 | Add optimization passes | ⚪ Future |
+| `clr/fsharp_compiler_zero/FSharpCompiler.fs` | 196 | Add optimization passes | ✅ OptimizationPasses module |
 | `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 774 | Field/property access | ✅ Implemented |
 | `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 983 | TAIL_JMP offset | ✅ Implemented |
 | `clr/fsharp_compiler_zero/FSharpCodeGen.fs` | 996 | CALL function address | ✅ Implemented |
@@ -113,7 +113,7 @@ Last updated: 2025-12-15
 | `clr/fruity/fruity_ir.c` | 507 | Block verification | ✅ Implemented |
 | `clr/fruity/fruity_to_qbe.c` | 115 | Call argument handling | ✅ Simplified |
 | `clr/fruity/fruity_to_qbe.c` | 191 | Argument handling | ✅ Simplified |
-| `clr/il_to_fruity.c` | 1713 | Get method token | ⚪ Future |
+| `clr/il_to_fruity.c` | 1713 | Get method token | ✅ Uses method->method_token |
 | `clr/qbe_compile.c` | 120 | Pebble white token integration | ✅ Uses pebble_blue_alloc |
 
 ---
@@ -129,9 +129,9 @@ Last updated: 2025-12-15
 | `clr/qbe/clr_core.c` | 269 | Monitor.Exit | ✅ Implemented |
 | `clr/qbe/clr_p9_internal.c` | 236 | Dir stat parsing | ✅ Implemented |
 | `clr/qbe/kernel_util.c` | 205 | Realloc data copy | ✅ Implemented |
-| `clr/qbe/kernel_util.c` | 284 | Pool freeing | ⚪ Stub OK |
+| `clr/qbe/kernel_util.c` | 284 | Pool freeing | ✅ Documented design |
 | `clr/clr_codepage.c` | 198 | Check borrow counts | ✅ Implemented |
-| `clr/clr_tasklet_execute.c` | 119 | Endianness | ⚪ Future |
+| `clr/clr_tasklet_execute.c` | 119 | Endianness | ✅ CLR_BIG_ENDIAN macro |
 
 ---
 

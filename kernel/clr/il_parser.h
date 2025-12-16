@@ -210,6 +210,9 @@ typedef struct {
   uint16_t impl_flags; // MethodImplAttributes
   uint8_t flags;       /* Tiny or fat format */
 
+  /* Metadata token for this method (TABLE_METHODDEF | row_index) */
+  uint32_t method_token;
+
   /* Exception handling */
   exception_clause_t *exception_clauses;
   size_t exception_clause_count;

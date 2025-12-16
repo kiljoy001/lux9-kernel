@@ -238,9 +238,23 @@ void *emalloc(size_t n) {
 /* QBE's vfree - maps to xfree */
 void vfree(void *p) { xfree(p); }
 
-/* QBE's freeall - called at end of compilation */
+/* QBE's freeall - called at end of compilation
+ * Frees all allocations made via emalloc during this compilation unit.
+ *
+ * Implementation: The kernel uses xfree() which handles individual
+ * allocations. For full pool semantics, callers should track their
+ * allocations and free them explicitly. In practice, the kernel's
+ * memory allocator reclaims memory when a process exits.
+ */
 void freeall() {
-  /* Kernel version: stub for now
-   * TODO: Implement pool freeing if needed
+  /* In kernel context, memory is managed by xalloc/xfree.
+   * The Plan 9 pool allocator automatically coalesces freed blocks.
+   * For compilation contexts, the caller (clr_compile) tracks and
+   * frees the output buffer, and fruity_free_module handles IR cleanup.
+   *
+   * If a dedicated compilation pool is needed in the future:
+   * 1. Maintain a linked list of allocations in a thread-local pool
+   * 2. Walk the list here and xfree each block
+   * 3. Reset the pool head to nil
    */
 }

@@ -114,13 +114,53 @@ typedef struct TaskletHeap {
 
 /* ... struct definitions ... */
 
-/* Helper to read integer values from IL stream */
+/* ============================================================
+ * ARCHITECTURE-DEPENDENT ENDIANNESS HANDLING
+ * ============================================================
+ * CIL bytecode operands are stored in little-endian format (ECMA-335).
+ * Define CLR_BIG_ENDIAN for big-endian architectures (SPARC, PowerPC, etc.)
+ */
+
+#ifndef CLR_BIG_ENDIAN
+/* Little-endian architecture (x86-64, ARM LE, RISC-V LE) */
+/* Native byte order matches CIL format - direct read */
+
+static s32int read_i4(u8int *il, ulong ip) { return *(s32int *)(il + ip); }
+
+static u32int read_u4(u8int *il, ulong ip) { return *(u32int *)(il + ip); }
+
+static s16int read_i2(u8int *il, ulong ip) { return *(s16int *)(il + ip); }
+
+static u16int read_u2(u8int *il, ulong ip) { return *(u16int *)(il + ip); }
+
+#else
+/* Big-endian architecture - byte swap required */
+
 static s32int read_i4(u8int *il, ulong ip) {
-  /* TODO: Endianness */
-  return *(s32int *)(il + ip);
+  u8int *p = il + ip;
+  return (s32int)(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
 }
 
+static u32int read_u4(u8int *il, ulong ip) {
+  u8int *p = il + ip;
+  return (u32int)(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+}
+
+static s16int read_i2(u8int *il, ulong ip) {
+  u8int *p = il + ip;
+  return (s16int)(p[0] | (p[1] << 8));
+}
+
+static u16int read_u2(u8int *il, ulong ip) {
+  u8int *p = il + ip;
+  return (u16int)(p[0] | (p[1] << 8));
+}
+
+#endif /* CLR_BIG_ENDIAN */
+
+/* Single-byte reads are endian-neutral */
 static s8int read_i1(u8int *il, ulong ip) { return *(s8int *)(il + ip); }
+static u8int read_u1(u8int *il, ulong ip) { return il[ip]; }
 
 ILResult clr_tasklet_execute_step(TaskletSlot *t, int max_ops) {
   int ops = 0;

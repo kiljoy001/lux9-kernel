@@ -955,6 +955,7 @@ il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token) {
   il_method_t *method = parse_method(assembly, row->rva, method_name);
   if (method) {
     method->impl_flags = row->impl_flags;
+    method->method_token = token; /* Store the token for later use */
   }
 
   IL_FREE(methods);

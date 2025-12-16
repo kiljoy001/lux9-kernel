@@ -1710,7 +1710,7 @@ fruity_function_t *il_to_fruity_convert_method(il_assembly_t *assembly,
   }
 
   func->name = strdup(method->name ? method->name : "unnamed");
-  func->method_token = 0; /* TODO: Get from method */
+  func->method_token = method->method_token; /* Use token from il_method_t */
   ctx.current_function = func;
 
   /* Phase 1.5: Sort targets and create blocks */
