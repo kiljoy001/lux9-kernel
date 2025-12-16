@@ -1,0 +1,49 @@
+# QBE IL generated from Fruity IR
+
+# Allocator and Token stubs removed (implemented in runtime.c)
+
+export function w $method_100663301() {
+@method_100663301_start
+    %loc0 =l alloc8 8
+    %loc1 =l alloc8 8
+    %loc2 =l alloc8 8
+    # opcode 0 (unimplemented)
+    %t1 =l call $clr_string_from_literal(w 1)
+    %t2 =l call $method_100663300()
+    # opcode 0 (unimplemented)
+    %t3 =l call $clr_string_from_literal(w 37)
+    %t4 =l call $method_100663300()
+    # opcode 0 (unimplemented)
+    %t5 =l copy 10
+    storel %t5, %loc0
+    %t5 =l copy 20
+    storel %t5, %loc1
+    %t5 =l call $clr_string_from_literal(w 97)
+    %t6 =l call $method_100663300()
+    # opcode 0 (unimplemented)
+    %t7 =l loadl %loc0
+    %t8 =l loadl %loc1
+    %t7 =l add %t7, %t8
+    %t8 =l copy 30
+    # opcode 48 (unimplemented)
+    storel %t8, %loc2
+    %t8 =l loadl %loc2
+    jnz %t8, @method_100663301_bb1, @method_100663301_bb2
+@method_100663301_bb1
+    # opcode 0 (unimplemented)
+    %t8 =l call $clr_string_from_literal(w 143)
+    %t9 =l call $method_100663300()
+    # opcode 0 (unimplemented)
+    # opcode 0 (unimplemented)
+    jmp @method_100663301_bb3
+@method_100663301_bb2
+    # opcode 0 (unimplemented)
+    %t10 =l call $clr_string_from_literal(w 175)
+    %t11 =l call $method_100663300()
+    # opcode 0 (unimplemented)
+    # opcode 0 (unimplemented)
+    jmp @method_100663301_bb3
+@method_100663301_bb3
+    ret %t11
+}
+

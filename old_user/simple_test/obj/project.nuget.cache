@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "RKF2hClhN8k=",
+  "success": true,
+  "projectFilePath": "/home/scott/Repo/lux9-kernel/userspace/simple_test/test.csproj",
+  "expectedPackageFiles": [
+    "/home/scott/.nuget/packages/microsoft.dotnet.ilcompiler/9.0.11/microsoft.dotnet.ilcompiler.9.0.11.nupkg.sha512",
+    "/home/scott/.nuget/packages/microsoft.net.illink.tasks/9.0.11/microsoft.net.illink.tasks.9.0.11.nupkg.sha512",
+    "/home/scott/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/9.0.11/runtime.linux-x64.microsoft.dotnet.ilcompiler.9.0.11.nupkg.sha512"
+  ],
+  "logs": []
+}

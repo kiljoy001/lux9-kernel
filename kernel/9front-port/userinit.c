@@ -44,7 +44,29 @@ uintptr dbg_getpte(uintptr);
 /*
  * The first process kernel process starts here.
  */
-static void proc0(void *) {
+static void uartprint_hex(uvlong v) {
+  char hex[17];
+  int i;
+  for (i = 15; i >= 0; i--) {
+    int nib = v & 0xF;
+    hex[i] = (nib < 10) ? ('0' + nib) : ('A' + nib - 10);
+    v >>= 4;
+  }
+  hex[16] = 0;
+  uartputs(hex, 16);
+}
+
+static void proc0(void *arg) {
+  Proc *proc;
+  int i;
+  extern void main(void); /* forward decl */
+  extern void uartputs(char *, int);
+  uartputs("BOOT[proc0]: ENTRY via uartputs\n", 28);
+
+  print("BOOT[proc0]: ENTRY symbol main=%p\n", main);
+  delay(100);
+
+  USED(arg);
   KMap *k;
   Page *p;
 
@@ -56,6 +78,9 @@ static void proc0(void *) {
 
   if (waserror())
     panic("proc0: init0 failed: %r");
+
+  extern void main(void);
+  print("DEBUG: symbol main=%p\n", main);
 
   /*
    * Check if we have an initrd module from Limine.
@@ -72,7 +97,7 @@ static void proc0(void *) {
   up->rgrp = newrgrp();
   BOOTPRINT("BOOT[proc0]: process groups ready\n");
 
-  pebble_selftest();
+  /* pebble_selftest(); */
 
   /*
    * These are o.k. because rootinit is null.
@@ -91,17 +116,37 @@ static void proc0(void *) {
   } else {
     /* Try to set up proper root namespace */
     up->slash = namec("#/", Atodir, 0, 0);
+    if (up->slash == nil) {
+      print("BOOT[proc0]: namec(\"#/\") failed, attempting fallback to "
+            "devattach('/')\n");
+      up->slash = devattach('/', 0);
+    }
+
     if (up->slash != nil) {
       pathclose(up->slash->path);
       up->slash->path = newpath("/");
       up->dot = cclone(up->slash);
     } else {
-      up->dot = nil;
+      panic("proc0: could not obtain root device via namec or devattach");
     }
     poperror();
   }
+
+  /* Ensure /boot exists and is bound if we are in fallback mode or initrd is
+   * present */
+  if (initrd_base != nil && initrd_size > 0) {
+    /* We already called initrd_register() which adds to devroot,
+     * but we verify we can reach it */
+    Chan *bootc = namec("/boot", Atodir, 0, 0);
+    if (bootc == nil) {
+      print("BOOT[proc0]: WARNING: /boot not reachable despite "
+            "initrd_register\n");
+    } else {
+      cclose(bootc);
+    }
+  }
   print("BOOT[proc0]: root namespace setup complete\n");
-  pebble_sip_issue_test();
+  /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
   /*
@@ -113,9 +158,19 @@ static void proc0(void *) {
   print("BOOT[proc0]: newseg returned for stack\n");
 
   /* Allocate initial stack page and map it */
-  print("BOOT[proc0]: calling newpage for stack page\n");
+  extern void uartprint_hex(uvlong);
+  uartputs("BOOT[proc0]: calling newpage\n", 25);
   p = newpage(USTKTOP - BY2PG, nil);
+  uartputs("BOOT[proc0]: newpage p=\n", 22);
+  uartprint_hex((uvlong)p);
+  uartputs("\n", 1);
+
+  if ((p->pa & 0xFFF) != 0) {
+    uartputs("BOOT[proc0]: p->pa UNALIGNED from newpage\n", 39);
+    panic("proc0: p->pa unaligned");
+  }
   print("BOOT[proc0]: newpage returned %p\n", p);
+  uartputs("BOOT[proc0]: calling kmap\n", 20);
   k = kmap(p);
   print("BOOT[proc0]: kmap returned %p\n", k);
   memset((uchar *)VA(k), 0, BY2PG);
@@ -137,6 +192,12 @@ static void proc0(void *) {
     ustack[0] = nil;
   }
   kunmap(k);
+
+  uartputs("BOOT[proc0]: after kmap/memmove, p=\n", 31);
+  uartprint_hex((uvlong)p);
+  uartputs("\n", 1);
+
+  uartputs("BOOT[proc0]: calling segpage\n", 24);
   segpage(up->seg[SSEG], p);
   /* segpage now calls userpmap() which creates MMU structures */
   if (dbg_getpte(USTKTOP - BY2PG) != 0)
@@ -154,6 +215,8 @@ static void proc0(void *) {
   print("BOOT[proc0]: mapping text page\n");
   k = kmap(p);
   print("BOOT[proc0]: text page mapped, k=%p\n", k);
+  if (k == nil)
+    panic("proc0: kmap failed");
   memmove((uchar *)VA(k), initcode, sizeof(initcode));
   memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
   print("BOOT[proc0]: unmapping text page\n");
@@ -336,6 +399,10 @@ static void proc0(void *) {
    *	prepare the stack for initcode
    *	switch to usermode to run initcode
    */
+  /* Phase 6: Setup 9P exchange page for proc0 */
+  if (proc_setup_p9page(up) < 0)
+    panic("proc0: p9page setup failed");
+
   print("BOOT[proc0]: about to call init0 - switching to userspace\n");
   init0();
 

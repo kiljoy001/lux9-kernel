@@ -1,5 +1,3 @@
-#include "u.h"
-#include <lib.h>
 #include "../../limine.h"
 #include "borrowchecker.h"
 #include "dat.h"
@@ -15,10 +13,50 @@
 #include "rebootcode.i"
 #include "sdhw.h"
 #include "tos.h"
+#include "u.h"
 #include "vmdetect.h"
+#include <lib.h>
 
 Conf conf;
 int idle_spin;
+
+/* BOOT STATE MACHINE */
+typedef enum {
+  BOOT_START,
+  BOOT_XINIT,
+  BOOT_MEM_COORD,
+  BOOT_PAGES_OWN,
+  BOOT_EXCHANGE,
+  BOOT_TRAP,
+  BOOT_ARCH,
+  BOOT_PROC_INIT,
+  BOOT_SEG_INIT,
+  BOOT_LINKS,
+  BOOT_IO,
+  BOOT_CHANDEV_RESET,
+  BOOT_PAGEK,
+  BOOT_PRINT,
+  BOOT_TPM,
+  BOOT_MSGORD,
+  BOOT_CRYPTO,
+  BOOT_CHANDEV_INIT,
+  BOOT_USERINIT,
+  BOOT_SCHED,
+  BOOT_COMPLETE
+} BootState;
+
+BootState current_boot_state = BOOT_START;
+static char *boot_state_names[] = {
+    "START",   "XINIT",         "MEM_COORD",    "PAGES_OWN", "EXCHANGE",
+    "TRAP",    "ARCH",          "PROC_INIT",    "SEG_INIT",  "LINKS",
+    "IO",      "CHANDEV_RESET", "PAGEK",        "PRINT",     "TPM",
+    "MSGORD",  "CRYPTO",        "CHANDEV_INIT", "USERINIT",  "SCHED",
+    "COMPLETE"};
+
+void set_boot_state(BootState s) {
+  current_boot_state = s;
+  print("BOOT_STATE: %s\n", boot_state_names[s]);
+}
 
 /* CRITICAL: Global debug flag that doesn't depend on environment device */
 int panic_debug =
@@ -185,6 +223,7 @@ void main_after_cr3(void) {
   /* CRITICAL: First output must be via UART to verify we got here */
   extern void uartputs(char *, int);
   uartputs("main_after_cr3: ENTERED\n", 24);
+  set_boot_state(BOOT_XINIT);
 
   /* Skip print() until we've reinitialized - it was set up with old stack */
 
@@ -194,11 +233,15 @@ void main_after_cr3(void) {
   /* Transition memory tracking to dynamic allocator */
   establish_memory_ownership_zones_dynamic();
 
+  set_boot_state(BOOT_PAGES_OWN);
   uartputs("main_after_cr3: calling pageowninit\n", 37);
   pageowninit();
+
+  set_boot_state(BOOT_EXCHANGE);
   uartputs("main_after_cr3: calling exchangeinit\n", 38);
   exchangeinit();
 
+  set_boot_state(BOOT_TRAP);
   uartputs("main_after_cr3: calling trapinit\n", 35);
   trapinit();
   uartputs("main_after_cr3: calling mathinit\n", 35);
@@ -262,6 +305,7 @@ void main_after_cr3(void) {
   }
 
   if (arch->intrinit) {
+    set_boot_state(BOOT_ARCH);
     print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
     arch->intrinit();
     extern void uartputs(char *, int);
@@ -285,43 +329,53 @@ void main_after_cr3(void) {
     print("WARNING: arch->intrinit is nil\n");
   }
 
+  set_boot_state(BOOT_PROC_INIT);
   procinit0();
   uartputs("DEBUG: procinit0 complete\n", 28);
 
+  set_boot_state(BOOT_SEG_INIT);
   initseg();
   uartputs("DEBUG: initseg complete\n", 26);
 
+  set_boot_state(BOOT_LINKS);
   links();
   uartputs("DEBUG: links complete\n", 24);
 
   /* Initialize I/O port allocation after links() */
+  set_boot_state(BOOT_IO);
   iomapinit(0xFFFF);
   uartputs("DEBUG: iomapinit complete\n", 29);
 
   /* Reset and initialize all devices before environment setup */
+  set_boot_state(BOOT_CHANDEV_RESET);
   chandevreset();
   uartputs("DEBUG: chandevreset complete\n", 32);
 
+  set_boot_state(BOOT_PAGEK);
   pageinit();
   uartputs("DEBUG: pageinit complete\n", 27);
 
+  set_boot_state(BOOT_PRINT);
   printinit();
   uartputs("DEBUG: printinit complete\n", 28);
 
   /* Initialize TPM driver before crypto subsystem */
   extern void tpminit(void);
+  set_boot_state(BOOT_TPM);
   print("=== Initializing TPM Driver ===\n");
   tpminit();
   print("=== TPM Driver Initialized ===\n");
 
   /* Initialize MSGORD consensus subsystem */
   extern void msgord_init(uint k_param);
+  set_boot_state(BOOT_MSGORD);
   print("=== Initializing MSGORD Consensus ===\n");
   msgord_init(3); /* k=3 for robust ordering */
   print("=== MSGORD Consensus Initialized ===\n");
 
   /* Initialize crypto subsystem early for testing */
   extern int crypto_tpm_key_init(void);
+  set_boot_state(BOOT_CRYPTO);
   print("=== Initializing Crypto Subsystem ===\n");
   crypto_tpm_key_init();
   print("=== Crypto Subsystem Initialized ===\n");
@@ -331,10 +385,12 @@ void main_after_cr3(void) {
   tpm_test_run();
 
   /* Initialize device drivers BEFORE spawning proc0 */
+  set_boot_state(BOOT_CHANDEV_INIT);
   chandevinit();
   uartputs("DEBUG: chandevinit complete\n", 30);
 
   /* Now spawn proc0 - devices are ready */
+  set_boot_state(BOOT_USERINIT);
   userinit();
   uartputs("DEBUG: userinit complete\n", 28);
 
@@ -347,6 +403,7 @@ void main_after_cr3(void) {
   timersinit();
   spllo(); /* Re-enable interrupts for scheduler - CRITICAL */
   uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
+  set_boot_state(BOOT_SCHED);
   schedinit();
 }
 

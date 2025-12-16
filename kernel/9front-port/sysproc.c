@@ -321,6 +321,10 @@ uintptr sysrfork(void *list_void) {
    *  any mmu info about this process is now stale
    *  (i.e. has bad properties) and has to be discarded.
    */
+  /* Phase 6: Setup 9P exchange page for new user process */
+  if (proc_setup_p9page(p) < 0)
+    error(Enovmem);
+
   flushmmu();
 
   procpriority(p, up->basepri, up->fixedpri);
@@ -1802,7 +1806,8 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
   uartputs(buf, strlen(buf));
 
   if (scallnr == EXEC) {
-    snprint(buf, sizeof(buf), "DEBUG: dosyscall EXEC handler address %p\n", systab[scallnr]);
+    snprint(buf, sizeof(buf), "DEBUG: dosyscall EXEC handler address %p\n",
+            systab[scallnr]);
     uartputs(buf, strlen(buf));
   }
   vlong startns, stopns;

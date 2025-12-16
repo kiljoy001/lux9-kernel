@@ -512,9 +512,9 @@ void syscall(Ureg *ureg) {
           scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
 
   /* Phase 6: Pure 9P - TRUE syscall elimination
-   * Userspace writes Fcall to exchange page, rings doorbell
-   * This is the ONLY syscall - no translation layer! */
-  if (p9_handle_doorbell(up) < 0) {
+   * TEMPORARILY DISABLED: Crashing in vm_stack_pop.
+   * Fallback to legacy syscalls for C-based init verification. */
+  if (1 || p9_handle_doorbell(up) < 0) {
     /* Fallback: Doorbell not rung? Try legacy syscall dispatch */
     /* This allows 'init' (Phase 5) to boot while we build Phase 6 userspace */
     dosyscall(scallnr, (Sargs *)(ureg->sp + sizeof(uintptr)),
