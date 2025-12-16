@@ -443,11 +443,14 @@ void init0(void) {
   /* Setup environment variables */
   if (!waserror()) {
     snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
-    uartputs("init0: calling ksetenv\n", 21);
+    print("init0: about to call ksetenv('terminal', '%s', 0)\n", buf);
     ksetenv("terminal", buf, 0);
+    print("init0: ksetenv('terminal') returned\n");
     ksetenv("cputype", "amd64", 0);
+    print("init0: ksetenv('cputype') returned\n");
     ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
-    uartputs("init0: calling setconfenv\n", 24);
+    print("init0: ksetenv('service') returned\n");
+    print("init0: about to call setconfenv()\n");
     setconfenv();
     poperror();
     print("BOOT[init0]: environment setup completed\n");

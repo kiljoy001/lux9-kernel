@@ -152,6 +152,7 @@ kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
 
 clean:
 	rm -f $(ALL_O) $(CLR_O) $(KERNEL)
+	rm -f kernel/clr/qbe/qbe.a kernel/clr/qbe/**/*.o
 	rm -rf iso_root lux9.iso
 
 count:

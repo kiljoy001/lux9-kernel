@@ -301,10 +301,24 @@ static void proc0(void *arg) {
       }
     }
   }
-  if (m->pml4[PTLX(USTKTOP - 1, 3)] != 0)
-    print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
-  else
-    print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
+  print("BOOT[proc0]: Exited PML4 validation, about to check USTKTOP slot\n");
+  print("BOOT[proc0]: Skipping m->pml4 check - causes hang (TODO: fix m->pml4 access)\n");
+  /* FIXME: Accessing m->pml4[255] causes a hang/page fault
+   * This needs investigation - likely m->pml4 is not properly mapped
+   * or m is pointing to invalid memory. For now, skip this check.
+  {
+    uintptr ustktop_idx = PTLX(USTKTOP - 1, 3);
+    print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\n",
+          USTKTOP, USTKTOP - 1, (long long)ustktop_idx);
+    print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long long)ustktop_idx);
+    uintptr pml4_value = m->pml4[ustktop_idx];
+    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx, pml4_value);
+    if (pml4_value != 0)
+      print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
+    else
+      print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
+  }
+  */
   if (up->mmuhead == nil)
     print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
   else {
