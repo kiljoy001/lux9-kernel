@@ -115,21 +115,110 @@ static int next_token(char **s, char *buf, int len) {
 extern void clr_console_write(void *);
 extern void clr_console_writeline(void *);
 
-/* CLR Memory Allocation
+/* CLR Memory Allocation with Pebble Blue Token Integration
  *
- * TODO: Integrate with Pebble system once CLR has proper white token
- * verification infrastructure. Currently uses xalloc directly.
- *
- * To properly integrate with Pebble:
- * 1. CLR needs to request white tokens via pebble_issue_white()
- * 2. Verify white tokens via pebble_white_verify()
- * 3. Only then call pebble_black_alloc() with proper UserCapability
+ * CLR uses Pebble Blue allocations for managed memory because:
+ * 1. Blue tokens provide direct memory access via blue_data pointer
+ * 2. Blue tokens don't require white token verification ceremony
+ * 3. Blue tokens are tracked per-process for automatic cleanup
+ * 4. Blue tokens integrate with transaction rollback via red snapshots
  */
+
+#include "../include/pebble.h"
+
+/* CLR allocation registry maps pointers to PebbleBlue tokens for GC */
+typedef struct ClrAllocEntry {
+  PebbleBlue *blue; /* Pebble Blue token */
+  void *ptr;        /* User-facing pointer (blue->blue_data) */
+  ulong size;       /* Allocation size */
+  int in_use;       /* Slot active */
+} ClrAllocEntry;
+
+#define CLR_MAX_ALLOCS 256
+static ClrAllocEntry clr_alloc_registry[CLR_MAX_ALLOCS];
+static int clr_alloc_count = 0;
+static Lock clr_alloc_lock;
+
 static void *pebble_alloc_clr(ulong size, void *type_hint) {
+  PebbleBlue *blue;
+  int slot = -1;
+
   USED(type_hint);
-  /* Use xalloc until CLR has proper Pebble integration */
-  return xalloc(size);
+
+  if (size == 0)
+    return nil;
+
+  /* Allocate via Pebble Blue - capability-tracked memory */
+  blue = pebble_blue_alloc(size);
+  if (blue == nil) {
+    /* Pebble allocation failed (budget exhausted or no pebble state) */
+    return nil;
+  }
+
+  /* Register in CLR registry for GC root tracking */
+  lock(&clr_alloc_lock);
+  for (int i = 0; i < CLR_MAX_ALLOCS; i++) {
+    if (!clr_alloc_registry[i].in_use) {
+      slot = i;
+      clr_alloc_registry[i].blue = blue;
+      clr_alloc_registry[i].ptr = blue->blue_data;
+      clr_alloc_registry[i].size = size;
+      clr_alloc_registry[i].in_use = 1;
+      clr_alloc_count++;
+      break;
+    }
+  }
+  unlock(&clr_alloc_lock);
+
+  if (slot < 0) {
+    /* Registry full - free allocation and fail */
+    pebble_blue_free(blue);
+    return nil;
+  }
+
+  return blue->blue_data;
 }
+
+/* Free CLR allocation and release Pebble Blue token */
+void pebble_free_clr(void *ptr) {
+  if (ptr == nil)
+    return;
+
+  lock(&clr_alloc_lock);
+  for (int i = 0; i < CLR_MAX_ALLOCS; i++) {
+    if (clr_alloc_registry[i].in_use && clr_alloc_registry[i].ptr == ptr) {
+      pebble_blue_free(clr_alloc_registry[i].blue);
+      clr_alloc_registry[i].in_use = 0;
+      clr_alloc_count--;
+      break;
+    }
+  }
+  unlock(&clr_alloc_lock);
+}
+
+/* Verify a CLR allocation is tracked and has valid Pebble token */
+int pebble_verify_clr_token(void *ptr) {
+  int valid = 0;
+  PebbleState *ps;
+
+  if (ptr == nil)
+    return 0;
+
+  lock(&clr_alloc_lock);
+  for (int i = 0; i < CLR_MAX_ALLOCS; i++) {
+    if (clr_alloc_registry[i].in_use && clr_alloc_registry[i].ptr == ptr) {
+      /* Verify the Blue token still exists in process state */
+      ps = pebble_state();
+      if (ps != nil && pebble_blue_exists(ps, clr_alloc_registry[i].blue)) {
+        valid = 1;
+      }
+      break;
+    }
+  }
+  unlock(&clr_alloc_lock);
+  return valid;
+}
+
 #define pebble_alloc pebble_alloc_clr
 
 /* System.Object / System.String Internals */

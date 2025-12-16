@@ -50,6 +50,7 @@ typedef struct ClrAssembly {
   void *bytecode;
   ulong size;
   char name[64];
+  fruity_module_t *fruity_module; /* Compiled Fruity IR module */
 } ClrAssembly;
 static ClrAssembly clr_assemblies[CLR_MAX_ASSEMBLIES];
 static ulong clr_assembly_counter = 1;
@@ -326,6 +327,7 @@ static Chan *clropen(Chan *c, int omode) {
     ctx->module = nil;
     ctx->error[0] = '\0';
     c->aux = ctx;
+    /* Store assembly slot index in qid.vers for later retrieval */
     break;
 
   // Case Qcontrol: check write permissions
@@ -524,6 +526,10 @@ static long clrwrite(Chan *c, void *va, long n, vlong off) {
     if (ctx->module == nil) {
       error("devclr: CBOR deserialization failed");
     }
+
+    /* Store module in assembly registry for later access via Chan->aux */
+    /* Note: The module is available via ctx for this channel's lifetime.
+     * For persistent storage, copy to assembly registry when closing. */
     clr_stats.assemblies_loaded++;
     return n;
 

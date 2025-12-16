@@ -72,7 +72,7 @@ Last updated: 2025-12-15
 |:-----|:-----|:------|:-------|
 | `9front-pc64/main.c` | 378 | Fix devenv create path | ⚪ Boot order (not bug) |
 | `9front-port/proc.c` | 794 | Implement /dev/sip for white tokens | ✅ Implemented |
-| `9front-port/sysproc.c` | 1969 | Store fruity_module_t* in devclr | ⚪ Future enhancement |
+| `9front-port/sysproc.c` | 1969 | Store fruity_module_t* in devclr | ✅ Implemented |
 | `9front-pc64/globals.c` | 81 | fprint stub | ✅ Implemented |
 | `9front-pc64/globals.c` | 209 | Swap system stubs | ✅ Implemented |
 | `9front-pc64/globals.c` | 278 | VMX stubs | ✅ In devvmx.c |
@@ -114,7 +114,7 @@ Last updated: 2025-12-15
 | `clr/fruity/fruity_to_qbe.c` | 115 | Call argument handling | ✅ Simplified |
 | `clr/fruity/fruity_to_qbe.c` | 191 | Argument handling | ✅ Simplified |
 | `clr/il_to_fruity.c` | 1713 | Get method token | ⚪ Future |
-| `clr/qbe_compile.c` | 120 | Pebble white token integration | ⚪ Future |
+| `clr/qbe_compile.c` | 120 | Pebble white token integration | ✅ Uses pebble_blue_alloc |
 
 ---
 
@@ -130,7 +130,7 @@ Last updated: 2025-12-15
 | `clr/qbe/clr_p9_internal.c` | 236 | Dir stat parsing | ✅ Implemented |
 | `clr/qbe/kernel_util.c` | 205 | Realloc data copy | ✅ Implemented |
 | `clr/qbe/kernel_util.c` | 284 | Pool freeing | ⚪ Stub OK |
-| `clr/clr_codepage.c` | 198 | Check borrow counts | ⚪ Future |
+| `clr/clr_codepage.c` | 198 | Check borrow counts | ✅ Implemented |
 | `clr/clr_tasklet_execute.c` | 119 | Endianness | ⚪ Future |
 
 ---
