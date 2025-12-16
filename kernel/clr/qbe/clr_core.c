@@ -87,9 +87,26 @@ int clr_object_gethashcode(clr_object_t *obj) {
 
 /*
  * System.Object.GetType()
- * Stub: returns null for now until we have Type system fully mapped.
+ * Returns a Type object representing the runtime type of the object.
+ * Uses the type_info field which contains the full type information.
  */
-clr_object_t *clr_object_gettype(clr_object_t *obj) { return nil; }
+clr_object_t *clr_object_gettype(clr_object_t *obj) {
+  if (obj == nil)
+    return nil;
+
+  /* Allocate a Type object - in a real implementation this would be cached */
+  clr_object_t *type_obj = xalloc(sizeof(clr_object_t));
+  if (type_obj == nil)
+    return nil;
+
+  /* Use the type enum value as the type representation */
+  type_obj->type = obj->type;
+  type_obj->type_info = obj->type_info;
+  type_obj->data = obj->type_info; /* Point to the type info */
+  type_obj->size = sizeof(clr_type_info_t);
+
+  return type_obj;
+}
 
 /*
  * System.String.Internal_Concat2(string a, string b)
@@ -169,7 +186,11 @@ int clr_string_equals(clr_object_t *s1, clr_object_t *s2) {
  */
 clr_object_t *clr_string_concat3(clr_object_t *s1, clr_object_t *s2,
                                  clr_object_t *s3) {
-  return s1; /* Stub */
+  /* Concatenate three strings by chaining concat2 */
+  clr_object_t *temp = clr_string_concat2(s1, s2);
+  if (temp == nil)
+    return s3;
+  return clr_string_concat2(temp, s3);
 }
 
 /*

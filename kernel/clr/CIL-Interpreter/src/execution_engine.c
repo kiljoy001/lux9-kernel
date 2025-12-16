@@ -3074,9 +3074,28 @@ bool vm_execute_instruction(vm_execution_state_t *state) {
 extern void *clr_resolve_internal_call(const char *cls, const char *method);
 
 bool vm_local_alloc(vm_value_t *size, vm_value_t *result) {
-  // Stub
-  result->type = VM_TYPE_I;
-  result->value.i = 0;
+  /* ECMA-335 localloc: Allocate space on the stack */
+  if (!size || size->type != VM_TYPE_I && size->type != VM_TYPE_I4)
+    return false;
+
+  intptr_t alloc_size =
+      (size->type == VM_TYPE_I) ? size->value.i : size->value.i4;
+  if (alloc_size <= 0 || alloc_size > 65536) /* Reasonable stack limit */
+    return false;
+
+  /* Use malloc for now - in kernel this would use per-tasklet heap */
+  void *ptr = malloc((size_t)alloc_size);
+  if (!ptr) {
+    result->type = VM_TYPE_I;
+    result->value.i = 0;
+    return false;
+  }
+
+  /* Zero-initialize per ECMA-335 */
+  memset(ptr, 0, (size_t)alloc_size);
+
+  result->type = VM_TYPE_I; /* Returns native int pointer */
+  result->value.i = (intptr_t)ptr;
   return true;
 }
 
@@ -3386,8 +3405,70 @@ bool vm_symbolic_differentiate(vm_value_t *expr, vm_value_t *var,
 
 bool vm_symbolic_integrate(vm_value_t *expr, vm_value_t *var,
                            vm_value_t *result) {
-  // Stub - integration is much more complex than differentiation
-  // For now, just return the original expression (placeholder)
+  /* Basic symbolic integration for common cases */
+  if (!expr || !var || !result)
+    return false;
+
+  sym_expr_t *sym = (sym_expr_t *)expr->value.ref;
+  sym_expr_t *v = (sym_expr_t *)var->value.ref;
+
+  if (!sym || !v)
+    return false;
+
+  /* Handle constant: integral of c dx = c*x */
+  if (sym->type == SYM_CONST) {
+    sym_expr_t *prod = sym_expr_alloc(SYM_MUL);
+    if (!prod)
+      return false;
+    prod->data.binary.left = sym;
+    sym->ref_count++;
+    prod->data.binary.right = v;
+    v->ref_count++;
+    result->type = VM_TYPE_REF;
+    result->value.ref = prod;
+    return true;
+  }
+
+  /* Handle variable: integral of x dx = x^2/2 */
+  if (sym->type == SYM_VAR && v->type == SYM_VAR) {
+    sym_expr_t *two = sym_expr_alloc(SYM_CONST);
+    if (!two)
+      return false;
+    two->data.value = 2;
+
+    sym_expr_t *sq = sym_expr_alloc(SYM_POW);
+    if (!sq) {
+      free(two);
+      return false;
+    }
+    sq->data.binary.left = sym;
+    sym->ref_count++;
+    sq->data.binary.right = two;
+
+    /* Create 1/2 using rational */
+    sym_expr_t *half = sym_expr_alloc(SYM_RATIONAL);
+    if (!half) {
+      free(sq);
+      return false;
+    }
+    half->data.rational.num = 1;
+    half->data.rational.den = 2;
+
+    sym_expr_t *res = sym_expr_alloc(SYM_MUL);
+    if (!res) {
+      free(sq);
+      free(half);
+      return false;
+    }
+    res->data.binary.left = half;
+    res->data.binary.right = sq;
+
+    result->type = VM_TYPE_REF;
+    result->value.ref = res;
+    return true;
+  }
+
+  /* For complex expressions, return original (integration not implemented) */
   result->type = expr->type;
   result->value = expr->value;
   return true;
@@ -3857,9 +3938,16 @@ bool vm_free_object(vm_execution_state_t *state, void *obj) {
 
 bool vm_load_field(vm_execution_state_t *state, void *obj,
                    uint32_t field_offset, vm_value_t *result) {
-  // Stub
+  /* Load field from object at given byte offset */
+  if (!obj || !result)
+    return false;
+
+  /* Calculate field address */
+  uint8_t *field_ptr = (uint8_t *)obj + field_offset;
+
+  /* Default to loading as 32-bit int - caller should cast as needed */
   result->type = VM_TYPE_I4;
-  result->value.i4 = 0;
+  result->value.i4 = *(int32_t *)field_ptr;
   return true;
 }
 bool vm_copy_memory(vm_value_t *src, vm_value_t *dest, vm_value_t *len) {
@@ -4148,9 +4236,22 @@ bool vm_compare_less_un(vm_value_t *left, vm_value_t *right,
 }
 
 bool vm_call_indirect(vm_value_t *method_ptr, vm_value_t *result) {
-  // Stub implementation for TDD GREEN phase
+  /* Call method through function pointer */
+  if (!method_ptr || !result)
+    return false;
+
+  void *fptr = method_ptr->value.ref;
+  if (!fptr)
+    return false; /* NullReferenceException */
+
+  /* Cast to function returning int and call it */
+  /* Real implementation would need to handle arguments and calling convention
+   */
+  typedef int (*func_void_t)(void);
+  func_void_t fn = (func_void_t)fptr;
+
   result->type = VM_TYPE_I4;
-  result->value.i4 = 0;
+  result->value.i4 = fn();
   return true;
 }
 
@@ -4384,16 +4485,79 @@ bool vm_store_indirect(vm_value_t *addr, vm_value_t *value) {
 // Stub implementations for complex operations
 bool vm_load_array_element(vm_value_t *array, vm_value_t *index,
                            vm_type_t element_type, vm_value_t *result) {
-  // Simplified stub implementation
+  /* Load element from array at given index */
+  if (!array || !index || !result)
+    return false;
+
+  if (array->value.ref == NULL)
+    return false; /* NullReferenceException */
+
+  int32_t idx =
+      (index->type == VM_TYPE_I4) ? index->value.i4 : (int32_t)index->value.i;
+  int32_t length = *(int32_t *)array->value.ref;
+
+  if (idx < 0 || idx >= length)
+    return false; /* IndexOutOfRangeException */
+
+  /* Array data starts after length field */
+  uint8_t *data = (uint8_t *)array->value.ref + sizeof(int32_t);
+
   result->type = element_type;
-  result->value.i4 = 0;
+  switch (element_type) {
+  case VM_TYPE_I1:
+    result->value.i1 = ((int8_t *)data)[idx];
+    break;
+  case VM_TYPE_I2:
+    result->value.i2 = ((int16_t *)data)[idx];
+    break;
+  case VM_TYPE_I4:
+    result->value.i4 = ((int32_t *)data)[idx];
+    break;
+  case VM_TYPE_I8:
+    result->value.i8 = ((int64_t *)data)[idx];
+    break;
+  case VM_TYPE_REF:
+  case VM_TYPE_OBJECT:
+    result->value.ref = ((void **)data)[idx];
+    break;
+  default:
+    result->value.i4 = ((int32_t *)data)[idx];
+    break;
+  }
   return true;
 }
 
 bool vm_new_array(vm_value_t *size, vm_value_t *result) {
-  // Simplified stub implementation
+  /* Create new single-dimensional array */
+  if (!size || !result)
+    return false;
+
+  int32_t length = 0;
+  if (size->type == VM_TYPE_I4)
+    length = size->value.i4;
+  else if (size->type == VM_TYPE_I)
+    length = (int32_t)size->value.i;
+  else
+    return false;
+
+  if (length < 0 || length > 1000000) /* Reasonable limit */
+    return false;
+
+  /* Array layout: [length:i4][element0][element1]... */
+  /* For now assume element size = 4 bytes (i32) */
+  size_t total_size = sizeof(int32_t) + (size_t)length * sizeof(int32_t);
+  void *arr = malloc(total_size);
+  if (!arr) {
+    result->type = VM_TYPE_REF;
+    result->value.ref = NULL;
+    return false;
+  }
+
+  memset(arr, 0, total_size);
+  *(int32_t *)arr = length; /* Store length at start */
+
   result->type = VM_TYPE_REF;
-  result->value.ref = NULL;
+  result->value.ref = arr;
   return true;
 }
 
@@ -4498,9 +4662,25 @@ bool vm_unbox_value(vm_execution_state_t *state, vm_value_t *obj,
 
 bool vm_load_field_object(vm_value_t *obj, vm_value_t *field_token,
                           vm_value_t *result) {
-  // Simplified stub implementation
+  /* Load field from object using field token to get offset */
+  if (!obj || !field_token || !result)
+    return false;
+
+  if (obj->value.ref == NULL) {
+    /* NullReferenceException */
+    result->type = VM_TYPE_I4;
+    result->value.i4 = 0;
+    return false;
+  }
+
+  /* Token high byte = table, low 24 bits = row */
+  /* Field offset would come from metadata - simplified: use token as offset */
+  uint32_t offset =
+      field_token->value.i4 & 0xFFF; /* Use low 12 bits as offset */
+
+  uint8_t *field_ptr = (uint8_t *)obj->value.ref + offset;
   result->type = VM_TYPE_I4;
-  result->value.i4 = 0;
+  result->value.i4 = *(int32_t *)field_ptr;
   return true;
 }
 
@@ -4508,56 +4688,160 @@ bool vm_load_field_object(vm_value_t *obj, vm_value_t *field_token,
 
 bool vm_new_object(vm_execution_state_t *state, clr_runtime_type_t *type,
                    vm_value_t *result) {
-  // Simplified stub implementation
-  result->type = VM_TYPE_REF;
-  result->value.ref = NULL;
+  /* Allocate new object of given type */
+  if (!state || !type || !result)
+    return false;
+
+  size_t obj_size = sizeof(clr_object_header_t) + type->size;
+  void *obj_ptr;
+  if (!vm_alloc_object(state, obj_size, &obj_ptr))
+    return false;
+
+  clr_object_header_t *header = (clr_object_header_t *)obj_ptr;
+  header->type_token = type->token;
+  /* Zero-initialize the object data */
+  memset((uint8_t *)obj_ptr + sizeof(clr_object_header_t), 0, type->size);
+
+  result->type = VM_TYPE_OBJECT;
+  result->value.ref = obj_ptr;
   return true;
 }
 
 bool vm_store_field_object(vm_value_t *obj, vm_value_t *field_token,
                            vm_value_t *value) {
-  // Simplified stub implementation
+  /* Store value to field in object */
+  if (!obj || !field_token || !value)
+    return false;
+
+  if (obj->value.ref == NULL)
+    return false; /* NullReferenceException */
+
+  /* Use low 12 bits of token as offset (simplified) */
+  uint32_t offset = field_token->value.i4 & 0xFFF;
+  uint8_t *field_ptr = (uint8_t *)obj->value.ref + offset;
+
+  /* Store based on value type */
+  switch (value->type) {
+  case VM_TYPE_I1:
+    *(int8_t *)field_ptr = value->value.i1;
+    break;
+  case VM_TYPE_I2:
+    *(int16_t *)field_ptr = value->value.i2;
+    break;
+  case VM_TYPE_I4:
+    *(int32_t *)field_ptr = value->value.i4;
+    break;
+  case VM_TYPE_I8:
+    *(int64_t *)field_ptr = value->value.i8;
+    break;
+  case VM_TYPE_REF:
+  case VM_TYPE_OBJECT:
+    *(void **)field_ptr = value->value.ref;
+    break;
+  default:
+    *(int32_t *)field_ptr = value->value.i4;
+    break;
+  }
   return true;
 }
 
+/* Static field storage - simple global table */
+#define MAX_STATIC_FIELDS 256
+static vm_value_t static_field_table[MAX_STATIC_FIELDS];
+
 bool vm_load_static_field(vm_value_t *field_token, vm_value_t *result) {
-  // Simplified stub implementation
-  result->type = VM_TYPE_I4;
-  result->value.i4 = 0;
+  /* Load value from static field */
+  if (!field_token || !result)
+    return false;
+
+  uint32_t slot = field_token->value.i4 & 0xFF; /* Use low byte as slot */
+  if (slot >= MAX_STATIC_FIELDS)
+    return false;
+
+  *result = static_field_table[slot];
+  if (result->type == 0) /* Uninitialized */
+    result->type = VM_TYPE_I4;
   return true;
 }
 
 bool vm_store_static_field(vm_value_t *field_token, vm_value_t *value) {
-  // Simplified stub implementation
+  /* Store value to static field */
+  if (!field_token || !value)
+    return false;
+
+  uint32_t slot = field_token->value.i4 & 0xFF;
+  if (slot >= MAX_STATIC_FIELDS)
+    return false;
+
+  static_field_table[slot] = *value;
   return true;
 }
 
 bool vm_load_field_address(vm_value_t *obj, vm_value_t *field_token,
                            vm_value_t *result) {
-  // Simplified stub implementation
-  result->type = VM_TYPE_I;
-  result->value.i = 0;
+  /* Get address of field in object */
+  if (!obj || !field_token || !result)
+    return false;
+
+  if (obj->value.ref == NULL)
+    return false; /* NullReferenceException */
+
+  uint32_t offset = field_token->value.i4 & 0xFFF;
+  uint8_t *field_ptr = (uint8_t *)obj->value.ref + offset;
+
+  result->type = VM_TYPE_PTR;
+  result->value.ref = field_ptr;
   return true;
 }
 
 bool vm_load_static_field_address(vm_value_t *field_token, vm_value_t *result) {
-  // Simplified stub implementation
-  result->type = VM_TYPE_I;
-  result->value.i = 0;
+  /* Get address of static field */
+  if (!field_token || !result)
+    return false;
+
+  uint32_t slot = field_token->value.i4 & 0xFF;
+  if (slot >= MAX_STATIC_FIELDS)
+    return false;
+
+  result->type = VM_TYPE_PTR;
+  result->value.ref = &static_field_table[slot];
   return true;
 }
 
 bool vm_cast_class(vm_value_t *obj, vm_value_t *cast_type, vm_value_t *result) {
-  // Simplified stub implementation
+  /* Cast object to another type (castclass instruction) */
+  if (!obj || !cast_type || !result)
+    return false;
+
+  if (obj->value.ref == NULL) {
+    /* Null reference - succeeds with null result */
+    result->type = VM_TYPE_OBJECT;
+    result->value.ref = NULL;
+    return true;
+  }
+
+  /* Type checking would require runtime type info */
+  /* For now, assume cast succeeds (unsafe but functional) */
   *result = *obj;
   return true;
 }
 
 bool vm_is_instance(vm_value_t *obj, vm_value_t *test_type,
                     vm_value_t *result) {
-  // Simplified stub implementation
+  /* Check if object is instance of type (isinst instruction) */
+  if (!obj || !test_type || !result)
+    return false;
+
   result->type = VM_TYPE_I4;
-  result->value.i4 = 0;
+
+  if (obj->value.ref == NULL) {
+    result->value.i4 = 0; /* null is not an instance of anything */
+    return true;
+  }
+
+  /* Would need runtime type info to properly check */
+  /* For now, assume it's an instance */
+  result->value.i4 = 1;
   return true;
 }
 
@@ -4664,6 +4948,39 @@ bool vm_divide_ovf_un(vm_value_t *left, vm_value_t *right, vm_value_t *result) {
 
 bool vm_store_field(vm_execution_state_t *state, void *obj,
                     uint32_t field_offset, vm_value_t *value) {
-  // Simplified stub implementation
+  /* Store value to field in object at given byte offset */
+  if (!obj || !value)
+    return false;
+
+  uint8_t *field_ptr = (uint8_t *)obj + field_offset;
+
+  /* Store based on value type */
+  switch (value->type) {
+  case VM_TYPE_I1:
+  case VM_TYPE_U1:
+    *(int8_t *)field_ptr = value->value.i1;
+    break;
+  case VM_TYPE_I2:
+  case VM_TYPE_U2:
+    *(int16_t *)field_ptr = value->value.i2;
+    break;
+  case VM_TYPE_I4:
+  case VM_TYPE_U4:
+    *(int32_t *)field_ptr = value->value.i4;
+    break;
+  case VM_TYPE_I8:
+  case VM_TYPE_U8:
+    *(int64_t *)field_ptr = value->value.i8;
+    break;
+  case VM_TYPE_REF:
+  case VM_TYPE_OBJECT:
+  case VM_TYPE_PTR:
+    *(void **)field_ptr = value->value.ref;
+    break;
+  default:
+    /* Default to 32-bit store */
+    *(int32_t *)field_ptr = value->value.i4;
+    break;
+  }
   return true;
 }
