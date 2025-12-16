@@ -65,6 +65,11 @@ incref(Ref *r)
 {
 	long old, new;
 
+	if(r == nil){
+		print("incref: NULL Ref from pc=%#p\n", getcallerpc(&r));
+		return 0;
+	}
+
 	do {
 		old = r->ref;
 		new = old+1;
@@ -1652,7 +1657,10 @@ case '#':
 			 * if findmount gave us a new Chan.
 			 */
 			cnew = cunique(cnew);
-			pathclose(cnew->path);
+			if(cnew->path != nil)
+				pathclose(cnew->path);
+			if(c->path == nil)
+				c->path = newpath("/");
 			cnew->path = c->path;
 			incref(cnew->path);
 
