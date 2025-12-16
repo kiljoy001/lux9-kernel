@@ -403,9 +403,24 @@ uintptr sysexec(void *list_void) {
    * saved+1 */
   saved_nerrlab = up->nerrlab;
   print("sysexec: saved_nerrlab=%d\n", saved_nerrlab);
-  up->nerrlab = 0; /* Reset to clean state for sysexec's own waserrors */
 
+  /* Initialize to nil before any error can occur */
   args = elem = nil;
+  file0 = nil;
+
+  /* Set up error handler BEFORE any code that can call error() */
+  if (waserror()) {
+    print("EXEC: failed with error '%s'\n", up->errstr);
+    free(file0);
+    free(elem);
+    free(args);
+    /* Disaster after commit */
+    if (up->seg[SSEG] == nil)
+      pexit(up->errstr, 1);
+    nexterror();
+  }
+
+  /* Now we have an error handler, safe to do validation that might error */
   file0 = (char *)uargs[0];
   print("sysexec: raw file argument %p -> '%s'\n", file0, file0);
   validaddr((uintptr)file0, 1, 0);
@@ -417,19 +432,8 @@ uintptr sysexec(void *list_void) {
   file0 = validnamedup(file0, 1);
   print("sysexec: validated file '%s', argp0=%p\n", file0, argp0);
   print("EXEC: attempting to execute '%s'\n", file0);
-  print("EXEC: about to call waserror()\n");
 
-  if (waserror()) {
-    print("EXEC: failed with error '%s'\n", up->errstr);
-    free(file0);
-    free(elem);
-    free(args);
-    /* Disaster after commit */
-    if (up->seg[SSEG] == nil)
-      pexit(up->errstr, 1);
-    nexterror();
-  }
-  print("EXEC: waserror() returned\n");
+  print("EXEC: continuing with file open\n");
   align = BY2PG - 1;
   print("EXEC: set align=%d\n", align);
   indir = 0;

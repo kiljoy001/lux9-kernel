@@ -7,17 +7,19 @@
 .global _start
 
 _start:
-	/* Build the string "/boot/init\0" on the stack */
-	mov $0, %rax
-	push %rax              /* null terminator */
-
-	mov $0x0000007469, %rax  /* "it\0\0\0\0" */
+	/* Build the string "/boot/boot\0" on the stack (11 bytes, padded to 16) */
+	/* Stack grows down, so push high bytes first, low bytes last */
+	/* rsp will point to the start of the string after pushes */
+	
+	/* Push "ot\0..." (high 8 bytes - at higher address) */
+	movabs $0x000000000000746f, %rax  /* "ot\0\0\0\0\0\0" in little-endian */
+	push %rax
+	
+	/* Push "/boot/bo" (low 8 bytes - at lower address = string start) */
+	movabs $0x6f622f746f6f622f, %rax  /* "/boot/bo" in little-endian */
 	push %rax
 
-	mov $0x6e692f746f6f622f, %rax  /* "/boot/in" */
-	push %rax
-
-	/* rsp now points to the start of the string */
+	/* rsp now points to the start of "/boot/boot\0" */
 	mov %rsp, %rbx         /* rbx = pointer */
 
 	/* Build argv array: [pointer_to_string, NULL] */

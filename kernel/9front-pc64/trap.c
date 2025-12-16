@@ -517,8 +517,10 @@ void syscall(Ureg *ureg) {
   if (1 || p9_handle_doorbell(up) < 0) {
     /* Fallback: Doorbell not rung? Try legacy syscall dispatch */
     /* This allows 'init' (Phase 5) to boot while we build Phase 6 userspace */
-    dosyscall(scallnr, (Sargs *)(ureg->sp + sizeof(uintptr)),
-              (uintptr *)(&ureg->ax));
+    dosyscall(
+        scallnr,
+        (Sargs *)(ureg->sp), /* No offset - SYSCALL doesn't push return addr */
+        (uintptr *)(&ureg->ax));
   }
 
   /* Debug: after 9P dispatch */
