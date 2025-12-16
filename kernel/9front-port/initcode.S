@@ -7,14 +7,14 @@
 .global _start
 
 _start:
-	/* Build the string "/bin/init\0" on the stack */
+	/* Build the string "/boot/init\0" on the stack */
 	mov $0, %rax
 	push %rax              /* null terminator */
 
-	mov $0x0000007469, %rax  /* "it\0\0" */
+	mov $0x0000007469, %rax  /* "it\0\0\0\0" */
 	push %rax
 
-	mov $0x6e692f6e69622f, %rax  /* "/bin/in" */
+	mov $0x6e692f746f6f622f, %rax  /* "/boot/in" */
 	push %rax
 
 	/* rsp now points to the start of the string */

@@ -86,6 +86,7 @@ static ProcTransition fsm_transitions[] = {
     {PS_New, EV_READY, PS_Ready, guard_mach_nil},
 
     /* Scheduling */
+    {PS_Ready, EV_READY, PS_Ready, nil}, /* Idempotent: already ready */
     {PS_Ready, EV_SCHEDULE, PS_Running, guard_mach_set},
     {PS_Running, EV_YIELD, PS_Scheding, nil},
     {PS_Scheding, EV_SCHEDULE, PS_Running, guard_mach_set},
@@ -204,6 +205,10 @@ int proc_event(Proc *p, int event) {
 
   /* Update state trace */
   p->state_trace = STATE_PUSH(p->state_trace, t->to_state);
+
+  /* CRITICAL: Also update legacy p->state field for compatibility
+   * with queueproc(), ready(), and other scheduler code that checks p->state */
+  p->state = t->to_state;
 
   /* Update checksum */
   proc_seal(p);
