@@ -13,7 +13,7 @@ typedef struct QBEBuffer {
 } QBEBuffer;
 
 /* Initialize buffer */
-void qbe_buffer_init(QBEBuffer *buf);
+int qbe_buffer_init(QBEBuffer *buf);
 
 /* Free buffer */
 void qbe_buffer_free(QBEBuffer *buf);

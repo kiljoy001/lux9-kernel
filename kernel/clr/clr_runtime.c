@@ -263,16 +263,29 @@ static il_method_t *clr_find_entry_point(il_assembly_t *assembly) {
  */
 static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
                                 ulong *out_size) {
+  extern void uartputs(char *, int);
+  char debug_buf[128];
   il_to_fruity_error_t err;
 
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_compile_method ENTER method=%s\n", method->name);
+  uartputs(debug_buf, strlen(debug_buf));
+
   /* Step 1: IL → Fruity IR */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Step 1: IL->Fruity\n");
+  uartputs(debug_buf, strlen(debug_buf));
   fruity_function_t *func = il_to_fruity_convert_method(assembly, method, &err);
   if (func == nil) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr IL->Fruity FAILED err=%d\n", err);
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: IL→Fruity failed for %s: error %d\n", method->name, err);
     return nil;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr IL->Fruity SUCCESS func=%p\n", func);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Wrap in a temporary module for fruity_to_qbe */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr wrapping in temp module\n");
+  uartputs(debug_buf, strlen(debug_buf));
   fruity_module_t temp_mod;
   memset(&temp_mod, 0, sizeof(temp_mod));
   temp_mod.name = method->name;
@@ -282,25 +295,39 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
 
   /* Step 2: Fruity IR → QBE text */
   /* Allocate a page for QBE text output */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Step 2: Fruity->QBE, allocating page\n");
+  uartputs(debug_buf, strlen(debug_buf));
   void *qbe_page = xalloc(4096);
   if (qbe_page == nil) {
     fruity_free_function(func);
     return nil;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr allocated qbe_page=%p\n", qbe_page);
+  uartputs(debug_buf, strlen(debug_buf));
 
   char errbuf[128];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling fruity_to_qbe\n");
+  uartputs(debug_buf, strlen(debug_buf));
   int qbe_result = fruity_to_qbe(&temp_mod, (uintptr)PADDR(qbe_page), errbuf,
                                  sizeof(errbuf));
   if (qbe_result < 0) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr fruity_to_qbe FAILED: %s\n", errbuf);
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: Fruity→QBE failed for %s: %s\n", method->name, errbuf);
     xfree(qbe_page);
     fruity_free_function(func);
     return nil;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr fruity_to_qbe SUCCESS\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   ulong qbe_len = strlen((char *)qbe_page);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr qbe_len=%ld\n", qbe_len);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Step 3: QBE text → x86-64 binary */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Step 3: QBE->x86-64, allocating code page\n");
+  uartputs(debug_buf, strlen(debug_buf));
   ulong code_page_size = 4096; /* 4KB page for code */
   void *code_page = xalloc(code_page_size);
   if (code_page == nil) {
@@ -308,16 +335,24 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
     fruity_free_function(func);
     return nil;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr allocated code_page=%p\n", code_page);
+  uartputs(debug_buf, strlen(debug_buf));
 
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling qbe_compile_page\n");
+  uartputs(debug_buf, strlen(debug_buf));
   int code_size =
       qbe_compile_page((char *)qbe_page, qbe_len, code_page, code_page_size);
   if (code_size <= 0) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr qbe_compile_page FAILED code_size=%d\n", code_size);
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: QBE→x86-64 failed for %s\n", method->name);
     xfree(code_page);
     xfree(qbe_page);
     fruity_free_function(func);
     return nil;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr qbe_compile_page SUCCESS code_size=%d\n", code_size);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Cleanup intermediate buffers */
   xfree(qbe_page);
@@ -353,45 +388,68 @@ il_assembly_t *clr_load_assembly(void *data, ulong size, char *errbuf,
  * Returns the exit code from Main().
  */
 int clr_execute_assembly(void *dll_data, ulong dll_size) {
+  extern void uartputs(char *, int);
   char errbuf[128];
+  char debug_buf[128];
+
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_execute_assembly ENTERED dll_size=%ld\n", dll_size);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Load assembly */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling clr_load_assembly\n");
+  uartputs(debug_buf, strlen(debug_buf));
   il_assembly_t *assembly =
       clr_load_assembly(dll_data, dll_size, errbuf, sizeof(errbuf));
   if (assembly == nil) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_load_assembly FAILED: %s\n", errbuf);
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: %s\n", errbuf);
     return -1;
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_load_assembly returned %p\n", assembly);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Find entry point */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling clr_find_entry_point\n");
+  uartputs(debug_buf, strlen(debug_buf));
   il_method_t *main = clr_find_entry_point(assembly);
   if (main == nil) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_find_entry_point FAILED\n");
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: no entry point found\n");
     il_free_assembly(assembly);
     return -1;
   }
-
-  print("clr: compiling entry point: %s\n", main->name);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr found entry point: %s\n", main->name);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Compile entry point */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling clr_compile_method\n");
+  uartputs(debug_buf, strlen(debug_buf));
   ulong code_size;
   void *code = clr_compile_method(assembly, main, &code_size);
   if (code == nil) {
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr_compile_method FAILED\n");
+    uartputs(debug_buf, strlen(debug_buf));
     print("clr: failed to compile entry point\n");
     il_free_assembly(assembly);
     return -1;
   }
-
-  print("clr: compiled %s (%ld bytes), executing...\n", main->name, code_size);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr compiled %ld bytes at %p\n", code_size, code);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Execute! */
   /* Cast to function pointer and call */
   /* For init: void Main() or int Main() */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr about to execute Main()\n");
+  uartputs(debug_buf, strlen(debug_buf));
   typedef int (*main_func_t)(void);
   main_func_t main_fn = (main_func_t)code;
 
   int result = main_fn();
 
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Main() returned %d\n", result);
+  uartputs(debug_buf, strlen(debug_buf));
   print("clr: Main() returned %d\n", result);
 
   /* Cleanup */

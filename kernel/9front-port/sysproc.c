@@ -371,6 +371,10 @@ uvlong beswav(uvlong v) {
 extern int clr_execute_assembly(void *dll_data, ulong dll_size);
 
 uintptr sysexec(void *list_void) {
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec ENTERED list_void=%p\n", list_void);
+  uartputs(debug_buf, strlen(debug_buf));
   ulong *uargs = (ulong *)list_void;
   union {
     struct {
@@ -396,21 +400,30 @@ uintptr sysexec(void *list_void) {
   Fgrp *f;
   int saved_nerrlab;
 
-  print("sysexec: started, list=%p\n", list_void);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec started, list=%p\n", list_void);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Save error stack level - we'll restore it before returning
    * The syscall wrapper will pop once after we return, so we need to be at
    * saved+1 */
   saved_nerrlab = up->nerrlab;
-  print("sysexec: saved_nerrlab=%d\n", saved_nerrlab);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec saved_nerrlab=%d\n", saved_nerrlab);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Initialize to nil before any error can occur */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec initializing variables\n");
+  uartputs(debug_buf, strlen(debug_buf));
   args = elem = nil;
   file0 = nil;
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec variables initialized\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Set up error handler BEFORE any code that can call error() */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec about to call waserror()\n");
+  uartputs(debug_buf, strlen(debug_buf));
   if (waserror()) {
-    print("EXEC: failed with error '%s'\n", up->errstr);
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec ERROR PATH: %s\n", up->errstr);
+    uartputs(debug_buf, strlen(debug_buf));
     free(file0);
     free(elem);
     free(args);
@@ -419,84 +432,137 @@ uintptr sysexec(void *list_void) {
       pexit(up->errstr, 1);
     nexterror();
   }
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec waserror() returned\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Now we have an error handler, safe to do validation that might error */
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec getting file0 from uargs[0]\n");
+  uartputs(debug_buf, strlen(debug_buf));
   file0 = (char *)uargs[0];
-  print("sysexec: raw file argument %p -> '%s'\n", file0, file0);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got file0=%p\n", file0);
+  uartputs(debug_buf, strlen(debug_buf));
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec calling validaddr for file0\n");
+  uartputs(debug_buf, strlen(debug_buf));
   validaddr((uintptr)file0, 1, 0);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validaddr returned\n");
+  uartputs(debug_buf, strlen(debug_buf));
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec getting argp0\n");
+  uartputs(debug_buf, strlen(debug_buf));
   argp0 = (char **)uargs[1];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got argp0=%p\n", argp0);
+  uartputs(debug_buf, strlen(debug_buf));
   evenaddr((uintptr)argp0);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec evenaddr done\n");
+  uartputs(debug_buf, strlen(debug_buf));
   validaddr((uintptr)argp0, 2 * BY2WD, 0);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validaddr argp0 done\n");
+  uartputs(debug_buf, strlen(debug_buf));
   if (*argp0 == nil)
     error(Ebadarg);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec checked *argp0\n");
+  uartputs(debug_buf, strlen(debug_buf));
   file0 = validnamedup(file0, 1);
-  print("sysexec: validated file '%s', argp0=%p\n", file0, argp0);
-  print("EXEC: attempting to execute '%s'\n", file0);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validated file '%s'\n", file0);
+  uartputs(debug_buf, strlen(debug_buf));
 
-  print("EXEC: continuing with file open\n");
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec setting up variables\n");
+  uartputs(debug_buf, strlen(debug_buf));
   align = BY2PG - 1;
-  print("EXEC: set align=%d\n", align);
   indir = 0;
   is_elf = 0;
   file_offset = 0;
   file = file0;
-  print("EXEC: entering main loop with file='%s'\n", file);
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec entering loop with file='%s'\n", file);
+  uartputs(debug_buf, strlen(debug_buf));
   for (;;) {
-    print("EXEC: opening file '%s'\n", file);
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec about to call namec('%s')\n", file);
+    uartputs(debug_buf, strlen(debug_buf));
     tc = namec(file, Aopen, OEXEC, 0);
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec namec returned tc=%p\n", tc);
+    uartputs(debug_buf, strlen(debug_buf));
     if (waserror()) {
       cclose(tc);
       nexterror();
     }
-    print("EXEC: file opened successfully\n");
-    if (!indir)
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec file opened, waserror set\n");
+    uartputs(debug_buf, strlen(debug_buf));
+    if (!indir) {
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec calling kstrdup\n");
+      uartputs(debug_buf, strlen(debug_buf));
       kstrdup(&elem, up->genbuf);
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec kstrdup done\n");
+      uartputs(debug_buf, strlen(debug_buf));
+    }
 
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec about to read from tc->type=%d\n", tc->type);
+    uartputs(debug_buf, strlen(debug_buf));
     n = devtab[tc->type]->read(tc, u.buf, sizeof(u.buf), 0);
-
-    print("EXEC: read %d bytes from file\n", n);
-    print("EXEC: first 4 bytes: %02x %02x %02x %02x\n", u.buf[0], u.buf[1],
-          u.buf[2], u.buf[3]);
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec read returned n=%d\n", n);
+    uartputs(debug_buf, strlen(debug_buf));
+    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec first 4 bytes: %02x %02x %02x %02x\n", u.buf[0], u.buf[1], u.buf[2], u.buf[3]);
+    uartputs(debug_buf, strlen(debug_buf));
 
     /* Check for ELF signature */
     if (n >= 4 && u.buf[0] == 0x7f && u.buf[1] == 'E' && u.buf[2] == 'L' &&
         u.buf[3] == 'F') {
-      print("EXEC: detected ELF binary\n");
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec detected ELF binary\n");
+      uartputs(debug_buf, strlen(debug_buf));
       is_elf = 1;
     }
 
     /* Check for .NET/CLR PE/COFF signature ("MZ") */
     if (n >= 2 && u.buf[0] == 'M' && u.buf[1] == 'Z') {
       /* Found a potential .NET assembly */
-      print("EXEC: detected potential CLR assembly (MZ signature)\n");
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec detected CLR assembly (MZ)\n");
+      uartputs(debug_buf, strlen(debug_buf));
 
       /* Read the full file into memory to execute it */
       /* Get file size first */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec calling dirchanstat\n");
+      uartputs(debug_buf, strlen(debug_buf));
       Dir *dir = dirchanstat(tc);
       if (dir == nil)
         error(Eio);
       ulong fsize = dir->length;
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec file size=%ld\n", fsize);
+      uartputs(debug_buf, strlen(debug_buf));
       free(dir);
 
       /* Allocate buffer */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec allocating %ld bytes\n", fsize);
+      uartputs(debug_buf, strlen(debug_buf));
       void *asm_data = malloc(fsize);
       if (asm_data == nil)
         error(Enomem);
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec allocated asm_data=%p\n", asm_data);
+      uartputs(debug_buf, strlen(debug_buf));
 
       /* Read full content */
       /* Rewind first (offset is at 'n' now) */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec reading full file\n");
+      uartputs(debug_buf, strlen(debug_buf));
       devtab[tc->type]->read(tc, asm_data, fsize, 0);
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec full file read complete\n");
+      uartputs(debug_buf, strlen(debug_buf));
       /* We ignore read errors for now assuming success if stat worked */
 
       /* Close file as we have it in memory */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec closing channel\n");
+      uartputs(debug_buf, strlen(debug_buf));
       cclose(tc);
       poperror(); /* cclose error handler */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec channel closed\n");
+      uartputs(debug_buf, strlen(debug_buf));
 
       /* Execute assembly */
       /* Note: This runs in kernel context for now, effectively taking over the
        * process */
       /* If clr_execute_assembly returns, the program exited */
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec calling clr_execute_assembly\n");
+      uartputs(debug_buf, strlen(debug_buf));
       int ret = clr_execute_assembly(asm_data, fsize);
+      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec clr_execute_assembly returned %d\n", ret);
+      uartputs(debug_buf, strlen(debug_buf));
 
       /* Cleanup */
       free(asm_data);
@@ -1864,7 +1930,11 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
      * print("dosyscall: calling syscall handler\n");
      */
     // print("DEBUG: calling handler\n");
+    snprint(buf, sizeof(buf), "DEBUG: About to call systab[%ld] at %p\n", scallnr, systab[scallnr]);
+    uartputs(buf, strlen(buf));
     ret = systab[scallnr](syscall_args);
+    snprint(buf, sizeof(buf), "DEBUG: systab[%ld] returned %#llux\n", scallnr, ret);
+    uartputs(buf, strlen(buf));
     /*
      * DEBUG: Disabled verbose syscall tracing
      * print("dosyscall: syscall handler returned %#llux\n", ret);

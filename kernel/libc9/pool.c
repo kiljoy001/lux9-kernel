@@ -1357,14 +1357,33 @@ poolrealloc(Pool *p, void *v, ulong n)
 void
 poolfree(Pool *p, void *v)
 {
+	extern void uartputs(char *, int);
+	char debug_buf[128];
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree ENTER p=%p v=%p\n", p, v);
+	uartputs(debug_buf, strlen(debug_buf));
+
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling lock\n");
+	uartputs(debug_buf, strlen(debug_buf));
 	p->lock(p);
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree lock acquired\n");
+	uartputs(debug_buf, strlen(debug_buf));
+
 	paranoia {
+		snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling poolcheckl\n");
+		uartputs(debug_buf, strlen(debug_buf));
 		poolcheckl(p);
+		snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree poolcheckl done\n");
+		uartputs(debug_buf, strlen(debug_buf));
 	}
 	verbosity {
 		pooldumpl(p);
 	}
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling poolfreel\n");
+	uartputs(debug_buf, strlen(debug_buf));
 	poolfreel(p, v);
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree poolfreel done\n");
+	uartputs(debug_buf, strlen(debug_buf));
+
 	paranoia {
 		poolcheckl(p);
 	}
@@ -1373,7 +1392,12 @@ poolfree(Pool *p, void *v)
 	}
 	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
 	LOG(p, "poolfree %p %p\n", p, v);
+
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling unlock\n");
+	uartputs(debug_buf, strlen(debug_buf));
 	p->unlock(p);
+	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree EXIT\n");
+	uartputs(debug_buf, strlen(debug_buf));
 }
 
 /*
