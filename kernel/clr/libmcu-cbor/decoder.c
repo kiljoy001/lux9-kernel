@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 #include "cbor/decoder.h"
-#include <kernel_compat.h>
+#include "../qbe/kernel_compat.h"
 
 #ifndef __PLAN9_KERNEL__
 /* #include <stdbool.h> */

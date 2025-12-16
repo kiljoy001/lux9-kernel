@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 #include "cbor/ieee754.h"
-#include <kernel_compat.h>
+#include "../qbe/kernel_compat.h"
 
 #define MAJOR_TYPE_BIT 5
 

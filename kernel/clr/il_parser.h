@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #else
-#include <kernel_compat.h>
+#include "qbe/kernel_compat.h"
 #endif
 /* #include <stddef.h> */
 /* #include <stdint.h> */
