@@ -545,7 +545,7 @@ void blind_ledger_update_merkle_root(void) {
     next_level_size = (level_size + 1) / 2;
     next_level = pebble_meta_alloc(next_level_size * BLIND_LEDGER_CAP_SIZE);
     if (next_level == nil) {
-      pebble_meta_pebble_meta_free(level_hashes);
+      pebble_meta_free(level_hashes);
       return;
     }
 
@@ -558,13 +558,13 @@ void blind_ledger_update_merkle_root(void) {
                        right);
     }
 
-    pebble_meta_pebble_meta_free(level_hashes);
+    pebble_meta_free(level_hashes);
     level_hashes = next_level;
     level_size = next_level_size;
   }
 
   memmove(merkle_root, level_hashes, BLIND_LEDGER_CAP_SIZE);
-  pebble_meta_pebble_meta_free(level_hashes);
+  pebble_meta_free(level_hashes);
 }
 
 const u8int *blind_ledger_get_merkle_root(void) { return merkle_root; }
