@@ -310,6 +310,8 @@ void *xallocz(ulong size, int zero) {
       xalloc_successes++;
       if (size >= 4096)
         xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
+      xtrace("xallocz: about to return p->data=%p\n", p->data);
+      /* Lock already released at line 294 */
       return p->data;
     }
     l = &h->link;
