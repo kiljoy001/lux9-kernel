@@ -7,6 +7,8 @@ CFLAGS = -Wall -Wextra -O2 -std=c99
 CFLAGS += -fno-builtin
 CFLAGS += -fno-stack-protector
 CFLAGS += -D_KERNEL_QBE
+CFLAGS += -DUSE_PEBBLE_ALLOC  # Enable Pebble Black token allocator
+CFLAGS += -I../../include      # Access to pebble.h
 
 # QBE core sources
 QBE_SRCS = \

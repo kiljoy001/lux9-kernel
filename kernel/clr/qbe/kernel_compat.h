@@ -7,6 +7,16 @@
 #ifndef KERNEL_COMPAT_H
 #define KERNEL_COMPAT_H
 
+/* Define static_assert before including u.h to prevent macro conflicts */
+#ifndef static_assert
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define static_assert _Static_assert
+#else
+/* Use __LINE__ to create unique identifier instead of message string */
+#define static_assert(x, msg) typedef char static_assert_line_##__LINE__[(x) ? 1 : -1]
+#endif
+#endif
+
 /* Compiler builtins */
 #include <stdarg.h>
 #include <stddef.h>
@@ -46,6 +56,17 @@ typedef unsigned char uchar;
 typedef unsigned int uint;
 typedef unsigned long ulong;
 typedef unsigned long long bits;
+
+/* Plan 9 types needed by pebble.h and blind_ledger.h */
+typedef unsigned short ushort;
+typedef unsigned char u8int;
+typedef unsigned short u16int;
+typedef unsigned int u32int;
+typedef unsigned long long u64int;
+typedef signed char s8int;
+typedef signed short s16int;
+typedef signed int s32int;
+typedef signed long long s64int;
 
 /* limits.h */
 #ifndef CHAR_BIT

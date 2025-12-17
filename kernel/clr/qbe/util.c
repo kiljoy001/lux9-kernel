@@ -2,7 +2,7 @@
 #include <stdarg.h>
 
 #ifdef _KERNEL_QBE
-/* Use Pebble Blue tokens for QBE memory - isolated from mainmem pool */
+/* Use Pebble Black tokens for QBE memory - isolated from mainmem pool */
 #include "../../include/pebble.h"
 #endif
 

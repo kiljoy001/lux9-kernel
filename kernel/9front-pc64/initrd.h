@@ -1,6 +1,8 @@
 /* initrd.h - Initial ramdisk support */
 #pragma once
 
+#include "u.h"
+
 /* TAR header format (POSIX ustar) */
 struct tar_header {
 	char name[100];

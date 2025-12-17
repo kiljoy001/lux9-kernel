@@ -1,3 +1,5 @@
+#include "u.h"
+
 typedef struct Pool Pool;
 struct Pool {
 	char*	name;

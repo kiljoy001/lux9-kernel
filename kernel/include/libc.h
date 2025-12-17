@@ -9,6 +9,7 @@ extern void longjmp(jmp_buf, int);
 #include <setjmp.h>
 #endif
 #include <stdarg.h>
+#include "u.h"
 
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
