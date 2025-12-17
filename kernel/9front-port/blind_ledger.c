@@ -6,17 +6,18 @@
  * millions) Secondary index: Hash table for PA reverse lookups (O(1) average)
  */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 #include <error.h>
 
-#include "blind_ledger.h"
 #include "../include/rbtree.h"
+#include "blind_ledger.h"
 #include "crypto.h"
 #include "siphash.h"
+#include <pebble.h>
 // =========================================================================
 //  Internal Data Structures
 // =========================================================================
@@ -194,7 +195,7 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
   out_cap->perms = permissions;
 
   // 7. Allocate node and insert into both indexes
-  LedgerEntryNode *node = mallocz(sizeof(LedgerEntryNode), 1);
+  LedgerEntryNode *node = pebble_meta_alloc(sizeof(LedgerEntryNode));
   if (node == nil) {
     return BLIND_LEDGER_ENOMEM;
   }
@@ -205,7 +206,7 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
   // Insert into RB-tree (primary index)
   if (ledger_tree_insert(node) < 0) {
     unlock(&ledger_lock);
-    free(node);
+    pebble_meta_free(node);
     return BLIND_LEDGER_EINVAL; // Duplicate capability (should never happen)
   }
 
@@ -419,7 +420,7 @@ BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner) {
 
   ledger_entry_count--;
 
-  free(node);
+  pebble_meta_free(node);
 
   unlock(&ledger_lock);
 
@@ -500,7 +501,7 @@ void blind_ledger_update_merkle_root(void) {
     return;
   }
 
-  leaf_hashes = mallocz(leaf_count * sizeof(u8int *), 1);
+  leaf_hashes = pebble_meta_alloc(leaf_count * sizeof(u8int *));
   if (leaf_hashes == nil) {
     unlock(&ledger_lock);
     return;
@@ -522,15 +523,15 @@ void blind_ledger_update_merkle_root(void) {
   // Handle single entry
   if (leaf_count == 1) {
     memmove(merkle_root, leaf_hashes[0], BLIND_LEDGER_CAP_SIZE);
-    free(leaf_hashes);
+    pebble_meta_free(leaf_hashes);
     return;
   }
 
   // Build Merkle tree
   level_size = leaf_count;
-  level_hashes = mallocz(level_size * BLIND_LEDGER_CAP_SIZE, 1);
+  level_hashes = pebble_meta_alloc(level_size * BLIND_LEDGER_CAP_SIZE);
   if (level_hashes == nil) {
-    free(leaf_hashes);
+    pebble_meta_free(leaf_hashes);
     return;
   }
 
@@ -538,13 +539,13 @@ void blind_ledger_update_merkle_root(void) {
     memmove(level_hashes + i * BLIND_LEDGER_CAP_SIZE, leaf_hashes[i],
             BLIND_LEDGER_CAP_SIZE);
   }
-  free(leaf_hashes);
+  pebble_meta_free(leaf_hashes);
 
   while (level_size > 1) {
     next_level_size = (level_size + 1) / 2;
-    next_level = mallocz(next_level_size * BLIND_LEDGER_CAP_SIZE, 1);
+    next_level = pebble_meta_alloc(next_level_size * BLIND_LEDGER_CAP_SIZE);
     if (next_level == nil) {
-      free(level_hashes);
+      pebble_meta_pebble_meta_free(level_hashes);
       return;
     }
 
@@ -557,13 +558,13 @@ void blind_ledger_update_merkle_root(void) {
                        right);
     }
 
-    free(level_hashes);
+    pebble_meta_pebble_meta_free(level_hashes);
     level_hashes = next_level;
     level_size = next_level_size;
   }
 
   memmove(merkle_root, level_hashes, BLIND_LEDGER_CAP_SIZE);
-  free(level_hashes);
+  pebble_meta_pebble_meta_free(level_hashes);
 }
 
 const u8int *blind_ledger_get_merkle_root(void) { return merkle_root; }

@@ -198,6 +198,8 @@ void pebble_sip_issue_test(void);
 /* Initialization */
 void pebbleinit(void);
 void pebbleprocinit(Proc *p);
+void *pebble_meta_alloc(ulong size);
+void pebble_meta_free(void *v);
 
 /* Constants for validation */
 #define PEBBLE_TOKEN_MAGIC 0x50454242 /* "PEBB" */
