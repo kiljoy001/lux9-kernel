@@ -376,6 +376,8 @@ void setupwatchpts(Proc *, Watchpt *, int);
 char *skipslash(char *);
 void sleep(Rendez *, int (*)(void *), void *);
 void *smalloc(ulong);
+void *pebble_meta_alloc(ulong);
+void pebble_meta_free(void *);
 int splhi(void);
 int spllo(void);
 void splx(int);

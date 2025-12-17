@@ -241,10 +241,10 @@ void main_after_cr3(void) {
   uartputs("main_after_cr3: calling exchangeinit\n", 38);
   exchangeinit();
 
-  uartputs("DEBUG: pre-pebble-selftest\n", 25);
+  uartputs("DEBUG: pre-pebble-selftest [SKIPPED]\n", 35);
   /* Run Pebble Self-Test (xalloc works now) */
-  extern void pebble_selftest(void);
-  pebble_selftest();
+  /* extern void pebble_selftest(void); */
+  /* pebble_selftest(); */
   uartputs("DEBUG: post-pebble-selftest\n", 26);
 
   set_boot_state(BOOT_TRAP);

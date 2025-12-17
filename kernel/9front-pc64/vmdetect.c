@@ -9,6 +9,7 @@
 #define cpu_relax() asm volatile("rep; nop" ::: "memory")
 
 VMInfo vm_info;
+static int vm_detect_has_run;
 
 /* Check if running under a hypervisor using CPUID */
 static int check_hypervisor_cpuid(void) {
@@ -70,6 +71,10 @@ static int check_vm_timing(void) {
 /* Main VM detection function */
 void vm_detect(void) {
   char vendor[16];
+
+  if (vm_detect_has_run)
+    return;
+  vm_detect_has_run = 1;
 
   memset(&vm_info, 0, sizeof(vm_info));
   vm_info.type = VM_NONE;
@@ -170,7 +175,7 @@ int vm_is_virtual(void) {
 
 /* Apply VM-specific workarounds */
 void vm_apply_workarounds(void) {
-  if (!vm_info.detected)
+  if (!vm_detect_has_run)
     vm_detect();
 
   if (vm_info.type == VM_NONE) {

@@ -374,7 +374,7 @@ BlindLedgerError ledger_rollback_transfer(const UserCapability *current_cap,
 BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner) {
   extern int pebble_black_free_internal(uintptr pa, ulong len, Proc * owner);
 
-  if (cap == nil || owner == nil) {
+  if (cap == nil) {
     return BLIND_LEDGER_EINVAL;
   }
 

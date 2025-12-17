@@ -18,26 +18,41 @@ int proc_setup_p9page(Proc *p) {
   if (p->p9page != nil)
     return 0; /* Already allocated */
 
-  /* Allocate 2 pages (8KB) for asymmetric exchange */
-  p->p9page = xallocz(2 * BY2PG, 1);
+  /* Allocate 2 pages (8KB) for asymmetric exchange, aligned to Page Size */
+  /* Must be aligned so that PADDR(p->p9page) is the exact start of the physical
+   * page mapped to userspace */
+  p->p9page = mallocalign(2 * BY2PG, BY2PG, 0, 0);
   if (p->p9page == nil) {
-    print("proc_setup_p9page: failed to allocate p9page for pid %lud\n",
-          p->pid);
+    print("proc_setup_p9page: mallocalign failed\n");
+    return -1;
+  }
+  memset(p->p9page, 0, 2 * BY2PG);
+
+  /* Create a physical segment for the exchange page */
+  Segment *s = newseg(SG_PHYSICAL, EXCHANGE_PAGE_ADDR, 2);
+  if (s == nil) {
+    print("proc_setup_p9page: newseg failed\n");
     return -1;
   }
 
-  /* Initialize P9Control block at offset 0x1F00 */
-  P9Control *ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
-  memset(ctl, 0, sizeof(P9Control));
-  ctl->status = P9_STATUS_IDLE;
-  ctl->doorbell = 0;
+  /* Allocate Physseg tracker for this segment */
+  s->pseg = malloc(sizeof(Physseg));
+  if (s->pseg == nil) {
+    print("proc_setup_p9page: malloc failed for pseg\n");
+    putseg(s);
+    return -1;
+  }
 
-  /* Map Page 0 (Requests) as Read-Write */
-  userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page), PTEVALID | PTEUSER | PTEWRITE);
+  /* Configure physical segment backing */
+  s->pseg->attr = SG_PHYSICAL | SG_CACHED;
+  s->pseg->name = "9pexchange";
+  s->pseg->pa = PADDR(p->p9page);
+  s->pseg->size = 2 * BY2PG;
+  s->pseg->next = nil;
+  s->pseg->prev = nil;
 
-  /* Map Page 1 (Responses/Control) as Read-Only */
-  userpmap(EXCHANGE_PAGE_ADDR + BY2PG, PADDR(p->p9page) + BY2PG,
-           PTEVALID | PTEUSER);
+  /* Assign segment to process at ESEG slot */
+  p->seg[ESEG] = s;
 
   return 0;
 }

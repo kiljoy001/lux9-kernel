@@ -27,6 +27,7 @@ struct Proc;
 typedef struct Proc Proc;
 
 #define BLIND_LEDGER_SECRET_SIZE 32
+#define BLIND_LEDGER_TOKEN_UNIT 8   // 8 bytes per Token Unit (Peg)
 #define BLIND_LEDGER_CAP_SIZE 32    // For BLAKE2b_256 (256 bits = 32 bytes)
 #define BLIND_LEDGER_SECRET_SIZE 32 // Cryptographically strong secret size
 

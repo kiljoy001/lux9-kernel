@@ -1272,7 +1272,6 @@ void poolfree(Pool *p, void *v) {
   LOG(p, "poolfree %p %p\n", p, v);
   p->unlock(p);
 }
-}
 
 /*
  * Return the real size of a block, and let the user use it.

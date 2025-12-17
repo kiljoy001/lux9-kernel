@@ -97,7 +97,7 @@ static void proc0(void *arg) {
   up->rgrp = newrgrp();
   BOOTPRINT("BOOT[proc0]: process groups ready\n");
 
-  /* pebble_selftest(); */
+  pebble_selftest();
 
   /*
    * These are o.k. because rootinit is null.
@@ -220,6 +220,9 @@ static void proc0(void *arg) {
 
   /* TODO: Load and compile CLR init from /boot/boot
    * For now, use legacy initcode[] until CLR userspace execution is working */
+  print("BOOT[proc0]: initcode size=%d, first bytes: %02x %02x %02x %02x\\n",
+        (int)sizeof(initcode), initcode[0], initcode[1], initcode[2],
+        initcode[3]);
   memmove((uchar *)VA(k), initcode, sizeof(initcode));
   memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
 
@@ -306,7 +309,8 @@ static void proc0(void *arg) {
     }
   }
   print("BOOT[proc0]: Exited PML4 validation, about to check USTKTOP slot\n");
-  print("BOOT[proc0]: Skipping m->pml4 check - causes hang (TODO: fix m->pml4 access)\n");
+  print("BOOT[proc0]: Skipping m->pml4 check - causes hang (TODO: fix m->pml4 "
+        "access)\n");
   /* FIXME: Accessing m->pml4[255] causes a hang/page fault
    * This needs investigation - likely m->pml4 is not properly mapped
    * or m is pointing to invalid memory. For now, skip this check.
@@ -314,13 +318,12 @@ static void proc0(void *arg) {
     uintptr ustktop_idx = PTLX(USTKTOP - 1, 3);
     print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\n",
           USTKTOP, USTKTOP - 1, (long long)ustktop_idx);
-    print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long long)ustktop_idx);
-    uintptr pml4_value = m->pml4[ustktop_idx];
-    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx, pml4_value);
-    if (pml4_value != 0)
-      print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
-    else
-      print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
+    print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long
+  long)ustktop_idx); uintptr pml4_value = m->pml4[ustktop_idx];
+    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx,
+  pml4_value); if (pml4_value != 0) print("BOOT[proc0]: PML4 slot before
+  mmuswitch nonzero\n"); else print("BOOT[proc0]: PML4 slot before mmuswitch
+  zero\n");
   }
   */
   if (up->mmuhead == nil)

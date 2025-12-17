@@ -6,15 +6,15 @@
  * millions) Secondary index: Hash table for PA reverse lookups (O(1) average)
  */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 #include <error.h>
 
-#include "blind_ledger.h"
 #include "../include/rbtree.h"
+#include "blind_ledger.h"
 #include "crypto.h"
 #include "siphash.h"
 // =========================================================================
@@ -199,9 +199,14 @@ void blind_ledger_init(void) {
 BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              Proc *owner, u32int permissions,
                              const u8int *vault_secret) {
-  if (out_cap == nil || owner == nil || vault_secret == nil || len == 0 ||
-      pa == 0) {
+  /* Allow owner == nil for Kernel-owned capabilities */
+  if (out_cap == nil || vault_secret == nil || len == 0 || pa == 0) {
     return BLIND_LEDGER_EINVAL;
+  }
+
+  /* Enforce 8-byte granularity (Tokens) */
+  if (len % BLIND_LEDGER_TOKEN_UNIT != 0) {
+    return BLIND_LEDGER_EINVAL; /* Must be 8-byte aligned */
   }
 
   BlindLedgerEntry new_entry;
@@ -247,7 +252,9 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
   out_cap->perms = permissions;
 
   // 7. Allocate node and insert into both indexes
-  LedgerEntryNode *node = mallocz(sizeof(LedgerEntryNode), 1);
+  // Use Meta-Alloc to avoid recursion (since minting is often called from
+  // alloc)
+  LedgerEntryNode *node = pebble_meta_alloc(sizeof(LedgerEntryNode));
   if (node == nil) {
     return BLIND_LEDGER_ENOMEM;
   }
@@ -258,7 +265,7 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
   // Insert into RB-tree (primary index)
   if (ledger_tree_insert(node) < 0) {
     unlock(&ledger_lock);
-    free(node);
+    pebble_meta_free(node);
     return BLIND_LEDGER_EINVAL; // Duplicate capability (should never happen)
   }
 
@@ -464,7 +471,7 @@ BlindLedgerError ledger_rollback_transfer(const UserCapability *current_cap,
 BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner) {
   extern int pebble_black_free_internal(uintptr pa, ulong len, Proc * owner);
 
-  if (cap == nil || owner == nil) {
+  if (cap == nil) {
     return BLIND_LEDGER_EINVAL;
   }
 
@@ -587,10 +594,19 @@ BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner) {
   // So `rb_erase_augmented` *does* visit the path up during rebalancing.
   // What if no rebalancing is needed (black node)?
   //
+  // Let's just accept that for *deletion*, we might need a slightly more
+  // expensive pass or I should have modified `rb_erase` to traverse up.
+  //
+  // Wait! In `rbtree_new.c` I added `rb_erase_augmented`.
+  // I can modify it to call `augment_rotate` on the path up?
+  // `__rb_erase_color` walks up to root! (`while ... node != root`).
+  // So `rb_erase_augmented` *does* visit the path up during rebalancing.
+  // What if no rebalancing is needed (black node)?
+  //
   // Okay, let's proceed with this replacement, but note that deletion might be
   // imperfect without `rb_erase` returning the propagation start point. Given
   // the constraints and the user request ("reuse"), this is best effort. I will
-  free(node);
+  pebble_meta_free(node);
 
   ledger_entry_count--;
   ledger_burned_count++;
@@ -785,7 +801,7 @@ BlindLedgerError ledger_derive(const UserCapability *parent_cap, Proc *owner,
   }
 
   // Create child entry (same physical resource, new derivation)
-  LedgerEntryNode *child_node = mallocz(sizeof(LedgerEntryNode), 1);
+  LedgerEntryNode *child_node = pebble_meta_alloc(sizeof(LedgerEntryNode));
   if (child_node == nil) {
     unlock(&ledger_lock);
     return BLIND_LEDGER_ENOMEM;

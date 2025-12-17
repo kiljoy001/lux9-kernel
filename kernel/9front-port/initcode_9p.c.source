@@ -1,0 +1,112 @@
+/*
+ * initcode_9p.c - First userspace code using 9P exchange page doorbell
+ *
+ * Compile: gcc -nostdlib -ffreestanding -fno-builtin -fno-stack-protector \
+ *          -fno-pie -no-pie -mcmodel=large -O2 -c initcode_9p.c -o
+ * initcode_9p.o Link:    ld -nostdlib -T initcode.ld initcode_9p.o -o
+ * initcode_9p_compact Extract: objcopy -O binary initcode_9p_compact
+ * initcode_9p_compact.bin
+ */
+
+/* Exchange page constants */
+#define EXCHANGE_PAGE_ADDR 0x7FFFFFFF0000ULL
+#define P9_REQUEST_OFFSET 0x000
+#define P9_CONTROL_OFFSET 0xF00
+
+/* Control block offsets */
+#define CTL_DOORBELL 0x00
+#define CTL_STATUS 0x04
+#define CTL_REQ_HEAD 0x08
+#define CTL_REQ_TAIL 0x0C
+
+/* Status codes */
+#define P9_STATUS_COMPLETE 2
+
+/* 9P message types */
+#define Texec 120
+
+typedef unsigned char u8;
+typedef unsigned int u32;
+
+/* Write a 9P Texec message to the exchange page */
+static inline void write_texec(volatile u8 *req, volatile u32 *ctl) {
+  u8 *p = (u8 *)req;
+
+  /* Embed path inline to avoid rodata references that generate kernel addresses
+   */
+  const u8 path[] = {'/', 'b', 'o', 'o', 't', '/', 'b', 'o', 'o', 't', 0};
+  int pathlen = 10;
+
+  u32 msgsize = 4 + 1 + 2 + 2 + pathlen;
+
+  /* size[4] */
+  p[0] = msgsize & 0xFF;
+  p[1] = (msgsize >> 8) & 0xFF;
+  p[2] = (msgsize >> 16) & 0xFF;
+  p[3] = (msgsize >> 24) & 0xFF;
+
+  /* type[1] */
+  p[4] = Texec;
+
+  /* tag[2] */
+  p[5] = 0;
+  p[6] = 0;
+
+  /* path length[2] */
+  p[7] = pathlen & 0xFF;
+  p[8] = (pathlen >> 8) & 0xFF;
+
+  /* path bytes */
+  for (int i = 0; i < pathlen; i++) {
+    p[9 + i] = path[i];
+  }
+
+  /* Update control block */
+  ctl[CTL_REQ_HEAD / 4] = 0;
+  ctl[CTL_REQ_TAIL / 4] = msgsize;
+}
+
+/* Ring doorbell and wait for completion */
+static inline void ring_doorbell_and_wait(volatile u32 *ctl) {
+  /* Set doorbell */
+  ctl[CTL_DOORBELL / 4] = 1;
+
+  /* Memory barrier */
+  __asm__ volatile("mfence" ::: "memory");
+
+  /* Trigger syscall */
+  __asm__ volatile("mov $0, %%rdi\n"
+                   "syscall\n" ::
+                       : "rax", "rcx", "r11", "memory");
+
+  /* Wait for status = COMPLETE */
+  while (ctl[CTL_STATUS / 4] != P9_STATUS_COMPLETE) {
+    __asm__ volatile("pause" ::: "memory");
+  }
+}
+
+/* Entry point */
+void __attribute__((naked, section(".text.start"))) _start(void) {
+  __asm__ volatile("movabs $0x7FFFFFFF0000, %%rbx\n"
+                   "lea 0xF00(%%rbx), %%r12\n"
+                   "call initcode_main\n"
+                   "1: pause\n"
+                   "jmp 1b\n" ::
+                       : "rbx", "r12", "memory");
+}
+
+void initcode_main(void) {
+  volatile u8 *req = (volatile u8 *)(EXCHANGE_PAGE_ADDR + P9_REQUEST_OFFSET);
+  volatile u32 *ctl = (volatile u32 *)(EXCHANGE_PAGE_ADDR + P9_CONTROL_OFFSET);
+
+  /* Write Texec message */
+  write_texec(req, ctl);
+
+  /* Ring doorbell and wait */
+  ring_doorbell_and_wait(ctl);
+
+  /* If exec succeeded, we never return. If we do, spin */
+  for (;;) {
+    __asm__ volatile("pause");
+  }
+}

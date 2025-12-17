@@ -32,6 +32,7 @@ extern int mnt_9p_handle(Proc *p, Fcall *t, Fcall *r);
 static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int rpipe_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static void rpipe_clone_notify(void *aux);
+extern uintptr sysexec(void *list_void); /* System exec call */
 
 /*
  * Path matching for routing
@@ -317,6 +318,66 @@ static void remove_fid(int fid) { fdclose(fid, 0); }
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
 
+  /* Handle Texec (120) - Direct execution message */
+  if (t->type == Texec) {
+    char *path;
+    char *argv[2];
+    ulong args[2];
+
+    /* Extract path from Texec message data */
+    /* Format: [2] pathlen + [n] path bytes */
+    if (t->count < 2) {
+      r->type = Rerror;
+      r->ename = "Texec: invalid message format";
+      return -1;
+    }
+
+    uint pathlen = (uint)t->data[0] | ((uint)t->data[1] << 8);
+    if (pathlen == 0 || pathlen > t->count - 2) {
+      r->type = Rerror;
+      r->ename = "Texec: invalid path length";
+      return -1;
+    }
+
+    /* Allocate and copy path string */
+    path = xalloc(pathlen + 1);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = "Texec: out of memory";
+      return -1;
+    }
+    memmove(path, t->data + 2, pathlen);
+    path[pathlen] = '\0';
+
+    print("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
+
+    /* Build argument list for sysexec */
+    argv[0] = path;
+    argv[1] = nil;
+    args[0] = (ulong)path;
+    args[1] = (ulong)argv;
+
+    /* Call sysexec - never returns on success */
+    if (waserror()) {
+      print("p9_dispatch: Texec failed: %s\n", up->errstr);
+      xfree(path);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    sysexec(args);
+    /* Not reached on success */
+    poperror();
+
+    /* If we get here, exec failed somehow */
+    xfree(path);
+    r->type = Rerror;
+    r->ename = "Texec: exec returned unexpectedly";
+    return -1;
+  }
+
   if (t->type == Tattach) {
     /* Determine type from path */
     if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0)
@@ -581,8 +642,28 @@ int p9_handle_doorbell(Proc *p) {
   /* Check doorbell is actually rung using Acquire semantics.
    * This ensures we see all userspace writes to the request buffer that
    * happened before the doorbell was rung. */
-  if (atomic_load(&ctl->doorbell, ORDER_ACQUIRE) == 0) {
-    print("p9_handle_doorbell: doorbell not rung for pid %lud\n", p->pid);
+  uint doorbell_val = atomic_load(&ctl->doorbell, ORDER_ACQUIRE);
+  print("p9_handle_doorbell: pid=%lud doorbell_val=%u p9page=%p phys=%#llux\n",
+        p->pid, doorbell_val, p->p9page, PADDR(p->p9page));
+
+  if (doorbell_val == 0) {
+    print("p9_handle_doorbell: doorbell not rung for pid %lud. Memory dump:\n",
+          p->pid);
+    uchar *page = (uchar *)p->p9page;
+    print("  REQ[0-15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+          "%02x %02x %02x %02x %02x\n",
+          page[0], page[1], page[2], page[3], page[4], page[5], page[6],
+          page[7], page[8], page[9], page[10], page[11], page[12], page[13],
+          page[14], page[15]);
+
+    uchar *ctl_ptr = page + P9_CONTROL_OFFSET;
+    print("  CTL[0-15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+          "%02x %02x %02x %02x %02x\n",
+          ctl_ptr[0], ctl_ptr[1], ctl_ptr[2], ctl_ptr[3], ctl_ptr[4],
+          ctl_ptr[5], ctl_ptr[6], ctl_ptr[7], ctl_ptr[8], ctl_ptr[9],
+          ctl_ptr[10], ctl_ptr[11], ctl_ptr[12], ctl_ptr[13], ctl_ptr[14],
+          ctl_ptr[15]);
+
     return -1;
   }
 
@@ -595,14 +676,26 @@ int p9_handle_doorbell(Proc *p) {
   /* Parse request from exchange page */
   memset(&t, 0, sizeof(t));
   req_size = ctl->req_tail - ctl->req_head;
+
   if (req_size == 0 || req_size > P9_REQUEST_SIZE) {
-    print("p9_handle_doorbell: invalid request size %ud\n", req_size);
-    atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-    return -1;
+    /* Fallback: Check if message header has valid size (GBIT32) */
+    /* This allows clients to just write message and ring doorbell without
+     * managing tail pointers */
+    uint msg_size = GBIT32(req_buf + ctl->req_head);
+    if (msg_size > 4 && msg_size <= P9_REQUEST_SIZE) {
+      req_size = msg_size;
+      /* Update tail to match */
+      ctl->req_tail = ctl->req_head + req_size;
+    } else {
+      print("p9_handle_doorbell: invalid request size %ud\n", req_size);
+      atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+      return -1;
+    }
   }
 
   if (convM2S(req_buf + ctl->req_head, req_size, &t) == 0) {
-    print("p9_handle_doorbell: failed to parse Fcall\n");
+    print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
+          req_buf[ctl->req_head]);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     return -1;
   }
@@ -1105,7 +1198,7 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
     r->type = Rstat;
-    r->nstat = n;
+    r->nstat = (ushort)n;
     r->stat = statbuf;
     return 0;
   }

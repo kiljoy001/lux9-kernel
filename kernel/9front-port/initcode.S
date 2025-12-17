@@ -1,45 +1,51 @@
-/* initcode.S - First userspace code
+/* initcode.S - First userspace code using 9P doorbell
  * This code executes in the first userspace process created by the kernel.
- * Its job is to exec /boot/init
+ * It uses the exchange page doorbell mechanism to execute /boot/init
  */
 
 .section .text
 .global _start
 
+/* Exchange page constants */
+.equ EXCHANGE_PAGE_ADDR, 0x7FFFFEEFF000
+.equ P9_REQUEST_OFFSET, 0x000
+.equ P9_CONTROL_OFFSET, 0xF00
+
+/* 9P message constants */
+.equ Texec, 128
+
 _start:
-	/* Build the string "/boot/boot\0" on the stack (11 bytes, padded to 16) */
-	/* Stack grows down, so push high bytes first, low bytes last */
-	/* rsp will point to the start of the string after pushes */
+	/* Build Texec message in exchange page request buffer
+	 * Format: size[4] type[1] tag[2] count[4] pathlen[2] path[...]
+	 * String is "/boot/init" (10 bytes)
+	 */
 	
-	/* Push "ot\0..." (high 8 bytes - at higher address) */
-	movabs $0x000000000000746f, %rax  /* "ot\0\0\0\0\0\0" in little-endian */
-	push %rax
+	movabs $EXCHANGE_PAGE_ADDR, %rdi
 	
-	/* Push "/boot/bo" (low 8 bytes - at lower address = string start) */
-	movabs $0x6f622f746f6f622f, %rax  /* "/boot/bo" in little-endian */
-	push %rax
+	/* Write message header */
+	movl $23, 0(%rdi)		/* size = 4+1+2+4+2+10 = 23 */
+	movb $Texec, 4(%rdi)		/* type = Texec (128) */
+	movw $0, 5(%rdi)		/* tag = 0 */
+	movl $12, 7(%rdi)		/* count = 2+10 = 12 (pathlen + path) */
+	movw $10, 11(%rdi)		/* pathlen = 10 */
+	
+	/* Write path string "/boot/init" */
+	movabs $0x6e692f746f6f622f, %rax	/* "/boot/in" */
+	movq %rax, 13(%rdi)
+	movw $0x7469, 21(%rdi)			/* "it" */
+	/* 23 bytes total message size */
 
-	/* rsp now points to the start of "/boot/boot\0" */
-	mov %rsp, %rbx         /* rbx = pointer */
+	/* Update req_tail to 23 (Message Size) 
+	 * Control block is at offset 0xF00. req_tail is at 0xF0C (offset 12)
+	 */
+	movl $23, 0xF0C(%rdi)
 
-	/* Build argv array: [pointer_to_string, NULL] */
-	sub $16, %rsp          /* Space for 2 pointers */
-	mov $0, %rax
-	mov %rax, 8(%rsp)      /* argv[1] = NULL */
-	mov %rbx, 0(%rsp)      /* argv[0] = pointer to path */
-
-	/* rsp now points to start of argv array */
-	mov %rsp, %rcx         /* rcx = pointer to argv array */
-
-	/* Set up syscall: exec(path, argv) */
-	mov $7, %rbp           /* syscall number = 7 (EXEC) */
-
-	/* Push arguments onto stack in reverse order */
-	push %rcx              /* arg2: argv */
-	push %rbx              /* arg1: path */
-
-	syscall                /* invoke EXEC */
-
+	/* Ring the doorbell - write 1 to doorbell field (offset 0xF00) */
+	movl $1, 0xF00(%rdi)
+	
+	/* Issue syscall - kernel will check doorbell and process the message */
+	syscall
+	
 	/* If we get here, exec failed - loop forever */
 fail:
 	jmp fail

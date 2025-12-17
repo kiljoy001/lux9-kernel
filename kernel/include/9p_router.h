@@ -23,8 +23,9 @@ typedef struct Fcall Fcall;
 #define P9_CONTROL_OFFSET 0xF00
 #define P9_CONTROL_SIZE 0x100
 
-/* Fixed user virtual address for the Exchange Page */
-#define EXCHANGE_PAGE_ADDR 0x7FFFFFFF0000ULL
+/* Fixed user virtual address for the Exchange Page (below stack at
+ * 0x7FFFFEFFF000) */
+#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 
 #include "atomic.h"
 
@@ -66,6 +67,9 @@ typedef struct PebbleToken {
 #define PEBBLE_PERM_EXEC 0x04
 #define PEBBLE_PERM_DELETE 0x08
 #define PEBBLE_PERM_ADMIN 0x80
+
+/* Custom 9P message types for Lux9 - defined in fcall.h enum */
+/* Texec = 128, Rexec = 129 */
 
 /* Router API */
 void p9_router_init(void);
