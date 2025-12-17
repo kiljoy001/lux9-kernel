@@ -24,6 +24,7 @@
 
 /* Emit QBE IL header */
 static int emit_header(QBEBuffer *buf) {
+  extern void uartputs(char *, int);
   Q_EMIT(buf, "# QBE IL generated from Fruity IR\n\n");
   Q_EMIT(buf, "# Pebble Runtime ABI\n");
   /* QBE requires labels on their own lines - proper multi-line format */
@@ -31,14 +32,17 @@ static int emit_header(QBEBuffer *buf) {
   Q_EMIT(buf, "@start\n");
   Q_EMIT(buf, "    ret 0\n");
   Q_EMIT(buf, "}\n\n");
+  uartputs("DEBUG: emit_header after lux_alloc brace\n", 42);
   Q_EMIT(buf, "export function $lux_token_mint(l %%ptr) {\n");
   Q_EMIT(buf, "@start\n");
   Q_EMIT(buf, "    ret\n");
   Q_EMIT(buf, "}\n\n");
+  uartputs("DEBUG: emit_header after token_mint brace\n", 43);
   Q_EMIT(buf, "export function $lux_token_burn(l %%ptr) {\n");
   Q_EMIT(buf, "@start\n");
   Q_EMIT(buf, "    ret\n");
   Q_EMIT(buf, "}\n\n");
+  uartputs("DEBUG: emit_header after token_burn brace\n", 43);
   return 0;
 }
 

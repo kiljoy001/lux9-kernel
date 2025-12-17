@@ -20,12 +20,14 @@ QBE_SRCS = \
 	ssa.c \
 	parse.c \
 	rega.c \
-	spill.c
+	spill.c \
+	util.c
 
 # AMD64 backend
 AMD64_SRCS = \
 	amd64/isel.c \
-	amd64/emit.c
+	amd64/emit.c \
+	amd64/sysv.c
 
 # Use kernel-compatible util - kernel_util.c removed (functions already in kernel)
 # exchange_io.c is built by main kernel Makefile
