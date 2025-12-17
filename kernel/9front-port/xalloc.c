@@ -217,10 +217,12 @@ void *xallocz(ulong size, int zero) {
   Hole *h, **l;
   ulong orig_size = size;
   ulong overhead;
+  uintptr addr_check;
 
   if (size >= 4096)
     xtrace("xallocz start size=%lud zero=%d caller=%#p\n", size, zero,
            getcallerpc(&size));
+
   /* Calculate overhead */
   overhead = BY2V + offsetof(Xhdr, data[0]);
 
@@ -237,9 +239,9 @@ void *xallocz(ulong size, int zero) {
     panic("xallocz: unreasonably large allocation request (size=%lud)", size);
   }
 
-  /* add room for magix & size overhead, round up to nearest vlong */
+  /* Add room for magix & size overhead, round UP to nearest vlong */
   size += overhead;
-  size &= ~(BY2V - 1);
+  size = (size + BY2V - 1) & ~(BY2V - 1); /* FIX: Round UP */
 
   /* Only print for large allocations to reduce verbose output */
   if (size > 64 * 1024) {
@@ -253,25 +255,61 @@ void *xallocz(ulong size, int zero) {
   l = &xlists.table;
   for (h = *l; h; h = h->link) {
     if (h->size >= size) {
+      /* FIX: Ensure h->addr is 8-byte aligned before using it */
+      addr_check = h->addr;
+      if (addr_check & (BY2V - 1)) {
+        /* Hole is misaligned - align it forward */
+        uintptr aligned_addr = (addr_check + BY2V - 1) & ~(BY2V - 1);
+        uintptr waste = aligned_addr - addr_check;
+
+        /* Check if we still have enough space after alignment */
+        if (h->size < size + waste) {
+          /* Not enough space in this hole after alignment */
+          l = &h->link;
+          continue;
+        }
+
+        /* Adjust hole for alignment waste */
+        h->addr = aligned_addr;
+        h->size -= waste;
+
+        print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
+              (void *)addr_check, (void *)aligned_addr, waste);
+      }
+
       p = (Xhdr *)h->addr;
       h->addr += size;
       h->size -= size;
+
+      /* FIX: Verify alignment of returned pointer */
+      if ((uintptr)p & (BY2V - 1)) {
+        panic("xallocz: returned misaligned pointer %#p", p);
+      }
+
       if (h->size == 0) {
         *l = h->link;
         h->link = xlists.flist;
         xlists.flist = h;
       }
       iunlock(&xlists.lk);
+
       p->magix = Magichole;
       p->size = size;
+
       if (zero)
         memset(p->data, 0, size - overhead);
       if (zero && *(ulong *)p->data != 0)
         panic("xallocz: zeroed block not cleared");
+
+      /* Verify p->data is 8-byte aligned (critical for QBE bitsets!) */
+      if ((uintptr)p->data & 7) {
+        panic("xallocz: data pointer %#p not 8-byte aligned", p->data);
+      }
+
       /* TEST 2A: Track allocation success */
       xalloc_successes++;
       if (size >= 4096)
-        xtrace("xallocz success size=%lud addr=%p\n", size, p);
+        xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
       return p->data;
     }
     l = &h->link;
@@ -351,6 +389,23 @@ void xhole(uintptr addr, uintptr size) {
   /* Convert physical address to virtual HHDM address
    * Now holes track virtual addresses in the HHDM region */
   vaddr = addr + get_hhdm_offset();
+
+  /* FIX: Ensure vaddr is 8-byte aligned */
+  if (vaddr & 7) {
+    uintptr aligned_vaddr = (vaddr + 7) & ~7UL;
+    uintptr waste = aligned_vaddr - vaddr;
+    vaddr = aligned_vaddr;
+    size -= waste; /* Reduce size by alignment waste */
+
+    if (size < 8) {
+      /* Too small after alignment, skip */
+      return;
+    }
+
+    print("xhole: aligned vaddr from %#p to %#p (waste=%lud)\n",
+          (void *)(vaddr - waste), (void *)vaddr, waste);
+  }
+
   top = vaddr + size;
 
   ilock(&xlists.lk);

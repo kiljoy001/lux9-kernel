@@ -43,7 +43,9 @@ void die_(char *file, char *s, ...) {
     }
 
     snprint(debug_buf, sizeof(debug_buf),
-            "DEBUG: die_() calling longjmp, errorbuf=%s\n", error_buffer);
+            "DEBUG: die_() calling longjmp, errorbuf=%s, error_jmpbuf=%p, "
+            "error_jmpbuf[0]=%p\n",
+            error_buffer, (void *)&error_jmpbuf, ((void **)error_jmpbuf)[0]);
     uartputs(debug_buf, strlen(debug_buf));
 
     /* Jump back to error handler */
@@ -80,8 +82,8 @@ static void emit_func(Fn *fn) {
   if (!output_file)
     return;
 
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: emit_func START fn=%s\n",
-          fn->name);
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: emit_func START fn=%s ntmp=%d\n", fn->name, fn->ntmp);
   uartputs(debug_buf, strlen(debug_buf));
 
   /* QBE compilation pipeline (from main.c) */
@@ -182,10 +184,23 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
   error_buffer_size = errorbuf_size;
 
   snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: qbe_compile_page setting up setjmp\n");
+          "DEBUG: qbe_compile_page setting up setjmp error_jmpbuf=%p\n",
+          (void *)&error_jmpbuf);
   uartputs(debug_buf, strlen(debug_buf));
 
-  if (setjmp(error_jmpbuf) != 0) {
+  int setjmp_ret = setjmp(error_jmpbuf);
+  uintptr *jbuf = (uintptr *)error_jmpbuf;
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: setjmp returned %d\n"
+          "  jbuf[0]=0x%p (rbx)\n"
+          "  jbuf[1]=0x%p (rbp)\n"
+          "  jbuf[6]=0x%p (rsp)\n"
+          "  jbuf[7]=0x%p (return addr)\n",
+          setjmp_ret, (void *)jbuf[0], (void *)jbuf[1], (void *)jbuf[6],
+          (void *)jbuf[7]);
+  uartputs(debug_buf, strlen(debug_buf));
+
+  if (setjmp_ret != 0) {
     /* Error occurred - clean up and return */
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: qbe_compile_page LONGJMP TRIGGERED errorbuf=%s\n",
@@ -197,6 +212,7 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
       exchange_fclose(output_file);
     output_file = NULL;
     error_active = 0;
+    qbe_reset_pool(); /* Reset memory pool on error */
     return -1;
   }
 

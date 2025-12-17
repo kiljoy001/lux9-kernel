@@ -37,6 +37,23 @@ void filllive(Fn *f) {
   int k, t, m[2], n, chg, nlv[2];
   BSet u[1], v[1];
   Mem *ma;
+  extern void uartputs(char *, int);
+  char debug_buf[256];
+
+  /* Validate f->tmp is allocated before use */
+  if (!f) {
+    uartputs("ERROR: filllive called with NULL Fn\n", 37);
+    die("filllive: NULL Fn pointer");
+  }
+  if (!f->tmp) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "ERROR: filllive f->tmp is NULL! f=%p ntmp=%u\n", f, f->ntmp);
+    uartputs(debug_buf, strlen(debug_buf));
+    die("filllive: f->tmp is NULL");
+  }
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: filllive f=%p ntmp=%u tmp=%p\n", f, f->ntmp, f->tmp);
+  uartputs(debug_buf, strlen(debug_buf));
 
   bsinit(u, f->ntmp);
   bsinit(v, f->ntmp);
