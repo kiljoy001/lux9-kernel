@@ -14,7 +14,6 @@ typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
 #include "9p_router.h"
-#include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "proc_packet.h"
@@ -339,7 +338,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       return -1;
     }
 
-    /* Allocate and copy path string */
+    /* Allocate and copy path string for kernel logging/debugging */
     path = xalloc(pathlen + 1);
     if (path == nil) {
       r->type = Rerror;
@@ -351,11 +350,56 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     print("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
 
-    /* Build argument list for sysexec */
-    argv[0] = path;
-    argv[1] = nil;
-    args[0] = (ulong)path;
-    args[1] = (ulong)argv;
+    /*
+     * Sysexec requires User Virtual Addresses for both path and argv.
+     * We must calculate the user address of the path existing in the
+     * exchange page, and construct a user-space argv array there as well.
+     */
+
+    /* 1. Calculate User Address of the path string */
+    /* t->data points into p->p9page. The string starts at data+2 */
+    uintptr kpage = (uintptr)p->p9page;
+    uintptr kpath = (uintptr)t->data + 2;
+    uintptr path_offset = kpath - kpage;
+    uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
+
+    /* 2. Ensure null-termination in the user buffer */
+    /* We can safely write \0 because validaddr/namec expects it.
+     * Check bounds to ensure we don't write past valid page. */
+    if (path_offset + pathlen < P9_PAGE_SIZE) {
+      ((char *)kpath)[pathlen] = 0;
+    }
+
+    /* 3. Construct argv array in the Exchange Page */
+    /* We need space for 2 pointers: [upath, 0] */
+    /* Use the space immediately following the message payload */
+    uintptr kargv_start = (uintptr)t->data + t->count;
+
+    /* Align to 8 bytes */
+    kargv_start = (kargv_start + 7) & ~7ULL;
+
+    /* Check if we have room in the request buffer */
+    if (kargv_start + 2 * sizeof(ulong) > kpage + P9_REQUEST_SIZE) {
+      xfree(path);
+      r->type = Rerror;
+      r->ename = "Texec: message too large, no room for argv";
+      return -1;
+    }
+
+    /* Write argv to the user page (via kernel mapping) */
+    ulong *argv_ptr = (ulong *)kargv_start;
+    argv_ptr[0] = (ulong)upath;
+    argv_ptr[1] = 0;
+
+    /* Calculate User Address of argv */
+    uintptr argv_offset = kargv_start - kpage;
+    uintptr uargv = EXCHANGE_PAGE_ADDR + argv_offset;
+
+    /* Prepare arguments for sysexec */
+    /* args[0] = file (user char*) */
+    /* args[1] = argv (user char**) */
+    args[0] = (ulong)upath;
+    args[1] = (ulong)uargv;
 
     /* Call sysexec - never returns on success */
     if (waserror()) {
@@ -2390,6 +2434,10 @@ int p9_handle_doorbell_async(Proc *p) {
   }
 
   /* Submit asynchronously for consensus */
+  /* Pass 'p' as the callback argument so p9_doorbell_completion knows which
+   * exchange page to write to. */
+  /* p9_submit_async allocates copies of 't' and the reply buffer. */
+  /* We pass our local 'p9_doorbell_completion' which cleans up the Op. */
   p9_submit_async(p, &t, path, nil, nil);
   return 1;
 }
