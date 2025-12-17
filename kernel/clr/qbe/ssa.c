@@ -313,12 +313,44 @@ ssa(Fn *fn)
 	Name **stk, *n;
 	int d, nt;
 	Blk *b, *b1;
+	extern void uartputs(char *, int);
+	char debug_buf[256];
+
+	/* Validate fn and critical fields */
+	if (!fn) {
+		uartputs("ERROR: ssa called with NULL Fn\n", 32);
+		die("ssa: NULL Fn pointer");
+	}
+	if (!fn->tmp) {
+		snprint(debug_buf, sizeof(debug_buf),
+		        "ERROR: ssa fn->tmp is NULL! fn=%p ntmp=%d\n", fn, fn->ntmp);
+		uartputs(debug_buf, strlen(debug_buf));
+		die("ssa: fn->tmp is NULL");
+	}
+	if (!fn->start) {
+		snprint(debug_buf, sizeof(debug_buf),
+		        "ERROR: ssa fn->start is NULL! fn=%p\n", fn);
+		uartputs(debug_buf, strlen(debug_buf));
+		die("ssa: fn->start is NULL");
+	}
+
+	snprint(debug_buf, sizeof(debug_buf),
+	        "DEBUG: ssa fn=%p ntmp=%d tmp=%p start=%p\n",
+	        fn, fn->ntmp, fn->tmp, fn->start);
+	uartputs(debug_buf, strlen(debug_buf));
 
 	nt = fn->ntmp;
 	stk = emalloc(nt * sizeof stk[0]);
+	snprint(debug_buf, sizeof(debug_buf),
+	        "DEBUG: ssa emalloc succeeded, stk=%p\n", stk);
+	uartputs(debug_buf, strlen(debug_buf));
 	d = debug['L'];
 	debug['L'] = 0;
+
+	uartputs("DEBUG: ssa calling filldom\n", 27);
 	filldom(fn);
+	uartputs("DEBUG: ssa filldom done\n", 24);
+
 	if (debug['N']) {
 		fprintf(stderr, "\n> Dominators:\n");
 		for (b1=fn->start; b1; b1=b1->link) {
@@ -330,10 +362,22 @@ ssa(Fn *fn)
 			fprintf(stderr, "\n");
 		}
 	}
+
+	uartputs("DEBUG: ssa calling fillfron\n", 29);
 	fillfron(fn);
+	uartputs("DEBUG: ssa fillfron done\n", 25);
+
+	uartputs("DEBUG: ssa calling filllive\n", 29);
 	filllive(fn);
+	uartputs("DEBUG: ssa filllive done\n", 25);
+
+	uartputs("DEBUG: ssa calling phiins\n", 27);
 	phiins(fn);
+	uartputs("DEBUG: ssa phiins done\n", 23);
+
+	uartputs("DEBUG: ssa calling renblk\n", 27);
 	renblk(fn->start, stk, fn);
+	uartputs("DEBUG: ssa renblk done\n", 23);
 	while (nt--)
 		while ((n=stk[nt])) {
 			stk[nt] = n->up;

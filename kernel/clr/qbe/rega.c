@@ -351,6 +351,15 @@ static void doblk(Blk *b, RMap *cur) {
       /* fall through */
     default:
       if (!req(i->to, R)) {
+        if (rtype(i->to) != RTmp) {
+          extern void uartputs(char *, int);
+          char debug_buf[128];
+          snprint(debug_buf, sizeof(debug_buf),
+                  "DEBUG: rega FAIL i->op=%d to.type=%d to.val=%lld\n", i->op,
+                  rtype(i->to), (long long)i->to.val);
+          uartputs(debug_buf, strlen(debug_buf));
+          // panic("rega: invalid to type");
+        }
         assert(rtype(i->to) == RTmp);
         r = i->to.val;
         if (r < Tmp0 && (BIT(r) & T.rglob))
@@ -435,7 +444,7 @@ static int prio2(int t1, int t2) {
 void rega(Fn *fn) {
   int j, t, r, x, rl[Tmp0];
   Blk *b, *b1, *s, ***ps, *blist, **blk, **bp;
-  RMap *end, *beg, cur, old, *m;
+  RMap *end_map, *beg, cur, old, *m;
   Ins *i;
   Phi *p;
   uint u, n;
@@ -448,10 +457,10 @@ void rega(Fn *fn) {
   tmp = fn->tmp;
   mem = fn->mem;
   blk = alloc(fn->nblk * sizeof blk[0]);
-  end = alloc(fn->nblk * sizeof end[0]);
+  end_map = alloc(fn->nblk * sizeof end_map[0]);
   beg = alloc(fn->nblk * sizeof beg[0]);
   for (n = 0; n < fn->nblk; n++) {
-    bsinit(end[n].b, fn->ntmp);
+    bsinit(end_map[n].b, fn->ntmp);
     bsinit(beg[n].b, fn->ntmp);
   }
   bsinit(cur.b, fn->ntmp);
@@ -494,7 +503,7 @@ void rega(Fn *fn) {
       ralloctry(&cur, rl[j], 1);
     for (j = 0; j < x; j++)
       ralloc(&cur, rl[j]);
-    rcopy(&end[n], &cur);
+    rcopy(&end_map[n], &cur);
     doblk(b, &cur);
     bscopy(b->in, cur.b);
     for (p = b->phi; p; p = p->link)
@@ -526,7 +535,7 @@ void rega(Fn *fn) {
         src = p->arg[u];
         if (rtype(src) != RTmp)
           continue;
-        x = rfind(&end[b->id], src.val);
+        x = rfind(&end_map[b->id], src.val);
         if (x == -1) /* spilled */
           continue;
         rl[r] = (!rl[r] || rl[r] == x) ? x : -1;
@@ -542,7 +551,7 @@ void rega(Fn *fn) {
       if (rl[r] || t < Tmp0 /* todo, remove this */)
         continue;
       for (bp = s->pred; bp < &s->pred[s->npred]; bp++) {
-        x = rfind(&end[(*bp)->id], t);
+        x = rfind(&end_map[(*bp)->id], t);
         if (x == -1) /* spilled */
           continue;
         rl[r] = (!rl[r] || rl[r] == x) ? x : -1;
@@ -582,7 +591,7 @@ void rega(Fn *fn) {
       fprintf(stderr, "\t%-10s beg", b->name);
       mdump(&beg[n]);
       fprintf(stderr, "\t           end");
-      mdump(&end[n]);
+      mdump(&end_map[n]);
     }
     fprintf(stderr, "\n");
   }
@@ -606,11 +615,11 @@ void rega(Fn *fn) {
           assert(u + 1 < p->narg);
         src = p->arg[u];
         if (rtype(src) == RTmp)
-          src = rref(&end[b->id], src.val);
+          src = rref(&end_map[b->id], src.val);
         pmadd(src, dst, p->cls);
       }
       for (t = Tmp0; bsiter(s->in, &t); t++) {
-        src = rref(&end[b->id], t);
+        src = rref(&end_map[b->id], t);
         dst = rref(&beg[s->id], t);
         pmadd(src, dst, tmp[t].cls);
       }

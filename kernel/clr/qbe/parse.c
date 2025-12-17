@@ -718,9 +718,19 @@ static void typecheck(Fn *fn) {
     }
     for (i = b->ins; i < &b->ins[b->nins]; i++)
       for (n = 0; n < 2; n++) {
+        /* Bounds check op and cls before accessing optab */
+        if (i->op >= NOp) {
+          err("invalid opcode %d in instruction", i->op);
+        }
+        if (i->cls > Kd) {
+          err("invalid class %d in instruction", i->cls);
+        }
         k = optab[i->op].argcls[n][i->cls];
         r = i->arg[n];
-        t = &fn->tmp[r.val];
+        if (rtype(r) == RTmp && r.val >= (uint)fn->ntmp) {
+          err("invalid temp %d >= %d in instruction", r.val, fn->ntmp);
+        }
+        t = rtype(r) == RTmp ? &fn->tmp[r.val] : NULL;
         if (k == Ke)
           err("invalid instruction type in %s", optab[i->op].name);
         if (rtype(r) == RType)
@@ -733,7 +743,8 @@ static void typecheck(Fn *fn) {
               optab[i->op].name);
         if (!usecheck(r, k, fn))
           err("invalid type for %s operand %%%s in %s",
-              n == 1 ? "second" : "first", t->name, optab[i->op].name);
+              n == 1 ? "second" : "first", t ? t->name : "?",
+              optab[i->op].name);
       }
     r = b->jmp.arg;
     if (isret(b->jmp.type)) {

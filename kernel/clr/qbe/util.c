@@ -65,7 +65,10 @@ void *emalloc(size_t n) {
   void *p;
 
 #ifdef _KERNEL_QBE
-  p = mallocz(n, 1); /* Kernel: use mallocz with clear flag */
+  /* Use xalloc which is consistent with rest of CLR pipeline */
+  p = xalloc(n);
+  if (p)
+    memset(p, 0, n); /* xalloc doesn't zero-initialize */
 #else
   p = calloc(1, n);
 #endif
@@ -76,6 +79,14 @@ void *emalloc(size_t n) {
 
 void *alloc(size_t n) {
   void **pp;
+
+#ifdef _KERNEL_QBE
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: alloc n=%d nptr=%d pool=%p\n",
+          (int)n, nptr, pool);
+  uartputs(debug_buf, strlen(debug_buf));
+#endif
 
   if (n == 0)
     return 0;
@@ -88,35 +99,61 @@ void *alloc(size_t n) {
   return pool[nptr++] = emalloc(n);
 }
 
+void qbe_reset_pool() {
+#ifdef _KERNEL_QBE
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_reset_pool nptr=%d pool=%p\n", nptr, pool);
+  uartputs(debug_buf, strlen(debug_buf));
+
+  /* Reset pool to initial state */
+  pool = ptr;
+  nptr = 1;
+  ptr[0] = 0; /* Clear the linked list head */
+
+  uartputs("DEBUG: qbe_reset_pool done\n", 27);
+#endif
+}
+
 void freeall() {
   void **pp;
 
   for (;;) {
     for (pp = &pool[1]; pp < &pool[nptr]; pp++)
+#ifdef _KERNEL_QBE
+      xfree(*pp);
+#else
       free(*pp);
+#endif
     pp = pool[0];
     if (!pp)
       break;
+#ifdef _KERNEL_QBE
+    xfree(pool);
+#else
     free(pool);
+#endif
     pool = pp;
     nptr = NPtr;
   }
   nptr = 1;
 }
 
-void *vnew(ulong len, size_t esz, Pool pool) {
+void *vnew(ulong len, size_t esz, Pool p) {
   void *(*f)(size_t);
   ulong cap;
   Vec *v;
 
   for (cap = VMin; cap < len; cap *= 2)
     ;
-  f = pool == Pheap ? emalloc : alloc;
+  f = p == Pheap ? emalloc : alloc;
   v = f(cap * esz + sizeof(Vec));
   v->mag = VMag;
   v->cap = cap;
   v->esz = esz;
-  v->pool = pool;
+  v->pool = p;
   return v + 1;
 }
 
@@ -127,7 +164,11 @@ void vfree(void *p) {
   assert(v->mag == VMag);
   if (v->pool == Pheap) {
     v->mag = 0;
+#ifdef _KERNEL_QBE
+    xfree(v);
+#else
     free(v);
+#endif
   }
 }
 
@@ -346,9 +387,29 @@ void blit(Ref rdst, uint doff, Ref rsrc, uint sz, Fn *fn) {
 }
 
 void bsinit(BSet *bs, uint n) {
+#ifdef _KERNEL_QBE
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: bsinit n=%u (NBit=%lu)\n", n,
+          NBit);
+  uartputs(debug_buf, strlen(debug_buf));
+#endif
   n = (n + NBit - 1) / NBit;
   bs->nt = n;
   bs->t = alloc(n * sizeof bs->t[0]);
+
+#ifdef _KERNEL_QBE
+  /* VERIFY ALIGNMENT */
+  if ((uintptr_t)bs->t & 7) {
+    extern void uartputs(char *, int);
+    // char debug_buf[128];
+    uartputs("[BITSET] CRITICAL: Misaligned allocation!\n", 38);
+    // snprint(debug_buf, sizeof(debug_buf), "  Address: %p\n", bs->t);
+    // uartputs(debug_buf, strlen(debug_buf));
+    panic("bsinit: misaligned bits array");
+  }
+  memset(bs->t, 0, n * sizeof bs->t[0]);
+#endif
 }
 
 MAKESURE(NBit_is_64, NBit == 64);
@@ -398,12 +459,32 @@ uint bscount(BSet *bs) {
 static inline uint bsmax(BSet *bs) { return bs->nt * NBit; }
 
 void bsset(BSet *bs, uint elt) {
-  assert(elt < bsmax(bs));
+  if (elt >= bsmax(bs)) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsset FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
+            bsmax(bs));
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(elt < bsmax(bs));
+  }
   bs->t[elt / NBit] |= BIT(elt % NBit);
 }
 
 void bsclr(BSet *bs, uint elt) {
-  assert(elt < bsmax(bs));
+  if (elt >= bsmax(bs)) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsclr FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
+            bsmax(bs));
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(elt < bsmax(bs));
+  }
   bs->t[elt / NBit] &= ~BIT(elt % NBit);
 }
 
@@ -416,10 +497,70 @@ void bsclr(BSet *bs, uint elt) {
       a->t[i] op b->t[i];                                                      \
   }
 
-BSOP(bscopy, =)
-BSOP(bsunion, |=)
-BSOP(bsinter, &=)
-BSOP(bsdiff, &= ~)
+void bscopy(BSet *a, BSet *b) {
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bscopy FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(a->nt == b->nt);
+  }
+  memcpy(a->t, b->t, a->nt * sizeof a->t[0]);
+}
+
+void bsunion(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsunion FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] |= b->t[i];
+}
+
+void bsinter(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsinter FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] &= b->t[i];
+}
+
+void bsdiff(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsdiff FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] &= ~b->t[i];
+}
 
 int bsequal(BSet *a, BSet *b) {
   uint i;

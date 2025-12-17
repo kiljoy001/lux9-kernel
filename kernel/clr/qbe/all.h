@@ -416,7 +416,7 @@ void die_(char *, char *, ...) __attribute__((noreturn));
 void *emalloc(size_t);
 void *alloc(size_t);
 void freeall(void);
-void qbe_reset_pool(void);
+void qbe_reset_pool(void); /* Reset global pool state between compilations */
 void *vnew(ulong, size_t, Pool);
 void vfree(void *);
 void vgrow(void *, ulong);

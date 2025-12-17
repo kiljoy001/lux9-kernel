@@ -379,6 +379,13 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   u8int *code;
   char *p;
   char token[64];
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page ENTERED qbe=%#p asm=%#p\n", qbe_page,
+          asm_page);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Temp storage for finding max temp usage */
   int max_temp = 0;
@@ -389,6 +396,11 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   /* Convert physical addresses to kernel virtual */
   qbe_vaddr = KADDR(qbe_page);
   asm_vaddr = KADDR(asm_page);
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page KADDR qbe=%p asm=%p\n", qbe_vaddr,
+          asm_vaddr);
+  uartputs(debug_buf, strlen(debug_buf));
 
   p = (char *)qbe_vaddr;
   code = (u8int *)asm_vaddr;

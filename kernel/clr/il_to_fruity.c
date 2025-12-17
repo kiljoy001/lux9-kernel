@@ -829,7 +829,7 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
   case IL_CALLVIRT:
     /* call/callvirt: Method call (virtual uses vtable lookup) */
     operand.type = FRUITY_OP_METHOD;
-    operand.value.token = *(uint32_t *)&il[offset + 1];
+    operand.value.token = *(uint32_t *)&il[offset + 1]; // THIS LINE!
     instr = create_fruity_instruction(FRUITY_CALL, operand, offset);
     /* Mark callvirt for runtime dispatch */
     if (opcode == IL_CALLVIRT && instr)

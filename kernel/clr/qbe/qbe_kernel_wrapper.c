@@ -168,6 +168,12 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
           output);
   uartputs(debug_buf, strlen(debug_buf));
 
+  /* Reset QBE's global pool state - critical for kernel environment!
+   * QBE was designed for userspace where globals reset per process.
+   * In kernel, we must manually reset between compilations. */
+  extern void qbe_reset_pool(void);
+  qbe_reset_pool();
+
   /* Validate parameters */
   if (!input || !output) {
     if (errorbuf && errorbuf_size > 0)
