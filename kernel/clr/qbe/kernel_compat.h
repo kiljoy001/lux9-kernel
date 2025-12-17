@@ -151,7 +151,9 @@ extern unsigned long msize(void *ptr);
 /* Memory allocation shims */
 #define malloc(n) xalloc(n)
 #define calloc(n, s) xallocz((n) * (s), 1)
+#ifndef USE_PEBBLE_ALLOC
 #define free(p) xfree(p)
+#endif
 
 extern void *realloc(void *ptr, size_t size);
 

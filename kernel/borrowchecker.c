@@ -275,12 +275,9 @@ static struct BorrowOwner *create_owner(uintptr key) {
   owner->borrow_deadline_ns = 0;
   owner->borrow_count = 0;
 
-  /* Initialize Capability Key (v2.0) - CRITICAL: Must have secure randomness */
-  owner->key_cap.gen = 1; /* Start at gen 1 */
-  owner->key_cap.nonce = get_random_nonce();
-  if (owner->key_cap.nonce == 0) {
-    panic("create_owner: FATAL - cannot generate secure capability nonce");
-  }
+  /* Initialize Capability Key (v2.0) */
+  owner->key_cap.gen = 1;   /* Start at gen 1 */
+  owner->key_cap.nonce = 0; /* Caller must set this! */
 
   owner->next = borrowpool.owners[hash].head;
   borrowpool.owners[hash].head = owner;
@@ -290,21 +287,39 @@ static struct BorrowOwner *create_owner(uintptr key) {
 }
 
 /* Acquire ownership of a resource */
+/* Acquire ownership of a resource */
 enum BorrowError borrow_acquire(Proc *p, uintptr key) {
   struct BorrowOwner *owner;
+  u64int nonce;
 
   if (p == nil) {
     return BORROW_EINVAL;
   }
 
+  /* CRITICAL FIX: Generate nonce BEFORE acquiring lock to avoid deadlock
+   * if RNG (TPM) waits for interrupts while we hold spinlock (interrupts
+   * disabled).
+   */
+  nonce = get_random_nonce();
+  if (nonce == 0) {
+    panic("borrow_acquire: FATAL - cannot generate secure capability nonce");
+  }
+
   ilock(&borrowpool.lock);
   owner = find_owner(key);
   if (owner == nil) {
+    /* Pass pre-generated nonce to create_owner */
     owner = create_owner(key);
     if (owner == nil) {
       iunlock(&borrowpool.lock);
       return BORROW_ENOMEM;
     }
+    owner->key_cap.nonce =
+        nonce; /* Set the nonce here as create_owner (modified) or post-set */
+  } else {
+    /* Update existing owner nonce */
+    owner->key_cap.gen++;
+    owner->key_cap.nonce = nonce;
   }
 
   if (owner->state != BORROW_FREE) {
@@ -312,22 +327,13 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
     return BORROW_EALREADY;
   }
 
-  /* Transition FSM BEFORE setting owner - invariant check requires owner=nil in
-   * FREE state */
+  /* Transition FSM BEFORE setting owner */
   if (!borrow_fsm_transition(owner, BORROW_EXCLUSIVE)) {
     iunlock(&borrowpool.lock);
     return BORROW_EALREADY;
   }
   owner->owner = p;
   owner->acquired_ns = todget(nil, nil);
-
-  /* Rotate capability key on new acquisition - CRITICAL: Must have secure
-   * randomness */
-  owner->key_cap.gen++;
-  owner->key_cap.nonce = get_random_nonce();
-  if (owner->key_cap.nonce == 0) {
-    panic("borrow_acquire: FATAL - cannot generate secure capability nonce");
-  }
 
   iunlock(&borrowpool.lock);
   return BORROW_OK;

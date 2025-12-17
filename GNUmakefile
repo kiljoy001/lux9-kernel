@@ -27,6 +27,7 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -D__PLAN9_KERNEL__ \
            -DKERNEL \
            -D_KERNEL_QBE \
+           -DUSE_PEBBLE_ALLOC=1 \
            -DKTZERO=0xffffffff80110000 \
            -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer \
            -Wformat-security -Wconversion -Wshadow

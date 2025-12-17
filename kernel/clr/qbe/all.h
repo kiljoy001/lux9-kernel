@@ -5,6 +5,14 @@
 /* Kernel build - use kernel compatibility layer */
 #include "kernel_compat.h"
 extern void panic(const char *, ...);
+#define USE_PEBBLE_ALLOC 1
+#ifdef USE_PEBBLE_ALLOC
+void qbe_free(void *);
+#ifdef free
+#undef free
+#endif
+#define free(p) qbe_free(p)
+#endif
 #else
 /* Normal userspace build */
 #include <assert.h>
@@ -160,9 +168,11 @@ enum J {
   X(retc)                                                                      \
   X(jmp)                                                                       \
   X(jnz)                                                                       \
-  X(jfieq) X(jfine) X(jfisge) X(jfisgt) X(jfisle) X(jfislt) X(jfiuge)          \
-      X(jfiugt) X(jfiule) X(jfiult) X(jffeq) X(jffge) X(jffgt) X(jffle)        \
-          X(jfflt) X(jffne) X(jffo) X(jffuo)
+  X(jfieq)                                                                     \
+  X(jfine)                                                                     \
+  X(jfisge)                                                                    \
+  X(jfisgt) X(jfisle) X(jfislt) X(jfiuge) X(jfiugt) X(jfiule) X(jfiult)        \
+      X(jffeq) X(jffge) X(jffgt) X(jffle) X(jfflt) X(jffne) X(jffo) X(jffuo)
 #define X(j) J##j,
   JMPS(X)
 #undef X

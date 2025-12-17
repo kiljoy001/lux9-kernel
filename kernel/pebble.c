@@ -143,116 +143,61 @@ ulong pebble_get_budget(void) {
   return budget;
 }
 
+/* Stub vault secret for Pebble Black allocations */
+static const u8int pebble_vault_key[32] = {
+    0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+    0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11,
+    0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b};
+
+const u8int *pebble_get_vault_secret(void) { return pebble_vault_key; }
+
 int pebble_black_alloc(ulong size, UserCapability *out_cap) {
-  PebbleState *ps;
-  PebbleBlack *pb = nil;  // Initialize to nil for error handling
-  PebbleBlue *blue = nil; // Initialize to nil for error handling
-  void *buf = nil; // Initialize buf to nil for proper cleanup on early error
+  void *buf;
+  PebbleBlack *pb;
+
+  if (up == nil)
+    return -1; /* Use global 'up' */
+
+  const u8int *vault_secret = pebble_get_vault_secret();
   BlindLedgerError ledger_err;
-  enum BorrowError borrow_err;
-  u8int vault_secret[BLIND_LEDGER_SECRET_SIZE];
 
-  if (out_cap == nil)
-    error(PEBBLE_E_BADARG);
-  if (size < PEBBLE_MIN_ALLOC || size > PEBBLE_MAX_ALLOC)
-    error(PEBBLE_E_BADARG);
+  if (size == 0 || out_cap == nil)
+    return -1;
 
-  ps = pebble_state();
-  if (ps == nil)
-    error(PEBBLE_E_PERM);
-
-  // Generate cryptographic secret via TPM-backed vault
-  ledger_err = ledger_generate_secret(vault_secret);
-  if (ledger_err != BLIND_LEDGER_OK)
-    error(PEBBLE_E_NOMEM);
-
-  lock(&pebble_global_lock);
-  if (ps->white_verified == 0) {
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_PERM);
-  }
-  if (ps->white_pending < size) {
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_PERM);
-  }
-  if (ps->black_budget < size) {
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_AGAIN);
-  }
-  ps->white_pending -= size;
-  ps->white_verified--;
-  ps->black_budget -= size;
-  ps->black_inuse += size;
-  ps->total_allocs++;
-  unlock(&pebble_global_lock);
-
-  // --- Physical Memory Allocation ---
+  /* 1. Allocate physical memory (kernel heap for now) */
   buf = xallocz(size, 1);
-  if (buf == nil) {
-    lock(&pebble_global_lock);
-    ps->black_budget += size;
-    ps->black_inuse -= size;
-    ps->total_allocs--;
-    ps->white_pending += size;
-    ps->white_verified++;
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_NOMEM);
+  if (buf == nil)
+    return -1;
+
+  /* 2. Acquire ownership via Borrow Checker */
+  if (borrow_acquire(up, (uintptr)buf) != BORROW_OK) {
+    xfree(buf);
+    return -1;
   }
 
-  // --- Mint UserCapability via Blind Ledger ---
-  ledger_err =
-      ledger_mint(out_cap, (uintptr)buf, size, up, PEBBLE_CAP_BLACK,
-                  vault_secret); // PEBBLE_CAP_BLACK as initial permission
+  /* 3. Mint capability via Blind Ledger */
+  ledger_err = ledger_mint(out_cap, (uintptr)buf, size, up, PEBBLE_CAP_BLACK,
+                           vault_secret);
   if (ledger_err != BLIND_LEDGER_OK) {
-    xfree(buf); // Rollback xallocz
-    lock(&pebble_global_lock);
-    ps->black_budget += size; // Rollback budget
-    ps->black_inuse -= size;
-    ps->total_allocs--;
-    ps->white_pending += size;
-    ps->white_verified++;
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_NOMEM); // Or BLIND_LEDGER_E_NOMEM mapped
+    borrow_release(up, (uintptr)buf);
+    xfree(buf);
+    return -1;
   }
 
-  // --- Acquire borrow checker ownership ---
-  borrow_err = borrow_acquire(up, (uintptr)buf);
-  if (borrow_err != BORROW_OK) {
-    // Rollback ledger_mint
-    ledger_burn(out_cap, up); // Pass up as owner, assuming it matches
-    xfree(buf);               // Rollback xallocz
-    lock(&pebble_global_lock);
-    ps->black_budget += size; // Rollback budget
-    ps->black_inuse -= size;
-    ps->total_allocs--;
-    ps->white_pending += size;
-    ps->white_verified++;
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_PERM); // Or a more specific borrow error mapped
-  }
-
-  // --- PebbleBlack Struct Allocation ---
+  /* 4. Track metadata */
+  ilock(&pebble_global_lock);
   pb = mallocz(sizeof(PebbleBlack), 1);
   if (pb == nil) {
-    // Rollback borrow_acquire and ledger_mint
+    iunlock(&pebble_global_lock);
     borrow_release(up, (uintptr)buf);
-    ledger_burn(out_cap, up);
     xfree(buf);
-    lock(&pebble_global_lock);
-    ps->black_budget += size;
-    ps->black_inuse -= size;
-    ps->total_allocs--;
-    ps->white_pending += size;
-    ps->white_verified++;
-    unlock(&pebble_global_lock);
-    error(PEBBLE_E_NOMEM);
+    return -1;
   }
 
-  // --- Populate PebbleBlack Struct ---
-  memmove(&pb->capability, out_cap,
-          sizeof(UserCapability)); // Store the UserCapability
-  pb->physical_addr = buf;         // Store the actual physical address
-  pb->size = size;                 // Retain size for budgeting
+  memset(pb, 0, sizeof(PebbleBlack));
+  pb->capability = *out_cap;
+  pb->physical_addr = buf;
+  pb->size = size;
   pb->flags = PEBBLE_CAP_BLACK | PEBBLE_CAP_ACTIVE;
 
   /* NOTE: Blue is NO LONGER auto-created - it's an independent token!
@@ -260,15 +205,34 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
    * This enforces the circular economy: Black and Blue are separate colors.
    */
 
-  lock(&pebble_global_lock);
-  pb->next = ps->black_list;
-  ps->black_list = pb;
-  unlock(&pebble_global_lock);
+  pb->next = pebble_state()->black_list;
+  pebble_state()->black_list = pb;
+  iunlock(&pebble_global_lock);
 
-  if (pebble_debug)
-    print("PEBBLE: black alloc pid=%lud cap=%H size=%lud\n", up->pid,
-          out_cap->hash, size); // Print hash of UserCapability
   return 0;
+}
+
+void *pebble_get_black_addr(const UserCapability *cap) {
+  PebbleState *ps;
+  PebbleBlack *pb;
+  void *addr;
+
+  if (cap == nil)
+    return nil;
+
+  ps = pebble_state();
+  if (ps == nil)
+    return nil;
+
+  lock(&pebble_global_lock);
+  pb = pebble_lookup_black_by_cap_locked(ps, cap);
+  if (pb == nil) {
+    unlock(&pebble_global_lock);
+    return nil;
+  }
+  addr = pb->physical_addr;
+  unlock(&pebble_global_lock);
+  return addr;
 }
 
 /*

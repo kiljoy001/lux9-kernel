@@ -1,6 +1,11 @@
 #include "all.h"
 #include <stdarg.h>
 
+#ifdef _KERNEL_QBE
+/* Use Pebble Blue tokens for QBE memory - isolated from mainmem pool */
+#include "../../include/pebble.h"
+#endif
+
 typedef struct Bitset Bitset;
 typedef struct Vec Vec;
 typedef struct Bucket Bucket;
@@ -33,9 +38,56 @@ enum {
 Typ *typ;
 Ins insb[NIns], *curi;
 
+#ifdef USE_PEBBLE_ALLOC
+/* Pebble-based allocation tracking - Black tokens for QBE memory */
+typedef struct QbeMemHeader {
+  struct QbeMemHeader *next;
+  struct QbeMemHeader *prev; /* Doubly-linked for O(1) removal */
+  UserCapability cap;
+  /* Ensure 16-byte alignment for the payload */
+  char padding[16 -
+               ((sizeof(struct QbeMemHeader *) * 2 + sizeof(UserCapability)) %
+                16)];
+} QbeMemHeader;
+
+static QbeMemHeader *qbe_black_head = NULL; /* List of all Black allocations */
+static int qbe_alloc_count = 0;             /* Count of active allocations */
+
+/* File-scope statics for alloc's pool logic */
+static char *qbe_alloc_pool_ptr = NULL;
+static size_t qbe_alloc_pool_rem = 0;
+
+void qbe_reset_pool_statics(void) {
+  qbe_alloc_pool_ptr = NULL;
+  qbe_alloc_pool_rem = 0;
+}
+
+void qbe_free(void *p) {
+  if (!p)
+    return;
+
+  size_t hdr_sz = sizeof(QbeMemHeader);
+  QbeMemHeader *hdr = (QbeMemHeader *)((char *)p - hdr_sz);
+
+  // Unlink from global tracking list
+  if (hdr->next)
+    hdr->next->prev = hdr->prev;
+
+  if (hdr->prev)
+    hdr->prev->next = hdr->next;
+  else if (qbe_black_head == hdr)
+    qbe_black_head = hdr->next;
+
+  pebble_black_free(&hdr->cap);
+  qbe_alloc_count--;
+}
+
+#else
+/* Original pool-based allocation tracking */
 static void *ptr[NPtr];
 static void **pool = ptr;
 static int nptr = 1;
+#endif
 
 static Bucket itbl[IMask + 1]; /* string interning table */
 
@@ -64,16 +116,65 @@ void die_(char *file, char *s, ...) {
 void *emalloc(size_t n) {
   void *p;
 
-#ifdef _KERNEL_QBE
-  /* Use xalloc which is consistent with rest of CLR pipeline */
-  p = xalloc(n);
+#ifdef USE_PEBBLE_ALLOC
+  /* Use Pebble Black token - verified/owned memory */
+  extern void uartputs(char *, int);
+  // char debug_buf[128];
+
+  // Minimal debug to trace entry
+  /* uartputs("DEBUG: emalloc ENTER\n", 21); */
+
+  UserCapability cap;
+  size_t hdr_sz = sizeof(QbeMemHeader);
+  /* Alignment check: header size must be multiple of 16 to preserve alignment
+   */
+  /* padding in struct definition ensures this, but let's be safe */
+
+  if (pebble_black_alloc(n + hdr_sz, &cap) != 0) {
+    // snprint(debug_buf, sizeof(debug_buf),
+    //         "ERROR: pebble_black_alloc(%d) failed\n", (int)n);
+    // uartputs(debug_buf, strlen(debug_buf));
+    die("emalloc: pebble_black_alloc failed");
+  }
+
+  QbeMemHeader *hdr = (QbeMemHeader *)pebble_get_black_addr(&cap);
+  if (!hdr) {
+    die("emalloc: pebble_get_black_addr failed after successful alloc");
+  }
+
+  hdr->cap = cap;
+  hdr->next = qbe_black_head;
+  hdr->prev = NULL;
+
+  if (qbe_black_head)
+    qbe_black_head->prev = hdr;
+
+  qbe_black_head = hdr;
+  qbe_alloc_count++;
+
+  p = (char *)hdr + hdr_sz;
   if (p)
-    memset(p, 0, n); /* xalloc doesn't zero-initialize */
+    memset(p, 0, n); /* Zero-initialize */
+
 #else
-  p = calloc(1, n);
-#endif
+  if ((long)n <= 0)
+    die("emalloc: bad size");
+
+  p = calloc(1, n); // Original userspace used calloc, not mallocz
   if (!p)
-    die("emalloc, out of memory");
+    die("emalloc: out of memory");
+#endif
+
+#ifdef _KERNEL_QBE
+  /* KERNEL TRACE: Trace larger allocations to check for misuse */
+  if (n > 4096) {
+    extern void uartputs(char *, int);
+    char buf[128];
+    snprint(buf, sizeof(buf), "debug: qbe emalloc %d bytes -> %p\n", (int)n, p);
+    uartputs(buf, strlen(buf));
+  }
+#endif
+
   return p;
 }
 
@@ -83,13 +184,70 @@ void *alloc(size_t n) {
 #ifdef _KERNEL_QBE
   extern void uartputs(char *, int);
   char debug_buf[128];
+#ifdef USE_PEBBLE_ALLOC
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: alloc n=%d pool=%p rem=%ld\n",
+          (int)n, qbe_alloc_pool_ptr, (long)qbe_alloc_pool_rem);
+#else
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: alloc n=%d nptr=%d pool=%p\n",
           (int)n, nptr, pool);
+#endif
   uartputs(debug_buf, strlen(debug_buf));
 #endif
 
   if (n == 0)
     return 0;
+  /*
+   * Alignment Logic:
+   * QBE requires pointers to be aligned.
+   * Round up 'n' to nearest 8 bytes (sizeof(void*)).
+   */
+  n = (n + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+#ifdef USE_PEBBLE_ALLOC
+  /*
+   * If request is large, go direct to Pebble
+   * Otherwise, sub-allocate from a large Pebble block (pool)
+   */
+  if (n >= 4096)
+    return emalloc(n);
+
+  /* Use a static pool pointer?
+   * Cannot use static pool if we want reentrancy/reset support.
+   * But qbe is single-threaded per compilation usually.
+   * We need to store the current pool block.
+   *
+   * Let's reuse the 'pool' concept but backed by Pebble.
+   * We need a 'current_pool_block' and 'remaining_bytes'.
+   */
+
+  if (n > qbe_alloc_pool_rem) {
+    size_t blk_sz = 68 * 1024;
+    qbe_alloc_pool_ptr = emalloc(blk_sz); /* Allocates a new Black Token */
+    qbe_alloc_pool_rem = blk_sz;
+    /* emalloc zeros memory */
+  }
+
+  void *ret = qbe_alloc_pool_ptr;
+  qbe_alloc_pool_ptr += n;
+  qbe_alloc_pool_rem -= n;
+
+  /* Trace pool usage (verbose) */
+  /*
+  extern void uartputs(char *, int);
+  char buf[128];
+  snprint(buf, sizeof(buf), "debug: alloc pool %d -> %p\n", (int)n, ret);
+  uartputs(buf, strlen(buf));
+  */
+
+  return ret;
+#else
+  /* Non-Pebble Userspace - Restore original logic if needed or leave simplified
+   */
+  /* For now, just use emalloc for everything in userspace to be safe/simple?
+   * Or restore the original? The original was:
+   */
+  if (n >= 4096)
+    return emalloc(n);
   if (nptr >= NPtr) {
     pp = emalloc(NPtr * sizeof(void *));
     pp[0] = pool;
@@ -97,10 +255,13 @@ void *alloc(size_t n) {
     nptr = 1;
   }
   return pool[nptr++] = emalloc(n);
+#endif
 }
 
 void qbe_reset_pool() {
-#ifdef _KERNEL_QBE
+#ifdef USE_PEBBLE_ALLOC
+  freeall();
+#elif defined(_KERNEL_QBE)
   extern void uartputs(char *, int);
   char debug_buf[128];
 
@@ -114,10 +275,36 @@ void qbe_reset_pool() {
   ptr[0] = 0; /* Clear the linked list head */
 
   uartputs("DEBUG: qbe_reset_pool done\n", 27);
+#else
+  // For userspace non-Pebble, freeall handles reset.
+  freeall();
 #endif
 }
 
 void freeall() {
+#ifdef USE_PEBBLE_ALLOC
+  /* Walk the list of Black tokens and free them */
+  QbeMemHeader *curr = qbe_black_head;
+  QbeMemHeader *next;
+
+  /* Since we are destroying the whole list, we can just free the tokens
+     directly without unlink overhead, but we MUST update qbe_black_head to NULL
+     first to avoid any concurrent confusion (though qbe is single threaded).
+     Actually, let's just use the pointers and call pebble_black_free.
+  */
+  qbe_black_head = NULL;
+  qbe_alloc_count = 0;
+
+  while (curr) {
+    next = curr->next;
+    pebble_black_free(&curr->cap); /* Frees the underlying memory */
+    curr = next;
+  }
+
+  /* Reset pool statics */
+  qbe_reset_pool_statics();
+
+#else
   void **pp;
 
   for (;;) {
@@ -139,6 +326,7 @@ void freeall() {
     nptr = NPtr;
   }
   nptr = 1;
+#endif
 }
 
 void *vnew(ulong len, size_t esz, Pool p) {
@@ -165,7 +353,12 @@ void vfree(void *p) {
   if (v->pool == Pheap) {
     v->mag = 0;
 #ifdef _KERNEL_QBE
+/* If using Pebble Alloc, we MUST use qbe_free to handle headers! */
+#ifdef USE_PEBBLE_ALLOC
+    qbe_free(v);
+#else
     xfree(v);
+#endif
 #else
     free(v);
 #endif

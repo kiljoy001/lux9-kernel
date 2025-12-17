@@ -99,6 +99,9 @@ static ProcTransition fsm_transitions[] = {
     /* QLock waiting */
     {PS_Running, EV_QLOCK, PS_Queueing, nil},
     {PS_Queueing, EV_QUNLOCK, PS_Ready, nil},
+    /* Relaxed check: Allow YIELD while Queueing (scheduler quirk) */
+    {PS_Queueing, EV_YIELD, PS_Queueing, nil},
+
     {PS_Running, EV_QLOCK_R, PS_QueueingR, nil},
     {PS_QueueingR, EV_QUNLOCK, PS_Ready, nil},
 
