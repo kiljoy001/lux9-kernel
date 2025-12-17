@@ -76,11 +76,14 @@ typedef unsigned long long bits;
 
 /* Standard library replacements */
 #ifndef assert
+/* Use do-while(0) idiom to prevent dangling-else problems */
 #define assert(x)                                                              \
-  if (!(x)) {                                                                  \
-    print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);                \
-    panic("assertion failed");                                                 \
-  }
+  do {                                                                         \
+    if (!(x)) {                                                                \
+      print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);              \
+      panic("assertion failed");                                               \
+    }                                                                          \
+  } while (0)
 #endif
 
 #define abort() die("QBE abort at %s:%d", __FILE__, __LINE__)

@@ -7,11 +7,8 @@
 #include "all.h"
 #include "exchange_io.h"
 
-/* Forward declarations for kernel functions we'll link against */
-extern void *xalloc(size_t n);
-extern void *xallocz(size_t n);
-extern void xfree(void *p);
-extern void panic(const char *fmt, ...);
+/* Note: xalloc, xallocz, xfree, panic are declared in kernel_compat.h
+ * via all.h. DO NOT redeclare here to avoid conflicting types. */
 
 /* stderr stub - debug output goes to /dev/null in kernel */
 static char stderr_stub_buf[1024];
@@ -147,17 +144,10 @@ void longjmp(jmp_buf env, int val) {
   __builtin_unreachable();
 }
 
-/* Error handling - die_ is called by die() macro */
-void die_(char *file, char *s, ...) {
-  va_list ap;
-  char buf[256];
-
-  va_start(ap, s);
-  vsnprintf(buf, sizeof(buf), s, ap);
-  va_end(ap);
-
-  panic("QBE error in %s: %s", file, buf);
-}
+/* Error handling - die_ is defined in qbe_kernel_wrapper.c
+ * which uses longjmp for error recovery instead of panic.
+ * Do NOT define die_() here as it would override the recovery mechanism.
+ */
 
 /* Memory allocation: use kernel's standard malloc/free from alloc.c
  * which uses poolalloc/poolfree. Do NOT redefine malloc/free here
@@ -203,7 +193,7 @@ void qsort(void *base, size_t nmemb, size_t size,
 void *emalloc(size_t n) {
   void *p;
 
-  p = xallocz(n);
+  p = xallocz(n, 1); /* 2nd arg: 1 = zero memory */
   if (!p)
     die("emalloc, out of memory");
   return p;

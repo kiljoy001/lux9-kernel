@@ -137,13 +137,21 @@ static uint ntyp;
 
 void err(char *s, ...) {
   va_list ap;
+  char buf[512];
+  int len = 0;
+  extern void die_(char *, char *, ...);
 
+  /* Build error message */
+  len = snprintf(buf, sizeof(buf), "%s:%d: ", inpath ? inpath : "<unknown>",
+                 lnum);
   va_start(ap, s);
-  fprintf(stderr, "%s:%d: ", inpath, lnum);
-  vfprintf(stderr, s, ap);
-  fprintf(stderr, "\n");
+  vsnprintf(buf + len, sizeof(buf) - len, s, ap);
   va_end(ap);
-  exit(1);
+
+  /* Use die_() for longjmp-based error recovery in kernel context */
+  die_("parse.c", "%s", buf);
+  /* die_() should not return, but just in case... */
+  __builtin_unreachable();
 }
 
 static void lexinit() {

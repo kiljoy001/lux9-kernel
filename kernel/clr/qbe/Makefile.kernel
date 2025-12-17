@@ -5,6 +5,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c99
 CFLAGS += -fno-builtin
+CFLAGS += -fno-stack-protector
 CFLAGS += -D_KERNEL_QBE
 
 # QBE core sources
@@ -26,8 +27,9 @@ AMD64_SRCS = \
 	amd64/isel.c \
 	amd64/emit.c
 
-# Use kernel-compatible util and exchange I/O
-UTIL_SRCS = kernel_util.c exchange_io.c qbe_kernel_wrapper.c
+# Use kernel-compatible util - kernel_util.c removed (functions already in kernel)
+# exchange_io.c is built by main kernel Makefile
+UTIL_SRCS = qbe_kernel_wrapper.c
 
 ALL_SRCS = $(QBE_SRCS) $(AMD64_SRCS) $(UTIL_SRCS)
 OBJECTS = $(ALL_SRCS:.c=.o)

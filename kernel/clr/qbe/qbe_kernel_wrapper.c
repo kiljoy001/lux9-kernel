@@ -22,6 +22,12 @@ static size_t error_buffer_size = 0;
 /* Override die_ to use longjmp instead of panic */
 void die_(char *file, char *s, ...) {
   va_list ap;
+  extern void uartputs(char *, int);
+  char debug_buf[256];
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: die_() CALLED file=%s error_active=%d\n", file, error_active);
+  uartputs(debug_buf, strlen(debug_buf));
 
   if (error_active && error_buffer && error_buffer_size > 0) {
     /* Capture error message */
@@ -36,9 +42,16 @@ void die_(char *file, char *s, ...) {
                " (in %s)", file);
     }
 
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: die_() calling longjmp, errorbuf=%s\n", error_buffer);
+    uartputs(debug_buf, strlen(debug_buf));
+
     /* Jump back to error handler */
     longjmp(error_jmpbuf, 1);
   }
+
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: die_() FALLBACK panic path\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Fallback - should never reach here in normal operation */
   extern void panic(const char *fmt, ...);
@@ -117,11 +130,21 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
                      size_t errorbuf_size) {
   ExchangeFILE *in_fp = NULL;
   extern Target T_amd64_sysv;
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page ENTERED input=%#p output=%#p\n", input,
+          output);
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Validate parameters */
   if (!input || !output) {
     if (errorbuf && errorbuf_size > 0)
       snprintf(errorbuf, errorbuf_size, "Invalid exchange handles");
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: qbe_compile_page INVALID HANDLES\n");
+    uartputs(debug_buf, strlen(debug_buf));
     return -1;
   }
 
@@ -130,8 +153,16 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
   error_buffer = errorbuf;
   error_buffer_size = errorbuf_size;
 
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page setting up setjmp\n");
+  uartputs(debug_buf, strlen(debug_buf));
+
   if (setjmp(error_jmpbuf) != 0) {
     /* Error occurred - clean up and return */
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: qbe_compile_page LONGJMP TRIGGERED errorbuf=%s\n",
+            errorbuf ? errorbuf : "(nil)");
+    uartputs(debug_buf, strlen(debug_buf));
     if (in_fp)
       exchange_fclose(in_fp);
     if (output_file)
@@ -141,20 +172,34 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
     return -1;
   }
 
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page opening input handle\n");
+  uartputs(debug_buf, strlen(debug_buf));
+
   /* Open input exchange page for reading */
   in_fp = exchange_fmemopen_handle(input, "r");
   if (!in_fp) {
     if (errorbuf && errorbuf_size > 0)
       snprintf(errorbuf, errorbuf_size, "Failed to open input exchange page");
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: qbe_compile_page FAILED to open input\n");
+    uartputs(debug_buf, strlen(debug_buf));
     error_active = 0;
     return -1;
   }
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page opening output handle\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Open output exchange page for writing */
   output_file = exchange_fmemopen_handle(output, "w");
   if (!output_file) {
     if (errorbuf && errorbuf_size > 0)
       snprintf(errorbuf, errorbuf_size, "Failed to open output exchange page");
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: qbe_compile_page FAILED to open output\n");
+    uartputs(debug_buf, strlen(debug_buf));
     exchange_fclose(in_fp);
     error_active = 0;
     return -1;
@@ -168,8 +213,16 @@ int qbe_compile_page(uintptr input, uintptr output, char *errorbuf,
   gasloc = ".L";
   gassym = "";
 
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page calling parse()\n");
+  uartputs(debug_buf, strlen(debug_buf));
+
   /* Parse and compile - callbacks will be invoked for each function/data */
   parse(in_fp, "<exchange-page>", emit_data, emit_func);
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page parse() completed\n");
+  uartputs(debug_buf, strlen(debug_buf));
 
   /* Emit finalizer */
   gasemitfin(output_file);
