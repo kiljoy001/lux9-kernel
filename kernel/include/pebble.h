@@ -56,7 +56,31 @@ extern int pebble_debug;
   (1 << 9) /* Administrative: can modify other processes' capabilities */
 
 /* Helper macro for capability checking */
+/* Helper macro for capability checking */
 #define has_capability(p, cap) ((p)->capabilities & (cap))
+
+/*
+ * 3-Bit Tagged Capabilities (Pointer-Carried Authority)
+ * Leveraging the 8-byte alignment gap (Peg).
+ */
+#define PEBBLE_WAVE_MASK 0x7ULL
+#define PEBBLE_PTR_ADDR(p) ((void *)((uintptr)(p) & ~PEBBLE_WAVE_MASK))
+#define PEBBLE_PTR_WAVE(p) ((int)((uintptr)(p) & PEBBLE_WAVE_MASK))
+
+/* The 8 Holographic Wavelengths (Channels) */
+#define PEBBLE_WAVE_0 0 /* The "White" Channel (Root/Admin) */
+#define PEBBLE_WAVE_1 1 /* Channel 1 */
+#define PEBBLE_WAVE_2 2 /* Channel 2 */
+#define PEBBLE_WAVE_3 3 /* Channel 3 */
+#define PEBBLE_WAVE_4 4 /* Channel 4 */
+#define PEBBLE_WAVE_5 5 /* Channel 5 */
+#define PEBBLE_WAVE_6 6 /* Channel 6 */
+#define PEBBLE_WAVE_7 7 /* Channel 7 */
+
+/* Holographic Projection */
+#define PEBBLE_PROJECT(p, wave)                                                \
+  ((void *)((uintptr)PEBBLE_PTR_ADDR(p) | ((wave) & PEBBLE_WAVE_MASK)))
+#define PEBBLE_TUNED(p, wave) (PEBBLE_PTR_WAVE(p) == (wave))
 
 #include "blind_ledger.h"
 #include "borrowchecker.h"
@@ -177,5 +201,10 @@ void pebbleprocinit(Proc *p);
 
 /* Constants for validation */
 #define PEBBLE_TOKEN_MAGIC 0x50454242 /* "PEBB" */
-#define PEBBLE_MIN_ALLOC 64
+#define PEBBLE_MEM_PER_TOKEN 8        /* 8 bytes per Token Unit */
+#define PEBBLE_MIN_ALLOC 8            /* Minimum allocation is 1 Token */
 #define PEBBLE_MAX_ALLOC (1024 * 1024 * 1024) /* 1 GiB max single alloc */
+
+#ifndef ROUNDUP
+#define ROUNDUP(n, sz) (((n) + ((sz) - 1)) & ~((sz) - 1))
+#endif

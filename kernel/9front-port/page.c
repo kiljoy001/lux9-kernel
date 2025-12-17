@@ -528,4 +528,5 @@ void userpmap(uintptr va, uintptr pa, int perms) {
   print("userpmap: va=%#p pa=%#p perms=%#ux pte=%#llux\n", va, pa, perms,
         (uvlong)*pte);
   splx(x);
+  print("userpmap: EXIT\n");
 }

@@ -241,6 +241,12 @@ void main_after_cr3(void) {
   uartputs("main_after_cr3: calling exchangeinit\n", 38);
   exchangeinit();
 
+  uartputs("DEBUG: pre-pebble-selftest\n", 25);
+  /* Run Pebble Self-Test (xalloc works now) */
+  extern void pebble_selftest(void);
+  pebble_selftest();
+  uartputs("DEBUG: post-pebble-selftest\n", 26);
+
   set_boot_state(BOOT_TRAP);
   uartputs("main_after_cr3: calling trapinit\n", 35);
   trapinit();
@@ -357,8 +363,6 @@ void main_after_cr3(void) {
 
   set_boot_state(BOOT_PRINT);
   printinit();
-  uartputs("DEBUG: printinit complete\n", 28);
-
   /* Initialize TPM driver before crypto subsystem */
   extern void tpminit(void);
   set_boot_state(BOOT_TPM);

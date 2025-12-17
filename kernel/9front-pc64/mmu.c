@@ -1,37 +1,35 @@
-#include	"u.h"
+#include "mem.h"
+#include "u.h"
 #include <lib.h>
-#include	"mem.h"
 
-#include	"fns.h"
-#include	"debugcon.h"
-#include	"hhdm.h"
-#include	"borrowchecker.h"
+#include "borrowchecker.h"
+#include "debugcon.h"
+#include "fns.h"
+#include "hhdm.h"
 #include <stddef.h>
 
-extern void uartputs(char*, int);
+extern void uartputs(char *, int);
 
 /* CR3 switch memory system functions */
 extern int memory_system_ready_before_cr3(void);
 extern void transfer_bootloader_to_kernel(void);
 extern void pre_init_memory_system(void);
 
-static void
-dbghex(char *label, uvlong value)
-{
-	static char hex[] = "0123456789abcdef";
-	char buf[2 + sizeof(uvlong)*2 + 2];
-	char *p = buf;
+static void dbghex(char *label, uvlong value) {
+  static char hex[] = "0123456789abcdef";
+  char buf[2 + sizeof(uvlong) * 2 + 2];
+  char *p = buf;
 
-	*p++ = '0';
-	*p++ = 'x';
-	for(int i = (int)(sizeof(uvlong)*2 - 1); i >= 0; i--)
-		*p++ = hex[(value >> (i*4)) & 0xF];
-	*p++ = '\n';
-	*p = 0;
+  *p++ = '0';
+  *p++ = 'x';
+  for (int i = (int)(sizeof(uvlong) * 2 - 1); i >= 0; i--)
+    *p++ = hex[(value >> (i * 4)) & 0xF];
+  *p++ = '\n';
+  *p = 0;
 
-	if(label != nil)
-		uartputs(label, strlen(label));
-	uartputs(buf, p - buf);
+  if (label != nil)
+    uartputs(label, strlen(label));
+  uartputs(buf, p - buf);
 }
 
 /* Limine HHDM offset - defined in boot.c */
@@ -44,114 +42,112 @@ extern usize initrd_size;
 
 static uintptr max_physaddr;
 
-static void
-ensure_phys_range(void)
-{
-	Confmem *cm;
-	int i;
+static void ensure_phys_range(void) {
+  Confmem *cm;
+  int i;
 
-	if(max_physaddr != 0)
-		return;
+  if (max_physaddr != 0)
+    return;
 
-	for(i = 0; i < nelem(conf.mem); i++){
-		cm = &conf.mem[i];
-		if(cm->npage == 0)
-			continue;
-		if(cm->base + (uintptr)cm->npage * BY2PG > max_physaddr)
-			max_physaddr = cm->base + (uintptr)cm->npage * BY2PG;
-	}
-	if(max_physaddr == 0)
-		max_physaddr = (uintptr)1 << 52;	/* 4PB default guard */
+  for (i = 0; i < nelem(conf.mem); i++) {
+    cm = &conf.mem[i];
+    if (cm->npage == 0)
+      continue;
+    if (cm->base + (uintptr)cm->npage * BY2PG > max_physaddr)
+      max_physaddr = cm->base + (uintptr)cm->npage * BY2PG;
+  }
+  if (max_physaddr == 0)
+    max_physaddr = (uintptr)1 << 52; /* 4PB default guard */
 }
 
 /* Unified HHDM implementation moved to include/hhdm.h */
 
-
-
-
-static int
-is_hhdm_va(uintptr va)
-{
-	if(saved_limine_hhdm_offset == 0 || va < saved_limine_hhdm_offset)
-		return 0;
-	ensure_phys_range();
-	return hhdm_phys((void*)va) < max_physaddr;
+static int is_hhdm_va(uintptr va) {
+  if (saved_limine_hhdm_offset == 0 || va < saved_limine_hhdm_offset)
+    return 0;
+  ensure_phys_range();
+  return hhdm_phys((void *)va) < max_physaddr;
 }
 
 /*
  * Simple segment descriptors with no translation.
  */
-#define	EXECSEGM(p) 	{ 0, SEGL|SEGP|SEGPL(p)|SEGEXEC }
-#define	DATASEGM(p) 	{ 0xFFFF, SEGB|SEGG|(0xF<<16)|SEGP|SEGPL(p)|SEGDATA|SEGW }
-#define	DATA64SEGM(p) 	{ 0, SEGP|SEGPL(p)|SEGDATA|SEGW } /* 64-bit Data: L=0, B=0, Limit ignored */
-#define	EXEC32SEGM(p) 	{ 0xFFFF, SEGG|SEGD|(0xF<<16)|SEGP|SEGPL(p)|SEGEXEC|SEGR }
-#define	DATA32SEGM(p) 	{ 0xFFFF, SEGB|SEGG|(0xF<<16)|SEGP|SEGPL(p)|SEGDATA|SEGW }
+#define EXECSEGM(p) {0, SEGL | SEGP | SEGPL(p) | SEGEXEC}
+#define DATASEGM(p)                                                            \
+  {0xFFFF, SEGB | SEGG | (0xF << 16) | SEGP | SEGPL(p) | SEGDATA | SEGW}
+#define DATA64SEGM(p)                                                          \
+  {0, SEGP | SEGPL(p) | SEGDATA | SEGW}                                        \
+  /* 64-bit Data: L=0, B=0, Limit ignored */
+#define EXEC32SEGM(p)                                                          \
+  {0xFFFF, SEGG | SEGD | (0xF << 16) | SEGP | SEGPL(p) | SEGEXEC | SEGR}
+#define DATA32SEGM(p)                                                          \
+  {0xFFFF, SEGB | SEGG | (0xF << 16) | SEGP | SEGPL(p) | SEGDATA | SEGW}
 
-Segdesc gdt[NGDT] =
-{
-[NULLSEG]	{ 0, 0},		/* null descriptor */
-[KESEG]		EXECSEGM(0),		/* kernel code */
-[KDSEG]		DATASEGM(0),		/* kernel data */
-[UE32SEG]	EXEC32SEGM(3),		/* user code 32 bit*/
-[UDSEG]		DATA32SEGM(3),		/* user data/stack 32 bit */
-[UD64SEG]	DATA64SEGM(3),		/* user data/stack 64 bit */
-[UESEG]		EXECSEGM(3),		/* user code 64 bit */
+Segdesc gdt[NGDT] = {
+    [NULLSEG] { 0, 0 },      /* null descriptor */
+    [KESEG] EXECSEGM(0),     /* kernel code */
+    [KDSEG] DATASEGM(0),     /* kernel data */
+    [UE32SEG] EXEC32SEGM(3), /* user code 32 bit*/
+    [UDSEG] DATA32SEGM(3),   /* user data/stack 32 bit */
+    [UD64SEG] DATA64SEGM(3), /* user data/stack 64 bit */
+    [UESEG] EXECSEGM(3),     /* user code 64 bit */
 };
 
 enum {
-	MMUFREELIMIT	= 256,
+  MMUFREELIMIT = 256,
 };
 
 enum {
-	/* level */
-	PML4E	= 2,
-	PDPE	= 1,
-	PDE	= 0,
+  /* level */
+  PML4E = 2,
+  PDPE = 1,
+  PDE = 0,
 
-	MAPBITS	= 8*sizeof(m->mmumap[0]),
+  MAPBITS = 8 * sizeof(m->mmumap[0]),
 };
 
-static void
-loadptr(u16int lim, uintptr off, void (*load)(void*))
-{
-	u64int b[2], *o;
-	u16int *s;
+static void loadptr(u16int lim, uintptr off, void (*load)(void *)) {
+  u64int b[2], *o;
+  u16int *s;
 
-	o = &b[1];
-	s = ((u16int*)o)-1;
+  o = &b[1];
+  s = ((u16int *)o) - 1;
 
-	*s = lim;
-	*o = off;
+  *s = lim;
+  *o = off;
 
-	(*load)(s);
+  (*load)(s);
 }
 
 static void
-taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc (address of Proc struct)
+taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc
+                                     // (address of Proc struct)
 {
-	Tss *tss;
-	Proc *p = (Proc*)proc_struct_addr;
-	uintptr kstack_top; // The actual top of the kernel stack for CPU pushes
+  Tss *tss;
+  Proc *p = (Proc *)proc_struct_addr;
+  uintptr kstack_top; // The actual top of the kernel stack for CPU pushes
 
-	tss = m->tss;
-	if(tss != nil){
-		if(p == nil || p->kstack == nil) { // For initial boot or m's stack
-			kstack_top = (uintptr)m + MACHSIZE; // Initial bootstrap stack
-		} else {
-			// Stack grows down from p->kstack + KSTACK.
-			// The CPU will push onto this.
-			kstack_top = (uintptr)p->kstack + KSTACK; 
-		}
+  tss = m->tss;
+  if (tss != nil) {
+    if (p == nil || p->kstack == nil) {   // For initial boot or m's stack
+      kstack_top = (uintptr)m + MACHSIZE; // Initial bootstrap stack
+    } else {
+      // Stack grows down from p->kstack + KSTACK.
+      // The CPU will push onto this.
+      kstack_top = (uintptr)p->kstack + KSTACK;
+    }
 
-		tss->rsp0[0] = (u32int)kstack_top;
-		tss->rsp0[1] = kstack_top >> 32;
-		tss->rsp1[0] = (u32int)kstack_top; // Also update RSP1, RSP2 for consistency (if used)
-		tss->rsp1[1] = kstack_top >> 32;
-		tss->rsp2[0] = (u32int)kstack_top;
-		tss->rsp2[1] = kstack_top >> 32;
-	}
-	/* For now, skip TLB flush during first process switch - we're using same page tables */
-	/* mmuflushtlb(PADDR(m->pml4)); */
+    tss->rsp0[0] = (u32int)kstack_top;
+    tss->rsp0[1] = kstack_top >> 32;
+    tss->rsp1[0] =
+        (u32int)kstack_top; // Also update RSP1, RSP2 for consistency (if used)
+    tss->rsp1[1] = kstack_top >> 32;
+    tss->rsp2[0] = (u32int)kstack_top;
+    tss->rsp2[1] = kstack_top >> 32;
+  }
+  /* For now, skip TLB flush during first process switch - we're using same page
+   * tables */
+  /* mmuflushtlb(PADDR(m->pml4)); */
 }
 
 static void kernelro(void);
@@ -159,24 +155,20 @@ extern void main_after_cr3(void);
 extern char cpu0data_start[];
 extern char cpu0data_end[];
 
-static void
-dump_transition_pte(const char *label, uintptr va)
-{
-	uartputs("  PTE(", 6);
-	uartputs((char*)label, strlen(label));
-	uartputs("): ", 3);
-	dbghex("", dbg_getpte(va));
+static void dump_transition_pte(const char *label, uintptr va) {
+  uartputs("  PTE(", 6);
+  uartputs((char *)label, strlen(label));
+  uartputs("): ", 3);
+  dbghex("", dbg_getpte(va));
 }
 
-uintptr
-dbg_getpte(uintptr va)
-{
-	uintptr *pte;
+uintptr dbg_getpte(uintptr va) {
+  uintptr *pte;
 
-	pte = mmuwalk(m->pml4, va, 0, 0);
-	if(pte == nil)
-		return 0;
-	return *pte;
+  pte = mmuwalk(m->pml4, va, 0, 0);
+  if (pte == nil)
+    return 0;
+  return *pte;
 }
 
 /*
@@ -187,529 +179,536 @@ dbg_getpte(uintptr va)
 
 /* Helper: allocate and zero a page table from reserved pool */
 enum {
-	PT_POOL_TABLES = 512,
-	PT_ENTRIES_PER_TABLE = 512,
+  PT_POOL_TABLES = 512,
+  PT_ENTRIES_PER_TABLE = 512,
 };
 
 static u64int *next_pt = nil;
 static int pt_count = 0;
 static Lock allocptlock;
 
-static u64int*
-alloc_pt(void)
-{
-	extern u64int cpu0pt_pool[];  /* Reserved in linker.ld */
-	u64int *pt = nil;
-	int i;
+static u64int *alloc_pt(void) {
+  extern u64int cpu0pt_pool[]; /* Reserved in linker.ld */
+  u64int *pt = nil;
+  int i;
 
-	lock(&allocptlock);
-	if(next_pt == nil){
-		next_pt = cpu0pt_pool;  /* Start of PT pool */
-		uartputs("alloc_pt: initialized pool\n", 27);
-	}
-	if(pt_count < PT_POOL_TABLES){
-		pt = next_pt;
-		next_pt += PT_ENTRIES_PER_TABLE;  /* Each PT is 512 entries (4KB) */
-		pt_count++;
-	}
-	unlock(&allocptlock);
+  lock(&allocptlock);
+  if (next_pt == nil) {
+    next_pt = cpu0pt_pool; /* Start of PT pool */
+    uartputs("alloc_pt: initialized pool\n", 27);
+  }
+  if (pt_count < PT_POOL_TABLES) {
+    pt = next_pt;
+    next_pt += PT_ENTRIES_PER_TABLE; /* Each PT is 512 entries (4KB) */
+    pt_count++;
+  }
+  unlock(&allocptlock);
 
-	if(pt == nil){
-		pt = rampage();
-		if(pt == nil)
-			panic("alloc_pt: rampage returned nil");
-		uartputs("alloc_pt: pool exhausted, using rampage\n", 41);
-	} else {
-		uartputs("alloc_pt: allocated page table\n", 31);
-	}
+  if (pt == nil) {
+    pt = rampage();
+    if (pt == nil)
+      panic("alloc_pt: rampage returned nil");
+    uartputs("alloc_pt: pool exhausted, using rampage\n", 41);
+  } else {
+    uartputs("alloc_pt: allocated page table\n", 31);
+  }
 
-	/* Zero the page table */
-	for(i = 0; i < PT_ENTRIES_PER_TABLE; i++)
-		pt[i] = 0;
+  /* Zero the page table */
+  for (i = 0; i < PT_ENTRIES_PER_TABLE; i++)
+    pt[i] = 0;
 
-	return pt;
+  return pt;
 }
 
 /* Helper: get physical address
  * Option A: Linear mapping with small Limine offset for kernel addresses
  * This is used during page table setup while still on Limine's page tables */
-static u64int
-virt2phys(void *virt)
-{
-	extern u64int limine_kernel_phys_base;
-	uintptr va = (uintptr)virt;
+static u64int virt2phys(void *virt) {
+  extern u64int limine_kernel_phys_base;
+  uintptr va = (uintptr)virt;
 
-	/* Kernel addresses at KZERO - need offset since Limine loaded us arbitrarily */
-	if(va >= KZERO)
-		return (va - KZERO) + limine_kernel_phys_base;
+  /* Kernel addresses at KZERO - need offset since Limine loaded us arbitrarily
+   */
+  if (va >= KZERO)
+    return (va - KZERO) + limine_kernel_phys_base;
 
-	if(va >= VMAP)
-		return va - VMAP;
+  if (va >= VMAP)
+    return va - VMAP;
 
-	if(is_hhdm_va(va))
-		return hhdm_phys((void*)va);
+  if (is_hhdm_va(va))
+    return hhdm_phys((void *)va);
 
-	/* Already physical */
-	return va;
+  /* Already physical */
+  return va;
 }
 
 /* Map a virtual address range to physical with 2MB pages */
-static void
-map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64int perms)
-{
-	extern uintptr saved_limine_hhdm_offset;
-	u64int virt, phys, virt_end;
-	u64int pml4_idx, pdp_idx, pd_idx;
-	u64int *pdp, *pd;
-	u64int pdp_phys, pd_phys;
-	u64int orig_size = size;
-	u64int page_count = 0;
+static void map_range_2mb(u64int *pml4, u64int virt_start, u64int phys_start,
+                          u64int size, u64int perms) {
+  extern uintptr saved_limine_hhdm_offset;
+  u64int virt, phys, virt_end;
+  u64int pml4_idx, pdp_idx, pd_idx;
+  u64int *pdp, *pd;
+  u64int pdp_phys, pd_phys;
+  u64int orig_size = size;
+  u64int page_count = 0;
 
-	virt_start &= ~0x1FFFFFULL;  /* Align to 2MB */
-	phys_start &= ~0x1FFFFFULL;
-	size = (size + 0x1FFFFF) & ~0x1FFFFFULL;
+  virt_start &= ~0x1FFFFFULL; /* Align to 2MB */
+  phys_start &= ~0x1FFFFFULL;
+  size = (size + 0x1FFFFF) & ~0x1FFFFFULL;
 
-	virt_end = virt_start + size;
+  virt_end = virt_start + size;
 
-	/* Handle address space wrap: if virt_end wrapped to a small value, we're mapping to end of address space */
-	int wraps = (virt_end < virt_start);
+  /* Handle address space wrap: if virt_end wrapped to a small value, we're
+   * mapping to end of address space */
+  int wraps = (virt_end < virt_start);
 
-	for(virt = virt_start, phys = phys_start; wraps ? (virt >= virt_start) : (virt < virt_end); virt += 2*MiB, phys += 2*MiB) {
-		/* Calculate indices */
-		pml4_idx = (virt >> 39) & 0x1FF;
-		pdp_idx = (virt >> 30) & 0x1FF;
-		pd_idx = (virt >> 21) & 0x1FF;
+  for (virt = virt_start, phys = phys_start;
+       wraps ? (virt >= virt_start) : (virt < virt_end);
+       virt += 2 * MiB, phys += 2 * MiB) {
+    /* Calculate indices */
+    pml4_idx = (virt >> 39) & 0x1FF;
+    pdp_idx = (virt >> 30) & 0x1FF;
+    pd_idx = (virt >> 21) & 0x1FF;
 
-		/* Get or create PDP */
-		if((pml4[pml4_idx] & PTEVALID) == 0) {
-			pdp = alloc_pt();
-			pdp_phys = virt2phys(pdp);
-			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
-		} else {
-			pdp_phys = pml4[pml4_idx] & ~0xFFF;
-			pdp = (u64int*)hhdm_virt(pdp_phys);
-		}
+    /* Get or create PDP */
+    if ((pml4[pml4_idx] & PTEVALID) == 0) {
+      pdp = alloc_pt();
+      pdp_phys = virt2phys(pdp);
+      pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
+    } else {
+      pdp_phys = pml4[pml4_idx] & ~0xFFF;
+      pdp = (u64int *)hhdm_virt(pdp_phys);
+    }
 
-		/* Get or create PD */
-		if((pdp[pdp_idx] & PTEVALID) == 0) {
-			pd = alloc_pt();
-			pd_phys = virt2phys(pd);
-			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
-		} else {
-			pd_phys = pdp[pdp_idx] & ~0xFFF;
-			pd = (u64int*)hhdm_virt(pd_phys);
-		}
+    /* Get or create PD */
+    if ((pdp[pdp_idx] & PTEVALID) == 0) {
+      pd = alloc_pt();
+      pd_phys = virt2phys(pd);
+      pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
+    } else {
+      pd_phys = pdp[pdp_idx] & ~0xFFF;
+      pd = (u64int *)hhdm_virt(pd_phys);
+    }
 
-		/* Map 2MB page directly in PD */
-		pd[pd_idx] = phys | perms;  /* perms should include PTESIZE */
-		page_count++;
-	}
+    /* Map 2MB page directly in PD */
+    pd[pd_idx] = phys | perms; /* perms should include PTESIZE */
+    page_count++;
+  }
 
-	/* Print single summary line */
-	uartputs("map_range_2mb: mapped ", 22);
-	dbghex("", orig_size);
-	uartputs(" bytes (", 8);
-	dbghex("", page_count);
-	uartputs(" x 2MB pages) phys ", 19);
-	dbghex("", phys_start);
-	uartputs(" -> virt ", 9);
-	dbghex("", virt_start);
-	uartputs("\n", 1);
+  /* Print single summary line */
+  uartputs("map_range_2mb: mapped ", 22);
+  dbghex("", orig_size);
+  uartputs(" bytes (", 8);
+  dbghex("", page_count);
+  uartputs(" x 2MB pages) phys ", 19);
+  dbghex("", phys_start);
+  uartputs(" -> virt ", 9);
+  dbghex("", virt_start);
+  uartputs("\n", 1);
 }
 
 /* Map a virtual address range to physical with given permissions */
-static void
-map_range(u64int *pml4, u64int virt_start, u64int phys_start, u64int size, u64int perms)
-{
-	extern uintptr saved_limine_hhdm_offset;
-	u64int virt, phys, virt_end;
-	u64int pml4_idx, pdp_idx, pd_idx, pt_idx;
-	u64int *pdp, *pd, *pt;
-	u64int pdp_phys, pd_phys, pt_phys;
+static void map_range(u64int *pml4, u64int virt_start, u64int phys_start,
+                      u64int size, u64int perms) {
+  extern uintptr saved_limine_hhdm_offset;
+  u64int virt, phys, virt_end;
+  u64int pml4_idx, pdp_idx, pd_idx, pt_idx;
+  u64int *pdp, *pd, *pt;
+  u64int pdp_phys, pd_phys, pt_phys;
 
-	virt_end = virt_start + size;
+  virt_end = virt_start + size;
 
-	for(virt = virt_start, phys = phys_start; virt < virt_end; virt += 4*KiB, phys += 4*KiB) {
-		/* Calculate indices */
-		pml4_idx = (virt >> 39) & 0x1FF;
-		pdp_idx = (virt >> 30) & 0x1FF;
-		pd_idx = (virt >> 21) & 0x1FF;
-		pt_idx = (virt >> 12) & 0x1FF;
+  for (virt = virt_start, phys = phys_start; virt < virt_end;
+       virt += 4 * KiB, phys += 4 * KiB) {
+    /* Calculate indices */
+    pml4_idx = (virt >> 39) & 0x1FF;
+    pdp_idx = (virt >> 30) & 0x1FF;
+    pd_idx = (virt >> 21) & 0x1FF;
+    pt_idx = (virt >> 12) & 0x1FF;
 
-		/* Get or create PDP */
-		if((pml4[pml4_idx] & PTEVALID) == 0) {
-			pdp = alloc_pt();
-			pdp_phys = virt2phys(pdp);
-			pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
-		} else {
-			pdp_phys = pml4[pml4_idx] & ~0xFFF;
-			/* Our page tables are in KZERO range, existing ones might be anywhere */
-			pdp = (u64int*)hhdm_virt(pdp_phys);
-		}
+    /* Get or create PDP */
+    if ((pml4[pml4_idx] & PTEVALID) == 0) {
+      pdp = alloc_pt();
+      pdp_phys = virt2phys(pdp);
+      pml4[pml4_idx] = pdp_phys | PTEVALID | PTEWRITE | PTEACCESSED;
+    } else {
+      pdp_phys = pml4[pml4_idx] & ~0xFFF;
+      /* Our page tables are in KZERO range, existing ones might be anywhere */
+      pdp = (u64int *)hhdm_virt(pdp_phys);
+    }
 
-		/* Get or create PD */
-		if((pdp[pdp_idx] & PTEVALID) == 0) {
-			pd = alloc_pt();
-			pd_phys = virt2phys(pd);
-			pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
-		} else {
-			pd_phys = pdp[pdp_idx] & ~0xFFF;
-			pd = (u64int*)hhdm_virt(pd_phys);
-		}
+    /* Get or create PD */
+    if ((pdp[pdp_idx] & PTEVALID) == 0) {
+      pd = alloc_pt();
+      pd_phys = virt2phys(pd);
+      pdp[pdp_idx] = pd_phys | PTEVALID | PTEWRITE | PTEACCESSED;
+    } else {
+      pd_phys = pdp[pdp_idx] & ~0xFFF;
+      pd = (u64int *)hhdm_virt(pd_phys);
+    }
 
-		/* Get or create PT */
-		if((pd[pd_idx] & PTEVALID) == 0) {
-			pt = alloc_pt();
-			pt_phys = virt2phys(pt);
-			pd[pd_idx] = pt_phys | PTEVALID | PTEWRITE | PTEACCESSED;
-		} else {
-			pt_phys = pd[pd_idx] & ~0xFFF;
-			pt = (u64int*)hhdm_virt(pt_phys);
-		}
+    /* Get or create PT */
+    if ((pd[pd_idx] & PTEVALID) == 0) {
+      pt = alloc_pt();
+      pt_phys = virt2phys(pt);
+      pd[pd_idx] = pt_phys | PTEVALID | PTEWRITE | PTEACCESSED;
+    } else {
+      pt_phys = pd[pd_idx] & ~0xFFF;
+      pt = (u64int *)hhdm_virt(pt_phys);
+    }
 
-		/* Map 4KB page in PT */
-		pt[pt_idx] = phys | perms;
-	}
+    /* Map 4KB page in PT */
+    pt[pt_idx] = phys | perms;
+  }
 }
 
 /* Setup our own page tables with linear RAM mapping at KZERO */
 
 /* Pre-initialize memory system for CR3 switch */
-void
-pre_init_memory_system(void)
-{
-	uartputs("pre_init_memory_system: starting\n", 36);
-	
-	/* Initialize borrow pool if not done yet - needed for memory coordination */
-	uartputs("pre_init_memory_system: checking borrow pool\n", 45);
-	if(borrowpool.owners == nil) {
-		uartputs("pre_init_memory_system: initializing borrow pool\n", 52);
-		borrowinit();
-		uartputs("pre_init_memory_system: borrow pool initialized\n", 48);
-	} else {
-		uartputs("pre_init_memory_system: borrow pool already initialized\n", 58);
-	}
-	
-	/* Transfer memory coordination state from bootloader to kernel */
-	/* This sets mem_coord.state = MEMORY_KERNEL_ACTIVE */
-	uartputs("pre_init_memory_system: transferring memory coordination\n", 56);
-	transfer_bootloader_to_kernel();
-	uartputs("pre_init_memory_system: memory coordination transferred\n", 57);
-	
-	uartputs("pre_init_memory_system: complete\n", 33);
+void pre_init_memory_system(void) {
+  uartputs("pre_init_memory_system: starting\n", 36);
+
+  /* Initialize borrow pool if not done yet - needed for memory coordination */
+  uartputs("pre_init_memory_system: checking borrow pool\n", 45);
+  if (borrowpool.owners == nil) {
+    uartputs("pre_init_memory_system: initializing borrow pool\n", 52);
+    borrowinit();
+    uartputs("pre_init_memory_system: borrow pool initialized\n", 48);
+  } else {
+    uartputs("pre_init_memory_system: borrow pool already initialized\n", 58);
+  }
+
+  /* Transfer memory coordination state from bootloader to kernel */
+  /* This sets mem_coord.state = MEMORY_KERNEL_ACTIVE */
+  uartputs("pre_init_memory_system: transferring memory coordination\n", 56);
+  transfer_bootloader_to_kernel();
+  uartputs("pre_init_memory_system: memory coordination transferred\n", 57);
+
+  uartputs("pre_init_memory_system: complete\n", 33);
 }
 /**
- * Prepare kernel page tables, establish HHDM and kernel mappings, then switch CR3 and continue boot.
+ * Prepare kernel page tables, establish HHDM and kernel mappings, then switch
+ * CR3 and continue boot.
  *
- * Initializes the kernel's PML4, maps the kernel image at KZERO and into the Higher Half Direct Map (HHDM),
- * constructs 2MB HHDM mappings covering actual physical memory, ensures the memory subsystem is ready for
- * the CR3 switch, performs the CR3 switch to the newly prepared page tables, updates the kernel MMU state,
- * and transfers control to main_after_cr3. This function does not return on success.
+ * Initializes the kernel's PML4, maps the kernel image at KZERO and into the
+ * Higher Half Direct Map (HHDM), constructs 2MB HHDM mappings covering actual
+ * physical memory, ensures the memory subsystem is ready for the CR3 switch,
+ * performs the CR3 switch to the newly prepared page tables, updates the kernel
+ * MMU state, and transfers control to main_after_cr3. This function does not
+ * return on success.
  */
-void
-setuppagetables(void)
-{
-	u64int *pml4;
-	u64int pml4_phys;
-	int i;
-	extern char end[];
+void setuppagetables(void) {
+  u64int *pml4;
+  u64int pml4_phys;
+  int i;
+  extern char end[];
 
-	uartputs("setuppagetables: ENTRY\n", 23);
+  uartputs("setuppagetables: ENTRY\n", 23);
 
-	/* Linker-provided symbols - declared in lib.h as char[] */
+  /* Linker-provided symbols - declared in lib.h as char[] */
 
+  /* Use OUR page tables from linker script - completely independent of Limine
+   */
+  extern u64int cpu0pml4[];
 
-	/* Use OUR page tables from linker script - completely independent of Limine */
-	extern u64int cpu0pml4[];
+  uartputs("setuppagetables: setting pml4 = cpu0pml4\n", 42);
+  pml4 = cpu0pml4;
+  uartputs("setuppagetables: pml4 set\n", 26);
+  uartputs("setuppagetables: about to set next_pt\n", 39);
+  next_pt = nil;
+  uartputs("setuppagetables: pt_count = 0\n", 31);
+  pt_count = 0;
+  uartputs("setuppagetables: calling virt2phys(pml4)\n", 41);
+  pml4_phys = virt2phys(pml4);
+  uartputs("setuppagetables: pml4_phys computed\n", 37);
 
-	uartputs("setuppagetables: setting pml4 = cpu0pml4\n", 42);
-	pml4 = cpu0pml4;
-	uartputs("setuppagetables: pml4 set\n", 26);
-	uartputs("setuppagetables: about to set next_pt\n", 39);
-	next_pt = nil;
-	uartputs("setuppagetables: pt_count = 0\n", 31);
-	pt_count = 0;
-	uartputs("setuppagetables: calling virt2phys(pml4)\n", 41);
-	pml4_phys = virt2phys(pml4);
-	uartputs("setuppagetables: pml4_phys computed\n", 37);
+  uartputs("setuppagetables: about to clear PML4\n", 37);
+  /* Clear OUR PML4 to start fresh */
+  for (i = 0; i < 512; i++)
+    pml4[i] = 0;
+  uartputs("setuppagetables: PML4 cleared\n", 30);
 
-	uartputs("setuppagetables: about to clear PML4\n", 37);
-	/* Clear OUR PML4 to start fresh */
-	for(i = 0; i < 512; i++)
-		pml4[i] = 0;
-	uartputs("setuppagetables: PML4 cleared\n", 30);
+  /* Keep kernel at Limine load address - no relocation needed
+   * Limine loads us high (~2GB), and we can work with that
+   * Strategy: Map KZERO directly to the actual physical load address */
+  extern u64int limine_kernel_phys_base;
+  extern char ttext[], etext[], kend[]; /* Kernel boundaries from linker */
 
-	/* Keep kernel at Limine load address - no relocation needed
-	 * Limine loads us high (~2GB), and we can work with that
-	 * Strategy: Map KZERO directly to the actual physical load address */
-	extern u64int limine_kernel_phys_base;
-	extern char ttext[], etext[], kend[];  /* Kernel boundaries from linker */
+  u64int kernel_phys =
+      limine_kernel_phys_base; /* Keep at Limine load address */
+  uintptr kernel_map_size =
+      (uintptr)kend - KZERO; /* Entire ELF span up to kend */
 
-	u64int kernel_phys = limine_kernel_phys_base;  /* Keep at Limine load address */
-	uintptr kernel_map_size = (uintptr)kend - KZERO;  /* Entire ELF span up to kend */
+  uartputs("setuppagetables: using kernel at Limine load address\n", 53);
+  dbghex("  kernel physical (Limine): ", kernel_phys);
+  dbghex("  kernel map size: ", kernel_map_size);
+  u64int kernel_phys_end = kernel_phys + kernel_map_size;
+  uintptr cpu0_data_va = (uintptr)cpu0data_start;
+  uintptr cpu0_data_size = (uintptr)cpu0data_end - cpu0_data_va;
+  uartputs("setuppagetables: cpu0_data region\n", 34);
+  dbghex("  cpu0_data start: ", cpu0_data_va);
+  dbghex("  cpu0_data size: ", cpu0_data_size);
 
-	uartputs("setuppagetables: using kernel at Limine load address\n", 53);
-	dbghex("  kernel physical (Limine): ", kernel_phys);
-	dbghex("  kernel map size: ", kernel_map_size);
-	u64int kernel_phys_end = kernel_phys + kernel_map_size;
-	uintptr cpu0_data_va = (uintptr)cpu0data_start;
-	uintptr cpu0_data_size = (uintptr)cpu0data_end - cpu0_data_va;
-	uartputs("setuppagetables: cpu0_data region\n", 34);
-	dbghex("  cpu0_data start: ", cpu0_data_va);
-	dbghex("  cpu0_data size: ", cpu0_data_size);
+  /* Map kernel at KZERO to actual Limine load address */
+  uartputs("setuppagetables: mapping KZERO to Limine load address\n", 52);
 
-	/* Map kernel at KZERO to actual Limine load address */
-	uartputs("setuppagetables: mapping KZERO to Limine load address\n", 52);
+  /* Extend mapping to include all global data that may not be covered by kend
+   */
+  extern char etext[];
+  uintptr required_map_size = (uintptr)etext - KZERO;
+  if (required_map_size > kernel_map_size) {
+    uartputs("setuppagetables: extending kernel mapping for global data\n", 57);
+    dbghex("  original map size: ", kernel_map_size);
+    dbghex("  required map size: ", required_map_size);
+    kernel_map_size = required_map_size;
+    kernel_phys_end = kernel_phys + kernel_map_size;
+  }
 
-	/* Extend mapping to include all global data that may not be covered by kend */
-	extern char etext[];
-	uintptr required_map_size = (uintptr)etext - KZERO;
-	if (required_map_size > kernel_map_size) {
-		uartputs("setuppagetables: extending kernel mapping for global data\n", 57);
-		dbghex("  original map size: ", kernel_map_size);
-		dbghex("  required map size: ", required_map_size);
-		kernel_map_size = required_map_size;
-		kernel_phys_end = kernel_phys + kernel_map_size;
-	}
+  /* Map full kernel image directly */
+  map_range(pml4, KZERO, kernel_phys, kernel_map_size,
+            PTEVALID | PTEWRITE | PTEGLOBAL);
+  uartputs("setuppagetables: KZERO mapped to kernel image\n", 47);
 
-	/* Map full kernel image directly */
-	map_range(pml4, KZERO, kernel_phys, kernel_map_size, PTEVALID | PTEWRITE | PTEGLOBAL);
-	uartputs("setuppagetables: KZERO mapped to kernel image\n", 47);
+  /* Mirror full kernel image into HHDM for memory functions */
+  uartputs("setuppagetables: mirroring kernel in HHDM\n", 43);
+  map_range(pml4, (u64int)kaddr((uintptr)kernel_phys), kernel_phys,
+            kernel_map_size, PTEVALID | PTEWRITE | PTEGLOBAL);
+  uartputs("setuppagetables: kernel mapping complete\n", 42);
+  uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
 
-	/* Mirror full kernel image into HHDM for memory functions */
-	uartputs("setuppagetables: mirroring kernel in HHDM\n", 43);
-	map_range(pml4, (u64int)kaddr((uintptr)kernel_phys), kernel_phys, kernel_map_size, PTEVALID | PTEWRITE | PTEGLOBAL);
-	uartputs("setuppagetables: kernel mapping complete\n", 42);
-	uartputs("setuppagetables: KZERO mapped to relocated kernel\n", 50);
+  /* Set max_physaddr from MemMin (already computed from Limine memory map)
+   * Don't use ensure_phys_range() yet - conf.mem isn't populated until
+   * meminit0() */
+  extern u64int MemMin;
+  if (MemMin > 0)
+    max_physaddr = MemMin;
+  else
+    max_physaddr = 64 * MiB; /* Safe fallback if MemMin not set */
+  if (kernel_phys_end > max_physaddr)
+    max_physaddr = kernel_phys_end;
 
-	/* Set max_physaddr from MemMin (already computed from Limine memory map)
-	 * Don't use ensure_phys_range() yet - conf.mem isn't populated until meminit0() */
-	extern u64int MemMin;
-	if(MemMin > 0)
-		max_physaddr = MemMin;
-	else
-		max_physaddr = 64*MiB;  /* Safe fallback if MemMin not set */
-	if(kernel_phys_end > max_physaddr)
-		max_physaddr = kernel_phys_end;
+  uartputs("setuppagetables: max_physaddr set from MemMin\n", 47);
+  dbghex("  max_physaddr: ", max_physaddr);
 
-	uartputs("setuppagetables: max_physaddr set from MemMin\n", 47);
-	dbghex("  max_physaddr: ", max_physaddr);
+  /* NOTE: We do NOT map high memory (>2GB physical) at KZERO because:
+   * 1. KZERO only has 2GB of virtual address space before wrapping
+   * 2. High memory access should use HHDM instead
+   * 3. Dynamic page mapping uses VMAP, not KZERO */
 
-	/* NOTE: We do NOT map high memory (>2GB physical) at KZERO because:
-	 * 1. KZERO only has 2GB of virtual address space before wrapping
-	 * 2. High memory access should use HHDM instead
-	 * 3. Dynamic page mapping uses VMAP, not KZERO */
+  /* HHDM provides access to low memory (0-8MB) for firmware/BIOS access
+   * No separate identity mapping needed - HHDM handles all physical memory */
+  uartputs("setuppagetables: using HHDM for low memory access\n", 52);
 
-	/* HHDM provides access to low memory (0-8MB) for firmware/BIOS access
-	 * No separate identity mapping needed - HHDM handles all physical memory */
-	uartputs("setuppagetables: using HHDM for low memory access\n", 52);
+  /* Setup HHDM mapping for all physical memory access */
+  uartputs("setuppagetables: setting up HHDM mapping\n", 45);
 
-	/* Setup HHDM mapping for all physical memory access */
-	uartputs("setuppagetables: setting up HHDM mapping\n", 45);
-	
-	/* Simple HHDM setup - covers all physical memory */
-	u64int hhdm_start = saved_limine_hhdm_offset;
-	u64int hhdm_end = hhdm_start + max_physaddr;
-	
-	/* Map only the actual physical memory we have, not a huge range */
-	/* Map in 2MB chunks to avoid excessive page table allocation */
-	for(u64int pa = 0; pa < max_physaddr; pa += PGLSZ(2)) {
-		u64int va = hhdm_start + pa;
-		u64int size = PGLSZ(2);  /* 2MB chunks */
-		if(pa + size > max_physaddr) size = max_physaddr - pa;
-		
-		/* Create 2MB mappings where possible for efficiency */
-		map_range_2mb(pml4, va, pa, size, PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
-	}
-	uartputs("setuppagetables: HHDM mapping complete\n", 42);
+  /* Simple HHDM setup - covers all physical memory */
+  u64int hhdm_start = saved_limine_hhdm_offset;
+  u64int hhdm_end = hhdm_start + max_physaddr;
 
-	/* Verify our current code location is mapped before switching */
-	uintptr current_rip;
-	__asm__ volatile("lea (%%rip), %0" : "=r"(current_rip));
-	uartputs("setuppagetables: current RIP check\n", 36);
+  /* Map only the actual physical memory we have, not a huge range */
+  /* Map in 2MB chunks to avoid excessive page table allocation */
+  for (u64int pa = 0; pa < max_physaddr; pa += PGLSZ(2)) {
+    u64int va = hhdm_start + pa;
+    u64int size = PGLSZ(2); /* 2MB chunks */
+    if (pa + size > max_physaddr)
+      size = max_physaddr - pa;
 
-	/* Check if RIP is in KZERO range */
-	if(current_rip >= KZERO) {
-		uartputs("setuppagetables: RIP is in KZERO range (good)\n", 48);
-	} else {
-		uartputs("setuppagetables: RIP NOT in KZERO range (bad!)\n", 49);
-	}
+    /* Create 2MB mappings where possible for efficiency */
+    map_range_2mb(pml4, va, pa, size,
+                  PTEVALID | PTEWRITE | PTEGLOBAL | PTESIZE | PTEACCESSED);
+  }
+  uartputs("setuppagetables: HHDM mapping complete\n", 42);
 
-	/* Debug: Check PML4 entries before switch */
-	uartputs("setuppagetables: checking PML4 entries\n", 40);
-	if(pml4[0] & PTEVALID)
-		uartputs("  PML4[0] (identity 0-8MB) is valid\n", 37);
-	if(pml4[511] & PTEVALID)
-		uartputs("  PML4[511] (KZERO) is valid\n", 30);
-	uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
-	uintptr saved_pml4 = (uintptr)m->pml4;
-	m->pml4 = pml4;
-	uintptr current_sp;
-	__asm__ volatile("mov %%rsp, %0" : "=r"(current_sp));
-	dump_transition_pte("setuppagetables", (uintptr)setuppagetables);
-	dump_transition_pte("uartputs", (uintptr)uartputs);
-	dump_transition_pte("stack", current_sp);
-	dump_transition_pte("main_after_cr3", (uintptr)main_after_cr3);
-	m->pml4 = (uintptr*)saved_pml4;
+  /* Verify our current code location is mapped before switching */
+  uintptr current_rip;
+  __asm__ volatile("lea (%%rip), %0" : "=r"(current_rip));
+  uartputs("setuppagetables: current RIP check\n", 36);
 
-	/* Simplified CR3 switch - HHDM ensures accessibility */
-	uartputs("setuppagetables: preparing simple CR3 switch\n", 50);
+  /* Check if RIP is in KZERO range */
+  if (current_rip >= KZERO) {
+    uartputs("setuppagetables: RIP is in KZERO range (good)\n", 48);
+  } else {
+    uartputs("setuppagetables: RIP NOT in KZERO range (bad!)\n", 49);
+  }
 
-	/* Check if memory system is ready before CR3 switch */
-	if(!memory_system_ready_before_cr3()) {
-		/* Transfer memory ownership from bootloader to kernel */
-		transfer_bootloader_to_kernel();
-		/* Initialize memory system for CR3 switch */
-		pre_init_memory_system();
-		uartputs("setuppagetables: memory system ready for CR3 switch\n", 50);
-	} else {
-		uartputs("setuppagetables: memory system already ready\n", 47);
-	}
+  /* Debug: Check PML4 entries before switch */
+  uartputs("setuppagetables: checking PML4 entries\n", 40);
+  if (pml4[0] & PTEVALID)
+    uartputs("  PML4[0] (identity 0-8MB) is valid\n", 37);
+  if (pml4[511] & PTEVALID)
+    uartputs("  PML4[511] (KZERO) is valid\n", 30);
+  uartputs("  No HHDM mapping (kernel uses VMAP)\n", 38);
+  uintptr saved_pml4 = (uintptr)m->pml4;
+  m->pml4 = pml4;
+  uintptr current_sp;
+  __asm__ volatile("mov %%rsp, %0" : "=r"(current_sp));
+  dump_transition_pte("setuppagetables", (uintptr)setuppagetables);
+  dump_transition_pte("uartputs", (uintptr)uartputs);
+  dump_transition_pte("stack", current_sp);
+  dump_transition_pte("main_after_cr3", (uintptr)main_after_cr3);
+  m->pml4 = (uintptr *)saved_pml4;
 
-	/* Simple, direct CR3 switch - HHDM ensures both old and new code are accessible */
-	uartputs("setuppagetables: switching to kernel page tables\n", 50);
-	dbghex("setuppagetables: new CR3 ", pml4_phys);
-	dbghex("setuppagetables: pml4 virt ", (uintptr)pml4);
-	debugcon_print("DBG switching CR3 to ");
-	debugcon_hex(pml4_phys);
-	debugcon_putc('\n');
-	__asm__ volatile(
-		"mov %0, %%cr3" 
-		: : "r"(pml4_phys) 
-		: "memory"
-	);
+  /* Simplified CR3 switch - HHDM ensures accessibility */
+  uartputs("setuppagetables: preparing simple CR3 switch\n", 50);
 
-	/* Update kernel's page table pointer */
-	m->pml4 = pml4;
-	uartputs("setuppagetables: CR3 switch complete\n", 40);
+  /* Check if memory system is ready before CR3 switch */
+  if (!memory_system_ready_before_cr3()) {
+    /* Transfer memory ownership from bootloader to kernel */
+    transfer_bootloader_to_kernel();
+    /* Initialize memory system for CR3 switch */
+    pre_init_memory_system();
+    uartputs("setuppagetables: memory system ready for CR3 switch\n", 50);
+  } else {
+    uartputs("setuppagetables: memory system already ready\n", 47);
+  }
 
-	/* Direct call to continue boot - no trampoline needed */
-	uartputs("setuppagetables: calling main_after_cr3\n", 44);
-	main_after_cr3();
+  /* Simple, direct CR3 switch - HHDM ensures both old and new code are
+   * accessible */
+  uartputs("setuppagetables: switching to kernel page tables\n", 50);
+  dbghex("setuppagetables: new CR3 ", pml4_phys);
+  dbghex("setuppagetables: pml4 virt ", (uintptr)pml4);
+  debugcon_print("DBG switching CR3 to ");
+  debugcon_hex(pml4_phys);
+  debugcon_putc('\n');
+  __asm__ volatile("mov %0, %%cr3" : : "r"(pml4_phys) : "memory");
 
-	/* Should never reach here */
-	panic("setuppagetables: main_after_cr3 returned unexpectedly");
+  /* Update kernel's page table pointer */
+  m->pml4 = pml4;
+  uartputs("setuppagetables: CR3 switch complete\n", 40);
+
+  /* Direct call to continue boot - no trampoline needed */
+  uartputs("setuppagetables: calling main_after_cr3\n", 44);
+  main_after_cr3();
+
+  /* Should never reach here */
+  panic("setuppagetables: main_after_cr3 returned unexpectedly");
 }
 
 /**
- * Initialize per-CPU MMU and CPU state required for kernel operation on this processor.
+ * Initialize per-CPU MMU and CPU state required for kernel operation on this
+ * processor.
  *
- * Performs processor-local setup needed before switching to kernel page tables and user/syscall transitions.
- * This includes allocating and initializing the TSS, installing and loading the GDT and IDT, loading the TSS,
- * initializing task-switch state, configuring model-specific registers used for syscall handling (EFER, STAR, LSTAR, SFMASK),
- * and setting FS/GS base registers.
+ * Performs processor-local setup needed before switching to kernel page tables
+ * and user/syscall transitions. This includes allocating and initializing the
+ * TSS, installing and loading the GDT and IDT, loading the TSS, initializing
+ * task-switch state, configuring model-specific registers used for syscall
+ * handling (EFER, STAR, LSTAR, SFMASK), and setting FS/GS base registers.
  *
  * If TSS allocation fails, the function will panic.
  */
-void
-mmuinit(void)
-{
-	uintptr x;
-	vlong v;
-	int i;
+void mmuinit(void) {
+  uintptr x;
+  vlong v;
+  int i;
 
-	if(m->machno == 0)
-		kernelro();
+  if (m->machno == 0)
+    kernelro();
 
-	m->tss = mallocz(sizeof(Tss), 1);
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: TSS allocated at %p\n", m->tss);
-	*/
-	if(m->tss == nil)
-		panic("mmuinit: no memory for Tss");
-	m->tss->iomap = 0xDFFF;
-	/* Leave IST slots zeroed so traps stay on the current stack unless explicitly requested */
+  m->tss = mallocz(sizeof(Tss), 1);
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG: TSS allocated at %p\n", m->tss);
+  */
+  if (m->tss == nil)
+    panic("mmuinit: no memory for Tss");
+  m->tss->iomap = 0xDFFF;
+  /* Leave IST slots zeroed so traps stay on the current stack unless explicitly
+   * requested */
 
-	/*
-	 * We used to keep the GDT in the Mach structure, but it
-	 * turns out that that slows down access to the rest of the
-	 * page.  Since the Mach structure is accessed quite often,
-	 * it pays off anywhere from a factor of 1.25 to 2 on real
-	 * hardware to separate them (the AMDs are more sensitive
-	 * than Intels in this regard).  Under VMware it pays off
-	 * a factor of about 10 to 100.
-	 */
-	/* Ensure m->gdt is valid - using static allocation for bootstrap */
-	if (m->gdt == 0) {
-		static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));
-		m->gdt = dynamic_gdt;
-	}
-	
-	memmove(m->gdt, gdt, sizeof gdt);
+  /*
+   * We used to keep the GDT in the Mach structure, but it
+   * turns out that that slows down access to the rest of the
+   * page.  Since the Mach structure is accessed quite often,
+   * it pays off anywhere from a factor of 1.25 to 2 on real
+   * hardware to separate them (the AMDs are more sensitive
+   * than Intels in this regard).  Under VMware it pays off
+   * a factor of about 10 to 100.
+   */
+  /* Ensure m->gdt is valid - using static allocation for bootstrap */
+  if (m->gdt == 0) {
+    static Segdesc dynamic_gdt[NGDT] __attribute__((aligned(16)));
+    m->gdt = dynamic_gdt;
+  }
 
-	x = (uintptr)m->tss;
-	m->gdt[TSSSEG+0].d0 = (x<<16)|0xFFFF;  /* Limit 64KB to cover I/O Map Base */
-	m->gdt[TSSSEG+0].d1 = (x&0xFF000000)|((x>>16)&0xFF)|SEGTSS|SEGPL(0)|SEGP;
-	m->gdt[TSSSEG+1].d0 = x>>32;
-	m->gdt[TSSSEG+1].d1 = 0;
+  memmove(m->gdt, gdt, sizeof gdt);
 
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Loading GDT\n");
-	*/
-	loadptr(sizeof(gdt)-1, (uintptr)m->gdt, lgdt);
-	/* IDT already set up by trapinit0() - don't reload from uninitialized IDT */
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Setting up task switch\n");
-	*/
-	taskswitch((uintptr)m + MACHSIZE);
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Loading TSS\n");
-	*/
-	ltr(TSSSEL);
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG: Setting up MSRs\n");
-	print("DEBUG: Setting up MSRs\n");
-	*/
-	/* KernelGSBase must always point at the per-CPU Mach* so swapgs works. */
-	wrmsr(FSbase, 0ull);			/* user TLS set later on EXEC */
-	wrmsr(GSbase, 0ull);			/* user GS unused; leave clear */
-	wrmsr(KernelGSbase, (uvlong)&machp[m->machno]);	/* swapgs restores Mach* */
+  x = (uintptr)m->tss;
+  m->gdt[TSSSEG + 0].d0 =
+      (x << 16) | 0xFFFF; /* Limit 64KB to cover I/O Map Base */
+  m->gdt[TSSSEG + 0].d1 =
+      (x & 0xFF000000) | ((x >> 16) & 0xFF) | SEGTSS | SEGPL(0) | SEGP;
+  m->gdt[TSSSEG + 1].d0 = x >> 32;
+  m->gdt[TSSSEG + 1].d1 = 0;
 
-	/* enable syscall extension */
-	/* DEBUG: Reduced verbose mmuinit printing
-	print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
-	*/
-	
-	/* WORKAROUND: Fix NULL GDT pointer issue */
-	if (m->gdt == NULL) {
-		print("WORKAROUND: m->gdt is NULL, using dynamic allocation\n");
-		/* Allocate GDT dynamically instead of using fixed address */
-		static Segdesc dynamic_gdt[NGDT];
-		m->gdt = dynamic_gdt;
-		print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
-	}
-	
-	v = 0;
-	rdmsr(Efer, &v);
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG: Loading GDT\n");
+  */
+  loadptr(sizeof(gdt) - 1, (uintptr)m->gdt, lgdt);
+  /* IDT already set up by trapinit0() - don't reload from uninitialized IDT */
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG: Setting up task switch\n");
+  */
+  taskswitch((uintptr)m + MACHSIZE);
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG: Loading TSS\n");
+  */
+  ltr(TSSSEL);
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG: Setting up MSRs\n");
+  print("DEBUG: Setting up MSRs\n");
+  */
+  /* KernelGSBase must always point at the per-CPU Mach* so swapgs works. */
+  wrmsr(FSbase, 0ull); /* user TLS set later on EXEC */
+  wrmsr(GSbase, 0ull); /* user GS unused; leave clear */
+  wrmsr(KernelGSbase, (uvlong)&machp[m->machno]); /* swapgs restores Mach* */
 
-	v |= 1ull;  /* Enable SCE */
-	wrmsr(Efer, v);
-	
-	/* We use IRETQ for all returns instead of the faster SYSRET instruction.
-	 * But we MUST set up MSRs for SYSCALL entry. */
-	extern void syscallentry(void);
-	wrmsr(Star, ((uvlong)UDSEL << 48) | ((uvlong)KESEL << 32));
-	wrmsr(Lstar, (uvlong)syscallentry);
-	wrmsr(Sfmask, 0x200);
-	
-	/* Reload data segments to KDSEL (0x10) */
-	__asm__ volatile(
-		"mov %0, %%ds\n"
-		"mov %0, %%es\n"
-		"mov %0, %%ss\n"
-		: : "r" ((u16int)KDSEL) : "memory"
-	);
+  /* enable syscall extension */
+  /* DEBUG: Reduced verbose mmuinit printing
+  print("DEBUG[mmuinit]: About to set up GDT, m->gdt = %p\n", m->gdt);
+  */
 
-	/* Reload CS to KESEL (0x08) to match our GDT */
-	/* This prevents GPF on IRETQ if previous CS (from bootloader) is now invalid */
-	__asm__ volatile(
-		"pushq %0\n"
-		"leaq 1f(%%rip), %%rax\n"
-		"pushq %%rax\n"
-		"lretq\n"
-		"1:\n"
-		: : "i"(KESEL) : "rax", "memory"
-	);
+  /* WORKAROUND: Fix NULL GDT pointer issue */
+  if (m->gdt == NULL) {
+    print("WORKAROUND: m->gdt is NULL, using dynamic allocation\n");
+    /* Allocate GDT dynamically instead of using fixed address */
+    static Segdesc dynamic_gdt[NGDT];
+    m->gdt = dynamic_gdt;
+    print("WORKAROUND: Set m->gdt to dynamic GDT at %p\n", m->gdt);
+  }
+
+  v = 0;
+  rdmsr(Efer, &v);
+
+  v |= 1ull; /* Enable SCE */
+  wrmsr(Efer, v);
+
+  /* We use IRETQ for all returns instead of the faster SYSRET instruction.
+   * But we MUST set up MSRs for SYSCALL entry. */
+  extern void syscallentry(void);
+  wrmsr(Star, ((uvlong)UDSEL << 48) | ((uvlong)KESEL << 32));
+  wrmsr(Lstar, (uvlong)syscallentry);
+  wrmsr(Sfmask, 0x200);
+
+  /* Reload data segments to KDSEL (0x10) */
+  __asm__ volatile("mov %0, %%ds\n"
+                   "mov %0, %%es\n"
+                   "mov %0, %%ss\n"
+                   :
+                   : "r"((u16int)KDSEL)
+                   : "memory");
+
+  /* Reload CS to KESEL (0x08) to match our GDT */
+  /* This prevents GPF on IRETQ if previous CS (from bootloader) is now invalid
+   */
+  __asm__ volatile("pushq %0\n"
+                   "leaq 1f(%%rip), %%rax\n"
+                   "pushq %%rax\n"
+                   "lretq\n"
+                   "1:\n"
+                   :
+                   : "i"(KESEL)
+                   : "rax", "memory");
 }
 
 /*
@@ -717,207 +716,197 @@ mmuinit(void)
  * but the extra checking is nice to have.
  */
 
-void*
-kaddr(uintptr pa)
-{
-	if(saved_limine_hhdm_offset == 0)
-		panic("kaddr: HHDM not initialized yet!");
-	return (void*)hhdm_virt(pa);
+void *kaddr(uintptr pa) {
+  if (saved_limine_hhdm_offset == 0)
+    panic("kaddr: HHDM not initialized yet!");
+  return (void *)hhdm_virt(pa);
 }
 
-uintptr
-paddr(void *v)
-{
-	/* Handle multiple address spaces:
-	 * HHDM, KZERO (kernel), and VMAP (virtual mappings) */
-	extern u64int limine_kernel_phys_base;
-	extern uintptr hhdm_base;
-	extern char end[];
-	uintptr va;
+uintptr paddr(void *v) {
+  /* Handle multiple address spaces:
+   * HHDM, KZERO (kernel), and VMAP (virtual mappings) */
+  extern u64int limine_kernel_phys_base;
+  extern uintptr hhdm_base;
+  extern char end[];
+  uintptr va;
 
-	va = (uintptr)v;
+  va = (uintptr)v;
 
-	/* HHDM addresses - direct physical mapping */
-	if(va >= hhdm_base && va < hhdm_base + (256ULL*GiB)) {
-		return va - hhdm_base;
-	}
+  /* HHDM addresses - direct physical mapping */
+  if (va >= hhdm_base && va < hhdm_base + (256ULL * GiB)) {
+    return va - hhdm_base;
+  }
 
-	/* Kernel addresses at KZERO - kernel was relocated to physical 2MB */
-	if(va >= KZERO && va < (uintptr)end) {
-		/* Inside kernel image: kernel is now at physical 2MB (relocated from Limine's location) */
-		return (va - KZERO) + (2*MiB);
-	} else if(va >= KZERO) {
-		/* Outside kernel but >= KZERO: simple linear mapping */
-		return va - KZERO;
-	}
+  /* Kernel addresses at KZERO - kernel was relocated to physical 2MB */
+  if (va >= KZERO && va < (uintptr)end) {
+    /* Inside kernel image: kernel is now at physical 2MB (relocated from
+     * Limine's location) */
+    return (va - KZERO) + (2 * MiB);
+  } else if (va >= KZERO) {
+    /* Outside kernel but >= KZERO: simple linear mapping */
+    return va - KZERO;
+  }
 
-	/* VMAP addresses - exact 9front style */
-	if(va >= VMAP)
-		return va - VMAP;
+  /* VMAP addresses - exact 9front style */
+  if (va >= VMAP)
+    return va - VMAP;
 
-	/* Neither HHDM, KZERO, nor VMAP - panic like 9front does */
-	panic("paddr: va=%#p pc=%#p", va, getcallerpc(&v));
+  /* Neither HHDM, KZERO, nor VMAP - panic like 9front does */
+  panic("paddr: va=%#p pc=%#p", va, getcallerpc(&v));
 }
 
-static MMU*
-mmualloc(void)
-{
-	MMU *p;
+static MMU *mmualloc(void) {
+  MMU *p;
 
-	p = m->mmufree;
-	if(p != nil){
-		m->mmufree = p->next;
-		m->mmucount--;
-		p->next = nil;
-		return p;
-	}
+  p = m->mmufree;
+  if (p != nil) {
+    m->mmufree = p->next;
+    m->mmucount--;
+    p->next = nil;
+    return p;
+  }
 
-	p = mallocz(sizeof(MMU), 1);
-	if(p == nil)
-		return nil;
-	p->alloc = mallocz(PTSZ + BY2PG, 1);
-	if(p->alloc == nil){
-		free(p);
-		return nil;
-	}
-	p->page = (uintptr*)ROUND((uintptr)p->alloc, BY2PG);
-	/* Zero the page table page to ensure clean entries */
-	memset(p->page, 0, PTSZ);
-	return p;
+  p = mallocz(sizeof(MMU), 1);
+  if (p == nil)
+    return nil;
+  p->alloc = mallocz(PTSZ + BY2PG, 1);
+  if (p->alloc == nil) {
+    free(p);
+    return nil;
+  }
+  p->page = (uintptr *)ROUND((uintptr)p->alloc, BY2PG);
+  /* Zero the page table page to ensure clean entries */
+  memset(p->page, 0, PTSZ);
+  return p;
 }
 
 /*
  * pt_page - Allocate a page for page tables from the palloc pool
  * Returns HHDM virtual address of the page, or nil if none available
  */
-static uintptr*
-mmucreate(uintptr *table, uintptr va, int level, int index)
-{
-	uintptr *page, flags;
-	MMU *p;
-	extern uintptr hhdm_base;
+static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
+  uintptr *page, flags;
+  MMU *p;
+  extern uintptr hhdm_base;
 
-	flags = PTEWRITE|PTEVALID;
-	/* Check if this is a user address that requires a process context.
-	 * User addresses are < USTKTOP.
-	 * Kernel addresses include: >= KZERO, HHDM range (vmap uses HHDM for device MMIO).
-	 * The kmap region (USTKTOP to KZERO, outside HHDM) also requires up. */
-	if(va < VMAP && !is_hhdm_va(va)){
-		if(up == nil){
-			/* Early boot: no process context yet, allocate from global pool */
-			page = rampage();
-			if(page == nil)
-				return nil;
-			memset(page, 0, PTSZ);
-		}else{
-			if((p = mmualloc()) == nil)
-				return nil;
-			p->index = index;
-			p->level = level;
-			page = p->page;
-			memset(page, 0, PTSZ);
-			if(va < USTKTOP){
-				flags |= PTEUSER;
-				if(level == PML4E){
-					if((p->next = up->mmuhead) == nil)
-						up->mmutail = p;
-					up->mmuhead = p;
-					m->mmumap[index/MAPBITS] |= 1ull<<(index%MAPBITS);
-				}else{
-					if(up->mmutail != nil)
-						up->mmutail->next = p;
-					up->mmutail = p;
-				}
-				up->mmucount++;
-			}else{
-				if(level == PML4E){
-					up->kmaphead = p;
-					up->kmaptail = p;
-				}else{
-					if(up->kmaptail != nil)
-						up->kmaptail->next = p;
-					up->kmaptail = p;
-				}
-				up->kmapcount++;
-			}
-		}
-	}else{
-		page = rampage();
-		if(page == nil)
-			return nil;
-		memset(page, 0, PTSZ);
-	}
-	table[index] = PADDR(page) | flags;
-	mfence();  /* Memory barrier to ensure PTE write is visible before use */
-	print("mmucreate: va=%#p level=%d index=%d flags=%#llux entry=%#llux page=%#p\n",
-		va, level, index, (uvlong)flags, (uvlong)table[index], page);
-	return page;
+  flags = PTEWRITE | PTEVALID;
+  /* Check if this is a user address that requires a process context.
+   * User addresses are < USTKTOP.
+   * Kernel addresses include: >= KZERO, HHDM range (vmap uses HHDM for device
+   * MMIO). The kmap region (USTKTOP to KZERO, outside HHDM) also requires up.
+   */
+  if (va < VMAP && !is_hhdm_va(va)) {
+    if (up == nil || up->pid <= 2) {
+      /* Early boot or init process: no mallocz yet, use rampage */
+      page = rampage();
+      if (page == nil)
+        return nil;
+      memset(page, 0, PTSZ);
+      /* Set PTEUSER for user addresses */
+      if (va < USTKTOP)
+        flags |= PTEUSER;
+    } else {
+      if ((p = mmualloc()) == nil)
+        return nil;
+      p->index = index;
+      p->level = level;
+      page = p->page;
+      memset(page, 0, PTSZ);
+      if (va < USTKTOP) {
+        flags |= PTEUSER;
+        if (level == PML4E) {
+          if ((p->next = up->mmuhead) == nil)
+            up->mmutail = p;
+          up->mmuhead = p;
+          m->mmumap[index / MAPBITS] |= 1ull << (index % MAPBITS);
+        } else {
+          if (up->mmutail != nil)
+            up->mmutail->next = p;
+          up->mmutail = p;
+        }
+        up->mmucount++;
+      } else {
+        if (level == PML4E) {
+          up->kmaphead = p;
+          up->kmaptail = p;
+        } else {
+          if (up->kmaptail != nil)
+            up->kmaptail->next = p;
+          up->kmaptail = p;
+        }
+        up->kmapcount++;
+      }
+    }
+  } else {
+    page = rampage();
+    if (page == nil)
+      return nil;
+    memset(page, 0, PTSZ);
+  }
+  table[index] = PADDR(page) | flags;
+  mfence(); /* Memory barrier to ensure PTE write is visible before use */
+  print("mmucreate: va=%#p level=%d index=%d flags=%#llux entry=%#llux "
+        "page=%#p\n",
+        va, level, index, (uvlong)flags, (uvlong)table[index], page);
+  return page;
 }
 
-uintptr*
-mmuwalk(uintptr *table, uintptr va, int level, int create)
-{
-	uintptr pte;
-	int i, x;
+uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
+  uintptr pte;
+  int i, x;
 
-	x = PTLX(va, 3);
-	for(i = 2; i >= level; i--){
-		pte = table[x];
-		if(pte & PTEVALID){
-			if(pte & PTESIZE)
-				return nil;
-			pte = PPN(pte);
-			/* Pure HHDM model: ALL physical addresses mapped via HHDM */
-			table = (void*)hhdm_virt(pte);
-		} else {
-			if(!create)
-				return nil;
-			table = mmucreate(table, va, i, x);
-			if(table == nil)
-				return nil;
-		}
-		x = PTLX(va, i);
-	}
-	return &table[x];
+  x = PTLX(va, 3);
+  for (i = 2; i >= level; i--) {
+    pte = table[x];
+    if (pte & PTEVALID) {
+      if (pte & PTESIZE)
+        return nil;
+      pte = PPN(pte);
+      /* Pure HHDM model: ALL physical addresses mapped via HHDM */
+      table = (void *)hhdm_virt(pte);
+    } else {
+      if (!create)
+        return nil;
+      table = mmucreate(table, va, i, x);
+      if (table == nil)
+        return nil;
+    }
+    x = PTLX(va, i);
+  }
+  return &table[x];
 }
 
-static uintptr*
-getpte(uintptr va)
-{
-	uintptr *pte;
+static uintptr *getpte(uintptr va) {
+  uintptr *pte;
 
-	if((pte = mmuwalk(m->pml4, va, 0, 1)) == nil){
-		flushmmu();
-		while((pte = mmuwalk(m->pml4, va, 0, 1)) == nil){
-			int x = spllo();
-			resrcwait("out of MMU pages");
-			splx(x);
-		}
-	}
-	return pte;
+  if ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+    flushmmu();
+    while ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+      int x = spllo();
+      resrcwait("out of MMU pages");
+      splx(x);
+    }
+  }
+  return pte;
 }
 
-static int
-ptecount(uintptr va, int level)
-{
-	return (1<<PTSHIFT) - (va & PGLSZ(level+1)-1) / PGLSZ(level);
+static int ptecount(uintptr va, int level) {
+  return (1 << PTSHIFT) - (va & PGLSZ(level + 1) - 1) / PGLSZ(level);
 }
 
-static void
-ptesplit(uintptr* table, uintptr va)
-{
-	uintptr *pte, pa, off;
+static void ptesplit(uintptr *table, uintptr va) {
+  uintptr *pte, pa, off;
 
-	pte = mmuwalk(table, va, 1, 0);
-	if(pte == nil || (*pte & PTESIZE) == 0 || (va & PGLSZ(1)-1) == 0)
-		return;
-	table = rampage();
-	va &= -PGLSZ(1);
-	pa = *pte & ~PTESIZE;
-	for(off = 0; off < PGLSZ(1); off += PGLSZ(0))
-		table[PTLX(va + off, 0)] = pa + off;
-	*pte = PADDR(table) | PTEVALID|PTEWRITE;
-	invlpg(va);
+  pte = mmuwalk(table, va, 1, 0);
+  if (pte == nil || (*pte & PTESIZE) == 0 || (va & PGLSZ(1) - 1) == 0)
+    return;
+  table = rampage();
+  va &= -PGLSZ(1);
+  pa = *pte & ~PTESIZE;
+  for (off = 0; off < PGLSZ(1); off += PGLSZ(0))
+    table[PTLX(va + off, 0)] = pa + off;
+  *pte = PADDR(table) | PTEVALID | PTEWRITE;
+  invlpg(va);
 }
 
 /*
@@ -928,336 +917,314 @@ ptesplit(uintptr* table, uintptr va)
  * Simple approach: Copy only the PML4 page to writable memory.
  * Lower level page tables remain Limine's (they don't need to be modified).
  */
-void
-copypagetables(void)
-{
-	uintptr *oldpml4, *newpml4;
-	uintptr cr3;
+void copypagetables(void) {
+  uintptr *oldpml4, *newpml4;
+  uintptr cr3;
 
-	/* Get current PML4 from CR3 */
-	__asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-	oldpml4 = kaddr(PPN(cr3));
+  /* Get current PML4 from CR3 */
+  __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+  oldpml4 = kaddr(PPN(cr3));
 
-	/* Allocate a single writable page for our PML4 */
-	newpml4 = rampage();
-	if(newpml4 == nil)
-		panic("copypagetables: out of memory");
+  /* Allocate a single writable page for our PML4 */
+  newpml4 = rampage();
+  if (newpml4 == nil)
+    panic("copypagetables: out of memory");
 
-	/* Copy all PML4 entries - these point to Limine's lower level tables */
-	memmove(newpml4, oldpml4, PTSZ);
+  /* Copy all PML4 entries - these point to Limine's lower level tables */
+  memmove(newpml4, oldpml4, PTSZ);
 
-	/* Update m->pml4 to point to new writable PML4 */
-	m->pml4 = newpml4;
+  /* Update m->pml4 to point to new writable PML4 */
+  m->pml4 = newpml4;
 
-	/* DON'T switch CR3 - just use Limine's page tables for now */
-	/* Switching CR3 causes triple fault - needs more investigation */
-	/* cr3 = paddr(newpml4); */
-	/* __asm__ volatile("mov %0, %%cr3" : : "r"(cr3)); */
+  /* DON'T switch CR3 - just use Limine's page tables for now */
+  /* Switching CR3 causes triple fault - needs more investigation */
+  /* cr3 = paddr(newpml4); */
+  /* __asm__ volatile("mov %0, %%cr3" : : "r"(cr3)); */
 }
 
-static void
-kernelro(void)
-{
-	extern char ttext[], etext[], kend[];
-	uintptr *pte, psz, va;
-	uintptr kernel_end;
-	uintptr *active_pml4;
+static void kernelro(void) {
+  extern char ttext[], etext[], kend[];
+  uintptr *pte, psz, va;
+  uintptr kernel_end;
+  uintptr *active_pml4;
 
-	/* CRITICAL FIX: Only process kernel image, not entire address space!
-	 * Original bug: loop continued until va wrapped to 0, corrupting HHDM and other regions
-	 * Use kend (end of .rodata) not end (end of .data which comes before .text!) */
-	kernel_end = PGROUND((uintptr)kend) + 16*MiB;  /* Kernel + reasonable margin */
+  /* CRITICAL FIX: Only process kernel image, not entire address space!
+   * Original bug: loop continued until va wrapped to 0, corrupting HHDM and
+   * other regions Use kend (end of .rodata) not end (end of .data which comes
+   * before .text!) */
+  kernel_end =
+      PGROUND((uintptr)kend) + 16 * MiB; /* Kernel + reasonable margin */
 
-	/* Get the ACTIVE page tables from CR3, not m->pml4 which is unused */
-	active_pml4 = (uintptr*)getcr3();
-	active_pml4 = (uintptr*)kaddr((uintptr)active_pml4);  /* Convert physical to virtual */
+  /* Get the ACTIVE page tables from CR3, not m->pml4 which is unused */
+  active_pml4 = (uintptr *)getcr3();
+  active_pml4 =
+      (uintptr *)kaddr((uintptr)active_pml4); /* Convert physical to virtual */
 
-	print("kernelro: ttext=%#p etext=%#p kend=%#p kernel_end=%#p\n",
-	      ttext, etext, kend, kernel_end);
-	print("kernelro: active CR3=%#p (using Limine's page tables)\n", active_pml4);
-	print("kernelro: m->havenx=%d PTENOEXEC=%#llux\n", m->havenx, PTENOEXEC);
+  print("kernelro: ttext=%#p etext=%#p kend=%#p kernel_end=%#p\n", ttext, etext,
+        kend, kernel_end);
+  print("kernelro: active CR3=%#p (using Limine's page tables)\n", active_pml4);
+  print("kernelro: m->havenx=%d PTENOEXEC=%#llux\n", m->havenx, PTENOEXEC);
 
-	ptesplit(active_pml4, APBOOTSTRAP);
-	ptesplit(active_pml4, KTZERO);
-	ptesplit(active_pml4, (uintptr)ttext);
-	ptesplit(active_pml4, (uintptr)etext-1);
+  ptesplit(active_pml4, APBOOTSTRAP);
+  ptesplit(active_pml4, KTZERO);
+  ptesplit(active_pml4, (uintptr)ttext);
+  ptesplit(active_pml4, (uintptr)etext - 1);
 
-	/* Now we can modify PTEs - our page tables are writable! */
-	uintptr text_pages = 0, noexec_pages = 0;
-	for(va = KZERO; va < kernel_end; va += psz){
-		psz = PGLSZ(0);
-		pte = mmuwalk(active_pml4, va, 0, 0);
-		if(pte == nil){
-			if(va & PGLSZ(1)-1)
-				continue;
-			pte = mmuwalk(active_pml4, va, 1, 0);
-			if(pte == nil)
-				continue;
-			psz = PGLSZ(1);
-		}
-		if((*pte & PTEVALID) == 0)
-			continue;
-		if(va >= (uintptr)ttext && va < (uintptr)etext){
-			uvlong old_pte = *pte;
-			*pte &= ~PTEWRITE;  /* Make text section read-only */
-			if(text_pages < 3 || va == 0xffffffff802e8000){  /* Debug first few and todinit page */
-				print("  text page va=%#p: pte %#llux -> %#llux\n", va, old_pte, *pte);
-			}
-			text_pages++;
-			invlpg(va);
-		}
-		/* TEMPORARY: Skip PTENOEXEC to isolate the issue */
-		/*
-		else if(va != (APBOOTSTRAP & -BY2PG)){
-			*pte |= PTENOEXEC;
-			noexec_pages++;
-			invlpg(va);
-		}
-		*/
-	}
-	print("kernelro: marked %lud text pages R-X, %lud data pages RW-\n",
-	      text_pages, noexec_pages);
+  /* Now we can modify PTEs - our page tables are writable! */
+  uintptr text_pages = 0, noexec_pages = 0;
+  for (va = KZERO; va < kernel_end; va += psz) {
+    psz = PGLSZ(0);
+    pte = mmuwalk(active_pml4, va, 0, 0);
+    if (pte == nil) {
+      if (va & PGLSZ(1) - 1)
+        continue;
+      pte = mmuwalk(active_pml4, va, 1, 0);
+      if (pte == nil)
+        continue;
+      psz = PGLSZ(1);
+    }
+    if ((*pte & PTEVALID) == 0)
+      continue;
+    if (va >= (uintptr)ttext && va < (uintptr)etext) {
+      uvlong old_pte = *pte;
+      *pte &= ~PTEWRITE; /* Make text section read-only */
+      if (text_pages < 3 ||
+          va == 0xffffffff802e8000) { /* Debug first few and todinit page */
+        print("  text page va=%#p: pte %#llux -> %#llux\n", va, old_pte, *pte);
+      }
+      text_pages++;
+      invlpg(va);
+    }
+    /* TEMPORARY: Skip PTENOEXEC to isolate the issue */
+    /*
+    else if(va != (APBOOTSTRAP & -BY2PG)){
+            *pte |= PTENOEXEC;
+            noexec_pages++;
+            invlpg(va);
+    }
+    */
+  }
+  print("kernelro: marked %lud text pages R-X, %lud data pages RW-\n",
+        text_pages, noexec_pages);
 }
 
-void
-pmap(uintptr pa, uintptr va, vlong size)
-{
-	uintptr *pte, *ptee, flags;
-	int z, l;
+void pmap(uintptr pa, uintptr va, vlong size) {
+  uintptr *pte, *ptee, flags;
+  int z, l;
 
-	/* Pure HHDM model: accept addresses in HHDM range, not VMAP */
-	if(size <= 0)
-		panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
-	flags = pa;
-	pa = PPN(pa);
-	flags -= pa;
-	flags |= PTEACCESSED|PTEDIRTY;
-	if(va >= KZERO)
-		flags |= PTEGLOBAL;
-	while(size > 0){
-	if(size >= PGLSZ(1) && size < PGLSZ(2) && (va % PGLSZ(1)) == 0)
-			flags |= PTESIZE;
-		l = (flags & PTESIZE) != 0;
-		z = PGLSZ(l);
-		pte = mmuwalk(m->pml4, va, l, 1);
-		if(pte == nil){
-			pte = mmuwalk(m->pml4, va, ++l, 0);
-			if(pte && (*pte & PTESIZE)){
-				flags |= PTESIZE;
-				z = va & (PGLSZ(l)-1);
-				va -= z;
-				pa -= z;
-				size += z;
-				continue;
-			}
-			panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
-		}
-		ptee = pte + ptecount(va, l);
-		while(size > 0 && pte < ptee){
-			*pte++ = pa | flags;
-			pa += z;
-			va += z;
-			size -= z;
-		}
-	}
+  /* Pure HHDM model: accept addresses in HHDM range, not VMAP */
+  if (size <= 0)
+    panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
+  flags = pa;
+  pa = PPN(pa);
+  flags -= pa;
+  flags |= PTEACCESSED | PTEDIRTY;
+  if (va >= KZERO)
+    flags |= PTEGLOBAL;
+  while (size > 0) {
+    if (size >= PGLSZ(1) && size < PGLSZ(2) && (va % PGLSZ(1)) == 0)
+      flags |= PTESIZE;
+    l = (flags & PTESIZE) != 0;
+    z = PGLSZ(l);
+    pte = mmuwalk(m->pml4, va, l, 1);
+    if (pte == nil) {
+      pte = mmuwalk(m->pml4, va, ++l, 0);
+      if (pte && (*pte & PTESIZE)) {
+        flags |= PTESIZE;
+        z = va & (PGLSZ(l) - 1);
+        va -= z;
+        pa -= z;
+        size += z;
+        continue;
+      }
+      panic("pmap: pa=%#p va=%#p size=%lld", pa, va, size);
+    }
+    ptee = pte + ptecount(va, l);
+    while (size > 0 && pte < ptee) {
+      *pte++ = pa | flags;
+      pa += z;
+      va += z;
+      size -= z;
+    }
+  }
 }
 
-void
-punmap(uintptr va, vlong size)
-{
-	uintptr *pte;
-	int l;
+void punmap(uintptr va, vlong size) {
+  uintptr *pte;
+  int l;
 
-	va = PPN(va);
-	while(size > 0){
-		if((va % PGLSZ(1)) != 0 || size < PGLSZ(1))
-			ptesplit(m->pml4, va);
-		l = 0;
-		pte = mmuwalk(m->pml4, va, l, 0);
-		if(pte == nil && (va % PGLSZ(1)) == 0 && size >= PGLSZ(1))
-			pte = mmuwalk(m->pml4, va, ++l, 0);
-		if(pte){
-			*pte = 0;
-			invlpg(va);
-		}
-		va += PGLSZ(l);
-		size -= PGLSZ(l);
-	}
+  va = PPN(va);
+  while (size > 0) {
+    if ((va % PGLSZ(1)) != 0 || size < PGLSZ(1))
+      ptesplit(m->pml4, va);
+    l = 0;
+    pte = mmuwalk(m->pml4, va, l, 0);
+    if (pte == nil && (va % PGLSZ(1)) == 0 && size >= PGLSZ(1))
+      pte = mmuwalk(m->pml4, va, ++l, 0);
+    if (pte) {
+      *pte = 0;
+      invlpg(va);
+    }
+    va += PGLSZ(l);
+    size -= PGLSZ(l);
+  }
 }
 
-static void
-mmuzap(void)
-{
-	uintptr *pte;
-	u64int w;
-	int i, x;
+static void mmuzap(void) {
+  uintptr *pte;
+  u64int w;
+  int i, x;
 
-	pte = m->pml4;
-	pte[PTLX(KMAP, 3)] = 0;
+  pte = m->pml4;
+  pte[PTLX(KMAP, 3)] = 0;
 
-	/* common case */
-	pte[PTLX(UTZERO, 3)] = 0;
-	pte[PTLX(USTKTOP-1, 3)] = 0;
-	m->mmumap[PTLX(UTZERO, 3)/MAPBITS] &= ~(1ull<<(PTLX(UTZERO, 3)%MAPBITS));
-	m->mmumap[PTLX(USTKTOP-1, 3)/MAPBITS] &= ~(1ull<<(PTLX(USTKTOP-1, 3)%MAPBITS));
+  /* common case */
+  pte[PTLX(UTZERO, 3)] = 0;
+  pte[PTLX(USTKTOP - 1, 3)] = 0;
+  m->mmumap[PTLX(UTZERO, 3) / MAPBITS] &=
+      ~(1ull << (PTLX(UTZERO, 3) % MAPBITS));
+  m->mmumap[PTLX(USTKTOP - 1, 3) / MAPBITS] &=
+      ~(1ull << (PTLX(USTKTOP - 1, 3) % MAPBITS));
 
-	for(i = 0; i < nelem(m->mmumap); pte += MAPBITS, i++){
-		if((w = m->mmumap[i]) == 0)
-			continue;
-		m->mmumap[i] = 0;
-		for(x = 0; w != 0; w >>= 1, x++){
-			if(w & 1)
-				pte[x] = 0;
-		}
-	}
+  for (i = 0; i < nelem(m->mmumap); pte += MAPBITS, i++) {
+    if ((w = m->mmumap[i]) == 0)
+      continue;
+    m->mmumap[i] = 0;
+    for (x = 0; w != 0; w >>= 1, x++) {
+      if (w & 1)
+        pte[x] = 0;
+    }
+  }
 
-	/* Flush TLB by reloading CR3 - read and write same value */
-	putcr3(getcr3());
+  /* Flush TLB by reloading CR3 - read and write same value */
+  putcr3(getcr3());
 }
 
-static void
-mmufree(Proc *proc)
-{
-	MMU *next, *p;
+static void mmufree(Proc *proc) {
+  MMU *next, *p;
 
-	for(p = proc->mmuhead; p != nil; p = next){
-		next = p->next;
-		if(m->mmucount < MMUFREELIMIT){
-			p->next = m->mmufree;
-			m->mmufree = p;
-			m->mmucount++;
-			continue;
-		}
-		free(p->alloc);
-		free(p);
-	}
-	proc->mmuhead = proc->mmutail = nil;
-	proc->mmucount = 0;
+  for (p = proc->mmuhead; p != nil; p = next) {
+    next = p->next;
+    if (m->mmucount < MMUFREELIMIT) {
+      p->next = m->mmufree;
+      m->mmufree = p;
+      m->mmucount++;
+      continue;
+    }
+    free(p->alloc);
+    free(p);
+  }
+  proc->mmuhead = proc->mmutail = nil;
+  proc->mmucount = 0;
 }
 
-void
-flushmmu(void)
-{
-	int x;
+void flushmmu(void) {
+  int x;
 
-	print("flushmmu: called, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
-	x = splhi();
-	up->newtlb = 1;
-	mmuswitch(up);
-	splx(x);
-	print("flushmmu: done, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
+  print("flushmmu: called, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
+  x = splhi();
+  up->newtlb = 1;
+  mmuswitch(up);
+  splx(x);
+  print("flushmmu: done, pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
 }
 
-void
-mmuswitch(Proc *proc)
-{
-	MMU *p;
+void mmuswitch(Proc *proc) {
+  MMU *p;
 
-	/* For kernel processes, there are no user MMU structures */
-	if(proc->kp){
-		taskswitch((uintptr)proc);
-		return;
-	}
+  /* For kernel processes, there are no user MMU structures */
+  if (proc->kp) {
+    taskswitch((uintptr)proc);
+    return;
+  }
 
-	mmuzap();
-	if(proc->newtlb){
-		mmufree(proc);
-		proc->newtlb = 0;
-	}
+  mmuzap();
+  if (proc->newtlb) {
+    mmufree(proc);
+    proc->newtlb = 0;
+  }
 
-	if((p = proc->kmaphead) != nil){
-		m->pml4[PTLX(KMAP, 3)] = PADDR(p->page) | PTEWRITE|PTEVALID;
-	}
-	
-	/* Process all PML4E entries in the linked list */
-	for(p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next){
-		m->mmumap[p->index/MAPBITS] |= 1ull<<(p->index%MAPBITS);
-		m->pml4[p->index] = PADDR(p->page) | PTEUSER|PTEWRITE|PTEVALID;
-	}
-	
-	taskswitch((uintptr)proc);
+  if ((p = proc->kmaphead) != nil) {
+    m->pml4[PTLX(KMAP, 3)] = PADDR(p->page) | PTEWRITE | PTEVALID;
+  }
+
+  /* Process all PML4E entries in the linked list */
+  for (p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next) {
+    m->mmumap[p->index / MAPBITS] |= 1ull << (p->index % MAPBITS);
+    m->pml4[p->index] = PADDR(p->page) | PTEUSER | PTEWRITE | PTEVALID;
+  }
+
+  taskswitch((uintptr)proc);
 }
 
-void
-mmurelease(Proc *proc)
-{
-	MMU *p;
+void mmurelease(Proc *proc) {
+  MMU *p;
 
-	mmuzap();
-	if((p = proc->kmaptail) != nil){
-		if((p->next = proc->mmuhead) == nil)
-			proc->mmutail = p;
-		proc->mmuhead = proc->kmaphead;
-		proc->mmucount += proc->kmapcount;
+  mmuzap();
+  if ((p = proc->kmaptail) != nil) {
+    if ((p->next = proc->mmuhead) == nil)
+      proc->mmutail = p;
+    proc->mmuhead = proc->kmaphead;
+    proc->mmucount += proc->kmapcount;
 
-		proc->kmaphead = proc->kmaptail = nil;
-		proc->kmapcount = proc->kmapindex = 0;
-	}
-	mmufree(proc);
-	taskswitch((uintptr)m+MACHSIZE);
+    proc->kmaphead = proc->kmaptail = nil;
+    proc->kmapcount = proc->kmapindex = 0;
+  }
+  mmufree(proc);
+  taskswitch((uintptr)m + MACHSIZE);
 }
 
-void
-putmmu(uintptr va, uintptr pa, Page *)
-{
-	uintptr *pte, old;
-	int x;
+void putmmu(uintptr va, uintptr pa, Page *) {
+  uintptr *pte, old;
+  int x;
 
-	x = splhi();
-	pte = getpte(va);
-	old = *pte;
-	*pte = pa | PTEACCESSED|PTEDIRTY|PTEUSER|PTEWRITE|PTEVALID;
-	splx(x);
-	invlpg(va);
+  x = splhi();
+  pte = getpte(va);
+  old = *pte;
+  *pte = pa | PTEACCESSED | PTEDIRTY | PTEUSER | PTEWRITE | PTEVALID;
+  splx(x);
+  invlpg(va);
 }
 
 /*
  * Double-check the user MMU.
  * Error checking only.
  */
-void
-checkmmu(uintptr va, uintptr pa)
-{
-	uintptr *pte, old;
-	int x;
+void checkmmu(uintptr va, uintptr pa) {
+  uintptr *pte, old;
+  int x;
 
-	x = splhi();
-	pte = mmuwalk(m->pml4, va, 0, 0);
-	if(pte == nil || ((old = *pte) & PTEVALID) == 0 || PPN(old) == pa){
-		splx(x);
-		return;
-	}
-	splx(x);
-	print("%ld %s: va=%#p pa=%#p pte=%#p\n", up->pid, up->text, va, pa, old);
+  x = splhi();
+  pte = mmuwalk(m->pml4, va, 0, 0);
+  if (pte == nil || ((old = *pte) & PTEVALID) == 0 || PPN(old) == pa) {
+    splx(x);
+    return;
+  }
+  splx(x);
+  print("%ld %s: va=%#p pa=%#p pte=%#p\n", up->pid, up->text, va, pa, old);
 }
 
-uintptr
-cankaddr(uintptr pa)
-{
-	/* With Limine HHDM, all physical memory is already mapped
-	 * Limine maps up to 4GB+ of memory typically
-	 * For now, assume we can map anything under 4GB */
-	if(pa >= 4ULL*1024*1024*1024)  /* 4GB limit */
-		return 0;
-	return (4ULL*1024*1024*1024) - pa;
+uintptr cankaddr(uintptr pa) {
+  /* With Limine HHDM, all physical memory is already mapped
+   * Limine maps up to 4GB+ of memory typically
+   * For now, assume we can map anything under 4GB */
+  if (pa >= 4ULL * 1024 * 1024 * 1024) /* 4GB limit */
+    return 0;
+  return (4ULL * 1024 * 1024 * 1024) - pa;
 }
 
-KMap*
-kmap(Page *page)
-{
-	uintptr pa, va;
+KMap *kmap(Page *page) {
+  uintptr pa, va;
 
-	/* Pure HHDM model: all physical memory already mapped via HHDM */
-	pa = page->pa;
-	va = (uintptr)hhdm_virt(pa);
-	return (KMap*)va;
+  /* Pure HHDM model: all physical memory already mapped via HHDM */
+  pa = page->pa;
+  va = (uintptr)hhdm_virt(pa);
+  return (KMap *)va;
 }
 
-void
-kunmap(KMap *k)
-{
-	/* Pure HHDM model: no-op, memory stays mapped via HHDM */
-	USED(k);
+void kunmap(KMap *k) {
+  /* Pure HHDM model: no-op, memory stays mapped via HHDM */
+  USED(k);
 }
 
 /*
@@ -1266,120 +1233,110 @@ kunmap(KMap *k)
  * between processors (see mpstartap) so no
  * synchronization is being done.
  */
-void*
-vmap(uvlong pa, vlong size)
-{
-	uintptr va;
-	int o;
-	uvlong mapend;
+void *vmap(uvlong pa, vlong size) {
+  uintptr va;
+  int o;
+  uvlong mapend;
 
-	if(pa < BY2PG || size <= 0 || -pa < size){
-		print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
-		return nil;
-	}
+  if (pa < BY2PG || size <= 0 || -pa < size) {
+    print("vmap pa=%llux size=%lld pc=%#p\n", pa, size, getcallerpc(&pa));
+    return nil;
+  }
 
-	/* If range fits in physical RAM, use HHDM mapping (already established) */
-	mapend = pa + size;
-	if(mapend >= pa){
-		ensure_phys_range();
-		if(mapend <= max_physaddr)
-			return hhdm_virt(pa);
-	}
+  /* If range fits in physical RAM, use HHDM mapping (already established) */
+  mapend = pa + size;
+  if (mapend >= pa) {
+    ensure_phys_range();
+    if (mapend <= max_physaddr)
+      return hhdm_virt(pa);
+  }
 
-	/* Otherwise fall back to explicit VMAP mapping */
-	if(mapend < pa || mapend > VMAPSIZE){
-		print("vmap pa=%llux size=%lld exceeds VMAP capacity pc=%#p\n", pa, size, getcallerpc(&pa));
-		return nil;
-	}
+  /* Otherwise fall back to explicit VMAP mapping */
+  if (mapend < pa || mapend > VMAPSIZE) {
+    print("vmap pa=%llux size=%lld exceeds VMAP capacity pc=%#p\n", pa, size,
+          getcallerpc(&pa));
+    return nil;
+  }
 
-	va = pa + VMAP;
+  va = pa + VMAP;
 
-	/*
-	 * might be asking for less than a page.
-	 */
-	o = pa & (BY2PG-1);
-	pa -= o;
-	va -= o;
-	size += o;
-	pmap(pa | PTEUNCACHED|PTEWRITE|PTENOEXEC|PTEVALID, va, size);
-	return (void*)(va+o);
+  /*
+   * might be asking for less than a page.
+   */
+  o = pa & (BY2PG - 1);
+  pa -= o;
+  va -= o;
+  size += o;
+  pmap(pa | PTEUNCACHED | PTEWRITE | PTENOEXEC | PTEVALID, va, size);
+  return (void *)(va + o);
 }
 
-void
-vunmap(void *v, vlong)
-{
-	paddr(v);	/* will panic on error */
-}
+void vunmap(void *v, vlong) { paddr(v); /* will panic on error */ }
 
 /*
  * mark pages as write combining (used for framebuffer)
  */
-void
-patwc(void *a, int n)
-{
-	uintptr *pte, mask, attr, va;
-	int z, l;
-	vlong v;
+void patwc(void *a, int n) {
+  uintptr *pte, mask, attr, va;
+  int z, l;
+  vlong v;
 
-	/* check if pat is usable */
-	if((MACHP(0)->cpuiddx & Pat) == 0
-	|| rdmsr(0x277, &v) == -1
-	|| ((v >> PATWC*8) & 7) != 1)
-		return;
+  /* check if pat is usable */
+  if ((MACHP(0)->cpuiddx & Pat) == 0 || rdmsr(0x277, &v) == -1 ||
+      ((v >> PATWC * 8) & 7) != 1)
+    return;
 
-	/* set the bits for all pages in range */
-	for(va = (uintptr)a; n > 0; n -= z, va += z){
-		l = 0;
-		pte = mmuwalk(m->pml4, va, l, 0);
-		if(pte == nil)
-			pte = mmuwalk(m->pml4, va, ++l, 0);
-		if(pte == nil || (*pte & PTEVALID) == 0)
-			panic("patwc: va=%#p", va);
-		z = PGLSZ(l);
-		z -= va & (z-1);
-		mask = l == 0 ? 3<<3 | 1<<7 : 3<<3 | 1<<12;
-		attr = (((PATWC&3)<<3) | ((PATWC&4)<<5) | ((PATWC&4)<<10));
-		*pte = (*pte & ~mask) | (attr & mask);
-	}
+  /* set the bits for all pages in range */
+  for (va = (uintptr)a; n > 0; n -= z, va += z) {
+    l = 0;
+    pte = mmuwalk(m->pml4, va, l, 0);
+    if (pte == nil)
+      pte = mmuwalk(m->pml4, va, ++l, 0);
+    if (pte == nil || (*pte & PTEVALID) == 0)
+      panic("patwc: va=%#p", va);
+    z = PGLSZ(l);
+    z -= va & (z - 1);
+    mask = l == 0 ? 3 << 3 | 1 << 7 : 3 << 3 | 1 << 12;
+    attr = (((PATWC & 3) << 3) | ((PATWC & 4) << 5) | ((PATWC & 4) << 10));
+    *pte = (*pte & ~mask) | (attr & mask);
+  }
 }
 
-void
-preallocpages(void)
-{
-	Confmem *cm;
-	uintptr base, top;
-	vlong psize;
-	ulong np;
-	int i;
+void preallocpages(void) {
+  Confmem *cm;
+  uintptr base, top;
+  vlong psize;
+  ulong np;
+  int i;
 
-	np = 0;
-	for(i = 0; i < nelem(conf.mem); i++){
-		cm = &conf.mem[i];
-		if(cm->npage == 0)
-			continue;
-		np += cm->npage - nkpages(cm);
-	}
-	if(np == 0)
-		return;
+  np = 0;
+  for (i = 0; i < nelem(conf.mem); i++) {
+    cm = &conf.mem[i];
+    if (cm->npage == 0)
+      continue;
+    np += cm->npage - nkpages(cm);
+  }
+  if (np == 0)
+    return;
 
-	psize = (uvlong)np * sizeof(Page);
-	psize = ROUND(psize, PGLSZ(1));
+  psize = (uvlong)np * sizeof(Page);
+  psize = ROUND(psize, PGLSZ(1));
 
-	for(i = 0; i < nelem(conf.mem); i++){
-		cm = &conf.mem[i];
-		if(cm->npage == 0)
-			continue;
-		base = cm->base;
-		top = base + (uvlong)cm->npage * BY2PG;
-		base += (uvlong)nkpages(cm) * BY2PG;
-		top &= -PGLSZ(1);
-		if(top <= VMAPSIZE && (vlong)(top - base) >= psize){
-			top -= psize;
-			cm->npage = (top - cm->base) / BY2PG;
-			palloc.pages = (Page*)hhdm_virt(top);
-			break;
-		}
-	}
-	if(palloc.pages == nil)
-		panic("preallocpages: insufficient memory for page array");
+  for (i = 0; i < nelem(conf.mem); i++) {
+    cm = &conf.mem[i];
+    if (cm->npage == 0)
+      continue;
+    base = cm->base;
+    top = base + (uvlong)cm->npage * BY2PG;
+    base += (uvlong)nkpages(cm) * BY2PG;
+    top &= -PGLSZ(1);
+    if (top <= VMAPSIZE && (vlong)(top - base) >= psize) {
+      top -= psize;
+      cm->npage = (top - cm->base) / BY2PG;
+      palloc.pages = (Page *)hhdm_virt(top);
+      break;
+    }
+  }
+  if (palloc.pages == nil)
+    panic("preallocpages: insufficient memory for page array");
 }

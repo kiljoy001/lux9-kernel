@@ -34,15 +34,23 @@ static void pebble_reset_state(PebbleState *ps) {
   ps->white_pending = 0;
 }
 
+// Boot-time state for use before proc0
+static PebbleState boot_pstate;
+
 PebbleState *pebble_state(void) {
   if (up == nil)
-    return nil;
+    return &boot_pstate;
   return &up->pebble;
 }
 
 void pebbleinit(void) {
   if (pebble_initialized)
     return;
+
+  // Initialize boot state
+  boot_pstate.black_budget = PEBBLE_DEFAULT_BUDGET;
+  boot_pstate.white_generation = 1;
+
   pebble_initialized = 1;
 }
 
@@ -54,9 +62,11 @@ void pebbleprocinit(Proc *p) {
 
 static PebbleBlack *pebble_lookup_black_locked(PebbleState *ps, void *handle) {
   PebbleBlack *pb;
+  /* Strip wave bits (Holographic View) */
+  void *base_handle = PEBBLE_PTR_ADDR(handle);
 
   for (pb = ps->black_list; pb != nil; pb = pb->next)
-    if (pb == handle)
+    if (pb == base_handle)
       return pb;
   return nil;
 }
@@ -79,8 +89,10 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   if (ps == nil)
     return nil;
 
-  /* Peg size to 8-byte quantum */
-  pegged_size = (size + 7) & ~7;
+  /* Peg size to 8-byte quantum (unit of account) */
+  if (size < PEBBLE_MIN_ALLOC)
+    size = PEBBLE_MIN_ALLOC;
+  pegged_size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
 
   lock(&pebble_global_lock);
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
@@ -155,14 +167,23 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   void *buf;
   PebbleBlack *pb;
 
-  if (up == nil)
-    return -1; /* Use global 'up' */
+  /*
+   * If up == nil, we are likely in early boot (xinit/mmuinit).
+   * We proceed, treating 'nil' as the Kernel process ownership.
+   * borrow_acquire and ledger_mint must handle nil owner!
+   */
+  // if (up == nil) return -1;
 
   const u8int *vault_secret = pebble_get_vault_secret();
   BlindLedgerError ledger_err;
 
-  if (size == 0 || out_cap == nil)
-    return -1;
+  /* Enforce 8-byte granularity (Tokens) */
+  if (size < PEBBLE_MIN_ALLOC) {
+    size = PEBBLE_MIN_ALLOC; // Min 1 Token (8 bytes)
+  }
+  if (size % PEBBLE_MEM_PER_TOKEN != 0) {
+    size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+  }
 
   /* 1. Allocate physical memory (kernel heap for now) */
   buf = xallocz(size, 1);
@@ -170,23 +191,36 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
     return -1;
 
   /* 2. Acquire ownership via Borrow Checker */
-  if (borrow_acquire(up, (uintptr)buf) != BORROW_OK) {
-    xfree(buf);
-    return -1;
+  if (up != nil) {
+    if (borrow_acquire(up, (uintptr)buf) != BORROW_OK) {
+      xfree(buf);
+      return -1;
+    }
+  } else {
+    /* Kernel Allocation during boot */
+    if (borrow_acquire_system((uintptr)buf, OWNER_KERNEL) != BORROW_OK) {
+      xfree(buf);
+      return -1;
+    }
   }
 
   /* 3. Mint capability via Blind Ledger */
   ledger_err = ledger_mint(out_cap, (uintptr)buf, size, up, PEBBLE_CAP_BLACK,
                            vault_secret);
   if (ledger_err != BLIND_LEDGER_OK) {
-    borrow_release(up, (uintptr)buf);
+    if (up != nil)
+      borrow_release(up, (uintptr)buf);
+    else
+      borrow_release_system((uintptr)buf, OWNER_KERNEL);
+
     xfree(buf);
     return -1;
   }
 
   /* 4. Track metadata */
   ilock(&pebble_global_lock);
-  pb = mallocz(sizeof(PebbleBlack), 1);
+  /* Use Meta-Alloc for internal tracking to prevent recursion */
+  pb = pebble_meta_alloc(sizeof(PebbleBlack));
   if (pb == nil) {
     iunlock(&pebble_global_lock);
     borrow_release(up, (uintptr)buf);
@@ -246,7 +280,10 @@ int pebble_black_free_internal(uintptr pa, ulong len, Proc *owner) {
     return -1;
 
   // --- Release borrow checker ownership ---
-  borrow_err = borrow_release(owner, pa);
+  if (owner != nil)
+    borrow_err = borrow_release(owner, pa);
+  else
+    borrow_err = borrow_release_system(pa, OWNER_KERNEL);
   if (borrow_err != BORROW_OK) {
     // CRITICAL: Borrow checker state inconsistent
     panic("pebble_black_free_internal: FATAL - borrow_release failed for "
@@ -322,7 +359,7 @@ int pebble_black_free(const UserCapability *cap) {
 
   // --- Free PebbleBlack struct ---
   // (Physical memory was freed by ledger_burn -> pebble_black_free_internal)
-  free(pb);
+  pebble_meta_free(pb);
 
   if (pebble_debug)
     print("PEBBLE: black free pid=%lud cap=%H size=%lud\n", up->pid, cap->hash,
@@ -785,6 +822,7 @@ void pebble_selftest(void) {
   UserCapability black_cap;
   PebbleBlue *blue;
   PebbleRed *red;
+  extern void uartprintf(char *, ...);
 
   if (!pebble_enabled)
     return;
@@ -792,45 +830,94 @@ void pebble_selftest(void) {
   if (ps == nil)
     return;
 
-  print("PEBBLE: selftest begin (pid=%lud)\n", up->pid);
-  if (waserror()) {
-    print("PEBBLE: selftest FAIL: %s\n", up->errstr);
-    poperror();
+  uartprintf("PEBBLE: selftest begin\n");
+
+  /* Test 1: White -> Black allocation */
+  white = pebble_issue_white(ps, nil, PEBBLE_MIN_ALLOC);
+  if (white == nil) {
+    uartprintf("pebble selftest: white issue failed\n");
     return;
   }
 
-  /* Test 1: White → Black allocation (circular economy) */
-  white = pebble_issue_white(ps, nil, PEBBLE_MIN_ALLOC);
-  if (white == nil)
-    error("pebble selftest: white issue failed");
-
   void *black_handle = nil;
   pebble_white_verify(white, &black_handle);
-  if (pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)
-    error("pebble selftest: black alloc failed");
+  if (pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0) {
+    uartprintf("pebble selftest: black alloc failed\n");
+    return;
+  }
 
-  /* Test 2: Independent Blue allocation (COLORLESS → BLUE) */
+  /* Test 2: Independent Blue allocation */
   blue = pebble_blue_alloc(PEBBLE_MIN_ALLOC);
-  if (blue == nil)
-    error("pebble selftest: blue alloc failed");
+  if (blue == nil) {
+    uartprintf("pebble selftest: blue alloc failed\n");
+    return;
+  }
 
-  /* Test 3: Blue → Red snapshot (independent tokens) */
-  if (pebble_red_snapshot(blue, &red) != 0)
-    error("pebble selftest: red snapshot failed");
-  if (red == nil)
-    error("pebble selftest: red nil after snapshot");
+  /* Test 3: Blue -> Red snapshot */
+  if (pebble_red_snapshot(blue, &red) != 0) {
+    uartprintf("pebble selftest: red snapshot failed\n");
+    return;
+  }
+  if (red == nil) {
+    uartprintf("pebble selftest: red nil after snapshot\n");
+    return;
+  }
 
-  /* Test 4: Free all tokens back to colorless bank */
-  if (pebble_red_free(red) != 0)
-    error("pebble selftest: red free failed");
-  if (pebble_blue_free(blue) != 0)
-    error("pebble selftest: blue free failed");
-  if (pebble_black_free(&black_cap) != 0)
-    error("pebble selftest: black free failed");
+  /* Test 4: Free all tokens */
+  if (pebble_red_free(red) != 0) {
+    uartprintf("pebble selftest: red free failed\n");
+    return;
+  }
+  if (pebble_blue_free(blue) != 0) {
+    uartprintf("pebble selftest: blue free failed\n");
+    return;
+  }
 
-  poperror();
-  print("PEBBLE: selftest PASS (independent tokens, circular economy "
-        "validated)\n");
+  /* Test 5: Holographic Channels ("Pointer-as-Channel") */
+  {
+    void *raw_ptr = pebble_get_black_addr(&black_cap);
+    void *proj_ch3, *proj_ch7;
+
+    /* Ensure alignment */
+    if (((uintptr)raw_ptr & PEBBLE_WAVE_MASK) != 0) {
+      uartprintf("pebble selftest: black addr not 8-byte aligned\n");
+      return;
+    }
+
+    /* Project onto Channel 3 */
+    proj_ch3 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_3);
+    if (!PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_3)) {
+      uartprintf("pebble selftest: projection to Ch3 failed\n");
+      return;
+    }
+    if (PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_2)) {
+      uartprintf("pebble selftest: Ch3 bled into Ch2 (filtering fail)\n");
+      return;
+    }
+
+    /* Project onto Channel 7 */
+    proj_ch7 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_7);
+    if (PEBBLE_PTR_WAVE(proj_ch7) != 7) {
+      uartprintf("pebble selftest: projection to Ch7 failed\n");
+      return;
+    }
+
+    /* Verify Base Address Recovery (All waves collapse to source) */
+    if (PEBBLE_PTR_ADDR(proj_ch3) != raw_ptr) {
+      uartprintf("pebble selftest: Ch3 addr recovery failed\n");
+      return;
+    }
+
+    uartprintf("PEBBLE: holographic channel verification passed\n");
+  }
+
+  if (pebble_black_free(&black_cap) != 0) {
+    uartprintf("pebble selftest: black free failed\n");
+    return;
+  }
+
+  uartprintf("PEBBLE: selftest PASS (independent tokens, circular economy "
+             "validated)\n");
 }
 
 void pebble_sip_issue_test(void) {
