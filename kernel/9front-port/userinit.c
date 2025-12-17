@@ -149,6 +149,11 @@ static void proc0(void *arg) {
   /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
+  /* Clear any existing user PML4 entries to force mmucreate to build mmuhead */
+  print("BOOT[proc0]: clearing existing user PML4 entries\n");
+  m->pml4[PTLX(UTZERO, 3)] = 0;
+  m->pml4[PTLX(USTKTOP-1, 3)] = 0;
+
   /*
    * Setup Text and Stack segments for initcode.
    */
