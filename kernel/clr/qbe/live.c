@@ -37,23 +37,31 @@ void filllive(Fn *f) {
   int k, t, m[2], n, chg, nlv[2];
   BSet u[1], v[1];
   Mem *ma;
+#ifdef _KERNEL_QBE
   extern void uartputs(char *, int);
   char debug_buf[256];
+#endif
 
   /* Validate f->tmp is allocated before use */
   if (!f) {
+#ifdef _KERNEL_QBE
     uartputs("ERROR: filllive called with NULL Fn\n", 37);
+#endif
     die("filllive: NULL Fn pointer");
   }
   if (!f->tmp) {
+#ifdef _KERNEL_QBE
     snprint(debug_buf, sizeof(debug_buf),
             "ERROR: filllive f->tmp is NULL! f=%p ntmp=%u\n", f, f->ntmp);
     uartputs(debug_buf, strlen(debug_buf));
+#endif
     die("filllive: f->tmp is NULL");
   }
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: filllive f=%p ntmp=%u tmp=%p\n", f, f->ntmp, f->tmp);
+#ifdef _KERNEL_QBE
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: filllive f=%p ntmp=%u tmp=%p\n",
+          f, f->ntmp, f->tmp);
   uartputs(debug_buf, strlen(debug_buf));
+#endif
 
   bsinit(u, f->ntmp);
   bsinit(v, f->ntmp);
@@ -111,6 +119,7 @@ Again:
         }
       }
       if (!req(i->to, R)) {
+#ifdef _KERNEL_QBE
         extern void uartputs(char *, int);
         char debug_buf[128];
         if (rtype(i->to) != RTmp) {
@@ -119,6 +128,7 @@ Again:
                   i->to.type, i->to.val);
           uartputs(debug_buf, strlen(debug_buf));
         }
+#endif
         assert(rtype(i->to) == RTmp);
         t = i->to.val;
         if (bshas(b->in, i->to.val))

@@ -201,10 +201,19 @@ static int lex() {
   do
     c = fgetc(inf);
   while (isblank(c));
+  /* DEBUG PATH: Trace first char */
+  // { extern void uartputs(char*,int); char b[64]; snprint(b,64,"LEX: c=%d\n",
+  // c); uartputs(b, strlen(b)); }
+
   t = Txxx;
   tokval.chr = c;
   switch (c) {
-  case EOF:
+  case EOF: {
+#ifdef _KERNEL_QBE
+    extern void uartputs(char *, int);
+    uartputs("LEX: EOF\n", 9);
+#endif
+  }
     return Teof;
   case ',':
     return Tcomma;
@@ -766,33 +775,43 @@ static void typecheck(Fn *fn) {
 }
 
 static Fn *parsefn(int export) {
+#ifdef _KERNEL_QBE
   extern void uartputs(char *, int);
   char debug_buf[128];
+#endif
   Blk *b;
   int i;
   PState ps;
 
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn ENTER\n", 21);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: parsefn T.gpr0=%d T.fpr0=%d Tmp0=%d\n", T.gpr0, T.fpr0, Tmp0);
   uartputs(debug_buf, strlen(debug_buf));
+#endif
 
   curb = 0;
   nblk = 0;
   curi = insb;
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn alloc curf\n", 26);
+#endif
   curf = alloc(sizeof *curf);
   curf->ntmp = 0;
   curf->ncon = 1; /* first constant must be 0 */
   curf->tmp = vnew(curf->ntmp, sizeof curf->tmp[0], Pfn);
   curf->con = vnew(curf->ncon, sizeof curf->con[0], Pfn);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn entering Tmp0 loop\n", 34);
+#endif
   for (i = 0; i < Tmp0; ++i)
     if (T.fpr0 <= i && i < T.fpr0 + T.nfpr)
       newtmp(0, Kd, curf);
     else
       newtmp(0, Kl, curf);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn Tmp0 loop done\n", 30);
+#endif
   curf->con[0].type = CBits;
   curf->export = export;
   blink = &curf->start;
@@ -804,7 +823,9 @@ static Fn *parsefn(int export) {
   if (next() != Tglo)
     err("function name expected");
   strncpy(curf->name, tokval.str, NString - 1);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn parsing body\n", 28);
+#endif
   curf->vararg = parserefl(0);
   if (nextnl() != Tlbrace)
     err("function body must start with {");
@@ -812,7 +833,9 @@ static Fn *parsefn(int export) {
   do
     ps = parseline(ps);
   while (ps != PEnd);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn body done\n", 25);
+#endif
   if (!curb)
     err("empty function");
   if (curb->jmp.type == Jxxx)
@@ -826,9 +849,13 @@ static Fn *parsefn(int export) {
   for (i = 0; i < BMask + 1; ++i)
     blkh[i] = 0;
   memset(tmph, 0, sizeof tmph);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn typecheck\n", 25);
+#endif
   typecheck(curf);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parsefn returning\n", 25);
+#endif
   return curf;
 }
 
@@ -1087,23 +1114,36 @@ Done:
   cb(&d);
 }
 
-void parse(FILE *f, char *path, void data(Dat *), void func(Fn *)) {
+void parse(FILE *f, char *path, void (*dat)(Dat *), void (*func)(Fn *)) {
+#ifdef _KERNEL_QBE
   extern void uartputs(char *, int);
+#endif
   int t, export;
 
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parse() ENTER\n", 21);
+#endif
   lexinit();
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parse() lexinit done\n", 28);
+#endif
   inf = f;
   inpath = path;
   lnum = 1;
   thead = Txxx;
+  rcls = T.gpr0 >= T.fpr0 ? Kd : Kl;
   ntyp = 0;
+  curf = 0; // Ensure curf matches usage in alloc/vnew
+  // Pre-allocate pools if not initialized? alloc handles it.
   typ = vnew(0, sizeof typ[0], Pheap);
+#ifdef _KERNEL_QBE
   uartputs("DEBUG: parse() vnew done, entering loop\n", 40);
+#endif
   for (;;) {
     export = 0;
+#ifdef _KERNEL_QBE
     uartputs("DEBUG: parse() nextnl\n", 22);
+#endif
     switch (nextnl()) {
     default:
       err("top-level definition expected");
@@ -1112,14 +1152,20 @@ void parse(FILE *f, char *path, void data(Dat *), void func(Fn *)) {
       t = nextnl();
       if (t == Tfunc) {
       case Tfunc:
+#ifdef _KERNEL_QBE
         uartputs("DEBUG: parse() calling parsefn\n", 31);
+#endif
         func(parsefn(export));
+#ifdef _KERNEL_QBE
         uartputs("DEBUG: parse() parsefn returned\n", 32);
+#endif
         break;
       } else if (t == Tdata) {
       case Tdata:
+#ifdef _KERNEL_QBE
         uartputs("DEBUG: parse() calling parsedat\n", 32);
-        parsedat(data, export);
+#endif
+        parsedat(dat, export);
         break;
       } else
         err("export can only qualify data and function");
@@ -1127,7 +1173,9 @@ void parse(FILE *f, char *path, void data(Dat *), void func(Fn *)) {
       parsetyp();
       break;
     case Teof:
+#ifdef _KERNEL_QBE
       uartputs("DEBUG: parse() EOF, returning\n", 30);
+#endif
       vfree(typ);
       return;
     }

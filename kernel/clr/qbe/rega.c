@@ -71,6 +71,7 @@ static Ref rref(RMap *m, int t) {
 }
 
 static void radd(RMap *m, int t, int r) {
+#ifdef _KERNEL_QBE
   extern void uartputs(char *, int);
   char debug_buf[128];
 
@@ -81,6 +82,7 @@ static void radd(RMap *m, int t, int r) {
             r, T.gpr0, T.ngpr, T.fpr0, T.nfpr);
     uartputs(debug_buf, strlen(debug_buf));
   }
+#endif
   assert((t >= Tmp0 || t == r) && "invalid temporary");
   assert(((T.gpr0 <= r && r < T.gpr0 + T.ngpr) ||
           (T.fpr0 <= r && r < T.fpr0 + T.nfpr)) &&
@@ -352,12 +354,14 @@ static void doblk(Blk *b, RMap *cur) {
     default:
       if (!req(i->to, R)) {
         if (rtype(i->to) != RTmp) {
+#ifdef _KERNEL_QBE
           extern void uartputs(char *, int);
           char debug_buf[128];
           snprint(debug_buf, sizeof(debug_buf),
                   "DEBUG: rega FAIL i->op=%d to.type=%d to.val=%lld\n", i->op,
                   rtype(i->to), (long long)i->to.val);
           uartputs(debug_buf, strlen(debug_buf));
+#endif
           // panic("rega: invalid to type");
         }
         assert(rtype(i->to) == RTmp);

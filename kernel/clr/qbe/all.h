@@ -30,6 +30,7 @@ void *qbe_realloc(void *, size_t);
 #else
 /* Normal userspace build */
 #include <assert.h>
+#include <ctype.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -186,8 +187,9 @@ enum J {
   X(jfine)                                                                     \
   X(jfisge)                                                                    \
   X(jfisgt)                                                                    \
-  X(jfisle) X(jfislt) X(jfiuge) X(jfiugt) X(jfiule) X(jfiult) X(jffeq)         \
-      X(jffge) X(jffgt) X(jffle) X(jfflt) X(jffne) X(jffo) X(jffuo)
+  X(jfisle)                                                                    \
+  X(jfislt) X(jfiuge) X(jfiugt) X(jfiule) X(jfiult) X(jffeq) X(jffge) X(jffgt) \
+      X(jffle) X(jfflt) X(jffne) X(jffo) X(jffuo)
 #define X(j) J##j,
   JMPS(X)
 #undef X
