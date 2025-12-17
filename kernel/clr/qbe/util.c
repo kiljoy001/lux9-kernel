@@ -44,10 +44,17 @@ typedef struct QbeMemHeader {
   struct QbeMemHeader *next;
   struct QbeMemHeader *prev; /* Doubly-linked for O(1) removal */
   UserCapability cap;
+  size_t size; /* Track size for realloc/stats */
   /* Ensure 16-byte alignment for the payload */
-  char padding[16 -
-               ((sizeof(struct QbeMemHeader *) * 2 + sizeof(UserCapability)) %
-                16)];
+  /* size_t is 8 bytes.
+     Ptrs: 16 bytes. Cap: 16 bytes (approx?). Size: 8 bytes. Total: 40?
+     Let's just use a fixed padding or calculated.
+  */
+  // Ptrs (16) + Cap (32 presumably?) + Size (8) = 56.
+  // 56 % 16 = 8. Padding = 8.s
+  char padding[16 - ((sizeof(struct QbeMemHeader *) * 2 +
+                      sizeof(UserCapability) + sizeof(size_t)) %
+                     16)];
 } QbeMemHeader;
 
 static QbeMemHeader *qbe_black_head = NULL; /* List of all Black allocations */
@@ -80,6 +87,44 @@ void qbe_free(void *p) {
 
   pebble_black_free(&hdr->cap);
   qbe_alloc_count--;
+}
+
+void *qbe_calloc(size_t nmemb, size_t size) {
+  size_t total = nmemb * size;
+  /* emalloc already zeros memory and uses Pebble */
+  return emalloc(total);
+}
+
+void *qbe_realloc(void *ptr, size_t size) {
+  if (!ptr)
+    return emalloc(size);
+  if (size == 0) {
+    qbe_free(ptr);
+    return NULL;
+  }
+
+  /* Get header of current block */
+  QbeMemHeader *hdr = (QbeMemHeader *)((char *)ptr - sizeof(QbeMemHeader));
+  size_t old_size = hdr->size;
+
+  if (size <= old_size) {
+    /* Shrinking or same size: verify alignment/constraints?
+       For now, just return existing ptr. Pebble caps are fixed size anyway.
+       We effectively waste the tail.
+       Ideally we'd re-mint, but that's expensive for simple shrinking.
+    */
+    return ptr;
+  }
+
+  /* Growing: Must allocate new and copy */
+  void *new_ptr = emalloc(size);
+  if (!new_ptr)
+    return NULL;
+
+  memcpy(new_ptr, ptr, old_size);
+  qbe_free(ptr);
+
+  return new_ptr;
 }
 
 #else
@@ -143,6 +188,7 @@ void *emalloc(size_t n) {
   }
 
   hdr->cap = cap;
+  hdr->size = n;
   hdr->next = qbe_black_head;
   hdr->prev = NULL;
 

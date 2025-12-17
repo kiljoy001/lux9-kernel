@@ -38,80 +38,74 @@
  * to merge it with its two neighbors via p->merge.
  */
 
-#include <u.h>
 #include <libc.h>
 #include <pool.h>
+#include <u.h>
 
 extern void early_iprint(char *fmt, ...);
-extern void uartputs(char*, int);
+extern void uartputs(char *, int);
 
-#define POOLALLOC_TRACE_THRESHOLD (4*1024)
-#define POOLTRACE_THRESHOLD       (16*1024)
+#define POOLALLOC_TRACE_THRESHOLD (4 * 1024)
+#define POOLTRACE_THRESHOLD (16 * 1024)
 
-static void
-pooltrace(const char *fmt, ...)
-{
-	char buf[128];
-	va_list v;
-	int n;
+static void pooltrace(const char *fmt, ...) {
+  char buf[128];
+  va_list v;
+  int n;
 
-	va_start(v, fmt);
-	n = vseprint(buf, buf+sizeof buf, fmt, v) - buf;
-	va_end(v);
-	uartputs(buf, n);
+  va_start(v, fmt);
+  n = vseprint(buf, buf + sizeof buf, fmt, v) - buf;
+  va_end(v);
+  uartputs(buf, n);
 }
 
-typedef struct Alloc	Alloc;
-typedef struct Arena	Arena;
-typedef struct Bhdr	Bhdr;
-typedef struct Btail	Btail;
-typedef struct Free	Free;
+typedef struct Alloc Alloc;
+typedef struct Arena Arena;
+typedef struct Bhdr Bhdr;
+typedef struct Btail Btail;
+typedef struct Free Free;
 
 struct Bhdr {
-	ulong	magic;
-	ulong	size;
+  ulong magic;
+  ulong size;
 };
-#define EMBED_BHDR \
-	union { \
-		struct { \
-			ulong	magic; \
-			ulong	size; \
-		}; \
-		Bhdr	bhdr; \
-	}
+#define EMBED_BHDR                                                             \
+  union {                                                                      \
+    struct {                                                                   \
+      ulong magic;                                                             \
+      ulong size;                                                              \
+    };                                                                         \
+    Bhdr bhdr;                                                                 \
+  }
 enum {
-	NOT_MAGIC = 0xdeadfa11,
-	DEAD_MAGIC = 0xdeaddead,
+  NOT_MAGIC = 0xdeadfa11,
+  DEAD_MAGIC = 0xdeaddead,
 };
-#define B2NB(b) ((Bhdr*)((uchar*)(b)+(b)->size))
+#define B2NB(b) ((Bhdr *)((uchar *)(b) + (b)->size))
 
 #define SHORT(x) (((x)[0] << 8) | (x)[1])
-#define PSHORT(p, x) \
-	(((uchar*)(p))[0] = ((x)>>8)&0xFF, \
-	((uchar*)(p))[1] = (x)&0xFF)
+#define PSHORT(p, x)                                                           \
+  (((uchar *)(p))[0] = ((x) >> 8) & 0xFF, ((uchar *)(p))[1] = (x) & 0xFF)
 
-enum {
-	TAIL_MAGIC0 = 0xBE,
-	TAIL_MAGIC1 = 0xEF
-};
+enum { TAIL_MAGIC0 = 0xBE, TAIL_MAGIC1 = 0xEF };
 struct Btail {
-	uchar	magic0;
-	uchar	datasize[2];
-	uchar	magic1;
-	ulong	size;	/* same as Bhdr->size */
+  uchar magic0;
+  uchar datasize[2];
+  uchar magic1;
+  ulong size; /* same as Bhdr->size */
 };
-#define B2T(b)	((Btail*)((uchar*)(b)+(b)->size-sizeof(Btail)))
-#define B2PT(b) ((Btail*)((uchar*)(b)-sizeof(Btail)))
-#define T2HDR(t) ((Bhdr*)((uchar*)(t)+sizeof(Btail)-(t)->size))
+#define B2T(b) ((Btail *)((uchar *)(b) + (b)->size - sizeof(Btail)))
+#define B2PT(b) ((Btail *)((uchar *)(b) - sizeof(Btail)))
+#define T2HDR(t) ((Bhdr *)((uchar *)(t) + sizeof(Btail) - (t)->size))
 struct Free {
-	EMBED_BHDR;
-	Free*	left;
-	Free*	right;
-	Free*	next;
-	Free*	prev;
+  EMBED_BHDR;
+  Free *left;
+  Free *right;
+  Free *next;
+  Free *prev;
 };
 enum {
-	FREE_MAGIC = 0xBA5EBA11,
+  FREE_MAGIC = 0xBA5EBA11,
 };
 
 /*
@@ -119,70 +113,68 @@ enum {
  * between Bhdr and Allocblk, and between Kempt and Unkempt.
  */
 struct Alloc {
-	EMBED_BHDR;
+  EMBED_BHDR;
 };
 enum {
-	ALLOC_MAGIC = 0x0A110C09,
-	UNALLOC_MAGIC = 0xCAB00D1F,
+  ALLOC_MAGIC = 0x0A110C09,
+  UNALLOC_MAGIC = 0xCAB00D1F,
 };
 
 struct Arena {
-	EMBED_BHDR;
-	Arena*	aup;
-	Arena*	down;
-	ulong	asize;
-	ulong	pad;	/* to a multiple of 8 bytes */
+  EMBED_BHDR;
+  Arena *aup;
+  Arena *down;
+  ulong asize;
+  ulong pad; /* to a multiple of 8 bytes */
 };
 enum {
-	ARENA_MAGIC = 0xC0A1E5CF,
-	ARENATAIL_MAGIC = 0xEC5E1A0D,
+  ARENA_MAGIC = 0xC0A1E5CF,
+  ARENATAIL_MAGIC = 0xEC5E1A0D,
 };
-#define A2TB(a)	((Bhdr*)((uchar*)(a)+(a)->asize-sizeof(Bhdr)))
-#define A2B(a)	B2NB(a)
+#define A2TB(a) ((Bhdr *)((uchar *)(a) + (a)->asize - sizeof(Bhdr)))
+#define A2B(a) B2NB(a)
 
 enum {
-	ALIGN_MAGIC = 0xA1F1D1C1,
+  ALIGN_MAGIC = 0xA1F1D1C1,
 };
 
-enum {
-	MINBLOCKSIZE = sizeof(Free)+sizeof(Btail)
-};
+enum { MINBLOCKSIZE = sizeof(Free) + sizeof(Btail) };
 
-static uchar datamagic[] = { 0xFE, 0xF1, 0xF0, 0xFA };
+static uchar datamagic[] = {0xFE, 0xF1, 0xF0, 0xFA};
 
-#define Poison	((void*)-0x35014542)	/* cafebabe */
+#define Poison ((void *)-0x35014542) /* cafebabe */
 
-#define _B2D(a)	((void*)((uchar*)a+sizeof(Bhdr)))
-#define _D2B(v)	((Alloc*)((uchar*)v-sizeof(Bhdr)))
+#define _B2D(a) ((void *)((uchar *)a + sizeof(Bhdr)))
+#define _D2B(v) ((Alloc *)((uchar *)v - sizeof(Bhdr)))
 
 // static void*	_B2D(void*);
 // static void*	_D2B(void*);
-static void*	B2D(Pool*, Alloc*);
-static Alloc*	D2B(Pool*, void*);
-static Arena*	arenamerge(Pool*, Arena*, Arena*);
-static void		blockcheck(Pool*, Bhdr*);
-static Alloc*	blockmerge(Pool*, Bhdr*, Bhdr*);
-static Alloc*	blocksetdsize(Pool*, Alloc*, ulong);
-static Bhdr*	blocksetsize(Bhdr*, ulong);
-static ulong	bsize2asize(Pool*, ulong);
-static ulong	dsize2bsize(Pool*, ulong);
-static ulong	getdsize(Alloc*);
-static Alloc*	trim(Pool*, Alloc*, ulong);
-static void		logstack(Pool*);
-static void		memmark(void*, int, ulong);
-static Free*	pooladd(Pool*, Alloc*);
-static void*	poolallocl(Pool*, ulong);
-static void		poolcheckl(Pool*);
-static void		poolcheckarena(Pool*, Arena*);
-static int		poolcompactl(Pool*);
-static Alloc*	pooldel(Pool*, Free*);
-static void		pooldumpl(Pool*);
-static void		pooldumparena(Pool*, Arena*);
-static void		poolfreel(Pool*, void*);
-static void		poolnewarena(Pool*, ulong);
-static void*	poolreallocl(Pool*, void*, ulong);
-static Free*	treelookupgt(Free*, ulong);
-static Free*	treesplay(Free*, ulong);
+static void *B2D(Pool *, Alloc *);
+static Alloc *D2B(Pool *, void *);
+static Arena *arenamerge(Pool *, Arena *, Arena *);
+static void blockcheck(Pool *, Bhdr *);
+static Alloc *blockmerge(Pool *, Bhdr *, Bhdr *);
+static Alloc *blocksetdsize(Pool *, Alloc *, ulong);
+static Bhdr *blocksetsize(Bhdr *, ulong);
+static ulong bsize2asize(Pool *, ulong);
+static ulong dsize2bsize(Pool *, ulong);
+static ulong getdsize(Alloc *);
+static Alloc *trim(Pool *, Alloc *, ulong);
+static void logstack(Pool *);
+static void memmark(void *, int, ulong);
+static Free *pooladd(Pool *, Alloc *);
+static void *poolallocl(Pool *, ulong);
+static void poolcheckl(Pool *);
+static void poolcheckarena(Pool *, Arena *);
+static int poolcompactl(Pool *);
+static Alloc *pooldel(Pool *, Free *);
+static void pooldumpl(Pool *);
+static void pooldumparena(Pool *, Arena *);
+static void poolfreel(Pool *, void *);
+static void poolnewarena(Pool *, ulong);
+static void *poolreallocl(Pool *, void *, ulong);
+static Free *treelookupgt(Free *, ulong);
+static Free *treesplay(Free *, ulong);
 
 /*
  * Debugging
@@ -202,359 +194,342 @@ static Free*	treesplay(Free*, ulong);
  * by the binary tree.  Turning on paranoia in the kernel makes it painfully
  * slow.
  *
- * Verbosity induces the dumping of the pool via p->print at each lock operation.
- * By default, only one line is logged for each alloc, free, and realloc.
+ * Verbosity induces the dumping of the pool via p->print at each lock
+ * operation. By default, only one line is logged for each alloc, free, and
+ * realloc.
  */
 
 /* the if(!x);else avoids ``dangling else'' problems */
-#define antagonism	if(!(p->flags & POOL_ANTAGONISM)){}else
-#define paranoia	if(!(p->flags & POOL_PARANOIA)){}else
-#define verbosity	if(!(p->flags & POOL_VERBOSITY)){}else
+#define antagonism                                                             \
+  if (!(p->flags & POOL_ANTAGONISM)) {                                         \
+  } else
+#define paranoia                                                               \
+  if (!(p->flags & POOL_PARANOIA)) {                                           \
+  } else
+#define verbosity                                                              \
+  if (!(p->flags & POOL_VERBOSITY)) {                                          \
+  } else
 
-#define DPRINT	if(!(p->flags & POOL_DEBUGGING)){}else p->print
-#define LOG		if(!(p->flags & POOL_LOGGING)){}else p->print
+#define DPRINT                                                                 \
+  if (!(p->flags & POOL_DEBUGGING)) {                                          \
+  } else                                                                       \
+    p->print
+#define LOG                                                                    \
+  if (!(p->flags & POOL_LOGGING)) {                                            \
+  } else                                                                       \
+    p->print
 
 /*
  * Tree walking
  */
 
-static void
-checklist(Free *t)
-{
-	Free *q;
+static void checklist(Free *t) {
+  Free *q;
 
-	for(q=t->next; q!=t; q=q->next){
-		assert(q->magic==FREE_MAGIC);
-		assert(q->size==t->size);
-		assert(q->left==Poison);
-		assert(q->right==Poison);
-		assert(q->next!=nil && q->next!=Poison && q->next->prev==q);
-		assert(q->prev!=nil && q->prev!=Poison && q->prev->next==q);
-	}
+  for (q = t->next; q != t; q = q->next) {
+    assert(q->magic == FREE_MAGIC);
+    assert(q->size == t->size);
+    assert(q->left == Poison);
+    assert(q->right == Poison);
+    assert(q->next != nil && q->next != Poison && q->next->prev == q);
+    assert(q->prev != nil && q->prev != Poison && q->prev->next == q);
+  }
 }
 
-static void
-checktree(Free *t, int a, int b)
-{
-	assert(t->magic==FREE_MAGIC);
-	assert(a < t->size && t->size < b);
-	assert(t->left!=Poison);
-	assert(t->right!=Poison);
-	assert(t->next!=nil && t->next!=Poison && t->next->prev==t);
-	assert(t->prev!=nil && t->prev!=Poison && t->prev->next==t);
-	checklist(t);
-	if(t->left)
-		checktree(t->left, a, t->size);
-	if(t->right)
-		checktree(t->right, t->size, b);
-
+static void checktree(Free *t, int a, int b) {
+  assert(t->magic == FREE_MAGIC);
+  assert(a < t->size && t->size < b);
+  assert(t->left != Poison);
+  assert(t->right != Poison);
+  assert(t->next != nil && t->next != Poison && t->next->prev == t);
+  assert(t->prev != nil && t->prev != Poison && t->prev->next == t);
+  checklist(t);
+  if (t->left)
+    checktree(t->left, a, t->size);
+  if (t->right)
+    checktree(t->right, t->size, b);
 }
 
 /* treelookupgt: find smallest node in tree with size >= size */
-static Free*
-treelookupgt(Free *t, ulong size)
-{
-	Free *lastgood;	/* last node we saw that was big enough */
+static Free *treelookupgt(Free *t, ulong size) {
+  Free *lastgood; /* last node we saw that was big enough */
 
-	lastgood = nil;
-	for(;;) {
-		if(t == nil)
-			return lastgood;
-		assert(t->magic == FREE_MAGIC);
-		if(size == t->size)
-			return t;
-		if(size < t->size) {
-			lastgood = t;
-			t = t->left;
-		} else
-			t = t->right;
-	}
+  lastgood = nil;
+  for (;;) {
+    if (t == nil)
+      return lastgood;
+    assert(t->magic == FREE_MAGIC);
+    if (size == t->size)
+      return t;
+    if (size < t->size) {
+      lastgood = t;
+      t = t->left;
+    } else
+      t = t->right;
+  }
 }
 
 /* treesplay: splay node of size size to the root and return new root */
-static Free*
-treesplay(Free *t, ulong size)
-{
-	Free N, *l, *r, *y;
+static Free *treesplay(Free *t, ulong size) {
+  Free N, *l, *r, *y;
 
-	N.left = N.right = nil;
-	l = r = &N;
+  N.left = N.right = nil;
+  l = r = &N;
 
-	for(;;) {
-		assert(t->magic == FREE_MAGIC);
-		if(size < t->size) {
-			y = t->left;
-			if(y != nil) {
-				assert(y->magic == FREE_MAGIC);
-				if(size < y->size) {
-					t->left = y->right;
-					y->right = t;
-					t = y;
-				}
-			}
-			if(t->left == nil)
-				break;
-			r->left = t;
-			r = t;
-			t = t->left;
-		} else if(size > t->size) {
-			y = t->right;
-			if(y != nil) {
-				assert(y->magic == FREE_MAGIC);
-				if(size > y->size) {
-					t->right = y->left;
-					y->left = t;
-					t = y;
-				}
-			}
-			if(t->right == nil)
-				break;
-			l->right = t;
-			l = t;
-			t = t->right;
-		} else
-			break;
-	}
+  for (;;) {
+    assert(t->magic == FREE_MAGIC);
+    if (size < t->size) {
+      y = t->left;
+      if (y != nil) {
+        assert(y->magic == FREE_MAGIC);
+        if (size < y->size) {
+          t->left = y->right;
+          y->right = t;
+          t = y;
+        }
+      }
+      if (t->left == nil)
+        break;
+      r->left = t;
+      r = t;
+      t = t->left;
+    } else if (size > t->size) {
+      y = t->right;
+      if (y != nil) {
+        assert(y->magic == FREE_MAGIC);
+        if (size > y->size) {
+          t->right = y->left;
+          y->left = t;
+          t = y;
+        }
+      }
+      if (t->right == nil)
+        break;
+      l->right = t;
+      l = t;
+      t = t->right;
+    } else
+      break;
+  }
 
-	l->right=t->left;
-	r->left=t->right;
-	t->left=N.right;
-	t->right=N.left;
+  l->right = t->left;
+  r->left = t->right;
+  t->left = N.right;
+  t->right = N.left;
 
-	return t;
+  return t;
 }
 
 /* pooladd: add anode to the free pool */
-static Free*
-pooladd(Pool *p, Alloc *anode)
-{
-	Free *node, *root;
+static Free *pooladd(Pool *p, Alloc *anode) {
+  Free *node, *root;
 
-	antagonism {
-		memmark(_B2D(anode), 0xF7, anode->size-sizeof(Bhdr)-sizeof(Btail));
-	}
+  antagonism {
+    memmark(_B2D(anode), 0xF7, anode->size - sizeof(Bhdr) - sizeof(Btail));
+  }
 
-	node = (Free*)anode;
-	node->magic = FREE_MAGIC;
-	node->left = node->right = nil;
-	node->next = node->prev = node;
+  node = (Free *)anode;
+  node->magic = FREE_MAGIC;
+  node->left = node->right = nil;
+  node->next = node->prev = node;
 
-	if(p->freeroot != nil) {
-		root = treesplay(p->freeroot, node->size);
-		if(root->size > node->size) {
-			node->left = root->left;
-			node->right = root;
-			root->left = nil;
-		} else if(root->size < node->size) {
-			node->right = root->right;
-			node->left = root;
-			root->right = nil;
-		} else {
-			node->left = root->left;
-			node->right = root->right;
-			root->left = root->right = Poison;
+  if (p->freeroot != nil) {
+    root = treesplay(p->freeroot, node->size);
+    if (root->size > node->size) {
+      node->left = root->left;
+      node->right = root;
+      root->left = nil;
+    } else if (root->size < node->size) {
+      node->right = root->right;
+      node->left = root;
+      root->right = nil;
+    } else {
+      node->left = root->left;
+      node->right = root->right;
+      root->left = root->right = Poison;
 
-			node->prev = root->prev;
-			node->next = root;
-			node->prev->next = node;
-			node->next->prev = node;
-		}
-	}
-	p->freeroot = node;
-	p->curfree += node->size;
+      node->prev = root->prev;
+      node->next = root;
+      node->prev->next = node;
+      node->next->prev = node;
+    }
+  }
+  p->freeroot = node;
+  p->curfree += node->size;
 
-	return node;
+  return node;
 }
 
 /* pooldel: remove node from the free pool */
-static Alloc*
-pooldel(Pool *p, Free *node)
-{
-	Free *root;
+static Alloc *pooldel(Pool *p, Free *node) {
+  Free *root;
 
-	root = treesplay(p->freeroot, node->size);
-	if(node == root && node->next == node) {
-		if(node->left == nil)
-			root = node->right;
-		else {
-			root = treesplay(node->left, node->size);
-			assert(root->right == nil);
-			root->right = node->right;
-		}
-	} else {
-		if(node == root) {
-			root = node->next;
-			root->left = node->left;
-			root->right = node->right;
-		}
-		assert(root->magic == FREE_MAGIC && root->size == node->size);
-		node->next->prev = node->prev;
-		node->prev->next = node->next;
-	}
-	p->freeroot = root;
-	p->curfree -= node->size;
+  root = treesplay(p->freeroot, node->size);
+  if (node == root && node->next == node) {
+    if (node->left == nil)
+      root = node->right;
+    else {
+      root = treesplay(node->left, node->size);
+      assert(root->right == nil);
+      root->right = node->right;
+    }
+  } else {
+    if (node == root) {
+      root = node->next;
+      root->left = node->left;
+      root->right = node->right;
+    }
+    assert(root->magic == FREE_MAGIC && root->size == node->size);
+    node->next->prev = node->prev;
+    node->prev->next = node->next;
+  }
+  p->freeroot = root;
+  p->curfree -= node->size;
 
-	node->left = node->right = node->next = node->prev = Poison;
+  node->left = node->right = node->next = node->prev = Poison;
 
-	antagonism {
-		memmark(_B2D(node), 0xF9, node->size-sizeof(Bhdr)-sizeof(Btail));
-	}
+  antagonism {
+    memmark(_B2D(node), 0xF9, node->size - sizeof(Bhdr) - sizeof(Btail));
+  }
 
-	node->magic = UNALLOC_MAGIC;
+  node->magic = UNALLOC_MAGIC;
 
-	return (Alloc*)node;
+  return (Alloc *)node;
 }
 
 /*
  * Block maintenance
  */
 /* block allocation */
-static ulong
-dsize2bsize(Pool *p, ulong sz)
-{
-	sz += sizeof(Bhdr)+sizeof(Btail);
-	if(sz < p->minblock)
-		sz = p->minblock;
-	if(sz < MINBLOCKSIZE)
-		sz = MINBLOCKSIZE;
-	sz = (sz+p->quantum-1)&~(p->quantum-1);
-	return sz;
+static ulong dsize2bsize(Pool *p, ulong sz) {
+  sz += sizeof(Bhdr) + sizeof(Btail);
+  if (sz < p->minblock)
+    sz = p->minblock;
+  if (sz < MINBLOCKSIZE)
+    sz = MINBLOCKSIZE;
+  sz = (sz + p->quantum - 1) & ~(p->quantum - 1);
+  return sz;
 }
 
-static ulong
-bsize2asize(Pool *p, ulong sz)
-{
-	sz += sizeof(Arena)+sizeof(Btail);
-	if(sz < p->minarena)
-		sz = p->minarena;
-	sz = (sz+p->quantum)&~(p->quantum-1);
-	return sz;
+static ulong bsize2asize(Pool *p, ulong sz) {
+  sz += sizeof(Arena) + sizeof(Btail);
+  if (sz < p->minarena)
+    sz = p->minarena;
+  sz = (sz + p->quantum) & ~(p->quantum - 1);
+  return sz;
 }
 
 /* blockmerge: merge a and b, known to be adjacent */
 /* both are removed from pool if necessary. */
-static Alloc*
-blockmerge(Pool *pool, Bhdr *a, Bhdr *b)
-{
-	Btail *t;
+static Alloc *blockmerge(Pool *pool, Bhdr *a, Bhdr *b) {
+  Btail *t;
 
-	assert(B2NB(a) == b);
+  assert(B2NB(a) == b);
 
-	if(a->magic == FREE_MAGIC)
-		pooldel(pool, (Free*)a);
-	if(b->magic == FREE_MAGIC)
-		pooldel(pool, (Free*)b);
+  if (a->magic == FREE_MAGIC)
+    pooldel(pool, (Free *)a);
+  if (b->magic == FREE_MAGIC)
+    pooldel(pool, (Free *)b);
 
-	t = B2T(a);
-	t->size = (ulong)Poison;
-	t->magic0 = NOT_MAGIC;
-	t->magic1 = NOT_MAGIC;
-	PSHORT(t->datasize, NOT_MAGIC);
+  t = B2T(a);
+  t->size = (ulong)Poison;
+  t->magic0 = NOT_MAGIC;
+  t->magic1 = NOT_MAGIC;
+  PSHORT(t->datasize, NOT_MAGIC);
 
-	a->size += b->size;
-	t = B2T(a);
-	t->size = a->size;
-	PSHORT(t->datasize, 0xFFFF);
+  a->size += b->size;
+  t = B2T(a);
+  t->size = a->size;
+  PSHORT(t->datasize, 0xFFFF);
 
-	b->size = NOT_MAGIC;
-	b->magic = NOT_MAGIC;
+  b->size = NOT_MAGIC;
+  b->magic = NOT_MAGIC;
 
-	a->magic = UNALLOC_MAGIC;
-	return (Alloc*)a;
+  a->magic = UNALLOC_MAGIC;
+  return (Alloc *)a;
 }
 
 /* blocksetsize: set the total size of a block, fixing tail pointers */
-static Bhdr*
-blocksetsize(Bhdr *b, ulong bsize)
-{
-	Btail *t;
+static Bhdr *blocksetsize(Bhdr *b, ulong bsize) {
+  Btail *t;
 
-	assert(b->magic != FREE_MAGIC /* blocksetsize */);
+  assert(b->magic != FREE_MAGIC /* blocksetsize */);
 
-	b->size = bsize;
-	t = B2T(b);
-	t->size = b->size;
-	t->magic0 = TAIL_MAGIC0;
-	t->magic1 = TAIL_MAGIC1;
-	return b;
+  b->size = bsize;
+  t = B2T(b);
+  t->size = b->size;
+  t->magic0 = TAIL_MAGIC0;
+  t->magic1 = TAIL_MAGIC1;
+  return b;
 }
 
 /* getdsize: return the requested data size for an allocated block */
-static ulong
-getdsize(Alloc *b)
-{
-	Btail *t;
-	t = B2T(b);
-	return b->size - SHORT(t->datasize);
+static ulong getdsize(Alloc *b) {
+  Btail *t;
+  t = B2T(b);
+  return b->size - SHORT(t->datasize);
 }
 
 /* blocksetdsize: set the user data size of a block */
-static Alloc*
-blocksetdsize(Pool *p, Alloc *b, ulong dsize)
-{
-	Btail *t;
-	uchar *q, *eq;
+static Alloc *blocksetdsize(Pool *p, Alloc *b, ulong dsize) {
+  Btail *t;
+  uchar *q, *eq;
 
-	assert(b->size >= dsize2bsize(p, dsize));
-	assert(b->size - dsize < 0x10000);
+  assert(b->size >= dsize2bsize(p, dsize));
+  assert(b->size - dsize < 0x10000);
 
-	t = B2T(b);
-	PSHORT(t->datasize, b->size - dsize);
+  t = B2T(b);
+  PSHORT(t->datasize, b->size - dsize);
 
-	q=(uchar*)_B2D(b)+dsize;
-	eq = (uchar*)t;
-	if(eq > q+4)
-		eq = q+4;
-	for(; q<eq; q++)
-		*q = datamagic[((ulong)(uintptr)q)%nelem(datamagic)];
+  q = (uchar *)_B2D(b) + dsize;
+  eq = (uchar *)t;
+  if (eq > q + 4)
+    eq = q + 4;
+  for (; q < eq; q++)
+    *q = datamagic[((ulong)(uintptr)q) % nelem(datamagic)];
 
-	return b;
+  return b;
 }
 
 /* trim: trim a block down to what is needed to hold dsize bytes of user data */
-static Alloc*
-trim(Pool *p, Alloc *b, ulong dsize)
-{
-	ulong extra, bsize;
-	Alloc *frag;
+static Alloc *trim(Pool *p, Alloc *b, ulong dsize) {
+  ulong extra, bsize;
+  Alloc *frag;
 
-	bsize = dsize2bsize(p, dsize);
-	extra = b->size - bsize;
-	if(b->size - dsize >= 0x10000 ||
-	  (extra >= bsize>>2 && extra >= MINBLOCKSIZE && extra >= p->minblock)) {
-		blocksetsize(b, bsize);
-		frag = (Alloc*) B2NB(b);
+  bsize = dsize2bsize(p, dsize);
+  extra = b->size - bsize;
+  if (b->size - dsize >= 0x10000 ||
+      (extra >= bsize >> 2 && extra >= MINBLOCKSIZE && extra >= p->minblock)) {
+    blocksetsize(b, bsize);
+    frag = (Alloc *)B2NB(b);
 
-		antagonism {
-			memmark(frag, 0xF1, extra);
-		}
+    antagonism { memmark(frag, 0xF1, extra); }
 
-		frag->magic = UNALLOC_MAGIC;
-		blocksetsize(frag, extra);
-		pooladd(p, frag);
-	}
+    frag->magic = UNALLOC_MAGIC;
+    blocksetsize(frag, extra);
+    pooladd(p, frag);
+  }
 
-	b->magic = ALLOC_MAGIC;
-	blocksetdsize(p, b, dsize);
-	return b;
+  b->magic = ALLOC_MAGIC;
+  blocksetdsize(p, b, dsize);
+  return b;
 }
 
-static Alloc*
-freefromfront(Pool *p, Alloc *b, ulong skip)
-{
-	Alloc *bb;
+static Alloc *freefromfront(Pool *p, Alloc *b, ulong skip) {
+  Alloc *bb;
 
-	skip = skip&~(p->quantum-1);
-	if(skip >= 0x1000 || (skip >= b->size>>2 && skip >= MINBLOCKSIZE && skip >= p->minblock)){
-		bb = (Alloc*)((uchar*)b+skip);
-		bb->magic = UNALLOC_MAGIC;
-		blocksetsize(bb, b->size-skip);
-		b->magic = UNALLOC_MAGIC;
-		blocksetsize(b, skip);
-		pooladd(p, b);
-		return bb;
-	}
-	return b;
+  skip = skip & ~(p->quantum - 1);
+  if (skip >= 0x1000 ||
+      (skip >= b->size >> 2 && skip >= MINBLOCKSIZE && skip >= p->minblock)) {
+    bb = (Alloc *)((uchar *)b + skip);
+    bb->magic = UNALLOC_MAGIC;
+    blocksetsize(bb, b->size - skip);
+    b->magic = UNALLOC_MAGIC;
+    blocksetsize(b, skip);
+    pooladd(p, b);
+    return bb;
+  }
+  return b;
 }
 
 /*
@@ -562,305 +537,290 @@ freefromfront(Pool *p, Alloc *b, ulong skip)
  */
 
 /* arenasetsize: set arena size, updating tail */
-static void
-arenasetsize(Arena *a, ulong asize)
-{
-	Bhdr *atail;
+static void arenasetsize(Arena *a, ulong asize) {
+  Bhdr *atail;
 
-	a->asize = asize;
-	atail = A2TB(a);
-	atail->magic = ARENATAIL_MAGIC;
-	atail->size = 0;
+  a->asize = asize;
+  atail = A2TB(a);
+  atail->magic = ARENATAIL_MAGIC;
+  atail->size = 0;
 }
 
 /* poolnewarena: allocate new arena */
-static void
-poolnewarena(Pool *p, ulong asize)
-{
-	Arena *a;
-	Arena *ap, *lastap;
-	Alloc *b;
+static void poolnewarena(Pool *p, ulong asize) {
+  Arena *a;
+  Arena *ap, *lastap;
+  Alloc *b;
 
-	if(asize >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolnewarena enter p=%p asize=%lud cursize=%lud max=%lud\n",
-			p, asize, (ulong)p->cursize, (ulong)p->maxsize);
-	LOG(p, "newarena %lud\n", asize);
-	if(asize > p->maxsize || p->cursize > p->maxsize - asize) {
-		if(asize >= POOLALLOC_TRACE_THRESHOLD)
-			early_iprint("poolnewarena: exceeds max\n");
-		if(poolcompactl(p) == 0){
-			LOG(p, "pool too big: %llud+%lud > %llud\n",
-				(uvlong)p->cursize, asize, (uvlong)p->maxsize);
-			werrstr("memory pool too large");
-		}
-		return;
-	}
+  if (asize >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolnewarena enter p=%p asize=%lud cursize=%lud max=%lud\n", p,
+              asize, (ulong)p->cursize, (ulong)p->maxsize);
+  LOG(p, "newarena %lud\n", asize);
+  if (asize > p->maxsize || p->cursize > p->maxsize - asize) {
+    if (asize >= POOLALLOC_TRACE_THRESHOLD)
+      early_iprint("poolnewarena: exceeds max\n");
+    if (poolcompactl(p) == 0) {
+      LOG(p, "pool too big: %llud+%lud > %llud\n", (uvlong)p->cursize, asize,
+          (uvlong)p->maxsize);
+      werrstr("memory pool too large");
+    }
+    return;
+  }
 
-	if((a = p->alloc(asize)) == nil) {
-		if(asize >= POOLALLOC_TRACE_THRESHOLD)
-			pooltrace("poolnewarena: alloc(%lud) failed\n", asize);
-		/* assume errstr set by p->alloc */
-		return;
-	}
-	if(asize >= POOLTRACE_THRESHOLD)
-		pooltrace("poolnewarena: alloc(%lud) success\n", asize);
+  if ((a = p->alloc(asize)) == nil) {
+    if (asize >= POOLALLOC_TRACE_THRESHOLD)
+      pooltrace("poolnewarena: alloc(%lud) failed\n", asize);
+    /* assume errstr set by p->alloc */
+    return;
+  }
+  if (asize >= POOLTRACE_THRESHOLD)
+    pooltrace("poolnewarena: alloc(%lud) success\n", asize);
 
-	p->cursize += asize;
+  p->cursize += asize;
 
-	/* arena hdr */
-	a->magic = ARENA_MAGIC;
-	blocksetsize(a, sizeof(Arena));
-	arenasetsize(a, asize);
-	blockcheck(p, a);
+  /* arena hdr */
+  a->magic = ARENA_MAGIC;
+  blocksetsize(a, sizeof(Arena));
+  arenasetsize(a, asize);
+  blockcheck(p, a);
 
-	/* create one large block in arena */
-	b = (Alloc*)A2B(a);
-	b->magic = UNALLOC_MAGIC;
-	blocksetsize(b, (uchar*)A2TB(a)-(uchar*)b);
-	blockcheck(p, b);
-	pooladd(p, b);
-	blockcheck(p, b);
+  /* create one large block in arena */
+  b = (Alloc *)A2B(a);
+  b->magic = UNALLOC_MAGIC;
+  blocksetsize(b, (uchar *)A2TB(a) - (uchar *)b);
+  blockcheck(p, b);
+  pooladd(p, b);
+  blockcheck(p, b);
 
-	/* sort arena into descending sorted arena list */
-	for(lastap=nil, ap=p->arenalist; ap > a; lastap=ap, ap=ap->down)
-		;
+  /* sort arena into descending sorted arena list */
+  for (lastap = nil, ap = p->arenalist; ap > a; lastap = ap, ap = ap->down)
+    ;
 
-	if(a->down = ap)	/* assign = */
-		a->down->aup = a;
+  if (a->down = ap) /* assign = */
+    a->down->aup = a;
 
-	if(a->aup = lastap)	/* assign = */
-		a->aup->down = a;
-	else
-		p->arenalist = a;
+  if (a->aup = lastap) /* assign = */
+    a->aup->down = a;
+  else
+    p->arenalist = a;
 
-	/* merge with surrounding arenas if possible */
-	/* must do a with up before down with a (think about it) */
-	if(a->aup)
-		arenamerge(p, a, a->aup);
-	if(a->down)
-		arenamerge(p, a->down, a);
-	if(asize >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolnewarena exit asize=%lud\n", asize);
+  /* merge with surrounding arenas if possible */
+  /* must do a with up before down with a (think about it) */
+  if (a->aup)
+    arenamerge(p, a, a->aup);
+  if (a->down)
+    arenamerge(p, a->down, a);
+  if (asize >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolnewarena exit asize=%lud\n", asize);
 }
 
-static int
-poolgrowarena(Pool *p, ulong bsize)
-{
-	ulong asize, minsize;
+static int poolgrowarena(Pool *p, ulong bsize) {
+  ulong asize, minsize;
 
-	asize = bsize2asize(p, bsize);
-	minsize = bsize + p->quantum;
-	if(minsize < bsize)
-		minsize = bsize;
+  asize = bsize2asize(p, bsize);
+  minsize = bsize + p->quantum;
+  if (minsize < bsize)
+    minsize = bsize;
 
-	while(asize >= minsize){
-		if(bsize >= POOLALLOC_TRACE_THRESHOLD)
-			pooltrace("poolgrowarena: attempting asize=%lud\n", asize);
-		poolnewarena(p, asize);
-		if(treelookupgt(p->freeroot, bsize) != nil)
-			return 1;
-		if(asize == minsize)
-			break;
-		asize /= 2;
-		if(asize < minsize)
-			asize = minsize;
-	}
-	return 0;
+  while (asize >= minsize) {
+    if (bsize >= POOLALLOC_TRACE_THRESHOLD)
+      pooltrace("poolgrowarena: attempting asize=%lud\n", asize);
+    poolnewarena(p, asize);
+    if (treelookupgt(p->freeroot, bsize) != nil)
+      return 1;
+    if (asize == minsize)
+      break;
+    asize /= 2;
+    if (asize < minsize)
+      asize = minsize;
+  }
+  return 0;
 }
 
 /* blockresize: grow a block to encompass space past its end, possibly by */
 /* trimming it into two different blocks. */
-static void
-blockgrow(Pool *p, Bhdr *b, ulong nsize)
-{
-	if(b->magic == FREE_MAGIC) {
-		Alloc *a;
-		Bhdr *bnxt;
-		a = pooldel(p, (Free*)b);
-		blockcheck(p, a);
-		blocksetsize(a, nsize);
-		blockcheck(p, a);
-		bnxt = B2NB(a);
-		if(bnxt->magic == FREE_MAGIC)
-			a = blockmerge(p, a, bnxt);
-		blockcheck(p, a);
-		pooladd(p, a);
-	} else {
-		Alloc *a;
-		ulong dsize;
+static void blockgrow(Pool *p, Bhdr *b, ulong nsize) {
+  if (b->magic == FREE_MAGIC) {
+    Alloc *a;
+    Bhdr *bnxt;
+    a = pooldel(p, (Free *)b);
+    blockcheck(p, a);
+    blocksetsize(a, nsize);
+    blockcheck(p, a);
+    bnxt = B2NB(a);
+    if (bnxt->magic == FREE_MAGIC)
+      a = blockmerge(p, a, bnxt);
+    blockcheck(p, a);
+    pooladd(p, a);
+  } else {
+    Alloc *a;
+    ulong dsize;
 
-		a = (Alloc*)b;
-		p->curalloc -= a->size;
-		dsize = getdsize(a);
-		blocksetsize(a, nsize);
-		trim(p, a, dsize);
-		p->curalloc += a->size;
-	}
+    a = (Alloc *)b;
+    p->curalloc -= a->size;
+    dsize = getdsize(a);
+    blocksetsize(a, nsize);
+    trim(p, a, dsize);
+    p->curalloc += a->size;
+  }
 }
 
 /* arenamerge: attempt to coalesce to arenas that might be adjacent */
-static Arena*
-arenamerge(Pool *p, Arena *bot, Arena *top)
-{
-	Bhdr *bbot, *btop;
-	Btail *t;
-	ulong newsize;
+static Arena *arenamerge(Pool *p, Arena *bot, Arena *top) {
+  Bhdr *bbot, *btop;
+  Btail *t;
+  ulong newsize;
 
-	blockcheck(p, bot);
-	blockcheck(p, top);
-	assert(bot->aup == top && top > bot);
+  blockcheck(p, bot);
+  blockcheck(p, top);
+  assert(bot->aup == top && top > bot);
 
-	newsize = top->asize + ((uchar*)top - (uchar*)bot);
-	if(newsize < top->asize || p->merge == nil || p->merge(bot, top) == 0)
-		return nil;
+  newsize = top->asize + ((uchar *)top - (uchar *)bot);
+  if (newsize < top->asize || p->merge == nil || p->merge(bot, top) == 0)
+    return nil;
 
-	/* remove top from list */
-	if(bot->aup = top->aup)	/* assign = */
-		bot->aup->down = bot;
-	else
-		p->arenalist = bot;
+  /* remove top from list */
+  if (bot->aup = top->aup) /* assign = */
+    bot->aup->down = bot;
+  else
+    p->arenalist = bot;
 
-	/* save ptrs to last block in bot, first block in top */
-	t = B2PT(A2TB(bot));
-	bbot = T2HDR(t);
-	btop = A2B(top);
-	blockcheck(p, bbot);
-	blockcheck(p, btop);
+  /* save ptrs to last block in bot, first block in top */
+  t = B2PT(A2TB(bot));
+  bbot = T2HDR(t);
+  btop = A2B(top);
+  blockcheck(p, bbot);
+  blockcheck(p, btop);
 
-	/* grow bottom arena to encompass top */
-	arenasetsize(bot, newsize);
+  /* grow bottom arena to encompass top */
+  arenasetsize(bot, newsize);
 
-	/* grow bottom block to encompass space between arenas */
-	blockgrow(p, bbot, (uchar*)btop-(uchar*)bbot);
-	blockcheck(p, bbot);
-	return bot;
+  /* grow bottom block to encompass space between arenas */
+  blockgrow(p, bbot, (uchar *)btop - (uchar *)bbot);
+  blockcheck(p, bbot);
+  return bot;
 }
 
 /* dumpblock: print block's vital stats */
-static void
-dumpblock(Pool *p, Bhdr *b)
-{
-	ulong *dp;
-	ulong dsize;
-	uchar *cp;
+static void dumpblock(Pool *p, Bhdr *b) {
+  ulong *dp;
+  ulong dsize;
+  uchar *cp;
 
-	dp = (ulong*)b;
-	p->print(p, "pool %s block %p\nhdr %.8lux %.8lux %.8lux %.8lux %.8lux %.8lux\n",
-		p->name, b, dp[0], dp[1], dp[2], dp[3], dp[4], dp[5], dp[6]);
+  dp = (ulong *)b;
+  p->print(p,
+           "pool %s block %p\nhdr %.8lux %.8lux %.8lux %.8lux %.8lux %.8lux\n",
+           p->name, b, dp[0], dp[1], dp[2], dp[3], dp[4], dp[5], dp[6]);
 
-	dp = (ulong*)B2T(b);
-	p->print(p, "tail %.8lux %.8lux %.8lux %.8lux %.8lux %.8lux | %.8lux %.8lux\n",
-		dp[-6], dp[-5], dp[-4], dp[-3], dp[-2], dp[-1], dp[0], dp[1]);
+  dp = (ulong *)B2T(b);
+  p->print(p,
+           "tail %.8lux %.8lux %.8lux %.8lux %.8lux %.8lux | %.8lux %.8lux\n",
+           dp[-6], dp[-5], dp[-4], dp[-3], dp[-2], dp[-1], dp[0], dp[1]);
 
-	if(b->magic == ALLOC_MAGIC){
-		dsize = getdsize((Alloc*)b);
-		if(dsize >= b->size)	/* user data size corrupt */
-			return;
+  if (b->magic == ALLOC_MAGIC) {
+    dsize = getdsize((Alloc *)b);
+    if (dsize >= b->size) /* user data size corrupt */
+      return;
 
-		cp = (uchar*)_B2D(b)+dsize;
-		p->print(p, "user data ");
-		p->print(p, "%.2ux %.2ux %.2ux %.2ux  %.2ux %.2ux %.2ux %.2ux",
-			cp[-8], cp[-7], cp[-6], cp[-5], cp[-4], cp[-3], cp[-2], cp[-1]);
-		p->print(p, " | %.2ux %.2ux %.2ux %.2ux  %.2ux %.2ux %.2ux %.2ux\n",
-			cp[0], cp[1], cp[2], cp[3], cp[4], cp[5], cp[6], cp[7]);
-	}
+    cp = (uchar *)_B2D(b) + dsize;
+    p->print(p, "user data ");
+    p->print(p, "%.2ux %.2ux %.2ux %.2ux  %.2ux %.2ux %.2ux %.2ux", cp[-8],
+             cp[-7], cp[-6], cp[-5], cp[-4], cp[-3], cp[-2], cp[-1]);
+    p->print(p, " | %.2ux %.2ux %.2ux %.2ux  %.2ux %.2ux %.2ux %.2ux\n", cp[0],
+             cp[1], cp[2], cp[3], cp[4], cp[5], cp[6], cp[7]);
+  }
 }
 
-static void
-printblock(Pool *p, Bhdr *b, char *msg)
-{
-	p->print(p, "%s\n", msg);
-	dumpblock(p, b);
+static void printblock(Pool *p, Bhdr *b, char *msg) {
+  p->print(p, "%s\n", msg);
+  dumpblock(p, b);
 }
 
-static void
-panicblock(Pool *p, Bhdr *b, char *msg)
-{
-	p->print(p, "%s\n", msg);
-	dumpblock(p, b);
-	p->panic(p, "pool panic");
+static void panicblock(Pool *p, Bhdr *b, char *msg) {
+  p->print(p, "%s\n", msg);
+  dumpblock(p, b);
+  p->panic(p, "pool panic");
 }
 
 /* blockcheck: ensure a block consistent with our expectations */
 /* should only be called when holding pool lock */
-static void
-blockcheck(Pool *p, Bhdr *b)
-{
-	Alloc *a;
-	Btail *t;
-	int i, n;
-	uchar *q, *bq, *eq;
-	ulong dsize;
+static void blockcheck(Pool *p, Bhdr *b) {
+  Alloc *a;
+  Btail *t;
+  int i, n;
+  uchar *q, *bq, *eq;
+  ulong dsize;
 
-	switch(b->magic) {
-	default:
-		panicblock(p, b, "bad magic");
-	case FREE_MAGIC:
-	case UNALLOC_MAGIC:
-	 	t = B2T(b);
-		if(t->magic0 != TAIL_MAGIC0 || t->magic1 != TAIL_MAGIC1)
-			panicblock(p, b, "corrupt tail magic");
-		if(T2HDR(t) != b)
-			panicblock(p, b, "corrupt tail ptr");
-		break;
-	case DEAD_MAGIC:
-	 	t = B2T(b);
-		if(t->magic0 != TAIL_MAGIC0 || t->magic1 != TAIL_MAGIC1)
-			panicblock(p, b, "corrupt tail magic");
-		if(T2HDR(t) != b)
-			panicblock(p, b, "corrupt tail ptr");
-		n = getdsize((Alloc*)b);
-		q = _B2D(b);
-		q += 8;
-		for(i=8; i<n; i++)
-			if(*q++ != 0xDA)
-				panicblock(p, b, "dangling pointer write");
-		break;
-	case ARENA_MAGIC:
-		b = A2TB((Arena*)b);
-		if(b->magic != ARENATAIL_MAGIC)
-			panicblock(p, b, "bad arena size");
-		/* fall through */
-	case ARENATAIL_MAGIC:
-		if(b->size != 0)
-			panicblock(p, b, "bad arena tail size");
-		break;
-	case ALLOC_MAGIC:
-		a = (Alloc*)b;
-	 	t = B2T(b);
-		dsize = getdsize(a);
-		bq = (uchar*)_B2D(a)+dsize;
-		eq = (uchar*)t;
+  switch (b->magic) {
+  default:
+    panicblock(p, b, "bad magic");
+  case FREE_MAGIC:
+  case UNALLOC_MAGIC:
+    t = B2T(b);
+    if (t->magic0 != TAIL_MAGIC0 || t->magic1 != TAIL_MAGIC1)
+      panicblock(p, b, "corrupt tail magic");
+    if (T2HDR(t) != b)
+      panicblock(p, b, "corrupt tail ptr");
+    break;
+  case DEAD_MAGIC:
+    t = B2T(b);
+    if (t->magic0 != TAIL_MAGIC0 || t->magic1 != TAIL_MAGIC1)
+      panicblock(p, b, "corrupt tail magic");
+    if (T2HDR(t) != b)
+      panicblock(p, b, "corrupt tail ptr");
+    n = getdsize((Alloc *)b);
+    q = _B2D(b);
+    q += 8;
+    for (i = 8; i < n; i++)
+      if (*q++ != 0xDA)
+        panicblock(p, b, "dangling pointer write");
+    break;
+  case ARENA_MAGIC:
+    b = A2TB((Arena *)b);
+    if (b->magic != ARENATAIL_MAGIC)
+      panicblock(p, b, "bad arena size");
+    /* fall through */
+  case ARENATAIL_MAGIC:
+    if (b->size != 0)
+      panicblock(p, b, "bad arena tail size");
+    break;
+  case ALLOC_MAGIC:
+    a = (Alloc *)b;
+    t = B2T(b);
+    dsize = getdsize(a);
+    bq = (uchar *)_B2D(a) + dsize;
+    eq = (uchar *)t;
 
-		if(t->magic0 != TAIL_MAGIC0){
-			/* if someone wrote exactly one byte over and it was a NUL, we sometimes only complain. */
-			if((p->flags & POOL_TOLERANCE) && bq == eq && t->magic0 == 0)
-				printblock(p, b, "mem user overflow (magic0)");
-			else
-				panicblock(p, b, "corrupt tail magic0");
-		}
+    if (t->magic0 != TAIL_MAGIC0) {
+      /* if someone wrote exactly one byte over and it was a NUL, we sometimes
+       * only complain. */
+      if ((p->flags & POOL_TOLERANCE) && bq == eq && t->magic0 == 0)
+        printblock(p, b, "mem user overflow (magic0)");
+      else
+        panicblock(p, b, "corrupt tail magic0");
+    }
 
-		if(t->magic1 != TAIL_MAGIC1)
-			panicblock(p, b, "corrupt tail magic1");
-		if(T2HDR(t) != b)
-			panicblock(p, b, "corrupt tail ptr");
+    if (t->magic1 != TAIL_MAGIC1)
+      panicblock(p, b, "corrupt tail magic1");
+    if (T2HDR(t) != b)
+      panicblock(p, b, "corrupt tail ptr");
 
-		if(dsize2bsize(p, dsize)  > a->size)
-			panicblock(p, b, "too much block data");
+    if (dsize2bsize(p, dsize) > a->size)
+      panicblock(p, b, "too much block data");
 
-		if(eq > bq+4)
-			eq = bq+4;
-		for(q=bq; q<eq; q++){
-			if(*q != datamagic[((uintptr)q)%nelem(datamagic)]){
-				if(q == bq && *q == 0 && (p->flags & POOL_TOLERANCE)){
-					printblock(p, b, "mem user overflow");
-					continue;
-				}
-				panicblock(p, b, "mem user overflow");
-			}
-		}
-		break;
-	}
+    if (eq > bq + 4)
+      eq = bq + 4;
+    for (q = bq; q < eq; q++) {
+      if (*q != datamagic[((uintptr)q) % nelem(datamagic)]) {
+        if (q == bq && *q == 0 && (p->flags & POOL_TOLERANCE)) {
+          printblock(p, b, "mem user overflow");
+          continue;
+        }
+        panicblock(p, b, "mem user overflow");
+      }
+    }
+    break;
+  }
 }
 
 /*
@@ -868,50 +828,49 @@ blockcheck(Pool *p, Bhdr *b)
  * assumes pool lock is held.
  */
 enum {
-	FLOATING_MAGIC = 0xCBCBCBCB,	/* temporarily neither allocated nor in the free tree */
+  FLOATING_MAGIC =
+      0xCBCBCBCB, /* temporarily neither allocated nor in the free tree */
 };
 
-static int
-arenacompact(Pool *p, Arena *a)
-{
-	Bhdr *b, *wb, *eb, *nxt;
-	int compacted;
+static int arenacompact(Pool *p, Arena *a) {
+  Bhdr *b, *wb, *eb, *nxt;
+  int compacted;
 
-	if(p->move == nil)
-		p->panic(p, "don't call me when pool->move is nil\n");
+  if (p->move == nil)
+    p->panic(p, "don't call me when pool->move is nil\n");
 
-	poolcheckarena(p, a);
-	eb = A2TB(a);
-	compacted = 0;
-	for(b=wb=A2B(a); b && b < eb; b=nxt) {
-		nxt = B2NB(b);
-		switch(b->magic) {
-		case FREE_MAGIC:
-			pooldel(p, (Free*)b);
-			b->magic = FLOATING_MAGIC;
-			break;
-		case ALLOC_MAGIC:
-			if(wb != b) {
-				memmove(wb, b, b->size);
-				p->move(_B2D(b), _B2D(wb));
-				compacted = 1;
-			}
-			wb = B2NB(wb);
-			break;
-		}
-	}
+  poolcheckarena(p, a);
+  eb = A2TB(a);
+  compacted = 0;
+  for (b = wb = A2B(a); b && b < eb; b = nxt) {
+    nxt = B2NB(b);
+    switch (b->magic) {
+    case FREE_MAGIC:
+      pooldel(p, (Free *)b);
+      b->magic = FLOATING_MAGIC;
+      break;
+    case ALLOC_MAGIC:
+      if (wb != b) {
+        memmove(wb, b, b->size);
+        p->move(_B2D(b), _B2D(wb));
+        compacted = 1;
+      }
+      wb = B2NB(wb);
+      break;
+    }
+  }
 
-	/*
-	 * the only free data is now at the end of the arena, pointed
-	 * at by wb.  all we need to do is set its size and get out.
-	 */
-	if(wb < eb) {
-		wb->magic = UNALLOC_MAGIC;
-		blocksetsize(wb, (uchar*)eb-(uchar*)wb);
-		pooladd(p, (Alloc*)wb);
-	}
+  /*
+   * the only free data is now at the end of the arena, pointed
+   * at by wb.  all we need to do is set its size and get out.
+   */
+  if (wb < eb) {
+    wb->magic = UNALLOC_MAGIC;
+    blocksetsize(wb, (uchar *)eb - (uchar *)wb);
+    pooladd(p, (Alloc *)wb);
+  }
 
-	return compacted;
+  return compacted;
 }
 
 /*
@@ -919,27 +878,25 @@ arenacompact(Pool *p, Arena *a)
  * 'twould be nice to shift blocks from one arena to the
  * next but it's a pain to code.
  */
-static int
-poolcompactl(Pool *pool)
-{
-	Arena *a;
-	int compacted;
+static int poolcompactl(Pool *pool) {
+  Arena *a;
+  int compacted;
 
-	if(pool->move == nil || pool->lastcompact == pool->nfree)
-		return 0;
+  if (pool->move == nil || pool->lastcompact == pool->nfree)
+    return 0;
 
-	pool->lastcompact = pool->nfree;
-	compacted = 0;
-	for(a=pool->arenalist; a; a=a->down)
-		compacted |= arenacompact(pool, a);
-	return compacted;
+  pool->lastcompact = pool->nfree;
+  compacted = 0;
+  for (a = pool->arenalist; a; a = a->down)
+    compacted |= arenacompact(pool, a);
+  return compacted;
 }
 
 /*
 static int
 poolcompactl(Pool*)
 {
-	return 0;
+        return 0;
 }
 */
 
@@ -951,637 +908,519 @@ poolcompactl(Pool*)
 static void*
 _B2D(void *a)
 {
-	return (uchar*)a+sizeof(Bhdr);
+        return (uchar*)a+sizeof(Bhdr);
 }
 */
 
-static void*
-B2D(Pool *p, Alloc *a)
-{
-	if(a->magic != ALLOC_MAGIC)
-		p->panic(p, "B2D called on unworthy block");
-	return _B2D(a);
+static void *B2D(Pool *p, Alloc *a) {
+  if (a->magic != ALLOC_MAGIC)
+    p->panic(p, "B2D called on unworthy block");
+  return _B2D(a);
 }
 
 /*
 static void*
 _D2B(void *v)
 {
-	Alloc *a;
-	a = (Alloc*)((uchar*)v-sizeof(Bhdr));
-	return a;
+        Alloc *a;
+        a = (Alloc*)((uchar*)v-sizeof(Bhdr));
+        return a;
 }
 */
 
-static Alloc*
-D2B(Pool *p, void *v)
-{
-	Alloc *a;
-	ulong *u;
+static Alloc *D2B(Pool *p, void *v) {
+  Alloc *a;
+  ulong *u;
 
-	if((uintptr)v&(sizeof(ulong)-1))
-		v = (char*)v - ((uintptr)v&(sizeof(ulong)-1));
-	u = v;
-	while(u[-1] == ALIGN_MAGIC)
-		u--;
-	a = _D2B(u);
-	if(a->magic != ALLOC_MAGIC)
-		p->panic(p, "D2B called on non-block %p (double-free?)", v);
-	return a;
+  if ((uintptr)v & (sizeof(ulong) - 1))
+    v = (char *)v - ((uintptr)v & (sizeof(ulong) - 1));
+  u = v;
+  while (u[-1] == ALIGN_MAGIC)
+    u--;
+  a = _D2B(u);
+  if (a->magic != ALLOC_MAGIC)
+    p->panic(p, "D2B called on non-block %p (double-free?)", v);
+  return a;
 }
 
-/* poolallocl: attempt to allocate block to hold dsize user bytes; assumes lock held */
-static void*
-poolallocl(Pool *p, ulong dsize)
-{
-	ulong bsize;
-	Free *fb;
-	Alloc *ab;
+/* poolallocl: attempt to allocate block to hold dsize user bytes; assumes lock
+ * held */
+static void *poolallocl(Pool *p, ulong dsize) {
+  ulong bsize;
+  Free *fb;
+  Alloc *ab;
 
-	if(dsize >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolallocl start p=%p dsize=%lud\n", p, dsize);
-	if(dsize >= 0x80000000UL){	/* for sanity, overflow */
-		werrstr("invalid allocation size");
-		return nil;
-	}
+  if (dsize >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolallocl start p=%p dsize=%lud\n", p, dsize);
+  if (dsize >= 0x80000000UL) { /* for sanity, overflow */
+    werrstr("invalid allocation size");
+    return nil;
+  }
 
-	bsize = dsize2bsize(p, dsize);
+  bsize = dsize2bsize(p, dsize);
 
-	fb = treelookupgt(p->freeroot, bsize);
-	if(fb == nil) {
-		if(dsize >= POOLALLOC_TRACE_THRESHOLD)
-			pooltrace("poolallocl: need new arena asize=%lud\n", bsize2asize(p, bsize));
-		poolnewarena(p, bsize2asize(p, bsize));
-		if((fb = treelookupgt(p->freeroot, bsize)) == nil) {
-			if(!poolgrowarena(p, bsize)){
-				if(dsize >= POOLALLOC_TRACE_THRESHOLD)
-					pooltrace("poolallocl: still no block for dsize=%lud\n", dsize);
-				/* assume poolnewarena failed and set %r */
-				return nil;
-			}
-			fb = treelookupgt(p->freeroot, bsize);
-			if(fb == nil)
-				return nil;
-		}
-	}
+  fb = treelookupgt(p->freeroot, bsize);
+  if (fb == nil) {
+    if (dsize >= POOLALLOC_TRACE_THRESHOLD)
+      pooltrace("poolallocl: need new arena asize=%lud\n",
+                bsize2asize(p, bsize));
+    poolnewarena(p, bsize2asize(p, bsize));
+    if ((fb = treelookupgt(p->freeroot, bsize)) == nil) {
+      if (!poolgrowarena(p, bsize)) {
+        if (dsize >= POOLALLOC_TRACE_THRESHOLD)
+          pooltrace("poolallocl: still no block for dsize=%lud\n", dsize);
+        /* assume poolnewarena failed and set %r */
+        return nil;
+      }
+      fb = treelookupgt(p->freeroot, bsize);
+      if (fb == nil)
+        return nil;
+    }
+  }
 
-	ab = trim(p, pooldel(p, fb), dsize);
-	p->curalloc += ab->size;
-	antagonism {
-		memset(B2D(p, ab), 0xDF, dsize);
-	}
-	if(dsize >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolallocl success p=%p dsize=%lud block=%p size=%lud\n", p, dsize, ab, ab->size);
-	return B2D(p, ab);
+  ab = trim(p, pooldel(p, fb), dsize);
+  p->curalloc += ab->size;
+  antagonism { memset(B2D(p, ab), 0xDF, dsize); }
+  if (dsize >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolallocl success p=%p dsize=%lud block=%p size=%lud\n", p,
+              dsize, ab, ab->size);
+  return B2D(p, ab);
 }
 
 /* poolreallocl: attempt to grow v to ndsize bytes; assumes lock held */
-static void*
-poolreallocl(Pool *p, void *v, ulong ndsize)
-{
-	Alloc *a;
-	Bhdr *left, *right, *newb;
-	Btail *t;
-	ulong nbsize;
-	ulong odsize;
-	ulong obsize;
-	void *nv;
+static void *poolreallocl(Pool *p, void *v, ulong ndsize) {
+  Alloc *a;
+  Bhdr *left, *right, *newb;
+  Btail *t;
+  ulong nbsize;
+  ulong odsize;
+  ulong obsize;
+  void *nv;
 
-	if(v == nil)	/* for ANSI */
-		return poolallocl(p, ndsize);
-	if(ndsize == 0) {
-		poolfreel(p, v);
-		return nil;
-	}
-	a = D2B(p, v);
-	blockcheck(p, a);
-	odsize = getdsize(a);
-	obsize = a->size;
+  if (v == nil) /* for ANSI */
+    return poolallocl(p, ndsize);
+  if (ndsize == 0) {
+    poolfreel(p, v);
+    return nil;
+  }
+  a = D2B(p, v);
+  blockcheck(p, a);
+  odsize = getdsize(a);
+  obsize = a->size;
 
-	/* can reuse the same block? */
-	nbsize = dsize2bsize(p, ndsize);
-	if(nbsize <= a->size) {
-	Returnblock:
-		if(v != _B2D(a))
-			memmove(_B2D(a), v, odsize);
-		a = trim(p, a, ndsize);
-		p->curalloc -= obsize;
-		p->curalloc += a->size;
-		v = B2D(p, a);
-		return v;
-	}
+  /* can reuse the same block? */
+  nbsize = dsize2bsize(p, ndsize);
+  if (nbsize <= a->size) {
+  Returnblock:
+    if (v != _B2D(a))
+      memmove(_B2D(a), v, odsize);
+    a = trim(p, a, ndsize);
+    p->curalloc -= obsize;
+    p->curalloc += a->size;
+    v = B2D(p, a);
+    return v;
+  }
 
-	/* can merge with surrounding blocks? */
-	right = B2NB(a);
-	if(right->magic == FREE_MAGIC && a->size+right->size >= nbsize) {
-		a = blockmerge(p, a, right);
-		goto Returnblock;
-	}
+  /* can merge with surrounding blocks? */
+  right = B2NB(a);
+  if (right->magic == FREE_MAGIC && a->size + right->size >= nbsize) {
+    a = blockmerge(p, a, right);
+    goto Returnblock;
+  }
 
-	t = B2PT(a);
-	left = T2HDR(t);
-	if(left->magic == FREE_MAGIC && left->size+a->size >= nbsize) {
-		a = blockmerge(p, left, a);
-		goto Returnblock;
-	}
+  t = B2PT(a);
+  left = T2HDR(t);
+  if (left->magic == FREE_MAGIC && left->size + a->size >= nbsize) {
+    a = blockmerge(p, left, a);
+    goto Returnblock;
+  }
 
-	if(left->magic == FREE_MAGIC && right->magic == FREE_MAGIC
-	&& left->size+a->size+right->size >= nbsize) {
-		a = blockmerge(p, blockmerge(p, left, a), right);
-		goto Returnblock;
-	}
+  if (left->magic == FREE_MAGIC && right->magic == FREE_MAGIC &&
+      left->size + a->size + right->size >= nbsize) {
+    a = blockmerge(p, blockmerge(p, left, a), right);
+    goto Returnblock;
+  }
 
-	if((nv = poolallocl(p, ndsize)) == nil)
-		return nil;
+  if ((nv = poolallocl(p, ndsize)) == nil)
+    return nil;
 
-	/* maybe the new block is next to us; if so, merge */
-	left = T2HDR(B2PT(a));
-	right = B2NB(a);
-	newb = D2B(p, nv);
-	if(left == newb || right == newb) {
-		if(left == newb || left->magic == FREE_MAGIC)
-			a = blockmerge(p, left, a);
-		if(right == newb || right->magic == FREE_MAGIC)
-			a = blockmerge(p, a, right);
-		assert(a->size >= nbsize);
-		goto Returnblock;
-	}
+  /* maybe the new block is next to us; if so, merge */
+  left = T2HDR(B2PT(a));
+  right = B2NB(a);
+  newb = D2B(p, nv);
+  if (left == newb || right == newb) {
+    if (left == newb || left->magic == FREE_MAGIC)
+      a = blockmerge(p, left, a);
+    if (right == newb || right->magic == FREE_MAGIC)
+      a = blockmerge(p, a, right);
+    assert(a->size >= nbsize);
+    goto Returnblock;
+  }
 
-	/* enough cleverness */
-	memmove(nv, v, odsize);
-	antagonism {
-		memset((char*)nv+odsize, 0xDE, ndsize-odsize);
-	}
-	poolfreel(p, v);
-	return nv;
+  /* enough cleverness */
+  memmove(nv, v, odsize);
+  antagonism { memset((char *)nv + odsize, 0xDE, ndsize - odsize); }
+  poolfreel(p, v);
+  return nv;
 }
 
-static void*
-alignptr(void *v, ulong align, long offset)
-{
-	char *c;
-	ulong off;
+static void *alignptr(void *v, ulong align, long offset) {
+  char *c;
+  ulong off;
 
-	c = v;
-	if(align){
-		off = ((ulong)(uintptr)c) % align;
-		if(off != offset){
-			offset -= off;
-			if(offset < 0)
-				offset += align;
-			c += offset;
-		}
-	}
-	return c;
+  c = v;
+  if (align) {
+    off = ((ulong)(uintptr)c) % align;
+    if (off != offset) {
+      offset -= off;
+      if (offset < 0)
+        offset += align;
+      c += offset;
+    }
+  }
+  return c;
 }
 
 /* poolspanallocl: allocate as described below; assumes pool locked */
-static void*
-poolallocalignl(Pool *p, ulong dsize, ulong align, long offset, ulong span)
-{
-	ulong asize;
-	void *v;
-	char *c;
-	ulong *u;
-	int skip;
-	Alloc *b;
+static void *poolallocalignl(Pool *p, ulong dsize, ulong align, long offset,
+                             ulong span) {
+  ulong asize;
+  void *v;
+  char *c;
+  ulong *u;
+  int skip;
+  Alloc *b;
 
-	/*
-	 * allocate block
-	 * 	dsize bytes
-	 *	addr == offset (modulo align)
-	 *	does not cross span-byte block boundary
-	 *
-	 * to satisfy alignment, just allocate an extra
-	 * align bytes and then shift appropriately.
-	 *
-	 * to satisfy span, try once and see if we're
-	 * lucky.  the second time, allocate 2x asize
-	 * so that we definitely get one not crossing
-	 * the boundary.
-	 */
-	if(align){
-		if(offset < 0)
-			offset = align - ((-offset)%align);
-		offset %= align;
-	}
-	asize = dsize+align;
-	v = poolallocl(p, asize);
-	if(v == nil)
-		return nil;
-	if(span && (uintptr)v/span != ((uintptr)v+asize)/span){
-		/* try again */
-		poolfreel(p, v);
-		v = poolallocl(p, 2*asize);
-		if(v == nil)
-			return nil;
-	}
+  /*
+   * allocate block
+   * 	dsize bytes
+   *	addr == offset (modulo align)
+   *	does not cross span-byte block boundary
+   *
+   * to satisfy alignment, just allocate an extra
+   * align bytes and then shift appropriately.
+   *
+   * to satisfy span, try once and see if we're
+   * lucky.  the second time, allocate 2x asize
+   * so that we definitely get one not crossing
+   * the boundary.
+   */
+  if (align) {
+    if (offset < 0)
+      offset = align - ((-offset) % align);
+    offset %= align;
+  }
+  asize = dsize + align;
+  v = poolallocl(p, asize);
+  if (v == nil)
+    return nil;
+  if (span && (uintptr)v / span != ((uintptr)v + asize) / span) {
+    /* try again */
+    poolfreel(p, v);
+    v = poolallocl(p, 2 * asize);
+    if (v == nil)
+      return nil;
+  }
 
-	/*
-	 * figure out what pointer we want to return
-	 */
-	c = alignptr(v, align, offset);
-	if(span && (uintptr)c/span != (uintptr)(c+dsize-1)/span){
-		c += span - (uintptr)c%span;
-		c = alignptr(c, align, offset);
-		if((uintptr)c/span != (uintptr)(c+dsize-1)/span){
-			poolfreel(p, v);
-			werrstr("cannot satisfy dsize %lud span %lud with align %lud+%ld", dsize, span, align, offset);
-			return nil;
-		}
-	}
-	skip = c - (char*)v;
+  /*
+   * figure out what pointer we want to return
+   */
+  c = alignptr(v, align, offset);
+  if (span && (uintptr)c / span != (uintptr)(c + dsize - 1) / span) {
+    c += span - (uintptr)c % span;
+    c = alignptr(c, align, offset);
+    if ((uintptr)c / span != (uintptr)(c + dsize - 1) / span) {
+      poolfreel(p, v);
+      werrstr("cannot satisfy dsize %lud span %lud with align %lud+%ld", dsize,
+              span, align, offset);
+      return nil;
+    }
+  }
+  skip = c - (char *)v;
 
-	/*
-	 * free up the skip bytes before that pointer
-	 * or mark it as unavailable.
-	 */
-	b = _D2B(v);
-	p->curalloc -= b->size;
-	b = freefromfront(p, b, skip);
-	v = _B2D(b);
-	skip = c - (char*)v;
-	if(c > (char*)v){
-		u = v;
-		while(c >= (char*)u+sizeof(ulong))
-			*u++ = ALIGN_MAGIC;
-	}
-	trim(p, b, skip+dsize);
-	p->curalloc += b->size;
-	assert(D2B(p, c) == b);
-	antagonism {
-		memset(c, 0xDD, dsize);
-	}
-	return c;
+  /*
+   * free up the skip bytes before that pointer
+   * or mark it as unavailable.
+   */
+  b = _D2B(v);
+  p->curalloc -= b->size;
+  b = freefromfront(p, b, skip);
+  v = _B2D(b);
+  skip = c - (char *)v;
+  if (c > (char *)v) {
+    u = v;
+    while (c >= (char *)u + sizeof(ulong))
+      *u++ = ALIGN_MAGIC;
+  }
+  trim(p, b, skip + dsize);
+  p->curalloc += b->size;
+  assert(D2B(p, c) == b);
+  antagonism { memset(c, 0xDD, dsize); }
+  return c;
 }
 
 /* poolfree: free block obtained from poolalloc; assumes lock held */
-static void
-poolfreel(Pool *p, void *v)
-{
-	Alloc *ab;
-	Bhdr *back, *fwd;
+static void poolfreel(Pool *p, void *v) {
+  Alloc *ab;
+  Bhdr *back, *fwd;
 
-	if(v == nil)	/* for ANSI */
-		return;
+  if (v == nil) /* for ANSI */
+    return;
 
-	ab = D2B(p, v);
-	blockcheck(p, ab);
+  ab = D2B(p, v);
+  blockcheck(p, ab);
 
-	if(p->flags&POOL_NOREUSE){
-		int n;
+  if (p->flags & POOL_NOREUSE) {
+    int n;
 
-		ab->magic = DEAD_MAGIC;
-		n = getdsize(ab)-8;
-		if(n > 0)
-			memset((uchar*)v+8, 0xDA, n);
-		return;
-	}
+    ab->magic = DEAD_MAGIC;
+    n = getdsize(ab) - 8;
+    if (n > 0)
+      memset((uchar *)v + 8, 0xDA, n);
+    return;
+  }
 
-	p->nfree++;
-	p->curalloc -= ab->size;
-	back = T2HDR(B2PT(ab));
-	if(back->magic == FREE_MAGIC)
-		ab = blockmerge(p, back, ab);
+  p->nfree++;
+  p->curalloc -= ab->size;
+  back = T2HDR(B2PT(ab));
+  if (back->magic == FREE_MAGIC)
+    ab = blockmerge(p, back, ab);
 
-	fwd = B2NB(ab);
-	if(fwd->magic == FREE_MAGIC)
-		ab = blockmerge(p, ab, fwd);
+  fwd = B2NB(ab);
+  if (fwd->magic == FREE_MAGIC)
+    ab = blockmerge(p, ab, fwd);
 
-	pooladd(p, ab);
+  pooladd(p, ab);
 }
 
-void*
-poolalloc(Pool *p, ulong n)
-{
-	void *v;
+void *poolalloc(Pool *p, ulong n) {
+  void *v;
 
-	if(n >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolalloc enter p=%p n=%lud\n", p, n);
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	v = poolallocl(p, n);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
-	LOG(p, "poolalloc %p %lud = %p\n", p, n, v);
-	p->unlock(p);
-	if(n >= POOLALLOC_TRACE_THRESHOLD)
-		pooltrace("poolalloc exit p=%p n=%lud v=%p\n", p, n, v);
-	return v;
+  if (n >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolalloc enter p=%p n=%lud\n", p, n);
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  v = poolallocl(p, n);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (p->logstack && (p->flags & POOL_LOGGING))
+    p->logstack(p);
+  LOG(p, "poolalloc %p %lud = %p\n", p, n, v);
+  p->unlock(p);
+  if (n >= POOLALLOC_TRACE_THRESHOLD)
+    pooltrace("poolalloc exit p=%p n=%lud v=%p\n", p, n, v);
+  return v;
 }
 
-void*
-poolallocalign(Pool *p, ulong n, ulong align, long offset, ulong span)
-{
-	void *v;
+void *poolallocalign(Pool *p, ulong n, ulong align, long offset, ulong span) {
+  void *v;
 
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	v = poolallocalignl(p, n, align, offset, span);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
-	LOG(p, "poolallocalign %p %lud %lud %ld %lud = %p\n", p, n, align, offset, span, v);
-	p->unlock(p);
-	return v;
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  v = poolallocalignl(p, n, align, offset, span);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (p->logstack && (p->flags & POOL_LOGGING))
+    p->logstack(p);
+  LOG(p, "poolallocalign %p %lud %lud %ld %lud = %p\n", p, n, align, offset,
+      span, v);
+  p->unlock(p);
+  return v;
 }
 
-int
-poolcompact(Pool *p)
-{
-	int rv;
+int poolcompact(Pool *p) {
+  int rv;
 
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	rv = poolcompactl(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	LOG(p, "poolcompact %p\n", p);
-	p->unlock(p);
-	return rv;
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  rv = poolcompactl(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  LOG(p, "poolcompact %p\n", p);
+  p->unlock(p);
+  return rv;
 }
 
-void*
-poolrealloc(Pool *p, void *v, ulong n)
-{
-	void *nv;
+void *poolrealloc(Pool *p, void *v, ulong n) {
+  void *nv;
 
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	nv = poolreallocl(p, v, n);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
-	LOG(p, "poolrealloc %p %p %ld = %p\n", p, v, n, nv);
-	p->unlock(p);
-	return nv;
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  nv = poolreallocl(p, v, n);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (p->logstack && (p->flags & POOL_LOGGING))
+    p->logstack(p);
+  LOG(p, "poolrealloc %p %p %ld = %p\n", p, v, n, nv);
+  p->unlock(p);
+  return nv;
 }
 
-void
-poolfree(Pool *p, void *v)
-{
-	extern void uartputs(char *, int);
-	char debug_buf[128];
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree ENTER p=%p v=%p\n", p, v);
-	uartputs(debug_buf, strlen(debug_buf));
-
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling lock\n");
-	uartputs(debug_buf, strlen(debug_buf));
-	p->lock(p);
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree lock acquired\n");
-	uartputs(debug_buf, strlen(debug_buf));
-
-	paranoia {
-		snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling poolcheckl\n");
-		uartputs(debug_buf, strlen(debug_buf));
-		poolcheckl(p);
-		snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree poolcheckl done\n");
-		uartputs(debug_buf, strlen(debug_buf));
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling poolfreel\n");
-	uartputs(debug_buf, strlen(debug_buf));
-	poolfreel(p, v);
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree poolfreel done\n");
-	uartputs(debug_buf, strlen(debug_buf));
-
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
-	LOG(p, "poolfree %p %p\n", p, v);
-
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree calling unlock\n");
-	uartputs(debug_buf, strlen(debug_buf));
-	p->unlock(p);
-	snprint(debug_buf, sizeof(debug_buf), "DEBUG: poolfree EXIT\n");
-	uartputs(debug_buf, strlen(debug_buf));
+void poolfree(Pool *p, void *v) {
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  poolfreel(p, v);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (p->logstack && (p->flags & POOL_LOGGING))
+    p->logstack(p);
+  LOG(p, "poolfree %p %p\n", p, v);
+  p->unlock(p);
+}
 }
 
 /*
  * Return the real size of a block, and let the user use it.
  */
-ulong
-poolmsize(Pool *p, void *v)
-{
-	Alloc *b;
-	ulong dsize;
+ulong poolmsize(Pool *p, void *v) {
+  Alloc *b;
+  ulong dsize;
 
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(v == nil)	/* consistency with other braindead ANSI-ness */
-		dsize = 0;
-	else {
-		b = D2B(p, v);
-		dsize = (b->size&~(p->quantum-1)) - sizeof(Bhdr) - sizeof(Btail);
-		assert(dsize >= getdsize(b));
-		blocksetdsize(p, b, dsize);
-	}
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	if(p->logstack && (p->flags & POOL_LOGGING)) p->logstack(p);
-	LOG(p, "poolmsize %p %p = %ld\n", p, v, dsize);
-	p->unlock(p);
-	return dsize;
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (v == nil) /* consistency with other braindead ANSI-ness */
+    dsize = 0;
+  else {
+    b = D2B(p, v);
+    dsize = (b->size & ~(p->quantum - 1)) - sizeof(Bhdr) - sizeof(Btail);
+    assert(dsize >= getdsize(b));
+    blocksetdsize(p, b, dsize);
+  }
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  if (p->logstack && (p->flags & POOL_LOGGING))
+    p->logstack(p);
+  LOG(p, "poolmsize %p %p = %ld\n", p, v, dsize);
+  p->unlock(p);
+  return dsize;
 }
 
-int
-poolisoverlap(Pool *p, void *v, ulong n)
-{
-	Arena *a;
+int poolisoverlap(Pool *p, void *v, ulong n) {
+  Arena *a;
 
-	p->lock(p);
-	for(a = p->arenalist; a != nil; a = a->down)
-		if((uchar*)v+n > (uchar*)a && (uchar*)v < (uchar*)a+a->asize)
-			break;
-	p->unlock(p);
-	return a != nil;
+  p->lock(p);
+  for (a = p->arenalist; a != nil; a = a->down)
+    if ((uchar *)v + n > (uchar *)a && (uchar *)v < (uchar *)a + a->asize)
+      break;
+  p->unlock(p);
+  return a != nil;
 }
 
-void
-poolreset(Pool *p)
-{
-	Arena *a;
+void poolreset(Pool *p) {
+  Arena *a;
 
-	if(p == nil)
-		return;
+  if (p == nil)
+    return;
 
-	p->lock(p);
-	paranoia {
-		poolcheckl(p);
-	}
-	verbosity {
-		pooldumpl(p);
-	}
-	p->cursize = 0;
-	p->curfree = 0;
-	p->curalloc = 0;
-	p->lastcompact = p->nfree = 0;
-	p->freeroot = nil;
-	a = p->arenalist;
-	p->arenalist = nil;
-	LOG(p, "poolreset %p\n", p);
-	p->unlock(p);
+  p->lock(p);
+  paranoia { poolcheckl(p); }
+  verbosity { pooldumpl(p); }
+  p->cursize = 0;
+  p->curfree = 0;
+  p->curalloc = 0;
+  p->lastcompact = p->nfree = 0;
+  p->freeroot = nil;
+  a = p->arenalist;
+  p->arenalist = nil;
+  LOG(p, "poolreset %p\n", p);
+  p->unlock(p);
 
-	while(a != nil){
-		Arena *next = a->down;
-		ulong asize = a->asize;
-		antagonism {
-			memmark(a, 0xFF, asize);
-		}
-		if(p->free)
-			p->free(a, asize);
-		a = next;
-	}
+  while (a != nil) {
+    Arena *next = a->down;
+    ulong asize = a->asize;
+    antagonism { memmark(a, 0xFF, asize); }
+    if (p->free)
+      p->free(a, asize);
+    a = next;
+  }
 }
 
 /*
  * Debugging
  */
 
-static void
-poolcheckarena(Pool *p, Arena *a)
-{
-	Bhdr *b;
-	Bhdr *atail;
+static void poolcheckarena(Pool *p, Arena *a) {
+  Bhdr *b;
+  Bhdr *atail;
 
-	atail = A2TB(a);
-	for(b=a; b->magic != ARENATAIL_MAGIC && b<atail; b=B2NB(b))
-		blockcheck(p, b);
-	blockcheck(p, b);
-	if(b != atail)
-		p->panic(p, "found wrong tail");
+  atail = A2TB(a);
+  for (b = a; b->magic != ARENATAIL_MAGIC && b < atail; b = B2NB(b))
+    blockcheck(p, b);
+  blockcheck(p, b);
+  if (b != atail)
+    p->panic(p, "found wrong tail");
 }
 
-static void
-poolcheckl(Pool *p)
-{
-	Arena *a;
+static void poolcheckl(Pool *p) {
+  Arena *a;
 
-	for(a=p->arenalist; a; a=a->down)
-		poolcheckarena(p, a);
-	if(p->freeroot)
-		checktree(p->freeroot, 0, 1<<30);
+  for (a = p->arenalist; a; a = a->down)
+    poolcheckarena(p, a);
+  if (p->freeroot)
+    checktree(p->freeroot, 0, 1 << 30);
 }
 
-void
-poolcheck(Pool *p)
-{
-	p->lock(p);
-	poolcheckl(p);
-	p->unlock(p);
+void poolcheck(Pool *p) {
+  p->lock(p);
+  poolcheckl(p);
+  p->unlock(p);
 }
 
-void
-poolblockcheck(Pool *p, void *v)
-{
-	if(v == nil)
-		return;
+void poolblockcheck(Pool *p, void *v) {
+  if (v == nil)
+    return;
 
-	p->lock(p);
-	blockcheck(p, D2B(p, v));
-	p->unlock(p);
+  p->lock(p);
+  blockcheck(p, D2B(p, v));
+  p->unlock(p);
 }
 
-static void
-pooldumpl(Pool *p)
-{
-	Arena *a;
+static void pooldumpl(Pool *p) {
+  Arena *a;
 
-	p->print(p, "pool %p %s\n", p, p->name);
-	for(a=p->arenalist; a; a=a->down)
-		pooldumparena(p, a);
+  p->print(p, "pool %p %s\n", p, p->name);
+  for (a = p->arenalist; a; a = a->down)
+    pooldumparena(p, a);
 }
 
-void
-pooldump(Pool *p)
-{
-	p->lock(p);
-	pooldumpl(p);
-	p->unlock(p);
+void pooldump(Pool *p) {
+  p->lock(p);
+  pooldumpl(p);
+  p->unlock(p);
 }
 
-static void
-pooldumparena(Pool *p, Arena *a)
-{
-	Bhdr *b;
+static void pooldumparena(Pool *p, Arena *a) {
+  Bhdr *b;
 
-	for(b=a; b->magic != ARENATAIL_MAGIC; b=B2NB(b))
-		p->print(p, "(%p %.8lux %lud)", b, b->magic, b->size);
-	p->print(p, "\n");
+  for (b = a; b->magic != ARENATAIL_MAGIC; b = B2NB(b))
+    p->print(p, "(%p %.8lux %lud)", b, b->magic, b->size);
+  p->print(p, "\n");
 }
 
 /*
  * mark the memory in such a way that we know who marked it
  * (via the signature) and we know where the marking started.
  */
-static void
-memmark(void *v, int sig, ulong size)
-{
-	uchar *p, *ep;
-	ulong *lp, *elp;
-	ulong words;
+static void memmark(void *v, int sig, ulong size) {
+  uchar *p, *ep;
+  ulong *lp, *elp;
+  ulong words;
 
-	lp = v;
-	words = size / sizeof(*lp);
-	elp = lp + words;
-	while(lp < elp){
-		uintptr offset = (uintptr)((uchar*)lp - (uchar*)v);
-		*lp++ = (sig<<24) ^ offset;
-	}
-	p = (uchar*)lp;
-	ep = (uchar*)v+size;
-	while(p<ep)
-		*p++ = sig;
+  lp = v;
+  words = size / sizeof(*lp);
+  elp = lp + words;
+  while (lp < elp) {
+    uintptr offset = (uintptr)((uchar *)lp - (uchar *)v);
+    *lp++ = (sig << 24) ^ offset;
+  }
+  p = (uchar *)lp;
+  ep = (uchar *)v + size;
+  while (p < ep)
+    *p++ = sig;
 }

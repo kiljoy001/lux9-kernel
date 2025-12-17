@@ -8,10 +8,24 @@ extern void panic(const char *, ...);
 #define USE_PEBBLE_ALLOC 1
 #ifdef USE_PEBBLE_ALLOC
 void qbe_free(void *);
+void *qbe_calloc(size_t, size_t);
+void *qbe_realloc(void *, size_t);
+
 #ifdef free
 #undef free
 #endif
 #define free(p) qbe_free(p)
+
+#ifdef calloc
+#undef calloc
+#endif
+#define calloc(n, s) qbe_calloc(n, s)
+
+#ifdef realloc
+#undef realloc
+#endif
+#define realloc(p, s) qbe_realloc(p, s)
+
 #endif
 #else
 /* Normal userspace build */
@@ -171,8 +185,9 @@ enum J {
   X(jfieq)                                                                     \
   X(jfine)                                                                     \
   X(jfisge)                                                                    \
-  X(jfisgt) X(jfisle) X(jfislt) X(jfiuge) X(jfiugt) X(jfiule) X(jfiult)        \
-      X(jffeq) X(jffge) X(jffgt) X(jffle) X(jfflt) X(jffne) X(jffo) X(jffuo)
+  X(jfisgt)                                                                    \
+  X(jfisle) X(jfislt) X(jfiuge) X(jfiugt) X(jfiule) X(jfiult) X(jffeq)         \
+      X(jffge) X(jffgt) X(jffle) X(jfflt) X(jffne) X(jffo) X(jffuo)
 #define X(j) J##j,
   JMPS(X)
 #undef X

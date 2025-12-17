@@ -150,15 +150,12 @@ extern unsigned long msize(void *ptr);
 
 /* Memory allocation shims */
 #define malloc(n) xalloc(n)
-#define calloc(n, s) xallocz((n) * (s), 1)
 #ifndef USE_PEBBLE_ALLOC
+#define calloc(n, s) xallocz((n) * (s), 1)
 #define free(p) xfree(p)
-#endif
-
-extern void *realloc(void *ptr, size_t size);
-
-/* Redefine to avoid conflict if any */
+/* extern void *realloc(void *ptr, size_t size); */
 /* #define realloc(p, s) realloc(p, s) */
+#endif
 /* #ifndef _PORTLIB_H_ */
 /* extern void qsort(void *base, size_t nmemb, size_t size, */
 /*                   int (*compar)(const void *, const void *)); */
