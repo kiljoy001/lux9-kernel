@@ -27,11 +27,11 @@ $(INIT_DLL):
 
 # Build the initrd tarball
 # Structure:
-#   boot/boot  <- The F# init binary (renamed from init.dll)
+#   boot/init  <- The F# init binary (renamed from init.dll)
 #   boot/System.Runtime.dll
 initrd: $(INIT_DLL)
 	@mkdir -p $(INIT_BOOT_DIR)
-	@cp $(INIT_DLL) $(INIT_BOOT_DIR)/boot
+	@cp $(INIT_DLL) $(INIT_BOOT_DIR)/init
 	@cp $(BCL_DLL) $(INIT_BOOT_DIR)/
 	@cp $(FSHARP_CORE_DLL) $(INIT_BOOT_DIR)/
 	@if [ -f $(INIT_OUT_DIR)/System.Collections.dll ]; then cp $(INIT_OUT_DIR)/System.Collections.dll $(INIT_BOOT_DIR)/; fi
