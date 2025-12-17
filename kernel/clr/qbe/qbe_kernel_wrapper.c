@@ -74,36 +74,63 @@ static void emit_data(Dat *d) {
 
 /* Callback for functions */
 static void emit_func(Fn *fn) {
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+
   if (!output_file)
     return;
 
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: emit_func START fn=%s\n",
+          fn->name);
+  uartputs(debug_buf, strlen(debug_buf));
+
   /* QBE compilation pipeline (from main.c) */
+  uartputs("DEBUG: emit_func fillrpo\n", 25);
   fillrpo(fn);
+  uartputs("DEBUG: emit_func fillpreds\n", 27);
   fillpreds(fn);
+  uartputs("DEBUG: emit_func filluse\n", 25);
   filluse(fn);
+  uartputs("DEBUG: emit_func memopt\n", 24);
   memopt(fn);
   filluse(fn);
+  uartputs("DEBUG: emit_func ssa\n", 21);
   ssa(fn);
   filluse(fn);
+  uartputs("DEBUG: emit_func ssacheck\n", 26);
   ssacheck(fn);
+  uartputs("DEBUG: emit_func fillalias\n", 27);
   fillalias(fn);
+  uartputs("DEBUG: emit_func loadopt\n", 25);
   loadopt(fn);
   filluse(fn);
   ssacheck(fn);
+  uartputs("DEBUG: emit_func copy\n", 22);
   copy(fn);
   filluse(fn);
+  uartputs("DEBUG: emit_func fold\n", 22);
   fold(fn);
+  uartputs("DEBUG: emit_func T.abi\n", 23);
   T.abi(fn);
   fillpreds(fn);
   filluse(fn);
+  uartputs("DEBUG: emit_func T.isel\n", 24);
   T.isel(fn);
+  uartputs("DEBUG: emit_func fillrpo2\n", 26);
   fillrpo(fn);
+  uartputs("DEBUG: emit_func filllive\n", 26);
   filllive(fn);
+  uartputs("DEBUG: emit_func fillloop\n", 26);
   fillloop(fn);
+  uartputs("DEBUG: emit_func fillcost\n", 26);
   fillcost(fn);
+  uartputs("DEBUG: emit_func spill\n", 23);
   spill(fn);
+  uartputs("DEBUG: emit_func rega\n", 22);
   rega(fn);
+  uartputs("DEBUG: emit_func fillrpo3\n", 26);
   fillrpo(fn);
+  uartputs("DEBUG: emit_func simpljmp\n", 26);
   simpljmp(fn);
   fillpreds(fn);
   fillrpo(fn);
@@ -116,6 +143,7 @@ static void emit_func(Fn *fn) {
       fn->rpo[n]->link = fn->rpo[n + 1];
   }
 
+  uartputs("DEBUG: emit_func T.emitfn\n", 26);
   /* Emit function */
   T.emitfn(fn, output_file);
   exchange_fprintf(output_file, "/* end function %s */\n\n", fn->name);
