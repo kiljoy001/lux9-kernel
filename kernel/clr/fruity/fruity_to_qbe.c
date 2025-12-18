@@ -147,6 +147,49 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         tmp_counter--;
         break;
 
+      case FRUITY_NEG:
+        Q_EMIT(buf, "    %%t%d =w sub 0, %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_DIV_UN:
+        Q_EMIT(buf, "    %%t%d =w udiv %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_REM_UN:
+        Q_EMIT(buf, "    %%t%d =w urem %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      /* Overflow arithmetic - QBE doesn't have native overflow checks,
+       * so emit regular ops + TODO runtime check */
+      case FRUITY_ADD_OVF:
+      case FRUITY_ADD_OVF_UN:
+        Q_EMIT(buf, "    %%t%d =w add %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        Q_EMIT(buf, "    # TODO: overflow check\n");
+        tmp_counter--;
+        break;
+
+      case FRUITY_MUL_OVF:
+      case FRUITY_MUL_OVF_UN:
+        Q_EMIT(buf, "    %%t%d =w mul %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        Q_EMIT(buf, "    # TODO: overflow check\n");
+        tmp_counter--;
+        break;
+
+      case FRUITY_SUB_OVF:
+      case FRUITY_SUB_OVF_UN:
+        Q_EMIT(buf, "    %%t%d =w sub %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        Q_EMIT(buf, "    # TODO: overflow check\n");
+        tmp_counter--;
+        break;
+
+      /* Bitwise operations */
       case FRUITY_AND:
         Q_EMIT(buf, "    %%t%d =w and %%t%d, %%t%d\n", tmp_counter - 1,
                tmp_counter - 1, tmp_counter);
@@ -163,6 +206,75 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         Q_EMIT(buf, "    %%t%d =w xor %%t%d, %%t%d\n", tmp_counter - 1,
                tmp_counter - 1, tmp_counter);
         tmp_counter--;
+        break;
+
+      case FRUITY_NOT:
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, -1\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_SHL:
+        Q_EMIT(buf, "    %%t%d =w shl %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_SHR:
+        Q_EMIT(buf, "    %%t%d =w sar %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_SHR_UN:
+        Q_EMIT(buf, "    %%t%d =w shr %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      /* Comparison operations */
+      case FRUITY_CEQ:
+        Q_EMIT(buf, "    %%t%d =w ceqw %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CNE:
+        Q_EMIT(buf, "    %%t%d =w cnew %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CLT:
+        Q_EMIT(buf, "    %%t%d =w csltw %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CLE:
+        Q_EMIT(buf, "    %%t%d =w cslew %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CGT:
+        Q_EMIT(buf, "    %%t%d =w csgtw %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      case FRUITY_CGE:
+        Q_EMIT(buf, "    %%t%d =w csgew %%t%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      /* Stack operations */
+      case FRUITY_DUP:
+        Q_EMIT(buf, "    %%t%d =w copy %%t%d\n", tmp_counter + 1, tmp_counter);
+        tmp_counter++;
+        break;
+
+      case FRUITY_POP:
+        tmp_counter--; /* Just decrement stack pointer */
         break;
 
       case FRUITY_CALL: {
