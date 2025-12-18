@@ -363,6 +363,21 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         /* Result replaces stack top */
         break;
 
+      case FRUITY_VANILLA:
+        /* call l $lux_addref(l %ptr) */
+        /* Duplicate reference by issuing new WHITE token */
+        Q_EMIT(buf, "    %%ptr%d =l call $lux_addref(l %%t%d)\n", tmp_counter,
+               tmp_counter);
+        /* Result is same pointer (for stack convenience) */
+        break;
+
+      case FRUITY_BURN:
+        /* call $lux_release(l %ptr) */
+        /* Release WHITE token, free if last reference */
+        Q_EMIT(buf, "    call $lux_release(l %%t%d)\n", tmp_counter);
+        tmp_counter--; /* Pop from stack */
+        break;
+
       case FRUITY_RET:
         /* Return top of stack */
         Q_EMIT(buf, "    ret %%t%d\n", tmp_counter);

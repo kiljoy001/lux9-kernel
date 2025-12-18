@@ -38,7 +38,7 @@ CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
 FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
-CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/clr_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
+CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/clr_runtime.c clr/lux_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
