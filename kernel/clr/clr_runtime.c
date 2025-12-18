@@ -375,7 +375,9 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Cleanup intermediate buffers */
-  xfree(qbe_page);
+  /* TODO: xfree(qbe_page) causes panic - qbe_page header corrupted by qbe_compile_page
+   * Temporarily disabled to allow init to run - THIS IS A MEMORY LEAK */
+  // xfree(qbe_page);
   fruity_free_function(func);
 
   if (out_size)
