@@ -689,11 +689,25 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     break;
 
   case IL_DUP:
+    /* TODO: Type-aware flavor injection
+     * If stack top is reference type → FRUITY_VANILLA (addref)
+     * If stack top is value type → FRUITY_DUP (copy)
+     *
+     * Requires stack type tracking or metadata lookup.
+     * For now: always use FRUITY_DUP (safe but may leak refs)
+     */
     instr = create_fruity_instruction(FRUITY_DUP, operand, offset);
     *offset_ptr += 1;
     break;
 
   case IL_POP:
+    /* TODO: Type-aware flavor injection
+     * If stack top is reference type → FRUITY_BURN (release)
+     * If stack top is value type → FRUITY_POP (discard)
+     *
+     * Requires stack type tracking or metadata lookup.
+     * For now: always use FRUITY_POP (safe but may leak refs)
+     */
     instr = create_fruity_instruction(FRUITY_POP, operand, offset);
     *offset_ptr += 1;
     break;
