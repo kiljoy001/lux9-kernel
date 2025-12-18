@@ -71,7 +71,7 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 # Testing
 test: lux9.iso
 	@echo "Running OS integration test..."
-	@timeout 30s /home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@timeout 30s qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
 		-nographic -serial stdio \
@@ -81,7 +81,7 @@ test: lux9.iso
 # Run in QEMU
 run: lux9.iso
 	@echo "Running OS in QEMU..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
 		-chardev socket,id=chrtpm,path=../swtpm/swtpm-sock \
@@ -93,7 +93,7 @@ run: lux9.iso
 # Debug mode
 debug: lux9.iso
 	@echo "Debugging OS in QEMU+GDB..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
 		-nographic -serial stdio \

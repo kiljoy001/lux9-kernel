@@ -268,6 +268,10 @@ extern void clr_span_copy(void *dst, void *src, int elementSize, int count);
 extern int clr_decimal_add96(u32int *a, u32int *b, u32int *result);
 extern u32int clr_decimal_mul32(u32int *a, u32int multiplier, u32int *result);
 
+/* System.P9.ExchangePage Ops */
+extern u32int clr_exchange_get_page(void);
+extern int clr_exchange_send_message(u32int, void *, int, void *, int);
+
 /* CLR Runtime Internals */
 extern void *clr_string_from_literal(u32int);
 extern void *clr_newobj(u32int);
@@ -366,6 +370,12 @@ static void *resolve_kernel_symbol(char *name) {
     return (void *)clr_decimal_add96;
   if (strcmp(name, "System_Decimal_Internal_Mul32") == 0)
     return (void *)clr_decimal_mul32;
+
+  /* System.P9.ExchangePage */
+  if (strcmp(name, "System_P9_ExchangePage_GetMyPage") == 0)
+    return (void *)clr_exchange_get_page;
+  if (strcmp(name, "System_P9_ExchangePage_SendMessage") == 0)
+    return (void *)clr_exchange_send_message;
 
   return nil;
 }

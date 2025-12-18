@@ -552,15 +552,7 @@ static void poolnewarena(Pool *p, ulong asize) {
   Arena *ap, *lastap;
   Alloc *b;
 
-  if (asize >= POOLALLOC_TRACE_THRESHOLD)
-    pooltrace("poolnewarena enter p=%p asize=%lud cursize=%lud max=%lud\n", p,
-              asize, (ulong)p->cursize, (ulong)p->maxsize);
-  early_iprint("poolnewarena: before LOG\n");
-  LOG(p, "newarena %lud\n", asize);
-  early_iprint("poolnewarena: after LOG, checking size\n");
   if (asize > p->maxsize || p->cursize > p->maxsize - asize) {
-    if (asize >= POOLALLOC_TRACE_THRESHOLD)
-      early_iprint("poolnewarena: exceeds max\n");
     if (poolcompactl(p) == 0) {
       LOG(p, "pool too big: %llud+%lud > %llud\n", (uvlong)p->cursize, asize,
           (uvlong)p->maxsize);
@@ -569,45 +561,31 @@ static void poolnewarena(Pool *p, ulong asize) {
     return;
   }
 
-  early_iprint("poolnewarena: calling p->alloc\n");
   a = p->alloc(asize);
-  early_iprint("poolnewarena: p->alloc returned\n");
   if (a == nil) {
-    if (asize >= POOLALLOC_TRACE_THRESHOLD)
-      pooltrace("poolnewarena: alloc(%lud) failed\n", asize);
     /* assume errstr set by p->alloc */
     return;
   }
-  early_iprint("poolnewarena: alloc returned, a=%p\n");
-  if (asize >= POOLTRACE_THRESHOLD)
-    pooltrace("poolnewarena: alloc(%lud) success\n", asize);
 
-  pooltrace("poolnewarena: updating cursize\n");
   p->cursize += asize;
 
   /* arena hdr */
-  pooltrace("poolnewarena: setting up arena header\n");
   a->magic = ARENA_MAGIC;
   blocksetsize(a, sizeof(Arena));
   arenasetsize(a, asize);
   blockcheck(p, a);
 
   /* create one large block in arena */
-  pooltrace("poolnewarena: creating large block\n");
   b = (Alloc *)A2B(a);
   b->magic = UNALLOC_MAGIC;
   blocksetsize(b, (uchar *)A2TB(a) - (uchar *)b);
   blockcheck(p, b);
-  pooltrace("poolnewarena: calling pooladd\n");
   pooladd(p, b);
-  pooltrace("poolnewarena: pooladd returned\n");
   blockcheck(p, b);
 
   /* sort arena into descending sorted arena list */
-  pooltrace("poolnewarena: sorting arena list\n");
   for (lastap = nil, ap = p->arenalist; ap > a; lastap = ap, ap = ap->down)
     ;
-  pooltrace("poolnewarena: arena list sorted\n");
 
   if (a->down = ap) /* assign = */
     a->down->aup = a;
@@ -619,12 +597,10 @@ static void poolnewarena(Pool *p, ulong asize) {
 
   /* merge with surrounding arenas if possible */
   /* must do a with up before down with a (think about it) */
-  if (a->aup)
-    arenamerge(p, a, a->aup);
-  if (a->down)
-    arenamerge(p, a->down, a);
-  if (asize >= POOLALLOC_TRACE_THRESHOLD)
-    pooltrace("poolnewarena exit asize=%lud\n", asize);
+  // if (a->aup)
+  //   arenamerge(p, a, a->aup);
+  // if (a->down)
+  //   arenamerge(p, a->down, a);
 }
 
 static int poolgrowarena(Pool *p, ulong bsize) {

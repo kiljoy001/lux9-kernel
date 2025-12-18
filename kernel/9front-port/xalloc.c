@@ -455,12 +455,10 @@ void xhole(uintptr addr, uintptr size) {
      * If we have exhausted the static free list, allocate a fresh batch
      * of Hole descriptors from the kernel malloc pool.
      * --------------------------------------------------------------- */
-    Hole *extra = (Hole *)malloc(DYNAMIC_NHOLE * sizeof(Hole));
+    Hole *extra = (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
     if (extra == nil) {
       iunlock(&xlists.lk);
-      /* TEST 2A: Track allocation success */
-      xalloc_successes++;
-      panic("xhole: out of hole descriptors and malloc failed");
+      panic("xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
     }
     for (int i = 0; i < DYNAMIC_NHOLE - 1; i++) {
       extra[i].link = &extra[i + 1];

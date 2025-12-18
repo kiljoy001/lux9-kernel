@@ -1,6 +1,6 @@
-#include <fcall.h>
-#include <libc.h>
 #include <u.h>
+#include <libc.h>
+#include <fcall.h>
 
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
   uint n;

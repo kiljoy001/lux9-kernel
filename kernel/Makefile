@@ -37,11 +37,7 @@ CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
 FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
-CLR_FRUITY_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c
-CLR_CBOR_C := clr/libmcu-cbor/common.c clr/libmcu-cbor/decoder.c clr/libmcu-cbor/encoder.c clr/libmcu-cbor/helper.c clr/libmcu-cbor/ieee754.c clr/libmcu-cbor/parser.c
-CLR_QBE_C := clr/qbe_compile.c clr/qbe/clr_p9_internal.c clr/clr_tasklet.c clr/clr_channel.c clr/clr_tasklet_execute.c clr/clr_codepage.c
-CLR_INTERP_C := clr/CIL-Interpreter/src/execution_engine.c clr/CIL-Interpreter/src/il_decoder.c
-MISC_KERNEL_C := ../kernel/msgord.c ../kernel/9p_router.c ../kernel/consensus_depth.c ../kernel/proc_fsm.c ../kernel/proc_state_dag.c ../kernel/syscall_9p.c
+CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/clr_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
@@ -57,9 +53,9 @@ FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transact
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o
+CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
-MISC_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(MISC_KERNEL_C))
+MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(CLR_INTERP_O) $(MISC_KERNEL_O)
 # AML_O removed temporarily to fix build
@@ -253,15 +249,19 @@ clr_internal_calls.o: clr/clr-kernel/clr_internal_calls.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+clr_exchange_ops.o: clr/clr_exchange_ops.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 # Testing targets (placeholder)
 
 run: $(KERNEL_BINARY)
 	@echo "Running kernel in QEMU..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -no-reboot -display none -serial stdio
+	@qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -initrd ../initrd.tar.gz -no-reboot -display none -serial stdio
 
 debug: $(KERNEL_BINARY)
 	@echo "Running kernel in QEMU with GDB..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -no-reboot -display none -serial stdio -s -S &
+	@qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -no-reboot -display none -serial stdio -s -S &
 
 # Installation (for distribution builds)
 install: $(KERNEL_BINARY)

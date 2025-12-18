@@ -220,8 +220,16 @@ void initrd_register(void) {
         addbootfile("boot", f->data, f->size);
         continue;
       }
-    } else if (strncmp(name, "boot/", 5) == 0)
+    } else if (strncmp(name, "boot/", 5) == 0) {
       name += 5;
+      if (strcmp(name, "init") == 0) {
+        print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
+        addbootfile(name, f->data, f->size);
+        print("initrd: registering alias as '/boot/boot'\n");
+        addbootfile("boot", f->data, f->size);
+        continue;
+      }
+    }
     print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
     addbootfile(name, f->data, f->size);
   }

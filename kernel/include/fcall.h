@@ -1,3 +1,6 @@
+#ifndef _FCALL_H_
+#define _FCALL_H_
+
 #pragma src "/sys/src/libc/9sys"
 #pragma lib "libc.a"
 
@@ -168,3 +171,5 @@ int read9pmsg(int, void *, uint);
 #pragma varargck type "F" Fcall *
 #pragma varargck type "M" ulong
 #pragma varargck type "D" Dir *
+
+#endif /* _FCALL_H_ */
