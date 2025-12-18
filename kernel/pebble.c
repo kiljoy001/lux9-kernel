@@ -172,14 +172,13 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
    * We proceed, treating 'nil' as the Kernel process ownership.
    * borrow_acquire and ledger_mint must handle nil owner!
    */
-  // if (up == nil) return -1;
 
   const u8int *vault_secret = pebble_get_vault_secret();
   BlindLedgerError ledger_err;
 
   /* Enforce 8-byte granularity (Tokens) */
   if (size < PEBBLE_MIN_ALLOC) {
-    size = PEBBLE_MIN_ALLOC; // Min 1 Token (8 bytes)
+    size = PEBBLE_MIN_ALLOC;
   }
   if (size % PEBBLE_MEM_PER_TOKEN != 0) {
     size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
@@ -219,7 +218,6 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
 
   /* 4. Track metadata */
   ilock(&pebble_global_lock);
-  /* Use Meta-Alloc for internal tracking to prevent recursion */
   pb = pebble_meta_alloc(sizeof(PebbleBlack));
   if (pb == nil) {
     iunlock(&pebble_global_lock);
@@ -233,11 +231,6 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   pb->physical_addr = buf;
   pb->size = size;
   pb->flags = PEBBLE_CAP_BLACK | PEBBLE_CAP_ACTIVE;
-
-  /* NOTE: Blue is NO LONGER auto-created - it's an independent token!
-   * If block I/O transactions are needed, use pebble_blue_alloc() separately.
-   * This enforces the circular economy: Black and Blue are separate colors.
-   */
 
   pb->next = pebble_state()->black_list;
   pebble_state()->black_list = pb;

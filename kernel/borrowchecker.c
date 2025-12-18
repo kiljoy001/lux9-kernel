@@ -130,22 +130,24 @@ static u64int get_random_nonce(void) {
   extern int crypto_hw_rdrand_available(void);
   extern u64int chacha20_csprng_u64(void);
 
-  /* Tier 1: Use TPM hardware RNG for cryptographic nonce generation */
+  /*
+   * Tier 1: Use TPM hardware RNG for cryptographic nonce generation.
+   * Note: tpm_get_random() internally checks islo() and returns -1
+   * if interrupts are disabled, so we safely fall through to RDRAND.
+   */
   if (tpm_get_random((u8int *)&nonce, sizeof(nonce)) == sizeof(nonce)) {
     return nonce;
   }
 
-  /* Tier 2: TPM unavailable - try hardware RDRAND as fallback */
+  /* Tier 2: Hardware RDRAND (no interrupt needed, CPU instruction) */
   if (crypto_hw_rdrand_available()) {
     nonce = rdrand_u64();
     if (nonce != 0) {
       return nonce;
     }
-    print("get_random_nonce: RDRAND failed\n");
   }
 
   /* Tier 3: Software CSPRNG fallback (ChaCha20 with multi-source entropy) */
-  print("get_random_nonce: Using ChaCha20 CSPRNG (SOFTWARE FALLBACK)\n");
   nonce = chacha20_csprng_u64();
   if (nonce != 0) {
     return nonce;

@@ -53,20 +53,17 @@ static void *pebble_arena_alloc(ulong size) {
   }
 
   /* 1. Allocate a Pebble Black Token */
-  /* We use a temporary cap; mainmem doesn't persist the cap struct itself
-     (it just holds the memory), but Pebble tracks it globally.
-     Ideally, we'd attach the cap hash to the Arena struct?
-     Arena struct checks magic. We could use 'pad' field?
-  */
-  if (pebble_black_alloc(size, &cap) < 0)
+  if (pebble_black_alloc(size, &cap) < 0) {
     return nil;
+  }
 
   /* 2. Retrieve the confirmed physical address */
   addr = pebble_get_black_addr(&cap);
 
   /* 3. Verify address is valid */
-  if (addr == nil)
+  if (addr == nil) {
     return nil;
+  }
 
   return addr;
 }
