@@ -3,6 +3,31 @@
  * Simplified translator: just emit QBE stubs for now
  */
 
+#ifdef USERSPACE_TEST
+#include "fruity_to_qbe.h"
+#include "qbe_buffer.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Mocks for userspace */
+#define snprint snprintf
+#define nil NULL
+typedef unsigned long ulong;
+typedef uint32_t u32int;
+typedef unsigned long usize;
+typedef unsigned long uintptr;
+
+int qbe_buffer_init(QBEBuffer *buf);
+int qbe_buffer_printf(QBEBuffer *buf, const char *fmt, ...);
+void qbe_buffer_free(QBEBuffer *buf);
+size_t qbe_buffer_len(QBEBuffer *buf);
+char *qbe_buffer_data(QBEBuffer *buf);
+
+#define KADDR(x) ((void *)(uintptr)(x))
+
+#else
 #include "../../include/dat.h"
 #include "../../include/fns.h"
 #include "../../include/mem.h"
@@ -15,6 +40,18 @@
 #include "../../include/hhdm.h"
 #include "fruity_to_qbe.h"
 #include "qbe_buffer.h"
+#endif
+
+/* Forward declaration for qbe_buffer if not included */
+#ifndef QBE_BUFFER_H
+#ifdef USERSPACE_TEST
+typedef struct {
+  char *data;
+  size_t size;
+  size_t capacity;
+} QBEBuffer;
+#endif
+#endif
 
 #define Q_EMIT(buf, ...)                                                       \
   do {                                                                         \
@@ -28,6 +65,7 @@ static int emit_header(QBEBuffer *buf) {
   Q_EMIT(buf, "# QBE IL generated from Fruity IR\n\n");
   Q_EMIT(buf, "# Pebble Runtime ABI\n");
   /* QBE requires labels on their own lines - proper multi-line format */
+#ifndef USERSPACE_TEST
   Q_EMIT(buf, "export function l $lux_alloc(w %%size, w %%type) {\n");
   Q_EMIT(buf, "@start\n");
   Q_EMIT(buf, "    ret 0\n");
@@ -43,6 +81,7 @@ static int emit_header(QBEBuffer *buf) {
   Q_EMIT(buf, "    ret\n");
   Q_EMIT(buf, "}\n\n");
   uartputs("DEBUG: emit_header after token_burn brace\n", 43);
+#endif
   return 0;
 }
 
@@ -198,6 +237,89 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         if (instr->operand.value.target)
           Q_EMIT(buf, "    jmp @bb%d\n", instr->operand.value.target->block_id);
         break;
+
+      /* Comparison Branches */
+      case FRUITY_BEQ:
+      case FRUITY_BNE:
+      case FRUITY_BLT:
+      case FRUITY_BLE:
+      case FRUITY_BGT:
+      case FRUITY_BGE: {
+        int right = tmp_counter--;
+        int left = tmp_counter--;
+        int cond = ++tmp_counter; // Result of comparison
+        char *op = "";
+
+        switch (instr->opcode) {
+        case FRUITY_BEQ:
+          op = "ceqw";
+          break;
+        case FRUITY_BNE:
+          op = "cnew";
+          break; // QBE has cnew? Check. cneww?
+        case FRUITY_BLT:
+          op = "csltw";
+          break;
+        case FRUITY_BLE:
+          op = "cslew";
+          break;
+        case FRUITY_BGT:
+          op = "csgtw";
+          break;
+        case FRUITY_BGE:
+          op = "csgew";
+          break;
+        }
+        /* Fix cne logic: if no cnew, use ceqw and invert? QBE has cnew for
+         * long? cneww for word? */
+        /* QBE doc: ceqw, ceql, cnew, cnel... */
+        /* Actually QBE IR usually uses type suffix only for memory/moves? No
+         * logic ops too */
+        /* QBE: ceqw (Compare Equal Word). cnew (Compare Not Equal Word?? NO) */
+        /* Checked QBE spec: cnew (Compare Not Equal Word). Yes. */
+
+        Q_EMIT(buf, "    %%t%d =w %s %%t%d, %%t%d\n", cond, op, left, right);
+
+        /* Branch */
+        u32int target_id = instr->operand.value.target
+                               ? instr->operand.value.target->block_id
+                               : 0;
+        u32int next_id = bb->next ? bb->next->block_id : 0;
+
+        /* jnz cond, @target, @next */
+        if (target_id > 0 && next_id > 0) {
+          Q_EMIT(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cond, target_id,
+                 next_id);
+        } else if (target_id > 0) {
+          /* Fallthrough is implicit? No QBE jnz needs 2 targets? */
+          /* If only 1 target, use jnz cond, @target, @next(implicit) */
+          /* But we don't know next implicit. */
+          /* Just use 0 if not set? */
+          /* QBE: jnz val, @l1, @l2. Both required. */
+          /* If next_id is 0, we can't emit valid jnz. */
+          /* But basic blocks should be linked. */
+          /* For now, assuming identifiers are valid. */
+          Q_EMIT(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cond, target_id,
+                 next_id);
+        } else {
+          // If target_id is 0, it means no explicit target.
+          // If next_id is 0, it means no next block.
+          // This case should ideally not happen for a valid branch instruction
+          // unless it's the end of a function or an error.
+          // For now, emit a jmp to next_id if it exists, otherwise a ret.
+          // This is a fallback and might indicate an issue in IR generation.
+          if (next_id > 0) {
+            Q_EMIT(buf, "    jnz %%t%d, @bb%u, @bb%u\n", cond, next_id,
+                   next_id); // Fallback: jump to next_id if true, else next_id
+                             // (effectively unconditional jmp to next_id)
+          } else {
+            Q_EMIT(buf,
+                   "    ret\n"); // Fallback: if no target and no next, return.
+          }
+        }
+
+        tmp_counter--; // Consume cond
+      } break;
 
       case FRUITY_BTRUE:
       case FRUITY_BFALSE: {

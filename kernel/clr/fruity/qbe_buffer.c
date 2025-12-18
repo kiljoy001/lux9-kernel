@@ -1,12 +1,35 @@
 /* qbe_buffer.c - Simple buffer implementation for QBE IL text */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
+#ifdef USERSPACE_TEST
+#include "qbe_buffer.h"
+#include <stdarg.h> /* For va_list */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Mocks */
+#define snprint snprintf
+#define vsnprint vsnprintf
+#define nil NULL
+typedef unsigned long usize;
+
+/* xalloc/mallocz shim might be in test runner or here */
+extern void *xallocz(size_t size);
+#define mallocz(s, f) xallocz(s)
+/* free is standard */
+
+/* Stub uartputs as printf or no-op */
+static void uartputs(char *s, int len) { fwrite(s, 1, len, stdout); }
+
+#else
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 
 #include "qbe_buffer.h"
+#endif
 
 #define INITIAL_CAPACITY 4096
 #define GROWTH_FACTOR 2
@@ -15,12 +38,15 @@ int qbe_buffer_init(QBEBuffer *buf) {
   extern void uartputs(char *, int);
   char debug_buf[128];
 
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: qbe_buffer_init calling mallocz(%d)\n", INITIAL_CAPACITY);
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_buffer_init calling mallocz(%d)\n", INITIAL_CAPACITY);
   uartputs(debug_buf, strlen(debug_buf));
 
   buf->data = mallocz(INITIAL_CAPACITY, 0);
 
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: qbe_buffer_init data=%p len=%d cap=%d\n", buf->data, 0, INITIAL_CAPACITY);
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_buffer_init data=%p len=%d cap=%d\n", buf->data, 0,
+          INITIAL_CAPACITY);
   uartputs(debug_buf, strlen(debug_buf));
 
   if (buf->data == nil) {
@@ -52,19 +78,22 @@ int qbe_buffer_printf(QBEBuffer *buf, const char *fmt, ...) {
   /* Ensure we have at least 1KB of space to start */
   available = buf->capacity - buf->len;
   if (available < 1024) {
-      usize new_capacity = buf->capacity ? buf->capacity * GROWTH_FACTOR : INITIAL_CAPACITY;
-      if (new_capacity < buf->capacity + 1024) new_capacity = buf->capacity + 1024;
-      
-      char *new_data = mallocz(new_capacity, 0);
-      if (new_data == nil) return -1;
-      
-      if (buf->data) {
-          memmove(new_data, buf->data, buf->len);
-          free(buf->data);
-      }
-      buf->data = new_data;
-      buf->capacity = new_capacity;
-      available = buf->capacity - buf->len;
+    usize new_capacity =
+        buf->capacity ? buf->capacity * GROWTH_FACTOR : INITIAL_CAPACITY;
+    if (new_capacity < buf->capacity + 1024)
+      new_capacity = buf->capacity + 1024;
+
+    char *new_data = mallocz(new_capacity, 0);
+    if (new_data == nil)
+      return -1;
+
+    if (buf->data) {
+      memmove(new_data, buf->data, buf->len);
+      free(buf->data);
+    }
+    buf->data = new_data;
+    buf->capacity = new_capacity;
+    available = buf->capacity - buf->len;
   }
 
   /* Write data */
@@ -73,30 +102,35 @@ int qbe_buffer_printf(QBEBuffer *buf, const char *fmt, ...) {
   va_end(ap);
 
   /* Check for error */
-  if (n < 0) return -1;
+  if (n < 0)
+    return -1;
 
-  /* Check for truncation (if n >= available - 1, meaning it filled the buffer) */
+  /* Check for truncation (if n >= available - 1, meaning it filled the buffer)
+   */
   if ((usize)n >= available - 1) {
-      /* Likely truncated. Grow and retry. */
-      usize new_capacity = buf->capacity * 2;
-      /* Ensure at least 4KB growth if doubling isn't enough */
-      if (new_capacity < buf->capacity + 4096) new_capacity = buf->capacity + 4096;
+    /* Likely truncated. Grow and retry. */
+    usize new_capacity = buf->capacity * 2;
+    /* Ensure at least 4KB growth if doubling isn't enough */
+    if (new_capacity < buf->capacity + 4096)
+      new_capacity = buf->capacity + 4096;
 
-      char *new_data = mallocz(new_capacity, 0);
-      if (new_data == nil) return -1;
-      
-      memmove(new_data, buf->data, buf->len);
-      free(buf->data);
-      buf->data = new_data;
-      buf->capacity = new_capacity;
-      available = buf->capacity - buf->len;
-      
-      /* Retry print */
-      va_start(ap, fmt);
-      n = vsnprint(buf->data + buf->len, (int)available, (char *)fmt, ap);
-      va_end(ap);
-      
-      if (n < 0) return -1;
+    char *new_data = mallocz(new_capacity, 0);
+    if (new_data == nil)
+      return -1;
+
+    memmove(new_data, buf->data, buf->len);
+    free(buf->data);
+    buf->data = new_data;
+    buf->capacity = new_capacity;
+    available = buf->capacity - buf->len;
+
+    /* Retry print */
+    va_start(ap, fmt);
+    n = vsnprint(buf->data + buf->len, (int)available, (char *)fmt, ap);
+    va_end(ap);
+
+    if (n < 0)
+      return -1;
   }
 
   buf->len += (usize)n;

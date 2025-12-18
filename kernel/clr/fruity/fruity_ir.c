@@ -4,11 +4,25 @@
  * All allocations use xalloc() from the kernel.
  */
 
+#ifdef USERSPACE_TEST
+#include "fruity_ir.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define nil NULL
+typedef unsigned long ulong;
+typedef uint32_t u32int;
+extern void *xalloc(size_t size);
+void *xallocz(size_t size, int zero);
+void xfree(void *ptr);
+int print(char *fmt, ...);
+#else
 #include "dat.h"
 #include "fns.h"
-#include "mem.h"
+#include "fruity_ir.h"
 #include "portlib.h"
 #include "u.h"
+#endif
 
 #include "fruity_ir.h"
 

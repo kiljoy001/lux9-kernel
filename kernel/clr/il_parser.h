@@ -14,6 +14,7 @@
 #ifdef USERSPACE_TEST
 #include <stddef.h>
 #include <stdint.h>
+typedef uintptr_t uintptr;
 #else
 #include "qbe/kernel_compat.h"
 #endif
