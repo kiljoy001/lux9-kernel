@@ -805,6 +805,34 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
       /* Set PTEUSER for user addresses */
       if (va < USTKTOP)
         flags |= PTEUSER;
+
+      /* CRITICAL FIX: Create MMU struct for user addresses even in early boot
+       * so mmuswitch() can find and restore these mappings */
+      if (va < USTKTOP && up != nil) {
+        /* Use mallocz for early processes since mmualloc pool isn't ready */
+        p = mallocz(sizeof(MMU), 1);
+        if (p == nil) {
+          /* If malloc fails, still return page but warn - mappings will be lost on switch */
+          print("mmucreate: WARNING - failed to allocate MMU struct for early process pid=%d\n", up->pid);
+        } else {
+          p->index = index;
+          p->level = level;
+          p->page = page;
+          p->alloc = nil; /* Mark as rampage allocation, not from mmualloc pool */
+
+          if (level == PML4E) {
+            if ((p->next = up->mmuhead) == nil)
+              up->mmutail = p;
+            up->mmuhead = p;
+            m->mmumap[index / MAPBITS] |= 1ull << (index % MAPBITS);
+          } else {
+            if (up->mmutail != nil)
+              up->mmutail->next = p;
+            up->mmutail = p;
+          }
+          up->mmucount++;
+        }
+      }
     } else {
       if ((p = mmualloc()) == nil)
         return nil;
