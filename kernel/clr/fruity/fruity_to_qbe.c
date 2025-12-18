@@ -277,6 +277,258 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         tmp_counter--; /* Just decrement stack pointer */
         break;
 
+      /* Additional constants */
+      case FRUITY_LDC_I8:
+        Q_EMIT(buf, "    %%t%d =l copy %lld\n", ++tmp_counter,
+               (long long)instr->operand.value.i64);
+        break;
+
+      /* Commented out R4/R8 to avoid SSE errors on kernel build */
+      /*case FRUITY_LDC_R4:
+        Q_EMIT(buf, "    %%t%d =s copy s_%f\n", ++tmp_counter,
+               instr->operand.value.r32);
+        break;
+
+      case FRUITY_LDC_R8:
+        Q_EMIT(buf, "    %%t%d =d copy d_%f\n", ++tmp_counter,
+               instr->operand.value.r64);
+        break; */
+
+      /* Type conversions */
+      case FRUITY_CONV_I4:
+        Q_EMIT(buf, "    %%t%d =w extsw %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_CONV_I8:
+        Q_EMIT(buf, "    %%t%d =l extsw %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      /* Commented out R4/R8 conversions to avoid SSE errors */
+      /*case FRUITY_CONV_R4:
+        Q_EMIT(buf, "    %%t%d =s swtof %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_CONV_R8:
+        Q_EMIT(buf, "    %%t%d =d swtof %%t%d\n", tmp_counter, tmp_counter);
+        break; */
+
+      /* Local/Arg address operations */
+      case FRUITY_LOAD_LOCAL_ADDR:
+        Q_EMIT(buf, "    %%t%d =l copy %%loc%lu\n", ++tmp_counter,
+               (unsigned long)instr->operand.value.index);
+        break;
+
+      case FRUITY_LOAD_ARG_ADDR:
+        Q_EMIT(buf, "    %%t%d =l copy %%arg%lu\n", ++tmp_counter,
+               (unsigned long)instr->operand.value.index);
+        break;
+
+      case FRUITY_STORE_ARG:
+        Q_EMIT(buf, "    storel %%arg%lu, %%t%d\n",
+               (unsigned long)instr->operand.value.index, tmp_counter--);
+        break;
+
+      /* Field/Memory operations */
+      case FRUITY_LOAD_FIELD:
+        /* obj_ref on stack, add field offset and load */
+        Q_EMIT(buf, "    %%addr%d =l add %%t%dL, %d\n", tmp_counter,
+               tmp_counter, instr->operand.value.i32);
+        Q_EMIT(buf, "    %%t%d =w loadw %%addr%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_STORE_FIELD:
+        /* obj_ref, value on stack */
+        Q_EMIT(buf, "    %%addr%d =l add %%t%d, %d\n", tmp_counter - 1,
+               tmp_counter - 1, instr->operand.value.i32);
+        Q_EMIT(buf, "    storew %%addr%d, %%t%d\n", tmp_counter - 1,
+               tmp_counter);
+        tmp_counter -= 2;
+        break;
+
+      case FRUITY_LOAD_STATIC:
+        /* Load from static field (global address) */
+        Q_EMIT(buf, "    %%t%d =w loadw $static_%u\n", ++tmp_counter,
+               instr->operand.value.token);
+        break;
+
+      case FRUITY_STORE_STATIC:
+        Q_EMIT(buf, "    storew $static_%u, %%t%d\n",
+               instr->operand.value.token, tmp_counter--);
+        break;
+
+      case FRUITY_LOAD_IND:
+        Q_EMIT(buf, "    %%t%d =w loadw %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_STORE_IND:
+        Q_EMIT(buf, "    storew %%t%d, %%t%d\n", tmp_counter - 1, tmp_counter);
+        tmp_counter -= 2;
+        break;
+
+      case FRUITY_LDFLDA:
+        /* Load field address */
+        Q_EMIT(buf, "    %%t%d =l add %%t%d, %d\n", tmp_counter, tmp_counter,
+               instr->operand.value.i32);
+        break;
+
+      case FRUITY_MEMCPY:
+        /* dest, src, size on stack */
+        Q_EMIT(buf, "    call $memcpy(l %%t%d, l %%t%d, l %%t%d)\n",
+               tmp_counter - 2, tmp_counter - 1, tmp_counter);
+        tmp_counter -= 3;
+        break;
+
+      case FRUITY_MEMSET:
+        /* dest, val, size on stack */
+        Q_EMIT(buf, "    call $memset(l %%t%d, w %%t%d, l %%t%d)\n",
+               tmp_counter - 2, tmp_counter - 1, tmp_counter);
+        tmp_counter -= 3;
+        break;
+
+      /* Object model operations */
+      case FRUITY_CASTCLASS:
+        Q_EMIT(buf, "    %%t%d =l call $lux_castclass(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_ISINST:
+        Q_EMIT(buf, "    %%t%d =l call $lux_isinst(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_BOX:
+        Q_EMIT(buf, "    %%t%d =l call $lux_box(w %%t%d, w %u)\n", tmp_counter,
+               tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_UNBOX:
+        Q_EMIT(buf, "    %%t%d =l call $lux_unbox(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_UNBOX_ANY:
+        Q_EMIT(buf, "    %%t%d =w call $lux_unbox_any(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_INITOBJ:
+        Q_EMIT(buf, "    call $memset(l %%t%d, w 0, w %u)\n", tmp_counter--,
+               instr->operand.value.token);
+        break;
+
+      case FRUITY_CPOBJ:
+        /* dest, src on stack */
+        Q_EMIT(buf, "    call $memcpy(l %%t%d, l %%t%d, w %u)\n",
+               tmp_counter - 1, tmp_counter, instr->operand.value.token);
+        tmp_counter -= 2;
+        break;
+
+      case FRUITY_LDOBJ:
+        Q_EMIT(buf, "    %%t%d =w loadw %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_STOBJ:
+        Q_EMIT(buf, "    storew %%t%d, %%t%d\n", tmp_counter - 1, tmp_counter);
+        tmp_counter -= 2;
+        break;
+
+      /* Array operations */
+      case FRUITY_LDLEN:
+        /* Array length at offset 0 */
+        Q_EMIT(buf, "    %%t%d =w loadw %%t%d\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_LDELEM:
+        /* array, index on stack → value */
+        Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter, tmp_counter,
+               4); /* TODO: actual element size */
+        Q_EMIT(buf, "    %%addr%d =l add %%t%d, %%idx%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        Q_EMIT(buf, "    %%t%d =w loadw %%addr%d\n", tmp_counter - 1,
+               tmp_counter - 1);
+        tmp_counter--;
+        break;
+
+      case FRUITY_STELEM:
+        /* array, index, value on stack */
+        Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter - 1,
+               tmp_counter - 1, 4); /* TODO: actual element size */
+        Q_EMIT(buf, "    %%addr%d =l add %%t%d, %%idx%d\n", tmp_counter - 2,
+               tmp_counter - 2, tmp_counter - 1);
+        Q_EMIT(buf, "    storew %%addr%d, %%t%d\n", tmp_counter - 2,
+               tmp_counter);
+        tmp_counter -= 3;
+        break;
+
+      case FRUITY_LDELEMA:
+        /* array, index → address */
+        Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter, tmp_counter,
+               4);
+        Q_EMIT(buf, "    %%t%d =l add %%t%d, %%idx%d\n", tmp_counter - 1,
+               tmp_counter - 1, tmp_counter);
+        tmp_counter--;
+        break;
+
+      /* Advanced function operations */
+      case FRUITY_CALLI:
+        /* Indirect call: fn_ptr on stack */
+        Q_EMIT(buf, "    %%t%d =l call %%t%d()\n", tmp_counter, tmp_counter);
+        break;
+
+      case FRUITY_LDFTN:
+        Q_EMIT(buf, "    %%t%d =l copy $method_%u\n", ++tmp_counter,
+               instr->operand.value.token);
+        break;
+
+      case FRUITY_LDVIRTFTN:
+        Q_EMIT(buf, "    %%t%d =l call $lux_ldvirtftn(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      /* Exception handling */
+      case FRUITY_THROW:
+        Q_EMIT(buf, "    call $lux_throw(l %%t%d)\n", tmp_counter--);
+        break;
+
+      case FRUITY_RETHROW:
+        Q_EMIT(buf, "    call $lux_rethrow()\n");
+        break;
+
+      case FRUITY_LEAVE:
+        Q_EMIT(buf, "    jmp @bb%u\n", instr->operand.value.target->block_id);
+        break;
+
+      case FRUITY_ENDFINALLY:
+        Q_EMIT(buf, "    call $lux_endfinally()\n");
+        break;
+
+      /* Metadata operations */
+      case FRUITY_SIZEOF:
+        Q_EMIT(buf, "    %%t%d =w copy %u\n", ++tmp_counter,
+               instr->operand.value.token); /* TODO: actual size lookup */
+        break;
+
+      case FRUITY_LDTOKEN:
+        Q_EMIT(buf, "    %%t%d =w copy %u\n", ++tmp_counter,
+               instr->operand.value.token);
+        break;
+
+      /* Typed reference operations */
+      case FRUITY_MKREFANY:
+        Q_EMIT(buf, "    %%t%d =l call $lux_mkrefany(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_REFANYVAL:
+        Q_EMIT(buf, "    %%t%d =l call $lux_refanyval(l %%t%d, w %u)\n",
+               tmp_counter, tmp_counter, instr->operand.value.token);
+        break;
+
+      case FRUITY_REFANYTYPE:
+        Q_EMIT(buf, "    %%t%d =w call $lux_refanytype(l %%t%d)\n", tmp_counter,
+               tmp_counter);
+        break;
+
       case FRUITY_CALL: {
         extern void uartputs(char *, int);
         char debug_buf[128];
