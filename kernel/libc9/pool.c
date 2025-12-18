@@ -561,11 +561,14 @@ static void poolnewarena(Pool *p, ulong asize) {
     return;
   }
 
+  pooltrace("poolnewarena: calling p->alloc(%lud)\n", asize);
   a = p->alloc(asize);
   if (a == nil) {
+    pooltrace("poolnewarena: p->alloc returned nil\n");
     /* assume errstr set by p->alloc */
     return;
   }
+  pooltrace("poolnewarena: got arena at %p\n", a);
 
   p->cursize += asize;
 
@@ -573,19 +576,27 @@ static void poolnewarena(Pool *p, ulong asize) {
   a->magic = ARENA_MAGIC;
   blocksetsize(a, sizeof(Arena));
   arenasetsize(a, asize);
+  pooltrace("poolnewarena: calling blockcheck(arena)\n");
   blockcheck(p, a);
 
   /* create one large block in arena */
   b = (Alloc *)A2B(a);
+  pooltrace("poolnewarena: block at %p\n", b);
   b->magic = UNALLOC_MAGIC;
   blocksetsize(b, (uchar *)A2TB(a) - (uchar *)b);
+  pooltrace("poolnewarena: calling blockcheck(block)\n");
   blockcheck(p, b);
+  pooltrace("poolnewarena: calling pooladd\n");
   pooladd(p, b);
+  pooltrace("poolnewarena: calling blockcheck after pooladd\n");
   blockcheck(p, b);
 
   /* sort arena into descending sorted arena list */
+  pooltrace("poolnewarena: sorting arena list (head=%p, a=%p)\n", p->arenalist,
+            a);
   for (lastap = nil, ap = p->arenalist; ap > a; lastap = ap, ap = ap->down)
     ;
+  pooltrace("poolnewarena: arena list sorted, linking\n");
 
   if (a->down = ap) /* assign = */
     a->down->aup = a;
@@ -594,6 +605,7 @@ static void poolnewarena(Pool *p, ulong asize) {
     a->aup->down = a;
   else
     p->arenalist = a;
+  pooltrace("poolnewarena: done\n");
 
   /* merge with surrounding arenas if possible */
   /* must do a with up before down with a (think about it) */

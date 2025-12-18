@@ -1,0 +1,320 @@
+DIGEST e523c823a6099501793af2625e51527e
+FBlindLedger.ledger_state
+R164:177 Coq.Lists.List <> <> lib
+R195:211 Coq.ZArith.ZArith <> <> lib
+R229:241 Coq.Bool.Bool <> <> lib
+R259:283 BlindLedger.ledger_crypto <> <> lib
+R293:305 Coq.Lists.List ListNotations <> mod
+def 526:536 <> Permissions
+R541:541 Coq.Numbers.BinNums <> Z ind
+ind 555:564 <> EntryState
+constr 573:584 <> State_Active
+constr 590:601 <> State_Burned
+constr 607:618 <> State_CowRed
+constr 624:636 <> State_CowBlue
+scheme 555:564 <> EntryState_rect
+scheme 555:564 <> EntryState_ind
+scheme 555:564 <> EntryState_rec
+scheme 555:564 <> EntryState_sind
+rec 647:662 <> BlindLedgerEntry
+proj 679:692 <> ent_capability
+proj 714:719 <> ent_pa
+proj 732:743 <> ent_span_len
+proj 754:762 <> ent_owner
+proj 774:788 <> ent_permissions
+proj 807:816 <> ent_secret
+proj 830:838 <> ent_state
+proj 856:871 <> ent_process_hash
+proj 890:902 <> ent_leaf_hash
+R696:709 BlindLedger.ledger_crypto <> UserCapability rec
+R723:727 BlindLedger.ledger_crypto <> PAddr def
+R747:749 BlindLedger.ledger_crypto <> Len def
+R766:769 BlindLedger.ledger_crypto <> Proc def
+R792:802 BlindLedger.ledger_state <> Permissions def
+R820:825 BlindLedger.ledger_crypto <> Secret ind
+R842:851 BlindLedger.ledger_state <> EntryState ind
+R875:885 BlindLedger.ledger_crypto <> ProcessHash ind
+R906:913 BlindLedger.ledger_crypto <> LeafHash ind
+def 931:941 <> LedgerState
+R953:956 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R946:952 BlindLedger.ledger_crypto <> CapHash ind
+R957:962 Coq.Init.Datatypes <> option ind
+R964:979 BlindLedger.ledger_state <> BlindLedgerEntry rec
+def 994:1004 <> empty_state
+R1008:1018 BlindLedger.ledger_state <> LedgerState def
+R1034:1037 Coq.Init.Datatypes <> None constr
+def 1054:1065 <> update_state
+R1072:1082 BlindLedger.ledger_state <> LedgerState def
+binder 1068:1068 <> s:13
+R1090:1096 BlindLedger.ledger_crypto <> CapHash ind
+binder 1086:1086 <> k:14
+R1104:1109 Coq.Init.Datatypes <> option ind
+R1111:1126 BlindLedger.ledger_state <> BlindLedgerEntry rec
+binder 1100:1100 <> v:15
+R1131:1141 BlindLedger.ledger_state <> LedgerState def
+binder 1152:1152 <> x:16
+R1161:1174 BlindLedger.ledger_crypto <> CapHash_eq_dec def
+R1176:1176 BlindLedger.ledger_state <> x:16 var
+R1178:1178 BlindLedger.ledger_state <> k:14 var
+R1193:1193 BlindLedger.ledger_state <> s:13 var
+R1195:1195 BlindLedger.ledger_state <> x:16 var
+R1186:1186 BlindLedger.ledger_state <> v:15 var
+def 1242:1253 <> remove_entry
+R1260:1270 BlindLedger.ledger_state <> LedgerState def
+binder 1256:1256 <> s:17
+R1278:1284 BlindLedger.ledger_crypto <> CapHash ind
+binder 1274:1274 <> k:18
+R1289:1299 BlindLedger.ledger_state <> LedgerState def
+R1306:1317 BlindLedger.ledger_state <> update_state def
+R1319:1319 BlindLedger.ledger_state <> s:17 var
+R1321:1321 BlindLedger.ledger_state <> k:18 var
+R1323:1326 Coq.Init.Datatypes <> None constr
+ind 1340:1350 <> LedgerError
+constr 1359:1363 <> LE_Ok
+constr 1369:1378 <> LE_Invalid
+constr 1384:1394 <> LE_NotFound
+constr 1400:1409 <> LE_Expired
+constr 1415:1421 <> LE_Perm
+constr 1427:1434 <> LE_NoMem
+scheme 1340:1350 <> LedgerError_rect
+scheme 1340:1350 <> LedgerError_ind
+scheme 1340:1350 <> LedgerError_rec
+scheme 1340:1350 <> LedgerError_sind
+def 1655:1661 <> op_mint
+R1668:1678 BlindLedger.ledger_state <> LedgerState def
+binder 1664:1664 <> s:21
+R1687:1691 BlindLedger.ledger_crypto <> PAddr def
+binder 1682:1683 <> pa:22
+R1701:1703 BlindLedger.ledger_crypto <> Len def
+binder 1695:1697 <> len:23
+R1715:1718 BlindLedger.ledger_crypto <> Proc def
+binder 1707:1711 <> owner:24
+R1750:1760 BlindLedger.ledger_state <> Permissions def
+binder 1742:1746 <> perms:25
+R1770:1775 BlindLedger.ledger_crypto <> Secret ind
+binder 1764:1766 <> sec:26
+R1829:1831 Coq.Init.Datatypes <> ::type_scope:x_'*'_x not
+R1812:1814 Coq.Init.Datatypes <> ::type_scope:x_'*'_x not
+R1801:1811 BlindLedger.ledger_state <> LedgerState def
+R1815:1828 BlindLedger.ledger_crypto <> UserCapability rec
+R1832:1842 BlindLedger.ledger_state <> LedgerError ind
+R1906:1913 BlindLedger.ledger_crypto <> Hash_Cap constr
+R1916:1927 BlindLedger.ledger_crypto <> Hash_Process constr
+R1930:1937 BlindLedger.ledger_crypto <> mkSecret constr
+R1943:1951 BlindLedger.ledger_crypto <> Hash_Leaf constr
+R1962:1970 BlindLedger.ledger_crypto <> Hash_Leaf constr
+binder 1892:1901 <> dummy_hash:27
+R1986:1990 Coq.ZArith.BinInt Z leb def
+R1992:1994 BlindLedger.ledger_state <> len:23 var
+R2118:2137 BlindLedger.ledger_crypto <> mint_capability_hash def
+R2139:2140 BlindLedger.ledger_state <> pa:22 var
+R2142:2144 BlindLedger.ledger_state <> len:23 var
+R2146:2148 BlindLedger.ledger_state <> sec:26 var
+R2150:2154 BlindLedger.ledger_state <> owner:24 var
+binder 2106:2113 <> cap_hash:28
+R2171:2187 BlindLedger.ledger_crypto <> compute_leaf_hash def
+R2189:2190 BlindLedger.ledger_state <> pa:22 var
+R2192:2194 BlindLedger.ledger_state <> len:23 var
+binder 2165:2166 <> lh:29
+R2211:2230 BlindLedger.ledger_crypto <> compute_process_hash def
+R2232:2234 BlindLedger.ledger_state <> sec:26 var
+R2236:2237 BlindLedger.ledger_state <> lh:29 var
+R2239:2243 BlindLedger.ledger_state <> owner:24 var
+binder 2205:2206 <> ph:30
+R2259:2259 BlindLedger.ledger_state <> s:21 var
+R2261:2268 BlindLedger.ledger_state <> cap_hash:28 var
+R2279:2282 Coq.Init.Datatypes <> Some constr
+R2289:2289 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2291:2292 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2326:2327 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2338:2338 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2290:2290 BlindLedger.ledger_state <> s:21 var
+R2293:2308 BlindLedger.ledger_crypto <> mkUserCapability constr
+R2310:2319 BlindLedger.ledger_state <> dummy_hash:27 var
+R2328:2337 BlindLedger.ledger_state <> LE_Invalid constr
+R2344:2347 Coq.Init.Datatypes <> None constr
+R2369:2384 BlindLedger.ledger_crypto <> mkUserCapability constr
+R2386:2393 BlindLedger.ledger_state <> cap_hash:28 var
+R2395:2397 BlindLedger.ledger_state <> len:23 var
+R2401:2405 BlindLedger.ledger_state <> perms:25 var
+binder 2362:2364 <> cap:31
+R2429:2435 BlindLedger.ledger_state <> mkEntry constr
+R2437:2439 BlindLedger.ledger_state <> cap:31 var
+R2441:2442 BlindLedger.ledger_state <> pa:22 var
+R2444:2446 BlindLedger.ledger_state <> len:23 var
+R2448:2452 BlindLedger.ledger_state <> owner:24 var
+R2454:2458 BlindLedger.ledger_state <> perms:25 var
+R2460:2462 BlindLedger.ledger_state <> sec:26 var
+R2464:2475 BlindLedger.ledger_state <> State_Active constr
+R2477:2478 BlindLedger.ledger_state <> ph:30 var
+R2480:2481 BlindLedger.ledger_state <> lh:29 var
+binder 2420:2424 <> entry:32
+R2492:2492 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2529:2530 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2534:2535 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2541:2541 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2493:2504 BlindLedger.ledger_state <> update_state def
+R2506:2506 BlindLedger.ledger_state <> s:21 var
+R2508:2515 BlindLedger.ledger_state <> cap_hash:28 var
+R2518:2521 Coq.Init.Datatypes <> Some constr
+R2523:2527 BlindLedger.ledger_state <> entry:32 var
+R2531:2533 BlindLedger.ledger_state <> cap:31 var
+R2536:2540 BlindLedger.ledger_state <> LE_Ok constr
+R2004:2004 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2006:2007 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2041:2042 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2053:2053 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2005:2005 BlindLedger.ledger_state <> s:21 var
+R2008:2023 BlindLedger.ledger_crypto <> mkUserCapability constr
+R2025:2034 BlindLedger.ledger_state <> dummy_hash:27 var
+R2043:2052 BlindLedger.ledger_state <> LE_Invalid constr
+def 2669:2679 <> op_transfer
+R2686:2696 BlindLedger.ledger_state <> LedgerState def
+binder 2682:2682 <> s:33
+R2710:2723 BlindLedger.ledger_crypto <> UserCapability rec
+binder 2700:2706 <> old_cap:34
+R2763:2766 BlindLedger.ledger_crypto <> Proc def
+binder 2751:2759 <> from_proc:35
+R2780:2783 BlindLedger.ledger_crypto <> Proc def
+binder 2770:2776 <> to_proc:36
+R2841:2843 Coq.Init.Datatypes <> ::type_scope:x_'*'_x not
+R2824:2826 Coq.Init.Datatypes <> ::type_scope:x_'*'_x not
+R2813:2823 BlindLedger.ledger_state <> LedgerState def
+R2827:2840 BlindLedger.ledger_crypto <> UserCapability rec
+R2844:2854 BlindLedger.ledger_state <> LedgerError ind
+R2871:2871 BlindLedger.ledger_state <> s:33 var
+R2874:2881 BlindLedger.ledger_crypto <> cap_hash proj
+R2883:2889 BlindLedger.ledger_state <> old_cap:34 var
+R2901:2904 Coq.Init.Datatypes <> None constr
+R2909:2909 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2911:2912 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2920:2921 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2933:2933 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R2910:2910 BlindLedger.ledger_state <> s:33 var
+R2913:2919 BlindLedger.ledger_state <> old_cap:34 var
+R2922:2932 BlindLedger.ledger_state <> LE_NotFound constr
+R2939:2942 Coq.Init.Datatypes <> Some constr
+R2972:2980 BlindLedger.ledger_state <> ent_state proj
+R2996:3007 BlindLedger.ledger_state <> State_Active constr
+R3027:3031 Coq.ZArith.BinInt Z eqb def
+R3040:3048 BlindLedger.ledger_state <> ent_owner proj
+R3051:3059 BlindLedger.ledger_state <> from_proc:35 var
+R4833:4833 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4835:4836 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4844:4845 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4853:4853 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4834:4834 BlindLedger.ledger_state <> s:33 var
+R4837:4843 BlindLedger.ledger_state <> old_cap:34 var
+R4846:4852 BlindLedger.ledger_state <> LE_Perm constr
+R3157:3176 BlindLedger.ledger_crypto <> mint_capability_hash def
+R3203:3208 BlindLedger.ledger_state <> ent_pa proj
+R3236:3247 BlindLedger.ledger_state <> ent_span_len proj
+R3275:3284 BlindLedger.ledger_state <> ent_secret proj
+R3305:3311 BlindLedger.ledger_state <> to_proc:36 var
+binder 3141:3152 <> new_cap_hash:37
+R3357:3376 BlindLedger.ledger_crypto <> compute_process_hash def
+R3403:3412 BlindLedger.ledger_state <> ent_secret proj
+R3440:3452 BlindLedger.ledger_state <> ent_leaf_hash proj
+R3473:3479 BlindLedger.ledger_state <> to_proc:36 var
+binder 3347:3352 <> new_ph:38
+R3576:3591 BlindLedger.ledger_crypto <> mkUserCapability constr
+R3611:3622 BlindLedger.ledger_state <> new_cap_hash:37 var
+R3649:3660 BlindLedger.ledger_state <> ent_span_len proj
+R3705:3712 BlindLedger.ledger_crypto <> cap_type proj
+R3688:3701 BlindLedger.ledger_state <> ent_capability proj
+R3740:3754 BlindLedger.ledger_state <> ent_permissions proj
+binder 3565:3571 <> new_cap:39
+R3808:3814 BlindLedger.ledger_state <> mkEntry constr
+R3834:3840 BlindLedger.ledger_state <> new_cap:39 var
+R3867:3872 BlindLedger.ledger_state <> ent_pa proj
+R3900:3911 BlindLedger.ledger_state <> ent_span_len proj
+R3932:3938 BlindLedger.ledger_state <> to_proc:36 var
+R3965:3979 BlindLedger.ledger_state <> ent_permissions proj
+R4007:4016 BlindLedger.ledger_state <> ent_secret proj
+R4037:4048 BlindLedger.ledger_state <> State_Active constr
+R4068:4073 BlindLedger.ledger_state <> new_ph:38 var
+R4100:4112 BlindLedger.ledger_state <> ent_leaf_hash proj
+binder 3795:3803 <> new_entry:40
+R4631:4642 BlindLedger.ledger_state <> remove_entry def
+R4644:4644 BlindLedger.ledger_state <> s:33 var
+R4647:4654 BlindLedger.ledger_crypto <> cap_hash proj
+R4656:4662 BlindLedger.ledger_state <> old_cap:34 var
+binder 4618:4626 <> s_removed:41
+R4696:4707 BlindLedger.ledger_state <> update_state def
+R4709:4717 BlindLedger.ledger_state <> s_removed:41 var
+R4719:4730 BlindLedger.ledger_state <> new_cap_hash:37 var
+R4733:4736 Coq.Init.Datatypes <> Some constr
+R4738:4746 BlindLedger.ledger_state <> new_entry:40 var
+binder 4685:4691 <> s_final:42
+R4779:4779 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4787:4788 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4796:4797 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4803:4803 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4780:4786 BlindLedger.ledger_state <> s_final:42 var
+R4789:4795 BlindLedger.ledger_state <> new_cap:39 var
+R4798:4802 BlindLedger.ledger_state <> LE_Ok constr
+R4868:4868 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4870:4871 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4879:4880 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4891:4891 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4869:4869 BlindLedger.ledger_state <> s:33 var
+R4872:4878 BlindLedger.ledger_state <> old_cap:34 var
+R4881:4890 BlindLedger.ledger_state <> LE_Expired constr
+def 4949:4955 <> op_burn
+R4962:4972 BlindLedger.ledger_state <> LedgerState def
+binder 4958:4958 <> s:43
+R4982:4995 BlindLedger.ledger_crypto <> UserCapability rec
+binder 4976:4978 <> cap:44
+R5006:5009 BlindLedger.ledger_crypto <> Proc def
+binder 4999:5002 <> proc:45
+R5046:5048 Coq.Init.Datatypes <> ::type_scope:x_'*'_x not
+R5035:5045 BlindLedger.ledger_state <> LedgerState def
+R5049:5059 BlindLedger.ledger_state <> LedgerError ind
+R5073:5073 BlindLedger.ledger_state <> s:43 var
+R5076:5083 BlindLedger.ledger_crypto <> cap_hash proj
+R5085:5087 BlindLedger.ledger_state <> cap:44 var
+R5099:5102 Coq.Init.Datatypes <> None constr
+R5107:5107 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5109:5110 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5122:5122 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5108:5108 BlindLedger.ledger_state <> s:43 var
+R5111:5121 BlindLedger.ledger_state <> LE_NotFound constr
+R5128:5131 Coq.Init.Datatypes <> Some constr
+R5164:5172 BlindLedger.ledger_state <> ent_state proj
+R5180:5191 BlindLedger.ledger_state <> State_Active constr
+R5196:5199 Coq.Init.Datatypes <> true constr
+R5208:5212 Coq.Init.Datatypes <> false constr
+R5855:5855 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5857:5858 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5869:5869 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5856:5856 BlindLedger.ledger_state <> s:43 var
+R5859:5868 BlindLedger.ledger_state <> LE_Expired constr
+R5235:5239 Coq.ZArith.BinInt Z eqb def
+R5248:5256 BlindLedger.ledger_state <> ent_owner proj
+R5259:5262 BlindLedger.ledger_state <> proc:45 var
+R5823:5823 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5825:5826 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5834:5834 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5824:5824 BlindLedger.ledger_state <> s:43 var
+R5827:5833 BlindLedger.ledger_state <> LE_Perm constr
+R5298:5304 BlindLedger.ledger_state <> mkEntry constr
+R5331:5344 BlindLedger.ledger_state <> ent_capability proj
+R5371:5376 BlindLedger.ledger_state <> ent_pa proj
+R5404:5415 BlindLedger.ledger_state <> ent_span_len proj
+R5443:5451 BlindLedger.ledger_state <> ent_owner proj
+R5479:5493 BlindLedger.ledger_state <> ent_permissions proj
+R5521:5530 BlindLedger.ledger_state <> ent_secret proj
+R5550:5561 BlindLedger.ledger_state <> State_Burned constr
+R5588:5603 BlindLedger.ledger_state <> ent_process_hash proj
+R5631:5643 BlindLedger.ledger_state <> ent_leaf_hash proj
+binder 5285:5293 <> new_entry:46
+R5743:5743 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5790:5791 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5797:5797 Coq.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5744:5755 BlindLedger.ledger_state <> update_state def
+R5757:5757 BlindLedger.ledger_state <> s:43 var
+R5760:5767 BlindLedger.ledger_crypto <> cap_hash proj
+R5769:5771 BlindLedger.ledger_state <> cap:44 var
+R5775:5778 Coq.Init.Datatypes <> Some constr
+R5780:5788 BlindLedger.ledger_state <> new_entry:46 var
+R5792:5796 BlindLedger.ledger_state <> LE_Ok constr

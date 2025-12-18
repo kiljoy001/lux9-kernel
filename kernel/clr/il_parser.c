@@ -821,6 +821,8 @@ static il_method_t *parse_method(il_assembly_t *assembly, uint32_t rva,
     method->il_code_size = header_byte >> 2;
     method->local_var_sig_token = 0;
     method->il_code = method_ptr + 1;
+    IL_PRINT("IL_PARSER: TINY format method '%s' il_code=%p method_offset=0x%x\n",
+             name, method->il_code, method_offset);
     method->exception_clauses = NULL;
     method->exception_clause_count = 0;
   } else if ((header_byte & 0x03) == 0x03) {
@@ -832,6 +834,8 @@ static il_method_t *parse_method(il_assembly_t *assembly, uint32_t rva,
     method->il_code_size = READ_UINT32(method_ptr + 4);
     method->local_var_sig_token = READ_UINT32(method_ptr + 8);
     method->il_code = method_ptr + header_size;
+    IL_PRINT("IL_PARSER: FAT format method '%s' il_code=%p method_offset=0x%x\n",
+             name, method->il_code, method_offset);
     code_end = method->il_code + method->il_code_size;
 
     // Check for MoreSects flag (0x08 in low byte)
@@ -1065,55 +1069,77 @@ const char *il_get_method_parent_type_name(il_assembly_t *assembly,
 
 il_assembly_t *il_parse_assembly_memory(const uint8_t *data, size_t size,
                                         il_error_t *error) {
+  IL_PRINT("IL_PARSER: il_parse_assembly_memory ENTER size=%ld\n", (long)size);
   il_assembly_t *assembly = IL_MALLOC(sizeof(il_assembly_t));
   if (assembly == NULL) {
+    IL_PRINT("IL_PARSER: failed to allocate assembly struct\n");
     if (error)
       *error = IL_ERROR_OUT_OF_MEMORY;
     return NULL;
   }
+  IL_PRINT("IL_PARSER: allocated assembly struct at %p\n", assembly);
 
   memset(assembly, 0, sizeof(il_assembly_t));
   assembly->data = (uint8_t *)data;
   assembly->size = size;
+  IL_PRINT("IL_PARSER: assembly->data=%p (HHDM check: %s)\n",
+           assembly->data,
+           ((uintptr)assembly->data >= 0xffff800000000000ull) ? "YES" : "NO");
 
   // Parse PE/COFF headers
+  IL_PRINT("IL_PARSER: calling parse_pe_header\n");
   il_error_t err = parse_pe_header(assembly);
   if (err != IL_OK) {
+    IL_PRINT("IL_PARSER: parse_pe_header FAILED err=%d\n", err);
     if (error)
       *error = err;
     IL_FREE(assembly);
     return NULL;
   }
+  IL_PRINT("IL_PARSER: parse_pe_header SUCCESS, %d sections\n",
+           assembly->section_count);
 
   // Parse CLI header
+  IL_PRINT("IL_PARSER: calling parse_cli_header\n");
   err = parse_cli_header(assembly);
   if (err != IL_OK) {
+    IL_PRINT("IL_PARSER: parse_cli_header FAILED err=%d\n", err);
     if (error)
       *error = err;
     il_free_assembly(assembly);
     return NULL;
   }
+  IL_PRINT("IL_PARSER: parse_cli_header SUCCESS, entry_point=0x%x\n",
+           assembly->cli_header.entry_point_token);
 
   // Parse metadata
+  IL_PRINT("IL_PARSER: calling parse_metadata_header\n");
   err = parse_metadata_header(assembly);
   if (err != IL_OK) {
+    IL_PRINT("IL_PARSER: parse_metadata_header FAILED err=%d\n", err);
     if (error)
       *error = err;
     il_free_assembly(assembly);
     return NULL;
   }
+  IL_PRINT("IL_PARSER: parse_metadata_header SUCCESS, %d streams\n",
+           assembly->stream_count);
 
   // Parse metadata tables
+  IL_PRINT("IL_PARSER: calling parse_metadata_tables\n");
   err = parse_metadata_tables(assembly);
   if (err != IL_OK) {
+    IL_PRINT("IL_PARSER: parse_metadata_tables FAILED err=%d\n", err);
     if (error)
       *error = err;
     il_free_assembly(assembly);
     return NULL;
   }
+  IL_PRINT("IL_PARSER: parse_metadata_tables SUCCESS\n");
 
   if (error)
     *error = IL_OK;
+  IL_PRINT("IL_PARSER: il_parse_assembly_memory EXIT success\n");
   return assembly;
 }
 

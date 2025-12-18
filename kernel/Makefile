@@ -33,6 +33,7 @@ ASM_S := $(wildcard $(PC64_DIR)/*.S)
 BORROW_C := ../kernel/borrowchecker.c
 LOCKDAG_C := ../kernel/lock_dag.c
 PEBBLE_C := ../kernel/pebble.c
+PEBBLE_KERNEL_C := ../kernel/pebble_kernel.c
 CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
@@ -47,6 +48,7 @@ ASM_O := $(patsubst $(PC64_DIR)/%.S,%.o,$(ASM_S))
 BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C))
 LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
 PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
+PEBBLE_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_KERNEL_C))
 CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%.o,$(CRYPTO_S))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
 FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
@@ -55,9 +57,10 @@ CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
 CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
-MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o
+MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o test_il_opcodes.o
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(CLR_INTERP_O) $(MISC_KERNEL_O)
+
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(CLR_INTERP_O) $(MISC_KERNEL_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -253,7 +256,13 @@ clr_exchange_ops.o: clr/clr_exchange_ops.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+# IL Opcode test suite
+test_il_opcodes.o: test/test_il_opcodes.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 # Testing targets (placeholder)
+
 
 run: $(KERNEL_BINARY)
 	@echo "Running kernel in QEMU..."

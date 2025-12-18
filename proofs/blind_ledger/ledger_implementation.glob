@@ -1,0 +1,120 @@
+DIGEST 88bc3997f55f4ed8fd0c23d57ac98915
+FBlindLedger.ledger_implementation
+R231:244 Coq.Lists.List <> <> lib
+R262:278 Coq.ZArith.ZArith <> <> lib
+R296:308 Coq.Bool.Bool <> <> lib
+R326:343 Coq.FSets.FMapList <> <> lib
+R361:379 Coq.FSets.FMapFacts <> <> lib
+R397:417 Coq.Structures.Orders <> <> lib
+R435:459 BlindLedger.ledger_crypto <> <> lib
+R477:500 BlindLedger.ledger_state <> <> lib
+R510:522 Coq.Lists.List ListNotations <> mod
+def 1027:1037 <> secret_to_Z
+R1044:1049 BlindLedger.ledger_crypto <> Secret ind
+binder 1040:1040 <> s:1
+R1054:1054 Coq.Numbers.BinNums <> Z ind
+R1067:1067 BlindLedger.ledger_implementation <> s:1 var
+R1074:1081 BlindLedger.ledger_crypto <> mkSecret constr
+def 1105:1113 <> leaf_to_Z
+R1120:1127 BlindLedger.ledger_crypto <> LeafHash ind
+binder 1116:1116 <> l:4
+R1132:1132 Coq.Numbers.BinNums <> Z ind
+R1145:1145 BlindLedger.ledger_implementation <> l:4 var
+R1152:1160 BlindLedger.ledger_crypto <> Hash_Leaf constr
+R1174:1176 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+mod 1459:1478 <> CapHashAsOrderedType
+def 1494:1494 CapHashAsOrderedType t
+R1499:1505 BlindLedger.ledger_crypto <> CapHash ind
+def 1524:1525 CapHashAsOrderedType eq
+R1534:1534 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+binder 1528:1528 <> x:7
+binder 1530:1530 <> y:8
+R1541:1543 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1540:1540 BlindLedger.ledger_implementation <> x:7 var
+R1544:1544 BlindLedger.ledger_implementation <> y:8 var
+def 1560:1566 CapHashAsOrderedType eq_refl
+R1572:1578 Coq.Init.Logic <> eq_refl constr
+R1580:1580 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+def 1596:1601 CapHashAsOrderedType eq_sym
+R1607:1612 Coq.Init.Logic <> eq_sym thm
+R1614:1614 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+def 1630:1637 CapHashAsOrderedType eq_trans
+R1643:1650 Coq.Init.Logic <> eq_trans thm
+R1652:1652 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+ax 1719:1725 CapHashAsOrderedType compare
+R1730:1733 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1729:1729 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+R1735:1738 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1734:1734 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+R1739:1748 Coq.Init.Datatypes <> comparison ind
+def 1767:1768 CapHashAsOrderedType lt
+R1777:1777 BlindLedger.ledger_implementation CapHashAsOrderedType t def
+binder 1771:1771 <> x:11
+binder 1773:1773 <> y:12
+R1794:1796 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1783:1789 BlindLedger.ledger_implementation CapHashAsOrderedType compare prfax
+R1791:1791 BlindLedger.ledger_implementation <> x:11 var
+R1793:1793 BlindLedger.ledger_implementation <> y:12 var
+R1797:1798 Coq.Init.Datatypes <> Lt constr
+ax 1812:1820 CapHashAsOrderedType lt_not_eq
+binder 1831:1831 <> x:13
+binder 1833:1833 <> y:14
+R1842:1845 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1836:1837 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R1839:1839 BlindLedger.ledger_implementation <> x:13 var
+R1841:1841 BlindLedger.ledger_implementation <> y:14 var
+R1846:1847 Coq.Init.Logic <> ::type_scope:'~'_x not
+R1848:1849 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+R1851:1851 BlindLedger.ledger_implementation <> x:13 var
+R1853:1853 BlindLedger.ledger_implementation <> y:14 var
+ax 1864:1871 CapHashAsOrderedType lt_trans
+binder 1882:1882 <> x:17
+binder 1884:1884 <> y:18
+binder 1886:1886 <> z:19
+R1895:1898 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1889:1890 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R1892:1892 BlindLedger.ledger_implementation <> x:17 var
+R1894:1894 BlindLedger.ledger_implementation <> y:18 var
+R1905:1908 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1899:1900 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R1902:1902 BlindLedger.ledger_implementation <> y:18 var
+R1904:1904 BlindLedger.ledger_implementation <> z:19 var
+R1909:1910 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R1912:1912 BlindLedger.ledger_implementation <> x:17 var
+R1914:1914 BlindLedger.ledger_implementation <> z:19 var
+ax 1925:1935 CapHashAsOrderedType lt_strorder
+R1939:1949 Coq.Classes.RelationClasses <> StrictOrder class
+R1951:1952 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+ax 1963:1971 CapHashAsOrderedType lt_compat
+R1975:1980 Coq.Classes.Morphisms <> Proper class
+R2002:2003 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R1985:1989 Coq.Classes.Morphisms ProperNotations ::signature_scope:x_'==>'_x not
+R1983:1984 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+R1992:1996 Coq.Classes.Morphisms ProperNotations ::signature_scope:x_'==>'_x not
+R1990:1991 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+R1997:1999 Coq.Init.Logic <> iff def
+ax 2014:2025 CapHashAsOrderedType compare_spec
+binder 2036:2036 <> x:26
+binder 2038:2038 <> y:27
+R2041:2051 Coq.Init.Datatypes <> CompareSpec ind
+R2081:2087 BlindLedger.ledger_implementation CapHashAsOrderedType compare prfax
+R2089:2089 BlindLedger.ledger_implementation <> x:26 var
+R2091:2091 BlindLedger.ledger_implementation <> y:27 var
+R2072:2073 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R2075:2075 BlindLedger.ledger_implementation <> y:27 var
+R2077:2077 BlindLedger.ledger_implementation <> x:26 var
+R2063:2064 BlindLedger.ledger_implementation CapHashAsOrderedType lt def
+R2066:2066 BlindLedger.ledger_implementation <> x:26 var
+R2068:2068 BlindLedger.ledger_implementation <> y:27 var
+R2054:2055 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+R2057:2057 BlindLedger.ledger_implementation <> x:26 var
+R2059:2059 BlindLedger.ledger_implementation <> y:27 var
+def 2110:2117 CapHashAsOrderedType eq_equiv
+R2121:2131 Coq.Classes.RelationClasses <> Equivalence class
+R2133:2134 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+R2164:2165 BlindLedger.ledger_implementation CapHashAsOrderedType eq def
+def 2313:2318 CapHashAsOrderedType eq_dec
+R2323:2336 BlindLedger.ledger_crypto <> CapHash_eq_dec def
+R2346:2365 BlindLedger.ledger_implementation CapHashAsOrderedType <> mod
+R2384:2396 Coq.FSets.FMapList Make <> modtype
+R2398:2417 BlindLedger.ledger_implementation CapHashAsOrderedType <> modtype

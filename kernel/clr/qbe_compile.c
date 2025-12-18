@@ -62,22 +62,70 @@ static char *skip_ws(char *s) {
 }
 
 /* Parse helper: parse temporary ID (%t123 -> 123) */
+/* Parse helper: parse temporary ID (%t123 -> 123)
+ * Handles:
+ *   %t1, %t2, ...     → 1, 2, ...
+ *   %loc0, %loc1, ... → 101, 102, ... (separate namespace for locals)
+ *   %a, %b, ..., %z   → mapped by first letter
+ *   %cond, %val, etc  → mapped by first letter
+ */
 static int parse_temp(char **s) {
   *s = skip_ws(*s);
   char *p = *s;
   if (*p != '%')
     return -1;
   p++; /* skip % */
-  if (*p == 't' || *p == 'r' || *p == 'p' ||
-      (*p == 'p' && *(p + 1) == 't' && *(p + 2) == 'r')) {
-    /* Handle %t, %r, %ptr prefixes roughly same mapping */
-    while (*p >= 'a' && *p <= 'z')
+
+  /* Handle %t<num> - numbered temporaries */
+  if (*p == 't' && p[1] >= '0' && p[1] <= '9') {
+    p++; /* skip 't' */
+    int val = 0;
+    while (*p >= '0' && *p <= '9') {
+      val = val * 10 + (*p - '0');
       p++;
+    }
+    *s = p;
+    return val + 1; /* 1-indexed for stack slots */
   }
 
-  int id = strtol(p, &p, 10);
+  /* Handle %loc<num> - local variables */
+  if (strncmp(p, "loc", 3) == 0) {
+    p += 3;
+    int val = 0;
+    while (*p >= '0' && *p <= '9') {
+      val = val * 10 + (*p - '0');
+      p++;
+    }
+    *s = p;
+    return 101 + val; /* offset to avoid collision with temps */
+  }
+
+  /* Handle named temps: %a -> 1, %b -> 2, ..., %z -> 26
+   * Also handles multi-char names: %cond, %val -> use first letter */
+  if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
+    int val;
+    if (*p >= 'a' && *p <= 'z')
+      val = *p - 'a' + 1;
+    else
+      val = *p - 'A' + 1;
+
+    /* Skip rest of identifier */
+    while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+           (*p >= '0' && *p <= '9') || *p == '_') {
+      p++;
+    }
+    *s = p;
+    return val;
+  }
+
+  /* Fallback: just a number */
+  int val = 0;
+  while (*p >= '0' && *p <= '9') {
+    val = val * 10 + (*p - '0');
+    p++;
+  }
   *s = p;
-  return id;
+  return val + 1;
 }
 
 /* Parse helper: parse immediate */
@@ -88,9 +136,21 @@ static int parse_imm(char **s) {
 
 /* Simple tokenizer to find next word */
 static int next_token(char **s, char *buf, int len) {
+  extern void uartputs(char *, int);
+  static int token_call_count = 0;
+  token_call_count++;
+
   *s = skip_ws(*s);
   if (**s == 0)
     return 0;
+
+  /* Only trace first 30 calls to avoid spam */
+  if (token_call_count <= 30) {
+    char tb[64];
+    int n = snprint(tb, sizeof(tb), "next_token: start *s=%c(0x%x)\n",
+                    (**s >= 32 && **s < 127) ? **s : '?', (unsigned char)**s);
+    uartputs(tb, n);
+  }
 
   int i = 0;
   while (**s && **s != ' ' && **s != '\t' && **s != '\n' && **s != ',' &&
@@ -105,6 +165,12 @@ static int next_token(char **s, char *buf, int len) {
   /* Consume separators if needed */
   while (**s == ',' || **s == '=' || **s == '(' || **s == ')')
     (*s)++;
+
+  if (token_call_count <= 30) {
+    char tb[64];
+    int n = snprint(tb, sizeof(tb), "next_token: done buf='%s'\n", buf);
+    uartputs(tb, n);
+  }
 
   return 1;
 }
@@ -415,8 +481,12 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   p = (char *)qbe_vaddr;
   code = (u8int *)asm_vaddr;
 
+  uartputs("DEBUG: qbe_compile_page zeroing output\n", 40);
+
   /* Zero output */
   memset(asm_vaddr, 0, BY2PG);
+
+  uartputs("DEBUG: qbe_compile_page emitting prologue\n", 43);
 
   /* PROLOGUE */
   /* We don't know stack size yet, but let's assume max 64 temps = 512 bytes for
@@ -444,13 +514,35 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
     u8int *next_inst;  /* Address of instruction AFTER the jump */
   } fixups[MAX_SYMBOLS];
   int fixup_count = 0;
+  int loop_iter = 0; /* DEBUG: iteration counter */
+
+  uartputs("DEBUG: qbe_compile_page entering parse loop\n", 45);
 
   /* First Pass: Generate code, record labels, record fixups */
   while (*p) {
+    loop_iter++;
+    /* Always print first 50 iterations for detailed trace */
+    if (loop_iter <= 50) {
+      snprint(debug_buf, sizeof(debug_buf),
+              "DEBUG: qbe iter=%d *p=%c(0x%x) pos=%ld\n", loop_iter,
+              (*p >= 32 && *p < 127) ? *p : '?', (unsigned char)*p,
+              (long)(p - (char *)qbe_vaddr));
+      uartputs(debug_buf, strlen(debug_buf));
+    }
+
     char *line_start = p;
     p = skip_ws(p);
     if (*p == 0)
       break;
+
+    /* Trace what instruction we're about to process */
+    if (loop_iter <= 50 || loop_iter % 100 == 0) {
+      snprint(debug_buf, sizeof(debug_buf),
+              "DEBUG: qbe after skip *p=%c(0x%x) pos=%ld\n",
+              (*p >= 32 && *p < 127) ? *p : '?', (unsigned char)*p,
+              (long)(p - (char *)qbe_vaddr));
+      uartputs(debug_buf, strlen(debug_buf));
+    }
 
     if (*p == '#') {
       while (*p && *p != '\n')
@@ -476,6 +568,7 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
     }
 
     if (strncmp(p, "jmp", 3) == 0) {
+
       /* jmp @target */
       p += 3;
       p = skip_ws(p);
@@ -521,34 +614,49 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
         emit_byte(&code, 0xC0);
       }
 
+      /* Parse true target */
       p = skip_ws(p);
-      if (*p == ',')
-        p++;
-      p = skip_ws(p);
-
-      char target[32];
+      char true_target[32];
       int i = 0;
-      while (*p && *p != ',' && *p != ' ' && i < 31)
-        target[i++] = *p++;
-      target[i] = 0;
+      while (*p && *p != ',' && *p != '\n' && *p != ' ' && i < 31)
+        true_target[i++] = *p++;
+      true_target[i] = 0;
 
-      /* jne rel32 (0F 85 md) */
+      /* jnz rel32 (0F 85 xx xx xx xx) */
       emit_byte(&code, 0x0F);
       emit_byte(&code, 0x85);
 
       if (fixup_count < MAX_SYMBOLS) {
-        strncpy(fixups[fixup_count].name, target, 31);
+        strncpy(fixups[fixup_count].name, true_target, 31);
         fixups[fixup_count].patch_addr = code;
         emit_dword(&code, 0x00000000);
         fixups[fixup_count].next_inst = code;
         fixup_count++;
       }
 
-      /* Consume @false target (fallthrough assumption or explicit jump?) */
-      /* Simplification: ignore second arg, assume fallthrough logic handled by
-       * IR structure */
-      while (*p && *p != '\n')
+      /* Parse false target */
+      p = skip_ws(p);
+      if (*p == ',')
         p++;
+      p = skip_ws(p);
+      char false_target[32];
+      i = 0;
+      while (*p && *p != ',' && *p != '\n' && *p != ' ' && i < 31)
+        false_target[i++] = *p++;
+      false_target[i] = 0;
+
+      /* jmp rel32 (E9 xx xx xx xx) - unconditional jump to false target */
+      emit_byte(&code, 0xE9);
+
+      if (fixup_count < MAX_SYMBOLS) {
+        strncpy(fixups[fixup_count].name, false_target, 31);
+        fixups[fixup_count].patch_addr = code;
+        emit_dword(&code, 0x00000000);
+        fixups[fixup_count].next_inst = code;
+        fixup_count++;
+      }
+
+      continue;
 
     } else if (*p == 'e' && strncmp(p, "export", 6) == 0) {
       while (*p && *p != '{')
@@ -557,24 +665,50 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
         p++;
       continue;
     } else if (*p == '}') {
+      uartputs("DEBUG: qbe found }, continuing\n", 31);
       p++;
       continue;
     } else
 
       /* ... Existing instruction parsing ... */
       if (*p == '%') {
+        if (loop_iter <= 50)
+          uartputs("DEBUG: % parsing: parse_temp\n", 30);
         int dest_id = parse_temp(&p);
+        if (loop_iter <= 50)
+          uartputs("DEBUG: % parsing: skip_ws\n", 27);
         p = skip_ws(p);
         if (*p == '=')
           p++; /* consume = */
         p = skip_ws(p);
 
+        if (loop_iter <= 50)
+          uartputs("DEBUG: % parsing: next_token\n", 30);
         next_token(&p, token, sizeof(token));
+        if (loop_iter <= 50) {
+          snprint(debug_buf, sizeof(debug_buf), "DEBUG: % token='%s'\n", token);
+          uartputs(debug_buf, strlen(debug_buf));
+        }
         if (strcmp(token, "w") == 0 || strcmp(token, "l") == 0) {
           next_token(&p, token, sizeof(token));
         }
 
-        if (strcmp(token, "copy") == 0) {
+        if (loop_iter <= 50) {
+          snprint(debug_buf, sizeof(debug_buf),
+                  "DEBUG: instruction='%s' pos=%ld\n", token,
+                  (long)(p - (char *)qbe_vaddr));
+          uartputs(debug_buf, strlen(debug_buf));
+        }
+
+        /* Handle call instruction - skip to end of line (not compiled, linked
+         * at runtime) */
+        if (strcmp(token, "call") == 0) {
+          if (loop_iter <= 50)
+            uartputs("DEBUG: skipping call instruction\n", 34);
+          while (*p && *p != '\n')
+            p++;
+        } else if (strcmp(token, "copy") == 0) {
+
           /* ... existing copy ... */
           if (*p == '%') {
             int src_id = parse_temp(&p);
@@ -1384,6 +1518,11 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
       *patch++ = (rel >> 24) & 0xFF;
     }
   }
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_compile_page done, loop_iter=%d\n", loop_iter);
+  uartputs(debug_buf, strlen(debug_buf));
+  uartputs("DEBUG: qbe_compile_page returning SUCCESS\n", 43);
 
   return 0;
 }

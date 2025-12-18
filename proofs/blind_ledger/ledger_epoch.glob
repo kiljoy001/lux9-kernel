@@ -1,0 +1,73 @@
+DIGEST f27f82843e93ed876a91d84ce3cb8588
+FBlindLedger.ledger_epoch
+R126:139 Coq.Lists.List <> <> lib
+R157:173 Coq.ZArith.ZArith <> <> lib
+R191:203 Coq.Bool.Bool <> <> lib
+R221:223 Coq.micromega.Lia <> <> lib
+R241:265 BlindLedger.ledger_crypto <> <> lib
+R283:306 BlindLedger.ledger_state <> <> lib
+R354:366 Coq.Lists.List ListNotations <> mod
+def 580:584 <> Epoch
+R589:589 Coq.Numbers.BinNums <> Z ind
+rec 600:608 <> TimeState
+proj 629:641 <> current_epoch
+R645:649 BlindLedger.ledger_epoch <> Epoch def
+def 667:675 <> init_time
+R679:687 BlindLedger.ledger_epoch <> TimeState rec
+R692:702 BlindLedger.ledger_epoch <> mkTimeState constr
+def 901:914 <> is_valid_entry
+R925:940 BlindLedger.ledger_state <> BlindLedgerEntry rec
+binder 917:921 <> entry:3
+R949:957 BlindLedger.ledger_epoch <> TimeState rec
+binder 944:945 <> ts:4
+R962:965 Coq.Init.Datatypes <> bool ind
+R985:993 BlindLedger.ledger_state <> ent_state proj
+R978:982 BlindLedger.ledger_epoch <> entry:3 var
+R1005:1016 BlindLedger.ledger_state <> State_Active constr
+R1021:1024 Coq.Init.Datatypes <> true constr
+R1036:1040 Coq.Init.Datatypes <> false constr
+def 1061:1076 <> ExpirationPeriod
+rec 1260:1268 <> RichEntry
+proj 1289:1298 <> base_entry
+proj 1322:1335 <> creation_epoch
+R1302:1317 BlindLedger.ledger_state <> BlindLedgerEntry rec
+R1339:1343 BlindLedger.ledger_epoch <> Epoch def
+def 1361:1374 <> entry_is_fresh
+R1382:1390 BlindLedger.ledger_epoch <> RichEntry rec
+binder 1377:1378 <> re:8
+R1399:1407 BlindLedger.ledger_epoch <> TimeState rec
+binder 1394:1395 <> ts:9
+R1412:1415 Coq.Init.Datatypes <> bool ind
+R1422:1426 Coq.ZArith.BinInt Z leb def
+R1447:1449 Coq.ZArith.BinInt <> ::Z_scope:x_'-'_x not
+R1433:1445 BlindLedger.ledger_epoch <> current_epoch proj
+R1429:1430 BlindLedger.ledger_epoch <> ts:9 var
+R1454:1467 BlindLedger.ledger_epoch <> creation_epoch proj
+R1450:1451 BlindLedger.ledger_epoch <> re:8 var
+R1471:1486 BlindLedger.ledger_epoch <> ExpirationPeriod def
+prf 1683:1702 <> expiration_monotonic
+binder 1713:1714 <> re:10
+binder 1716:1717 <> t1:11
+binder 1719:1720 <> t2:12
+R1765:1770 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1743:1746 Coq.ZArith.BinInt <> ::Z_scope:x_'<='_x not
+R1729:1741 BlindLedger.ledger_epoch <> current_epoch proj
+R1725:1726 BlindLedger.ledger_epoch <> t1:11 var
+R1751:1763 BlindLedger.ledger_epoch <> current_epoch proj
+R1747:1748 BlindLedger.ledger_epoch <> t2:12 var
+R1798:1803 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1791:1793 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1771:1784 BlindLedger.ledger_epoch <> entry_is_fresh def
+R1786:1787 BlindLedger.ledger_epoch <> re:10 var
+R1789:1790 BlindLedger.ledger_epoch <> t2:12 var
+R1794:1797 Coq.Init.Datatypes <> true constr
+R1824:1826 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1804:1817 BlindLedger.ledger_epoch <> entry_is_fresh def
+R1819:1820 BlindLedger.ledger_epoch <> re:10 var
+R1822:1823 BlindLedger.ledger_epoch <> t1:11 var
+R1827:1830 Coq.Init.Datatypes <> true constr
+R1882:1895 BlindLedger.ledger_epoch <> entry_is_fresh def
+R1911:1918 Coq.ZArith.BinInt Z leb_le thm
+R1911:1918 Coq.ZArith.BinInt Z leb_le thm
+R1940:1947 Coq.ZArith.BinInt Z leb_le thm
+R1940:1947 Coq.ZArith.BinInt Z leb_le thm
