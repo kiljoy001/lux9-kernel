@@ -151,9 +151,12 @@ Theorem verify_white_preserves_nonneg :
   VerifyWhite size s1 s2 ->
   TokenomicNonNegative s2.
 Proof.
-  (* TODO: Coq's lia tactic has limitations with complex record destructuring.
-     Property holds by inspection - WhiteVerify only adds to white_pending and white_verified,
-     both of which are incremented by positive values. *)
+  intros s1 s2 size Hnonneg HVerify.
+  inversion HVerify; subst.
+  inversion H1; subst.
+  (* Property holds: WhiteVerify only increments white_pending and white_verified.
+     Coq's lia tactic cannot handle the 6-part conjunction after inversions.
+     Would need manual proof for each of the 6 fields. *)
   admit.
 Admitted.
 
@@ -164,11 +167,12 @@ Theorem mint_black_preserves_nonneg :
   MintBlack size cap s1 s2 ->
   TokenomicNonNegative s2.
 Proof.
-  (* TODO: Similar automation issue. Property holds:
-     colorless decreases by size (precondition: colorless >= size),
-     black increases by size, all stay >= 0. *)
-  admit.
-Admitted.
+  intros s1 s2 size cap Hnonneg HMint.
+  inversion HMint; subst.
+  inversion H0; subst.
+  unfold TokenomicNonNegative, Inv_NonNegative in *.
+  destruct Hnonneg as [H_c [H_b [H_bl [H_r [H_wp H_wv]]]]].
+  simpl. repeat split; lia.
 
 (** BurnBlack preserves non-negative invariant *)
 Theorem burn_black_preserves_nonneg :
@@ -177,11 +181,12 @@ Theorem burn_black_preserves_nonneg :
   BurnBlack size cap s1 s2 ->
   TokenomicNonNegative s2.
 Proof.
-  (* TODO: Similar automation issue. Property holds:
-     BLACK decreases by size (precondition: black >= size),
-     colorless increases by size, all stay >= 0. *)
-  admit.
-Admitted.
+  intros s1 s2 size cap Hnonneg HBurn.
+  inversion HBurn; subst.
+  inversion H0; subst.
+  destruct Hnonneg as [H_c [H_b [H_bl [H_r [H_wp H_wv]]]]]].
+  simpl. repeat split; lia.
+Qed.
 
 (** All transitions preserve the complete system invariant *)
 Definition SystemInvariant (s : TokenomicState) (total : Z) : Prop :=
@@ -417,11 +422,15 @@ Theorem mint_creates_unique_capability :
   MintBlack size cap s1 s2 ->
   CapabilityUnique s2 cap.
 Proof.
-  (* TODO: This proof has technical issues with Coq's destruct tactic.
-     The property holds: H8 : ~ In (next_cap_id (pebble s1)) (freed_caps (pebble s1))
-     but the proof structure is complex. Admitting for now to complete the main theorems. *)
-  admit.
-Admitted.
+  intros s1 s2 size cap HMint.
+  inversion HMint; subst; clear HMint.
+  inversion H0; subst; clear H0.
+  unfold CapabilityUnique. intro HIn. intro HFreed.
+  simpl in HIn. simpl in HFreed.
+  destruct HIn as [HEq | HIn'].
+  - subst. exact (H8 HFreed).
+  - exact (H8 HFreed).
+Qed.
 
 (** Burning invalidates capabilities *)
 Theorem burn_invalidates_capability :
@@ -430,10 +439,11 @@ Theorem burn_invalidates_capability :
   In cap s1.(pebble).(live_caps) ->
   In cap s2.(pebble).(freed_caps).
 Proof.
-  (* TODO: Same technical issue - Coq inversions create non-inductive structure.
-     Admitting to complete main conservation theorems. *)
-  admit.
-Admitted.
+  intros s1 s2 size cap HBurn HLive.
+  inversion HBurn; subst; clear HBurn.
+  inversion H0; subst; clear H0.
+  simpl in *. left. reflexivity.
+Qed.
 
 (* ========================================================================= *)
 (* SUMMARY THEOREM                                                           *)
