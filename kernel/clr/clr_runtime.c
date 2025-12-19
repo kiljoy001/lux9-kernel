@@ -81,6 +81,28 @@ static clr_compiled_method_t *compiled_methods;
 static ulong compiled_method_count;
 static ulong compiled_method_capacity;
 
+/* Static field table */
+typedef struct {
+  u32int field_token;
+  void *data_ptr;
+  ulong size;
+} clr_static_field_t;
+
+static clr_static_field_t *static_fields;
+static ulong static_field_count;
+static ulong static_field_capacity;
+
+/*
+ * clr_get_static_field - Get pointer to static field data by token
+ */
+void *clr_get_static_field(u32int token) {
+  for (ulong i = 0; i < static_field_count; i++) {
+    if (static_fields[i].field_token == token)
+      return static_fields[i].data_ptr;
+  }
+  return nil;
+}
+
 /* Current assembly */
 static il_assembly_t *current_assembly;
 

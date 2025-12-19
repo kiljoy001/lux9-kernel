@@ -55,7 +55,7 @@ FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transact
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o fruity_interp.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o
+CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o clr_vtable.o
 # fruity_sljit.o and qbe_exec.o temporarily disabled due to sljit/kernel header conflicts
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
 MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o test_il_opcodes.o pow_gate.o
@@ -250,6 +250,10 @@ il_decoder.o: clr/CIL-Interpreter/src/il_decoder.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clr_internal_calls.o: clr/clr-kernel/clr_internal_calls.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+clr_vtable.o: clr/clr-kernel/clr_vtable.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

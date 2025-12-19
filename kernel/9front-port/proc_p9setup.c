@@ -53,6 +53,9 @@ int proc_setup_p9page(Proc *p) {
 
   /* Assign segment to process at ESEG slot */
   p->seg[ESEG] = s;
+  print(
+      "proc_setup_p9page: assigned seg %p to p->seg[ESEG], base=%#p top=%#p\n",
+      s, (void *)s->base, (void *)s->top);
 
   return 0;
 }
