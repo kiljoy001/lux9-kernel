@@ -34,6 +34,9 @@ typedef struct {
   } value;
 } vm_value_t;
 
+/* Global for testing verification */
+uint32_t last_locals_count = 0xFFFFFFFF;
+
 static vm_execution_state_t vm_create_execution_state(vm_init_t *init) {
   (void)init;
   vm_execution_state_t s = {0};
@@ -55,7 +58,7 @@ static int vm_execute_method(vm_execution_state_t *s, const uint8_t *c,
   (void)s;
   (void)c;
   (void)sz;
-  (void)lc;
+  last_locals_count = lc;
   return 1;
 }
 static const char *vm_get_error(vm_execution_state_t *s) {
@@ -162,8 +165,8 @@ void qbe_exec_destroy(qbe_exec_ctx_t *ctx) {
 /*
  * Execute via CIL interpreter
  */
-static int exec_interpret_cil(qbe_exec_ctx_t *ctx, il_method_t *method,
-                              void **args, int arg_count,
+static int exec_interpret_cil(qbe_exec_ctx_t *ctx, il_assembly_t *assembly,
+                              il_method_t *method, void **args, int arg_count,
                               qbe_exec_result_t *result) {
   if (ctx->vm_state == nil) {
     snprint(result->error_msg, sizeof(result->error_msg),
@@ -186,9 +189,26 @@ static int exec_interpret_cil(qbe_exec_ctx_t *ctx, il_method_t *method,
   }
 
   /* Execute the method */
-  /* TODO: decode local_count from method->local_var_sig_token blob */
+  uint32_t locals_count = 0;
+  if (method->local_var_sig_token) {
+    uint8_t table_kind = (method->local_var_sig_token >> 24) & 0xFF;
+    uint32_t row_index = method->local_var_sig_token & 0x00FFFFFF;
+
+    if (table_kind == TABLE_STANDALONESIG) {
+      standalonesig_row_t *row = il_get_standalonesig(assembly, row_index);
+      if (row) {
+        uint32_t sig_len = 0;
+        const uint8_t *sig = il_get_blob(assembly, row->signature, &sig_len);
+        if (sig && sig_len > 1 && sig[0] == 0x07) { /* LOCAL_SIG */
+          const uint8_t *p = sig + 1;
+          locals_count = il_decode_compressed_uint(&p);
+        }
+      }
+    }
+  }
+
   if (!vm_execute_method(ctx->vm_state, method->il_code, method->il_code_size,
-                         0)) {
+                         locals_count)) {
     snprint(result->error_msg, sizeof(result->error_msg),
             "Execution failed: %s", vm_get_error(ctx->vm_state));
     result->success = -1;
@@ -333,7 +353,7 @@ int qbe_exec_method(qbe_exec_ctx_t *ctx, il_assembly_t *assembly,
 
   switch (mode) {
   case QBE_EXEC_INTERPRET_CIL:
-    return exec_interpret_cil(ctx, method, args, arg_count, result);
+    return exec_interpret_cil(ctx, assembly, method, args, arg_count, result);
 
   case QBE_EXEC_INTERPRET_FRUITY:
     return exec_interpret_fruity(ctx, assembly, method, args, arg_count,

@@ -565,6 +565,8 @@ static uint32_t get_table_row_size(il_assembly_t *assembly, int table_id) {
   }
   case TABLE_TYPESPEC: // 0x1B
     return (blob_wide ? 4 : 2);
+  case TABLE_STANDALONESIG: // 0x11
+    return (blob_wide ? 4 : 2);
   default:
     return 0; // Unknown table
   }
@@ -725,6 +727,38 @@ static typespec_row_t *parse_typespec_table(il_assembly_t *assembly,
 
   // Allocate
   typespec_row_t *rows = IL_MALLOC(sizeof(typespec_row_t) * row_count);
+  if (rows == NULL) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  for (size_t i = 0; i < row_count; i++) {
+    rows[i].signature = read_table_index(&table_ptr, blob_wide);
+  }
+
+  *row_count_out = row_count;
+  return rows;
+}
+
+static standalonesig_row_t *parse_standalonesig_table(il_assembly_t *assembly,
+                                                      size_t *row_count_out) {
+  size_t row_count = assembly->tables_header.row_counts[TABLE_STANDALONESIG];
+  if (row_count == 0) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  uint8_t *table_ptr = il_get_table_start(assembly, TABLE_STANDALONESIG);
+  if (table_ptr == NULL) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  // Index sizes
+  int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
+
+  // Allocate
+  standalonesig_row_t *rows = IL_MALLOC(sizeof(standalonesig_row_t) * row_count);
   if (rows == NULL) {
     *row_count_out = 0;
     return NULL;
@@ -1034,6 +1068,21 @@ typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid) {
   return NULL;
 }
 
+standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly, uint32_t rid) {
+  if (rid == 0)
+    return NULL;
+
+  if (assembly->standalonesigs == NULL) {
+    assembly->standalonesigs =
+        parse_standalonesig_table(assembly, &assembly->standalonesig_count);
+  }
+
+  if (assembly->standalonesigs && rid <= assembly->standalonesig_count) {
+    return &assembly->standalonesigs[rid - 1];
+  }
+  return NULL;
+}
+
 const char *il_get_method_parent_type_name(il_assembly_t *assembly,
                                            uint32_t method_token) {
   uint32_t row_index = method_token & 0x00FFFFFF;
@@ -1223,6 +1272,8 @@ void il_free_assembly(il_assembly_t *assembly) {
       IL_FREE(assembly->typedefs);
     if (assembly->typespecs)
       IL_FREE(assembly->typespecs);
+    if (assembly->standalonesigs)
+      IL_FREE(assembly->standalonesigs);
 
     if (assembly->data) {
       IL_FREE((void *)assembly->data);

@@ -133,6 +133,7 @@ typedef enum {
   TABLE_METHODDEF = 0x06,
   TABLE_PARAM = 0x08,
   TABLE_MEMBERREF = 0x0A,
+  TABLE_STANDALONESIG = 0x11,
   TABLE_TYPESPEC = 0x1B,
   TABLE_ASSEMBLY = 0x20,
   TABLE_ASSEMBLYREF = 0x23
@@ -179,6 +180,10 @@ typedef struct {
 typedef struct {
   uint32_t signature; /* Index into #Blob heap */
 } typespec_row_t;
+
+typedef struct {
+  uint32_t signature; /* Index into #Blob heap */
+} standalonesig_row_t;
 
 /* ========== Exception Clause Types (ECMA-335 II.25.4.6) ========== */
 
@@ -264,6 +269,8 @@ typedef struct {
   size_t typedef_count;
   typespec_row_t *typespecs;
   size_t typespec_count;
+  standalonesig_row_t *standalonesigs;
+  size_t standalonesig_count;
 } il_assembly_t;
 
 /* ========== Error Codes ========== */
@@ -306,6 +313,10 @@ typedef_row_t *il_get_typedef(il_assembly_t *assembly, uint32_t rid);
 
 /* Get TypeSpec row (1-based index) */
 typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid);
+
+/* Get StandAloneSig row (1-based index) */
+standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly,
+                                          uint32_t rid);
 
 /* Get string from #Strings heap */
 const char *il_get_string(il_assembly_t *assembly, uint32_t index);
