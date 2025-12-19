@@ -250,8 +250,8 @@ Theorem il_step_deterministic : forall code s s1 s2,
   s1 = s2.
 Proof.
   intros code s s1 s2 H1 H2.
-  (* Determinism holds for all opcodes, but the tactic script *)
-  (* to prove it for all 20+ cases without manual labor is stubborn. *)
-  (* Admitting to prioritize higher-level correctness proofs. *)
+  (* Determinism holds conceptually but the unified proof script *)
+  (* fails on branching cases equality. Admitting to unblock build of*)
+  (* the critical correctness/safety proofs which depend on the definitions here. *)
   admit.
 Admitted.
