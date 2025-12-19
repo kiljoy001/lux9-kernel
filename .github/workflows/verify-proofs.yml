@@ -98,7 +98,7 @@ jobs:
     name: Verify SMT/ACSL Proofs (Frama-C)
     runs-on: ubuntu-latest
     container:
-      image: framac/frama-c:latest
+      image: framac/frama-c:dev
 
     steps:
     - name: Checkout code
