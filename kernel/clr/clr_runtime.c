@@ -578,3 +578,72 @@ void clr_init(void) {
 
   print("CLR runtime initialized\n");
 }
+
+/*
+ * Implementation of System.Threading.Thread.Sleep(int ms)
+ */
+void clr_thread_sleep(int ms) {
+  if (up == nil)
+    return;
+
+  if (ms < 0) {
+    /* Infinite sleep not supported yet, default to 1 min to allow break */
+    ms = 60000;
+  }
+
+  /* tsleep for ms milliseconds
+   * return0 means "condition never met", so it waits for timeout or interrupt
+   */
+  tsleep(&up->sleep, return0, 0, (ulong)ms);
+}
+
+/*
+ * Process creation support
+ */
+#define RFPROC (1 << 4)
+#define RFFDG (1 << 2)
+#define RFNOTEG (1 << 3)
+
+extern uintptr sysrfork(void *);
+extern uintptr sysexec(void *);
+extern void pexit(char *, int);
+
+int clr_process_start(char *cmd, char *args_str) {
+  /* fork */
+  ulong fork_args[1];
+  fork_args[0] = RFPROC | RFFDG | RFNOTEG;
+
+  int pid = (int)sysrfork(fork_args);
+  /* sysrfork returns pid in parent, 0 in child.
+     Note: In kernel mode, sysrfork returns directly. */
+
+  if (pid < 0)
+    return pid;
+
+  if (pid == 0) {
+    /* Child process */
+    /* Construct argv. We need to split args_str if possible,
+       but for now simple [cmd, args_str, nil] */
+
+    char *argv[4]; /* cmd, arg1, arg2, nil */
+    int argc = 0;
+
+    argv[argc++] = cmd;
+    if (args_str && *args_str) {
+      /* TODO: Improper tokenize, just treating whole string as one arg */
+      argv[argc++] = args_str;
+    }
+    argv[argc] = nil;
+
+    ulong exec_args[2];
+    exec_args[0] = (ulong)cmd;
+    exec_args[1] = (ulong)argv;
+
+    sysexec(exec_args);
+
+    /* If sysexec returns, it failed */
+    pexit("exec failed", 1);
+  }
+
+  return pid;
+}

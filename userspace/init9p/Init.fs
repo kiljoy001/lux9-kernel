@@ -223,11 +223,12 @@ let setupNamespace () =
 let spawnChild (path: string) =
     printfn "[INIT] Spawning: %s" path
 
-    // TODO: Send fork/exec request to kernel via 9P
-    // For now, stub
-    // For now assume we use legacy /proc or something?
-    // Or just exec the shell. 
-    // Since we are "init", we might just launch the shell.
+    // Use the new Process.Start API
+    try
+        let _ = System.Diagnostics.Process.Start(path, "")
+        printfn "[INIT] Spawned: %s" path
+    with ex ->
+        printfn "[INIT] FAILED to spawn %s: %s" path ex.Message
     ()
 
     printfn "[INIT] Spawned: %s" path

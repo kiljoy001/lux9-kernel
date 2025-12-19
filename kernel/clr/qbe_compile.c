@@ -359,6 +359,12 @@ static void *resolve_kernel_symbol(char *name) {
   if (strcmp(name, "System_Console_Internal_WriteLine") == 0)
     return (void *)clr_console_writeline;
 
+  /* Process */
+  if (strcmp(name, "System_Diagnostics_Process_Internal_Start") == 0) {
+    extern int clr_process_start(char *, char *);
+    return (void *)clr_process_start;
+  }
+
   /* Environment */
   if (strcmp(name, "System_Environment_get_TickCount") == 0)
     return (void *)clr_environment_tickcount;
@@ -372,6 +378,15 @@ static void *resolve_kernel_symbol(char *name) {
     return (void *)clr_monitor_enter;
   if (strcmp(name, "System_Threading_Monitor_Exit") == 0)
     return (void *)clr_monitor_exit;
+  if (strcmp(name, "System_Threading_Thread_Sleep") == 0) {
+    extern void clr_thread_sleep(int); /* Forward decl */
+    return (void *)clr_thread_sleep;
+  }
+  if (strcmp(name, "System_Threading_Thread_Yield") == 0) {
+    /* Yield stub - just delay 0 */
+    extern void delay(int);
+    return (void *)yield;
+  }
 
   /* Allocation */
   if (strcmp(name, "lux_alloc") == 0)

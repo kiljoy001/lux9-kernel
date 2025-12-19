@@ -105,5 +105,25 @@ namespace System.Diagnostics
                 _disposed = true;
             }
         }
+
+        /// <summary>
+        /// Starts a process resource by specifying the name of a document or application file.
+        /// </summary>
+        public static Process Start(string fileName, string arguments = "")
+        {
+            int pid = Internal_Start(fileName, arguments);
+            if (pid < 0)
+            {
+                // Explicitly use Concat to avoid compiler looking for missing overloads
+                string msg = String.Concat("Failed to start process '", fileName);
+                msg = String.Concat(msg, "': error ");
+                msg = String.Concat(msg, pid.ToString());
+                throw new Exception(msg);
+            }
+            return new Process(pid);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern int Internal_Start(string fileName, string arguments);
     }
 }
