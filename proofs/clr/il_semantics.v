@@ -241,7 +241,46 @@ Inductive il_steps : il_code -> il_state -> il_state -> Prop :=
       il_steps code s2 s3 ->
       il_steps code s1 s3.
 
+(* ========== Helper Lemmas for Determinism ========== *)
+
+(* Fetch is functional: same code and pc gives same instruction *)
+Lemma fetch_functional : forall code pc i1 i2,
+  fetch code pc = Some i1 ->
+  fetch code pc = Some i2 ->
+  i1 = i2.
+Proof.
+  intros code pc i1 i2 H1 H2.
+  rewrite H1 in H2. inversion H2. reflexivity.
+Qed.
+
+(* Stack cons injection: if stacks match at head, values are equal *)
+Lemma stack_cons_inj : forall (v1 v2 : il_value) (rest1 rest2 : list il_value),
+  v1 :: rest1 = v2 :: rest2 ->
+  v1 = v2 /\ rest1 = rest2.
+Proof.
+  intros v1 v2 rest1 rest2 H.
+  inversion H. split; reflexivity.
+Qed.
+
+(* Z equality decidability for branch contradictions *)
+Lemma z_neq_zero_contra : forall n : Z,
+  n <> 0%Z -> n = 0%Z -> False.
+Proof.
+  intros n Hneq Heq. apply Hneq. exact Heq.
+Qed.
+
 (* ========== Key Properties ========== *)
+
+(* Custom tactic to solve branching contradictions *)
+Ltac solve_branch_contra :=
+  match goal with
+  | [ Hneq: ?n <> 0%Z, Heq: ILV_I4 0%Z = ILV_I4 ?n |- _ ] =>
+      inversion Heq; subst; exfalso; apply Hneq; reflexivity
+  | [ Hneq: ?n <> 0%Z, Heq: ILV_I4 ?n = ILV_I4 0%Z |- _ ] =>
+      inversion Heq; subst; exfalso; apply Hneq; reflexivity
+  | [ Hneq: ?n <> 0%Z, Heq: ?n = 0%Z |- _ ] =>
+      exfalso; apply Hneq; exact Heq
+  end.
 
 (* Determinism: IL execution is deterministic *)
 Theorem il_step_deterministic : forall code s s1 s2,
@@ -250,8 +289,47 @@ Theorem il_step_deterministic : forall code s s1 s2,
   s1 = s2.
 Proof.
   intros code s s1 s2 H1 H2.
-  (* Determinism holds for all opcodes, but branching cases (brtrue_take/skip, brfalse_take/skip)
-     have n=0 vs n<>0 contradictions that require explicit case analysis.
-     This is a meta-property not used by Memory Safety proofs, which are complete. *)
-  admit.
-Admitted.
+  
+  (* Strategy: destruct H1, then inversion H2, then solve each case *)
+  destruct H1; inversion H2; subst;
+  
+  (* Unify fetches - discriminate different opcodes *)
+  repeat match goal with
+  | [ H: Some ?x = Some ?y |- _ ] => inversion H; subst; clear H
+  end;
+  
+  (* Cross-state field unification: use ils_stack s0 = ils_stack s *)
+  repeat match goal with
+  | [ Heq: ils_stack ?s1 = ils_stack ?s2, Hs1: ils_stack ?s1 = _ |- _ ] =>
+      rewrite Heq in Hs1
+  end;
+  
+  (* Unify stack shapes: now both stacks refer to same state *)
+  repeat match goal with
+  | [ H1: ils_stack ?s = ?v1 :: ?r1, H2: ils_stack ?s = ?v2 :: ?r2 |- _ ] =>
+      rewrite H1 in H2; inversion H2; subst; clear H2
+  end;
+  
+  (* Handle brfalse: n=0 vs n<>0 contradiction *)
+  try match goal with
+  | [ H1: ?n <> 0%Z, H2: ILV_I4 0%Z = ILV_I4 ?n |- _ ] =>
+      inversion H2; subst; exfalso; apply H1; reflexivity
+  | [ H1: ?n <> 0%Z, H2: ILV_I4 ?n = ILV_I4 0%Z |- _ ] =>
+      inversion H2; subst; exfalso; apply H1; reflexivity
+  end;
+  
+  (* Handle brtrue: 0<>0 contradiction from skip case *)
+  try match goal with
+  | [ H: 0%Z <> 0%Z |- _ ] => exfalso; apply H; reflexivity
+  end;
+  
+  (* Unify nth_error results for ldloc *)
+  repeat match goal with
+  | [ H1: nth_error ?l ?i = Some ?v1, H2: nth_error ?l ?i = Some ?v2 |- _ ] =>
+      rewrite H1 in H2; inversion H2; subst; clear H2
+  end;
+  
+  (* Remaining cases should be reflexivity *)
+  try reflexivity;
+  try congruence.
+Qed.
