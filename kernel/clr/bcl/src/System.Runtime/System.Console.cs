@@ -12,8 +12,12 @@ namespace System
         // Console backed by /dev/cons via 9P
         public static TextWriter Out { get; } = new ConsoleWriter();
 
-        public static void WriteLine(string value) => Out.WriteLine(value);
-        public static void WriteLine(object value) => Out.WriteLine(value?.ToString());
+        public static void WriteLine(string value) => Internal_WriteLine(value);
+        public static void WriteLine(object value) => Internal_WriteLine(value?.ToString());
+        
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        extern static void Internal_WriteLine(string value);
+        
         public static void Write(string value) => Out.Write(value);
         public static void Write(object value) => Out.Write(value?.ToString());
 

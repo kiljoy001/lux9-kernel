@@ -4579,7 +4579,44 @@ bool vm_load_string_constant(vm_execution_state_t *state,
 
   clr_string_t *str = (clr_string_t *)obj;
   str->length = length;
-  // str->header.type_token = ... (TODO: Resolve System.String token)
+
+  /* Resolve System.String token */
+  il_assembly_t *assembly = (il_assembly_t *)state->assembly;
+  uint32_t string_type_token = 0;
+
+  /* Search TypeDefs */
+  for (size_t i = 1; i <= assembly->typedef_count; i++) {
+    typedef_row_t *row = &assembly->typedefs[i - 1];
+    const char *name = il_get_string(assembly, row->name_index);
+    const char *ns = il_get_string(assembly, row->namespace_index);
+    if (name && ns && strcmp(name, "String") == 0 &&
+        strcmp(ns, "System") == 0) {
+      string_type_token = (TABLE_TYPEDEF << 24) | i;
+      break;
+    }
+  }
+
+  /* Search TypeRefs if not found in TypeDefs */
+  if (string_type_token == 0) {
+    for (size_t i = 1; i <= assembly->typeref_count; i++) {
+      typeref_row_t *row = &assembly->typerefs[i - 1];
+      const char *name = il_get_string(assembly, row->name_index);
+      const char *ns = il_get_string(assembly, row->namespace_index);
+      if (name && ns && strcmp(name, "String") == 0 &&
+          strcmp(ns, "System") == 0) {
+        string_type_token = (TABLE_TYPEREF << 24) | i;
+        break;
+      }
+    }
+  }
+
+  if (string_type_token == 0) {
+    /* Fallback/Warning - System.String not found? */
+    /* This might happen in minimal corlib, assume token 0 or handle error?? */
+    /* For now we proceed, maybe it's bootstrapped manually elsewhere */
+  }
+
+  str->header.type_token = string_type_token;
 
   if (length > 0 && raw_chars) {
     memcpy(str->chars, raw_chars, length * sizeof(uint16_t));
