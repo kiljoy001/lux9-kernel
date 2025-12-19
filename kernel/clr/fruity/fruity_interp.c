@@ -69,8 +69,11 @@ static void *lux_addref(void *ptr) {
 
 static void lux_release(void *ptr) {
   if (ptr) {
-    /* TODO: Revoke white token or decrement count */
-    /* pebble_white_burn(ptr); */
+    /* TODO: Revoke white token when API is available
+     * For now, white tokens are GC'd when pebble_state is cleaned up
+     * on process exit. No explicit burn API exists yet.
+     */
+    (void)ptr;
   }
 }
 
@@ -744,18 +747,50 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     break;
   }
 
-  case FRUITY_CALLI:
-    /* TODO: Indirect call */
+  case FRUITY_CALLI: {
+    /* Indirect call via function pointer */
     POP(a); /* function pointer */
-    r = fruity_val_i64(0);
-    PUSH(r);
+    void *fptr = AS_REF(a);
+    if (fptr == nil) {
+      snprint(state->error_msg, sizeof(state->error_msg),
+              "Null function pointer");
+      state->has_error = 1;
+      return -1;
+    }
+    /* Call the function pointer - assuming it's a fruity_function_t* */
+    fruity_function_t *target = (fruity_function_t *)fptr;
+    int64_t call_result = 0;
+    int ret = fruity_interp_execute(target, nil, 0, &call_result);
+    if (ret < 0) {
+      snprint(state->error_msg, sizeof(state->error_msg),
+              "Indirect call failed");
+      state->has_error = 1;
+      return -1;
+    }
+    if (target->return_type != CLR_VOID) {
+      r = fruity_val_i64(call_result);
+      PUSH(r);
+    }
     break;
+  }
 
-  case FRUITY_LDFTN:
-    /* Load function pointer */
-    r = fruity_val_ref(nil); /* TODO: resolve from token */
+  case FRUITY_LDFTN: {
+    /* Load function pointer from method token */
+    uint32_t method_token = instr->operand.value.token;
+    fruity_function_t *target = nil;
+    if (state->module) {
+      for (fruity_function_t *f = state->module->functions_head; f;
+           f = f->next) {
+        if (f->method_token == method_token) {
+          target = f;
+          break;
+        }
+      }
+    }
+    r = fruity_val_ref((void *)target);
     PUSH(r);
     break;
+  }
 
   case FRUITY_LDVIRTFTN:
     /* Load virtual function pointer */
@@ -974,11 +1009,23 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     break;
   }
 
-  case FRUITY_NEWOBJ:
-    /* TODO: Object construction */
-    r = fruity_val_ref(nil);
+  case FRUITY_NEWOBJ: {
+    /* Object construction:
+     * Allocate object based on type token size
+     * Type token encodes the constructor method
+     */
+    uint32_t ctor_token = instr->operand.value.token;
+    /* For now, allocate 64 bytes for object (typical small object) */
+    size_t obj_size = 64; /* TODO: resolve size from type metadata */
+    void *obj = lux_alloc(obj_size, 0);
+    if (obj) {
+      memset(obj, 0, obj_size);
+    }
+    r = fruity_val_ref(obj);
     PUSH(r);
+    (void)ctor_token; /* Will be used for constructor call */
     break;
+  }
 
     /* ===== Array Operations ===== */
 
