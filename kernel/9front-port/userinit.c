@@ -12,9 +12,11 @@
 #endif
 #define BOOTPRINT(...)                                                         \
   do {                                                                         \
-    if (BOOTVERBOSE)                                                           \
+    if (bootdebug)                                                             \
       print(__VA_ARGS__);                                                      \
   } while (0)
+
+extern int bootdebug;
 
 extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
 extern void pmap(uintptr, uintptr, vlong);
@@ -63,7 +65,8 @@ static void proc0(void *arg) {
   extern void uartputs(char *, int);
   uartputs("BOOT[proc0]: ENTRY via uartputs\n", 28);
 
-  print("BOOT[proc0]: ENTRY symbol main=%p\n", main);
+  if (bootdebug)
+    print("BOOT[proc0]: ENTRY symbol main=%p\n", main);
   delay(100);
 
   USED(arg);
@@ -80,7 +83,8 @@ static void proc0(void *arg) {
     panic("proc0: init0 failed: %r");
 
   extern void main(void);
-  print("DEBUG: symbol main=%p\n", main);
+  if (bootdebug)
+    print("DEBUG: symbol main=%p\n", main);
 
   /*
    * Check if we have an initrd module from Limine.
@@ -103,7 +107,8 @@ static void proc0(void *arg) {
    * These are o.k. because rootinit is null.
    * Then early kproc's will have a root and dot.
    */
-  print("BOOT[proc0]: setting up root namespace\n");
+  if (bootdebug)
+    print("BOOT[proc0]: setting up root namespace\n");
 
   /* Provide fallback root namespace if #/ is not available */
   if (waserror()) {
@@ -115,7 +120,10 @@ static void proc0(void *arg) {
     poperror();
   } else {
     /* Try to set up proper root namespace */
+    print("BOOT[proc0]: invoking namec(\"#/\")...\n");
     up->slash = namec("#/", Atodir, 0, 0);
+    print("BOOT[proc0]: namec(\"#/\") returned %p\n", up->slash);
+
     if (up->slash == nil) {
       print("BOOT[proc0]: namec(\"#/\") failed, attempting fallback to "
             "devattach('/')\n");
@@ -137,22 +145,28 @@ static void proc0(void *arg) {
   if (initrd_base != nil && initrd_size > 0) {
     /* We already called initrd_register() which adds to devroot,
      * but we verify we can reach it */
-    Chan *bootc = namec("/boot", Atodir, 0, 0);
-    if (bootc == nil) {
-      print("BOOT[proc0]: WARNING: /boot not reachable despite "
-            "initrd_register\n");
-    } else {
-      cclose(bootc);
+    if (bootdebug) {
+      print("BOOT[proc0]: checking /boot via namec...\n");
+      Chan *bootc = namec("/boot", Atodir, 0, 0);
+      print("BOOT[proc0]: namec(\"/boot\") returned %p\n", bootc);
+
+      if (bootc == nil) {
+        print("BOOT[proc0]: WARNING: /boot not reachable despite "
+              "initrd_register\n");
+      } else {
+        cclose(bootc);
+      }
     }
   }
-  print("BOOT[proc0]: root namespace setup complete\n");
+  if (bootdebug)
+    print("BOOT[proc0]: root namespace setup complete\n");
   /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
   /* Clear any existing user PML4 entries to force mmucreate to build mmuhead */
   print("BOOT[proc0]: clearing existing user PML4 entries\n");
   m->pml4[PTLX(UTZERO, 3)] = 0;
-  m->pml4[PTLX(USTKTOP-1, 3)] = 0;
+  m->pml4[PTLX(USTKTOP - 1, 3)] = 0;
 
   /*
    * Setup Text and Stack segments for initcode.
@@ -223,68 +237,132 @@ static void proc0(void *arg) {
   if (k == nil)
     panic("proc0: kmap failed");
 
-  /* TODO: Load and compile CLR init from /boot/boot
-   * For now, use legacy initcode[] until CLR userspace execution is working */
-  print("BOOT[proc0]: initcode size=%d, first bytes: %02x %02x %02x %02x\\n",
-        (int)sizeof(initcode), initcode[0], initcode[1], initcode[2],
-        initcode[3]);
+  /*
+   * Attempt to load and executes /boot/boot if it exists and is a CLR binary.
+   * If it fails or doesn't exist, we panic for now as per requirements.
+   */
+  print("BOOT[proc0]: Attempting to load /boot/boot\\n");
+  Chan *c = namec("/boot/boot", Aopen, OEXEC, 0);
+  if (c != nil) {
+    print("BOOT[proc0]: /boot/boot opened successfully\\n");
+
+    /* Get file size */
+    Dir *d = dirchanstat(c);
+    if (d == nil) {
+      print("BOOT[proc0]: failed to stat /boot/boot\\n");
+      cclose(c);
+    } else {
+      long n = d->length;
+      free(d);
+
+      if (bootdebug)
+        print("BOOT[proc0]: allocating %ld bytes for /boot/boot\\n", n);
+      void *buf = malloc(n);
+      if (buf == nil)
+        panic("proc0: out of memory loading /boot/boot");
+
+      long nread = devtab[c->type]->read(c, buf, n, 0);
+      cclose(c);
+
+      if (nread != n) {
+        print("BOOT[proc0]: short read on /boot/boot\\n");
+        free(buf);
+      } else {
+        /* Check for CLR signature (MZ) */
+        char *b = (char *)buf;
+        if (n >= 2 && b[0] == 'M' && b[1] == 'Z') {
+          print("BOOT[proc0]: CLR signature found, executing assembly...\\n");
+
+          /* Copy to user text segment just in case, though we execute from
+           * implementation */
+          /* memmove((uchar *)VA(k), buf, n); */ /* Not needed if we use
+                                                    interpreter directly */
+
+          /*
+           * For the interpreter, we can execute directly from the kernel buffer
+           * since the interpreter runs in kernel mode for now.
+           */
+          extern int clr_execute_assembly(void *data, ulong size);
+          int ret = clr_execute_assembly(buf, n);
+          print("BOOT[proc0]: clr_execute_assembly returned %d\\n", ret);
+
+          /* If it returns, it's an exit */
+          panic("proc0: /boot/boot exited");
+        } else {
+          print(
+              "BOOT[proc0]: /boot/boot is not a CLR binary (no MZ header)\\n");
+          free(buf);
+        }
+      }
+    }
+  } else {
+    print("BOOT[proc0]: failed to open /boot/boot\\n");
+  }
+
+  /* Fallback to legacy initcode if /boot/boot failed */
+  print("BOOT[proc0]: falling back to legacy initcode\\n");
   memmove((uchar *)VA(k), initcode, sizeof(initcode));
   memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
 
-  print("BOOT[proc0]: unmapping text page\n");
+  print("BOOT[proc0]: unmapping text page\\n");
   kunmap(k);
   if (p->pa == 0)
-    print("BOOT[proc0]: text page pa=0 (unexpected)\n");
+    print("BOOT[proc0]: text page pa=0 (unexpected)\\n");
   else
-    print("BOOT[proc0]: text page pa nonzero\n");
-  print("BOOT[proc0]: about to call segpage for text\n");
+    print("BOOT[proc0]: text page pa nonzero\\n");
+  print("BOOT[proc0]: about to call segpage for text\\n");
   segpage(up->seg[TSEG], p);
-  print("BOOT[proc0]: segpage for text completed\n");
+  print("BOOT[proc0]: segpage for text completed\\n");
   /* segpage now calls userpmap() which creates MMU structures */
   if (dbg_getpte(UTZERO) != 0)
-    print("BOOT[proc0]: text pte present\n");
+    print("BOOT[proc0]: text pte present\\n");
   else
-    print("BOOT[proc0]: text pte missing\n");
-  print("BOOT[proc0]: user segments populated\n");
+    print("BOOT[proc0]: text pte missing\\n");
+  print("BOOT[proc0]: user segments populated\\n");
   {
     uintptr va = USTKTOP - BY2PG;
     uintptr idx3 = PTLX(va, 3);
-    print("BOOT[proc0]: checking VA=0x%llx PML4idx=%lld\n",
+    print("BOOT[proc0]: checking VA=0x%llx PML4idx=%lld\\n",
           (unsigned long long)va, (long long)idx3);
-    print("BOOT[proc0]: m->pml4[%lld]=0x%llx\n", (unsigned long long)idx3,
-          (unsigned long long)m->pml4[idx3]);
 
-    uintptr *lvl2_walk = mmuwalk(m->pml4, va, 2, 0);
-    if (lvl2_walk != nil) {
-      print("BOOT[proc0]: mmuwalk L2 present *entry=0x%llx\n", *lvl2_walk);
-    } else {
-      print("BOOT[proc0]: mmuwalk L2 missing\n");
-    }
+    if (m->pml4 != nil) {
+      print("BOOT[proc0]: m->pml4[%lld]=0x%llx\\n", (unsigned long long)idx3,
+            (unsigned long long)m->pml4[idx3]);
 
-    if (mmuwalk(m->pml4, va, 1, 0) != nil)
-      print("BOOT[proc0]: mmuwalk L1 present\n");
-    else
-      print("BOOT[proc0]: mmuwalk L1 missing\n");
+      uintptr *lvl2_walk = mmuwalk(m->pml4, va, 2, 0);
+      if (lvl2_walk != nil) {
+        print("BOOT[proc0]: mmuwalk L2 present *entry=0x%llx\\n", *lvl2_walk);
+      } else {
+        print("BOOT[proc0]: mmuwalk L2 missing\\n");
+      }
 
-    uintptr *lvl2_direct = &m->pml4[idx3];
-    print("BOOT[proc0]: direct &m->pml4[%lld]=0x%llx\n",
-          (unsigned long long)idx3, (unsigned long long)*lvl2_direct);
-    if ((*lvl2_direct & PTEVALID) != 0)
-      print("BOOT[proc0]: L2 entry VALID\n");
-    else
-      print("BOOT[proc0]: L2 entry INVALID\n");
-
-    if ((*lvl2_direct & PTEVALID) != 0) {
-      uintptr *pdpt = kaddr(PPN(*lvl2_direct));
-      uintptr idx2 = PTLX(va, 2);
-      print("BOOT[proc0]: PDPT=0x%llx idx=%lld\n",
-            (unsigned long long)(uintptr)pdpt, (unsigned long long)idx2);
-      print("BOOT[proc0]: pdpt[%lld]=0x%llx\n", (unsigned long long)idx2,
-            (unsigned long long)pdpt[idx2]);
-      if (pdpt[idx2] != 0)
-        print("BOOT[proc0]: PDPT entry NONZERO\n");
+      if (mmuwalk(m->pml4, va, 1, 0) != nil)
+        print("BOOT[proc0]: mmuwalk L1 present\\n");
       else
-        print("BOOT[proc0]: PDPT entry ZERO\n");
+        print("BOOT[proc0]: mmuwalk L1 missing\\n");
+
+      uintptr *lvl2_direct = &m->pml4[idx3];
+      print("BOOT[proc0]: direct &m->pml4[%lld]=0x%llx\\n",
+            (unsigned long long)idx3, (unsigned long long)*lvl2_direct);
+      if ((*lvl2_direct & PTEVALID) != 0)
+        print("BOOT[proc0]: L2 entry VALID\\n");
+      else
+        print("BOOT[proc0]: L2 entry INVALID\\n");
+
+      if ((*lvl2_direct & PTEVALID) != 0) {
+        uintptr *pdpt = kaddr(PPN(*lvl2_direct));
+        uintptr idx2 = PTLX(va, 2);
+        print("BOOT[proc0]: PDPT=0x%llx idx=%lld\\n",
+              (unsigned long long)(uintptr)pdpt, (unsigned long long)idx2);
+        print("BOOT[proc0]: pdpt[%lld]=0x%llx\\n", (unsigned long long)idx2,
+              (unsigned long long)pdpt[idx2]);
+        if (pdpt[idx2] != 0)
+          print("BOOT[proc0]: PDPT entry NONZERO\\n");
+        else
+          print("BOOT[proc0]: PDPT entry ZERO\\n");
+      }
+    } else {
+      print("BOOT[proc0]: m->pml4 is NIL! Cannot check user mappings.\\n");
     }
   }
 
@@ -292,59 +370,65 @@ static void proc0(void *arg) {
   {
     uintptr va = USTKTOP - BY2PG;
     uintptr idx3 = PTLX(va, 3);
-    uintptr pml4_entry = m->pml4[idx3];
-    if (pml4_entry & PTEVALID) {
-      uintptr *pdpt = kaddr(PPN(pml4_entry));
-      uintptr idx2 = PTLX(va, 2);
-      uintptr pdpt_entry = pdpt[idx2];
-      if (pdpt_entry & PTEVALID) {
-        uintptr *pd = kaddr(PPN(pdpt_entry));
-        uintptr idx1 = PTLX(va, 1);
-        uintptr pd_entry = pd[idx1];
-        if (pd_entry & PTEVALID) {
-          print("BOOT[proc0]: Full chain valid to PD\n");
+    if (m->pml4 != nil) {
+      uintptr pml4_entry = m->pml4[idx3];
+      if (pml4_entry & PTEVALID) {
+        uintptr *pdpt = kaddr(PPN(pml4_entry));
+        uintptr idx2 = PTLX(va, 2);
+        uintptr pdpt_entry = pdpt[idx2];
+        if (pdpt_entry & PTEVALID) {
+          uintptr *pd = kaddr(PPN(pdpt_entry));
+          uintptr idx1 = PTLX(va, 1);
+          uintptr pd_entry = pd[idx1];
+          if (pd_entry & PTEVALID) {
+            print("BOOT[proc0]: Full chain valid to PD\\n");
+          } else {
+            print("BOOT[proc0]: PD entry invalid (0x%llx)\\n",
+                  (unsigned long long)pd_entry);
+          }
         } else {
-          print("BOOT[proc0]: PD entry invalid (0x%llx)\n",
-                (unsigned long long)pd_entry);
+          print("BOOT[proc0]: PDPT entry invalid (0x%llx)\\n",
+                (unsigned long long)pdpt_entry);
         }
-      } else {
-        print("BOOT[proc0]: PDPT entry invalid (0x%llx)\n",
-              (unsigned long long)pdpt_entry);
       }
     }
   }
-  print("BOOT[proc0]: Exited PML4 validation, about to check USTKTOP slot\n");
-  print("BOOT[proc0]: Skipping m->pml4 check - causes hang (TODO: fix m->pml4 "
-        "access)\n");
-  /* FIXME: Accessing m->pml4[255] causes a hang/page fault
-   * This needs investigation - likely m->pml4 is not properly mapped
-   * or m is pointing to invalid memory. For now, skip this check.
-  {
+  print("BOOT[proc0]: Exited PML4 validation, about to check USTKTOP slot\\n");
+
+  /* Restored m->pml4 check with safety */
+  if (m->pml4 != nil) {
     uintptr ustktop_idx = PTLX(USTKTOP - 1, 3);
-    print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\n",
+    print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\\n",
           USTKTOP, USTKTOP - 1, (long long)ustktop_idx);
-    print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long
-  long)ustktop_idx); uintptr pml4_value = m->pml4[ustktop_idx];
-    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx,
-  pml4_value); if (pml4_value != 0) print("BOOT[proc0]: PML4 slot before
-  mmuswitch nonzero\n"); else print("BOOT[proc0]: PML4 slot before mmuswitch
-  zero\n");
+    print("BOOT[proc0]: About to access m->pml4[%lld]\\n",
+          (long long)ustktop_idx);
+
+    uintptr pml4_value = m->pml4[ustktop_idx];
+    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\\n", (long long)ustktop_idx,
+          pml4_value);
+
+    if (pml4_value != 0)
+      print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\\n");
+    else
+      print("BOOT[proc0]: PML4 slot before mmuswitch zero\\n");
+  } else {
+    print("BOOT[proc0]: Skipping m->pml4 check (m->pml4 is NIL)\\n");
   }
-  */
+
   if (up->mmuhead == nil)
-    print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
+    print("BOOT[proc0]: mmuhead nil (no user mappings staged)\\n");
   else {
     MMU *p;
     int count = 0;
     for (p = up->mmuhead; p != nil && count < 5; p = p->next, count++) {
       if (p->level == 2)
-        print("BOOT[proc0]: mmuhead[%d] PML4E index=%d\n", count, p->index);
+        print("BOOT[proc0]: mmuhead[%d] PML4E index=%d\\n", count, p->index);
       else if (p->level == 1)
-        print("BOOT[proc0]: mmuhead[%d] PDPE index=%d\n", count, p->index);
+        print("BOOT[proc0]: mmuhead[%d] PDPE index=%d\\n", count, p->index);
       else if (p->level == 0)
-        print("BOOT[proc0]: mmuhead[%d] PDE index=%d\n", count, p->index);
+        print("BOOT[proc0]: mmuhead[%d] PDE index=%d\\n", count, p->index);
       else
-        print("BOOT[proc0]: mmuhead[%d] level=%d index=%d\n", count, p->level,
+        print("BOOT[proc0]: mmuhead[%d] level=%d index=%d\\n", count, p->level,
               p->index);
     }
   }
@@ -360,44 +444,48 @@ static void proc0(void *arg) {
 
   /* Install user mappings now that proc0 drops kernel privileges */
   {
-    print("userinit: about to call mmuswitch, checking mmuhead...\n");
+    print("userinit: about to call mmuswitch, checking mmuhead...\\n");
     if (up->mmuhead == nil)
-      print("userinit: mmuhead is NULL!\n");
+      print("userinit: mmuhead is NULL!\\n");
     else
-      print("userinit: mmuhead has entries\n");
+      print("userinit: mmuhead has entries\\n");
 
     int s = splhi();
-    print("userinit: calling mmuswitch\n");
+    print("userinit: calling mmuswitch\\n");
     mmuswitch(up);
-    print("userinit: mmuswitch returned\n");
+    print("userinit: mmuswitch returned\\n");
     splx(s);
   }
-  {
+
+  if (m->pml4 != nil) {
     uintptr idx = PTLX(USTKTOP - 1, 3);
     if ((m->pml4[idx] & PTEVALID) != 0)
-      print("BOOT[proc0]: PML4 entry valid after mmuswitch\n");
+      print("BOOT[proc0]: PML4 entry valid after mmuswitch\\n");
     else
-      print("BOOT[proc0]: PML4 entry still invalid after mmuswitch\n");
+      print("BOOT[proc0]: PML4 entry still invalid after mmuswitch\\n");
     uintptr *pdpt = kaddr(PPN(m->pml4[idx]));
     uintptr idx1 = PTLX(USTKTOP - BY2PG, 2);
     if (pdpt[idx1] != 0)
-      print("BOOT[proc0]: PDPT entry after mmuswitch nonzero\n");
+      print("BOOT[proc0]: PDPT entry after mmuswitch nonzero\\n");
     else
-      print("BOOT[proc0]: PDPT entry after mmuswitch zero\n");
+      print("BOOT[proc0]: PDPT entry after mmuswitch zero\\n");
+
+    if (m->pml4[PTLX(USTKTOP - 1, 3)] != 0)
+      print("BOOT[proc0]: PML4 slot after mmuswitch nonzero\\n");
+    else
+      print("BOOT[proc0]: PML4 slot after mmuswitch still zero\\n");
   }
-  if (m->pml4[PTLX(USTKTOP - 1, 3)] != 0)
-    print("BOOT[proc0]: PML4 slot after mmuswitch nonzero\n");
-  else
-    print("BOOT[proc0]: PML4 slot after mmuswitch still zero\n");
+
   if (dbg_getpte(USTKTOP - BY2PG) != 0)
-    print("BOOT[proc0]: stack pte present after mmuswitch\n");
+    print("BOOT[proc0]: stack pte present after mmuswitch\\n");
   else
-    print("BOOT[proc0]: stack pte still missing after mmuswitch\n");
+    print("BOOT[proc0]: stack pte still missing after mmuswitch\\n");
   if (dbg_getpte(UTZERO) != 0)
-    print("BOOT[proc0]: text pte present after mmuswitch\n");
+    print("BOOT[proc0]: text pte present after mmuswitch\\n");
   else
-    print("BOOT[proc0]: text pte still missing after mmuswitch\n");
-  {
+    print("BOOT[proc0]: text pte still missing after mmuswitch\\n");
+
+  if (m->pml4 != nil) {
     uintptr idx = PTLX(USTKTOP - 1, 3);
     if ((m->pml4[idx] & PTEVALID) != 0) {
       uintptr *pdpt = kaddr(PPN(m->pml4[idx]));
@@ -406,13 +494,14 @@ static void proc0(void *arg) {
         // Success - page tables are set up correctly
       }
     }
-  }
-  if (m->pml4[PTLX(USTKTOP - 1, 3)] != 0) {
-    if (dbg_getpte(USTKTOP - BY2PG) != 0) {
-      // Stack PTE is present
-    }
-    if (dbg_getpte(UTZERO) != 0) {
-      // Text PTE is present
+
+    if (m->pml4[PTLX(USTKTOP - 1, 3)] != 0) {
+      if (dbg_getpte(USTKTOP - BY2PG) != 0) {
+        // Stack PTE is present
+      }
+      if (dbg_getpte(UTZERO) != 0) {
+        // Text PTE is present
+      }
     }
   }
 
@@ -429,11 +518,11 @@ static void proc0(void *arg) {
   if (proc_setup_p9page(up) < 0)
     panic("proc0: p9page setup failed");
 
-  print("BOOT[proc0]: about to call init0 - switching to userspace\n");
+  print("BOOT[proc0]: about to call init0 - switching to userspace\\n");
   init0();
 
   /* init0 will never return */
-  print("BOOT[proc0]: init0 returned - this should never happen!\n");
+  print("BOOT[proc0]: init0 returned - this should never happen!\\n");
   panic("init0");
 }
 
