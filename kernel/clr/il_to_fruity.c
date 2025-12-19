@@ -137,6 +137,23 @@ static int is_branch_target(il_to_fruity_ctx_t *ctx, uint32_t offset) {
   return 0;
 }
 
+/*@ requires \valid(ctx);
+    allocates  \result;
+    assigns    ctx->blocks, ctx->block_count, ctx->block_capacity;
+    assigns    ctx->last_error;
+    behavior   success:
+      assumes  xalloc can allocate;
+      ensures  \result != \null;
+      ensures  \result->block_id == block_id;
+      ensures  \result->instructions_head == \null;
+      ensures  \result->instructions_tail == \null;
+      ensures  \result->instruction_count == 0;
+      ensures  ctx->block_count == \old(ctx->block_count) + 1;
+    behavior   failure:
+      assumes  xalloc cannot allocate;
+      ensures  \result == \null;
+      ensures  ctx->last_error == IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
+*/
 /* Helper: Create new basic block */
 static fruity_basic_block_t *create_basic_block(il_to_fruity_ctx_t *ctx,
                                                 uint32_t block_id) {
@@ -175,6 +192,18 @@ static fruity_basic_block_t *create_basic_block(il_to_fruity_ctx_t *ctx,
   return block;
 }
 
+/*@ requires \valid(block);
+    requires \valid(instr);
+    requires instr->next == \null;
+    requires instr->prev == \null || instr->prev == block->instructions_tail;
+    assigns  block->instructions_head, block->instructions_tail;
+    assigns  block->instruction_count;
+    assigns  block->instructions_tail->next \from instr;
+    assigns  instr->prev, instr->next;
+    ensures  block->instructions_tail == instr;
+    ensures  block->instruction_count == \old(block->instruction_count) + 1;
+    ensures  \result == 0;
+*/
 /* Helper: Add instruction to block */
 static int add_instruction_to_block(fruity_basic_block_t *block,
                                     fruity_instruction_t *instr) {
@@ -191,6 +220,19 @@ static int add_instruction_to_block(fruity_basic_block_t *block,
   return 0;
 }
 
+/*@ allocates \result;
+    assigns   \result \from opcode, operand, il_offset;
+    behavior  success:
+      assumes  xalloc can allocate sizeof(fruity_instruction_t) bytes;
+      ensures  \result != \null;
+      ensures  \result->opcode == opcode;
+      ensures  \result->msil_offset == il_offset;
+      ensures  \result->next == \null;
+      ensures  \result->prev == \null;
+    behavior  failure:
+      assumes  xalloc cannot allocate memory;
+      ensures  \result == \null;
+*/
 /* Helper: Create Fruity instruction */
 static fruity_instruction_t *create_fruity_instruction(fruity_opcode_t opcode,
                                                        fruity_operand_t operand,
@@ -1600,7 +1642,8 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     case 0x0F: /* localloc */
       instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
       /* BEVIS: PoW check required for dynamic stack allocation */
-      if (instr) instr->pebble_effects.creates_white = 1;
+      if (instr)
+        instr->pebble_effects.creates_white = 1;
       *offset_ptr += 2;
       break;
 
