@@ -1,6 +1,6 @@
 # Critical TODOs in Lux9 Kernel
 
-Last updated: 2025-12-15
+Last updated: 2025-12-19
 
 **First-party kernel code only** (excluding tpm2-tss, qbe/, libmcu-cbor/, CIL-Interpreter/, test/)
 
@@ -39,6 +39,11 @@ Last updated: 2025-12-15
 | `clr/clr-kernel/clr_internal_calls.c` | 37 | Get size from type token | ✅ Fixed |
 | `clr/clr-kernel/clr_pebble_integration.c` | 307 | Redesign for token economy | ✅ Implemented |
 | `clr/clr-kernel/clr_pebble_integration.h` | 227 | Implement Red-Blue API | ✅ Implemented |
+| `clr/fruity/fruity_interp.c` | 1019 | NEWOBJ hardcoded 64-byte size | ✅ Fixed (uses clr_get_type_size) |
+| `clr/fruity/fruity_interp.c` | 1037 | NEWARR hardcoded 8-byte element | ✅ Fixed (uses clr_get_type_size) |
+| `clr/fruity/fruity_to_qbe.c` | 444 | LDELEM hardcoded 4-byte element | ✅ Fixed (element size helper) |
+| `clr/fruity/fruity_to_qbe.c` | 455 | STELEM hardcoded 4-byte element | ✅ Fixed (element size helper) |
+| `clr/qbe/qbe_exec.c` | 181 | VM args hardcoded VM_TYPE_I8 | ✅ Fixed (documented FFI approach) |
 
 ---
 
@@ -139,10 +144,10 @@ Last updated: 2025-12-15
 
 | Priority | Total | Resolved | Remaining |
 |:---------|:------|:---------|:----------|
-| 🔴 CRITICAL | 15 | 14 | 1 (CGA) |
+| 🔴 CRITICAL | 20 | 19 | 1 (CGA) |
 | 🟡 MEDIUM | 19 | 16 | 3 (future) |
 | 🟢 LOW | 24 | 19 | 5 (future) |
-| **Total** | **58** | **49** | **9** |
+| **Total** | **63** | **54** | **9** |
 
 ---
 
