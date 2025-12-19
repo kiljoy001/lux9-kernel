@@ -122,10 +122,10 @@ fi
 echo -e "\n${YELLOW}[Phase 3/3] Annotation Coverage...${NC}"
 
 # Count ACSL annotations in kernel code
-ACSL_REQUIRES=$(grep -r "requires " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
-ACSL_ENSURES=$(grep -r "ensures " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
-ACSL_ASSIGNS=$(grep -r "assigns " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
-ACSL_INVARIANTS=$(grep -r "invariant " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
+ACSL_REQUIRES=$(grep -rh "requires " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
+ACSL_ENSURES=$(grep -rh "ensures " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
+ACSL_ASSIGNS=$(grep -rh "assigns " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
+ACSL_INVARIANTS=$(grep -rh "invariant " "$KERNEL_DIR" --include="*.c" 2>/dev/null | grep -c '/\*@' || echo 0)
 
 ANNOTATIONS_TOTAL=$((ACSL_REQUIRES + ACSL_ENSURES + ACSL_ASSIGNS + ACSL_INVARIANTS))
 
@@ -144,7 +144,7 @@ echo -e "\n  Coq Theorems/Lemmas: ${GREEN}$COQ_THEOREMS${NC}"
 # Save coverage metrics to file for tracking
 METRICS_FILE="$REPO_ROOT/.verification_metrics"
 cat > "$METRICS_FILE" << EOF
-# Verification Metrics - $(date -Iseconds)
+# Verification Metrics - $(date +%Y-%m-%dT%H:%M:%S 2>/dev/null || date)
 coq_admits=$ADMITS_COUNT
 coq_theorems=$COQ_THEOREMS
 acsl_requires=$ACSL_REQUIRES
