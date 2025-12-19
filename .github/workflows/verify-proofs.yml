@@ -19,35 +19,40 @@ jobs:
   verify-coq-proofs:
     name: Verify Coq Proofs
     runs-on: ubuntu-latest
+    container:
+      image: coqorg/coq:8.19
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Coq
-      uses: coq-community/docker-coq-action@v1
-      with:
-        coq_version: '8.19'
-
-    - name: Cache Coq compilation
-      uses: actions/cache@v4
-      with:
-        path: |
-          proofs/**/*.vo
-          proofs/**/*.glob
-        key: ${{ runner.os }}-coq-${{ hashFiles('proofs/**/*.v') }}
-        restore-keys: |
-          ${{ runner.os }}-coq-
-
     - name: Verify all proofs
       run: |
-        cd proofs
-        make verify
+        # Verify each proof directory
+        for dir in proofs/*/; do
+          if [ -d "$dir" ] && ls "$dir"/*.v >/dev/null 2>&1; then
+            echo "═══════════════════════════════════════════════"
+            echo "Verifying: $dir"
+            echo "═══════════════════════════════════════════════"
+            cd "$dir"
+            for vfile in *.v; do
+              echo "  Compiling $vfile..."
+              coqc "$vfile" || exit 1
+            done
+            cd ../..
+          fi
+        done
+        echo ""
+        echo "✅ All Coq proofs verified!"
 
     - name: Check proof statistics
       run: |
-        cd proofs
-        make stats
+        echo "Proof Statistics:"
+        echo "================"
+        THEOREMS=$(find proofs -name "*.v" -exec grep -c "Theorem\|Lemma" {} \; 2>/dev/null | paste -sd+ | bc || echo 0)
+        ADMITS=$(find proofs -name "*.v" -exec grep -c "Admitted\." {} \; 2>/dev/null | paste -sd+ | bc || echo 0)
+        echo "Theorems/Lemmas: $THEOREMS"
+        echo "Admitted: $ADMITS"
 
     - name: Check for incomplete proofs
       run: |
