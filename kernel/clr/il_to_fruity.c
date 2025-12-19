@@ -47,6 +47,18 @@ typedef struct Fmt Fmt;
 #define calloc(n, sz) xallocz((n) * (sz), 1)
 #define free(p) xfree(p)
 
+/* strdup uses pool allocator internally, so we need our own xstrdup */
+static inline char *xstrdup(const char *s) {
+  if (s == nil)
+    return nil;
+  ulong len = strlen(s) + 1;
+  char *copy = xalloc(len);
+  if (copy)
+    memmove(copy, s, len);
+  return copy;
+}
+#define strdup(s) xstrdup(s)
+
 #else
 #include <stdint.h>
 #include <stdio.h>
@@ -1693,9 +1705,12 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
 
     case 0x0F: /* localloc */
       instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
-      /* BEVIS: PoW check required for dynamic stack allocation */
-      if (instr)
+      /* BEVIS: PoW check required for dynamic stack allocation
+       * Uses POW_OP_STACK_ALLOC (5) - cheaper than heap but still costs */
+      if (instr) {
         instr->pebble_effects.creates_white = 1;
+        instr->pebble_effects.pow_op_class = 5; /* POW_OP_STACK_ALLOC */
+      }
       *offset_ptr += 2;
       break;
 

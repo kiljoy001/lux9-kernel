@@ -41,10 +41,18 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
             if (magnitude < 4096) return 0; /* Free for small allocs */
             diff = 4 + (magnitude / (64 * 1024 * 1024));
             break;
-            
+
+        case POW_OP_STACK_ALLOC:
+            /* Stack allocation (CIL localloc) - much cheaper than heap
+             * Still costs something (no freebies), but 256x easier
+             * Stack frames are frequent, so difficulty is minimal */
+            if (magnitude < 1024) return 1; /* 1-bit for tiny allocs */
+            diff = 2 + (magnitude / (16 * 1024 * 1024)); /* 1 bit per 16MB */
+            break;
+
         case POW_OP_SPAWN:
             /* Forking is expensive */
-            diff = 12; 
+            diff = 12;
             break;
             
         case POW_OP_NET_BIND:

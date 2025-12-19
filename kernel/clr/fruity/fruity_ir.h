@@ -81,6 +81,7 @@ struct fruity_instruction {
     int burns_white;
     int may_free;
     int is_speculative;
+    int pow_op_class;  /* POW_OP_* constant for tiered difficulty */
   } pebble_effects;
 
   /* Debug information */

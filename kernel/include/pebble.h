@@ -207,14 +207,15 @@ void pebble_meta_free(void *v);
 #define PEBBLE_MIN_ALLOC 8            /* Minimum allocation is 1 Token */
 #define PEBBLE_MAX_ALLOC (1024 * 1024 * 1024) /* 1 GiB max single alloc */
 
-/* 
+/*
  * B.E.V.I.S. (Byzantine Energy Verification & Isolation Subsystem)
  * B.U.T.T.H.E.A.D. (Bandwidth-Utilizing Thermodynamic Token Hardened Economic Allocation Dispatcher)
  */
-#define POW_OP_ALLOC    1
-#define POW_OP_SPAWN    2
-#define POW_OP_NET_BIND 3
-#define POW_OP_REALTIME 4
+#define POW_OP_ALLOC       1
+#define POW_OP_SPAWN       2
+#define POW_OP_NET_BIND    3
+#define POW_OP_REALTIME    4
+#define POW_OP_STACK_ALLOC 5  /* CIL localloc - cheaper than heap */
 
 int pow_calculate_difficulty(int op_class, ulong magnitude);
 int pow_verify(u64int nonce, u64int context, int required_diff);

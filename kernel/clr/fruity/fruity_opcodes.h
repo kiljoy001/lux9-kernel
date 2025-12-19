@@ -23,14 +23,6 @@
  *   0x400-0x4FF: Control flow (CALL, RET, JUMP, BRANCH)
  *   0x500-0x5FF: Stack and local operations
  */
-#define FRUITY_BEQ 0x410
-#define FRUITY_BNE 0x411
-#define FRUITY_BLT 0x412
-#define FRUITY_BLE 0x413
-#define FRUITY_BGT 0x414
-#define FRUITY_BGE 0x415
-#define FRUITY_BTRUE 0x416
-#define FRUITY_BFALSE 0x417
 
 typedef enum {
   /* ===== Standard Operations (0x000-0x0FF) ===== */
@@ -109,19 +101,37 @@ typedef enum {
    */
   FRUITY_BURN = 0x102,
 
-  /* DUP - Duplicate top of stack
-   * For value types: simple copy
-   * For reference types: VANILLA (issue white token)
+  /* DUP - Duplicate top of stack (value types only)
+   * Maps to: simple register copy
+   * Source: MSIL 'dup' on int32/int64/float/etc
+   * Effect: Stack duplicate, no GC implications
    * Stack: value → value, value
    */
   FRUITY_DUP = 0x103,
 
-  /* POP - Remove top of stack
-   * For value types: simple removal
-   * For reference types: BURN (release white token)
+  /* DUP_REF - Duplicate reference with addref
+   * Maps to: clr_object_addref() + stack dup
+   * Source: MSIL 'dup' on object/string/array
+   * Effect: Issues new White Token, increments refcount
+   * Stack: obj_ref → obj_ref, obj_ref
+   */
+  FRUITY_DUP_REF = 0x104,
+
+  /* POP - Remove top of stack (value types only)
+   * Maps to: stack discard
+   * Source: MSIL 'pop' on int32/int64/float/etc
+   * Effect: Stack removal, no GC implications
    * Stack: value → ∅
    */
-  FRUITY_POP = 0x104,
+  FRUITY_POP = 0x105,
+
+  /* POP_REF - Remove reference with release
+   * Maps to: clr_object_release()
+   * Source: MSIL 'pop' on object/string/array
+   * Effect: Burns White Token, decrements refcount
+   * Stack: obj_ref → ∅
+   */
+  FRUITY_POP_REF = 0x106,
 
   /* LOAD_STRING - Load string literal
    * Maps to: clr_string_from_literal()
@@ -129,7 +139,7 @@ typedef enum {
    * Effect: Returns managed string object (White Token)
    * Stack: → string_ref
    */
-  FRUITY_LOAD_STRING = 0x105,
+  FRUITY_LOAD_STRING = 0x107,
 
   /* ===== Transactional Operations (0x200-0x2FF) ===== */
 
@@ -221,6 +231,14 @@ typedef enum {
   FRUITY_LDVIRTFTN = 0x406,
 
   /* Branch instructions (conditional jumps) */
+  FRUITY_BEQ = 0x410,
+  FRUITY_BNE = 0x411,
+  FRUITY_BLT = 0x412,
+  FRUITY_BLE = 0x413,
+  FRUITY_BGT = 0x414,
+  FRUITY_BGE = 0x415,
+  FRUITY_BTRUE = 0x416,
+  FRUITY_BFALSE = 0x417,
 
   /* ===== Stack and Local Operations (0x500-0x5FF) ===== */
 

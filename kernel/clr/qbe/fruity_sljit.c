@@ -19,6 +19,12 @@ extern void xfree(void *);
 #else
 #include "../../include/dat.h"
 #include "../../include/fns.h"
+
+/* Standard C type compatibility for kernel mode */
+typedef unsigned int uint32_t;
+typedef signed int int32_t;
+typedef signed long long int64_t;
+typedef unsigned long size_t;
 #endif
 
 /* sljit configuration for kernel use */
@@ -306,6 +312,17 @@ static int emit_instruction(fruity_jit_ctx_t *ctx, struct sljit_compiler *C,
     break;
   }
 
+  case FRUITY_LOAD_ARG: {
+    uint32_t idx = instr->operand.value.index;
+    dst = fruity_to_sljit_reg(*sp);
+    /* Arguments are passed in Saved registers S0, S1, etc. */
+    /* Note: We requested 2 saved registers in sljit_emit_enter */
+    /* TODO: Spilling if > 2 args */
+    sljit_emit_op1(C, SLJIT_MOV, dst, 0, SLJIT_S(idx), 0);
+    (*sp)++;
+    break;
+  }
+
   /* ===== Control Flow ===== */
   case FRUITY_RET:
     if (*sp > 0) {
@@ -384,14 +401,62 @@ static int emit_instruction(fruity_jit_ctx_t *ctx, struct sljit_compiler *C,
   return 0;
 }
 
+/* Common emission logic for JIT and AOT */
+static int emit_all_instructions(fruity_jit_ctx_t *ctx,
+                                 struct sljit_compiler *C,
+                                 fruity_function_t *func, char *err_buf,
+                                 size_t err_len) {
+  fruity_basic_block_t *block;
+  fruity_instruction_t *instr;
+  int sp = 0; /* Virtual stack pointer */
+
+  /* Allocate label array */
+  ctx->label_count = func->block_count;
+  ctx->labels = xalloc(ctx->label_count * sizeof(struct sljit_label *));
+  if (!ctx->labels) {
+    return -1;
+  }
+
+  /* Emit function prologue */
+  sljit_emit_enter(C, 0, SLJIT_ARGS1(W, W), /* 1 arg, returns word */
+                   5,                       /* 5 scratch registers */
+                   2,                       /* 2 saved registers */
+                   func->local_count * sizeof(sljit_sw)); /* Stack for locals */
+
+  /* Emit each basic block */
+  size_t block_idx = 0;
+  for (block = func->blocks_head; block != nil; block = block->next) {
+    /* Define label for this block */
+    ctx->labels[block_idx] = sljit_emit_label(C);
+
+    /* Emit instructions */
+    for (instr = block->instructions_head; instr != nil; instr = instr->next) {
+      if (emit_instruction(ctx, C, instr, &sp) < 0) {
+        snprint(err_buf, err_len, "Failed to emit instruction at offset %u",
+                (unsigned)instr->msil_offset);
+        return -1;
+      }
+    }
+
+    block_idx++;
+  }
+
+  /* Resolve jump fixups */
+  for (size_t i = 0; i < ctx->fixup_count; i++) {
+    uint32_t target_id = ctx->fixups[i].target_block_id;
+    if (target_id < ctx->label_count) {
+      sljit_set_label(ctx->fixups[i].jump, ctx->labels[target_id]);
+    }
+  }
+
+  return 0;
+}
+
 /* ===== Main Compilation Entry ===== */
 
 int fruity_jit_compile(fruity_jit_ctx_t *ctx, fruity_function_t *func,
                        fruity_jit_result_t *result) {
   struct sljit_compiler *C;
-  fruity_basic_block_t *block;
-  fruity_instruction_t *instr;
-  int sp = 0; /* Virtual stack pointer */
 
   if (!ctx || !func || !result) {
     if (result) {
@@ -414,48 +479,12 @@ int fruity_jit_compile(fruity_jit_ctx_t *ctx, fruity_function_t *func,
   }
   ctx->compiler = C;
 
-  /* Allocate label array */
-  ctx->label_count = func->block_count;
-  ctx->labels = xalloc(ctx->label_count * sizeof(struct sljit_label *));
-  if (!ctx->labels) {
+  /* Emit instructions */
+  if (emit_all_instructions(ctx, C, func, result->error_msg,
+                            sizeof(result->error_msg)) < 0) {
     sljit_free_compiler(C);
     result->success = -1;
     return -1;
-  }
-
-  /* Emit function prologue */
-  sljit_emit_enter(C, 0, SLJIT_ARGS1(W, W), /* 1 arg, returns word */
-                   5,                       /* 5 scratch registers */
-                   2,                       /* 2 saved registers */
-                   func->local_count * sizeof(sljit_sw)); /* Stack for locals */
-
-  /* Emit each basic block */
-  size_t block_idx = 0;
-  for (block = func->blocks_head; block != nil; block = block->next) {
-    /* Define label for this block */
-    ctx->labels[block_idx] = sljit_emit_label(C);
-
-    /* Emit instructions */
-    for (instr = block->instructions_head; instr != nil; instr = instr->next) {
-      if (emit_instruction(ctx, C, instr, &sp) < 0) {
-        sljit_free_compiler(C);
-        snprint(result->error_msg, sizeof(result->error_msg),
-                "Failed to emit instruction at offset %u",
-                (unsigned)instr->msil_offset);
-        result->success = -1;
-        return -1;
-      }
-    }
-
-    block_idx++;
-  }
-
-  /* Resolve jump fixups */
-  for (size_t i = 0; i < ctx->fixup_count; i++) {
-    uint32_t target_id = ctx->fixups[i].target_block_id;
-    if (target_id < ctx->label_count) {
-      sljit_set_label(ctx->fixups[i].jump, ctx->labels[target_id]);
-    }
   }
 
   /* Generate code */
@@ -464,6 +493,74 @@ int fruity_jit_compile(fruity_jit_ctx_t *ctx, fruity_function_t *func,
     sljit_free_compiler(C);
     snprint(result->error_msg, sizeof(result->error_msg),
             "Failed to generate native code");
+    result->success = -1;
+    return -1;
+  }
+
+  result->code_size = sljit_get_generated_code_size(C);
+  result->success = 0;
+
+  sljit_free_compiler(C);
+  return 0;
+}
+
+int fruity_aot_compile(fruity_jit_ctx_t *ctx, fruity_function_t *func,
+                       void **buffer, size_t *size) {
+  struct sljit_compiler *C;
+  char error_msg[256];
+
+  if (!ctx || !func || !buffer || !size)
+    return -1;
+
+  *buffer = nil;
+  *size = 0;
+
+  C = sljit_create_compiler(nil);
+  if (!C)
+    return -1;
+  ctx->compiler = C;
+
+  if (emit_all_instructions(ctx, C, func, error_msg, sizeof(error_msg)) < 0) {
+    sljit_free_compiler(C);
+    return -1;
+  }
+
+  /* Serialize instead of generating code */
+  sljit_uw buf_size;
+  sljit_uw *buf = sljit_serialize_compiler(C, 0, &buf_size);
+
+  sljit_free_compiler(C);
+
+  if (!buf)
+    return -1;
+
+  *buffer = buf;
+  *size = buf_size;
+  return 0;
+}
+
+int fruity_aot_load(void *buffer, size_t size, fruity_jit_result_t *result) {
+  struct sljit_compiler *C;
+
+  if (!buffer || size == 0 || !result)
+    return -1;
+  memset(result, 0, sizeof(*result));
+
+  /* Deserialize compiler from buffer */
+  C = sljit_deserialize_compiler((sljit_uw *)buffer, size, 0, nil);
+  if (!C) {
+    snprint(result->error_msg, sizeof(result->error_msg),
+            "Failed to deserialize compiler");
+    result->success = -1;
+    return -1;
+  }
+
+  /* Generate executable code from deserialized state */
+  result->code = sljit_generate_code(C, 0, nil);
+  if (!result->code) {
+    sljit_free_compiler(C);
+    snprint(result->error_msg, sizeof(result->error_msg),
+            "Failed to generate code from deserialized AOT");
     result->success = -1;
     return -1;
   }

@@ -39,7 +39,10 @@ const fruity_opcode_metadata_t fruity_opcode_table[] = {
     {FRUITY_VANILLA, "vanilla", 1, 0, 0, 0, 1, 2, 0, 0, 0, 0},
     {FRUITY_BURN, "burn", 0, 1, 1, 0, 1, 0, 0, 0, 0, 0},
     {FRUITY_DUP, "dup", 0, 0, 0, 0, 1, 2, 0, 0, 0, 0},
+    {FRUITY_DUP_REF, "dup_ref", 1, 0, 0, 0, 1, 2, 0, 0, 0, 0},  /* Creates white token */
     {FRUITY_POP, "pop", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
+    {FRUITY_POP_REF, "pop_ref", 0, 1, 1, 0, 1, 0, 0, 0, 0, 0},  /* Burns white token */
+    {FRUITY_LOAD_STRING, "load_string", 1, 0, 0, 0, 0, 1, 0, 0, 0, 0},
 
     /* Transactional */
     {FRUITY_CHERRY, "cherry", 0, 0, 0, 1, 1, 1, 0, 0, 0, 0},
@@ -407,6 +410,7 @@ fruity_instruction_t *fruity_instruction_create(fruity_opcode_t opcode) {
   instr->pebble_effects.burns_white = fruity_opcode_burns_white(opcode);
   instr->pebble_effects.may_free = fruity_opcode_may_free(opcode);
   instr->pebble_effects.is_speculative = (opcode == FRUITY_CHERRY);
+  instr->pebble_effects.pow_op_class = 1; /* POW_OP_ALLOC default */
 
   return instr;
 }

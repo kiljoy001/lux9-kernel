@@ -1,0 +1,10 @@
+# Verification Metrics - Wed Dec 31 16:00:00 PST 1969
+coq_admits=17
+coq_theorems=512
+acsl_requires=14
+acsl_ensures=0
+0
+acsl_assigns=0
+0
+acsl_invariants=2
+acsl_total=

@@ -312,13 +312,14 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
           "DEBUG: clr Step 2a: Querying QBE IL size\n");
   uartputs(debug_buf, strlen(debug_buf));
   ulong qbe_il_size = 0;
-  int qbe_result = fruity_to_qbe(&temp_mod, 0, &qbe_il_size, errbuf,
-                                 sizeof(errbuf));
+  int qbe_result =
+      fruity_to_qbe(&temp_mod, 0, &qbe_il_size, errbuf, sizeof(errbuf));
   if (qbe_result < 0 || qbe_il_size == 0) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr fruity_to_qbe size query FAILED: %s\n", errbuf);
     uartputs(debug_buf, strlen(debug_buf));
-    print("clr: Failed to query QBE IL size for %s: %s\n", method->name, errbuf);
+    print("clr: Failed to query QBE IL size for %s: %s\n", method->name,
+          errbuf);
     fruity_free_function(func);
     return nil;
   }
@@ -420,7 +421,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Cleanup intermediate buffers */
-  pebble_black_free(&qbe_cap);  /* Safe - no header corruption with Pebble */
+  pebble_black_free(&qbe_cap); /* Safe - no header corruption with Pebble */
   fruity_free_function(func);
 
   if (out_size)
@@ -527,9 +528,12 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   uartputs(debug_buf, strlen(debug_buf));
   print("clr: Main() returned %d\n", result);
 
-  /* Cleanup */
-  xfree(code);
-  il_free_assembly(assembly);
+  /* Cleanup - temporarily disabled due to allocator mismatch causing xfree
+   * panic.
+   * TODO: Fix allocator consistency across all CLR modules.
+   * This is a small memory leak but allows init to complete successfully. */
+  /* xfree(code); */
+  /* il_free_assembly(assembly); */
   current_assembly = nil;
 
   return result;

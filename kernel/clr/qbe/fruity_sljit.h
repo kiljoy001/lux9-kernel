@@ -66,4 +66,19 @@ int fruity_jit_execute(fruity_jit_result_t *result, int64_t *args,
  */
 void fruity_jit_free_code(fruity_jit_result_t *result);
 
+/* ===== AOT Support ===== */
+
+/*
+ * Compile Fruity function to AOT buffer (serialized)
+ *
+ * buffer matches sljit_serialize_compiler output
+ */
+int fruity_aot_compile(fruity_jit_ctx_t *ctx, fruity_function_t *func,
+                       void **buffer, size_t *size);
+
+/*
+ * Load AOT code from buffer
+ */
+int fruity_aot_load(void *buffer, size_t size, fruity_jit_result_t *result);
+
 #endif /* FRUITY_SLJIT_H */
