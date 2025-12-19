@@ -186,9 +186,14 @@ Proof.
   intros s1 ops s2 H.
   induction H.
   - simpl. lia.
-  - simpl. (* Complex proof - binding IH to s2,s3 not s1 *)
-    admit.
-Admitted.
+  - simpl.
+    (* IH: length s3 <= length s2 + 2 * length ops *)
+    (* Goal: length s3 <= length s1 + 2 + 2 * length ops *)
+    (* Use lemma: length s2 <= length s1 + 2 *)
+    assert (Hbound: length s2 <= length s1 + 2).
+    { apply type_transition_depth_bound with (op:=op). apply H. }
+    lia.
+Qed.
 
 (* ========== Progress Theorem ========== *)
 

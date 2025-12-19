@@ -229,6 +229,45 @@ Theorem operations_preserve_refcount_inv : forall s s',
   (pebble_vanilla s = Some s' \/ pebble_burn s = Some s') ->
   refcount_invariant s'.
 Proof.
-  (* Complex proof involving case analysis on VANILLA and BURN *)
-  (* TODO: Complete this proof *)
-Admitted.
+  intros s s' Hinv [Hvanilla | Hburn].
+  - (* VANILLA case *)
+    unfold pebble_vanilla in Hvanilla.
+    destruct (fs_stack s) eqn:Hstack; try discriminate.
+    destruct f; try discriminate.
+    + (* Stack top is FV_Ref *)
+      inversion Hvanilla; subst.
+      unfold refcount_invariant in *; simpl.
+      intros v [Hin_stack | Hin_locals].
+      * simpl in Hin_stack. destruct Hin_stack as [Heq | Hin].
+        -- (* Head of stack: refcount incremented *)
+           subst. simpl. lia.
+        -- (* Rest of stack: preserved *)
+           apply Hinv. left. rewrite Hstack. right. assumption.
+      * (* Locals: preserved *)
+        apply Hinv. right. assumption.
+    + (* Stack top is FV_Null *)
+      inversion Hvanilla; subst. assumption.
+  - (* BURN case *)
+    unfold pebble_burn in Hburn.
+    destruct (fs_stack s) eqn:Hstack; try discriminate.
+    destruct f; try discriminate.
+    + (* Stack top is FV_Ref *)
+      destruct (Nat.leb refcount 0) eqn:Hleb.
+      * (* Refcount <= 0 -> Error, no transition *)
+        discriminate.
+      * (* Refcount > 0 -> Decrement *)
+        inversion Hburn; subst.
+        unfold refcount_invariant in *; simpl.
+        intros v [Hin_stack | Hin_locals].
+        -- simpl in Hin_stack. destruct Hin_stack as [Heq | Hin].
+           ++ (* Head of stack: refcount decremented *)
+              subst. simpl.
+              apply Nat.leb_gt in Hleb. lia.
+           ++ (* Rest of stack: preserved *)
+              apply Hinv. left. rewrite Hstack. right. assumption.
+        -- (* Locals: preserved *)
+           apply Hinv. right. assumption.
+    + (* Stack top is FV_Null *)
+      inversion Hburn; subst. assumption.
+
+Qed.

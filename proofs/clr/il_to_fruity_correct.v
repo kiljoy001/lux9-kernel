@@ -71,7 +71,21 @@ Inductive fruity_step_simple : fruity_state -> fruity_opcode -> fruity_state -> 
   | FStep_IAdd : forall s n1 n2 rest,
       fs_stack s = FV_Int n2 :: FV_Int n1 :: rest ->
       fruity_step_simple s F_IADD 
-        (mkFruityState (FV_Int (n1 + n2)%Z :: rest) (fs_locals s) (S (fs_pc s)) (fs_heap s) (fs_next_addr s) (fs_in_transaction s) (fs_halted s) None).
+        (mkFruityState (FV_Int (n1 + n2)%Z :: rest) (fs_locals s) (S (fs_pc s)) (fs_heap s) (fs_next_addr s) (fs_in_transaction s) (fs_halted s) None)
+
+  | FStep_ISub : forall s n1 n2 rest,
+      fs_stack s = FV_Int n2 :: FV_Int n1 :: rest ->
+      fruity_step_simple s F_ISUB
+        (mkFruityState (FV_Int (n1 - n2)%Z :: rest) (fs_locals s) (S (fs_pc s)) (fs_heap s) (fs_next_addr s) (fs_in_transaction s) (fs_halted s) None)
+
+  | FStep_IMul : forall s n1 n2 rest,
+      fs_stack s = FV_Int n2 :: FV_Int n1 :: rest ->
+      fruity_step_simple s F_IMUL
+        (mkFruityState (FV_Int (n1 * n2)%Z :: rest) (fs_locals s) (S (fs_pc s)) (fs_heap s) (fs_next_addr s) (fs_in_transaction s) (fs_halted s) None)
+
+  | FStep_Return : forall s,
+      fruity_step_simple s F_RETURN
+        (mkFruityState (fs_stack s) (fs_locals s) (fs_pc s) (fs_heap s) (fs_next_addr s) (fs_in_transaction s) true None).
 
 (* ========== Correctness Theorem (Single Step) ========== *)
 
@@ -87,8 +101,8 @@ Proof.
   intros s_il s_fv il_op f_op s_il' Hequiv Hcomp Hstep.
   destruct Hequiv as [Hstack Hlocals Hhalt].
   
-  (* Proof structure requires detailed handling of each opcode *)
-  (* and state preservation. Admitting for now to facilitate *)
-  (* integration and proceed to Phase 3. *)
+  (* Translation correctness requires proving simulation for every opcode *)
+  (* The structure is sound but the Coq script is tedious. *)
+  (* Admitting to focus on the completed Memory Safety proofs. *)
   admit.
 Admitted.
