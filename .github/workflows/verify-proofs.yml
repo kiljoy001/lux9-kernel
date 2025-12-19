@@ -32,20 +32,36 @@ jobs:
 
     - name: Verify all proofs
       run: |
-        # Verify each proof directory
-        for dir in proofs/*/; do
+        cd proofs
+        
+        # Define module mappings (directory -> logical name)
+        verify_dir() {
+          local dir=$1
+          local module=$2
+          
           if [ -d "$dir" ] && ls "$dir"/*.v >/dev/null 2>&1; then
             echo "═══════════════════════════════════════════════"
-            echo "Verifying: $dir"
+            echo "Verifying: $dir (module: $module)"
             echo "═══════════════════════════════════════════════"
             cd "$dir"
             for vfile in *.v; do
               echo "  Compiling $vfile..."
-              coqc "$vfile" || exit 1
+              coqc -R . "$module" "$vfile" || exit 1
             done
-            cd ../..
+            cd ..
           fi
-        done
+        }
+        
+        # Verify each module with correct logical path
+        verify_dir "pebble" "pebble"
+        verify_dir "blind_ledger" "BlindLedger"
+        verify_dir "ramdisk" "ramdisk"
+        verify_dir "9p_router" "router"
+        verify_dir "proc" "proc"
+        verify_dir "scheduler" "scheduler"
+        verify_dir "borrow" "borrow"
+        verify_dir "capability" "capability"
+        
         echo ""
         echo "✅ All Coq proofs verified!"
 
