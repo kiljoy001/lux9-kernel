@@ -1312,12 +1312,24 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
             p++; /* Skip ( */
             while (*p && *p != ')' && arg_count < 6) {
               p = skip_ws(p);
+
+              /* Skip type prefixes (w, l, s, d) if present */
+              while ((*p >= 'a' && *p <= 'z')) {
+                p++;
+              }
+              p = skip_ws(p);
+
               if (*p == '%') {
                 arg_temps[arg_count++] = parse_temp(&p);
               } else if (*p >= '0' && *p <= '9') {
                 /* Immediate - store as negative temp ID (special marker) */
                 arg_temps[arg_count++] =
                     -parse_imm(&p) - 1; /* -1 to distinguish from temp 0 */
+              } else {
+                /* Unrecognized token - skip char to avoid infinite loop */
+                if (*p != ')' && *p != ',') {
+                  p++;
+                }
               }
               p = skip_ws(p);
               if (*p == ',')
