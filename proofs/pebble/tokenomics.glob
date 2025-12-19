@@ -1,274 +1,746 @@
-DIGEST f605a355ad60715f1cd35954d50cda10
+DIGEST d1958349abcde1928a62f94139a8d6b6
 Fpebble.tokenomics
 R388:392 pebble.types <> <> lib
 R410:421 pebble.conservation <> <> lib
-rec 967:976 <> WhiteToken
-proj 993:1008 <> white_generation
-proj 1017:1026 <> white_size
-proj 1035:1045 <> white_valid
-R1012:1012 Coq.Numbers.BinNums <> Z ind
-R1030:1030 Coq.Numbers.BinNums <> Z ind
-R1049:1052 Coq.Init.Datatypes <> bool ind
-rec 1125:1138 <> TokenomicState
-proj 1159:1164 <> pebble
-proj 1248:1259 <> white_tokens
-R1168:1178 pebble.types <> PebbleState rec
-R1263:1266 Coq.Init.Datatypes <> list ind
-R1268:1277 pebble.tokenomics <> WhiteToken rec
-ind 1838:1847 <> IssueWhite
-constr 1899:1908 <> IW_Success
-R1857:1857 Coq.Numbers.BinNums <> Z ind
-binder 1850:1853 <> size:8
-R1869:1882 pebble.tokenomics <> TokenomicState rec
-binder 1861:1862 <> s1:9
-binder 1864:1865 <> s2:10
-R1926:1970 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R1922:1924 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
-R1918:1921 pebble.tokenomics <> size:8 var
-R1988:1994 pebble.tokenomics <> mkWhite constr
-R2010:2020 pebble.types <> next_cap_id proj
-R2001:2006 pebble.tokenomics <> pebble proj
-R1997:1998 pebble.tokenomics <> s1:9 var
-R2024:2027 pebble.tokenomics <> size:8 var
-R2029:2032 Coq.Init.Datatypes <> true constr
-binder 1975:1983 <> new_white:13
-R2210:2219 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2078:2080 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R2076:2077 pebble.tokenomics <> s2:10 var
-R2081:2091 pebble.tokenomics <> mkTokenomic constr
-R2110:2115 pebble.tokenomics <> pebble proj
-R2106:2107 pebble.tokenomics <> s1:9 var
-R2188:2191 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
-R2179:2187 pebble.tokenomics <> new_white:13 var
-R2196:2207 pebble.tokenomics <> white_tokens proj
-R2192:2193 pebble.tokenomics <> s1:9 var
-R2220:2229 pebble.tokenomics <> IssueWhite:11 ind
-R2239:2240 pebble.tokenomics <> s2:10 var
-R2236:2237 pebble.tokenomics <> s1:9 var
-R2231:2234 pebble.tokenomics <> size:8 var
-scheme 1838:1847 <> IssueWhite_rect
-scheme 1838:1847 <> IssueWhite_ind
-scheme 1838:1847 <> IssueWhite_rec
-scheme 1838:1847 <> IssueWhite_sind
-ind 2495:2505 <> VerifyWhite
-constr 2557:2566 <> VW_Success
-R2515:2515 Coq.Numbers.BinNums <> Z ind
-binder 2508:2511 <> size:14
-R2527:2540 pebble.tokenomics <> TokenomicState rec
-binder 2519:2520 <> s1:15
-binder 2522:2523 <> s2:16
-R2584:2641 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2580:2582 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
-R2576:2579 pebble.tokenomics <> size:14 var
-R2642:2642 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2768:2846 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2643:2649 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
-R2652:2653 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
-binder 2650:2651 <> wt:19
-R2677:2699 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
-R2654:2655 Coq.Lists.List <> In def
-R2664:2675 pebble.tokenomics <> white_tokens proj
-R2660:2661 pebble.tokenomics <> s1:15 var
-R2657:2658 pebble.tokenomics <> wt:19 var
-R2723:2745 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
-R2716:2718 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R2704:2714 pebble.tokenomics <> white_valid proj
-R2700:2701 pebble.tokenomics <> wt:19 var
-R2719:2722 Coq.Init.Datatypes <> true constr
-R2761:2763 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R2750:2759 pebble.tokenomics <> white_size proj
-R2746:2747 pebble.tokenomics <> wt:19 var
-R2764:2767 pebble.tokenomics <> size:14 var
-R2887:2943 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2847:2857 pebble.conservation <> WhiteVerify ind
-R2859:2862 pebble.tokenomics <> size:14 var
-R2868:2873 pebble.tokenomics <> pebble proj
-R2864:2865 pebble.tokenomics <> s1:15 var
-R2880:2885 pebble.tokenomics <> pebble proj
-R2876:2877 pebble.tokenomics <> s2:16 var
-R3174:3183 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R2961:2972 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R2948:2959 pebble.tokenomics <> white_tokens proj
-R2944:2945 pebble.tokenomics <> s2:16 var
-R2973:2975 Coq.Lists.List <> map def
-R3161:3172 pebble.tokenomics <> white_tokens proj
-R3157:3158 pebble.tokenomics <> s1:15 var
-binder 2982:2983 <> wt:20
-R3008:3011 Coq.Init.Datatypes <> ::bool_scope:x_'&&'_x not
-R2996:3006 pebble.tokenomics <> white_valid proj
-R2992:2993 pebble.tokenomics <> wt:20 var
-R3012:3016 Coq.ZArith.BinInt Z eqb def
-R3022:3031 pebble.tokenomics <> white_size proj
-R3018:3019 pebble.tokenomics <> wt:20 var
-R3034:3037 pebble.tokenomics <> size:14 var
-R3153:3154 pebble.tokenomics <> wt:20 var
-R3073:3079 pebble.tokenomics <> mkWhite constr
-R3085:3100 pebble.tokenomics <> white_generation proj
-R3081:3082 pebble.tokenomics <> wt:20 var
-R3107:3116 pebble.tokenomics <> white_size proj
-R3103:3104 pebble.tokenomics <> wt:20 var
-R3119:3123 Coq.Init.Datatypes <> false constr
-R3184:3194 pebble.tokenomics <> VerifyWhite:17 ind
-R3204:3205 pebble.tokenomics <> s2:16 var
-R3201:3202 pebble.tokenomics <> s1:15 var
-R3196:3199 pebble.tokenomics <> size:14 var
-scheme 2495:2505 <> VerifyWhite_rect
-scheme 2495:2505 <> VerifyWhite_ind
-scheme 2495:2505 <> VerifyWhite_rec
-scheme 2495:2505 <> VerifyWhite_sind
-ind 3509:3517 <> MintBlack
-constr 3583:3592 <> MB_Success
-R3527:3527 Coq.Numbers.BinNums <> Z ind
-binder 3520:3523 <> size:21
-R3537:3541 pebble.types <> CapId def
-binder 3531:3533 <> cap:22
-R3553:3566 pebble.tokenomics <> TokenomicState rec
-binder 3545:3546 <> s1:23
-binder 3548:3549 <> s2:24
-R3610:3666 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R3606:3608 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
-R3602:3605 pebble.tokenomics <> size:21 var
-R3710:3754 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R3667:3676 pebble.conservation <> BlackAlloc ind
-R3678:3681 pebble.tokenomics <> size:21 var
-R3683:3685 pebble.tokenomics <> cap:22 var
-R3691:3696 pebble.tokenomics <> pebble proj
-R3687:3688 pebble.tokenomics <> s1:23 var
-R3703:3708 pebble.tokenomics <> pebble proj
-R3699:3700 pebble.tokenomics <> s2:24 var
-R3792:3801 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R3772:3774 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R3759:3770 pebble.tokenomics <> white_tokens proj
-R3755:3756 pebble.tokenomics <> s2:24 var
-R3779:3790 pebble.tokenomics <> white_tokens proj
-R3775:3776 pebble.tokenomics <> s1:23 var
-R3802:3810 pebble.tokenomics <> MintBlack:25 ind
-R3824:3825 pebble.tokenomics <> s2:24 var
-R3821:3822 pebble.tokenomics <> s1:23 var
-R3817:3819 pebble.tokenomics <> cap:22 var
-R3812:3815 pebble.tokenomics <> size:21 var
-scheme 3509:3517 <> MintBlack_rect
-scheme 3509:3517 <> MintBlack_ind
-scheme 3509:3517 <> MintBlack_rec
-scheme 3509:3517 <> MintBlack_sind
-ind 4053:4061 <> BurnBlack
-constr 4127:4136 <> BB_Success
-R4071:4071 Coq.Numbers.BinNums <> Z ind
-binder 4064:4067 <> size:27
-R4081:4085 pebble.types <> CapId def
-binder 4075:4077 <> cap:28
-R4097:4110 pebble.tokenomics <> TokenomicState rec
-binder 4089:4090 <> s1:29
-binder 4092:4093 <> s2:30
-R4154:4209 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R4150:4152 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
-R4146:4149 pebble.tokenomics <> size:27 var
-R4252:4296 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R4210:4218 pebble.conservation <> BlackFree ind
-R4220:4223 pebble.tokenomics <> size:27 var
-R4225:4227 pebble.tokenomics <> cap:28 var
-R4233:4238 pebble.tokenomics <> pebble proj
-R4229:4230 pebble.tokenomics <> s1:29 var
-R4245:4250 pebble.tokenomics <> pebble proj
-R4241:4242 pebble.tokenomics <> s2:30 var
-R4334:4343 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R4314:4316 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R4301:4312 pebble.tokenomics <> white_tokens proj
-R4297:4298 pebble.tokenomics <> s2:30 var
-R4321:4332 pebble.tokenomics <> white_tokens proj
-R4317:4318 pebble.tokenomics <> s1:29 var
-R4344:4352 pebble.tokenomics <> BurnBlack:31 ind
-R4366:4367 pebble.tokenomics <> s2:30 var
-R4363:4364 pebble.tokenomics <> s1:29 var
-R4359:4361 pebble.tokenomics <> cap:28 var
-R4354:4357 pebble.tokenomics <> size:27 var
-scheme 4053:4061 <> BurnBlack_rect
-scheme 4053:4061 <> BurnBlack_ind
-scheme 4053:4061 <> BurnBlack_rec
-scheme 4053:4061 <> BurnBlack_sind
-def 4672:4692 <> TokenomicConservation
-R4699:4712 pebble.tokenomics <> TokenomicState rec
-binder 4695:4695 <> s:33
-R4724:4724 Coq.Numbers.BinNums <> Z ind
-binder 4716:4720 <> total:34
-R4739:4754 pebble.conservation <> Inv_Conservation def
-R4759:4764 pebble.tokenomics <> pebble proj
-R4756:4756 pebble.tokenomics <> s:33 var
-R4767:4771 pebble.tokenomics <> total:34 var
-def 4826:4849 <> WhiteAccountingInvariant
-R4856:4869 pebble.tokenomics <> TokenomicState rec
-binder 4852:4852 <> s:35
-R4964:4969 Coq.Lists.List <> filter def
-R5003:5014 pebble.tokenomics <> white_tokens proj
-R5000:5000 pebble.tokenomics <> s:35 var
-binder 4976:4977 <> wt:36
-R4986:4996 pebble.tokenomics <> white_valid proj
-R4982:4983 pebble.tokenomics <> wt:36 var
-binder 4948:4959 <> valid_whites:37
-R5041:5050 Coq.Lists.List <> fold_right def
-R5092:5103 pebble.tokenomics <> valid_whites:37 var
-binder 5057:5058 <> wt:38
-binder 5060:5062 <> acc:39
-R5082:5084 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
-R5071:5080 pebble.tokenomics <> white_size proj
-R5067:5068 pebble.tokenomics <> wt:38 var
-R5085:5087 pebble.tokenomics <> acc:39 var
-binder 5026:5036 <> total_white:40
-R5121:5124 Coq.ZArith.BinInt <> ::Z_scope:x_'<='_x not
-R5110:5120 pebble.tokenomics <> total_white:40 var
-R5137:5149 pebble.types <> white_pending proj
-R5128:5133 pebble.tokenomics <> pebble proj
-R5125:5125 pebble.tokenomics <> s:35 var
-def 5195:5214 <> TokenomicNonNegative
-R5221:5234 pebble.tokenomics <> TokenomicState rec
-binder 5217:5217 <> s:41
-R5249:5263 pebble.conservation <> Inv_NonNegative def
-R5268:5273 pebble.tokenomics <> pebble proj
-R5265:5265 pebble.tokenomics <> s:41 var
-prf 5578:5605 <> issue_white_preserves_nonneg
-binder 5618:5619 <> s1:42
-binder 5621:5622 <> s2:43
-binder 5624:5627 <> size:44
-R5655:5660 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5632:5651 pebble.tokenomics <> TokenomicNonNegative def
-R5653:5654 pebble.tokenomics <> s1:42 var
-R5682:5687 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5661:5670 pebble.tokenomics <> IssueWhite ind
-R5672:5675 pebble.tokenomics <> size:44 var
-R5677:5678 pebble.tokenomics <> s1:42 var
-R5680:5681 pebble.tokenomics <> s2:43 var
-R5688:5707 pebble.tokenomics <> TokenomicNonNegative def
-R5709:5710 pebble.tokenomics <> s2:43 var
-R5792:5811 pebble.tokenomics <> TokenomicNonNegative def
-prf 5907:5935 <> verify_white_preserves_nonneg
-binder 5948:5949 <> s1:45
-binder 5951:5952 <> s2:46
-binder 5954:5957 <> size:47
-R5985:5990 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5962:5981 pebble.tokenomics <> TokenomicNonNegative def
-R5983:5984 pebble.tokenomics <> s1:45 var
-R6013:6018 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5991:6001 pebble.tokenomics <> VerifyWhite ind
-R6003:6006 pebble.tokenomics <> size:47 var
+R439:446 pebble.security <> <> lib
+rec 992:1001 <> WhiteToken
+proj 1018:1033 <> white_generation
+proj 1042:1051 <> white_size
+proj 1060:1070 <> white_valid
+R1037:1037 Coq.Numbers.BinNums <> Z ind
+R1055:1055 Coq.Numbers.BinNums <> Z ind
+R1074:1077 Coq.Init.Datatypes <> bool ind
+rec 1150:1163 <> TokenomicState
+proj 1184:1189 <> pebble
+proj 1273:1284 <> white_tokens
+R1193:1203 pebble.types <> PebbleState rec
+R1288:1291 Coq.Init.Datatypes <> list ind
+R1293:1302 pebble.tokenomics <> WhiteToken rec
+ind 1863:1872 <> IssueWhite
+constr 1924:1933 <> IW_Success
+R1882:1882 Coq.Numbers.BinNums <> Z ind
+binder 1875:1878 <> size:8
+R1894:1907 pebble.tokenomics <> TokenomicState rec
+binder 1886:1887 <> s1:9
+binder 1889:1890 <> s2:10
+R1951:1995 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1947:1949 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R1943:1946 pebble.tokenomics <> size:8 var
+R2013:2019 pebble.tokenomics <> mkWhite constr
+R2035:2045 pebble.types <> next_cap_id proj
+R2026:2031 pebble.tokenomics <> pebble proj
+R2022:2023 pebble.tokenomics <> s1:9 var
+R2049:2052 pebble.tokenomics <> size:8 var
+R2054:2057 Coq.Init.Datatypes <> true constr
+binder 2000:2008 <> new_white:13
+R2235:2244 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2103:2105 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2101:2102 pebble.tokenomics <> s2:10 var
+R2106:2116 pebble.tokenomics <> mkTokenomic constr
+R2135:2140 pebble.tokenomics <> pebble proj
+R2131:2132 pebble.tokenomics <> s1:9 var
+R2213:2216 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2204:2212 pebble.tokenomics <> new_white:13 var
+R2221:2232 pebble.tokenomics <> white_tokens proj
+R2217:2218 pebble.tokenomics <> s1:9 var
+R2245:2254 pebble.tokenomics <> IssueWhite:11 ind
+R2264:2265 pebble.tokenomics <> s2:10 var
+R2261:2262 pebble.tokenomics <> s1:9 var
+R2256:2259 pebble.tokenomics <> size:8 var
+scheme 1863:1872 <> IssueWhite_rect
+scheme 1863:1872 <> IssueWhite_ind
+scheme 1863:1872 <> IssueWhite_rec
+scheme 1863:1872 <> IssueWhite_sind
+ind 2520:2530 <> VerifyWhite
+constr 2582:2591 <> VW_Success
+R2540:2540 Coq.Numbers.BinNums <> Z ind
+binder 2533:2536 <> size:14
+R2552:2565 pebble.tokenomics <> TokenomicState rec
+binder 2544:2545 <> s1:15
+binder 2547:2548 <> s2:16
+R2609:2666 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2605:2607 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R2601:2604 pebble.tokenomics <> size:14 var
+R2667:2667 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2793:2871 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2668:2674 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R2677:2678 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 2675:2676 <> wt:19
+R2702:2724 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R2679:2680 Coq.Lists.List <> In def
+R2689:2700 pebble.tokenomics <> white_tokens proj
+R2685:2686 pebble.tokenomics <> s1:15 var
+R2682:2683 pebble.tokenomics <> wt:19 var
+R2748:2770 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R2741:2743 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2729:2739 pebble.tokenomics <> white_valid proj
+R2725:2726 pebble.tokenomics <> wt:19 var
+R2744:2747 Coq.Init.Datatypes <> true constr
+R2786:2788 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2775:2784 pebble.tokenomics <> white_size proj
+R2771:2772 pebble.tokenomics <> wt:19 var
+R2789:2792 pebble.tokenomics <> size:14 var
+R2912:2968 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2872:2882 pebble.conservation <> WhiteVerify ind
+R2884:2887 pebble.tokenomics <> size:14 var
+R2893:2898 pebble.tokenomics <> pebble proj
+R2889:2890 pebble.tokenomics <> s1:15 var
+R2905:2910 pebble.tokenomics <> pebble proj
+R2901:2902 pebble.tokenomics <> s2:16 var
+R3199:3208 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2986:2997 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2973:2984 pebble.tokenomics <> white_tokens proj
+R2969:2970 pebble.tokenomics <> s2:16 var
+R2998:3000 Coq.Lists.List <> map def
+R3186:3197 pebble.tokenomics <> white_tokens proj
+R3182:3183 pebble.tokenomics <> s1:15 var
+binder 3007:3008 <> wt:20
+R3033:3036 Coq.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3021:3031 pebble.tokenomics <> white_valid proj
+R3017:3018 pebble.tokenomics <> wt:20 var
+R3037:3041 Coq.ZArith.BinInt Z eqb def
+R3047:3056 pebble.tokenomics <> white_size proj
+R3043:3044 pebble.tokenomics <> wt:20 var
+R3059:3062 pebble.tokenomics <> size:14 var
+R3178:3179 pebble.tokenomics <> wt:20 var
+R3098:3104 pebble.tokenomics <> mkWhite constr
+R3110:3125 pebble.tokenomics <> white_generation proj
+R3106:3107 pebble.tokenomics <> wt:20 var
+R3132:3141 pebble.tokenomics <> white_size proj
+R3128:3129 pebble.tokenomics <> wt:20 var
+R3144:3148 Coq.Init.Datatypes <> false constr
+R3209:3219 pebble.tokenomics <> VerifyWhite:17 ind
+R3229:3230 pebble.tokenomics <> s2:16 var
+R3226:3227 pebble.tokenomics <> s1:15 var
+R3221:3224 pebble.tokenomics <> size:14 var
+scheme 2520:2530 <> VerifyWhite_rect
+scheme 2520:2530 <> VerifyWhite_ind
+scheme 2520:2530 <> VerifyWhite_rec
+scheme 2520:2530 <> VerifyWhite_sind
+ind 3534:3542 <> MintBlack
+constr 3608:3617 <> MB_Success
+R3552:3552 Coq.Numbers.BinNums <> Z ind
+binder 3545:3548 <> size:21
+R3562:3566 pebble.types <> CapId def
+binder 3556:3558 <> cap:22
+R3578:3591 pebble.tokenomics <> TokenomicState rec
+binder 3570:3571 <> s1:23
+binder 3573:3574 <> s2:24
+R3635:3691 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3631:3633 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R3627:3630 pebble.tokenomics <> size:21 var
+R3735:3779 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3692:3701 pebble.conservation <> BlackAlloc ind
+R3703:3706 pebble.tokenomics <> size:21 var
+R3708:3710 pebble.tokenomics <> cap:22 var
+R3716:3721 pebble.tokenomics <> pebble proj
+R3712:3713 pebble.tokenomics <> s1:23 var
+R3728:3733 pebble.tokenomics <> pebble proj
+R3724:3725 pebble.tokenomics <> s2:24 var
+R3817:3826 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R3797:3799 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3784:3795 pebble.tokenomics <> white_tokens proj
+R3780:3781 pebble.tokenomics <> s2:24 var
+R3804:3815 pebble.tokenomics <> white_tokens proj
+R3800:3801 pebble.tokenomics <> s1:23 var
+R3827:3835 pebble.tokenomics <> MintBlack:25 ind
+R3849:3850 pebble.tokenomics <> s2:24 var
+R3846:3847 pebble.tokenomics <> s1:23 var
+R3842:3844 pebble.tokenomics <> cap:22 var
+R3837:3840 pebble.tokenomics <> size:21 var
+scheme 3534:3542 <> MintBlack_rect
+scheme 3534:3542 <> MintBlack_ind
+scheme 3534:3542 <> MintBlack_rec
+scheme 3534:3542 <> MintBlack_sind
+ind 4078:4086 <> BurnBlack
+constr 4152:4161 <> BB_Success
+R4096:4096 Coq.Numbers.BinNums <> Z ind
+binder 4089:4092 <> size:27
+R4106:4110 pebble.types <> CapId def
+binder 4100:4102 <> cap:28
+R4122:4135 pebble.tokenomics <> TokenomicState rec
+binder 4114:4115 <> s1:29
+binder 4117:4118 <> s2:30
+R4179:4234 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4175:4177 Coq.ZArith.BinInt <> ::Z_scope:x_'>'_x not
+R4171:4174 pebble.tokenomics <> size:27 var
+R4277:4321 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4235:4243 pebble.conservation <> BlackFree ind
+R4245:4248 pebble.tokenomics <> size:27 var
+R4250:4252 pebble.tokenomics <> cap:28 var
+R4258:4263 pebble.tokenomics <> pebble proj
+R4254:4255 pebble.tokenomics <> s1:29 var
+R4270:4275 pebble.tokenomics <> pebble proj
+R4266:4267 pebble.tokenomics <> s2:30 var
+R4359:4368 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R4339:4341 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R4326:4337 pebble.tokenomics <> white_tokens proj
+R4322:4323 pebble.tokenomics <> s2:30 var
+R4346:4357 pebble.tokenomics <> white_tokens proj
+R4342:4343 pebble.tokenomics <> s1:29 var
+R4369:4377 pebble.tokenomics <> BurnBlack:31 ind
+R4391:4392 pebble.tokenomics <> s2:30 var
+R4388:4389 pebble.tokenomics <> s1:29 var
+R4384:4386 pebble.tokenomics <> cap:28 var
+R4379:4382 pebble.tokenomics <> size:27 var
+scheme 4078:4086 <> BurnBlack_rect
+scheme 4078:4086 <> BurnBlack_ind
+scheme 4078:4086 <> BurnBlack_rec
+scheme 4078:4086 <> BurnBlack_sind
+def 4697:4717 <> TokenomicConservation
+R4724:4737 pebble.tokenomics <> TokenomicState rec
+binder 4720:4720 <> s:33
+R4749:4749 Coq.Numbers.BinNums <> Z ind
+binder 4741:4745 <> total:34
+R4764:4779 pebble.conservation <> Inv_Conservation def
+R4784:4789 pebble.tokenomics <> pebble proj
+R4781:4781 pebble.tokenomics <> s:33 var
+R4792:4796 pebble.tokenomics <> total:34 var
+def 4851:4874 <> WhiteAccountingInvariant
+R4881:4894 pebble.tokenomics <> TokenomicState rec
+binder 4877:4877 <> s:35
+R4989:4994 Coq.Lists.List <> filter def
+R5028:5039 pebble.tokenomics <> white_tokens proj
+R5025:5025 pebble.tokenomics <> s:35 var
+binder 5001:5002 <> wt:36
+R5011:5021 pebble.tokenomics <> white_valid proj
+R5007:5008 pebble.tokenomics <> wt:36 var
+binder 4973:4984 <> valid_whites:37
+R5066:5075 Coq.Lists.List <> fold_right def
+R5117:5128 pebble.tokenomics <> valid_whites:37 var
+binder 5082:5083 <> wt:38
+binder 5085:5087 <> acc:39
+R5107:5109 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R5096:5105 pebble.tokenomics <> white_size proj
+R5092:5093 pebble.tokenomics <> wt:38 var
+R5110:5112 pebble.tokenomics <> acc:39 var
+binder 5051:5061 <> total_white:40
+R5146:5149 Coq.ZArith.BinInt <> ::Z_scope:x_'<='_x not
+R5135:5145 pebble.tokenomics <> total_white:40 var
+R5162:5174 pebble.types <> white_pending proj
+R5153:5158 pebble.tokenomics <> pebble proj
+R5150:5150 pebble.tokenomics <> s:35 var
+def 5220:5239 <> TokenomicNonNegative
+R5246:5259 pebble.tokenomics <> TokenomicState rec
+binder 5242:5242 <> s:41
+R5274:5288 pebble.conservation <> Inv_NonNegative def
+R5293:5298 pebble.tokenomics <> pebble proj
+R5290:5290 pebble.tokenomics <> s:41 var
+prf 5603:5630 <> issue_white_preserves_nonneg
+binder 5643:5644 <> s1:42
+binder 5646:5647 <> s2:43
+binder 5649:5652 <> size:44
+R5680:5685 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5657:5676 pebble.tokenomics <> TokenomicNonNegative def
+R5678:5679 pebble.tokenomics <> s1:42 var
+R5707:5712 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5686:5695 pebble.tokenomics <> IssueWhite ind
+R5697:5700 pebble.tokenomics <> size:44 var
+R5702:5703 pebble.tokenomics <> s1:42 var
+R5705:5706 pebble.tokenomics <> s2:43 var
+R5713:5732 pebble.tokenomics <> TokenomicNonNegative def
+R5734:5735 pebble.tokenomics <> s2:43 var
+R5817:5836 pebble.tokenomics <> TokenomicNonNegative def
+prf 5932:5960 <> verify_white_preserves_nonneg
+binder 5973:5974 <> s1:45
+binder 5976:5977 <> s2:46
+binder 5979:5982 <> size:47
+R6010:6015 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5987:6006 pebble.tokenomics <> TokenomicNonNegative def
 R6008:6009 pebble.tokenomics <> s1:45 var
-R6011:6012 pebble.tokenomics <> s2:46 var
-R6019:6038 pebble.tokenomics <> TokenomicNonNegative def
-R6040:6041 pebble.tokenomics <> s2:46 var
-prf 6435:6461 <> mint_black_preserves_nonneg
-binder 6474:6475 <> s1:48
-binder 6477:6478 <> s2:49
-binder 6480:6483 <> size:50
-binder 6485:6487 <> cap:51
-R6515:6520 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R6492:6511 pebble.tokenomics <> TokenomicNonNegative def
-R6513:6514 pebble.tokenomics <> s1:48 var
-R6545:6550 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R6521:6529 pebble.tokenomics <> MintBlack ind
-R6531:6534 pebble.tokenomics <> size:50 var
-R6536:6538 pebble.tokenomics <> cap:51 var
-R6540:6541 pebble.tokenomics <> s1:48 var
-R6543:6544 pebble.tokenomics <> s2:49 var
-R6551:6570 pebble.tokenomics <> TokenomicNonNegative def
-R6572:6573 pebble.tokenomics <> s2:49 var
-R6680:6699 pebble.tokenomics <> TokenomicNonNegative def
-R6702:6716 pebble.conservation <> Inv_NonNegative def
+R6038:6043 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6016:6026 pebble.tokenomics <> VerifyWhite ind
+R6028:6031 pebble.tokenomics <> size:47 var
+R6033:6034 pebble.tokenomics <> s1:45 var
+R6036:6037 pebble.tokenomics <> s2:46 var
+R6044:6063 pebble.tokenomics <> TokenomicNonNegative def
+R6065:6066 pebble.tokenomics <> s2:46 var
+R6150:6169 pebble.tokenomics <> TokenomicNonNegative def
+R6247:6274 pebble.conservation <> whiteverify_preserves_nonneg thm
+R6247:6274 pebble.conservation <> whiteverify_preserves_nonneg thm
+prf 6348:6374 <> mint_black_preserves_nonneg
+binder 6387:6388 <> s1:48
+binder 6390:6391 <> s2:49
+binder 6393:6396 <> size:50
+binder 6398:6400 <> cap:51
+R6428:6433 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6405:6424 pebble.tokenomics <> TokenomicNonNegative def
+R6426:6427 pebble.tokenomics <> s1:48 var
+R6458:6463 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6434:6442 pebble.tokenomics <> MintBlack ind
+R6444:6447 pebble.tokenomics <> size:50 var
+R6449:6451 pebble.tokenomics <> cap:51 var
+R6453:6454 pebble.tokenomics <> s1:48 var
+R6456:6457 pebble.tokenomics <> s2:49 var
+R6464:6483 pebble.tokenomics <> TokenomicNonNegative def
+R6485:6486 pebble.tokenomics <> s2:49 var
+R6570:6589 pebble.tokenomics <> TokenomicNonNegative def
+R6667:6693 pebble.security <> blackalloc_preserves_nonneg thm
+R6667:6693 pebble.security <> blackalloc_preserves_nonneg thm
+prf 6767:6793 <> burn_black_preserves_nonneg
+binder 6806:6807 <> s1:52
+binder 6809:6810 <> s2:53
+binder 6812:6815 <> size:54
+binder 6817:6819 <> cap:55
+R6847:6852 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6824:6843 pebble.tokenomics <> TokenomicNonNegative def
+R6845:6846 pebble.tokenomics <> s1:52 var
+R6877:6882 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6853:6861 pebble.tokenomics <> BurnBlack ind
+R6863:6866 pebble.tokenomics <> size:54 var
+R6868:6870 pebble.tokenomics <> cap:55 var
+R6872:6873 pebble.tokenomics <> s1:52 var
+R6875:6876 pebble.tokenomics <> s2:53 var
+R6883:6902 pebble.tokenomics <> TokenomicNonNegative def
+R6904:6905 pebble.tokenomics <> s2:53 var
+R6989:7008 pebble.tokenomics <> TokenomicNonNegative def
+R7085:7110 pebble.security <> blackfree_preserves_nonneg thm
+R7085:7110 pebble.security <> blackfree_preserves_nonneg thm
+def 7199:7213 <> SystemInvariant
+R7220:7233 pebble.tokenomics <> TokenomicState rec
+binder 7216:7216 <> s:56
+R7245:7245 Coq.Numbers.BinNums <> Z ind
+binder 7237:7241 <> total:57
+R7289:7294 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R7260:7280 pebble.tokenomics <> TokenomicConservation def
+R7282:7282 pebble.tokenomics <> s:56 var
+R7284:7288 pebble.tokenomics <> total:57 var
+R7295:7314 pebble.tokenomics <> TokenomicNonNegative def
+R7316:7316 pebble.tokenomics <> s:56 var
+prf 7612:7639 <> white_tokens_are_lightweight
+binder 7652:7653 <> s1:58
+binder 7655:7656 <> s2:59
+binder 7658:7661 <> size:60
+binder 7663:7667 <> total:61
+R7702:7707 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7672:7692 pebble.tokenomics <> TokenomicConservation def
+R7694:7695 pebble.tokenomics <> s1:58 var
+R7697:7701 pebble.tokenomics <> total:61 var
+R7729:7734 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7708:7717 pebble.tokenomics <> IssueWhite ind
+R7719:7722 pebble.tokenomics <> size:60 var
+R7724:7725 pebble.tokenomics <> s1:58 var
+R7727:7728 pebble.tokenomics <> s2:59 var
+R7735:7755 pebble.tokenomics <> TokenomicConservation def
+R7757:7758 pebble.tokenomics <> s2:59 var
+R7760:7764 pebble.tokenomics <> total:61 var
+R7850:7870 pebble.tokenomics <> TokenomicConservation def
+prf 7963:7984 <> white_verify_conserves
+binder 7997:7998 <> s1:62
+binder 8000:8001 <> s2:63
+binder 8003:8006 <> size:64
+binder 8008:8012 <> total:65
+R8047:8052 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8017:8037 pebble.tokenomics <> TokenomicConservation def
+R8039:8040 pebble.tokenomics <> s1:62 var
+R8042:8046 pebble.tokenomics <> total:65 var
+R8075:8080 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8053:8063 pebble.tokenomics <> VerifyWhite ind
+R8065:8068 pebble.tokenomics <> size:64 var
+R8070:8071 pebble.tokenomics <> s1:62 var
+R8073:8074 pebble.tokenomics <> s2:63 var
+R8081:8101 pebble.tokenomics <> TokenomicConservation def
+R8103:8104 pebble.tokenomics <> s2:63 var
+R8106:8110 pebble.tokenomics <> total:65 var
+R8198:8218 pebble.tokenomics <> TokenomicConservation def
+R8235:8256 pebble.conservation <> white_verify_conserves thm
+R8235:8256 pebble.conservation <> white_verify_conserves thm
+prf 8324:8343 <> black_mint_conserves
+binder 8356:8357 <> s1:66
+binder 8359:8360 <> s2:67
+binder 8362:8365 <> size:68
+binder 8367:8369 <> cap:69
+binder 8371:8375 <> total:70
+R8410:8415 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8380:8400 pebble.tokenomics <> TokenomicConservation def
+R8402:8403 pebble.tokenomics <> s1:66 var
+R8405:8409 pebble.tokenomics <> total:70 var
+R8440:8445 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8416:8424 pebble.tokenomics <> MintBlack ind
+R8426:8429 pebble.tokenomics <> size:68 var
+R8431:8433 pebble.tokenomics <> cap:69 var
+R8435:8436 pebble.tokenomics <> s1:66 var
+R8438:8439 pebble.tokenomics <> s2:67 var
+R8446:8466 pebble.tokenomics <> TokenomicConservation def
+R8468:8469 pebble.tokenomics <> s2:67 var
+R8471:8475 pebble.tokenomics <> total:70 var
+R8563:8583 pebble.tokenomics <> TokenomicConservation def
+R8607:8627 pebble.conservation <> black_alloc_conserves thm
+R8607:8627 pebble.conservation <> black_alloc_conserves thm
+prf 8695:8714 <> black_burn_conserves
+binder 8727:8728 <> s1:71
+binder 8730:8731 <> s2:72
+binder 8733:8736 <> size:73
+binder 8738:8740 <> cap:74
+binder 8742:8746 <> total:75
+R8781:8786 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8751:8771 pebble.tokenomics <> TokenomicConservation def
+R8773:8774 pebble.tokenomics <> s1:71 var
+R8776:8780 pebble.tokenomics <> total:75 var
+R8811:8816 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8787:8795 pebble.tokenomics <> BurnBlack ind
+R8797:8800 pebble.tokenomics <> size:73 var
+R8802:8804 pebble.tokenomics <> cap:74 var
+R8806:8807 pebble.tokenomics <> s1:71 var
+R8809:8810 pebble.tokenomics <> s2:72 var
+R8817:8837 pebble.tokenomics <> TokenomicConservation def
+R8839:8840 pebble.tokenomics <> s2:72 var
+R8842:8846 pebble.tokenomics <> total:75 var
+R8934:8954 pebble.tokenomics <> TokenomicConservation def
+R8978:8997 pebble.conservation <> black_free_conserves thm
+R8978:8997 pebble.conservation <> black_free_conserves thm
+prf 9341:9367 <> full_lifecycle_conservation
+binder 9380:9381 <> s0:76
+binder 9383:9384 <> s1:77
+binder 9386:9387 <> s2:78
+binder 9389:9390 <> s3:79
+binder 9392:9393 <> s4:80
+binder 9395:9398 <> size:81
+binder 9400:9402 <> cap:82
+binder 9404:9408 <> total:83
+R9483:9536 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9453:9473 pebble.tokenomics <> TokenomicConservation def
+R9475:9476 pebble.tokenomics <> s0:76 var
+R9478:9482 pebble.tokenomics <> total:83 var
+R9558:9610 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9537:9546 pebble.tokenomics <> IssueWhite ind
+R9548:9551 pebble.tokenomics <> size:81 var
+R9553:9554 pebble.tokenomics <> s0:76 var
+R9556:9557 pebble.tokenomics <> s1:77 var
+R9633:9698 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9611:9621 pebble.tokenomics <> VerifyWhite ind
+R9623:9626 pebble.tokenomics <> size:81 var
+R9628:9629 pebble.tokenomics <> s1:77 var
+R9631:9632 pebble.tokenomics <> s2:78 var
+R9723:9777 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9699:9707 pebble.tokenomics <> MintBlack ind
+R9709:9712 pebble.tokenomics <> size:81 var
+R9714:9716 pebble.tokenomics <> cap:82 var
+R9718:9719 pebble.tokenomics <> s2:78 var
+R9721:9722 pebble.tokenomics <> s3:79 var
+R9802:9845 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R9778:9786 pebble.tokenomics <> BurnBlack ind
+R9788:9791 pebble.tokenomics <> size:81 var
+R9793:9795 pebble.tokenomics <> cap:82 var
+R9797:9798 pebble.tokenomics <> s3:79 var
+R9800:9801 pebble.tokenomics <> s4:80 var
+R9846:9866 pebble.tokenomics <> TokenomicConservation def
+R9868:9869 pebble.tokenomics <> s4:80 var
+R9871:9875 pebble.tokenomics <> total:83 var
+R10002:10022 pebble.tokenomics <> TokenomicConservation def
+R10002:10022 pebble.tokenomics <> TokenomicConservation def
+R10052:10079 pebble.tokenomics <> white_tokens_are_lightweight thm
+R10052:10079 pebble.tokenomics <> white_tokens_are_lightweight thm
+R10113:10133 pebble.tokenomics <> TokenomicConservation def
+R10113:10133 pebble.tokenomics <> TokenomicConservation def
+R10163:10184 pebble.tokenomics <> white_verify_conserves thm
+R10163:10184 pebble.tokenomics <> white_verify_conserves thm
+R10218:10238 pebble.tokenomics <> TokenomicConservation def
+R10218:10238 pebble.tokenomics <> TokenomicConservation def
+R10268:10287 pebble.tokenomics <> black_mint_conserves thm
+R10268:10287 pebble.tokenomics <> black_mint_conserves thm
+R10323:10342 pebble.tokenomics <> black_burn_conserves thm
+R10323:10342 pebble.tokenomics <> black_burn_conserves thm
+prf 10425:10449 <> budget_accounting_correct
+binder 10462:10462 <> s:84
+binder 10464:10468 <> total:85
+R10502:10507 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10473:10493 pebble.tokenomics <> TokenomicConservation def
+R10495:10495 pebble.tokenomics <> s:84 var
+R10497:10501 pebble.tokenomics <> total:85 var
+R10593:10595 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R10574:10576 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R10551:10556 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R10530:10532 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R10520:10528 pebble.types <> colorless proj
+R10511:10516 pebble.tokenomics <> pebble proj
+R10508:10508 pebble.tokenomics <> s:84 var
+R10545:10549 pebble.types <> black proj
+R10536:10541 pebble.tokenomics <> pebble proj
+R10533:10533 pebble.tokenomics <> s:84 var
+R10569:10572 pebble.types <> blue proj
+R10560:10565 pebble.tokenomics <> pebble proj
+R10557:10557 pebble.tokenomics <> s:84 var
+R10589:10591 pebble.types <> red proj
+R10580:10585 pebble.tokenomics <> pebble proj
+R10577:10577 pebble.tokenomics <> s:84 var
+R10596:10600 pebble.tokenomics <> total:85 var
+R10643:10663 pebble.tokenomics <> TokenomicConservation def
+R10684:10699 pebble.conservation <> Inv_Conservation def
+prf 10787:10821 <> full_lifecycle_preserves_invariants
+binder 10834:10835 <> s0:86
+binder 10837:10838 <> s1:87
+binder 10840:10841 <> s2:88
+binder 10843:10844 <> s3:89
+binder 10846:10847 <> s4:90
+binder 10849:10852 <> size:91
+binder 10854:10856 <> cap:92
+binder 10858:10862 <> total:93
+R10891:10896 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10867:10881 pebble.tokenomics <> SystemInvariant def
+R10883:10884 pebble.tokenomics <> s0:86 var
+R10886:10890 pebble.tokenomics <> total:93 var
+R10918:10923 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10897:10906 pebble.tokenomics <> IssueWhite ind
+R10908:10911 pebble.tokenomics <> size:91 var
+R10913:10914 pebble.tokenomics <> s0:86 var
+R10916:10917 pebble.tokenomics <> s1:87 var
+R10946:10951 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10924:10934 pebble.tokenomics <> VerifyWhite ind
+R10936:10939 pebble.tokenomics <> size:91 var
+R10941:10942 pebble.tokenomics <> s1:87 var
+R10944:10945 pebble.tokenomics <> s2:88 var
+R10976:10981 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10952:10960 pebble.tokenomics <> MintBlack ind
+R10962:10965 pebble.tokenomics <> size:91 var
+R10967:10969 pebble.tokenomics <> cap:92 var
+R10971:10972 pebble.tokenomics <> s2:88 var
+R10974:10975 pebble.tokenomics <> s3:89 var
+R11006:11011 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R10982:10990 pebble.tokenomics <> BurnBlack ind
+R10992:10995 pebble.tokenomics <> size:91 var
+R10997:10999 pebble.tokenomics <> cap:92 var
+R11001:11002 pebble.tokenomics <> s3:89 var
+R11004:11005 pebble.tokenomics <> s4:90 var
+R11012:11026 pebble.tokenomics <> SystemInvariant def
+R11028:11029 pebble.tokenomics <> s4:90 var
+R11031:11035 pebble.tokenomics <> total:93 var
+R11122:11136 pebble.tokenomics <> SystemInvariant def
+R11181:11201 pebble.tokenomics <> TokenomicConservation def
+R11181:11201 pebble.tokenomics <> TokenomicConservation def
+R11233:11260 pebble.tokenomics <> white_tokens_are_lightweight thm
+R11233:11260 pebble.tokenomics <> white_tokens_are_lightweight thm
+R11296:11316 pebble.tokenomics <> TokenomicConservation def
+R11296:11316 pebble.tokenomics <> TokenomicConservation def
+R11348:11369 pebble.tokenomics <> white_verify_conserves thm
+R11348:11369 pebble.tokenomics <> white_verify_conserves thm
+R11405:11425 pebble.tokenomics <> TokenomicConservation def
+R11405:11425 pebble.tokenomics <> TokenomicConservation def
+R11457:11476 pebble.tokenomics <> black_mint_conserves thm
+R11457:11476 pebble.tokenomics <> black_mint_conserves thm
+R11514:11533 pebble.tokenomics <> black_burn_conserves thm
+R11514:11533 pebble.tokenomics <> black_burn_conserves thm
+R11594:11613 pebble.tokenomics <> TokenomicNonNegative def
+R11594:11613 pebble.tokenomics <> TokenomicNonNegative def
+R11639:11666 pebble.tokenomics <> issue_white_preserves_nonneg thm
+R11639:11666 pebble.tokenomics <> issue_white_preserves_nonneg thm
+R11702:11721 pebble.tokenomics <> TokenomicNonNegative def
+R11702:11721 pebble.tokenomics <> TokenomicNonNegative def
+R11747:11775 pebble.tokenomics <> verify_white_preserves_nonneg thm
+R11747:11775 pebble.tokenomics <> verify_white_preserves_nonneg thm
+R11811:11830 pebble.tokenomics <> TokenomicNonNegative def
+R11811:11830 pebble.tokenomics <> TokenomicNonNegative def
+R11856:11882 pebble.tokenomics <> mint_black_preserves_nonneg thm
+R11856:11882 pebble.tokenomics <> mint_black_preserves_nonneg thm
+R11920:11946 pebble.tokenomics <> burn_black_preserves_nonneg thm
+R11920:11946 pebble.tokenomics <> burn_black_preserves_nonneg thm
+def 12514:12523 <> LIME_Alloc
+R12533:12533 Coq.Numbers.BinNums <> Z ind
+binder 12526:12529 <> size:94
+R12543:12547 pebble.types <> CapId def
+binder 12537:12539 <> cap:95
+R12559:12572 pebble.tokenomics <> TokenomicState rec
+binder 12551:12552 <> s0:96
+binder 12554:12555 <> s4:97
+R12587:12593 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R12602:12607 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 12594:12595 <> s1:98
+binder 12597:12598 <> s2:99
+binder 12600:12601 <> s3:100
+R12629:12636 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R12608:12617 pebble.tokenomics <> IssueWhite ind
+R12619:12622 pebble.tokenomics <> size:94 var
+R12624:12625 pebble.tokenomics <> s0:96 var
+R12627:12628 pebble.tokenomics <> s1:98 var
+R12659:12666 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R12637:12647 pebble.tokenomics <> VerifyWhite ind
+R12649:12652 pebble.tokenomics <> size:94 var
+R12654:12655 pebble.tokenomics <> s1:98 var
+R12657:12658 pebble.tokenomics <> s2:99 var
+R12691:12767 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R12667:12675 pebble.tokenomics <> MintBlack ind
+R12677:12680 pebble.tokenomics <> size:94 var
+R12682:12684 pebble.tokenomics <> cap:95 var
+R12686:12687 pebble.tokenomics <> s2:99 var
+R12689:12690 pebble.tokenomics <> s3:100 var
+R12770:12772 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R12768:12769 pebble.tokenomics <> s4:97 var
+R12773:12774 pebble.tokenomics <> s3:100 var
+def 12862:12875 <> VANILLA_AddRef
+R12885:12885 Coq.Numbers.BinNums <> Z ind
+binder 12878:12881 <> size:101
+R12897:12910 pebble.tokenomics <> TokenomicState rec
+binder 12889:12890 <> s0:102
+binder 12892:12893 <> s1:103
+R12925:12934 pebble.tokenomics <> IssueWhite ind
+R12936:12939 pebble.tokenomics <> size:101 var
+R12941:12942 pebble.tokenomics <> s0:102 var
+R12944:12945 pebble.tokenomics <> s1:103 var
+def 13001:13012 <> BURN_Release
+R13022:13022 Coq.Numbers.BinNums <> Z ind
+binder 13015:13018 <> size:104
+R13032:13036 pebble.types <> CapId def
+binder 13026:13028 <> cap:105
+R13048:13061 pebble.tokenomics <> TokenomicState rec
+binder 13040:13041 <> s0:106
+binder 13043:13044 <> s1:107
+R13076:13084 pebble.tokenomics <> BurnBlack ind
+R13086:13089 pebble.tokenomics <> size:104 var
+R13091:13093 pebble.tokenomics <> cap:105 var
+R13095:13096 pebble.tokenomics <> s0:106 var
+R13098:13099 pebble.tokenomics <> s1:107 var
+prf 13148:13173 <> cil_object_lifecycle_sound
+binder 13186:13187 <> s0:108
+binder 13189:13195 <> s_alloc:109
+binder 13197:13203 <> s_final:110
+binder 13205:13208 <> size:111
+binder 13210:13212 <> cap:112
+binder 13214:13218 <> total:113
+R13253:13284 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R13223:13243 pebble.tokenomics <> TokenomicConservation def
+R13245:13246 pebble.tokenomics <> s0:108 var
+R13248:13252 pebble.tokenomics <> total:113 var
+R13315:13353 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R13285:13294 pebble.tokenomics <> LIME_Alloc def
+R13296:13299 pebble.tokenomics <> size:111 var
+R13301:13303 pebble.tokenomics <> cap:112 var
+R13305:13306 pebble.tokenomics <> s0:108 var
+R13308:13314 pebble.tokenomics <> s_alloc:109 var
+R13391:13423 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R13354:13365 pebble.tokenomics <> BURN_Release def
+R13367:13370 pebble.tokenomics <> size:111 var
+R13372:13374 pebble.tokenomics <> cap:112 var
+R13376:13382 pebble.tokenomics <> s_alloc:109 var
+R13384:13390 pebble.tokenomics <> s_final:110 var
+R13424:13444 pebble.tokenomics <> TokenomicConservation def
+R13446:13452 pebble.tokenomics <> s_final:110 var
+R13454:13458 pebble.tokenomics <> total:113 var
+R13536:13545 pebble.tokenomics <> LIME_Alloc def
+R13650:13661 pebble.tokenomics <> BURN_Release def
+R13735:13755 pebble.tokenomics <> TokenomicConservation def
+R13735:13755 pebble.tokenomics <> TokenomicConservation def
+R13785:13812 pebble.tokenomics <> white_tokens_are_lightweight thm
+R13785:13812 pebble.tokenomics <> white_tokens_are_lightweight thm
+R13846:13866 pebble.tokenomics <> TokenomicConservation def
+R13846:13866 pebble.tokenomics <> TokenomicConservation def
+R13896:13917 pebble.tokenomics <> white_verify_conserves thm
+R13896:13917 pebble.tokenomics <> white_verify_conserves thm
+R13951:13971 pebble.tokenomics <> TokenomicConservation def
+R13951:13971 pebble.tokenomics <> TokenomicConservation def
+R14001:14020 pebble.tokenomics <> black_mint_conserves thm
+R14001:14020 pebble.tokenomics <> black_mint_conserves thm
+R14056:14075 pebble.tokenomics <> black_burn_conserves thm
+R14056:14075 pebble.tokenomics <> black_burn_conserves thm
+prf 14427:14435 <> map_id_In
+binder 14447:14447 <> A:114
+R14462:14462 pebble.tokenomics <> A:114 var
+binder 14458:14458 <> x:115
+R14470:14473 Coq.Init.Datatypes <> list ind
+R14475:14475 pebble.tokenomics <> A:114 var
+binder 14466:14466 <> l:116
+R14506:14510 Coq.Init.Logic <> ::type_scope:x_'<->'_x not
+R14481:14482 Coq.Lists.List <> In def
+R14487:14489 Coq.Lists.List <> map def
+R14504:14504 pebble.tokenomics <> l:116 var
+binder 14496:14496 <> c:117
+R14501:14501 pebble.tokenomics <> c:117 var
+R14484:14484 pebble.tokenomics <> x:115 var
+R14511:14512 Coq.Lists.List <> In def
+R14516:14516 pebble.tokenomics <> l:116 var
+R14514:14514 pebble.tokenomics <> x:115 var
+R14544:14549 Coq.Lists.List <> map_id thm
+R14544:14549 Coq.Lists.List <> map_id thm
+R14544:14549 Coq.Lists.List <> map_id thm
+def 14636:14660 <> BorrowAcquirePrecondition
+R14667:14680 pebble.tokenomics <> TokenomicState rec
+binder 14663:14663 <> s:118
+R14691:14691 Coq.Numbers.BinNums <> Z ind
+binder 14684:14687 <> addr:119
+R14753:14754 Coq.Init.Logic <> ::type_scope:'~'_x not
+R14755:14756 Coq.Lists.List <> In def
+R14775:14783 pebble.types <> live_caps proj
+R14766:14771 pebble.tokenomics <> pebble proj
+R14763:14763 pebble.tokenomics <> s:118 var
+R14758:14761 pebble.tokenomics <> addr:119 var
+prf 14860:14888 <> mint_black_requires_ownership
+binder 14901:14902 <> s1:120
+binder 14904:14905 <> s2:121
+binder 14907:14910 <> size:122
+binder 14912:14914 <> cap:123
+R14943:14948 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R14919:14927 pebble.tokenomics <> MintBlack ind
+R14929:14932 pebble.tokenomics <> size:122 var
+R14934:14936 pebble.tokenomics <> cap:123 var
+R14938:14939 pebble.tokenomics <> s1:120 var
+R14941:14942 pebble.tokenomics <> s2:121 var
+R14949:14973 pebble.tokenomics <> BorrowAcquirePrecondition def
+R14975:14976 pebble.tokenomics <> s1:120 var
+R14978:14980 pebble.tokenomics <> cap:123 var
+R15069:15093 pebble.tokenomics <> BorrowAcquirePrecondition def
+def 15456:15471 <> CapabilityUnique
+R15478:15491 pebble.tokenomics <> TokenomicState rec
+binder 15474:15474 <> s:124
+R15501:15505 pebble.types <> CapId def
+binder 15495:15497 <> cap:125
+R15549:15554 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R15520:15521 Coq.Lists.List <> In def
+R15539:15547 pebble.types <> live_caps proj
+R15530:15535 pebble.tokenomics <> pebble proj
+R15527:15527 pebble.tokenomics <> s:124 var
+R15523:15525 pebble.tokenomics <> cap:125 var
+R15555:15556 Coq.Init.Logic <> ::type_scope:'~'_x not
+R15557:15558 Coq.Lists.List <> In def
+R15576:15585 pebble.types <> freed_caps proj
+R15567:15572 pebble.tokenomics <> pebble proj
+R15564:15564 pebble.tokenomics <> s:124 var
+R15560:15562 pebble.tokenomics <> cap:125 var
+prf 15641:15670 <> mint_creates_unique_capability
+binder 15683:15684 <> s1:126
+binder 15686:15687 <> s2:127
+binder 15689:15692 <> size:128
+binder 15694:15696 <> cap:129
+R15725:15730 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R15701:15709 pebble.tokenomics <> MintBlack ind
+R15711:15714 pebble.tokenomics <> size:128 var
+R15716:15718 pebble.tokenomics <> cap:129 var
+R15720:15721 pebble.tokenomics <> s1:126 var
+R15723:15724 pebble.tokenomics <> s2:127 var
+R15731:15746 pebble.tokenomics <> CapabilityUnique def
+R15748:15749 pebble.tokenomics <> s2:127 var
+R15751:15753 pebble.tokenomics <> cap:129 var
+R16060:16075 pebble.tokenomics <> CapabilityUnique def
+prf 16236:16262 <> burn_invalidates_capability
+binder 16275:16276 <> s1:130
+binder 16278:16279 <> s2:131
+binder 16281:16284 <> size:132
+binder 16286:16288 <> cap:133
+R16317:16322 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R16293:16301 pebble.tokenomics <> BurnBlack ind
+R16303:16306 pebble.tokenomics <> size:132 var
+R16308:16310 pebble.tokenomics <> cap:133 var
+R16312:16313 pebble.tokenomics <> s1:130 var
+R16315:16316 pebble.tokenomics <> s2:131 var
+R16353:16358 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R16323:16324 Coq.Lists.List <> In def
+R16343:16351 pebble.types <> live_caps proj
+R16334:16339 pebble.tokenomics <> pebble proj
+R16330:16331 pebble.tokenomics <> s1:130 var
+R16326:16328 pebble.tokenomics <> cap:133 var
+R16359:16360 Coq.Lists.List <> In def
+R16379:16388 pebble.types <> freed_caps proj
+R16370:16375 pebble.tokenomics <> pebble proj
+R16366:16367 pebble.tokenomics <> s2:131 var
+R16362:16364 pebble.tokenomics <> cap:133 var
+prf 17258:17282 <> pebble_tokenomics_correct
+binder 17295:17296 <> s0:134
+binder 17298:17302 <> total:135
+R17337:17342 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17307:17327 pebble.tokenomics <> TokenomicConservation def
+R17329:17330 pebble.tokenomics <> s0:134 var
+R17332:17336 pebble.tokenomics <> total:135 var
+R17366:17423 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R17343:17362 pebble.tokenomics <> TokenomicNonNegative def
+R17364:17365 pebble.tokenomics <> s0:134 var
+R17424:17444 pebble.tokenomics <> TokenomicConservation def
+R17446:17447 pebble.tokenomics <> s0:134 var
+R17449:17453 pebble.tokenomics <> total:135 var

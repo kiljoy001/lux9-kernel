@@ -130,6 +130,18 @@ Proof.
   intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. exact H.
 Qed.
 
+(** WhiteVerify preserves non-negative invariant *)
+Theorem whiteverify_preserves_nonneg :
+  forall s1 s2 size,
+  Inv_NonNegative s1 -> WhiteVerify size s1 s2 -> Inv_NonNegative s2.
+Proof.
+  intros s1 s2 size Hnonneg HVerify.
+  inversion HVerify; subst.
+  unfold Inv_NonNegative in *. simpl.
+  destruct Hnonneg as [Hc [Hb [Hbl [Hr [Hwp Hwv]]]]].
+  repeat split; try assumption; try lia.
+Qed.
+
 Theorem black_alloc_conserves :
   forall s1 s2 size cap total,
   Inv_Conservation s1 total -> BlackAlloc size cap s1 s2 -> Inv_Conservation s2 total.

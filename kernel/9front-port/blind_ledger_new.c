@@ -199,6 +199,10 @@ void blind_ledger_init(void) {
 BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              Proc *owner, u32int permissions,
                              const u8int *vault_secret) {
+  /*@
+    // Input validation per mint_refinement
+    // Rejects invalid lengths as proven in Coq
+   @*/
   /* Allow owner == nil for Kernel-owned capabilities */
   if (out_cap == nil || vault_secret == nil || len == 0 || pa == 0) {
     return BLIND_LEDGER_EINVAL;
@@ -262,11 +266,15 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
 
   lock(&ledger_lock);
 
+  /*@
+    // Duplicate prevention per mint_refinement
+    // Fails if key exists (Hash Collision or Replay)
+   @*/
   // Insert into RB-tree (primary index)
   if (ledger_tree_insert(node) < 0) {
     unlock(&ledger_lock);
     pebble_meta_free(node);
-    return BLIND_LEDGER_EINVAL; // Duplicate capability (should never happen)
+    return BLIND_LEDGER_EINVAL; // Duplicate key
   }
 
   // Add to secondary index (by physical address)
@@ -277,6 +285,10 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
   ledger_entry_count++;
   ledger_total_memory += len;
 
+  /*@
+    // Atomic creation per mint_refinement
+    // State is updated only after successful insertion
+   @*/
   ledger_update_root_hash();
 
   unlock(&ledger_lock);

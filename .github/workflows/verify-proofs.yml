@@ -1,0 +1,199 @@
+name: Formal Verification
+
+on:
+  push:
+    branches: [ main, develop, secure-ramdisk ]
+    paths:
+      - 'proofs/**/*.v'
+      - 'kernel/**/*.c'
+      - 'kernel/**/*.h'
+      - '.github/workflows/verify-proofs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'proofs/**/*.v'
+      - 'kernel/**/*.c'
+      - 'kernel/**/*.h'
+
+jobs:
+  verify-coq-proofs:
+    name: Verify Coq Proofs
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Coq
+      uses: coq-community/docker-coq-action@v1
+      with:
+        coq_version: '8.19'
+
+    - name: Cache Coq compilation
+      uses: actions/cache@v3
+      with:
+        path: |
+          proofs/**/*.vo
+          proofs/**/*.glob
+        key: ${{ runner.os }}-coq-${{ hashFiles('proofs/**/*.v') }}
+        restore-keys: |
+          ${{ runner.os }}-coq-
+
+    - name: Verify all proofs
+      run: |
+        cd proofs
+        make verify
+
+    - name: Check proof statistics
+      run: |
+        cd proofs
+        make stats
+
+    - name: Check for incomplete proofs
+      run: |
+        ADMITTED=$(find proofs -name "*.v" -exec grep -l "Admitted\." {} \;)
+        if [ -n "$ADMITTED" ]; then
+          echo "⚠️ WARNING: Found incomplete proofs:"
+          echo "$ADMITTED"
+          echo "admitted_count=$(echo "$ADMITTED" | wc -l)" >> $GITHUB_OUTPUT
+        else
+          echo "✅ All proofs complete!"
+          echo "admitted_count=0" >> $GITHUB_OUTPUT
+        fi
+      id: check_admitted
+
+    - name: Generate proof report
+      run: |
+        echo "# Formal Verification Report" > proof_report.md
+        echo "" >> proof_report.md
+        echo "**Build:** ${{ github.run_number }}" >> proof_report.md
+        echo "**Commit:** ${{ github.sha }}" >> proof_report.md
+        echo "" >> proof_report.md
+        echo "## Proof Statistics" >> proof_report.md
+        echo '```' >> proof_report.md
+        cd proofs && make stats >> ../proof_report.md
+        echo '```' >> proof_report.md
+
+    - name: Upload proof report
+      uses: actions/upload-artifact@v3
+      with:
+        name: proof-report
+        path: proof_report.md
+
+    - name: Comment PR with proof status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('proof_report.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });
+
+  check-c-code:
+    name: Check C Code Changes
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 2
+
+    - name: Check for security-critical changes
+      run: |
+        # Check if devram.c was modified
+        if git diff HEAD~1 HEAD --name-only | grep -q 'devram\.c'; then
+          echo "⚠️ devram.c was modified"
+
+          # Check for crypto changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "xchacha20\|crypto_\|encrypt\|decrypt"; then
+            echo "🔐 Cryptographic code modified - proofs may need updates"
+            echo "crypto_modified=true" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for concurrency changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "qlock\|refcount\|locked"; then
+            echo "🔒 Concurrency code modified - proofs may need updates"
+            echo "concurrency_modified=true" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for state machine changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "initialized\|locked.*=\|state"; then
+            echo "🔄 State machine modified - proofs may need updates"
+            echo "state_modified=true" >> $GITHUB_OUTPUT
+          fi
+        fi
+      id: check_changes
+
+    - name: Verify proof updates
+      if: steps.check_changes.outputs.crypto_modified == 'true' || steps.check_changes.outputs.concurrency_modified == 'true'
+      run: |
+        # Check if proofs were also updated
+        if ! git diff HEAD~1 HEAD --name-only | grep -q 'proofs/ramdisk/'; then
+          echo "❌ ERROR: Critical C code changed but proofs not updated!"
+          echo ""
+          echo "The following critical components were modified:"
+          echo "- Cryptography: ${{ steps.check_changes.outputs.crypto_modified }}"
+          echo "- Concurrency: ${{ steps.check_changes.outputs.concurrency_modified }}"
+          echo "- State machine: ${{ steps.check_changes.outputs.state_modified }}"
+          echo ""
+          echo "Please update proofs in proofs/ramdisk/ to match C changes."
+          exit 1
+        else
+          echo "✅ Proofs were updated alongside C code changes"
+        fi
+
+  runtime-invariant-check:
+    name: Check Runtime Invariants
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check for invariant violations
+      run: |
+        echo "Checking for potential runtime invariant violations..."
+
+        # Check for operations without locking
+        UNLOCKED=$(grep -n "secure_rd\." kernel/9front-port/devram.c | grep -v "qlock\|qunlock" || true)
+        if [ -n "$UNLOCKED" ]; then
+          echo "⚠️ Potential unlocked access to secure_rd:"
+          echo "$UNLOCKED"
+        fi
+
+        # Check for state modifications without validation
+        STATE_MODS=$(grep -n "secure_rd\.locked.*=" kernel/9front-port/devram.c | grep -v "check_lock_invariant" || true)
+        if [ -n "$STATE_MODS" ]; then
+          echo "⚠️ State modifications without invariant checks:"
+          echo "$STATE_MODS"
+        fi
+
+  build-status:
+    name: Verification Summary
+    runs-on: ubuntu-latest
+    needs: [verify-coq-proofs, check-c-code, runtime-invariant-check]
+    if: always()
+
+    steps:
+    - name: Generate summary
+      run: |
+        echo "## Lux9 Kernel Verification Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Coq Proofs:** ${{ needs.verify-coq-proofs.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **C Code Check:** ${{ needs.check-c-code.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Runtime Invariants:** ${{ needs.runtime-invariant-check.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ needs.verify-coq-proofs.result }}" == "success" ] && \
+           [ "${{ needs.check-c-code.result }}" == "success" ] && \
+           [ "${{ needs.runtime-invariant-check.result }}" == "success" ]; then
+          echo "✅ **All verification checks passed!**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Some verification checks failed**" >> $GITHUB_STEP_SUMMARY
+        fi

@@ -8,6 +8,20 @@
 #include "blind_ledger.h"
 #include "pebble.h"
 
+/*@
+  predicate Inv_Conservation(struct PebbleState *ps, int total) =
+    ps->black_budget + ps->black_inuse + ps->blue_inuse + ps->red_inuse ==
+total;
+
+  predicate Inv_NonNegative(struct PebbleState *ps) =
+    ps->black_budget >= 0 &&
+    ps->black_inuse >= 0 &&
+    ps->blue_inuse >= 0 &&
+    ps->red_inuse >= 0 &&
+    ps->white_pending >= 0 &&
+    ps->white_verified >= 0;
+@*/
+
 Lock pebble_global_lock;
 int pebble_enabled = 1;
 int pebble_debug = PEBBLE_DEBUG;
@@ -82,12 +96,31 @@ PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
   return pb;
 }
 
+/*@
+  requires size > 0;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   int i, idx;
   ulong pegged_size;
+  int diff;
 
   if (ps == nil)
     return nil;
+
+  /* BEVIS: Kinetic Defense - Proof-of-Work Gating */
+  if (up != nil) {
+    diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
+    if (!pow_verify(up->pow_nonce, (u64int)up->pid, diff)) {
+      if (pebble_debug)
+        print("PEBBLE: PoW failure for alloc size %lud (diff %d)\n", size,
+              diff);
+      return nil; /* E_POW_REQUIRED */
+    }
+  }
 
   /* Peg size to 8-byte quantum (unit of account) */
   if (size < PEBBLE_MIN_ALLOC)
@@ -155,14 +188,66 @@ ulong pebble_get_budget(void) {
   return budget;
 }
 
-/* Stub vault secret for Pebble Black allocations */
-static const u8int pebble_vault_key[32] = {
-    0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-    0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11,
-    0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b};
+/*
+ * Dynamic vault secret for Pebble Black allocations.
+ * Generated at boot from TPM, RDRAND, or ChaCha20 CSPRNG.
+ * This key is used to derive capability hashes - MUST be cryptographically
+ * random.
+ */
+static u8int pebble_vault_key[32];
+static int pebble_vault_key_initialized = 0;
 
-const u8int *pebble_get_vault_secret(void) { return pebble_vault_key; }
+static void pebble_init_vault_key(void) {
+  extern int tpm_get_random(u8int * buf, int n);
+  extern u64int rdrand_u64(void);
+  extern int crypto_hw_rdrand_available(void);
+  extern u64int chacha20_csprng_u64(void);
 
+  if (pebble_vault_key_initialized)
+    return;
+
+  /* Try TPM first (strongest source) */
+  if (tpm_get_random(pebble_vault_key, 32) == 32) {
+    print("PEBBLE: Vault secret from TPM\\n");
+    pebble_vault_key_initialized = 1;
+    return;
+  }
+
+  /* Fallback to RDRAND (hardware RNG) */
+  if (crypto_hw_rdrand_available()) {
+    u64int *key64 = (u64int *)pebble_vault_key;
+    key64[0] = rdrand_u64();
+    key64[1] = rdrand_u64();
+    key64[2] = rdrand_u64();
+    key64[3] = rdrand_u64();
+    print("PEBBLE: Vault secret from RDRAND\\n");
+    pebble_vault_key_initialized = 1;
+    return;
+  }
+
+  /* Last resort: ChaCha20 CSPRNG (software) */
+  u64int *key64 = (u64int *)pebble_vault_key;
+  key64[0] = chacha20_csprng_u64();
+  key64[1] = chacha20_csprng_u64();
+  key64[2] = chacha20_csprng_u64();
+  key64[3] = chacha20_csprng_u64();
+  print("PEBBLE: Vault secret from ChaCha20 CSPRNG (software fallback)\\n");
+  pebble_vault_key_initialized = 1;
+}
+
+const u8int *pebble_get_vault_secret(void) {
+  if (!pebble_vault_key_initialized)
+    pebble_init_vault_key();
+  return pebble_vault_key;
+}
+
+/*@
+  requires size > 0;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   void *buf;
   PebbleBlack *pb;
@@ -294,6 +379,13 @@ int pebble_black_free_internal(uintptr pa, ulong len, Proc *owner) {
   return 0;
 }
 
+/*@
+  requires cap != \null;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 int pebble_black_free(const UserCapability *cap) {
   PebbleState *ps;
   PebbleBlack *pb, **pp;
@@ -360,6 +452,13 @@ int pebble_black_free(const UserCapability *cap) {
   return 0;
 }
 
+/*@
+  requires white_cap != \null;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap) {
   PebbleState *ps;
   int i;
@@ -438,6 +537,13 @@ static void pebble_free_red(PebbleRed *red) {
  * State transition: COLORLESS → BLUE
  * Consumes budget from colorless bank for separate allocation.
  */
+/*@
+  requires size > 0;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 PebbleBlue *pebble_blue_alloc(ulong size) {
   PebbleState *ps;
   PebbleBlue *blue;
@@ -504,6 +610,12 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
  * State transition: BLUE → COLORLESS
  * Returns budget to colorless bank.
  */
+/*@
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 int pebble_blue_free(PebbleBlue *blue) {
   PebbleState *ps;
   PebbleBlue **bp;
@@ -552,6 +664,13 @@ int pebble_blue_free(PebbleBlue *blue) {
  * State transition: COLORLESS → RED
  * Consumes budget from colorless bank for separate allocation.
  */
+/*@
+  requires size > 0;
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 PebbleRed *pebble_red_alloc(ulong size) {
   PebbleState *ps;
   PebbleRed *red;
@@ -618,6 +737,12 @@ PebbleRed *pebble_red_alloc(ulong size) {
  * State transition: RED → COLORLESS
  * Returns budget to colorless bank.
  */
+/*@
+  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  requires Inv_NonNegative(pebble_state());
+  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  ensures Inv_NonNegative(pebble_state());
+@*/
 int pebble_red_free(PebbleRed *red) {
   PebbleState *ps;
   PebbleRed **rp;

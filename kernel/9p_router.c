@@ -686,6 +686,10 @@ int p9_handle_doorbell(Proc *p) {
   /* Check doorbell is actually rung using Acquire semantics.
    * This ensures we see all userspace writes to the request buffer that
    * happened before the doorbell was rung. */
+  /*@
+    // Acquire Precondition: (s1 page).(doorbell) = true
+    // Corresponds to 'Acquire' in proofs/sip/sip_model.v
+   @*/
   uint doorbell_val = atomic_load(&ctl->doorbell, ORDER_ACQUIRE);
   print("p9_handle_doorbell: pid=%lud doorbell_val=%u p9page=%p phys=%#llux\n",
         p->pid, doorbell_val, p->p9page, PADDR(p->p9page));
@@ -715,6 +719,10 @@ int p9_handle_doorbell(Proc *p) {
   atomic_store(&ctl->doorbell, 0, ORDER_RELAXED);
 
   /* Mark as pending */
+  /*@
+    // Acquire Transition: s2 = update_page s1 page (mkPageState ... P9_Pending ...)
+    // Corresponds to 'Acquire_Success' in proofs/sip/sip_model.v
+   @*/
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
 
   /* Parse request from exchange page */
@@ -764,6 +772,10 @@ int p9_handle_doorbell(Proc *p) {
   /* Mark as complete using Release semantics.
    * This ensures userspace sees the data in rep_buf before they see the
    * STATUS_COMPLETE flag. */
+  /*@
+    // Release Transition: s2 = update_page s1 page (mkPageState ... P9_Complete ...)
+    // Corresponds to 'Release' in proofs/sip/sip_model.v
+   @*/
   atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
 
   return result;

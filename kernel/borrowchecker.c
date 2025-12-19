@@ -290,6 +290,10 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
 /* Acquire ownership of a resource */
 /* Acquire ownership of a resource */
+/*@
+  // Transition: Free -> Exclusive
+  // Corresponds to 'Acquire' in proofs/borrow/borrow_core.v (Implicit in ownership model)
+@*/
 enum BorrowError borrow_acquire(Proc *p, uintptr key) {
   struct BorrowOwner *owner;
   u64int nonce;
@@ -359,6 +363,10 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
  * @returns BORROW_EBORROWED if there are active shared or mutable borrows that
  * prevent release.
  */
+/*@
+  // Transition: Exclusive -> Free
+  // Corresponds to release logic in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_release(Proc *p, uintptr key) {
   struct BorrowOwner *owner, *prev;
   ulong hash;
@@ -417,6 +425,10 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
 }
 
 /* Transfer ownership from one process to another (Low-level) */
+/*@
+  // Transition: Exclusive -> Exclusive (Transfer)
+  // Corresponds to 'Transfer' in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
   struct BorrowOwner *owner;
 
@@ -547,6 +559,10 @@ enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
  * resource.
  * @returns BORROW_ENOMEM if allocation of the shared-borrow record fails.
  */
+/*@
+  // Transition: Exclusive -> SharedOwned OR SharedOwned -> SharedOwned
+  // Corresponds to 'BorrowShared' in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
                                       uintptr key) {
   struct BorrowOwner *own;
@@ -620,6 +636,10 @@ enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
 }
 
 /* Borrow resource as mutable */
+/*@
+  // Transition: Exclusive -> MutLent
+  // Corresponds to 'BorrowMut' in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 
@@ -676,6 +696,10 @@ enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
  *          BORROW_ENOTFOUND if no owner exists for `key`;
  *          BORROW_ENOTBORROWED if the borrower does not hold a shared borrow.
  */
+/*@
+  // Transition: SharedOwned -> SharedOwned OR SharedOwned -> Exclusive
+  // Corresponds to 'ReturnShared' in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
   struct SharedBorrower *sb, *prev;
@@ -732,6 +756,10 @@ enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
 }
 
 /* Return a mutable borrow */
+/*@
+  // Transition: MutLent -> Exclusive
+  // Corresponds to 'ReturnMut' in proofs/borrow/borrow_core.v
+@*/
 enum BorrowError borrow_return_mut(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 

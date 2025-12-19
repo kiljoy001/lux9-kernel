@@ -171,14 +171,13 @@ Qed.
 
 
 
-
-
-
-
-(* Standard arithmetic fact: div2 n < n for non-zero n.
-   This is proven in Coq.Arith.Div2 but that module is not accessible in this setup.
-   Accepting as axiom since it's a well-known arithmetic property. *)
-Axiom local_div2_lt : forall n, (n <> 0 -> Nat.div2 n < n)%nat.
+(* Use stdlib's Nat.lt_div2 : 0 < n -> div2 n < n *)
+Lemma local_div2_lt : forall n, (n <> 0 -> Nat.div2 n < n)%nat.
+Proof.
+  intros n Hn.
+  apply Nat.lt_div2.
+  lia.
+Qed.
 
 Lemma build_level_size_bound : forall l n,
   (2 <= length l)%nat ->
@@ -194,10 +193,20 @@ Proof.
     + clear Hge. simpl. simpl.
       (* Need: S (div2 (S (length ys))) <= n *)
       (* Have: S (S (length ys)) <= S n *)
-      (* By local_div2_lt: div2 (S (length ys)) < S (length ys) *)
-      (* These together imply the goal, but lia cannot see through div2 *)
-      admit.
-Admitted.
+      simpl in Hle.
+      (* Hle: S (S (length ys)) <= S n *)
+      (* Use Nat.le_div2: div2 (S m) <= m *)
+      pose proof (Nat.le_div2 (length ys)) as Hdiv.
+      (* Hdiv: div2 (S (length ys)) <= length ys *)
+      (* From Hle: S (length ys) <= n, so length ys < n *)
+      (* We need: S (div2 (S (length ys))) <= n *)
+      (* From Hdiv: div2 (S (length ys)) <= length ys *)
+      (* So S (div2 (S (length ys))) <= S (length ys) <= n by Hle *)
+      apply Nat.le_trans with (m := S (length ys)).
+      * apply le_n_S. exact Hdiv.
+      * apply Nat.succ_le_mono in Hle. exact Hle.
+Qed.
+
 Lemma build_tree_injective : forall n l1 l2,
   length l1 = length l2 ->
   build_tree_recursive l1 n = build_tree_recursive l2 n ->
@@ -231,19 +240,51 @@ Proof.
                     ***** simpl in Hgas. exact Hgas.
 Qed.
 
-(**
- * Theorem: Injectivity of build_merkle_tree
- *)
+(* Helper: MHash_Cap is injective *)
+Lemma MHash_Cap_injective : forall c1 c2, MHash_Cap c1 = MHash_Cap c2 -> c1 = c2.
+Proof.
+  intros c1 c2 H.
+  injection H as H'. exact H'.
+Qed.
+
+(* Helper: map is injective if f is injective *)
+Lemma map_injective_aux : forall (A B : Type) (f : A -> B) (l1 l2 : list A),
+  (forall x y, f x = f y -> x = y) ->
+  map f l1 = map f l2 ->
+  l1 = l2.
+Proof.
+  intros A B f l1.
+  induction l1 as [|h1 t1 IH].
+  - intros l2 Hf Hmap.
+    destruct l2; [reflexivity | discriminate Hmap].
+  - intros l2 Hf Hmap.
+    destruct l2 as [|h2 t2]; [discriminate Hmap|].
+    simpl in Hmap. injection Hmap as Hhead Htail.
+    f_equal.
+    + apply Hf. exact Hhead.
+    + apply IH; assumption.
+Qed.
+
 Theorem build_merkle_tree_injective : forall c1 c2,
   length c1 = length c2 ->
   build_merkle_tree c1 = build_merkle_tree c2 ->
   c1 = c2.
 Proof.
-  (* This follows from build_tree_injective and the fact that
-     map MHash_Cap is injective (which follows from MHash_Cap being injective).
-     Standard map injectivity lemmas from List library would complete this. *)
-  admit.
-Admitted.
+  intros c1 c2 Hlen Htree.
+  unfold build_merkle_tree in Htree.
+  (* First show that map MHash_Cap c1 = map MHash_Cap c2 uses build_tree_injective *)
+  assert (Hmaplen: length (map MHash_Cap c1) = length (map MHash_Cap c2)).
+  { do 2 rewrite length_map. exact Hlen. }
+  (* Rewrite to make types match *)
+  rewrite Hlen in Htree.
+  assert (Hmapeq: map MHash_Cap c1 = map MHash_Cap c2).
+  { apply build_tree_injective with (n := length c2).
+    - exact Hmaplen.
+    - exact Htree.
+    - rewrite length_map. lia. }
+  (* Now derive c1 = c2 from map MHash_Cap c1 = map MHash_Cap c2 *)
+  apply map_injective_aux with (f := MHash_Cap); [exact MHash_Cap_injective | exact Hmapeq].
+Qed.
 
 (**
  * Main Integrity Property (Contrapositive of Injectivity)

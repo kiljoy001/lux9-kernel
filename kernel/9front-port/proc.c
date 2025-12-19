@@ -500,6 +500,9 @@ static int queueproc(Schedq *rq, Proc *p) {
  *  ready(p) picks a new priority for a process and sticks it in the
  *  runq for that priority.
  */
+/*@
+  // Safe transition to Ready per proofs/proc/proc_state_dag.v
+ @*/
 void ready(Proc *p) {
   int s, pri;
 
@@ -648,6 +651,9 @@ static void rebalance(void) {
 /*
  *  pick a process to run
  */
+/*@
+  // Selects process in Valid state per proofs/proc/proc_state_dag.v
+ @*/
 Proc *runproc(void) {
   Schedq *rq;
   Proc *p;

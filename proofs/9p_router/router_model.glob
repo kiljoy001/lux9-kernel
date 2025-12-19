@@ -1,0 +1,474 @@
+DIGEST 067a1c37dbd1e63d77980698856d5b56
+Frouter_model
+R157:170 Coq.Lists.List <> <> lib
+R188:204 Coq.ZArith.ZArith <> <> lib
+R222:234 Coq.Bool.Bool <> <> lib
+R252:254 Coq.micromega.Lia <> <> lib
+R264:276 Coq.Lists.List ListNotations <> mod
+def 552:560 <> ProcessId
+R565:565 Coq.Numbers.BinNums <> Z ind
+def 579:583 <> FidId
+R588:588 Coq.Numbers.BinNums <> Z ind
+def 602:610 <> Timestamp
+R615:615 Coq.Numbers.BinNums <> Z ind
+ind 923:930 <> P9Status
+constr 939:945 <> P9_Idle
+constr 981:990 <> P9_Pending
+constr 1026:1036 <> P9_Complete
+constr 1072:1079 <> P9_Error
+scheme 923:930 <> P9Status_rect
+scheme 923:930 <> P9Status_ind
+scheme 923:930 <> P9Status_rec
+scheme 923:930 <> P9Status_sind
+rec 1164:1172 <> P9Control
+proj 1193:1202 <> ctl_status
+proj 1218:1228 <> ctl_req_seq
+proj 1237:1247 <> ctl_rep_seq
+proj 1256:1267 <> ctl_doorbell
+R1206:1213 router_model <> P9Status ind
+R1232:1232 Coq.Numbers.BinNums <> Z ind
+R1251:1251 Coq.Numbers.BinNums <> Z ind
+R1271:1274 Coq.Init.Datatypes <> bool ind
+def 1321:1335 <> p9_control_init
+R1339:1347 router_model <> P9Control rec
+R1357:1366 router_model <> ctl_status proj
+R1357:1366 router_model <> ctl_status proj
+R1357:1366 router_model <> ctl_status proj
+R1382:1392 router_model <> ctl_req_seq proj
+R1382:1392 router_model <> ctl_req_seq proj
+R1402:1412 router_model <> ctl_rep_seq proj
+R1402:1412 router_model <> ctl_rep_seq proj
+R1422:1433 router_model <> ctl_doorbell proj
+R1422:1433 router_model <> ctl_doorbell proj
+R1371:1377 router_model <> P9_Idle constr
+R1438:1442 Coq.Init.Datatypes <> false constr
+ind 1490:1496 <> P9Event
+constr 1505:1518 <> EvDoorbellRing
+constr 1553:1569 <> EvDispatchSuccess
+constr 1613:1627 <> EvDispatchError
+constr 1656:1662 <> EvReset
+scheme 1490:1496 <> P9Event_rect
+scheme 1490:1496 <> P9Event_ind
+scheme 1490:1496 <> P9Event_rec
+scheme 1490:1496 <> P9Event_sind
+def 1739:1751 <> p9_transition
+R1760:1768 router_model <> P9Control rec
+binder 1754:1756 <> ctl:10
+R1777:1783 router_model <> P9Event ind
+binder 1772:1773 <> ev:11
+R1788:1796 router_model <> P9Control rec
+R1809:1810 router_model <> ev:11 var
+R1821:1834 router_model <> EvDoorbellRing constr
+R1856:1865 router_model <> ctl_status proj
+R1851:1853 router_model <> ctl:10 var
+R1881:1887 router_model <> P9_Idle constr
+R1895:1904 router_model <> ctl_status proj
+R1895:1904 router_model <> ctl_status proj
+R1895:1904 router_model <> ctl_status proj
+R1943:1953 router_model <> ctl_req_seq proj
+R1943:1953 router_model <> ctl_req_seq proj
+R2003:2013 router_model <> ctl_rep_seq proj
+R2003:2013 router_model <> ctl_rep_seq proj
+R2059:2070 router_model <> ctl_doorbell proj
+R2059:2070 router_model <> ctl_doorbell proj
+R1909:1918 router_model <> P9_Pending constr
+R1975:1977 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R1963:1973 router_model <> ctl_req_seq proj
+R1958:1960 router_model <> ctl:10 var
+R2023:2033 router_model <> ctl_rep_seq proj
+R2018:2020 router_model <> ctl:10 var
+R2075:2079 Coq.Init.Datatypes <> false constr
+R2097:2099 router_model <> ctl:10 var
+R2140:2156 router_model <> EvDispatchSuccess constr
+R2178:2187 router_model <> ctl_status proj
+R2173:2175 router_model <> ctl:10 var
+R2203:2212 router_model <> P9_Pending constr
+R2220:2229 router_model <> ctl_status proj
+R2220:2229 router_model <> ctl_status proj
+R2220:2229 router_model <> ctl_status proj
+R2272:2282 router_model <> ctl_req_seq proj
+R2272:2282 router_model <> ctl_req_seq proj
+R2331:2341 router_model <> ctl_rep_seq proj
+R2331:2341 router_model <> ctl_rep_seq proj
+R2394:2405 router_model <> ctl_doorbell proj
+R2394:2405 router_model <> ctl_doorbell proj
+R2234:2244 router_model <> P9_Complete constr
+R2292:2302 router_model <> ctl_req_seq proj
+R2287:2289 router_model <> ctl:10 var
+R2363:2365 Coq.ZArith.BinInt <> ::Z_scope:x_'+'_x not
+R2351:2361 router_model <> ctl_rep_seq proj
+R2346:2348 router_model <> ctl:10 var
+R2415:2426 router_model <> ctl_doorbell proj
+R2410:2412 router_model <> ctl:10 var
+R2445:2447 router_model <> ctl:10 var
+R2463:2477 router_model <> EvDispatchError constr
+R2499:2508 router_model <> ctl_status proj
+R2494:2496 router_model <> ctl:10 var
+R2524:2533 router_model <> P9_Pending constr
+R2541:2550 router_model <> ctl_status proj
+R2541:2550 router_model <> ctl_status proj
+R2541:2550 router_model <> ctl_status proj
+R2590:2600 router_model <> ctl_req_seq proj
+R2590:2600 router_model <> ctl_req_seq proj
+R2649:2659 router_model <> ctl_rep_seq proj
+R2649:2659 router_model <> ctl_rep_seq proj
+R2708:2719 router_model <> ctl_doorbell proj
+R2708:2719 router_model <> ctl_doorbell proj
+R2555:2562 router_model <> P9_Error constr
+R2610:2620 router_model <> ctl_req_seq proj
+R2605:2607 router_model <> ctl:10 var
+R2669:2679 router_model <> ctl_rep_seq proj
+R2664:2666 router_model <> ctl:10 var
+R2729:2740 router_model <> ctl_doorbell proj
+R2724:2726 router_model <> ctl:10 var
+R2759:2761 router_model <> ctl:10 var
+R2777:2783 router_model <> EvReset constr
+R2797:2806 router_model <> ctl_status proj
+R2797:2806 router_model <> ctl_status proj
+R2797:2806 router_model <> ctl_status proj
+R2829:2839 router_model <> ctl_req_seq proj
+R2829:2839 router_model <> ctl_req_seq proj
+R2872:2882 router_model <> ctl_rep_seq proj
+R2872:2882 router_model <> ctl_rep_seq proj
+R2915:2926 router_model <> ctl_doorbell proj
+R2915:2926 router_model <> ctl_doorbell proj
+R2811:2817 router_model <> P9_Idle constr
+R2849:2859 router_model <> ctl_req_seq proj
+R2844:2846 router_model <> ctl:10 var
+R2892:2902 router_model <> ctl_rep_seq proj
+R2887:2889 router_model <> ctl:10 var
+R2931:2935 Coq.Init.Datatypes <> false constr
+ind 3240:3246 <> FidType
+constr 3255:3263 <> TYPE_PROC
+constr 3285:3292 <> TYPE_DEV
+constr 3314:3321 <> TYPE_ENV
+constr 3343:3350 <> TYPE_SRV
+constr 3372:3379 <> TYPE_MNT
+constr 3401:3407 <> TYPE_FD
+scheme 3240:3246 <> FidType_rect
+scheme 3240:3246 <> FidType_ind
+scheme 3240:3246 <> FidType_rec
+scheme 3240:3246 <> FidType_sind
+rec 3462:3469 <> FidEntry
+proj 3489:3494 <> fid_id
+proj 3507:3514 <> fid_type
+proj 3529:3539 <> fid_subtype
+proj 3605:3613 <> fid_owner
+R3498:3502 router_model <> FidId def
+R3518:3524 router_model <> FidType ind
+R3543:3543 Coq.Numbers.BinNums <> Z ind
+R3617:3625 router_model <> ProcessId def
+def 3676:3683 <> FidTable
+R3688:3691 Coq.Init.Datatypes <> list ind
+R3693:3700 router_model <> FidEntry rec
+def 3748:3758 <> fid_install
+R3769:3776 router_model <> FidTable def
+binder 3761:3765 <> table:20
+R3788:3795 router_model <> FidEntry rec
+binder 3780:3784 <> entry:21
+R3800:3807 router_model <> FidTable def
+R3819:3822 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3814:3818 router_model <> entry:21 var
+R3823:3827 router_model <> table:20 var
+def 3863:3872 <> fid_lookup
+R3883:3890 router_model <> FidTable def
+binder 3875:3879 <> table:22
+R3900:3904 router_model <> FidId def
+binder 3894:3896 <> fid:23
+R3909:3914 Coq.Init.Datatypes <> option ind
+R3916:3923 router_model <> FidEntry rec
+R3936:3940 router_model <> table:22 var
+R3951:3952 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3957:3960 Coq.Init.Datatypes <> None constr
+R3967:3970 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3988:3992 Coq.ZArith.BinInt Z eqb def
+R3997:4002 router_model <> fid_id proj
+R4005:4007 router_model <> fid:23 var
+R4032:4041 router_model <> fid_lookup:24 def
+R4048:4050 router_model <> fid:23 var
+R4014:4017 Coq.Init.Datatypes <> Some constr
+def 4121:4132 <> fid_get_type
+R4143:4150 router_model <> FidTable def
+binder 4135:4139 <> table:26
+R4160:4164 router_model <> FidId def
+binder 4154:4156 <> fid:27
+R4169:4174 Coq.Init.Datatypes <> option ind
+R4176:4182 router_model <> FidType ind
+R4195:4204 router_model <> fid_lookup def
+R4206:4210 router_model <> table:26 var
+R4212:4214 router_model <> fid:27 var
+R4225:4228 Coq.Init.Datatypes <> Some constr
+R4235:4238 Coq.Init.Datatypes <> Some constr
+R4243:4250 router_model <> fid_type proj
+R4257:4260 Coq.Init.Datatypes <> None constr
+R4265:4268 Coq.Init.Datatypes <> None constr
+def 4315:4324 <> fid_remove
+R4335:4342 router_model <> FidTable def
+binder 4327:4331 <> table:28
+R4352:4356 router_model <> FidId def
+binder 4346:4348 <> fid:29
+R4361:4368 router_model <> FidTable def
+R4381:4385 router_model <> table:28 var
+R4396:4397 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4402:4403 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R4410:4413 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4431:4435 Coq.ZArith.BinInt Z eqb def
+R4440:4445 router_model <> fid_id proj
+R4448:4450 router_model <> fid:29 var
+R4474:4477 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4478:4487 router_model <> fid_remove:30 def
+R4494:4496 router_model <> fid:29 var
+def 4549:4560 <> fid_owned_by
+R4571:4578 router_model <> FidTable def
+binder 4563:4567 <> table:32
+R4588:4592 router_model <> FidId def
+binder 4582:4584 <> fid:33
+R4602:4610 router_model <> ProcessId def
+binder 4596:4598 <> pid:34
+R4615:4618 Coq.Init.Datatypes <> bool ind
+R4631:4640 router_model <> fid_lookup def
+R4642:4646 router_model <> table:32 var
+R4648:4650 router_model <> fid:33 var
+R4661:4664 Coq.Init.Datatypes <> Some constr
+R4671:4675 Coq.ZArith.BinInt Z eqb def
+R4680:4688 router_model <> fid_owner proj
+R4691:4693 router_model <> pid:34 var
+R4699:4702 Coq.Init.Datatypes <> None constr
+R4707:4711 Coq.Init.Datatypes <> false constr
+def 5013:5028 <> PEBBLE_PERM_READ
+R5033:5033 Coq.Numbers.BinNums <> Z ind
+def 5064:5080 <> PEBBLE_PERM_WRITE
+R5084:5084 Coq.Numbers.BinNums <> Z ind
+def 5115:5130 <> PEBBLE_PERM_EXEC
+R5135:5135 Coq.Numbers.BinNums <> Z ind
+def 5166:5183 <> PEBBLE_PERM_DELETE
+R5187:5187 Coq.Numbers.BinNums <> Z ind
+def 5217:5233 <> PEBBLE_PERM_ADMIN
+R5237:5237 Coq.Numbers.BinNums <> Z ind
+rec 5294:5304 <> PebbleToken
+proj 5327:5342 <> pebble_ledger_id
+proj 5351:5364 <> pebble_expires
+proj 5402:5419 <> pebble_permissions
+R5346:5346 Coq.Numbers.BinNums <> Z ind
+R5368:5368 Coq.Numbers.BinNums <> Z ind
+R5423:5423 Coq.Numbers.BinNums <> Z ind
+def 5518:5538 <> pebble_has_permission
+R5547:5557 router_model <> PebbleToken rec
+binder 5541:5543 <> tok:39
+R5568:5568 Coq.Numbers.BinNums <> Z ind
+binder 5561:5564 <> perm:40
+R5573:5576 Coq.Init.Datatypes <> bool ind
+R5583:5587 Coq.ZArith.BinInt Z eqb def
+R5590:5595 Coq.ZArith.BinInt Z land def
+R5602:5619 router_model <> pebble_permissions proj
+R5597:5599 router_model <> tok:39 var
+R5622:5625 router_model <> perm:40 var
+R5628:5631 router_model <> perm:40 var
+def 5699:5713 <> pebble_validate
+R5722:5732 router_model <> PebbleToken rec
+binder 5716:5718 <> tok:41
+R5751:5759 router_model <> Timestamp def
+binder 5736:5747 <> current_time:42
+R5774:5774 Coq.Numbers.BinNums <> Z ind
+binder 5763:5770 <> required:43
+R5779:5782 Coq.Init.Datatypes <> bool ind
+R5833:5835 Coq.Init.Datatypes <> orb def
+R5894:5898 Coq.ZArith.BinInt Z ltb def
+R5900:5911 router_model <> current_time:42 var
+R5918:5931 router_model <> pebble_expires proj
+R5913:5915 router_model <> tok:41 var
+R5838:5842 Coq.ZArith.BinInt Z eqb def
+R5849:5862 router_model <> pebble_expires proj
+R5844:5846 router_model <> tok:41 var
+binder 5818:5828 <> not_expired:44
+R5983:6003 router_model <> pebble_has_permission def
+R6005:6007 router_model <> tok:41 var
+R6009:6016 router_model <> required:43 var
+binder 5970:5978 <> has_perms:45
+R6023:6026 Coq.Init.Datatypes <> andb def
+R6040:6048 router_model <> has_perms:45 var
+R6028:6038 router_model <> not_expired:44 var
+ind 6340:6349 <> PathPrefix
+constr 6358:6365 <> PathProc
+constr 6387:6393 <> PathDev
+constr 6415:6421 <> PathEnv
+constr 6443:6449 <> PathSrv
+constr 6471:6477 <> PathMnt
+constr 6499:6504 <> PathFd
+constr 6526:6536 <> PathUnknown
+scheme 6340:6349 <> PathPrefix_rect
+scheme 6340:6349 <> PathPrefix_ind
+scheme 6340:6349 <> PathPrefix_rec
+scheme 6340:6349 <> PathPrefix_sind
+def 6585:6596 <> path_to_type
+R6608:6617 router_model <> PathPrefix ind
+binder 6599:6604 <> prefix:48
+R6622:6627 Coq.Init.Datatypes <> option ind
+R6629:6635 router_model <> FidType ind
+R6648:6653 router_model <> prefix:48 var
+R6664:6671 router_model <> PathProc constr
+R6676:6679 Coq.Init.Datatypes <> Some constr
+R6681:6689 router_model <> TYPE_PROC constr
+R6695:6701 router_model <> PathDev constr
+R6706:6709 Coq.Init.Datatypes <> Some constr
+R6711:6718 router_model <> TYPE_DEV constr
+R6724:6730 router_model <> PathEnv constr
+R6735:6738 Coq.Init.Datatypes <> Some constr
+R6740:6747 router_model <> TYPE_ENV constr
+R6753:6759 router_model <> PathSrv constr
+R6764:6767 Coq.Init.Datatypes <> Some constr
+R6769:6776 router_model <> TYPE_SRV constr
+R6782:6788 router_model <> PathMnt constr
+R6793:6796 Coq.Init.Datatypes <> Some constr
+R6798:6805 router_model <> TYPE_MNT constr
+R6811:6816 router_model <> PathFd constr
+R6821:6824 Coq.Init.Datatypes <> Some constr
+R6826:6832 router_model <> TYPE_FD constr
+R6838:6848 router_model <> PathUnknown constr
+R6853:6856 Coq.Init.Datatypes <> None constr
+ind 7117:7123 <> MsgType
+constr 7132:7139 <> Tversion
+constr 7143:7150 <> Rversion
+constr 7156:7160 <> Tauth
+constr 7164:7168 <> Rauth
+constr 7174:7180 <> Tattach
+constr 7184:7190 <> Rattach
+constr 7196:7200 <> Twalk
+constr 7204:7208 <> Rwalk
+constr 7214:7218 <> Topen
+constr 7222:7226 <> Ropen
+constr 7232:7238 <> Tcreate
+constr 7242:7248 <> Rcreate
+constr 7254:7258 <> Tread
+constr 7262:7266 <> Rread
+constr 7272:7277 <> Twrite
+constr 7281:7286 <> Rwrite
+constr 7292:7297 <> Tclunk
+constr 7301:7306 <> Rclunk
+constr 7312:7317 <> Rerror
+constr 7323:7327 <> Texec
+constr 7331:7335 <> Rexec
+scheme 7117:7123 <> MsgType_rect
+scheme 7117:7123 <> MsgType_ind
+scheme 7117:7123 <> MsgType_rec
+scheme 7117:7123 <> MsgType_sind
+rec 7391:7395 <> Fcall
+proj 7412:7421 <> fcall_type
+proj 7436:7444 <> fcall_fid
+proj 7457:7466 <> fcall_path
+R7425:7431 router_model <> MsgType ind
+R7448:7452 router_model <> FidId def
+R7470:7479 router_model <> PathPrefix ind
+def 7540:7549 <> reply_type
+R7556:7562 router_model <> MsgType ind
+binder 7552:7552 <> t:56
+R7567:7573 router_model <> MsgType ind
+R7586:7586 router_model <> t:56 var
+R7597:7604 router_model <> Tversion constr
+R7609:7616 router_model <> Rversion constr
+R7622:7626 router_model <> Tauth constr
+R7631:7635 router_model <> Rauth constr
+R7641:7647 router_model <> Tattach constr
+R7652:7658 router_model <> Rattach constr
+R7664:7668 router_model <> Twalk constr
+R7673:7677 router_model <> Rwalk constr
+R7683:7687 router_model <> Topen constr
+R7692:7696 router_model <> Ropen constr
+R7702:7708 router_model <> Tcreate constr
+R7713:7719 router_model <> Rcreate constr
+R7725:7729 router_model <> Tread constr
+R7734:7738 router_model <> Rread constr
+R7744:7749 router_model <> Twrite constr
+R7754:7759 router_model <> Rwrite constr
+R7765:7770 router_model <> Tclunk constr
+R7775:7780 router_model <> Rclunk constr
+R7786:7790 router_model <> Texec constr
+R7795:7799 router_model <> Rexec constr
+R7810:7815 router_model <> Rerror constr
+ind 8098:8111 <> DispatchResult
+constr 8120:8129 <> DispatchOk
+constr 8170:8180 <> DispatchErr
+R8140:8147 router_model <> FidTable def
+binder 8132:8136 <> table:60
+R8159:8163 router_model <> Fcall rec
+binder 8151:8155 <> reply:61
+R8189:8191 Coq.Init.Datatypes <> nat ind
+binder 8183:8185 <> msg:62
+scheme 8098:8111 <> DispatchResult_rect
+scheme 8098:8111 <> DispatchResult_ind
+scheme 8098:8111 <> DispatchResult_rec
+scheme 8098:8111 <> DispatchResult_sind
+def 8280:8287 <> dispatch
+R8298:8305 router_model <> FidTable def
+binder 8290:8294 <> table:63
+R8315:8323 router_model <> ProcessId def
+binder 8309:8311 <> pid:64
+R8331:8335 router_model <> Fcall rec
+binder 8327:8327 <> t:65
+R8340:8353 router_model <> DispatchResult ind
+R8369:8378 router_model <> fcall_type proj
+R8366:8366 router_model <> t:65 var
+R8390:8396 router_model <> Tattach constr
+R8413:8424 router_model <> path_to_type def
+R8429:8438 router_model <> fcall_path proj
+R8426:8426 router_model <> t:65 var
+R8454:8457 Coq.Init.Datatypes <> Some constr
+R8491:8500 router_model <> mkFidEntry constr
+R8505:8513 router_model <> fcall_fid proj
+R8502:8502 router_model <> t:65 var
+R8524:8526 router_model <> pid:64 var
+binder 8482:8486 <> entry:66
+R8558:8568 router_model <> fid_install def
+R8570:8574 router_model <> table:63 var
+R8576:8580 router_model <> entry:66 var
+binder 8545:8553 <> new_table:67
+R8608:8614 router_model <> mkFcall constr
+R8616:8622 router_model <> Rattach constr
+R8627:8635 router_model <> fcall_fid proj
+R8624:8624 router_model <> t:65 var
+R8641:8650 router_model <> fcall_path proj
+R8638:8638 router_model <> t:65 var
+binder 8599:8603 <> reply:68
+R8666:8675 router_model <> DispatchOk constr
+R8677:8685 router_model <> new_table:67 var
+R8687:8691 router_model <> reply:68 var
+R8701:8704 Coq.Init.Datatypes <> None constr
+R8719:8729 router_model <> DispatchErr constr
+R8766:8771 router_model <> Tclunk constr
+R8830:8841 router_model <> fid_owned_by def
+R8843:8847 router_model <> table:63 var
+R8852:8860 router_model <> fcall_fid proj
+R8849:8849 router_model <> t:65 var
+R8863:8865 router_model <> pid:64 var
+R9050:9060 router_model <> DispatchErr constr
+R8897:8906 router_model <> fid_remove def
+R8908:8912 router_model <> table:63 var
+R8917:8925 router_model <> fcall_fid proj
+R8914:8914 router_model <> t:65 var
+binder 8884:8892 <> new_table:69
+R8952:8958 router_model <> mkFcall constr
+R8960:8965 router_model <> Rclunk constr
+R8970:8978 router_model <> fcall_fid proj
+R8967:8967 router_model <> t:65 var
+R8981:8991 router_model <> PathUnknown constr
+binder 8943:8947 <> reply:70
+R9004:9013 router_model <> DispatchOk constr
+R9015:9023 router_model <> new_table:69 var
+R9025:9029 router_model <> reply:70 var
+R9165:9176 router_model <> fid_owned_by def
+R9178:9182 router_model <> table:63 var
+R9187:9195 router_model <> fcall_fid proj
+R9184:9184 router_model <> t:65 var
+R9198:9200 router_model <> pid:64 var
+R9343:9353 router_model <> DispatchErr constr
+R9228:9234 router_model <> mkFcall constr
+R9237:9246 router_model <> reply_type def
+R9251:9260 router_model <> fcall_type proj
+R9248:9248 router_model <> t:65 var
+R9267:9275 router_model <> fcall_fid proj
+R9264:9264 router_model <> t:65 var
+R9278:9288 router_model <> PathUnknown constr
+binder 9219:9223 <> reply:71
+R9301:9310 router_model <> DispatchOk constr
+R9312:9316 router_model <> table:63 var
+R9318:9322 router_model <> reply:71 var

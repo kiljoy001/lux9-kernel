@@ -1,4 +1,4 @@
-DIGEST b52b772c7d7f5559bd8180188d9f90e6
+DIGEST 38953724387ecf04a909a5cbdf10e29c
 FBlindLedger.ledger_merkle
 R210:223 Coq.Lists.List <> <> lib
 R241:257 Coq.ZArith.ZArith <> <> lib
@@ -232,112 +232,218 @@ R4775:4778 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
 R4782:4782 Coq.Init.Datatypes <> S constr
 R4775:4778 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
 R4782:4782 Coq.Init.Datatypes <> S constr
-ax 5144:5156 <> local_div2_lt
-binder 5167:5167 <> n:35
-R5177:5180 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5172:5175 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
-R5171:5171 BlindLedger.ledger_merkle <> n:35 var
-R5191:5193 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
-R5181:5188 Coq.Arith.PeanoNat Nat div2 def
-R5190:5190 BlindLedger.ledger_merkle <> n:35 var
-R5194:5194 BlindLedger.ledger_merkle <> n:35 var
-prf 5209:5230 <> build_level_size_bound
-binder 5241:5241 <> l:38
-binder 5243:5243 <> n:39
-R5267:5272 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5250:5253 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
-R5254:5259 Coq.Init.Datatypes <> length def
-R5261:5261 BlindLedger.ledger_merkle <> l:38 var
-R5294:5299 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5282:5285 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
-R5274:5279 Coq.Init.Datatypes <> length def
-R5281:5281 BlindLedger.ledger_merkle <> l:38 var
-R5286:5286 Coq.Init.Datatypes <> S constr
-R5288:5288 BlindLedger.ledger_merkle <> n:39 var
-R5323:5326 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
-R5301:5306 Coq.Init.Datatypes <> length def
-R5309:5319 BlindLedger.ledger_merkle <> build_level def
-R5321:5321 BlindLedger.ledger_merkle <> l:38 var
-R5327:5327 BlindLedger.ledger_merkle <> n:39 var
-R5406:5411 Coq.Init.Datatypes <> length def
-R5374:5395 BlindLedger.ledger_merkle <> length_build_level_aux thm
-R5406:5411 Coq.Init.Datatypes <> length def
-R5374:5395 BlindLedger.ledger_merkle <> length_build_level_aux thm
-R5406:5411 Coq.Init.Datatypes <> length def
-R5374:5395 BlindLedger.ledger_merkle <> length_build_level_aux thm
-R5406:5411 Coq.Init.Datatypes <> length def
-R5374:5395 BlindLedger.ledger_merkle <> length_build_level_aux thm
-prf 5820:5839 <> build_tree_injective
-binder 5850:5850 <> n:40
-binder 5852:5853 <> l1:41
-binder 5855:5856 <> l2:42
-R5882:5887 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5870:5872 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R5861:5866 Coq.Init.Datatypes <> length def
-R5868:5869 BlindLedger.ledger_merkle <> l1:41 var
-R5873:5878 Coq.Init.Datatypes <> length def
-R5880:5881 BlindLedger.ledger_merkle <> l2:42 var
-R5941:5946 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5913:5915 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R5888:5907 BlindLedger.ledger_merkle <> build_tree_recursive def
-R5909:5910 BlindLedger.ledger_merkle <> l1:41 var
-R5912:5912 BlindLedger.ledger_merkle <> n:40 var
-R5916:5935 BlindLedger.ledger_merkle <> build_tree_recursive def
-R5937:5938 BlindLedger.ledger_merkle <> l2:42 var
-R5940:5940 BlindLedger.ledger_merkle <> n:40 var
-R5967:5993 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R5949:5952 Coq.Init.Peano <> ::nat_scope:x_'>='_x not
-R5948:5948 BlindLedger.ledger_merkle <> n:40 var
-R5953:5958 Coq.Init.Datatypes <> length def
-R5960:5961 BlindLedger.ledger_merkle <> l1:41 var
-R5996:5998 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R5994:5995 BlindLedger.ledger_merkle <> l1:41 var
-R5999:6000 BlindLedger.ledger_merkle <> l2:42 var
-R6597:6598 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
-R6601:6602 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
-R6563:6583 BlindLedger.ledger_merkle <> build_level_injective thm
-R6597:6598 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
-R6601:6602 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
-R6563:6583 BlindLedger.ledger_merkle <> build_level_injective thm
-R6688:6708 BlindLedger.ledger_merkle <> build_level_length_eq thm
-R6688:6708 BlindLedger.ledger_merkle <> build_level_length_eq thm
-R6781:6802 BlindLedger.ledger_merkle <> build_level_size_bound prfax
-R6781:6802 BlindLedger.ledger_merkle <> build_level_size_bound prfax
-prf 6987:7013 <> build_merkle_tree_injective
-binder 7024:7025 <> c1:43
-binder 7027:7028 <> c2:44
-R7054:7059 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R7042:7044 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R7033:7038 Coq.Init.Datatypes <> length def
-R7040:7041 BlindLedger.ledger_merkle <> c1:43 var
-R7045:7050 Coq.Init.Datatypes <> length def
-R7052:7053 BlindLedger.ledger_merkle <> c2:44 var
-R7103:7108 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R7080:7082 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R7060:7076 BlindLedger.ledger_merkle <> build_merkle_tree def
-R7078:7079 BlindLedger.ledger_merkle <> c1:43 var
-R7083:7099 BlindLedger.ledger_merkle <> build_merkle_tree def
-R7101:7102 BlindLedger.ledger_merkle <> c2:44 var
-R7111:7113 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R7109:7110 BlindLedger.ledger_merkle <> c1:43 var
-R7114:7115 BlindLedger.ledger_merkle <> c2:44 var
-prf 7441:7456 <> root_sensitivity
-binder 7467:7471 <> caps1:45
-binder 7473:7477 <> caps2:46
-R7496:7501 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R7487:7490 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
-R7482:7486 BlindLedger.ledger_merkle <> caps1:45 var
-R7491:7495 BlindLedger.ledger_merkle <> caps2:46 var
-R7529:7534 Coq.Init.Logic <> ::type_scope:x_'->'_x not
-R7514:7516 Coq.Init.Logic <> ::type_scope:x_'='_x not
-R7502:7507 Coq.Init.Datatypes <> length def
-R7509:7513 BlindLedger.ledger_merkle <> caps1:45 var
-R7517:7522 Coq.Init.Datatypes <> length def
-R7524:7528 BlindLedger.ledger_merkle <> caps2:46 var
-R7558:7561 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
-R7535:7551 BlindLedger.ledger_merkle <> build_merkle_tree def
-R7553:7557 BlindLedger.ledger_merkle <> caps1:45 var
-R7562:7578 BlindLedger.ledger_merkle <> build_merkle_tree def
-R7580:7584 BlindLedger.ledger_merkle <> caps2:46 var
-R7650:7676 BlindLedger.ledger_merkle <> build_merkle_tree_injective prfax
-R7650:7676 BlindLedger.ledger_merkle <> build_merkle_tree_injective prfax
+prf 4982:4994 <> local_div2_lt
+binder 5005:5005 <> n:35
+R5015:5018 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5010:5013 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R5009:5009 BlindLedger.ledger_merkle <> n:35 var
+R5029:5031 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R5019:5026 Coq.Arith.PeanoNat Nat div2 def
+R5028:5028 BlindLedger.ledger_merkle <> n:35 var
+R5032:5032 BlindLedger.ledger_merkle <> n:35 var
+R5070:5080 Coq.Arith.PeanoNat Nat lt_div2 thm
+R5070:5080 Coq.Arith.PeanoNat Nat lt_div2 thm
+prf 5102:5123 <> build_level_size_bound
+binder 5134:5134 <> l:36
+binder 5136:5136 <> n:37
+R5160:5165 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5143:5146 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R5147:5152 Coq.Init.Datatypes <> length def
+R5154:5154 BlindLedger.ledger_merkle <> l:36 var
+R5187:5192 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R5175:5178 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R5167:5172 Coq.Init.Datatypes <> length def
+R5174:5174 BlindLedger.ledger_merkle <> l:36 var
+R5179:5179 Coq.Init.Datatypes <> S constr
+R5181:5181 BlindLedger.ledger_merkle <> n:37 var
+R5216:5219 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R5194:5199 Coq.Init.Datatypes <> length def
+R5202:5212 BlindLedger.ledger_merkle <> build_level def
+R5214:5214 BlindLedger.ledger_merkle <> l:36 var
+R5220:5220 BlindLedger.ledger_merkle <> n:37 var
+R5299:5304 Coq.Init.Datatypes <> length def
+R5267:5288 BlindLedger.ledger_merkle <> length_build_level_aux thm
+R5299:5304 Coq.Init.Datatypes <> length def
+R5267:5288 BlindLedger.ledger_merkle <> length_build_level_aux thm
+R5299:5304 Coq.Init.Datatypes <> length def
+R5267:5288 BlindLedger.ledger_merkle <> length_build_level_aux thm
+R5299:5304 Coq.Init.Datatypes <> length def
+R5267:5288 BlindLedger.ledger_merkle <> length_build_level_aux thm
+R5667:5677 Coq.Arith.PeanoNat Nat le_div2 thm
+R5680:5685 Coq.Init.Datatypes <> length def
+R5667:5677 Coq.Arith.PeanoNat Nat le_div2 thm
+R5680:5685 Coq.Init.Datatypes <> length def
+R6025:6025 Coq.Init.Datatypes <> S constr
+R6028:6033 Coq.Init.Datatypes <> length def
+R6001:6012 Coq.Arith.PeanoNat Nat le_trans thm
+R6025:6025 Coq.Init.Datatypes <> S constr
+R6028:6033 Coq.Init.Datatypes <> length def
+R6001:6012 Coq.Arith.PeanoNat Nat le_trans thm
+R6055:6060 Coq.Init.Peano <> le_n_S thm
+R6055:6060 Coq.Init.Peano <> le_n_S thm
+R6089:6104 Coq.Arith.PeanoNat Nat succ_le_mono thm
+R6089:6104 Coq.Arith.PeanoNat Nat succ_le_mono thm
+prf 6137:6156 <> build_tree_injective
+binder 6167:6167 <> n:38
+binder 6169:6170 <> l1:39
+binder 6172:6173 <> l2:40
+R6199:6204 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6187:6189 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6178:6183 Coq.Init.Datatypes <> length def
+R6185:6186 BlindLedger.ledger_merkle <> l1:39 var
+R6190:6195 Coq.Init.Datatypes <> length def
+R6197:6198 BlindLedger.ledger_merkle <> l2:40 var
+R6258:6263 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6230:6232 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6205:6224 BlindLedger.ledger_merkle <> build_tree_recursive def
+R6226:6227 BlindLedger.ledger_merkle <> l1:39 var
+R6229:6229 BlindLedger.ledger_merkle <> n:38 var
+R6233:6252 BlindLedger.ledger_merkle <> build_tree_recursive def
+R6254:6255 BlindLedger.ledger_merkle <> l2:40 var
+R6257:6257 BlindLedger.ledger_merkle <> n:38 var
+R6284:6310 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R6266:6269 Coq.Init.Peano <> ::nat_scope:x_'>='_x not
+R6265:6265 BlindLedger.ledger_merkle <> n:38 var
+R6270:6275 Coq.Init.Datatypes <> length def
+R6277:6278 BlindLedger.ledger_merkle <> l1:39 var
+R6313:6315 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R6311:6312 BlindLedger.ledger_merkle <> l1:39 var
+R6316:6317 BlindLedger.ledger_merkle <> l2:40 var
+R6914:6915 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6918:6919 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6880:6900 BlindLedger.ledger_merkle <> build_level_injective thm
+R6914:6915 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6918:6919 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6880:6900 BlindLedger.ledger_merkle <> build_level_injective thm
+R7005:7025 BlindLedger.ledger_merkle <> build_level_length_eq thm
+R7005:7025 BlindLedger.ledger_merkle <> build_level_length_eq thm
+R7098:7119 BlindLedger.ledger_merkle <> build_level_size_bound thm
+R7098:7119 BlindLedger.ledger_merkle <> build_level_size_bound thm
+prf 7286:7304 <> MHash_Cap_injective
+binder 7315:7316 <> c1:41
+binder 7318:7319 <> c2:42
+R7349:7352 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7334:7336 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7322:7330 BlindLedger.ledger_merkle <> MHash_Cap constr
+R7332:7333 BlindLedger.ledger_merkle <> c1:41 var
+R7337:7345 BlindLedger.ledger_merkle <> MHash_Cap constr
+R7347:7348 BlindLedger.ledger_merkle <> c2:42 var
+R7355:7357 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7353:7354 BlindLedger.ledger_merkle <> c1:41 var
+R7358:7359 BlindLedger.ledger_merkle <> c2:42 var
+prf 7479:7495 <> map_injective_aux
+binder 7507:7507 <> A:43
+binder 7509:7509 <> B:44
+R7525:7528 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7524:7524 BlindLedger.ledger_merkle <> A:43 var
+R7529:7529 BlindLedger.ledger_merkle <> B:44 var
+binder 7520:7520 <> f:45
+R7541:7544 Coq.Init.Datatypes <> list ind
+R7546:7546 BlindLedger.ledger_merkle <> A:43 var
+binder 7533:7534 <> l1:46
+binder 7536:7537 <> l2:47
+R7552:7552 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7583:7589 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+binder 7560:7560 <> x:48
+binder 7562:7562 <> y:49
+R7574:7577 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7568:7570 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7565:7565 BlindLedger.ledger_merkle <> f:45 var
+R7567:7567 BlindLedger.ledger_merkle <> x:48 var
+R7571:7571 BlindLedger.ledger_merkle <> f:45 var
+R7573:7573 BlindLedger.ledger_merkle <> y:49 var
+R7579:7581 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7578:7578 BlindLedger.ledger_merkle <> x:48 var
+R7582:7582 BlindLedger.ledger_merkle <> y:49 var
+R7609:7614 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R7598:7600 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7590:7592 Coq.Lists.List <> map def
+R7596:7597 BlindLedger.ledger_merkle <> l1:46 var
+R7594:7594 BlindLedger.ledger_merkle <> f:45 var
+R7601:7603 Coq.Lists.List <> map def
+R7607:7608 BlindLedger.ledger_merkle <> l2:47 var
+R7605:7605 BlindLedger.ledger_merkle <> f:45 var
+R7617:7619 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R7615:7616 BlindLedger.ledger_merkle <> l1:46 var
+R7620:7621 BlindLedger.ledger_merkle <> l2:47 var
+prf 7964:7990 <> build_merkle_tree_injective
+binder 8001:8002 <> c1:50
+binder 8004:8005 <> c2:51
+R8031:8036 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8019:8021 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8010:8015 Coq.Init.Datatypes <> length def
+R8017:8018 BlindLedger.ledger_merkle <> c1:50 var
+R8022:8027 Coq.Init.Datatypes <> length def
+R8029:8030 BlindLedger.ledger_merkle <> c2:51 var
+R8080:8085 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8057:8059 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8037:8053 BlindLedger.ledger_merkle <> build_merkle_tree def
+R8055:8056 BlindLedger.ledger_merkle <> c1:50 var
+R8060:8076 BlindLedger.ledger_merkle <> build_merkle_tree def
+R8078:8079 BlindLedger.ledger_merkle <> c2:51 var
+R8088:8090 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8086:8087 BlindLedger.ledger_merkle <> c1:50 var
+R8091:8092 BlindLedger.ledger_merkle <> c2:51 var
+R8138:8154 BlindLedger.ledger_merkle <> build_merkle_tree def
+R8296:8298 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8271:8276 Coq.Init.Datatypes <> length def
+R8279:8281 Coq.Lists.List <> map def
+R8283:8291 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8299:8304 Coq.Init.Datatypes <> length def
+R8307:8309 Coq.Lists.List <> map def
+R8311:8319 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8296:8298 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8271:8276 Coq.Init.Datatypes <> length def
+R8279:8281 Coq.Lists.List <> map def
+R8283:8291 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8299:8304 Coq.Init.Datatypes <> length def
+R8307:8309 Coq.Lists.List <> map def
+R8311:8319 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8344:8353 Coq.Lists.List <> length_map thm
+R8344:8353 Coq.Lists.List <> length_map thm
+R8344:8353 Coq.Lists.List <> length_map thm
+R8344:8353 Coq.Lists.List <> length_map thm
+R8344:8353 Coq.Lists.List <> length_map thm
+R8465:8467 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8449:8451 Coq.Lists.List <> map def
+R8453:8461 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8468:8470 Coq.Lists.List <> map def
+R8472:8480 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8465:8467 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8449:8451 Coq.Lists.List <> map def
+R8453:8461 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8468:8470 Coq.Lists.List <> map def
+R8472:8480 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8529:8534 Coq.Init.Datatypes <> length def
+R8497:8516 BlindLedger.ledger_merkle <> build_tree_injective thm
+R8529:8534 Coq.Init.Datatypes <> length def
+R8497:8516 BlindLedger.ledger_merkle <> build_tree_injective thm
+R8595:8604 Coq.Lists.List <> length_map thm
+R8595:8604 Coq.Lists.List <> length_map thm
+R8595:8604 Coq.Lists.List <> length_map thm
+R8719:8727 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8690:8706 BlindLedger.ledger_merkle <> map_injective_aux thm
+R8738:8756 BlindLedger.ledger_merkle <> MHash_Cap_injective thm
+R8719:8727 BlindLedger.ledger_merkle <> MHash_Cap constr
+R8690:8706 BlindLedger.ledger_merkle <> map_injective_aux thm
+R8738:8756 BlindLedger.ledger_merkle <> MHash_Cap_injective thm
+prf 8856:8871 <> root_sensitivity
+binder 8882:8886 <> caps1:52
+binder 8888:8892 <> caps2:53
+R8911:8916 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8902:8905 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8897:8901 BlindLedger.ledger_merkle <> caps1:52 var
+R8906:8910 BlindLedger.ledger_merkle <> caps2:53 var
+R8944:8949 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R8929:8931 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R8917:8922 Coq.Init.Datatypes <> length def
+R8924:8928 BlindLedger.ledger_merkle <> caps1:52 var
+R8932:8937 Coq.Init.Datatypes <> length def
+R8939:8943 BlindLedger.ledger_merkle <> caps2:53 var
+R8973:8976 Coq.Init.Logic <> ::type_scope:x_'<>'_x not
+R8950:8966 BlindLedger.ledger_merkle <> build_merkle_tree def
+R8968:8972 BlindLedger.ledger_merkle <> caps1:52 var
+R8977:8993 BlindLedger.ledger_merkle <> build_merkle_tree def
+R8995:8999 BlindLedger.ledger_merkle <> caps2:53 var
+R9065:9091 BlindLedger.ledger_merkle <> build_merkle_tree_injective thm
+R9065:9091 BlindLedger.ledger_merkle <> build_merkle_tree_injective thm

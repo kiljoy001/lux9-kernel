@@ -82,6 +82,9 @@ ghostdag_get_timestamp(void)
 /*
  * Add message to GHOSTDAG and determine consensus ordering
  */
+/*@
+  // Maintains DAG invariants per proofs/msgord/msgord_consensus_proofs.v
+ @*/
 kern_return_t 
 ghostdag_add_message(struct ipc_kmsg *kmsg, ghostdag_msg_meta_t *meta_out)
 {
@@ -286,6 +289,9 @@ ghostdag_update_reachability_cache(uint32_t new_msg_id)
  * Compute anticone set for message
  * Anticone = messages not reachable from this message and vice versa
  */
+/*@
+  // Computes anticone correctly per proofs/msgord/msgord_consensus_proofs.v
+ @*/
 kern_return_t 
 ghostdag_compute_anticone(uint32_t msg_id, uint32_t *anticone_out, uint32_t *anticone_size)
 {

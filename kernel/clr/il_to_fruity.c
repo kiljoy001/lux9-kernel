@@ -1599,6 +1599,8 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
 
     case 0x0F: /* localloc */
       instr = create_fruity_instruction(FRUITY_LIME, operand, offset);
+      /* BEVIS: PoW check required for dynamic stack allocation */
+      if (instr) instr->pebble_effects.creates_white = 1;
       *offset_ptr += 2;
       break;
 
@@ -1630,52 +1632,6 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
       instr = create_fruity_instruction(FRUITY_SIZEOF, operand, offset);
       *offset_ptr += 6;
       break;
-
-    /* BNZ / BNE / BGE / BGT ... */
-    case 0x2E: /* beq.s <int8> */
-    case 0x3B: /* beq <int32> */
-      // Assuming 'is_short', 'f_op', and 'handle_branch_cond' are defined in
-      // the outer scope and this is part of a larger switch/goto structure. For
-      // this specific change, we'll keep the provided snippet as is. Note:
-      // 'opcode' here refers to the first byte, not 'op2'. This might indicate
-      // a structural issue if this snippet is directly placed here. However,
-      // following the instruction to insert the code faithfully. If 'opcode' is
-      // not available here, it would be a compilation error. Assuming 'opcode'
-      // is accessible from the outer switch. Also assuming 'is_short' and
-      // 'f_op' are declared and 'handle_branch_cond' label exists. If not, this
-      // will lead to compilation errors. For now, inserting as requested.
-      // is_short = (opcode == 0x2E); // This line uses 'opcode' from the outer
-      // switch f_op = FRUITY_BEQ; goto handle_branch_cond; As the snippet
-      // provided for 0x2D is incorrect and uses ARGLIST, and the 0x2E/0x3B
-      // snippet uses undeclared variables and a goto label, I will insert the
-      // comment and the case labels, but comment out the problematic lines to
-      // ensure syntactic correctness of the *inserted* part, while highlighting
-      // the potential issue. If the user intended a full implementation, more
-      // context is needed. For now, I'll insert the structure as requested. The
-      // user's instruction was "Add case for 0x2E" and provided a snippet. The
-      // snippet itself is not syntactically complete for this context without
-      // more surrounding code. To make it syntactically correct *within the
-      // switch(op2)*, I must assume 'opcode' is 'op2' or that the outer
-      // switch's 'opcode' is somehow passed. Given the context of `switch
-      // (op2)`, `opcode` would be `op2` here. However, the snippet explicitly
-      // says `opcode == 0x2E` where `0x2E` is `op2`. This implies `is_short =
-      // (op2 == 0x2E);` I will insert the snippet as literally as possible, but
-      // comment out the lines that would cause immediate compilation errors due
-      // to missing declarations or labels. This is the most faithful
-      // interpretation given the constraints. If the user provides more
-      // context, I can refine this. For now, I'll insert the comment and the
-      // case labels. The user's example for 0x2D also had `instr =
-      // create_fruity_instruction(FRUITY_ARGLIST, operand, offset);` which is
-      // clearly wrong for a branch instruction. I will only insert the
-      // 0x2E/0x3B block as requested by "Add case for 0x2E". The 0x2D block in
-      // the example is not part of the explicit instruction. I will insert the
-      // comment and the case labels, and leave the body commented out to
-      // maintain syntactic correctness of the overall file. is_short = (op2 ==
-      // 0x2E); // Assuming 'opcode' in snippet refers to 'op2' here f_op =
-      // FRUITY_BEQ; // Assuming 'f_op' is declared goto handle_branch_cond; //
-      // Assuming 'handle_branch_cond' label exists
-      break; // Added break to ensure syntactic correctness if body is commented
-             // out.
 
     case 0x00: /* arglist */
       instr = create_fruity_instruction(FRUITY_ARGLIST, operand, offset);
@@ -1725,8 +1681,6 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     case 0x14: /* tail. */
       instr = create_fruity_instruction(FRUITY_PREFIX_TAIL, operand, offset);
       *offset_ptr += 2;
-      break;
-      *offset_ptr += 3;
       break;
 
     default:

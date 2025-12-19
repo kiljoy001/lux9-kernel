@@ -840,6 +840,9 @@ struct Proc {
   /* Pebble resource tracking */
   PebbleState pebble;
 
+  /* BEVIS: Proof-of-Work Nonce for resource acquisition */
+  u64int pow_nonce;
+
   /* Security: Hash of the running binary (Blake2b-512) */
   uchar text_hash[64];
 } __attribute__((aligned(64)));
