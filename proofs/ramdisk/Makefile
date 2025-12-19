@@ -3,9 +3,9 @@
 # Automatically compiles and verifies all Coq proofs for the secure ramdisk
 # implementation.
 
-# Coq compiler
-COQC := /home/scott/.opam/coq-8.19/bin/coqc
-COQDEP := /home/scott/.opam/coq-8.19/bin/coqdep
+# Coq compiler (use system PATH)
+COQC := coqc
+COQDEP := coqdep
 
 # Source files
 VFILES := ramdisk_state.v ramdisk_crypto.v ramdisk_wipe.v

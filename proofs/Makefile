@@ -24,7 +24,7 @@ $(SUBDIRS):
 	elif [ -d $@ ]; then \
 		echo "  ⚠️  No Makefile in $@, checking for .v files..."; \
 		if ls $@/*.v >/dev/null 2>&1; then \
-			cd $@ && /home/scott/.opam/coq-8.19/bin/coqc *.v && echo "  ✅ $@ verified"; \
+			cd $@ && coqc *.v && echo "  ✅ $@ verified"; \
 		else \
 			echo "  ⚠️  No .v files in $@"; \
 		fi; \
