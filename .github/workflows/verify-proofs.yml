@@ -34,6 +34,11 @@ jobs:
       run: |
         cd proofs
         
+        # Clean any stale .vo files (may be from different Coq version)
+        find . -name "*.vo" -delete
+        find . -name "*.glob" -delete
+        find . -name ".*.aux" -delete
+        
         # Define module mappings (directory -> logical name)
         verify_dir() {
           local dir=$1

@@ -40,3 +40,10 @@ root.priv
 root.pub
 services.cbor
 services.cbor.sig
+
+# Coq compiled files
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux
