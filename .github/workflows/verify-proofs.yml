@@ -19,12 +19,16 @@ jobs:
   verify-coq-proofs:
     name: Verify Coq Proofs
     runs-on: ubuntu-latest
-    container:
-      image: coqorg/coq:8.19
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Install Coq
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y coq
+        coqc --version
 
     - name: Verify all proofs
       run: |
