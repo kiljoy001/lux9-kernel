@@ -425,7 +425,6 @@ jobs:
       uses: returntocorp/semgrep-action@v1
       with:
         config: .semgrep/lux9-security.yaml
-        auditOn: push  # Don't fail on push, just report
 
     - name: Generate Semgrep report
       if: always()
