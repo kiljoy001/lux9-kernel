@@ -97,18 +97,12 @@ jobs:
   verify-smt-proofs:
     name: Verify SMT/ACSL Proofs (Frama-C)
     runs-on: ubuntu-latest
+    container:
+      image: framac/frama-c:latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Install Frama-C and SMT solvers
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y frama-c alt-ergo
-        frama-c --version || echo "Frama-C not available via apt, skipping"
-        alt-ergo --version || echo "Alt-Ergo not available"
-      continue-on-error: true
 
     - name: Find ACSL-annotated files
       id: find_acsl
@@ -119,14 +113,13 @@ jobs:
 
     - name: Run Frama-C WP verification
       run: |
-        eval $(opam env)
         mkdir -p frama-c-report
         
         # List of files with ACSL annotations
         ACSL_FILES="${{ steps.find_acsl.outputs.files }}"
         
-        TOTAL_GOALS=0
-        PROVED_GOALS=0
+        # Check Frama-C version
+        frama-c --version
         
         for file in $ACSL_FILES; do
           echo "═══════════════════════════════════════════════"
@@ -135,31 +128,26 @@ jobs:
           
           # Run WP with Alt-Ergo, timeout 10s per goal
           frama-c -wp -wp-prover alt-ergo -wp-timeout 10 \
-            -cpp-extra-args="-Ikernel/include -D__PLAN9_KERNEL__ -DKERNEL" \
-            -wp-out frama-c-report \
+            -cpp-extra-args="-Ikernel/include -D__PLAN9_KERNEL__ -DKERNEL -Wno-everything" \
             "$file" 2>&1 | tee -a frama-c-report/wp-output.txt || true
-          
-          # Extract stats
-          GOALS=$(grep -o "Proved goals:.*" frama-c-report/wp-output.txt | tail -1 || echo "0")
-          echo "Results: $GOALS"
         done
         
         echo ""
         echo "═══════════════════════════════════════════════"
         echo "Frama-C WP Verification Complete"
         echo "═══════════════════════════════════════════════"
-        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout)" || true
+        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout|goal)" || true
 
     - name: Generate SMT report
       run: |
         echo "# SMT/ACSL Verification Report" > smt_report.md
         echo "" >> smt_report.md
         echo "**Commit:** ${{ github.sha }}" >> smt_report.md
-        echo "**Prover:** Frama-C WP + Alt-Ergo" >> smt_report.md
+        echo "**Prover:** Frama-C WP + Alt-Ergo (Docker)" >> smt_report.md
         echo "" >> smt_report.md
         echo "## Results" >> smt_report.md
         echo '```' >> smt_report.md
-        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout|Error)" >> smt_report.md || echo "No goals found" >> smt_report.md
+        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout|Error)" >> smt_report.md 2>/dev/null || echo "No goals found" >> smt_report.md
         echo '```' >> smt_report.md
 
     - name: Upload SMT report
@@ -168,6 +156,7 @@ jobs:
         name: smt-report
         path: |
           smt_report.md
+          frama-c-report/
           frama-c-report/
 
   # ============================================================================
