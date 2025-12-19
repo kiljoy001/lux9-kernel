@@ -182,6 +182,337 @@ jobs:
           smt_report.md
           frama-c-report/
 
+  # ============================================================================
+  # CLANG STATIC ANALYZER
+  # ============================================================================
+  clang-static-analysis:
+    name: Clang Static Analyzer
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install Clang tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang clang-tools
+
+    - name: Run Clang Static Analyzer
+      run: |
+        mkdir -p clang-analysis
+        
+        # Analyze key kernel files
+        for file in kernel/pebble.c kernel/borrowchecker.c kernel/9front-port/blind_ledger.c \
+                    kernel/9front-port/devram.c kernel/pow_gate.c kernel/crypto/crypto.c; do
+          if [ -f "$file" ]; then
+            echo "Analyzing: $file"
+            scan-build -o clang-analysis \
+              clang -c "$file" \
+              -Ikernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+              -Wno-incompatible-pointer-types \
+              2>&1 | tee -a clang-analysis/scan-build.log || true
+          fi
+        done
+
+    - name: Generate Clang report
+      run: |
+        echo "# Clang Static Analysis Report" > clang_report.md
+        echo "" >> clang_report.md
+        echo "**Commit:** ${{ github.sha }}" >> clang_report.md
+        echo "" >> clang_report.md
+        
+        # Count issues
+        BUGS=$(grep -c "warning:" clang-analysis/scan-build.log 2>/dev/null || echo "0")
+        echo "## Summary" >> clang_report.md
+        echo "- **Warnings found:** $BUGS" >> clang_report.md
+        echo "" >> clang_report.md
+        
+        echo "## Details" >> clang_report.md
+        echo '```' >> clang_report.md
+        cat clang-analysis/scan-build.log | grep -E "(warning:|error:)" | head -50 >> clang_report.md || echo "No issues found" >> clang_report.md
+        echo '```' >> clang_report.md
+
+    - name: Upload Clang report
+      uses: actions/upload-artifact@v3
+      with:
+        name: clang-report
+        path: |
+          clang_report.md
+          clang-analysis/
+
+  # ============================================================================
+  # CBMC BOUNDED MODEL CHECKING
+  # ============================================================================
+  cbmc-verification:
+    name: CBMC Bounded Model Checking
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install CBMC
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cbmc
+
+    - name: Run CBMC on security-critical functions
+      run: |
+        mkdir -p cbmc-results
+        
+        # CBMC verification targets (functions with assertions)
+        # Verify memory safety properties with bounded unrolling
+        
+        echo "# CBMC Verification Results" > cbmc-results/cbmc_output.txt
+        
+        # Check pebble allocation (bounded to 10 iterations)
+        echo "=== Checking pebble.c ===" >> cbmc-results/cbmc_output.txt
+        cbmc kernel/pebble.c \
+          -I kernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+          --bounds-check --pointer-check --memory-leak-check \
+          --unwind 10 --unwinding-assertions \
+          2>&1 >> cbmc-results/cbmc_output.txt || true
+        
+        # Check pow_gate (PoW security)
+        echo "=== Checking pow_gate.c ===" >> cbmc-results/cbmc_output.txt
+        cbmc kernel/pow_gate.c \
+          -I kernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+          --bounds-check --pointer-check \
+          --unwind 5 \
+          2>&1 >> cbmc-results/cbmc_output.txt || true
+
+    - name: Generate CBMC report
+      run: |
+        echo "# CBMC Model Checking Report" > cbmc_report.md
+        echo "" >> cbmc_report.md
+        echo "**Commit:** ${{ github.sha }}" >> cbmc_report.md
+        echo "**Checks:** bounds, pointer, memory-leak" >> cbmc_report.md
+        echo "" >> cbmc_report.md
+        
+        # Count verification results
+        VERIFIED=$(grep -c "VERIFICATION SUCCESSFUL" cbmc-results/cbmc_output.txt 2>/dev/null || echo "0")
+        FAILED=$(grep -c "VERIFICATION FAILED" cbmc-results/cbmc_output.txt 2>/dev/null || echo "0")
+        
+        echo "## Summary" >> cbmc_report.md
+        echo "- **Verified:** $VERIFIED" >> cbmc_report.md
+        echo "- **Failed:** $FAILED" >> cbmc_report.md
+        echo "" >> cbmc_report.md
+        
+        echo "## Property Violations" >> cbmc_report.md
+        echo '```' >> cbmc_report.md
+        grep -A2 "FAILURE" cbmc-results/cbmc_output.txt >> cbmc_report.md 2>/dev/null || echo "None" >> cbmc_report.md
+        echo '```' >> cbmc_report.md
+
+    - name: Upload CBMC report
+      uses: actions/upload-artifact@v3
+      with:
+        name: cbmc-report
+        path: |
+          cbmc_report.md
+          cbmc-results/
+
+  # ============================================================================
+  # ADMIT TRACKER (Historical Metrics)
+  # ============================================================================
+  admit-tracker:
+    name: Track Proof Metrics Over Time
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Full history for trend analysis
+
+    - name: Calculate proof metrics
+      id: metrics
+      run: |
+        # Count admits
+        ADMITS=$(find proofs -name "*.v" -exec grep -c "Admitted\." {} \; 2>/dev/null | paste -sd+ | bc 2>/dev/null || echo 0)
+        
+        # Count theorems
+        THEOREMS=$(find proofs -name "*.v" -exec grep -c "Theorem\|Lemma\|Corollary" {} \; 2>/dev/null | paste -sd+ | bc 2>/dev/null || echo 0)
+        
+        # Count ACSL annotations
+        ACSL=$(grep -rh "/\*@" kernel --include="*.c" 2>/dev/null | wc -l || echo 0)
+        
+        # Count proof files
+        PROOF_FILES=$(find proofs -name "*.v" | wc -l)
+        
+        # Lines of proof
+        PROOF_LINES=$(find proofs -name "*.v" -exec wc -l {} \; 2>/dev/null | tail -1 | awk '{print $1}' || echo 0)
+        
+        echo "admits=$ADMITS" >> $GITHUB_OUTPUT
+        echo "theorems=$THEOREMS" >> $GITHUB_OUTPUT
+        echo "acsl=$ACSL" >> $GITHUB_OUTPUT
+        echo "proof_files=$PROOF_FILES" >> $GITHUB_OUTPUT
+        echo "proof_lines=$PROOF_LINES" >> $GITHUB_OUTPUT
+        
+        # Calculate completion percentage
+        if [ "$THEOREMS" -gt 0 ]; then
+          COMPLETE=$(echo "scale=1; ($THEOREMS - $ADMITS) * 100 / $THEOREMS" | bc)
+        else
+          COMPLETE=0
+        fi
+        echo "complete=$COMPLETE" >> $GITHUB_OUTPUT
+
+    - name: Generate metrics report
+      run: |
+        echo "# Proof Metrics Dashboard" > metrics_report.md
+        echo "" >> metrics_report.md
+        echo "**Commit:** ${{ github.sha }}" >> metrics_report.md
+        echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> metrics_report.md
+        echo "" >> metrics_report.md
+        
+        echo "## Current State" >> metrics_report.md
+        echo "" >> metrics_report.md
+        echo "| Metric | Value |" >> metrics_report.md
+        echo "|--------|-------|" >> metrics_report.md
+        echo "| Coq Theorems/Lemmas | ${{ steps.metrics.outputs.theorems }} |" >> metrics_report.md
+        echo "| Admitted Proofs | ${{ steps.metrics.outputs.admits }} |" >> metrics_report.md
+        echo "| Completion | ${{ steps.metrics.outputs.complete }}% |" >> metrics_report.md
+        echo "| ACSL Annotations | ${{ steps.metrics.outputs.acsl }} |" >> metrics_report.md
+        echo "| Proof Files | ${{ steps.metrics.outputs.proof_files }} |" >> metrics_report.md
+        echo "" >> metrics_report.md
+        
+        # Progress bar
+        COMPLETE=${{ steps.metrics.outputs.complete }}
+        echo "## Progress" >> metrics_report.md
+        echo "" >> metrics_report.md
+        echo '```' >> metrics_report.md
+        printf "Proven:   ["
+        for i in $(seq 1 10); do
+          if [ $(echo "$COMPLETE / 10 >= $i" | bc) -eq 1 ]; then
+            printf "█"
+          else
+            printf "░"
+          fi
+        done
+        echo "] $COMPLETE%"
+        echo '```' >> metrics_report.md
+
+    - name: Save metrics to history
+      run: |
+        mkdir -p .github/metrics
+        echo "${{ github.sha }},${{ steps.metrics.outputs.admits }},${{ steps.metrics.outputs.theorems }},${{ steps.metrics.outputs.acsl }},$(date -u +%Y-%m-%d)" >> .github/metrics/history.csv
+
+    - name: Upload metrics report
+      uses: actions/upload-artifact@v3
+      with:
+        name: metrics-report
+        path: metrics_report.md
+
+  # ============================================================================
+  # SEMGREP SECURITY SCANNING
+  # ============================================================================
+  semgrep-security:
+    name: Semgrep Security Rules
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Create custom Semgrep rules
+      run: |
+        mkdir -p .semgrep
+        
+        # Custom rules for lux9 kernel security
+        cat > .semgrep/lux9-security.yaml << 'RULES'
+        rules:
+          # Capability leak detection
+          - id: capability-leak
+            patterns:
+              - pattern: memcpy($DST, &$CAP, ...)
+              - metavariable-regex:
+                  metavariable: $CAP
+                  regex: ".*capability.*|.*cap.*"
+            message: "Potential capability leak via memcpy - capabilities should not be copied to user space"
+            languages: [c]
+            severity: ERROR
+          
+          # Unchecked capability verification
+          - id: unchecked-capability-verify
+            patterns:
+              - pattern: |
+                  ledger_verify(...);
+                  $STMT;
+              - pattern-not: |
+                  if (ledger_verify(...) != BLIND_LEDGER_OK) { ... }
+            message: "Capability verification result not checked"
+            languages: [c]
+            severity: WARNING
+          
+          # Token use without ownership check
+          - id: pebble-token-without-owner
+            patterns:
+              - pattern: pebble_black_alloc(...)
+              - pattern-not-inside: |
+                  if (up != nil) { ... }
+            message: "Pebble allocation without process context check"
+            languages: [c]
+            severity: WARNING
+          
+          # Hardcoded secrets
+          - id: hardcoded-secret
+            patterns:
+              - pattern-regex: "0xdeadbeef|0xcafebabe|password.*=.*\"|secret.*=.*\""
+            message: "Potential hardcoded secret or test value"
+            languages: [c]
+            severity: ERROR
+          
+          # Missing lock before secure_rd access
+          - id: secure-rd-without-lock
+            patterns:
+              - pattern: secure_rd.$FIELD
+              - pattern-not-inside: |
+                  qlock(&secure_rd.lock);
+                  ...
+                  qunlock(&secure_rd.lock);
+            message: "secure_rd accessed without holding lock"
+            languages: [c]
+            severity: WARNING
+          
+          # Vault password in logs
+          - id: password-in-logs
+            patterns:
+              - pattern: print(..., $PASSWORD, ...)
+              - metavariable-regex:
+                  metavariable: $PASSWORD
+                  regex: ".*password.*|.*key.*|.*secret.*"
+            message: "Sensitive data may be logged"
+            languages: [c]
+            severity: ERROR
+        RULES
+
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: .semgrep/lux9-security.yaml
+
+    - name: Generate Semgrep report
+      if: always()
+      run: |
+        echo "# Semgrep Security Scan" > semgrep_report.md
+        echo "" >> semgrep_report.md
+        echo "**Commit:** ${{ github.sha }}" >> semgrep_report.md
+        echo "" >> semgrep_report.md
+        echo "## Custom Rules Applied" >> semgrep_report.md
+        echo "- capability-leak: Detect capability data leaks" >> semgrep_report.md
+        echo "- unchecked-capability-verify: Missing verification checks" >> semgrep_report.md
+        echo "- pebble-token-without-owner: Token operations without context" >> semgrep_report.md
+        echo "- hardcoded-secret: Hardcoded secrets/test values" >> semgrep_report.md
+        echo "- secure-rd-without-lock: Unlocked vault access" >> semgrep_report.md
+        echo "- password-in-logs: Sensitive data logging" >> semgrep_report.md
+
+    - name: Upload Semgrep report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: semgrep-report
+        path: semgrep_report.md
+
   check-c-code:
     name: Check C Code Changes
     runs-on: ubuntu-latest
@@ -265,33 +596,55 @@ jobs:
   build-status:
     name: Verification Summary
     runs-on: ubuntu-latest
-    needs: [verify-coq-proofs, verify-smt-proofs, check-c-code, runtime-invariant-check]
+    needs: [verify-coq-proofs, verify-smt-proofs, clang-static-analysis, cbmc-verification, admit-tracker, semgrep-security, check-c-code, runtime-invariant-check]
     if: always()
 
     steps:
     - name: Generate summary
       run: |
-        echo "## Lux9 Kernel Verification Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 🔒 Lux9 Kernel Verification Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Core Verification (Blocking)" >> $GITHUB_STEP_SUMMARY
         echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
         echo "| Coq Proofs | ${{ needs.verify-coq-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| SMT/ACSL (Frama-C) | ${{ needs.verify-smt-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| C Code Check | ${{ needs.check-c-code.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Runtime Invariants | ${{ needs.runtime-invariant-check.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Static Analysis (Advisory)" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| SMT/ACSL (Frama-C) | ${{ needs.verify-smt-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Clang Static Analyzer | ${{ needs.clang-static-analysis.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| CBMC Model Checking | ${{ needs.cbmc-verification.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Semgrep Security | ${{ needs.semgrep-security.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Metrics" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Admit Tracker | ${{ needs.admit-tracker.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
 
+        # Determine overall status
         if [ "${{ needs.verify-coq-proofs.result }}" == "success" ] && \
            [ "${{ needs.check-c-code.result }}" == "success" ] && \
            [ "${{ needs.runtime-invariant-check.result }}" == "success" ]; then
-          echo "✅ **All verification checks passed!**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **All blocking checks passed!**" >> $GITHUB_STEP_SUMMARY
         else
-          echo "❌ **Some verification checks failed**" >> $GITHUB_STEP_SUMMARY
+          echo "❌ **Blocking checks failed**" >> $GITHUB_STEP_SUMMARY
         fi
         
-        # SMT is advisory, not blocking
-        if [ "${{ needs.verify-smt-proofs.result }}" != "success" ]; then
+        # Count advisory failures
+        ADVISORY_FAILURES=0
+        [ "${{ needs.verify-smt-proofs.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.clang-static-analysis.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.cbmc-verification.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.semgrep-security.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        
+        if [ $ADVISORY_FAILURES -gt 0 ]; then
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ *SMT verification is advisory - check artifacts for details*" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ *$ADVISORY_FAILURES advisory check(s) need attention - see artifacts*" >> $GITHUB_STEP_SUMMARY
         fi
-
