@@ -59,6 +59,8 @@ typedef struct {
       return -1;                                                               \
   } while (0)
 
+static ulong label_uniq = 0;
+
 /* Get element size from instruction operand */
 extern ulong clr_get_type_size(u32int token);
 
@@ -209,31 +211,193 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         tmp_counter--;
         break;
 
-      /* Overflow arithmetic - QBE doesn't have native overflow checks,
-       * so emit regular ops + TODO runtime check */
-      case FRUITY_ADD_OVF:
-      case FRUITY_ADD_OVF_UN:
-        Q_EMIT(buf, "    %%t%d =w add %%t%d, %%t%d\n", tmp_counter - 1,
-               tmp_counter - 1, tmp_counter);
-        Q_EMIT(buf, "    # TODO: overflow check\n");
-        tmp_counter--;
-        break;
+      /* Overflow arithmetic */
+      case FRUITY_ADD_OVF: {
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1; /* Result overwrites left */
+        int uniq = ++label_uniq;
 
-      case FRUITY_MUL_OVF:
-      case FRUITY_MUL_OVF_UN:
-        Q_EMIT(buf, "    %%t%d =w mul %%t%d, %%t%d\n", tmp_counter - 1,
-               tmp_counter - 1, tmp_counter);
-        Q_EMIT(buf, "    # TODO: overflow check\n");
-        tmp_counter--;
-        break;
+        Q_EMIT(buf, "    %%t%d =w add %%t%d, %%t%d\n", res, l, r);
 
-      case FRUITY_SUB_OVF:
-      case FRUITY_SUB_OVF_UN:
-        Q_EMIT(buf, "    %%t%d =w sub %%t%d, %%t%d\n", tmp_counter - 1,
-               tmp_counter - 1, tmp_counter);
-        Q_EMIT(buf, "    # TODO: overflow check\n");
-        tmp_counter--;
+        /* Check: (~(l ^ r) & (l ^ res)) < 0 */
+        int t_xor_lr = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, %%t%d\n", t_xor_lr, l, r);
+
+        int t_not_xor_lr = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, -1\n", t_not_xor_lr, t_xor_lr);
+
+        int t_xor_lres = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, %%t%d\n", t_xor_lres, l, res);
+
+        int t_and = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w and %%t%d, %%t%d\n", t_and, t_not_xor_lr,
+               t_xor_lres);
+
+        int t_cond = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w csltw %%t%d, 0\n", t_cond, t_and);
+
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_fail_%ld, @ovf_ok_%ld\n", t_cond, uniq,
+               uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res; /* Reset stack to result */
         break;
+      }
+
+      case FRUITY_ADD_OVF_UN: {
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1;
+        int uniq = ++label_uniq;
+
+        Q_EMIT(buf, "    %%t%d =w add %%t%d, %%t%d\n", res, l, r);
+
+        /* Check: res < l (unsigned) */
+        int t_cond = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w cultw %%t%d, %%t%d\n", t_cond, res, l);
+
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_fail_%ld, @ovf_ok_%ld\n", t_cond, uniq,
+               uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res;
+        break;
+      }
+
+      case FRUITY_SUB_OVF: {
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1;
+        int uniq = ++label_uniq;
+
+        Q_EMIT(buf, "    %%t%d =w sub %%t%d, %%t%d\n", res, l, r);
+
+        /* Check: ((l ^ r) & (l ^ res)) < 0 */
+        int t_xor_lr = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, %%t%d\n", t_xor_lr, l, r);
+
+        int t_xor_lres = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w xor %%t%d, %%t%d\n", t_xor_lres, l, res);
+
+        int t_and = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w and %%t%d, %%t%d\n", t_and, t_xor_lr,
+               t_xor_lres);
+
+        int t_cond = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w csltw %%t%d, 0\n", t_cond, t_and);
+
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_fail_%ld, @ovf_ok_%ld\n", t_cond, uniq,
+               uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res;
+        break;
+      }
+
+      case FRUITY_SUB_OVF_UN: {
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1;
+        int uniq = ++label_uniq;
+
+        /* Check BEFORE sub: l < r (unsigned) -> overflow if borrowing */
+        int t_cond = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =w cultw %%t%d, %%t%d\n", t_cond, l, r);
+
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_fail_%ld, @ovf_sub_%ld\n", t_cond,
+               uniq, uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_sub_%ld\n", uniq);
+
+        Q_EMIT(buf, "    %%t%d =w sub %%t%d, %%t%d\n", res, l, r);
+
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res;
+        break;
+      }
+
+      case FRUITY_MUL_OVF: {
+        /* Signed Mul: widen to 64-bit, check bounds */
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1;
+        int uniq = ++label_uniq;
+
+        int l64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extsw %%t%d\n", l64, l);
+
+        int r64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extsw %%t%d\n", r64, r);
+
+        int res64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l mul %%t%d, %%t%d\n", res64, l64, r64);
+
+        /* Truncate to 32 */
+        Q_EMIT(buf, "    %%t%d =w copy %%t%d\n", res, res64);
+
+        /* Sign extend back to 64 to check */
+        int check64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extsw %%t%d\n", check64, res);
+
+        int t_eq = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l ceql %%t%d, %%t%d\n", t_eq, res64, check64);
+
+        /* if equal, ok (jump to ok), else fail */
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_ok_%ld, @ovf_fail_%ld\n", t_eq, uniq,
+               uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res;
+        break;
+      }
+
+      case FRUITY_MUL_OVF_UN: {
+        /* Unsigned Mul: widen, check bounds */
+        int r = tmp_counter;
+        int l = tmp_counter - 1;
+        int res = tmp_counter - 1;
+        int uniq = ++label_uniq;
+
+        int l64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extuw %%t%d\n", l64, l);
+
+        int r64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extuw %%t%d\n", r64, r);
+
+        int res64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l mul %%t%d, %%t%d\n", res64, l64, r64);
+
+        /* Truncate to 32 */
+        Q_EMIT(buf, "    %%t%d =w copy %%t%d\n", res, res64);
+
+        /* Zero extend back to 64 to check */
+        int check64 = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l extuw %%t%d\n", check64, res);
+
+        int t_eq = ++tmp_counter;
+        Q_EMIT(buf, "    %%t%d =l ceql %%t%d, %%t%d\n", t_eq, res64, check64);
+
+        /* if equal, ok */
+        Q_EMIT(buf, "    jnz %%t%d, @ovf_ok_%ld, @ovf_fail_%ld\n", t_eq, uniq,
+               uniq);
+        Q_EMIT(buf, "@ovf_fail_%ld\n", uniq);
+        Q_EMIT(buf, "    call $System_Environment_FailFast(l 0)\n");
+        Q_EMIT(buf, "@ovf_ok_%ld\n", uniq);
+
+        tmp_counter = res;
+        break;
+      }
 
       /* Bitwise operations */
       case FRUITY_AND:
@@ -911,7 +1075,7 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, ulong *out_size,
   /* Two-pass API: if out_handle == 0, this is a size query */
   if (out_handle == 0) {
     if (out_size)
-      *out_size = copy_len + 1;  /* +1 for null terminator */
+      *out_size = copy_len + 1; /* +1 for null terminator */
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: fruity_to_qbe size query: returning size=%lud\n",
             copy_len + 1);
@@ -925,7 +1089,8 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, ulong *out_size,
 
   /* Copy to page */
   memmove(vaddr, qbe_buffer_data(&buf), copy_len);
-  ((char *)vaddr)[copy_len] = 0; // Null-terminate the string (safe with +1 allocation)
+  ((char *)vaddr)[copy_len] =
+      0; // Null-terminate the string (safe with +1 allocation)
 
   // DEBUG: Print the generated QBE IL to UART
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: Generated QBE IL (len=%ld):\n",

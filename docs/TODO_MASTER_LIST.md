@@ -11,7 +11,7 @@
 |----------|-------|--------|
 | Fruity Interpreter | 0 | ✅ Complete |
 | Boot & Runtime | 3 | Active |
-| Fruity→QBE | 1 | Active |
+| Fruity→QBE | 0 | ✅ Complete |
 | IL→Fruity | 0 | ✅ Complete |
 | QBE Exec | 0 | ✅ Complete |
 | Admitted Proofs | 17 | Active |
@@ -46,13 +46,7 @@ All 17 TODOs implemented:
 
 ---
 
-## 🟡 Fruity→QBE (`fruity_to_qbe.c`)
 
-| Line | Issue |
-|------|-------|
-| 167,172,180,188 | Overflow checks (emit runtime) |
-
----
 
 ## ✅ Completed (2025-12-19)
 
@@ -63,6 +57,7 @@ All 17 TODOs implemented:
 - `fruity_interp.c:925` — Object construction (NEWOBJ) ✅
 - `qbe_exec.c:472` — AOT cache lookup ✅
 - `qbe_exec.c:482` — AOT precompilation ✅
+- `fruity_to_qbe.c:167` — Overflow checks (emit runtime) ✅
 
 ---
 
