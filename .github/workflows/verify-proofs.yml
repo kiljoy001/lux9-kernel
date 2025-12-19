@@ -94,6 +94,94 @@ jobs:
             body: report
           });
 
+  verify-smt-proofs:
+    name: Verify SMT/ACSL Proofs (Frama-C)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Cache opam
+      uses: actions/cache@v3
+      with:
+        path: ~/.opam
+        key: ${{ runner.os }}-opam-frama-c
+        restore-keys: |
+          ${{ runner.os }}-opam-
+
+    - name: Setup OCaml and opam
+      uses: ocaml/setup-ocaml@v2
+      with:
+        ocaml-compiler: 4.14.x
+
+    - name: Install Frama-C and SMT solvers
+      run: |
+        opam install -y frama-c alt-ergo z3
+        eval $(opam env)
+        frama-c --version
+        alt-ergo --version
+
+    - name: Find ACSL-annotated files
+      id: find_acsl
+      run: |
+        ACSL_FILES=$(find kernel -name "*.c" -exec grep -l '/\*@' {} \; 2>/dev/null | tr '\n' ' ')
+        echo "files=$ACSL_FILES" >> $GITHUB_OUTPUT
+        echo "Found ACSL files: $ACSL_FILES"
+
+    - name: Run Frama-C WP verification
+      run: |
+        eval $(opam env)
+        mkdir -p frama-c-report
+        
+        # List of files with ACSL annotations
+        ACSL_FILES="${{ steps.find_acsl.outputs.files }}"
+        
+        TOTAL_GOALS=0
+        PROVED_GOALS=0
+        
+        for file in $ACSL_FILES; do
+          echo "═══════════════════════════════════════════════"
+          echo "Verifying: $file"
+          echo "═══════════════════════════════════════════════"
+          
+          # Run WP with Alt-Ergo, timeout 10s per goal
+          frama-c -wp -wp-prover alt-ergo -wp-timeout 10 \
+            -cpp-extra-args="-Ikernel/include -D__PLAN9_KERNEL__ -DKERNEL" \
+            -wp-out frama-c-report \
+            "$file" 2>&1 | tee -a frama-c-report/wp-output.txt || true
+          
+          # Extract stats
+          GOALS=$(grep -o "Proved goals:.*" frama-c-report/wp-output.txt | tail -1 || echo "0")
+          echo "Results: $GOALS"
+        done
+        
+        echo ""
+        echo "═══════════════════════════════════════════════"
+        echo "Frama-C WP Verification Complete"
+        echo "═══════════════════════════════════════════════"
+        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout)" || true
+
+    - name: Generate SMT report
+      run: |
+        echo "# SMT/ACSL Verification Report" > smt_report.md
+        echo "" >> smt_report.md
+        echo "**Commit:** ${{ github.sha }}" >> smt_report.md
+        echo "**Prover:** Frama-C WP + Alt-Ergo" >> smt_report.md
+        echo "" >> smt_report.md
+        echo "## Results" >> smt_report.md
+        echo '```' >> smt_report.md
+        cat frama-c-report/wp-output.txt | grep -E "(Proved|Valid|Unknown|Timeout|Error)" >> smt_report.md || echo "No goals found" >> smt_report.md
+        echo '```' >> smt_report.md
+
+    - name: Upload SMT report
+      uses: actions/upload-artifact@v3
+      with:
+        name: smt-report
+        path: |
+          smt_report.md
+          frama-c-report/
+
   check-c-code:
     name: Check C Code Changes
     runs-on: ubuntu-latest
@@ -177,7 +265,7 @@ jobs:
   build-status:
     name: Verification Summary
     runs-on: ubuntu-latest
-    needs: [verify-coq-proofs, check-c-code, runtime-invariant-check]
+    needs: [verify-coq-proofs, verify-smt-proofs, check-c-code, runtime-invariant-check]
     if: always()
 
     steps:
@@ -185,9 +273,12 @@ jobs:
       run: |
         echo "## Lux9 Kernel Verification Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Coq Proofs:** ${{ needs.verify-coq-proofs.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **C Code Check:** ${{ needs.check-c-code.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Runtime Invariants:** ${{ needs.runtime-invariant-check.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Coq Proofs | ${{ needs.verify-coq-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| SMT/ACSL (Frama-C) | ${{ needs.verify-smt-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| C Code Check | ${{ needs.check-c-code.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Runtime Invariants | ${{ needs.runtime-invariant-check.result }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
 
         if [ "${{ needs.verify-coq-proofs.result }}" == "success" ] && \
@@ -197,3 +288,10 @@ jobs:
         else
           echo "❌ **Some verification checks failed**" >> $GITHUB_STEP_SUMMARY
         fi
+        
+        # SMT is advisory, not blocking
+        if [ "${{ needs.verify-smt-proofs.result }}" != "success" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ *SMT verification is advisory - check artifacts for details*" >> $GITHUB_STEP_SUMMARY
+        fi
+
