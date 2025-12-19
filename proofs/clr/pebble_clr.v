@@ -45,8 +45,54 @@ Theorem step_preserves_memory_safety : forall s op s',
   refcount_invariant s' /\ no_use_after_free s'.
 Proof.
   intros s op s' Hrc Huaf Hstep.
-  admit.
-Admitted.
+  inversion Hstep; subst; split; try assumption.
+  
+  (* IConst: new stack is FV_Int n :: fs_stack s *)
+  - (* refcount_invariant *)
+    unfold refcount_invariant in *. intros v [Hstack | Hloc].
+    + simpl in Hstack. destruct Hstack as [Heq | Hrest].
+      * subst. simpl. exact I.
+      * apply Hrc. left. exact Hrest.
+    + apply Hrc. right. exact Hloc.
+  - (* no_use_after_free *)
+    unfold no_use_after_free in *. intros addr rc Hin Hpos.
+    simpl in Hin. destruct Hin as [Heq | Hrest].
+    + discriminate.
+    + apply (Huaf addr rc Hrest Hpos).
+
+  (* IAdd: new stack is FV_Int (n1+n2) :: rest *)
+  - unfold refcount_invariant in *. intros v [Hstack | Hloc].
+    + simpl in Hstack. destruct Hstack as [Heq | Hrest].
+      * subst. simpl. exact I.
+      * apply Hrc. left. rewrite H. simpl. right. right. exact Hrest.
+    + apply Hrc. right. exact Hloc.
+  - unfold no_use_after_free in *. intros addr rc Hin Hpos.
+    simpl in Hin. destruct Hin as [Heq | Hrest].
+    + discriminate.
+    + apply (Huaf addr rc). rewrite H. simpl. right. right. exact Hrest. exact Hpos.
+
+  (* ISub: same structure as IAdd *)
+  - unfold refcount_invariant in *. intros v [Hstack | Hloc].
+    + simpl in Hstack. destruct Hstack as [Heq | Hrest].
+      * subst. simpl. exact I.
+      * apply Hrc. left. rewrite H. simpl. right. right. exact Hrest.
+    + apply Hrc. right. exact Hloc.
+  - unfold no_use_after_free in *. intros addr rc Hin Hpos.
+    simpl in Hin. destruct Hin as [Heq | Hrest].
+    + discriminate.
+    + apply (Huaf addr rc). rewrite H. simpl. right. right. exact Hrest. exact Hpos.
+
+  (* IMul: same structure as IAdd *)
+  - unfold refcount_invariant in *. intros v [Hstack | Hloc].
+    + simpl in Hstack. destruct Hstack as [Heq | Hrest].
+      * subst. simpl. exact I.
+      * apply Hrc. left. rewrite H. simpl. right. right. exact Hrest.
+    + apply Hrc. right. exact Hloc.
+  - unfold no_use_after_free in *. intros addr rc Hin Hpos.
+    simpl in Hin. destruct Hin as [Heq | Hrest].
+    + discriminate.
+    + apply (Huaf addr rc). rewrite H. simpl. right. right. exact Hrest. exact Hpos.
+Qed.
 
 
 (* Theorem: BURN is safe if refcount > 0 (No Double Free) *)

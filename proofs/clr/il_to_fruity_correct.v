@@ -98,11 +98,54 @@ Theorem translation_preserves_semantics : forall s_il s_fv il_op f_op s_il',
     fruity_step_simple s_fv f_op s_fv' /\
     state_equiv s_il' s_fv'.
 Proof.
+
   intros s_il s_fv il_op f_op s_il' Hequiv Hcomp Hstep.
-  destruct Hequiv as [Hstack Hlocals Hhalt].
   
-  (* Translation correctness requires proving simulation for every opcode *)
-  (* The structure is sound but the Coq script is tedious. *)
-  (* Admitting to focus on the completed Memory Safety proofs. *)
-  admit.
-Admitted.
+  destruct (ils_pc s_il); simpl in *; try discriminate.
+  
+  destruct s_fv as [fs_stack fs_locals fs_pc fs_heap fs_next fs_trans fs_halted_fv fs_err].
+  
+  destruct Hequiv as [Hstack Hlocals Hhalt].
+  simpl in Hstack, Hlocals, Hhalt.
+  
+  inversion Hcomp; subst; inversion Hstep; subst; try discriminate;
+  repeat match goal with 
+    | H: Some _ = Some _ |- _ => inversion H; subst; clear H
+    | H: fetch _ _ = Some _ |- _ => simpl in H; inversion H; subst; clear H
+    | H: stack_equiv (_ :: _) _ |- _ => inversion H; subst; clear H
+  end.
+  
+  - (* Nop *)
+    eexists. split.
+    + apply FStep_Nop.
+    + constructor; simpl; auto.
+    
+  - (* Ldc I4 *)
+    eexists. split.
+    + apply FStep_IConst.
+    + constructor; simpl; auto.
+      constructor; auto using Eq_I4.
+      
+  - (* Add *)
+    eexists. split.
+    + apply FStep_IAdd; simpl; reflexivity.
+    + constructor; simpl; auto.
+      constructor; auto using Eq_I4.
+
+  - (* Sub *)
+    eexists. split.
+    + apply FStep_ISub; simpl; reflexivity.
+    + constructor; simpl; auto.
+      constructor; auto using Eq_I4.
+
+  - (* Mul *)
+    eexists. split.
+    + apply FStep_IMul; simpl; reflexivity.
+    + constructor; simpl; auto.
+      constructor; auto using Eq_I4.
+
+  - (* Ret *)
+    eexists. split.
+    + apply FStep_Return.
+    + constructor; simpl; auto.
+Qed.
