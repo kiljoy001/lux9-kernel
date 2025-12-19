@@ -41,6 +41,12 @@ typedef struct Fmt Fmt;
 #include "dat.h"
 #include "fns.h"
 
+/* Critical: Use consistent allocator throughout - xallocz/xfree.
+ * The pool allocator (malloc/calloc/free) uses different headers than
+ * xalloc, so mixing them causes xfree panics. */
+#define calloc(n, sz) xallocz((n) * (sz), 1)
+#define free(p) xfree(p)
+
 #else
 #include <stdint.h>
 #include <stdio.h>
@@ -55,6 +61,9 @@ extern void xfree(void *ptr);
 
 #include "fruity/fruity_ir.h"
 #include "il_to_fruity.h"
+
+/* Maximum type stack depth for static tracking */
+#define IL_TYPE_STACK_MAX 256
 
 /* Internal context for conversion */
 typedef struct il_to_fruity_ctx {
@@ -74,9 +83,34 @@ typedef struct il_to_fruity_ctx {
   /* Current function being built */
   fruity_function_t *current_function;
 
+  /* Type stack for reference tracking during translation */
+  stack_entry_type_t type_stack[IL_TYPE_STACK_MAX];
+  int type_stack_top;
+
   /* Error tracking */
   il_to_fruity_error_t last_error;
 } il_to_fruity_ctx_t;
+
+/* Type stack helpers */
+static void type_stack_push(il_to_fruity_ctx_t *ctx, stack_entry_type_t type) {
+  if (ctx->type_stack_top < IL_TYPE_STACK_MAX) {
+    ctx->type_stack[ctx->type_stack_top++] = type;
+  }
+}
+
+static stack_entry_type_t type_stack_pop(il_to_fruity_ctx_t *ctx) {
+  if (ctx->type_stack_top > 0) {
+    return ctx->type_stack[--ctx->type_stack_top];
+  }
+  return STACK_UNKNOWN;
+}
+
+static stack_entry_type_t type_stack_peek(il_to_fruity_ctx_t *ctx) {
+  if (ctx->type_stack_top > 0) {
+    return ctx->type_stack[ctx->type_stack_top - 1];
+  }
+  return STACK_UNKNOWN;
+}
 
 /* Helper: Error strings */
 const char *il_to_fruity_error_string(il_to_fruity_error_t error) {
@@ -687,6 +721,7 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     operand.type = FRUITY_OP_IMM_I32;
     operand.value.i32 = opcode - IL_LDC_I4_0;
     instr = create_fruity_instruction(FRUITY_LDC_I4, operand, offset);
+    type_stack_push(ctx, STACK_VALUE);
     *offset_ptr += 1;
     break;
 
@@ -727,30 +762,43 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
 
   case IL_LDNULL:
     instr = create_fruity_instruction(FRUITY_LDNULL, operand, offset);
+    type_stack_push(ctx, STACK_REF); /* null is technically a ref */
     *offset_ptr += 1;
     break;
 
   case IL_DUP:
-    /* TODO: Type-aware flavor injection
+    /* Type-aware flavor injection:
      * If stack top is reference type → FRUITY_VANILLA (addref)
      * If stack top is value type → FRUITY_DUP (copy)
-     *
-     * Requires stack type tracking or metadata lookup.
-     * For now: always use FRUITY_DUP (safe but may leak refs)
+     * UNKNOWN types treated as refs (conservative/safe)
      */
-    instr = create_fruity_instruction(FRUITY_DUP, operand, offset);
+    {
+      stack_entry_type_t top_type = type_stack_peek(ctx);
+      if (top_type == STACK_REF || top_type == STACK_UNKNOWN) {
+        instr = create_fruity_instruction(FRUITY_VANILLA, operand, offset);
+      } else {
+        instr = create_fruity_instruction(FRUITY_DUP, operand, offset);
+      }
+      /* DUP duplicates the top, so push same type again */
+      type_stack_push(ctx, top_type);
+    }
     *offset_ptr += 1;
     break;
 
   case IL_POP:
-    /* TODO: Type-aware flavor injection
+    /* Type-aware flavor injection:
      * If stack top is reference type → FRUITY_BURN (release)
      * If stack top is value type → FRUITY_POP (discard)
-     *
-     * Requires stack type tracking or metadata lookup.
-     * For now: always use FRUITY_POP (safe but may leak refs)
+     * UNKNOWN types treated as refs (conservative/safe)
      */
-    instr = create_fruity_instruction(FRUITY_POP, operand, offset);
+    {
+      stack_entry_type_t top_type = type_stack_pop(ctx);
+      if (top_type == STACK_REF || top_type == STACK_UNKNOWN) {
+        instr = create_fruity_instruction(FRUITY_BURN, operand, offset);
+      } else {
+        instr = create_fruity_instruction(FRUITY_POP, operand, offset);
+      }
+    }
     *offset_ptr += 1;
     break;
 
@@ -925,6 +973,7 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     instr = create_fruity_instruction(FRUITY_NEWOBJ, operand, offset);
     if (instr)
       instr->pebble_effects.creates_white = 1;
+    type_stack_push(ctx, STACK_REF); /* newobj produces a reference */
     *offset_ptr += 5;
     break;
 
@@ -934,6 +983,8 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     instr = create_fruity_instruction(FRUITY_NEWARR, operand, offset);
     if (instr)
       instr->pebble_effects.creates_white = 1;
+    type_stack_pop(ctx);             /* pop the length (value) */
+    type_stack_push(ctx, STACK_REF); /* push the array ref */
     *offset_ptr += 5;
     break;
 
@@ -951,6 +1002,7 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     if (instr)
       instr->pebble_effects.creates_white = 1;
 
+    type_stack_push(ctx, STACK_REF); /* ldstr produces a string reference */
     *offset_ptr += 5;
     break;
   }

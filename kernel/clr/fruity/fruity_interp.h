@@ -61,6 +61,9 @@ typedef struct {
   /* Function being executed */
   fruity_function_t *func;
 
+  /* Module (for method resolution during CALL) */
+  fruity_module_t *module;
+
   /* Error handling */
   int has_error;
   char error_msg[256];

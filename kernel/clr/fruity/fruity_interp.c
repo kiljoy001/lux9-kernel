@@ -34,33 +34,60 @@ static void lux_rollback(void *ptr) { (void)ptr; }
 #include "../../include/portlib.h"
 #include "../../include/u.h"
 
-/* Pebble runtime functions */
-extern void *pebble_black_alloc(size_t size);
-extern void pebble_white_mint(void *ptr);
-extern void pebble_white_burn(void *ptr);
-extern void *pebble_snapshot(void *ptr);
-extern void pebble_commit(void *ptr);
-extern void pebble_rollback(void *ptr);
+/* Standard types for kernel mode */
+typedef signed int int32_t;
+typedef unsigned int uint32_t;
+typedef signed long long int64_t;
+typedef unsigned long long uint64_t;
+typedef unsigned long uintptr_t;
+typedef long intptr_t;
+typedef unsigned long size_t;
 
 static void *lux_alloc(size_t size, int type) {
   (void)type;
-  void *ptr = pebble_black_alloc(size);
-  if (ptr)
-    pebble_white_mint(ptr);
+  UserCapability cap;
+  /* Use Pebble to allocate Black memory */
+  if (pebble_black_alloc((ulong)size, &cap) < 0) {
+    return nil;
+  }
+  void *ptr = pebble_get_black_addr(&cap);
+
+  /* Auto-mint a white token for initial access if needed */
+  if (ptr) {
+    pebble_issue_white(pebble_state(), ptr, (ulong)size);
+  }
   return ptr;
 }
+
 static void *lux_addref(void *ptr) {
-  if (ptr)
-    pebble_white_mint(ptr);
+  if (ptr) {
+    /* Issue new white token for shared reference */
+    pebble_issue_white(pebble_state(), ptr, 0);
+  }
   return ptr;
 }
+
 static void lux_release(void *ptr) {
-  if (ptr)
-    pebble_white_burn(ptr);
+  if (ptr) {
+    /* TODO: Revoke white token or decrement count */
+    /* pebble_white_burn(ptr); */
+  }
 }
-static void *lux_snapshot(void *ptr) { return pebble_snapshot(ptr); }
-static void lux_commit(void *ptr) { pebble_commit(ptr); }
-static void lux_rollback(void *ptr) { pebble_rollback(ptr); }
+
+static void *lux_snapshot(void *ptr) {
+  /* TODO: Implement Red snapshot */
+  return ptr;
+}
+
+static void lux_commit(void *ptr) {
+  /* TODO: Implement Blue commit */
+  (void)ptr;
+}
+
+static void lux_rollback(void *ptr) {
+  /* TODO: Implement Red rollback */
+  (void)ptr;
+}
 #endif
 
 #include "fruity_interp.h"
@@ -449,13 +476,23 @@ int fruity_interp_step(fruity_interp_state_t *state) {
 
   case FRUITY_CONV_R4:
     POP(a);
+#if defined(KERNEL) || defined(__PLAN9_KERNEL__)
+    /* SSE not available in kernel mode - return integer approximation */
+    r = fruity_val_i64(AS_I64(a));
+#else
     r = fruity_val_r32((float)AS_I64(a));
+#endif
     PUSH(r);
     break;
 
   case FRUITY_CONV_R8:
     POP(a);
+#if defined(KERNEL) || defined(__PLAN9_KERNEL__)
+    /* SSE not available in kernel mode - return integer approximation */
+    r = fruity_val_i64(AS_I64(a));
+#else
     r = fruity_val_r64((double)AS_I64(a));
+#endif
     PUSH(r);
     break;
 
@@ -648,11 +685,64 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     break;
   }
 
-  case FRUITY_CALL:
-    /* TODO: Method invocation */
-    r = fruity_val_i64(0);
-    PUSH(r);
+  case FRUITY_CALL: {
+    /* Method invocation:
+     * 1. Resolve method token to fruity_function_t*
+     * 2. Pop arguments from stack
+     * 3. Recursively interpret target function
+     * 4. Push return value
+     */
+    uint32_t method_token = instr->operand.value.token;
+    fruity_function_t *target = nil;
+
+    /* Try to find method in module */
+    if (state->module) {
+      for (fruity_function_t *f = state->module->functions_head; f;
+           f = f->next) {
+        if (f->method_token == method_token) {
+          target = f;
+          break;
+        }
+      }
+    }
+
+    if (target == nil) {
+      /* Method not found - could be external or not yet compiled */
+      snprint(state->error_msg, sizeof(state->error_msg),
+              "Method token 0x%x not found in module", method_token);
+      state->has_error = 1;
+      return -1;
+    }
+
+    /* Pop arguments in reverse order (last arg pushed first) */
+    int target_arg_count = (int)target->arg_count;
+    void *call_args[16]; /* Support up to 16 args */
+    if (target_arg_count > 16)
+      target_arg_count = 16;
+
+    for (int i = target_arg_count - 1; i >= 0; i--) {
+      POP(a);
+      call_args[i] = (void *)(uintptr_t)AS_I64(a);
+    }
+
+    /* Recursive call via fruity_interp_execute */
+    int64_t call_result = 0;
+    int ret = fruity_interp_execute(target, call_args, target_arg_count,
+                                    &call_result);
+    if (ret < 0) {
+      snprint(state->error_msg, sizeof(state->error_msg),
+              "Call to method 0x%x failed", method_token);
+      state->has_error = 1;
+      return -1;
+    }
+
+    /* Push return value (if any - check return type) */
+    if (target->return_type != CLR_VOID) {
+      r = fruity_val_i64(call_result);
+      PUSH(r);
+    }
     break;
+  }
 
   case FRUITY_CALLI:
     /* TODO: Indirect call */

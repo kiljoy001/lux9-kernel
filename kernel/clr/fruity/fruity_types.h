@@ -18,11 +18,12 @@ typedef u32int channel_id_t;
 
 /* CLR value types (from clr_runtime.h) */
 typedef enum {
-	CLR_INT32,
-	CLR_INT64,
-	CLR_BOOL,
-	CLR_REF,
-	CLR_NULL
+  CLR_VOID = 0,
+  CLR_INT32,
+  CLR_INT64,
+  CLR_BOOL,
+  CLR_REF,
+  CLR_NULL
 } clr_value_type_t;
 
 #endif /* FRUITY_TYPES_H */
