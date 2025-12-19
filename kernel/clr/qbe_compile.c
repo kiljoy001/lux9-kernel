@@ -700,14 +700,9 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
           uartputs(debug_buf, strlen(debug_buf));
         }
 
-        /* Handle call instruction - skip to end of line (not compiled, linked
-         * at runtime) */
-        if (strcmp(token, "call") == 0) {
-          if (loop_iter <= 50)
-            uartputs("DEBUG: skipping call instruction\n", 34);
-          while (*p && *p != '\n')
-            p++;
-        } else if (strcmp(token, "copy") == 0) {
+        /* NOTE: call instruction is handled below at line ~1282 with full AMD64
+         * ABI support. Do NOT skip it here. */
+        if (strcmp(token, "copy") == 0) {
 
           /* ... existing copy ... */
           if (*p == '%') {
