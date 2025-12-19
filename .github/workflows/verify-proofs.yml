@@ -66,6 +66,7 @@ jobs:
         verify_dir "scheduler" "scheduler"
         verify_dir "borrow" "borrow"
         verify_dir "capability" "capability"
+        verify_dir "clr" "CLR"
         
         echo ""
         echo "✅ All Coq proofs verified!"
