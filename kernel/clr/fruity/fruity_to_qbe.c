@@ -59,6 +59,52 @@ typedef struct {
       return -1;                                                               \
   } while (0)
 
+/* Get element size from instruction operand */
+extern ulong clr_get_type_size(u32int token);
+
+static int get_element_size_from_instr(fruity_instruction_t *instr) {
+  /* Check operand type */
+  if (instr->operand.type == FRUITY_OP_TYPE) {
+    /* Has type token - resolve actual size */
+    u32int elem_type = instr->operand.value.token;
+    ulong size = clr_get_type_size(elem_type);
+    if (size > 64)
+      return 8; /* Large structs use references */
+    if (size == 0)
+      return 8; /* Default to pointer size */
+    return (int)size;
+  } else if (instr->operand.type == FRUITY_OP_IMM_I32) {
+    /* Typed variant - infer from IL opcode */
+    u32int opcode = instr->operand.value.i32;
+    /* IL opcodes: LDELEM_I1=0x90, LDELEM_I2=0x92, LDELEM_I4=0x94, etc. */
+    switch (opcode) {
+    case 0x90: /* IL_LDELEM_I1 */
+    case 0x91: /* IL_STELEM_I1 */
+      return 1;
+    case 0x92: /* IL_LDELEM_I2 */
+    case 0x93: /* IL_STELEM_I2 */
+      return 2;
+    case 0x94: /* IL_LDELEM_I4 */
+    case 0x95: /* IL_STELEM_I4 */
+    case 0x96: /* IL_LDELEM_R4 */
+    case 0x9C: /* IL_STELEM_R4 */
+      return 4;
+    case 0x97: /* IL_LDELEM_I8 */
+    case 0x98: /* IL_STELEM_I8 */
+    case 0x99: /* IL_LDELEM_R8 */
+    case 0x9D: /* IL_STELEM_R8 */
+    case 0x9A: /* IL_LDELEM_I */
+    case 0x9B: /* IL_LDELEM_REF */
+    case 0x9E: /* IL_STELEM_I */
+    case 0x9F: /* IL_STELEM_REF */
+      return 8;
+    default:
+      return 4; /* Default fallback */
+    }
+  }
+  return 4; /* Final fallback */
+}
+
 /* Emit QBE IL header */
 static int emit_header(QBEBuffer *buf) {
   extern void uartputs(char *, int);
@@ -273,8 +319,21 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         tmp_counter++;
         break;
 
+      case FRUITY_DUP_REF:
+        /* Duplicate reference: copy pointer + addref via white token */
+        Q_EMIT(buf, "    %%t%d =l copy %%t%d\n", tmp_counter + 1, tmp_counter);
+        Q_EMIT(buf, "    call $clr_object_addref(l %%t%d)\n", tmp_counter + 1);
+        tmp_counter++;
+        break;
+
       case FRUITY_POP:
         tmp_counter--; /* Just decrement stack pointer */
+        break;
+
+      case FRUITY_POP_REF:
+        /* Pop reference: release via white token burn */
+        Q_EMIT(buf, "    call $clr_object_release(l %%t%d)\n", tmp_counter);
+        tmp_counter--;
         break;
 
       /* Additional constants */
@@ -438,36 +497,42 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
         Q_EMIT(buf, "    %%t%d =w loadw %%t%d\n", tmp_counter, tmp_counter);
         break;
 
-      case FRUITY_LDELEM:
+      case FRUITY_LDELEM: {
         /* array, index on stack → value */
+        int elem_size = get_element_size_from_instr(instr);
         Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter, tmp_counter,
-               4); /* TODO: actual element size */
+               elem_size);
         Q_EMIT(buf, "    %%addr%d =l add %%t%d, %%idx%d\n", tmp_counter - 1,
                tmp_counter - 1, tmp_counter);
         Q_EMIT(buf, "    %%t%d =w loadw %%addr%d\n", tmp_counter - 1,
                tmp_counter - 1);
         tmp_counter--;
         break;
+      }
 
-      case FRUITY_STELEM:
+      case FRUITY_STELEM: {
         /* array, index, value on stack */
+        int elem_size = get_element_size_from_instr(instr);
         Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter - 1,
-               tmp_counter - 1, 4); /* TODO: actual element size */
+               tmp_counter - 1, elem_size);
         Q_EMIT(buf, "    %%addr%d =l add %%t%d, %%idx%d\n", tmp_counter - 2,
                tmp_counter - 2, tmp_counter - 1);
         Q_EMIT(buf, "    storew %%addr%d, %%t%d\n", tmp_counter - 2,
                tmp_counter);
         tmp_counter -= 3;
         break;
+      }
 
-      case FRUITY_LDELEMA:
+      case FRUITY_LDELEMA: {
         /* array, index → address */
+        int elem_size = get_element_size_from_instr(instr);
         Q_EMIT(buf, "    %%idx%d =l mul %%t%d, %d\n", tmp_counter, tmp_counter,
-               4);
+               elem_size);
         Q_EMIT(buf, "    %%t%d =l add %%t%d, %%idx%d\n", tmp_counter - 1,
                tmp_counter - 1, tmp_counter);
         tmp_counter--;
         break;
+      }
 
       /* Advanced function operations */
       case FRUITY_CALLI:

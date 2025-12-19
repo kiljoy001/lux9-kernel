@@ -96,6 +96,9 @@ static void lux_rollback(void *ptr) {
 #include "fruity_interp.h"
 #include "fruity_opcodes.h"
 
+/* External declarations */
+extern ulong clr_get_type_size(u32int token);
+
 /* ========== Value Constructors ========== */
 
 fruity_val_t fruity_val_i32(int32_t v) {
@@ -1015,8 +1018,9 @@ int fruity_interp_step(fruity_interp_state_t *state) {
      * Type token encodes the constructor method
      */
     uint32_t ctor_token = instr->operand.value.token;
-    /* For now, allocate 64 bytes for object (typical small object) */
-    size_t obj_size = 64; /* TODO: resolve size from type metadata */
+    /* Resolve actual type size from metadata */
+    size_t obj_size = clr_get_type_size(ctor_token);
+    if (obj_size < 16) obj_size = 16; /* Minimum with CLR object header */
     void *obj = lux_alloc(obj_size, 0);
     if (obj) {
       memset(obj, 0, obj_size);
@@ -1030,8 +1034,13 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     /* ===== Array Operations ===== */
 
   case FRUITY_NEWARR: {
-    POP(a);               /* length */
-    size_t elem_size = 8; /* TODO: from type token */
+    POP(a);                                          /* length */
+    u32int elem_type_token = instr->operand.value.token; /* NEWARR token is element type */
+    size_t elem_size = clr_get_type_size(elem_type_token);
+    if (elem_size > 64)
+      elem_size = 8; /* Arrays of large structs use references */
+    if (elem_size == 0)
+      elem_size = 8; /* Default to pointer size */
     size_t total = 8 + (size_t)AS_I64(a) * elem_size; /* length + elements */
     void *arr = lux_alloc(total, 0);
     if (arr)

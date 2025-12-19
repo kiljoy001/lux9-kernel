@@ -359,4 +359,9 @@ void il_dump_assembly_info(il_assembly_t *assembly);
 /* Dump method info (for debugging) */
 void il_dump_method(il_method_t *method);
 
+/* ========== Type Metadata Functions ========== */
+
+/* Get size in bytes of a CLR type from its metadata token */
+ulong clr_get_type_size(u32int token);
+
 #endif /* IL_PARSER_H */

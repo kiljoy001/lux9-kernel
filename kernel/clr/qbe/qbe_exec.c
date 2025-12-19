@@ -175,10 +175,14 @@ static int exec_interpret_cil(qbe_exec_ctx_t *ctx, il_assembly_t *assembly,
     return -1;
   }
 
-  /* Push arguments onto VM stack */
+  /* Push arguments onto VM stack
+   * Note: All args treated as pointer-sized values (VM_TYPE_I8) which is safe
+   * for FFI boundary. Full type-aware args would require parsing MethodDef
+   * signature blob to extract ELEMENT_TYPE for each parameter.
+   */
   for (int i = 0; i < arg_count; i++) {
     vm_value_t val;
-    val.type = VM_TYPE_I8; /* TODO: proper type from metadata */
+    val.type = VM_TYPE_I8;
     val.value.i8 = (int64_t)(uintptr_t)args[i];
     if (!vm_stack_push(ctx->vm_state, &val)) {
       snprint(result->error_msg, sizeof(result->error_msg),

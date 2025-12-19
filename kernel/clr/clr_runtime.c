@@ -162,7 +162,7 @@ void *clr_string_from_literal(u32int us_index) {
  * Token format: upper byte = table index, lower 3 bytes = row index
  * Tables: 0x01=TypeRef, 0x02=TypeDef, 0x1B=TypeSpec
  */
-static ulong clr_get_type_size(u32int token) {
+ulong clr_get_type_size(u32int token) {
   u8int table = (token >> 24) & 0xFF;
   u32int row = token & 0x00FFFFFF;
 
