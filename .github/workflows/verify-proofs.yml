@@ -22,7 +22,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Coq
       uses: coq-community/docker-coq-action@v1
@@ -30,7 +30,7 @@ jobs:
         coq_version: '8.19'
 
     - name: Cache Coq compilation
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           proofs/**/*.vo
@@ -75,7 +75,7 @@ jobs:
         echo '```' >> proof_report.md
 
     - name: Upload proof report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: proof-report
         path: proof_report.md
@@ -100,10 +100,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Cache opam
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.opam
         key: ${{ runner.os }}-opam-frama-c
@@ -175,7 +175,7 @@ jobs:
         echo '```' >> smt_report.md
 
     - name: Upload SMT report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: smt-report
         path: |
@@ -191,7 +191,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install Clang tools
       run: |
@@ -234,7 +234,7 @@ jobs:
         echo '```' >> clang_report.md
 
     - name: Upload Clang report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: clang-report
         path: |
@@ -250,7 +250,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install CBMC
       run: |
@@ -305,7 +305,7 @@ jobs:
         echo '```' >> cbmc_report.md
 
     - name: Upload CBMC report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cbmc-report
         path: |
@@ -321,7 +321,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Full history for trend analysis
 
@@ -398,7 +398,7 @@ jobs:
         echo "${{ github.sha }},${{ steps.metrics.outputs.admits }},${{ steps.metrics.outputs.theorems }},${{ steps.metrics.outputs.acsl }},$(date -u +%Y-%m-%d)" >> .github/metrics/history.csv
 
     - name: Upload metrics report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: metrics-report
         path: metrics_report.md
@@ -412,7 +412,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Create custom Semgrep rules
       run: |
@@ -507,7 +507,7 @@ jobs:
         echo "- password-in-logs: Sensitive data logging" >> semgrep_report.md
 
     - name: Upload Semgrep report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: semgrep-report
@@ -519,7 +519,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 2
 
@@ -573,7 +573,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Check for invariant violations
       run: |
