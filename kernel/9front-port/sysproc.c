@@ -2123,7 +2123,9 @@ uintptr sysclrcompile(void *list_void) {
   memset(intermediate_va, 0, BY2PG);
 
   /* 5. Translate Fruity IR → QBE IL */
-  ret = fruity_to_qbe(module, intermediate_handle, kerrbuf, sizeof(kerrbuf));
+  ulong qbe_size = 0;
+  ret = fruity_to_qbe(module, intermediate_handle, &qbe_size, kerrbuf,
+                      sizeof(kerrbuf));
   if (ret != 0) {
     /* Error message already in kerrbuf */
     error("fruity_to_qbe failed");

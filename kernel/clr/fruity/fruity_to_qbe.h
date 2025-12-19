@@ -23,9 +23,14 @@
 /*
  * Translate Fruity IR module to QBE IL text
  *
+ * Two-pass API for dynamic size allocation:
+ *   Pass 1: out_handle=0 → builds buffer, returns size in *out_size
+ *   Pass 2: out_handle!=0 → builds buffer, copies to page at out_handle
+ *
  * Arguments:
  *   module: Fruity IR module to translate
- *   out_handle: Exchange page handle for output (physical address)
+ *   out_handle: Exchange page handle for output (physical address), or 0 for size query
+ *   out_size: Output parameter - receives required size (+1 for null terminator)
  *   errorbuf: Optional buffer for error messages (NULL if not needed)
  *   errorbuf_size: Size of error buffer
  *
@@ -38,6 +43,7 @@
  */
 int fruity_to_qbe(fruity_module_t *module,
                   uintptr out_handle,
+                  unsigned long *out_size,
                   char *errorbuf,
                   size_t errorbuf_size);
 

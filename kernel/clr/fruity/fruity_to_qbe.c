@@ -760,8 +760,8 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
 }
 
 /* Main translation function */
-int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, char *errorbuf,
-                  usize errorbuf_size) {
+int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, ulong *out_size,
+                  char *errorbuf, usize errorbuf_size) {
   extern void uartputs(char *, int);
   char debug_buf[128];
   QBEBuffer buf;
@@ -837,23 +837,30 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, char *errorbuf,
     uartputs(debug_buf, strlen(debug_buf));
   }
 
-  /* out_handle is a physical address - convert to kernel virtual */
-  vaddr = KADDR(out_handle);
+  /* Get buffer length */
   copy_len = qbe_buffer_len(&buf);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: fruity_to_qbe final buf_len=%d\n", (int)copy_len);
   uartputs(debug_buf, strlen(debug_buf));
-  if (copy_len > 4096) {
-    if (errorbuf && errorbuf_size > 0)
-      snprint(errorbuf, (int)errorbuf_size, "Output too large: %lud bytes",
-              copy_len);
+
+  /* Two-pass API: if out_handle == 0, this is a size query */
+  if (out_handle == 0) {
+    if (out_size)
+      *out_size = copy_len + 1;  /* +1 for null terminator */
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: fruity_to_qbe size query: returning size=%lud\n",
+            copy_len + 1);
+    uartputs(debug_buf, strlen(debug_buf));
     qbe_buffer_free(&buf);
-    return -1;
+    return 0;
   }
+
+  /* out_handle is a physical address - convert to kernel virtual */
+  vaddr = KADDR(out_handle);
 
   /* Copy to page */
   memmove(vaddr, qbe_buffer_data(&buf), copy_len);
-  ((char *)vaddr)[copy_len] = 0; // Null-terminate the string
+  ((char *)vaddr)[copy_len] = 0; // Null-terminate the string (safe with +1 allocation)
 
   // DEBUG: Print the generated QBE IL to UART
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: Generated QBE IL (len=%ld):\n",

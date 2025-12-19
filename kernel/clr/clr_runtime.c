@@ -46,11 +46,17 @@ typedef struct Fmt Fmt;
 
 /* Forward declarations */
 extern int fruity_to_qbe(fruity_module_t *module, uintptr out_handle,
-                         char *errorbuf, ulong errorbuf_size);
+                         ulong *out_size, char *errorbuf, ulong errorbuf_size);
 /* qbe_compile_page: takes physical addresses of QBE text page and output code
  * page */
 extern int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
                             usize errorbuf_size);
+
+/* Pebble API forward declarations */
+typedef struct UserCapability UserCapability;
+extern int pebble_black_alloc(ulong size, UserCapability *out_cap);
+extern int pebble_black_free(const UserCapability *cap);
+extern void *pebble_get_black_addr(const UserCapability *cap);
 
 /* String literal table (populated during compilation) */
 typedef struct {
@@ -298,13 +304,51 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   temp_mod.functions_tail = func;
   temp_mod.function_count = 1;
 
-  /* Step 2: Fruity IR → QBE text */
-  /* Allocate a page for QBE text output */
+  /* Step 2: Fruity IR → QBE text (Two-pass with Pebble allocation) */
+  char errbuf[128];
+
+  /* Pass 1: Query required size */
   snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: clr Step 2: Fruity->QBE, allocating page\n");
+          "DEBUG: clr Step 2a: Querying QBE IL size\n");
   uartputs(debug_buf, strlen(debug_buf));
-  void *qbe_page = xalloc(4096);
+  ulong qbe_il_size = 0;
+  int qbe_result = fruity_to_qbe(&temp_mod, 0, &qbe_il_size, errbuf,
+                                 sizeof(errbuf));
+  if (qbe_result < 0 || qbe_il_size == 0) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: clr fruity_to_qbe size query FAILED: %s\n", errbuf);
+    uartputs(debug_buf, strlen(debug_buf));
+    print("clr: Failed to query QBE IL size for %s: %s\n", method->name, errbuf);
+    fruity_free_function(func);
+    return nil;
+  }
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: clr QBE IL size query: %lud bytes\n", qbe_il_size);
+  uartputs(debug_buf, strlen(debug_buf));
+
+  /* Pass 2: Allocate Pebble black token with exact size */
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: clr Step 2b: Allocating Pebble black token (%lud bytes)\n",
+          qbe_il_size);
+  uartputs(debug_buf, strlen(debug_buf));
+  UserCapability qbe_cap;
+  if (pebble_black_alloc(qbe_il_size, &qbe_cap) != 0) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: clr pebble_black_alloc FAILED\n");
+    uartputs(debug_buf, strlen(debug_buf));
+    print("clr: pebble_black_alloc(%lud) failed for %s\n", qbe_il_size,
+          method->name);
+    fruity_free_function(func);
+    return nil;
+  }
+
+  void *qbe_page = pebble_get_black_addr(&qbe_cap);
   if (qbe_page == nil) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: clr pebble_get_black_addr FAILED\n");
+    uartputs(debug_buf, strlen(debug_buf));
+    print("clr: pebble_get_black_addr failed for %s\n", method->name);
+    pebble_black_free(&qbe_cap);
     fruity_free_function(func);
     return nil;
   }
@@ -312,17 +356,18 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
           qbe_page);
   uartputs(debug_buf, strlen(debug_buf));
 
-  char errbuf[128];
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr calling fruity_to_qbe\n");
+  /* Pass 3: Fill the page with actual QBE IL */
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: clr Step 2c: Generating QBE IL to page\n");
   uartputs(debug_buf, strlen(debug_buf));
-  int qbe_result = fruity_to_qbe(&temp_mod, (uintptr)PADDR(qbe_page), errbuf,
-                                 sizeof(errbuf));
+  qbe_result = fruity_to_qbe(&temp_mod, (uintptr)PADDR(qbe_page), &qbe_il_size,
+                             errbuf, sizeof(errbuf));
   if (qbe_result < 0) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr fruity_to_qbe FAILED: %s\n", errbuf);
     uartputs(debug_buf, strlen(debug_buf));
     print("clr: Fruity→QBE failed for %s: %s\n", method->name, errbuf);
-    xfree(qbe_page);
+    pebble_black_free(&qbe_cap);
     fruity_free_function(func);
     return nil;
   }
@@ -343,7 +388,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   ulong code_page_size = 4096; /* 4KB page for code */
   void *code_page = xalloc(code_page_size);
   if (code_page == nil) {
-    xfree(qbe_page);
+    pebble_black_free(&qbe_cap);
     fruity_free_function(func);
     return nil;
   }
@@ -364,7 +409,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
     uartputs(debug_buf, strlen(debug_buf));
     print("clr: QBE→x86-64 failed for %s: %s\n", method->name, qbe_errbuf);
     xfree(code_page);
-    xfree(qbe_page);
+    pebble_black_free(&qbe_cap);
     fruity_free_function(func);
     return nil;
   }
@@ -375,9 +420,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Cleanup intermediate buffers */
-  /* TODO: xfree(qbe_page) causes panic - qbe_page header corrupted by qbe_compile_page
-   * Temporarily disabled to allow init to run - THIS IS A MEMORY LEAK */
-  // xfree(qbe_page);
+  pebble_black_free(&qbe_cap);  /* Safe - no header corruption with Pebble */
   fruity_free_function(func);
 
   if (out_size)
