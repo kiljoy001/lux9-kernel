@@ -215,37 +215,58 @@ fpuinit(void)
 	u64int cr4;
 	ulong regs[4];
 
+	uartputs("fpuinit: ENTRY\n", 15);
 	m->xcr0 = 0;
+	uartputs("fpuinit: xcr0 cleared\n", 22);
+
 	cr4 = getcr4() | CR4Osfxsr|CR4Oxmmex;
+	uartputs("fpuinit: got CR4\n", 17);
+
 	if((m->cpuidcx & (Xsave|Avx)) == (Xsave|Avx) && getconf("*noavx") == nil){
+		uartputs("fpuinit: AVX path - setting CR4\n", 33);
 		cr4 |= CR4Oxsave;
 		putcr4(cr4);
+		uartputs("fpuinit: CR4 set\n", 17);
 
 		m->xcr0 = 7;	/* x87, sse, avx */
+		uartputs("fpuinit: calling putxcr0\n", 25);
 		putxcr0(m->xcr0);
+		uartputs("fpuinit: putxcr0 done\n", 22);
 
+		uartputs("fpuinit: calling cpuid 0xd\n", 27);
 		cpuid(0xd, 1, regs);
+		uartputs("fpuinit: cpuid done\n", 20);
+
 		if(regs[0] & Xsaves){
+			uartputs("fpuinit: using xsaves\n", 22);
 			fpsave = fpxsaves;
 			fprestore = fpxrestores;
 		} else {
-			if(regs[0] & Xsaveopt)
+			if(regs[0] & Xsaveopt){
+				uartputs("fpuinit: using xsaveopt\n", 24);
 				fpsave = fpxsaveopt;
-			else
+			} else {
+				uartputs("fpuinit: using xsave\n", 21);
 				fpsave = fpxsave;
+			}
 			fprestore = fpxrestore;
 		}
 	} else {
+		uartputs("fpuinit: SSE path - clearing XSAVE\n", 36);
 		cr4 &= ~CR4Oxsave;
 		putcr4(cr4);
+		uartputs("fpuinit: CR4 cleared\n", 21);
 
 		fpsave = fpssesave;
 		fprestore = fpsserestore;
 	}
 
+	uartputs("fpuinit: setting fpstate\n", 25);
 	m->fpsave = nil;
 	m->fpstate = FPinit;
+	uartputs("fpuinit: calling _stts\n", 23);
 	_stts();
+	uartputs("fpuinit: EXIT\n", 14);
 }
 
 static FPalloc*

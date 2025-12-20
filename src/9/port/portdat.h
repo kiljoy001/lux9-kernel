@@ -766,7 +766,7 @@ struct Proc
 	char	*errstr;	/* reason we're unwinding the error stack, errbuf1 or 0 */
 	char	errbuf0[ERRMAX];
 	char	errbuf1[ERRMAX];
-	char	genbuf[128];	/* buffer used e.g. for last name element from namec */
+	char	genbuf[4096];	/* buffer used e.g. for last name element from namec */
 	Chan	*slash;
 	Chan	*dot;
 

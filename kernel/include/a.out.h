@@ -1,15 +1,19 @@
+#include <stdint.h>
+
 typedef	struct	Exec	Exec;
 struct	Exec
 {
-	long	magic;		/* magic number */
-	long	text;	 	/* size of text segment */
-	long	data;	 	/* size of initialized data */
-	long	bss;	  	/* size of uninitialized data */
-	long	syms;	 	/* size of symbol table */
-	long	entry;	 	/* entry point */
-	long	spsz;		/* size of pc/sp offset table */
-	long	pcsz;		/* size of pc/line number table */
+	uint32_t	magic;		/* magic number */
+	uint32_t	text;	 	/* size of text segment */
+	uint32_t	data;	 	/* size of initialized data */
+	uint32_t	bss;	  	/* size of uninitialized data */
+	uint32_t	syms;	 	/* size of symbol table */
+	uint32_t	entry;	 	/* entry point */
+	uint32_t	spsz;		/* size of pc/sp offset table */
+	uint32_t	pcsz;		/* size of pc/line number table */
 };
+
+typedef char exec_size_must_be_32_bytes[(sizeof(Exec) == 8*sizeof(uint32_t)) ? 1 : -1];
 
 #define HDR_MAGIC	0x00008000		/* header expansion */
 

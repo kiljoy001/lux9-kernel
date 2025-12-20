@@ -1026,8 +1026,8 @@ _intrestore:
 
 	SWAPGS
 
-	MOVQ	8(SP), RMACH
-	MOVQ	0(SP), RUSER
+	MOVQ	(15*8)(SP), RMACH		/* r15 */
+	MOVQ	(14*8)(SP), RUSER		/* r14 */
 
 _iretnested:
 	ADDQ	$40, SP

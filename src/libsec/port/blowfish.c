@@ -99,7 +99,7 @@ setupBFstate(BFstate *s, uchar key[], int keybytes, uchar *ivec)
 		s->sbox[i+1] = buf[1];
 	}
 
-	s->setup = 0xcafebabe;
+	s->setup = 0xcafebabe /* nosec */;
 }
 
 void

@@ -41,6 +41,27 @@ Dirtab exchdir[] = {
 	"stat",		{Qstat, 0},		0,		0444,
 };
 
+/* Helper: compare two UserCapability structs */
+static int
+capability_equal(const ExchangeHandle *a, const ExchangeHandle *b)
+{
+	return memcmp(a->hash, b->hash, BLIND_LEDGER_CAP_SIZE) == 0 &&
+	       a->size == b->size &&
+	       a->type == b->type &&
+	       a->perms == b->perms;
+}
+
+/* Helper: check if UserCapability is zero/invalid */
+static int
+capability_is_zero(const ExchangeHandle *cap)
+{
+	static const u8int zero_hash[BLIND_LEDGER_CAP_SIZE] = {0};
+	return memcmp(cap->hash, zero_hash, BLIND_LEDGER_CAP_SIZE) == 0 &&
+	       cap->size == 0 &&
+	       cap->type == 0 &&
+	       cap->perms == 0;
+}
+
 static void
 exchinit(void)
 {
@@ -125,13 +146,13 @@ exchread(Chan *c, void *buf, long n, vlong off)
 		e = p + 4096;
 		seprint(p, e, "Page Exchange System\n");
 		seprint(p+strlen(p), e, "Prepared pages: %d\n", exchctl.nprepared);
-		seprint(p+strlen(p), e, "Owner PID   Handle           Original VAddr\n");
-		seprint(p+strlen(p), e, "----------  ---------------  ---------------\n");
+		seprint(p+strlen(p), e, "Index  Owner PID   Original VAddr\n");
+		seprint(p+strlen(p), e, "-----  ----------  ---------------\n");
 		qlock(&exchctl);
 		for(i = 0; i < exchctl.nprepared; i++){
-			seprint(p+strlen(p), e, "%-10d  0x%016llux  0x%016llux\n",
+			seprint(p+strlen(p), e, "%-5d  %-10d  0x%016llux\n",
+				i,
 				exchctl.prepared[i].owner ? exchctl.prepared[i].owner->pid : -1,
-				(uvlong)exchctl.prepared[i].handle,
 				(uvlong)exchctl.prepared[i].original_vaddr);
 		}
 		qunlock(&exchctl);
@@ -185,8 +206,7 @@ exchwrite(Chan *c, void *vp, long n, vlong off)
 			}
 			
 			/* Prepare the page for exchange */
-			handle = exchange_prepare(vaddr);
-			if(handle == 0){
+			if(exchange_prepare(vaddr, &handle) != BLIND_LEDGER_OK){
 				free(buf);
 				error("exchange_prepare failed");
 			}
@@ -207,67 +227,63 @@ exchwrite(Chan *c, void *vp, long n, vlong off)
 		}
 		else if(strncmp(buf, "accept ", 7) == 0){
 			/* accept <handle> <dest_vaddr> <prot> */
+			/* Parse "accept <cap_index> <dest_vaddr> <prot>" */
 			char *p = buf+7;
-			handle = strtoul(p, &p, 0);
+			int cap_idx = strtol(p, &p, 0);
 			while(*p == ' ') p++;
 			uintptr dest_vaddr = strtoul(p, &p, 0);
 			while(*p == ' ') p++;
 			int prot = strtol(p, nil, 0);
-			
-			if(handle == 0 || (dest_vaddr & (BY2PG-1)) != 0){
+
+			qlock(&exchctl);
+			if(cap_idx < 0 || cap_idx >= exchctl.nprepared || (dest_vaddr & (BY2PG-1)) != 0){
+				qunlock(&exchctl);
 				free(buf);
 				error("invalid parameters");
 			}
-			
-			result = exchange_accept(handle, dest_vaddr, prot);
+
+			handle = exchctl.prepared[cap_idx].handle;
+			result = exchange_accept(&handle, dest_vaddr, prot);
 			if(result != EXCHANGE_OK){
+				qunlock(&exchctl);
 				free(buf);
 				error("exchange_accept failed");
 			}
-			
+
 			/* Remove from prepared tracking */
-			qlock(&exchctl);
-			for(int i = 0; i < exchctl.nprepared; i++){
-				if(exchctl.prepared[i].handle == handle){
-					/* Shift remaining entries down */
-					for(int j = i; j < exchctl.nprepared - 1; j++){
-						exchctl.prepared[j] = exchctl.prepared[j+1];
-					}
-					exchctl.nprepared--;
-					break;
-				}
+			for(int j = cap_idx; j < exchctl.nprepared - 1; j++){
+				exchctl.prepared[j] = exchctl.prepared[j+1];
 			}
+			exchctl.nprepared--;
 			qunlock(&exchctl);
 			
 			free(buf);
 			return n;
 		}
 		else if(strncmp(buf, "cancel ", 7) == 0){
-			/* cancel <handle> */
-			handle = strtoul(buf+7, nil, 0);
-			if(handle == 0){
+			/* cancel <cap_index> */
+			int cap_idx = strtol(buf+7, nil, 0);
+
+			qlock(&exchctl);
+			if(cap_idx < 0 || cap_idx >= exchctl.nprepared){
+				qunlock(&exchctl);
 				free(buf);
-				error("invalid handle");
+				error("invalid capability index");
 			}
-			
-			result = exchange_cancel(handle);
+
+			handle = exchctl.prepared[cap_idx].handle;
+			result = exchange_cancel(&handle);
 			if(result != EXCHANGE_OK){
+				qunlock(&exchctl);
 				free(buf);
 				error("exchange_cancel failed");
 			}
-			
+
 			/* Remove from prepared tracking */
-			qlock(&exchctl);
-			for(int i = 0; i < exchctl.nprepared; i++){
-				if(exchctl.prepared[i].handle == handle){
-					/* Shift remaining entries down */
-					for(int j = i; j < exchctl.nprepared - 1; j++){
-						exchctl.prepared[j] = exchctl.prepared[j+1];
-					}
-					exchctl.nprepared--;
-					break;
-				}
+			for(int j = cap_idx; j < exchctl.nprepared - 1; j++){
+				exchctl.prepared[j] = exchctl.prepared[j+1];
 			}
+			exchctl.nprepared--;
 			qunlock(&exchctl);
 			
 			free(buf);

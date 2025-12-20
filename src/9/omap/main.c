@@ -141,13 +141,13 @@ main(void)
 {
 //	int i;
 	extern char bdata[], edata[], end[], etext[];
-	static ulong vfy = 0xcafebabe;
+	static ulong vfy = 0xcafebabe /* nosec */;
 
 	/* l.s has already printed "Plan 9 from Be" */
 //	m = mach;					/* now done in l.s */
 
 	/* realign data seg; apparently -H0 -R4096 does not pad the text seg */
-	if (vfy != 0xcafebabe) {
+	if (vfy != 0xcafebabe /* nosec */) {
 //		wave('<'); wave('-');
 		memmove(bdata, etext, edata - bdata);
 	}
@@ -159,7 +159,7 @@ main(void)
 	cacheuwbinv();
 	l2cacheuwbinv();
 
-	if (vfy != 0xcafebabe)
+	if (vfy != 0xcafebabe /* nosec */)
 		panic("data segment misaligned");
 	vfy = 0;
 

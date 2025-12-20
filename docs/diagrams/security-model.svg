@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="1100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <!-- Layer Gradients -->
+    <linearGradient id="layer1-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e3f2fd"/>
+      <stop offset="100%" style="stop-color:#bbdefb"/>
+    </linearGradient>
+    <linearGradient id="layer2-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f3e5f5"/>
+      <stop offset="100%" style="stop-color:#e1bee7"/>
+    </linearGradient>
+    <linearGradient id="layer3-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff8e1"/>
+      <stop offset="100%" style="stop-color:#ffecb3"/>
+    </linearGradient>
+    <linearGradient id="layer4-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e0f2f1"/>
+      <stop offset="100%" style="stop-color:#b2dfdb"/>
+    </linearGradient>
+    <linearGradient id="layer5-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffebee"/>
+      <stop offset="100%" style="stop-color:#ffcdd2"/>
+    </linearGradient>
+
+    <style>
+      .layer1-box { fill: url(#layer1-grad); stroke: #1e88e5; stroke-width: 2; }
+      .layer2-box { fill: url(#layer2-grad); stroke: #8e24aa; stroke-width: 2; }
+      .layer3-box { fill: url(#layer3-grad); stroke: #ffa000; stroke-width: 2; }
+      .layer4-box { fill: url(#layer4-grad); stroke: #00897b; stroke-width: 2; }
+      .layer5-box { fill: url(#layer5-grad); stroke: #e53935; stroke-width: 2; }
+
+      .box-content { fill: white; stroke: #546e7a; stroke-width: 1; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.1)); }
+      .box-unsafe { fill: #ffebee; stroke: #ef5350; stroke-width: 2; }
+      
+      .text { font-family: monospace; font-size: 11px; fill: #333; alignment-baseline: middle; }
+      .title { font-family: sans-serif; font-size: 24px; font-weight: bold; fill: #1a202c; }
+      .subtitle { font-family: sans-serif; font-size: 14px; font-weight: bold; fill: #263238; }
+      .label { font-family: sans-serif; font-size: 11px; fill: #546e7a; }
+      .label-head { font-family: sans-serif; font-size: 11px; fill: #333; font-weight: bold; }
+      
+      .arrow { stroke: #546e7a; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .arrow-attack { stroke: #ef5350; stroke-width: 2; fill: none; marker-end: url(#arrow-attack); stroke-dasharray: 4,4; }
+      .arrow-defense { stroke: #43a047; stroke-width: 2; fill: none; marker-end: url(#arrow-defense); }
+      
+      .blocked-x { stroke: #c62828; stroke-width: 3; }
+    </style>
+    
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#546e7a"/>
+    </marker>
+    <marker id="arrow-attack" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ef5350"/>
+    </marker>
+    <marker id="arrow-defense" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#43a047"/>
+    </marker>
+  </defs>
+
+  <text x="450" y="40" text-anchor="middle" class="title">Lux9 Security Model: Defense in Depth</text>
+
+  <!-- Layer 1: Page Ownership -->
+  <g transform="translate(50, 70)">
+    <rect width="800" height="130" rx="8" class="layer1-box"/>
+    <text x="20" y="25" class="subtitle">Layer 1: Memory Ownership (Borrow Checker)</text>
+    
+    <g transform="translate(100, 50)">
+      <rect x="0" y="0" width="140" height="40" rx="4" class="box-content"/>
+      <text x="70" y="20" text-anchor="middle" class="text" font-weight="bold">Page 0x1234</text>
+      <text x="70" y="32" text-anchor="middle" font-size="9px" fill="#555">Owner: Proc A</text>
+    </g>
+
+    <g transform="translate(300, 50)">
+      <path d="M -40 20 L -10 20" class="arrow"/>
+      <rect x="0" y="0" width="140" height="40" rx="4" class="box-content" style="stroke: #1e88e5; fill: #e3f2fd"/>
+      <text x="70" y="20" text-anchor="middle" class="text">State: Owned</text>
+      <text x="70" y="32" text-anchor="middle" font-size="9px" fill="#1e88e5">Exclusive Access</text>
+    </g>
+
+    <g transform="translate(600, 50)">
+      <text x="-60" y="15" text-anchor="middle" class="label" fill="#ef5350">Unauthorized Access</text>
+      <path d="M 0 20 L -80 20" class="arrow-attack"/>
+      <rect x="0" y="0" width="140" height="40" rx="4" class="box-unsafe"/>
+      <text x="70" y="20" text-anchor="middle" class="text">Attacker (Proc B)</text>
+    </g>
+    
+    <!-- Blocked X -->
+    <g transform="translate(540, 70)">
+       <line x1="-10" y1="-10" x2="10" y2="10" class="blocked-x"/>
+       <line x1="10" y1="-10" x2="-10" y2="10" class="blocked-x"/>
+       <text x="0" y="25" text-anchor="middle" class="label" fill="#c62828" font-weight="bold">BLOCKED</text>
+    </g>
+  </g>
+
+  <!-- Layer 2: TOCTOU -->
+  <g transform="translate(50, 220)">
+    <rect width="800" height="180" rx="8" class="layer2-box"/>
+    <text x="20" y="25" class="subtitle">Layer 2: TOCTOU Prevention (Exchange Page)</text>
+
+    <!-- Vulnerable Flow -->
+    <g transform="translate(130, 55)">
+      <!-- Label pushed left to avoid overlap with boxes -->
+      <text x="-20" y="20" text-anchor="end" class="label-head">Vulnerable:</text>
+      
+      <rect x="0" y="0" width="130" height="30" class="box-unsafe"/>
+      <text x="65" y="15" text-anchor="middle" class="text" font-size="10px">Check: n=5</text>
+      
+      <path d="M 135 15 L 165 15" class="arrow-attack"/>
+      
+      <rect x="170" y="0" width="130" height="30" class="box-unsafe"/>
+      <text x="235" y="15" text-anchor="middle" class="text" font-size="10px">Swap: n=999</text>
+      
+      <path d="M 305 15 L 335 15" class="arrow-attack"/>
+      
+      <rect x="340" y="0" width="130" height="30" class="box-unsafe"/>
+      <text x="405" y="15" text-anchor="middle" class="text" fill="#c62828" font-size="10px">Buffer Overflow!</text>
+    </g>
+
+    <!-- Secure Flow -->
+    <g transform="translate(130, 115)">
+      <text x="-20" y="20" text-anchor="end" class="label-head">Secure:</text>
+      
+      <rect x="0" y="0" width="110" height="40" rx="4" class="box-content"/>
+      <text x="55" y="20" text-anchor="middle" class="text">1. Unmap Page</text>
+      
+      <path d="M 115 20 L 145 20" class="arrow-defense"/>
+      
+      <rect x="150" y="0" width="110" height="40" rx="4" class="box-content"/>
+      <text x="205" y="20" text-anchor="middle" class="text">2. Copy Stack</text>
+      
+      <path d="M 265 20 L 295 20" class="arrow-defense"/>
+      
+      <rect x="300" y="0" width="110" height="40" rx="4" class="box-content"/>
+      <text x="355" y="20" text-anchor="middle" class="text">3. Validate</text>
+      
+      <path d="M 415 20 L 445 20" class="arrow-defense"/>
+      
+      <rect x="450" y="0" width="110" height="40" rx="4" class="box-content"/>
+      <text x="505" y="20" text-anchor="middle" class="text">4. Execute</text>
+    </g>
+    
+    <text x="680" y="135" class="label" fill="#43a047" font-weight="bold">Atomic Snapshot = Safe</text>
+  </g>
+
+  <!-- Layer 3: MsgOrd -->
+  <g transform="translate(50, 420)">
+    <rect width="800" height="150" rx="8" class="layer3-box"/>
+    <text x="20" y="25" class="subtitle">Layer 3: Message Ordering (MsgOrd / GHOSTDAG)</text>
+    <text x="350" y="25" class="label"> Consensus-based Sequencing (No Replay)</text>
+
+    <g transform="translate(100, 60)">
+      <!-- DAG nodes -->
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="80" height="30" rx="4" class="box-content"/>
+        <text x="40" y="15" text-anchor="middle" class="text">Msg A</text>
+      </g>
+      
+      <path d="M 85 15 L 115 15" class="arrow"/>
+      
+      <g transform="translate(120, -20)">
+         <rect x="0" y="0" width="80" height="30" rx="4" class="box-content"/>
+         <text x="40" y="15" text-anchor="middle" class="text">Msg B</text>
+      </g>
+      
+      <g transform="translate(120, 30)">
+         <rect x="0" y="0" width="80" height="30" rx="4" class="box-content"/>
+         <text x="40" y="15" text-anchor="middle" class="text">Msg C</text>
+      </g>
+
+       <!-- Consensus Convergence -->
+       <path d="M 205 -5 L 235 15" class="arrow"/>
+       <path d="M 205 45 L 235 15" class="arrow"/>
+
+       <g transform="translate(240, 0)">
+         <rect x="0" y="0" width="140" height="40" rx="4" class="box-content" style="stroke: #ff6f00; fill: #fff3e0"/>
+         <text x="70" y="20" text-anchor="middle" class="text" font-weight="bold">MsgOrd Consensus</text>
+         <text x="70" y="32" text-anchor="middle" class="label" font-size="9px">Total Order Established</text>
+       </g>
+    </g>
+
+    <g transform="translate(550, 60)">
+      <text x="80" y="-10" text-anchor="middle" class="label" fill="#ef5350">Replay / Out-of-Order</text>
+      <rect x="0" y="0" width="160" height="40" rx="4" class="box-unsafe"/>
+      <text x="80" y="20" text-anchor="middle" class="text">Old Seq / Bad DAG Parent</text>
+      
+      <g transform="translate(65, 50)">
+         <line x1="-10" y1="-10" x2="10" y2="10" class="blocked-x"/>
+         <line x1="10" y1="-10" x2="-10" y2="10" class="blocked-x"/>
+         <text x="30" y="5" class="label" fill="#c62828" font-weight="bold">DROPPED</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Layer 4: Bounds -->
+  <g transform="translate(50, 590)">
+    <rect width="800" height="150" rx="8" class="layer4-box"/>
+    <text x="20" y="25" class="subtitle">Layer 4: Multi-Layer Bounds Checking</text>
+
+    <g transform="translate(80, 50)">
+      <rect x="0" y="0" width="140" height="50" rx="4" class="box-content"/>
+      <text x="70" y="18" text-anchor="middle" class="text" font-weight="bold">Header</text>
+      <text x="70" y="35" text-anchor="middle" class="label">count &lt;= 256</text>
+    </g>
+
+    <g transform="translate(240, 50)">
+      <rect x="0" y="0" width="140" height="50" rx="4" class="box-content"/>
+      <text x="70" y="18" text-anchor="middle" class="text" font-weight="bold">Length</text>
+      <text x="70" y="35" text-anchor="middle" class="label">len &lt;= 8192</text>
+    </g>
+
+    <g transform="translate(400, 50)">
+      <rect x="0" y="0" width="140" height="50" rx="4" class="box-content"/>
+      <text x="70" y="18" text-anchor="middle" class="text" font-weight="bold">Overflow</text>
+      <text x="70" y="35" text-anchor="middle" class="label">off + len &gt;= off</text>
+    </g>
+
+    <g transform="translate(560, 50)">
+      <rect x="0" y="0" width="140" height="50" rx="4" class="box-content"/>
+      <text x="70" y="18" text-anchor="middle" class="text" font-weight="bold">Alignment</text>
+      <text x="70" y="35" text-anchor="middle" class="label">addr &amp; 0xFFF == 0</text>
+    </g>
+    
+    <text x="400" y="125" text-anchor="middle" class="label" fill="#00695c" font-weight="bold">Validation at kernel/9front-port/devring.c ensures memory safety</text>
+  </g>
+
+  <!-- Layer 5: Kinetic -->
+  <g transform="translate(50, 760)">
+    <rect width="800" height="160" rx="8" class="layer5-box"/>
+    <text x="20" y="25" class="subtitle">Layer 5: Kinetic Defense (BEVIS &amp; BUTTHEAD)</text>
+
+    <g transform="translate(100, 50)">
+      <rect x="0" y="0" width="200" height="60" rx="4" class="box-content" style="stroke: #2e7d32; stroke-width: 2"/>
+      <text x="100" y="20" text-anchor="middle" class="text" font-weight="bold" font-size="12px" fill="#2e7d32">BEVIS</text>
+      <text x="100" y="40" text-anchor="middle" class="label">Proof-of-Work Gating</text>
+    </g>
+
+    <g transform="translate(500, 50)">
+      <rect x="0" y="0" width="200" height="60" rx="4" class="box-content" style="stroke: #c62828; stroke-width: 2"/>
+      <text x="100" y="20" text-anchor="middle" class="text" font-weight="bold" font-size="12px" fill="#c62828">BUTTHEAD</text>
+      <text x="100" y="40" text-anchor="middle" class="label">Anomaly Detection</text>
+    </g>
+    
+    <!-- Feedback Loop -->
+    <path d="M 600 110 L 600 130 L 200 130 L 200 110" class="arrow" stroke-dasharray="5,5" stroke="#d32f2f"/>
+    <rect x="300" y="120" width="200" height="20" fill="#ffebee" rx="2"/>
+    <text x="400" y="134" text-anchor="middle" class="label" fill="#d32f2f">High Load → Increase Difficulty</text>
+  </g>
+  
+  <rect x="50" y="940" width="800" height="20" fill="none"/>
+</svg>

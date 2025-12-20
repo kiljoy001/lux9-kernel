@@ -1,0 +1,557 @@
+/*
+ * Fruity IR CBOR Serialization
+ * Uses libmcu-cbor for encoding/decoding Fruity IR modules
+ */
+
+/* Include kernel headers first (required by fruity_ir.h) */
+#include "u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+
+/* Now include Fruity IR */
+#include "fruity_ir.h"
+
+/*
+ * Prevent cbor_kernel.h double-include (we already have kernel headers).
+ * Define the guard and provide the typedefs manually.
+ */
+#define CBOR_KERNEL_H
+
+/* CBOR needs these stdint types */
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+typedef signed char int8_t;
+typedef signed short int16_t;
+typedef signed int int32_t;
+typedef signed long long int64_t;
+typedef ulong size_t;
+typedef long ptrdiff_t;
+typedef unsigned char bool;
+#define true 1
+#define false 0
+#define CBOR_NO_FLOAT
+
+/* Now include CBOR headers */
+#include "../libmcu-cbor/cbor/encoder.h"
+#include "../libmcu-cbor/cbor/decoder.h"
+
+/*
+ * CBOR Schema for Fruity IR Module:
+ *
+ * module = {
+ *   "name": string,
+ *   "version": uint,
+ *   "functions": [function, ...]
+ * }
+ *
+ * function = {
+ *   "name": string,
+ *   "token": uint,
+ *   "blocks": [block, ...]
+ * }
+ *
+ * block = {
+ *   "id": uint,
+ *   "instructions": [instruction, ...]
+ * }
+ *
+ * instruction = {
+ *   "opcode": uint,
+ *   "operand": operand
+ * }
+ *
+ * operand = uint | {type: uint, value: any}
+ */
+
+/*
+ * Encode a Fruity IR module to CBOR
+ * Returns number of bytes written, or 0 on error
+ */
+ulong
+fruity_module_to_cbor(fruity_module_t *module, u8int *buf, ulong bufsize, char *errbuf, ulong errbuf_size)
+{
+	cbor_writer_t writer;
+	cbor_error_t err;
+
+	if(module == nil || buf == nil){
+		if(errbuf != nil)
+			snprint(errbuf, errbuf_size, "null arguments");
+		return 0;
+	}
+
+	cbor_writer_init(&writer, buf, bufsize);
+
+	/* Top-level map: {name, version, functions} */
+	err = cbor_encode_map(&writer, 3);
+	if(err != CBOR_SUCCESS) goto error;
+
+	/* Key: "name" */
+	err = cbor_encode_null_terminated_text_string(&writer, "name");
+	if(err != CBOR_SUCCESS) goto error;
+	err = cbor_encode_null_terminated_text_string(&writer, module->name);
+	if(err != CBOR_SUCCESS) goto error;
+
+	/* Key: "version" */
+	err = cbor_encode_null_terminated_text_string(&writer, "version");
+	if(err != CBOR_SUCCESS) goto error;
+	err = cbor_encode_unsigned_integer(&writer, module->version);
+	if(err != CBOR_SUCCESS) goto error;
+
+	/* Key: "functions" */
+	err = cbor_encode_null_terminated_text_string(&writer, "functions");
+	if(err != CBOR_SUCCESS) goto error;
+	err = cbor_encode_array(&writer, module->function_count);
+	if(err != CBOR_SUCCESS) goto error;
+
+	/* Encode each function */
+	for(fruity_function_t *func = module->functions_head; func != nil; func = func->next){
+		/* Function map: {name, token, blocks} */
+		err = cbor_encode_map(&writer, 3);
+		if(err != CBOR_SUCCESS) goto error;
+
+		/* name */
+		err = cbor_encode_null_terminated_text_string(&writer, "name");
+		if(err != CBOR_SUCCESS) goto error;
+		err = cbor_encode_null_terminated_text_string(&writer, func->name);
+		if(err != CBOR_SUCCESS) goto error;
+
+		/* token */
+		err = cbor_encode_null_terminated_text_string(&writer, "token");
+		if(err != CBOR_SUCCESS) goto error;
+		err = cbor_encode_unsigned_integer(&writer, func->method_token);
+		if(err != CBOR_SUCCESS) goto error;
+
+		/* blocks */
+		err = cbor_encode_null_terminated_text_string(&writer, "blocks");
+		if(err != CBOR_SUCCESS) goto error;
+		err = cbor_encode_array(&writer, func->block_count);
+		if(err != CBOR_SUCCESS) goto error;
+
+		/* Encode each block */
+		for(fruity_basic_block_t *block = func->blocks_head; block != nil; block = block->next){
+			/* Block map: {id, instructions} */
+			err = cbor_encode_map(&writer, 2);
+			if(err != CBOR_SUCCESS) goto error;
+
+			/* id */
+			err = cbor_encode_null_terminated_text_string(&writer, "id");
+			if(err != CBOR_SUCCESS) goto error;
+			err = cbor_encode_unsigned_integer(&writer, block->block_id);
+			if(err != CBOR_SUCCESS) goto error;
+
+			/* instructions */
+			err = cbor_encode_null_terminated_text_string(&writer, "instructions");
+			if(err != CBOR_SUCCESS) goto error;
+			err = cbor_encode_array(&writer, block->instruction_count);
+			if(err != CBOR_SUCCESS) goto error;
+
+			/* Encode each instruction */
+			for(fruity_instruction_t *instr = block->instructions_head; instr != nil; instr = instr->next){
+				/* Instruction map: {opcode, operand} */
+				err = cbor_encode_map(&writer, 2);
+				if(err != CBOR_SUCCESS) goto error;
+
+				/* opcode */
+				err = cbor_encode_null_terminated_text_string(&writer, "opcode");
+				if(err != CBOR_SUCCESS) goto error;
+				err = cbor_encode_unsigned_integer(&writer, instr->opcode);
+				if(err != CBOR_SUCCESS) goto error;
+
+				/* operand */
+				err = cbor_encode_null_terminated_text_string(&writer, "operand");
+				if(err != CBOR_SUCCESS) goto error;
+
+				switch(instr->operand.type){
+				case FRUITY_OP_NONE:
+					err = cbor_encode_null(&writer);
+					break;
+				case FRUITY_OP_IMM_I32:
+					if(instr->operand.value.i32 < 0)
+						err = cbor_encode_negative_integer(&writer, (uint64_t)(-instr->operand.value.i32 - 1));
+					else
+						err = cbor_encode_unsigned_integer(&writer, (uint64_t)instr->operand.value.i32);
+					break;
+				case FRUITY_OP_IMM_I64:
+					if(instr->operand.value.i64 < 0)
+						err = cbor_encode_negative_integer(&writer, (uint64_t)(-instr->operand.value.i64 - 1));
+					else
+						err = cbor_encode_unsigned_integer(&writer, (uint64_t)instr->operand.value.i64);
+					break;
+				case FRUITY_OP_LOCAL:
+				case FRUITY_OP_ARG:
+				case FRUITY_OP_FIELD:
+					err = cbor_encode_unsigned_integer(&writer, instr->operand.value.index);
+					break;
+				case FRUITY_OP_TYPE:
+				case FRUITY_OP_METHOD:
+					err = cbor_encode_unsigned_integer(&writer, instr->operand.value.token);
+					break;
+				case FRUITY_OP_IMM_R32:
+				case FRUITY_OP_IMM_R64:
+					/* Float not supported in kernel */
+					err = cbor_encode_null(&writer);
+					break;
+				default:
+					err = cbor_encode_null(&writer);
+					break;
+				}
+				if(err != CBOR_SUCCESS) goto error;
+			}
+		}
+	}
+
+	return cbor_writer_len(&writer);
+
+error:
+	if(errbuf != nil)
+		snprint(errbuf, errbuf_size, "CBOR encoding failed: error code %d", err);
+	return 0;
+}
+
+/*
+ * Decode a CBOR-encoded Fruity IR module
+ * Returns module pointer or nil on error
+ */
+fruity_module_t*
+fruity_module_from_cbor(u8int *data, ulong datalen, char *errbuf, ulong errbuf_size)
+{
+	cbor_reader_t reader;
+	cbor_item_t item;
+	cbor_error_t err;
+	fruity_module_t *module = nil;
+	fruity_function_t *func = nil, *func_tail = nil;
+	fruity_basic_block_t *block = nil, *block_tail = nil;
+	fruity_instruction_t *instr = nil, *instr_tail = nil;
+	char key_buf[64];
+	ulong map_entries, array_items;
+
+	if(data == nil || datalen == 0){
+		if(errbuf != nil)
+			snprint(errbuf, errbuf_size, "null data");
+		return nil;
+	}
+
+	cbor_reader_init(&reader, data, datalen);
+
+	/* Read top-level map: {name, version, functions} */
+	err = cbor_decode_map(&reader, &map_entries);
+	if(err != CBOR_SUCCESS || map_entries != 3){
+		if(errbuf != nil)
+			snprint(errbuf, errbuf_size, "expected map with 3 entries");
+		return nil;
+	}
+
+	/* Allocate module */
+	module = mallocz(sizeof(fruity_module_t), 1);
+	if(module == nil){
+		if(errbuf != nil)
+			snprint(errbuf, errbuf_size, "out of memory");
+		return nil;
+	}
+
+	/* Parse module fields */
+	for(ulong i = 0; i < map_entries; i++){
+		/* Read key */
+		err = cbor_decode_null_terminated_text_string(&reader, key_buf, sizeof(key_buf));
+		if(err != CBOR_SUCCESS){
+			if(errbuf != nil)
+				snprint(errbuf, errbuf_size, "failed to read key");
+			goto error;
+		}
+
+		if(strcmp(key_buf, "name") == 0){
+			/* Read name */
+			char name_buf[256];
+			err = cbor_decode_null_terminated_text_string(&reader, name_buf, sizeof(name_buf));
+			if(err != CBOR_SUCCESS){
+				if(errbuf != nil)
+					snprint(errbuf, errbuf_size, "failed to read name");
+				goto error;
+			}
+			module->name = strdup(name_buf);
+		}
+		else if(strcmp(key_buf, "version") == 0){
+			/* Read version */
+			uint64_t version;
+			err = cbor_decode_unsigned_integer(&reader, &version);
+			if(err != CBOR_SUCCESS){
+				if(errbuf != nil)
+					snprint(errbuf, errbuf_size, "failed to read version");
+				goto error;
+			}
+			module->version = (u32int)version;
+		}
+		else if(strcmp(key_buf, "functions") == 0){
+			/* Read functions array */
+			err = cbor_decode_array(&reader, &array_items);
+			if(err != CBOR_SUCCESS){
+				if(errbuf != nil)
+					snprint(errbuf, errbuf_size, "failed to read functions array");
+				goto error;
+			}
+
+			module->function_count = array_items;
+
+			/* Decode each function */
+			for(ulong f = 0; f < array_items; f++){
+				ulong func_map_entries;
+
+				/* Read function map: {name, token, blocks} */
+				err = cbor_decode_map(&reader, &func_map_entries);
+				if(err != CBOR_SUCCESS || func_map_entries != 3){
+					if(errbuf != nil)
+						snprint(errbuf, errbuf_size, "expected function map with 3 entries");
+					goto error;
+				}
+
+				func = mallocz(sizeof(fruity_function_t), 1);
+				if(func == nil){
+					if(errbuf != nil)
+						snprint(errbuf, errbuf_size, "out of memory");
+					goto error;
+				}
+
+				/* Parse function fields */
+				for(ulong j = 0; j < func_map_entries; j++){
+					err = cbor_decode_null_terminated_text_string(&reader, key_buf, sizeof(key_buf));
+					if(err != CBOR_SUCCESS){
+						if(errbuf != nil)
+							snprint(errbuf, errbuf_size, "failed to read function key");
+						goto error;
+					}
+
+					if(strcmp(key_buf, "name") == 0){
+						char func_name[256];
+						err = cbor_decode_null_terminated_text_string(&reader, func_name, sizeof(func_name));
+						if(err != CBOR_SUCCESS){
+							if(errbuf != nil)
+								snprint(errbuf, errbuf_size, "failed to read function name");
+							goto error;
+						}
+						func->name = strdup(func_name);
+					}
+					else if(strcmp(key_buf, "token") == 0){
+						uint64_t token;
+						err = cbor_decode_unsigned_integer(&reader, &token);
+						if(err != CBOR_SUCCESS){
+							if(errbuf != nil)
+								snprint(errbuf, errbuf_size, "failed to read token");
+							goto error;
+						}
+						func->method_token = (u32int)token;
+					}
+					else if(strcmp(key_buf, "blocks") == 0){
+						ulong block_array_items;
+
+						/* Read blocks array */
+						err = cbor_decode_array(&reader, &block_array_items);
+						if(err != CBOR_SUCCESS){
+							if(errbuf != nil)
+								snprint(errbuf, errbuf_size, "failed to read blocks array");
+							goto error;
+						}
+
+						func->block_count = block_array_items;
+						block_tail = nil;
+
+						/* Decode each block */
+						for(ulong b = 0; b < block_array_items; b++){
+							ulong block_map_entries;
+
+							/* Read block map: {id, instructions} */
+							err = cbor_decode_map(&reader, &block_map_entries);
+							if(err != CBOR_SUCCESS || block_map_entries != 2){
+								if(errbuf != nil)
+									snprint(errbuf, errbuf_size, "expected block map with 2 entries");
+								goto error;
+							}
+
+							block = mallocz(sizeof(fruity_basic_block_t), 1);
+							if(block == nil){
+								if(errbuf != nil)
+									snprint(errbuf, errbuf_size, "out of memory");
+								goto error;
+							}
+
+							/* Parse block fields */
+							for(ulong k = 0; k < block_map_entries; k++){
+								err = cbor_decode_null_terminated_text_string(&reader, key_buf, sizeof(key_buf));
+								if(err != CBOR_SUCCESS){
+									if(errbuf != nil)
+										snprint(errbuf, errbuf_size, "failed to read block key");
+									goto error;
+								}
+
+								if(strcmp(key_buf, "id") == 0){
+									uint64_t id;
+									err = cbor_decode_unsigned_integer(&reader, &id);
+									if(err != CBOR_SUCCESS){
+										if(errbuf != nil)
+											snprint(errbuf, errbuf_size, "failed to read block id");
+										goto error;
+									}
+									block->block_id = (u32int)id;
+								}
+								else if(strcmp(key_buf, "instructions") == 0){
+									ulong instr_array_items;
+
+									/* Read instructions array */
+									err = cbor_decode_array(&reader, &instr_array_items);
+									if(err != CBOR_SUCCESS){
+										if(errbuf != nil)
+											snprint(errbuf, errbuf_size, "failed to read instructions array");
+										goto error;
+									}
+
+									block->instruction_count = instr_array_items;
+									instr_tail = nil;
+
+									/* Decode each instruction */
+									for(ulong ins = 0; ins < instr_array_items; ins++){
+										ulong instr_map_entries;
+
+										/* Read instruction map: {opcode, operand} */
+										err = cbor_decode_map(&reader, &instr_map_entries);
+										if(err != CBOR_SUCCESS || instr_map_entries != 2){
+											if(errbuf != nil)
+												snprint(errbuf, errbuf_size, "expected instruction map with 2 entries");
+											goto error;
+										}
+
+										instr = mallocz(sizeof(fruity_instruction_t), 1);
+										if(instr == nil){
+											if(errbuf != nil)
+												snprint(errbuf, errbuf_size, "out of memory");
+											goto error;
+										}
+
+										/* Parse instruction fields */
+										for(ulong m = 0; m < instr_map_entries; m++){
+											err = cbor_decode_null_terminated_text_string(&reader, key_buf, sizeof(key_buf));
+											if(err != CBOR_SUCCESS){
+												if(errbuf != nil)
+													snprint(errbuf, errbuf_size, "failed to read instruction key");
+												goto error;
+											}
+
+											if(strcmp(key_buf, "opcode") == 0){
+												uint64_t opcode;
+												err = cbor_decode_unsigned_integer(&reader, &opcode);
+												if(err != CBOR_SUCCESS){
+													if(errbuf != nil)
+														snprint(errbuf, errbuf_size, "failed to read opcode");
+													goto error;
+												}
+												instr->opcode = (fruity_opcode_t)opcode;
+											}
+											else if(strcmp(key_buf, "operand") == 0){
+												/* Peek at item type */
+												err = cbor_peek_type(&reader, &item);
+												if(err != CBOR_SUCCESS){
+													if(errbuf != nil)
+														snprint(errbuf, errbuf_size, "failed to peek operand type");
+													goto error;
+												}
+
+												if(item.type == CBOR_ITEM_SIMPLE_VALUE){
+													cbor_decode_null(&reader);
+													instr->operand.type = FRUITY_OP_NONE;
+												}
+												else if(item.type == CBOR_ITEM_INTEGER){
+													uint64_t value;
+													err = cbor_decode_unsigned_integer(&reader, &value);
+													if(err != CBOR_SUCCESS){
+														if(errbuf != nil)
+															snprint(errbuf, errbuf_size, "failed to read operand value");
+														goto error;
+													}
+
+													/* Infer operand type from opcode */
+													switch(instr->opcode){
+													case FRUITY_LDC_I4:
+														instr->operand.type = FRUITY_OP_IMM_I32;
+														instr->operand.value.i32 = (s32int)value;
+														break;
+													case FRUITY_LDC_I8:
+														instr->operand.type = FRUITY_OP_IMM_I64;
+														instr->operand.value.i64 = (s64int)value;
+														break;
+													case FRUITY_LOAD_LOCAL:
+													case FRUITY_STORE_LOCAL:
+														instr->operand.type = FRUITY_OP_LOCAL;
+														instr->operand.value.index = (u32int)value;
+														break;
+													case FRUITY_LOAD_ARG:
+													case FRUITY_STORE_ARG:
+														instr->operand.type = FRUITY_OP_ARG;
+														instr->operand.value.index = (u32int)value;
+														break;
+													case FRUITY_CALL:
+														instr->operand.type = FRUITY_OP_METHOD;
+														instr->operand.value.token = (u32int)value;
+														break;
+													case FRUITY_LIME:
+													case FRUITY_NEWARR:
+														instr->operand.type = FRUITY_OP_TYPE;
+														instr->operand.value.token = (u32int)value;
+														break;
+													default:
+														instr->operand.type = FRUITY_OP_IMM_I32;
+														instr->operand.value.i32 = (s32int)value;
+														break;
+													}
+												}
+											}
+										}
+
+										/* Add instruction to list */
+										instr->next = nil;
+										instr->prev = instr_tail;
+										if(instr_tail)
+											instr_tail->next = instr;
+										else
+											block->instructions_head = instr;
+										instr_tail = instr;
+									}
+									block->instructions_tail = instr_tail;
+								}
+							}
+
+							/* Add block to list */
+							block->next = nil;
+							block->prev = block_tail;
+							if(block_tail)
+								block_tail->next = block;
+							else
+								func->blocks_head = block;
+							block_tail = block;
+						}
+						func->blocks_tail = block_tail;
+					}
+				}
+
+				/* Add function to list */
+				func->next = nil;
+				func->prev = func_tail;
+				if(func_tail)
+					func_tail->next = func;
+				else
+					module->functions_head = func;
+				func_tail = func;
+			}
+			module->functions_tail = func_tail;
+		}
+	}
+
+	return module;
+
+error:
+	/* TODO: Implement proper cleanup on error */
+	if(module != nil)
+		free(module);
+	return nil;
+}

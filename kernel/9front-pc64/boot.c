@@ -12,6 +12,7 @@ extern struct limine_memmap_request *limine_memmap;
 extern struct limine_hhdm_request *limine_hhdm;
 extern struct limine_module_request *limine_module;
 extern struct limine_kernel_address_request *limine_kernel_address;
+extern struct limine_kernel_file_request *limine_executable_file;
 extern uintptr limine_bootloader_info;
 
 /* Global HHDM offset from Limine - used by kaddr()
@@ -29,6 +30,7 @@ bootargsinit(void)
 	struct limine_memmap_entry *entry;
 	u64int i, max_addr;
 	extern u64int MemMin;
+	extern void uartputs(char*, int);
 
 	/* Parse Limine kernel address response */
 	if(limine_kernel_address && limine_kernel_address->response) {
@@ -50,6 +52,37 @@ bootargsinit(void)
 	extern uintptr hhdm_base;
 	hhdm_base = limine_hhdm_offset;
 	saved_limine_hhdm_offset = limine_hhdm_offset;
+
+	/* Parse Kernel Command Line */
+	if(limine_executable_file && limine_executable_file->response) {
+		struct limine_file *kf = limine_executable_file->response->kernel_file;
+		if(kf && kf->cmdline) {
+			char *cmdline = kf->cmdline;
+			uartputs("bootargsinit: cmdline found: ", 31);
+			uartputs(cmdline, strlen(cmdline));
+			uartputs("\n", 1);
+			
+			/* Copy to BOOTARGS (CONFADDR+64) */
+			/* We must use kstrcpy because we are in early boot */
+			/* Note: BOOTARGS is a macro for ((char*)(CONFADDR+BOOTLINELEN)) */
+			/* CONFADDR is virtual KZERO+... */
+			
+			char *dst = BOOTARGS;
+			char *src = cmdline;
+			int len = 0;
+			
+			/* Manual copy to avoid dependency on libc */
+			while(*src && len < (BOOTARGSLEN - 1)) {
+				*dst++ = *src++;
+				len++;
+			}
+			*dst = 0;
+		} else {
+			uartputs("bootargsinit: no cmdline in kernel file response\n", 45);
+		}
+	} else {
+		uartputs("bootargsinit: no kernel file response\n", 40);
+	}
 
 	/* Initialize MemMin from Limine memory map
 	 * MemMin indicates the end of the initially mapped physical memory

@@ -1,322 +1,418 @@
-#include	"u.h"
-#include	"tos.h"
+#include "../../limine.h"
+#include "borrowchecker.h"
+#include "dat.h"
+#include "exchange.h"
+#include "fns.h"
+#include "initrd.h"
+#include "io.h"
+#include "mem.h"
+#include "pageown.h"
+#include "pci.h"
+#include "pebble.h"
+#include "pool.h"
+#include "rebootcode.i"
+#include "sdhw.h"
+#include "tos.h"
+#include "u.h"
+#include "vmdetect.h"
 #include <lib.h>
-#include	"mem.h"
-#include	"dat.h"
-#include	"fns.h"
-#include	"borrowchecker.h"
-#include	"pageown.h"
-#include	"exchange.h"
-#include	"pebble.h"
-#include	"io.h"
-#include	"pci.h"
-#include	"ureg.h"
-#include	"pool.h"
-#include	"rebootcode.i"
-#include	"initrd.h"
-#include	"../../limine.h"
-#include	"sdhw.h"
 
 Conf conf;
 int idle_spin;
 
-/* Page table protection exclusion data for kernelro() */
-int panic_debug = 1;  /* Already exists */
-uintptr protected_page_tables_base = 0;  /* Will store active page table base */
-uintptr protected_page_tables_end = 0;   /* Will store computed end address */
+/* BOOT STATE MACHINE */
+typedef enum {
+  BOOT_START,
+  BOOT_XINIT,
+  BOOT_MEM_COORD,
+  BOOT_PAGES_OWN,
+  BOOT_EXCHANGE,
+  BOOT_TRAP,
+  BOOT_ARCH,
+  BOOT_PROC_INIT,
+  BOOT_SEG_INIT,
+  BOOT_LINKS,
+  BOOT_IO,
+  BOOT_CHANDEV_RESET,
+  BOOT_PAGEK,
+  BOOT_PRINT,
+  BOOT_TPM,
+  BOOT_MSGORD,
+  BOOT_CRYPTO,
+  BOOT_CHANDEV_INIT,
+  BOOT_USERINIT,
+  BOOT_SCHED,
+  BOOT_COMPLETE
+} BootState;
+
+BootState current_boot_state = BOOT_START;
+static char *boot_state_names[] = {
+    "START",   "XINIT",         "MEM_COORD",    "PAGES_OWN", "EXCHANGE",
+    "TRAP",    "ARCH",          "PROC_INIT",    "SEG_INIT",  "LINKS",
+    "IO",      "CHANDEV_RESET", "PAGEK",        "PRINT",     "TPM",
+    "MSGORD",  "CRYPTO",        "CHANDEV_INIT", "USERINIT",  "SCHED",
+    "COMPLETE"};
+
+void set_boot_state(BootState s) {
+  current_boot_state = s;
+  print("BOOT_STATE: %s\n", boot_state_names[s]);
+}
+
+/* CRITICAL: Global debug flag that doesn't depend on environment device */
+int panic_debug = 0; /* Default to SILENT mode for performance */
+int jitdebug = 0;    /* JIT debug flag */
 
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
 extern uintptr saved_limine_hhdm_offset;
-extern void* kaddr(uintptr);
+extern void *kaddr(uintptr);
 
-void
-confinit(void)
-{
-	char *p;
-	int i, userpcnt;
-	ulong kpages;
+void confinit(void) {
+  char *p;
+  int i, userpcnt;
+  ulong kpages;
 
-	if(p = getconf("service")){
-	if(strcmp(p, "cpu") == 0)
-		cpuserver = 1;
-	else if(strcmp(p,"terminal") == 0)
-		cpuserver = 0;
-	}
+  if (p = getconf("service")) {
+    if (strcmp(p, "cpu") == 0)
+      cpuserver = 1;
+    else if (strcmp(p, "terminal") == 0)
+      cpuserver = 0;
+  }
 
-	if(p = getconf("*kernelpercent"))
-	userpcnt = 100 - strtol(p, 0, 0);
-	else
-	userpcnt = 0;
+  if (p = getconf("*kernelpercent"))
+    userpcnt = 100 - strtol(p, 0, 0);
+  else
+    userpcnt = 0;
 
-	conf.npage = 0;
-	for(i=0; i<nelem(conf.mem); i++)
-	conf.npage += conf.mem[i].npage;
+  conf.npage = 0;
+  for (i = 0; i < nelem(conf.mem); i++)
+    conf.npage += conf.mem[i].npage;
 
-	conf.nproc = 100 + ((conf.npage*BY2PG)/MB)*5;
-	if(cpuserver)
-	conf.nproc *= 3;
-	if(conf.nproc > 4000)
-	conf.nproc = 4000;
-	/* Temporary: limit to 100 procs for early boot debugging */
-	if(conf.nproc > 100)
-	conf.nproc = 100;
-	conf.nimage = 200;
-	conf.nswap = conf.nproc*80;
-	conf.nswppo = 4096;
+  conf.nproc = 100 + ((conf.npage * BY2PG) / MB) * 5;
+  if (cpuserver)
+    conf.nproc *= 3;
+  if (conf.nproc > 4000)
+    conf.nproc = 4000;
+  /* Temporary: limit to 100 procs for early boot debugging */
+  if (conf.nproc > 100)
+    conf.nproc = 100;
+  conf.nimage = 200;
+  conf.nswap = conf.nproc * 80;
+  conf.nswppo = 4096;
 
-	if(cpuserver) {
-	if(userpcnt < 10)
-		userpcnt = 70;
-	kpages = conf.npage - (conf.npage*userpcnt)/100;
-	conf.nimage = conf.nproc;
-	} else {
-	if(userpcnt < 10) {
-		if(conf.npage*BY2PG < 16*MB)
-			userpcnt = 50;
-		else
-			userpcnt = 60;
-	}
-	kpages = conf.npage - (conf.npage*userpcnt)/100;
+  if (cpuserver) {
+    if (userpcnt < 10)
+      userpcnt = 70;
+    kpages = conf.npage - (conf.npage * userpcnt) / 100;
+    conf.nimage = conf.nproc;
+  } else {
+    if (userpcnt < 10) {
+      if (conf.npage * BY2PG < 16 * MB)
+        userpcnt = 50;
+      else
+        userpcnt = 60;
+    }
+    kpages = conf.npage - (conf.npage * userpcnt) / 100;
 
-	/*
-	 * Make sure terminals with low memory get at least
-	 * 4MB on the first Image chunk allocation.
-	 */
-	if(conf.npage*BY2PG < 16*MB)
-		imagmem->minarena = 4*MB;
-	}
+    /*
+     * Make sure terminals with low memory get at least
+     * 4MB on the first Image chunk allocation.
+     */
+    if (conf.npage * BY2PG < 16 * MB)
+      imagmem->minarena = 4 * MB;
+  }
 
-	/*
-	 * can't go past the end of virtual memory.
-	 */
-	if(kpages > ((uintptr)-KZERO)/BY2PG)
-	kpages = ((uintptr)-KZERO)/BY2PG;
+  /*
+   * can't go past the end of virtual memory.
+   */
+  if (kpages > ((uintptr)-KZERO) / BY2PG)
+    kpages = ((uintptr)-KZERO) / BY2PG;
 
-	/* Ensure reasonable memory allocation for userspace */
-	if(conf.npage > 0) {
-	/* Make sure we leave at least 30% of memory for userspace */
-	ulong min_upages = conf.npage * 30 / 100;
-	if(conf.npage - kpages < min_upages) {
-		kpages = conf.npage - min_upages;
-	}
-	}
-	
-	conf.upages = conf.npage - kpages;
-	/* DEBUG: Print memory allocation details */
-	print("DEBUG: npage=%lud, kpages=%lud, upages=%lud\n", conf.npage, kpages, conf.upages);
-	/* Remove temporary memory allocation hack */
-	// if(conf.upages > conf.npage/2)
-	// 	conf.upages = conf.npage/10;  /* Give 90% to kernel temporarily */
-	conf.ialloc = (kpages/2)*BY2PG;
+  /* Ensure reasonable memory allocation for userspace */
+  if (conf.npage > 0) {
+    /* Make sure we leave at least 30% of memory for userspace */
+    ulong min_upages = conf.npage * 30 / 100;
+    if (conf.npage - kpages < min_upages) {
+      kpages = conf.npage - min_upages;
+    }
+  }
 
-	/*
-	 * Guess how much is taken by the large permanent
-	 * datastructures. Mntcache and Mntrpc are not accounted for.
-	 */
-	kpages *= BY2PG;
-	kpages -= conf.nproc*sizeof(Proc*)
-	+ conf.nimage*sizeof(Image)
-	+ conf.nswap
-	+ conf.nswppo*sizeof(Page*);
-	mainmem->maxsize = kpages;
+  conf.upages = conf.npage - kpages;
+  /* DEBUG: Print memory allocation details */
+  print("DEBUG: npage=%lud, kpages=%lud, upages=%lud\n", conf.npage, kpages,
+        conf.upages);
+  /* Remove temporary memory allocation hack */
+  // if(conf.upages > conf.npage/2)
+  // 	conf.upages = conf.npage/10;  /* Give 90% to kernel temporarily */
+  conf.ialloc = (kpages / 2) * BY2PG;
 
-	/*
-	 * the dynamic allocation will balance the load properly,
-	 * hopefully. be careful with 32-bit overflow.
-	 */
-	imagmem->maxsize = kpages - (kpages/10);
-	if(p = getconf("*imagemaxmb")){
-	imagmem->maxsize = strtol(p, nil, 0)*MB;
-	if(imagmem->maxsize > mainmem->maxsize)
-		imagmem->maxsize = mainmem->maxsize;
-	}
+  /*
+   * Guess how much is taken by the large permanent
+   * datastructures. Mntcache and Mntrpc are not accounted for.
+   */
+  kpages *= BY2PG;
+  kpages -= conf.nproc * sizeof(Proc *) + conf.nimage * sizeof(Image) +
+            conf.nswap + conf.nswppo * sizeof(Page *);
+  mainmem->maxsize = kpages;
+
+  /*
+   * the dynamic allocation will balance the load properly,
+   * hopefully. be careful with 32-bit overflow.
+   */
+  imagmem->maxsize = kpages - (kpages / 10);
+  if (p = getconf("*imagemaxmb")) {
+    imagmem->maxsize = strtol(p, nil, 0) * MB;
+    if (imagmem->maxsize > mainmem->maxsize)
+      imagmem->maxsize = mainmem->maxsize;
+  }
 }
 
-void
-machinit(void)
-{
-	int machno;
-	Segdesc *gdt;
-	uintptr *pml4;
+void machinit(void) {
+  int machno;
+  Segdesc *gdt;
+  uintptr *pml4;
 
-	machno = m->machno;
-	pml4 = m->pml4;
-	gdt = m->gdt;
-	memset(m, 0, sizeof(Mach));
-	m->machno = machno;
-	m->pml4 = pml4;
-	m->gdt = gdt;
-	m->perf.period = 1;
+  machno = m->machno;
+  pml4 = m->pml4;
+  gdt = m->gdt;
+  memset(m, 0, sizeof(Mach));
+  m->machno = machno;
+  m->pml4 = pml4;
+  m->gdt = gdt;
+  m->perf.period = 1;
 
-	/*
-	 * For polled uart output at boot, need
-	 * a default delay constant. 100000 should
-	 * be enough for a while. Cpuidentify will
-	 * calculate the real value later.
-	 */
-	m->loopconst = 100000;
+  /*
+   * For polled uart output at boot, need
+   * a default delay constant. 100000 should
+   * be enough for a while. Cpuidentify will
+   * calculate the real value later.
+   */
+  m->loopconst = 100000;
 }
 
-void
-mach0init(void)
-{
-	extern Mach *m;  /* Define m as extern - it should be in globals or bss */
+void mach0init(void) {
+  extern Mach *m; /* Define m as extern - it should be in globals or bss */
 
-	conf.nmach = 1;
+  conf.nmach = 1;
 
-	MACHP(0) = (Mach*)CPU0MACH;
+  MACHP(0) = (Mach *)CPU0MACH;
 
-	/* Initialize m to point to MACHP(0) */
-	m = MACHP(0);
+  /* Initialize m to point to MACHP(0) */
+  m = MACHP(0);
 
-	/* Zero the entire Mach structure to ensure clean state */
-	memset(m, 0, sizeof(Mach));
+  /* Zero the entire Mach structure to ensure clean state */
+  memset(m, 0, sizeof(Mach));
 
-	m->machno = 0;
-	m->pml4 = (u64int*)CPU0PML4;
-	m->gdt = (Segdesc*)CPU0GDT;
-	m->ticks = 0;
-	m->ilockdepth = 0;
+  m->machno = 0;
+  m->pml4 = (u64int *)CPU0PML4;
+  m->gdt = (Segdesc *)CPU0GDT;
+  m->ticks = 0;
+  m->ilockdepth = 0;
 
-	machinit();
+  machinit();
 
-	active.machs[0] = 1;
-	active.exiting = 0;
+  active.machs[0] = 1;
+  active.exiting = 0;
 }
 
 /* Main boot continuation after CR3 switch
  * Called directly by setuppagetables() after page table switch is complete */
-void
-main_after_cr3(void)
-{
-	char *p;
+void main_after_cr3(void) {
+  char *p;
 
-	/* CRITICAL: First output must be via UART to verify we got here */
-	extern void uartputs(char*, int);
-	uartputs("main_after_cr3: ENTERED\n", 24);
+  /* CRITICAL: First output must be via UART to verify we got here */
+  extern void uartputs(char *, int);
+  uartputs("main_after_cr3: ENTERED\n", 24);
+  set_boot_state(BOOT_XINIT);
 
-	/* Skip print() until we've reinitialized - it was set up with old stack */
-	uartputs("BOOT: switched to kernel-managed page tables\n", 46);
+  /* Skip print() until we've reinitialized - it was set up with old stack */
 
-	uartputs("main_after_cr3: calling xinit\n", 31);
-	xinit();
-	uartputs("main_after_cr3: calling pageowninit\n", 37);
-	pageowninit();
-	uartputs("main_after_cr3: calling exchangeinit\n", 38);
-	exchangeinit();
-	uartputs("BOOT: exchangeinit complete\n", 29);
+  uartputs("main_after_cr3: calling xinit\n", 31);
+  xinit();
 
+  /* Transition memory tracking to dynamic allocator */
+  establish_memory_ownership_zones_dynamic();
 
-	uartputs("main_after_cr3: calling trapinit\n", 35);
-	trapinit();
-	uartputs("main_after_cr3: calling mathinit\n", 35);
-	mathinit();
-	if(i8237alloc != nil)
-	i8237alloc();
-	uartputs("main_after_cr3: calling pcicfginit\n", 37);
-	pcicfginit();
-	uartputs("main_after_cr3: calling bootscreeninit\n", 41);
-	bootscreeninit();
-uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
-fbconsoleinit();  /* Initialize framebuffer console */
-	cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
-	cpuidprint();
+  set_boot_state(BOOT_PAGES_OWN);
+  uartputs("main_after_cr3: calling pageowninit\n", 37);
+  pageowninit();
 
-	print("BOOT: capturing page table information for kernelro() exclusion...\n");
-	protected_page_tables_base = (uintptr)getcr3();
-	/* Estimate page table size: 4 levels * 512 entries * 8 bytes each = ~64KB per CPU */
-	/* For single CPU system, estimate 128KB total for safety */
-	protected_page_tables_end = protected_page_tables_base + 128*1024;
-	print("BOOT: page tables 0x%lx - 0x%lx will be excluded from kernelro()\n", 
-	      protected_page_tables_base, protected_page_tables_end);
+  set_boot_state(BOOT_EXCHANGE);
+  uartputs("main_after_cr3: calling exchangeinit\n", 38);
+  exchangeinit();
 
-	print("BOOT: setting up minimal configuration environment\n");
-	
-	/* Note: *debug is now handled by global panic_debug variable, no need for ksetenv here */
-	print("BOOT: deferring full environment setup until after chandevreset()\n");
-	print("BOOT: after config setup - getconf(\"*debug\") = %s\n", (getconf("*debug") == nil) ? "NIL" : "SET");
+  uartputs("DEBUG: pre-pebble-selftest [SKIPPED]\n", 35);
+  /* Run Pebble Self-Test (xalloc works now) */
+  /* extern void pebble_selftest(void); */
+  /* pebble_selftest(); */
+  uartputs("DEBUG: post-pebble-selftest\n", 26);
 
-	print("BOOT: about to call mmuinit\n");
-	mmuinit();
-	print("BOOT: mmuinit complete - runtime page tables live\n");
+  set_boot_state(BOOT_TRAP);
+  uartputs("main_after_cr3: calling trapinit\n", 35);
+  trapinit();
+  uartputs("main_after_cr3: calling mathinit\n", 35);
+  mathinit();
+  if (i8237alloc != nil)
+    i8237alloc();
+  uartputs("main_after_cr3: calling pcicfginit\n", 37);
+  pcicfginit();
+  print("DEBUG: pcicfginit RETURNED\n");
+  uartputs("main_after_cr3: calling bootscreeninit\n", 41);
+  bootscreeninit();
+  print("DEBUG: bootscreeninit RETURNED\n");
+  uartputs("main_after_cr3: calling fbconsoleinit ENTER\n", 46);
+  fbconsoleinit();
+  print("DEBUG: fbconsoleinit RETURNED\n");
+  uartputs("main_after_cr3: fbconsoleinit RETURNED\n", 40);
+  uartputs("main_after_cr3: before cpuidentify check\n", 45);
+  if (cpuidentify_done == 0)
+    cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
+  uartputs("main_after_cr3: calling fpuinit\n", 33);
+  fpuinit(); /* Initialize FPU - must happen after xinit() */
+  uartputs("main_after_cr3: fpuinit returned, calling cpuidprint\n", 55);
+  cpuidprint();
 
-	/* Debug: check if IDT is still valid after mmuinit */
-	{
-		extern Segdesc temp_idt[];
-		print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
-		else
-			print("OK: IDT[0x46] still valid after mmuinit\n");
-	}
+  /* FIX: Move configuration environment setup earlier to prevent reboot */
+  /* FIX: Set only the most critical variable early, defer the rest until
+   * devices are ready */
 
-	print("BOOT: arch=%#p arch->intrinit=%#p\n", arch, arch->intrinit);
-	if(arch->intrinit) {
-	print("BOOT: calling arch->intrinit at %#p\n", arch->intrinit);
-	arch->intrinit();
-	print("BOOT: arch->intrinit returned successfully\n");
+  /* Note: *debug is now handled by global panic_debug variable, no need for
+   * ksetenv here */
 
-	/* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
-	{
-		extern Segdesc temp_idt[];
-		print("DEBUG: Checking IDT[0x46] AFTER arch->intrinit:\n");
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] CORRUPTED by arch->intrinit!\n");
-		else
-			print("OK: IDT[0x46] still valid after arch->intrinit\n");
-	}
+  mmuinit();
 
-	} else {
-	print("WARNING: arch->intrinit is nil\n");
-	}
-	print("BOOT: calling timersinit\n");
-	timersinit();
-	print("BOOT: timersinit complete\n");
-	print("BOOT: calling arch->clockenable\n");
-	if(arch->clockenable)
-	arch->clockenable();
-	print("BOOT: arch->clockenable complete\n");
-	print("BOOT: calling procinit0\n");
-	procinit0();
-	print("BOOT: procinit0 complete - process table ready\n");
+  /* Initialize r15 to point to Mach structure after mmuinit sets up GS */
+  __asm__ volatile("movq %0, %%r15" : : "r"(m) : "r15");
+  print("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
 
-	print("BOOT: calling initseg\n");
-	initseg();
-	print("BOOT: initseg complete\n");
+  /* Debug: check if IDT is still valid after mmuinit */
+  {
+    extern Segdesc temp_idt[];
+    print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
+    print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46 * 2].d0);
+    print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46 * 2].d1);
+    if (temp_idt[0x46 * 2].d0 == 0 && temp_idt[0x46 * 2].d1 == 0)
+      print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
+    else
+      print("OK: IDT[0x46] still valid after mmuinit\n");
 
-	links();
-	print("BOOT: links complete\n");
-	
-	/* Initialize I/O port allocation after links() */
-	print("BOOT: calling iomapinit\n");
-	iomapinit(0xFFFF);  
-	print("BOOT: iomapinit complete\n");
-	
-	/* Reset and initialize all devices before environment setup */
-	print("BOOT: calling chandevreset\n");
-	chandevreset();   
-	print("BOOT: chandevreset complete\n");
+    /* Check timer interrupt IDT entry (vector 32) */
+    print("DEBUG: Checking IDT[32] (timer):\n");
+    print("  IDT[32*2].d0 = %#lux\n", temp_idt[32 * 2].d0);
+    print("  IDT[32*2].d1 = %#lux\n", temp_idt[32 * 2].d1);
+    print("  IST field = %d (bits 0-2 of d1)\n",
+          (int)(temp_idt[32 * 2].d1 & 0x7));
+  }
 
-	print("BOOT: device reset sequence finished\n");
+  print("DEBUG: About to call arch->intrinit\n");
 
-	print("BOOT: calling pageinit\n");
-	pageinit();
-	print("BOOT: pageinit complete\n");
+  /* Re-map ACPI tables after CR3 switch (if ACPI is being used) */
+  extern PCArch archacpi;
+  if (arch == &archacpi) {
+    extern void acpi_remap_tables(void);
+    print("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
+    acpi_remap_tables();
+  }
 
-	print("BOOT: calling printinit\n");
-	printinit();
-	print("BOOT: printinit complete - print queues initialized\n");
+  if (arch->intrinit) {
+    set_boot_state(BOOT_ARCH);
+    print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
+    arch->intrinit();
+    extern void uartputs(char *, int);
+    uartputs("DEBUG: arch->intrinit complete\n", 33);
 
-	print("BOOT: entering userinit\n");
-	userinit();
-	print("BOOT: userinit called successfully - proceeding to scheduler\n");
-	print("BOOT: entering scheduler - expecting proc0 hand-off\n");
-	schedinit();
+    /* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
+    {
+      extern Segdesc temp_idt[];
+      /* DEBUG: Reduced verbose IDT checking
+      print("DEBUG: Checking IDT[0x46] AFTER arch->intrinit:\n");
+      print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+      print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+      if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
+              print("ERROR: IDT[0x46] CORRUPTED by arch->intrinit!\n");
+      else
+              print("OK: IDT[0x46] still valid after arch->intrinit\n");
+      */
+    }
+
+  } else {
+    print("WARNING: arch->intrinit is nil\n");
+  }
+
+  set_boot_state(BOOT_PROC_INIT);
+  procinit0();
+  uartputs("DEBUG: procinit0 complete\n", 28);
+
+  set_boot_state(BOOT_SEG_INIT);
+  initseg();
+  uartputs("DEBUG: initseg complete\n", 26);
+
+  set_boot_state(BOOT_LINKS);
+  links();
+  uartputs("DEBUG: links complete\n", 24);
+
+  /* Initialize I/O port allocation after links() */
+  set_boot_state(BOOT_IO);
+  iomapinit(0xFFFF);
+  uartputs("DEBUG: iomapinit complete\n", 29);
+
+  /* Reset and initialize all devices before environment setup */
+  set_boot_state(BOOT_CHANDEV_RESET);
+  chandevreset();
+  uartputs("DEBUG: chandevreset complete\n", 32);
+
+  set_boot_state(BOOT_PAGEK);
+  pageinit();
+  uartputs("DEBUG: pageinit complete\n", 27);
+
+  set_boot_state(BOOT_PRINT);
+  printinit();
+  /* Initialize TPM driver before crypto subsystem */
+  extern void tpminit(void);
+  set_boot_state(BOOT_TPM);
+  print("=== Initializing TPM Driver ===\n");
+  tpminit();
+  print("=== TPM Driver Initialized ===\n");
+
+  /* Initialize MSGORD consensus subsystem */
+  extern void msgord_init(uint k_param);
+  set_boot_state(BOOT_MSGORD);
+  print("=== Initializing MSGORD Consensus ===\n");
+  msgord_init(3); /* k=3 for robust ordering */
+  print("=== MSGORD Consensus Initialized ===\n");
+
+  /* Initialize crypto subsystem early for testing */
+  extern int crypto_tpm_key_init(void);
+  set_boot_state(BOOT_CRYPTO);
+  print("=== Initializing Crypto Subsystem ===\n");
+  crypto_tpm_key_init();
+  print("=== Crypto Subsystem Initialized ===\n");
+
+  /* Run TPM 2.0 Kernel Test */
+  extern void tpm_test_run(void);
+  tpm_test_run();
+
+  /* Initialize device drivers BEFORE spawning proc0 */
+  set_boot_state(BOOT_CHANDEV_INIT);
+  chandevinit();
+  uartputs("DEBUG: chandevinit complete\n", 30);
+
+  /* Now spawn proc0 - devices are ready */
+  set_boot_state(BOOT_USERINIT);
+  userinit();
+  uartputs("DEBUG: userinit complete\n", 28);
+
+  /* Debug: show scheduler state before entering schedinit */
+  extern ulong runvec;
+  extern int nrdy;
+  /* Pre-initialize timers with interrupts masked; actual enable happens in
+   * proc0 */
+  splhi();
+  timersinit();
+  spllo(); /* Re-enable interrupts for scheduler - CRITICAL */
+  uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
+  set_boot_state(BOOT_SCHED);
+  schedinit();
 }
 
 /**
@@ -328,290 +424,314 @@ fbconsoleinit();  /* Initialize framebuffer console */
  * clears FPU state, raises interrupt level, and finally enters user mode by
  * calling touser() with the prepared stack frame.
  */
-void
-init0(void)
-{
-	char buf[2*KNAMELEN], **sp;
+void init0(void) {
+  char buf[2 * KNAMELEN], **sp;
 
-	iprint("BOOT[init0]: calling chandevinit\n");
-	chandevinit();
-	iprint("BOOT[init0]: chandevinit returned\n");
-	randominit();
-	iprint("BOOT[init0]: randominit complete\n");
+  /*
+   * Open console for stdin, stdout, stderr
+   * Use #c/cons directly since /dev not bound yet
+   */
+  /*
+   * Open console for stdin, stdout, stderr
+   * Use #c/cons directly since /dev not bound yet
+   */
+  if (waserror())
+    panic("init0: cannot open console: %r");
+  uartputs("init0: calling kopen(stdin)\n", 26);
+  kopen("#c/cons", OREAD); /* fd 0 - stdin */
+  uartputs("init0: calling kopen(stdout)\n", 27);
+  kopen("#c/cons", OWRITE); /* fd 1 - stdout */
+  uartputs("init0: calling kopen(stderr)\n", 27);
+  kopen("#c/cons", OWRITE); /* fd 2 - stderr */
+  poperror();
 
-	if(!waserror()){
-		snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
-		ksetenv("terminal", buf, 0);
-		ksetenv("cputype", "amd64", 0);
-		ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
-		setconfenv();
-		poperror();
-		print("BOOT[init0]: environment setup completed\n");
-	}
+  uartputs("init0: calling randominit\n", 24);
+  randominit();
 
-	kproc("alarm", alarmkproc, 0);
+  /* Setup environment variables */
+  if (!waserror()) {
+    snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+    print("init0: about to call ksetenv('terminal', '%s', 0)\n", buf);
+    ksetenv("terminal", buf, 0);
+    print("init0: ksetenv('terminal') returned\n");
+    ksetenv("cputype", "amd64", 0);
+    print("init0: ksetenv('cputype') returned\n");
+    ksetenv("service", cpuserver ? "cpu" : "terminal", 0);
+    print("init0: ksetenv('service') returned\n");
+    print("init0: about to call setconfenv()\n");
+    setconfenv();
+    poperror();
+    print("BOOT[init0]: environment setup completed\n");
+  } else {
+    print("BOOT[init0]: environment setup failed: %r\n");
+  }
 
-	sp = (char**)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0])*4);
-	sp[3] = sp[2] = nil;
-	strcpy(sp[1] = (char*)&sp[4], "boot");
-	sp[0] = nil;
+  uartputs("init0: calling kproc(alarm)\n", 26);
+  kproc("alarm", alarmkproc, 0);
 
-	splhi();
-	fpukexit(nil);
-	print("BOOT[init0]: transferring control to user mode\n");
-	touser(sp);
+  sp = (char **)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0]) * 4);
+  sp[3] = sp[2] = nil;
+  strcpy(sp[1] = (char *)&sp[4], "boot");
+  sp[0] = nil;
+
+  splhi();
+  fpukexit(nil);
+  if (m->proc == nil)
+    panic("BOOT[init0]: m->proc is NULL before touser()!");
+  uartputs("init0: calling touser\n", 22);
+  touser(sp);
 }
 
-void
-main(void)
-{
-	char *p;
+void main(void) {
+  char *p;
+  extern void uartprintf(char *,
+                         ...); /* Formatted UART output before prbuf is ready */
 
-	mach0init();
-	bootargsinit();
-	trapinit0();
-	ioinit();
-	i8250console();
+  mach0init();
+  bootargsinit();
+  trapinit0();
+  ioinit();
+  i8250console();
 
-	/* Debug: check if trapinit0() actually initialized the IDT */
-	{
-		extern Segdesc temp_idt[];
-		extern void sidt(void*);
-		uintptr idtr[2];
+  /* Debug: check if trapinit0() actually initialized the IDT */
+  {
+    extern Segdesc temp_idt[];
+    extern void sidt(void *);
+    uintptr idtr[2];
 
-		/* Read the IDTR register */
-		sidt(&((ushort*)&idtr[1])[-1]);
-		uintptr idt_base = idtr[1];
-		ushort idt_limit = ((ushort*)&idtr[1])[-1];
+    /* Read the IDTR register */
+    sidt(&((ushort *)&idtr[1])[-1]);
+    uintptr idt_base = idtr[1];
+    ushort idt_limit = ((ushort *)&idtr[1])[-1];
 
-		print("DEBUG: Checking IDT after trapinit0:\n");
-		print("  temp_idt addr: %#p\n", temp_idt);
-		print("  IDTR base: %#lux\n", idt_base);
-		print("  IDTR limit: %d\n", idt_limit);
+    /* DEBUG: Reduced verbose IDT checking
+    uartprintf("DEBUG: Checking IDT after trapinit0:\n");
+    uartprintf("  temp_idt addr: %#p\n", temp_idt);
+    uartprintf("  IDTR base: %#lux\n", idt_base);
+    uartprintf("  IDTR limit: %d\n", idt_limit);
 
-		if(idt_base != (uintptr)temp_idt){
-			print("ERROR: IDTR pointing to WRONG address!\n");
-			print("  Expected: %#p\n", temp_idt);
-			print("  Actual: %#lux\n", idt_base);
-		} else {
-			print("OK: IDTR points to temp_idt\n");
-		}
+    if(idt_base != (uintptr)temp_idt){
+            uartprintf("ERROR: IDTR pointing to WRONG address!\n");
+            uartprintf("  Expected: %#p\n", temp_idt);
+            uartprintf("  Actual: %#lux\n", idt_base);
+    } else {
+            uartprintf("OK: IDTR points to temp_idt\n");
+    }
 
-		print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
-		print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
-		if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
-			print("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
-		else
-			print("OK: IDT[0x46] is initialized\n");
-	}
+    uartprintf("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46*2].d0);
+    uartprintf("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46*2].d1);
+    if(temp_idt[0x46*2].d0 == 0 && temp_idt[0x46*2].d1 == 0)
+            uartprintf("ERROR: IDT[0x46] is ZERO after trapinit0()!\n");
+    else
+            uartprintf("OK: IDT[0x46] is initialized\n");
+    */
+  }
 
-	quotefmtinstall();
-	screeninit();
-	print("\nLux9\n");
-	cpuidentify();
-	/* Stash initrd pointers; parsing deferred until proc0 when allocators are ready */
-	extern struct limine_module_request *limine_module;
-	if(limine_module && limine_module->response && limine_module->response->module_count > 0) {
-	struct limine_file *initrd = limine_module->response->modules[0];
-	if(initrd && initrd->address){
-		uintptr addr = (uintptr)initrd->address;
-		if(addr >= saved_limine_hhdm_offset){
-			initrd_physaddr = addr - saved_limine_hhdm_offset;
-			initrd_base = initrd->address;
-		}else{
-			initrd_physaddr = addr;
-			initrd_base = (void*)(addr + saved_limine_hhdm_offset);
-		}
-		initrd_size = initrd->size;
-		print("initrd: limine reports module (%lld bytes)\n", (uvlong)initrd_size);
-	}
-	}
+  quotefmtinstall();
+  screeninit();
+  uartprintf("\nLux9\n");
 
-	meminit0();
+  /* Detect VM early - before any problematic operations */
+  vm_detect();
+  vm_apply_workarounds();
 
-	archinit();
-	if(arch->clockinit){
-	arch->clockinit();
-	}
-	meminit();
-	ramdiskinit();
-	confinit();
-	pebbleinit();
-	pebble_enabled = 1;
-	if((p = getconf("pebble")) != nil)
-	pebble_enabled = *p != '0';
-	if((p = getconf("pebbledebug")) != nil && *p != '0')
-	pebble_debug = 1;
-	if(pebble_enabled)
-	print("PEBBLE: runtime enabled (default budget %lud bytes)\n", (ulong)PEBBLE_DEFAULT_BUDGET);
+  cpuidentify();
+  uartprintf("main: cpuidentify() returned\n");
+  /* Stash initrd pointers; parsing deferred until proc0 when allocators are
+   * ready */
+  extern struct limine_module_request *limine_module;
+  if (limine_module && limine_module->response &&
+      limine_module->response->module_count > 0) {
+    struct limine_file *initrd = limine_module->response->modules[0];
+    if (initrd && initrd->address) {
+      uintptr addr = (uintptr)initrd->address;
+      if (addr >= saved_limine_hhdm_offset) {
+        initrd_physaddr = addr - saved_limine_hhdm_offset;
+        initrd_base = initrd->address;
+      } else {
+        initrd_physaddr = addr;
+        initrd_base = (void *)(addr + saved_limine_hhdm_offset);
+      }
+      initrd_size = initrd->size;
+      uartprintf("initrd: limine reports module (%lld bytes)\n",
+                 (uvlong)initrd_size);
+    }
+  }
 
-	/* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
-	 * because memory coordination needs it during CR3 switch */
-	borrowinit();
-	print("BOOT: borrow checker initialized\n");
+  meminit0();
 
-	/* Initialize memory coordination system for boot handoff */
-	boot_memory_coordination_init();
-	print("BOOT: memory coordination system initialized\n");
+  archinit();
+  if (arch->clockinit) {
+    arch->clockinit();
+  }
 
-	/* Save framebuffer info BEFORE switching page tables */
-	save_framebuffer_info();
+  meminit(); // CRITICAL: Populates conf.mem and initializes palloc
+  confinit();
+  pebbleinit();
+  pebble_enabled = 1;
+  if ((p = getconf("pebble")) != nil)
+    pebble_enabled = *p != '0';
+  if ((p = getconf("pebbledebug")) != nil && *p != '0')
+    pebble_debug = 1;
+  if (pebble_enabled)
+    uartprintf("PEBBLE: runtime enabled (default budget %lud bytes)\n",
+               (ulong)PEBBLE_DEFAULT_BUDGET);
 
-	/* Switch to our own page tables - REQUIRED for user space!
-	/* NOTE: This must happen AFTER setuppagetables() to avoid memory map conflicts.
-	 * setuppagetables() now uses HHDM and no longer relocates the kernel.
-	 * IMPORTANT: setuppagetables() calls main_after_cr3() directly to continue boot. */
-	setuppagetables();
+  /* CRITICAL: Initialize borrow checker BEFORE setuppagetables()
+   * because memory coordination needs it during CR3 switch */
+  borrowinit();
 
-	/* UNREACHABLE - setuppagetables() never returns */
-	panic("main: setuppagetables returned unexpectedly");
+  /* Initialize memory coordination system for boot handoff */
+  boot_memory_coordination_init();
+
+  /* Establish static kernel memory zones for early boot protection */
+  establish_memory_ownership_zones();
+
+  /* Save framebuffer info BEFORE switching page tables */
+  save_framebuffer_info();
+
+  /* Switch to our own page tables - REQUIRED for user space!
+  /* NOTE: This must happen AFTER setuppagetables() to avoid memory map
+  conflicts.
+   * setuppagetables() now uses HHDM and no longer relocates the kernel.
+   * IMPORTANT: setuppagetables() calls main_after_cr3() directly to continue
+  boot. */
+  setuppagetables();
+
+  /* UNREACHABLE - setuppagetables() never returns */
+  panic("main: setuppagetables returned unexpectedly");
 }
 
-static void
-rebootjump(uintptr entry, uintptr code, ulong size)
-{
-	void (*f)(uintptr, uintptr, ulong);
-	uintptr *pte;
+static void rebootjump(uintptr entry, uintptr code, ulong size) {
+  void (*f)(uintptr, uintptr, ulong);
+  uintptr *pte;
 
-	arch->introff();
+  arch->introff();
 
-	/*
-	 * This allows the reboot code to turn off the page mapping
-	 */
-	*mmuwalk(m->pml4, 0, 3, 0) = *mmuwalk(m->pml4, KZERO, 3, 0);
-	*mmuwalk(m->pml4, 0, 2, 0) = *mmuwalk(m->pml4, KZERO, 2, 0);
+  /*
+   * This allows the reboot code to turn off the page mapping
+   */
+  /* Hack: Explicitly declare mmuwalk if fns.h fails us */
+  extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+  *mmuwalk(m->pml4, 0, 3, 0) = *mmuwalk(m->pml4, KZERO, 3, 0);
+  *mmuwalk(m->pml4, 0, 2, 0) = *mmuwalk(m->pml4, KZERO, 2, 0);
 
-	if((pte = mmuwalk(m->pml4, REBOOTADDR, 1, 0)) != nil)
-	*pte &= ~PTENOEXEC;
-	if((pte = mmuwalk(m->pml4, REBOOTADDR, 0, 0)) != nil)
-	*pte &= ~PTENOEXEC;
+  if ((pte = mmuwalk(m->pml4, REBOOTADDR, 1, 0)) != nil)
+    *pte &= ~PTENOEXEC;
+  if ((pte = mmuwalk(m->pml4, REBOOTADDR, 0, 0)) != nil)
+    *pte &= ~PTENOEXEC;
 
-	mmuflushtlb(PADDR(m->pml4));
+  mmuflushtlb(PADDR(m->pml4));
 
-	/* setup reboot trampoline function */
-	f = (void*)REBOOTADDR;
-	memmove(f, rebootcode, sizeof(rebootcode));
+  /* setup reboot trampoline function */
+  f = (void *)REBOOTADDR;
+  memmove(f, rebootcode, sizeof(rebootcode));
 
-	/* off we go - never to return */
-	coherence();
-	(*f)(entry, code, size);
+  /* off we go - never to return */
+  coherence();
+  (*f)(entry, code, size);
 
-	for(;;);
+  for (;;)
+    ;
 }
 
-void
-exit(int)
-{
-	cpushutdown();
-	splhi();
+void exit(int) {
+  cpushutdown();
+  splhi();
 
-	if(m->machno)
-	rebootjump(0, 0, 0);
+  if (m->machno)
+    rebootjump(0, 0, 0);
 
-	/* clear secrets */
-	zeroprivatepages();
-	poolreset(secrmem);
+  /* clear secrets */
+  zeroprivatepages();
+  poolreset(secrmem);
 
-	arch->reset();
+  arch->reset();
 }
 
-void
-reboot(void *entry, void *code, ulong size)
-{
-	writeconf();
-	vmxshutdown();
+void reboot(void *entry, void *code, ulong size) {
+  writeconf();
+  vmxshutdown();
 
-	/*
-	 * the boot processor is cpu0.  execute this function on it
-	 * so that the new kernel has the same cpu0.  this only matters
-	 * because the hardware has a notion of which processor was the
-	 * boot processor and we look at it at start up.
-	 */
-	while(m->machno != 0){
-	procwired(up, 0);
-	sched();
-	}
-	cpushutdown();
-	delay(1000);
-	splhi();
+  /*
+   * the boot processor is cpu0.  execute this function on it
+   * so that the new kernel has the same cpu0.  this only matters
+   * because the hardware has a notion of which processor was the
+   * boot processor and we look at it at start up.
+   */
+  while (m->machno != 0) {
+    procwired(up, 0);
+    sched();
+  }
+  cpushutdown();
+  delay(1000);
+  splhi();
 
-	/* turn off buffered serial console */
-	serialoq = nil;
+  /* turn off buffered serial console */
+  serialoq = nil;
 
-	/* shutdown devices */
-	chandevshutdown();
+  /* shutdown devices */
+  chandevshutdown();
 
-	/* clear secrets */
-	zeroprivatepages();
-	poolreset(secrmem);
+  /* clear secrets */
+  zeroprivatepages();
+  poolreset(secrmem);
 
-	/* disable pci devices */
-	pcireset();
+  /* disable pci devices */
+  pcireset();
 
-	rebootjump((uintptr)entry & (ulong)~0xF0000000UL, PADDR(code), size);
+  rebootjump((uintptr)entry & (ulong)~0xF0000000UL, PADDR(code), size);
 }
 
-void
-procsetup(Proc *p)
-{
-	fpuprocsetup(p);
+void procsetup(Proc *p) {
+  fpuprocsetup(p);
 
-	/* clear debug registers */
-	memset(p->dr, 0, sizeof(p->dr));
-	if(m->dr7 != 0){
-	m->dr7 = 0;
-	putdr7(0);
-	}
+  /* clear debug registers */
+  memset(p->dr, 0, sizeof(p->dr));
+  if (m->dr7 != 0) {
+    m->dr7 = 0;
+    putdr7(0);
+  }
 }
 
-void
-procfork(Proc *p)
-{
-	fpuprocfork(p);
+void procfork(Proc *p) { fpuprocfork(p); }
+
+void procrestore(Proc *p) {
+  if (p->dr[7] != 0) {
+    m->dr7 = p->dr[7];
+    extern void putdr(u64int *);
+    putdr(p->dr);
+  }
+
+  if (p->vmx != nil)
+    vmxprocrestore(p);
+
+  fpuprocrestore(p);
 }
 
-void
-procrestore(Proc *p)
-{
-	if(p->dr[7] != 0){
-	m->dr7 = p->dr[7];
-	putdr(p->dr);
-	}
-	
-	if(p->vmx != nil)
-	vmxprocrestore(p);
+void procsave(Proc *p) {
+  if (m->dr7 != 0) {
+    m->dr7 = 0;
+    putdr7(0);
+  }
+  if (p->state == Moribund)
+    p->dr[7] = 0;
 
-	fpuprocrestore(p);
+  fpuprocsave(p);
+
+  /*
+   * While this processor is in the scheduler, the process could run
+   * on another processor and exit, returning the page tables to
+   * the free list where they could be reallocated and overwritten.
+   * When this processor eventually has to get an entry from the
+   * trashed page tables it will crash.
+   *
+   * If there's only one processor, this can't happen.
+   * You might think it would be a win not to do this in that case,
+   * especially on VMware, but it turns out not to matter.
+   */
+  /* DISABLED: mmuflushtlb() was causing hang during first context switch */
+  /* mmuflushtlb(PADDR(m->pml4)); */
 }
 
-void
-procsave(Proc *p)
-{
-	if(m->dr7 != 0){
-	m->dr7 = 0;
-	putdr7(0);
-	}
-	if(p->state == Moribund)
-	p->dr[7] = 0;
-
-	fpuprocsave(p);
-
-	/*
-	 * While this processor is in the scheduler, the process could run
-	 * on another processor and exit, returning the page tables to
-	 * the free list where they could be reallocated and overwritten.
-	 * When this processor eventually has to get an entry from the
-	 * trashed page tables it will crash.
-	 *
-	 * If there's only one processor, this can't happen.
-	 * You might think it would be a win not to do this in that case,
-	 * especially on VMware, but it turns out not to matter.
-	 */
-	mmuflushtlb(PADDR(m->pml4));
-}
-
-int
-pcibiosinit(int *, int *)
-{
-	return -1;
-}
+int pcibiosinit(int *, int *) { return -1; }

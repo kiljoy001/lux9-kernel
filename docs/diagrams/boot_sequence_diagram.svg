@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <linearGradient id="bootloader" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#edf2f7"/> <!-- Gray 100 -->
+      <stop offset="100%" style="stop-color:#cbd5e0"/> <!-- Gray 300 -->
+    </linearGradient>
+    <linearGradient id="kernel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ebf8ff"/> <!-- Blue 50 -->
+      <stop offset="100%" style="stop-color:#90cdf4"/> <!-- Blue 200 -->
+    </linearGradient>
+    <linearGradient id="user" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e6fffa"/> <!-- Teal 50 -->
+      <stop offset="100%" style="stop-color:#81e6d9"/> <!-- Teal 200 -->
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2d3748"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#2d3748">Lux9 Boot Sequence</text>
+
+  <!-- Timeline Line -->
+  <line x1="400" y1="80" x2="400" y2="950" stroke="#cbd5e0" stroke-width="4"/>
+
+  <!-- Phase 1: Bootloader -->
+  <g transform="translate(250, 80)">
+    <rect width="300" height="80" rx="6" fill="url(#bootloader)" stroke="#a0aec0" stroke-width="2" filter="url(#shadow)"/>
+    <text x="150" y="30" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#2d3748">Limine Bootloader</text>
+    <text x="150" y="55" text-anchor="middle" font-family="monospace" font-size="12" fill="#4a5568">limine.cfg -> kernel.elf</text>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 400 160 L 400 210" stroke="#2d3748" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Phase 2: Kernel Main -->
+  <g transform="translate(200, 220)">
+    <rect width="400" height="350" rx="8" fill="url(#kernel)" stroke="#3182ce" stroke-width="2" filter="url(#shadow)"/>
+    <text x="200" y="30" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#2b6cb0">Kernel Initialization (Ring 0)</text>
+    <text x="200" y="50" text-anchor="middle" font-family="monospace" font-size="14" fill="#2c5282">main.c</text>
+
+    <!-- Sub-steps -->
+    <g transform="translate(50, 70)">
+      <rect width="300" height="40" rx="4" fill="white" stroke="#63b3ed"/>
+      <text x="150" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#2d3748">1. consinit() - Console/UART</text>
+    </g>
+    <g transform="translate(50, 120)">
+      <rect width="300" height="40" rx="4" fill="white" stroke="#63b3ed"/>
+      <text x="150" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#2d3748">2. meminit() - Physical Allocator</text>
+    </g>
+    <g transform="translate(50, 170)">
+      <rect width="300" height="40" rx="4" fill="white" stroke="#63b3ed"/>
+      <text x="150" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#2d3748">3. trapinit() - IDT/Interrupts</text>
+    </g>
+    <g transform="translate(50, 220)">
+      <rect width="300" height="40" rx="4" fill="white" stroke="#63b3ed"/>
+      <text x="150" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#2d3748">4. procinit() - Process Table</text>
+    </g>
+    <g transform="translate(50, 270)">
+      <rect width="300" height="50" rx="4" fill="#bee3f8" stroke="#3182ce" stroke-width="2"/>
+      <text x="150" y="20" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">5. userinit()</text>
+      <text x="150" y="40" text-anchor="middle" font-family="Arial" font-size="12" fill="#2c5282">Sets up proc0 &amp; loads code</text>
+    </g>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 400 570 L 400 620" stroke="#2d3748" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Phase 3: Userinit Details -->
+  <g transform="translate(150, 630)">
+    <rect width="500" height="150" rx="8" fill="#e6fffa" stroke="#38b2ac" stroke-width="2" stroke-dasharray="5,5"/>
+    <text x="250" y="30" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#2c7a7b">Inside userinit()</text>
+    
+    <!-- Binary Loading -->
+    <g transform="translate(30, 50)">
+      <rect width="440" height="80" rx="4" fill="white" stroke="#38b2ac"/>
+      <text x="220" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#2d3748">Load Initial Binary</text>
+      <path d="M 50 40 L 390 40" stroke="#cbd5e0" stroke-width="1"/>
+      
+      <!-- Branch -->
+      <g transform="translate(20, 45)">
+        <rect width="180" height="30" rx="2" fill="#f0fff4" stroke="#48bb78"/>
+        <text x="90" y="20" text-anchor="middle" font-family="monospace" font-size="12" fill="#2f855a">/boot/boot (CLR)</text>
+      </g>
+      <text x="220" y="65" text-anchor="middle" font-family="Arial" font-size="12" font-style="italic" fill="#718096">OR</text>
+      <g transform="translate(240, 45)">
+        <rect width="180" height="30" rx="2" fill="#fff5f5" stroke="#f56565"/>
+        <text x="90" y="20" text-anchor="middle" font-family="monospace" font-size="12" fill="#c53030">initcode (Legacy)</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 400 780 L 400 830" stroke="#2d3748" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Phase 4: User Space -->
+  <g transform="translate(200, 840)">
+    <rect width="400" height="120" rx="8" fill="url(#user)" stroke="#38b2ac" stroke-width="3" filter="url(#shadow)"/>
+    <text x="200" y="30" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#234e52">User Space (Ring 3)</text>
+    
+    <g transform="translate(100, 50)">
+      <rect width="200" height="50" rx="4" fill="white" stroke="#38b2ac"/>
+      <text x="100" y="20" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Process 0 Running</text>
+      <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="12" fill="#2c7a7b">CLR / Init</text>
+    </g>
+  </g>
+
+</svg>

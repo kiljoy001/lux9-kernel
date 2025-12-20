@@ -2,7 +2,7 @@
 # Combines kernel and userspace into complete OS
 
 # Configuration
-KERNEL_BINARY := ../kernel/lux9.elf
+KERNEL_BINARY := ../lux9.elf
 USERSPACE_INITRD := ../userspace/build/initrd.tar
 BUILD_DIR := build
 ISO_DIR := $(BUILD_DIR)/iso
@@ -58,8 +58,12 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 		-rock -joliet \
 		$(ISO_DIR) -o $@
 	
-	# Install boot loader
-	@$(LIMINE_DIR)/bin/limine bios-install $@ 2>/dev/null || true
+	# Install boot loader (BIOS mode - will fail if limine built without BIOS support)
+	@if $(LIMINE_DIR)/bin/limine bios-install $@; then \
+		echo "✓ BIOS bootloader installed"; \
+	else \
+		echo "⚠ BIOS bootloader installation failed - ISO will only boot via UEFI"; \
+	fi
 	
 	@echo "OS image created: $@"
 	@ls -lh $@
@@ -67,7 +71,7 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 # Testing
 test: lux9.iso
 	@echo "Running OS integration test..."
-	@timeout 30s /home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@timeout 30s qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
 		-nographic -serial stdio \
@@ -77,16 +81,19 @@ test: lux9.iso
 # Run in QEMU
 run: lux9.iso
 	@echo "Running OS in QEMU..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
+		-chardev socket,id=chrtpm,path=../swtpm/swtpm-sock \
+		-tpmdev emulator,id=tpm0,chardev=chrtpm \
+		-device tpm-tis,tpmdev=tpm0 \
 		-nographic -serial stdio \
 		-display none
 
 # Debug mode
 debug: lux9.iso
 	@echo "Debugging OS in QEMU+GDB..."
-	@/home/scott/Repo/gnumach/qemu-9.1.0/build/qemu-system-x86_64 \
+	@qemu-system-x86_64 \
 		-drive file=$<,format=raw,media=disk \
 		-m 2G -smp 4 \
 		-nographic -serial stdio \

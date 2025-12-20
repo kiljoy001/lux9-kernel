@@ -70,7 +70,7 @@ envgen(Chan *c, char *name, Dirtab*, int, int s, Dir *dp)
 		devdir(c, c->qid, "#e", 0, eve, 0775, dp);
 		return 1;
 	}
-	rlock(eg);
+	rlock(&eg->rwlock);
 	if((c->qid.type & QTDIR) == 0) {
 		e = envindex(eg, c->qid.path);
 		if(e == nil)
@@ -84,12 +84,12 @@ envgen(Chan *c, char *name, Dirtab*, int, int s, Dir *dp)
 	} else if(s < eg->nent) {
 		e = eg->ent[s];
 		if(e == nil) {
-			runlock(eg);
+			runlock(&eg->rwlock);
 			return 0;	/* deleted, try next */
 		}
 	} else {
 Notfound:
-		runlock(eg);
+		runlock(&eg->rwlock);
 		return -1;
 	}
 	/* make sure name string continues to exist after we release lock */
@@ -97,7 +97,7 @@ Notfound:
 	mkqid(&q, e->path, e->vers, QTFILE);
 	devdir(c, q, up->genbuf, e->len, eve,
 		eg == &confegrp || eg != up->egrp ? 0664: 0666, dp);
-	runlock(eg);
+	runlock(&eg->rwlock);
 	return 1;
 }
 
@@ -207,15 +207,15 @@ envopen(Chan *c, int omode)
 		if(omode != OREAD && !envwritable(c))
 			error(Eperm);
 		if(trunc)
-			wlock(eg);
+			wlock(&eg->rwlock);
 		else
-			rlock(eg);
+			rlock(&eg->rwlock);
 		e = envindex(eg, c->qid.path);
 		if(e == nil) {
 			if(trunc)
-				wunlock(eg);
+				wunlock(&eg->rwlock);
 			else
-				runlock(eg);
+				runlock(&eg->rwlock);
 			error(Enonexist);
 		}
 		if(trunc && e->len > 0) {
@@ -225,9 +225,9 @@ envopen(Chan *c, int omode)
 		}
 		c->qid.vers = e->vers;
 		if(trunc)
-			wunlock(eg);
+			wunlock(&eg->rwlock);
 		else
-			runlock(eg);
+			runlock(&eg->rwlock);
 	}
 	c->mode = openmode(omode);
 	incref(eg);
@@ -253,9 +253,9 @@ envcreate(Chan *c, char *name, int omode, ulong)
 
 	omode = openmode(omode);
 	eg = envgrp(c);
-	wlock(eg);
+	wlock(&eg->rwlock);
 	if(waserror()) {
-		wunlock(eg);
+		wunlock(&eg->rwlock);
 		nexterror();
 	}
 
@@ -286,7 +286,7 @@ envcreate(Chan *c, char *name, int omode, ulong)
 	eg->low = i+1;
 	eg->vers++;
 	mkqid(&c->qid, e->path, e->vers, QTFILE);
-	wunlock(eg);
+	wunlock(&eg->rwlock);
 	poperror();
 	incref(eg);
 	c->aux = eg;
@@ -307,10 +307,10 @@ envremove(Chan *c)
 		error(Eperm);
 
 	eg = envgrp(c);
-	wlock(eg);
+	wlock(&eg->rwlock);
 	e = envindex(eg, c->qid.path);
 	if(e == nil){
-		wunlock(eg);
+		wunlock(&eg->rwlock);
 		error(Enonexist);
 	}
 	for(h = envhash(eg, e->name); *h != nil; h = &(*h)->hash){
@@ -329,7 +329,7 @@ envremove(Chan *c)
 	envrealloc(eg, e->value, 0);
 	envrealloc(eg, e, 0);
 
-	wunlock(eg);
+	wunlock(&eg->rwlock);
 }
 
 static void
@@ -360,9 +360,9 @@ envread(Chan *c, void *a, long n, vlong off)
 		return devdirread(c, a, n, nil, 0, envgen);
 
 	eg = envgrp(c);
-	rlock(eg);
+	rlock(&eg->rwlock);
 	if(waserror()){
-		runlock(eg);
+		runlock(&eg->rwlock);
 		nexterror();
 	}
 	e = envindex(eg, c->qid.path);
@@ -376,7 +376,7 @@ envread(Chan *c, void *a, long n, vlong off)
 		n = 0;
 	else
 		memmove(a, e->value+off, n);
-	runlock(eg);
+	runlock(&eg->rwlock);
 	poperror();
 	return n;
 }
@@ -389,9 +389,9 @@ envwrite(Chan *c, void *a, long n, vlong off)
 	int diff;
 
 	eg = envgrp(c);
-	wlock(eg);
+	wlock(&eg->rwlock);
 	if(waserror()){
-		wunlock(eg);
+		wunlock(&eg->rwlock);
 		nexterror();
 	}
 	e = envindex(eg, c->qid.path);
@@ -410,7 +410,7 @@ envwrite(Chan *c, void *a, long n, vlong off)
 	e->len += diff;
 	e->vers++;
 	eg->vers++;
-	wunlock(eg);
+	wunlock(&eg->rwlock);
 	poperror();
 	return n;
 }
@@ -444,6 +444,7 @@ newegrp(void)
 	eg = malloc(sizeof(Egrp));
 	if(eg == nil)
 		error(Enomem);
+	memset(eg, 0, sizeof(*eg));  /* Zero all fields including rwlock */
 	eg->ref = 1;
 	return eg;
 }
@@ -454,9 +455,9 @@ envcpy(Egrp *to, Egrp *from)
 	Evalue *e, *ne, **h;
 	int i, n;
 
-	rlock(from);
+	rlock(&from->rwlock);
 	if(waserror()){
-		runlock(from);
+		runlock(&from->rwlock);
 		nexterror();
 	}
 	to->nent = 0;
@@ -482,7 +483,7 @@ envcpy(Egrp *to, Egrp *from)
 		}
 	}
 	to->low = to->nent;
-	runlock(from);
+	runlock(&from->rwlock);
 	poperror();
 }
 
@@ -527,11 +528,16 @@ ksetenv(char *ename, char *eval, int conf)
 {
 	Chan *c;
 	char buf[2*KNAMELEN];
-	
+
+	print("ksetenv: enter ename='%s' eval='%s' conf=%d\n", ename, eval, conf);
 	snprint(buf, sizeof(buf), "#e%s/%s", conf?"c":"", ename);
+	print("ksetenv: calling namec('%s', Acreate, OWRITE, 0666)\n", buf);
 	c = namec(buf, Acreate, OWRITE, 0666);
+	print("ksetenv: namec returned, calling write\n");
 	devtab[c->type]->write(c, eval, strlen(eval), 0);
+	print("ksetenv: write complete, calling cclose\n");
 	cclose(c);
+	print("ksetenv: exit\n");
 }
 
 /*
@@ -547,7 +553,7 @@ getconfenv(void)
 	char *p, *q;
 	int i, n, m;
 
-	rlock(eg);
+	rlock(&eg->rwlock);
 	n = 1;
 	for(i = 0; i < eg->nent; i++){
 		e = eg->ent[i];
@@ -557,7 +563,7 @@ getconfenv(void)
 	}
 	p = malloc(n);
 	if(p == nil){
-		runlock(eg);
+		runlock(&eg->rwlock);
 		error(Enomem);
 	}
 	q = p;
@@ -581,7 +587,7 @@ getconfenv(void)
 		q += m+1;
 	}
 	*q = '\0';
-	runlock(eg);
+	runlock(&eg->rwlock);
 
 	return p;
 }

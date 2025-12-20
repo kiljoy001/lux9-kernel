@@ -1,7 +1,7 @@
 # GDB script with smart loop detection for configuration debugging
 # Usage: gdb lux9.elf -x gdb_smart_step.gdb
 
-target remote | /home/scott/Repo/lux9-kernel/shell_scripts/qemu_gdb_stdio.sh
+target remote :1234
 
 set logging file gdb_smart_trace.log
 set logging overwrite on
@@ -133,29 +133,37 @@ end
 break main_after_cr3
 commands 1
 printf "\n=== ENTERED main_after_cr3 ===\n"
-printf "Starting smart stepping sequence...\n"
+printf "Starting normal execution to configuration setup...\n"
+continue
 end
 
-break printinit
+break waserror  
 commands 2
-printf "\n--- printinit reached ---\n"
-printf "pc: %#lx\n", $pc
+printf "\n=== ENTERED waserror ===\n"
+print "WARNING: waserror called - this suggests a configuration setup failure"
 backtrace 3
 continue
 end
 
-break pageowninit
+break setconfenv
 commands 3
-printf "\n--- pageowninit reached ---\n"
-printf "pc: %#lx\n", $pc
+printf "\n=== ENTERED setconfenv ===\n"
+print "Hit setconfenv function"
 backtrace 3
 continue
 end
 
-break xinit
+break ksetenv
 commands 4
-printf "\n--- xinit reached ---\n"
-printf "pc: %#lx\n", $pc
+printf "\n=== ENTERED ksetenv ===\n"
+print "Hit ksetenv function"
+continue
+end
+
+break snprint
+commands 5
+printf "\n=== ENTERED snprint ===\n" 
+print "Hit snprint function"
 backtrace 3
 continue
 end

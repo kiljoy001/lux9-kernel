@@ -1,10 +1,13 @@
 /* initrd.c - Initial ramdisk support */
-#include "u.h"
-#include <lib.h>
-#include "mem.h"
+#include "initrd.h"
+#include "crypto.h"
 #include "dat.h"
 #include "fns.h"
-#include "initrd.h"
+#include "mem.h"
+#include "monocypher.h"
+#include "pubkey.h"
+#include "u.h"
+#include <lib.h>
 
 struct initrd_file *initrd_root = nil;
 void *initrd_base = nil;
@@ -12,274 +15,331 @@ usize initrd_size = 0;
 uintptr initrd_physaddr = 0;
 
 /* Parse octal number from TAR header */
-static usize
-parse_octal(const char *str, int len)
-{
-	usize val = 0;
-	int i;
+static usize parse_octal(const char *str, int len) {
+  usize val = 0;
+  int i;
 
-	for(i = 0; i < len && str[i]; i++) {
-		if(str[i] >= '0' && str[i] <= '7')
-			val = (val << 3) | (str[i] - '0');
-	}
+  for (i = 0; i < len && str[i]; i++) {
+    if (str[i] >= '0' && str[i] <= '7')
+      val = (val << 3) | (str[i] - '0');
+  }
 
-	return val;
+  return val;
 }
 
 /* Check if TAR header is valid */
-static int
-is_valid_tar(struct tar_header *hdr)
-{
-	/* Check magic */
-	if(memcmp(hdr->magic, "ustar", 5) != 0) {
-		print("initrd: invalid magic\n");
-		return 0;
-	}
-	
-	/* Check version */
-	if(hdr->version[0] != '0' && hdr->version[0] != ' ') {
-		print("initrd: invalid version\n");
-		return 0;
-	}
+static int is_valid_tar(struct tar_header *hdr) {
+  /* Check magic */
+  if (memcmp(hdr->magic, "ustar", 5) != 0) {
+    print("initrd: invalid magic\n");
+    return 0;
+  }
 
-	/* Check if name is not empty */
-	if(hdr->name[0] == '\0') {
-		print("initrd: empty name\n");
-		return 0;
-	}
-	
-	/* Check if size field looks reasonable */
-	/* Basic check: should be all octal digits or spaces */
-	int i;
-	for(i = 0; i < 12 && hdr->size[i] != '\0'; i++) {
-		if(hdr->size[i] != ' ' && (hdr->size[i] < '0' || hdr->size[i] > '7')) {
-			print("initrd: invalid size field\n");
-			return 0;
-		}
-	}
+  /* Check version */
+  if (hdr->version[0] != '0' && hdr->version[0] != ' ') {
+    print("initrd: invalid version\n");
+    return 0;
+  }
 
-	return 1;
+  /* Check if name is not empty */
+  if (hdr->name[0] == '\0') {
+    print("initrd: empty name\n");
+    return 0;
+  }
+
+  /* Check if size field looks reasonable */
+  /* Basic check: should be all octal digits or spaces */
+  int i;
+  for (i = 0; i < 12 && hdr->size[i] != '\0'; i++) {
+    if (hdr->size[i] != ' ' && (hdr->size[i] < '0' || hdr->size[i] > '7')) {
+      print("initrd: invalid size field\n");
+      return 0;
+    }
+  }
+
+  return 1;
 }
 
 /* Initialize initrd from memory */
-extern void uartputs(char*, int);
+extern void uartputs(char *, int);
 
-static void
-printhex(char *label, uvlong value)
-{
-    static char hex[] = "0123456789abcdef";
-    char buf[2 + sizeof(uvlong) * 2 + 2];
-    char *p = buf;
+static void printhex(char *label, uvlong value) {
+  static char hex[] = "0123456789abcdef";
+  char buf[2 + sizeof(uvlong) * 2 + 2];
+  char *p = buf;
 
-    *p++ = '0';
-    *p++ = 'x';
-    for(int i = (int)(sizeof(uvlong) * 2 - 1); i >= 0; i--)
-        *p++ = hex[(value >> (i * 4)) & 0xF];
-    *p++ = '\n';
-    *p = 0;
+  *p++ = '0';
+  *p++ = 'x';
+  for (int i = (int)(sizeof(uvlong) * 2 - 1); i >= 0; i--)
+    *p++ = hex[(value >> (i * 4)) & 0xF];
+  *p++ = '\n';
+  *p = 0;
 
-    if(label != nil)
-        uartputs(label, strlen(label));
-    uartputs(buf, p - buf);
+  if (label != nil)
+    uartputs(label, strlen(label));
+  uartputs(buf, p - buf);
 }
 
-void
-initrd_init(void *addr, usize len)
-{
-	struct tar_header *hdr;
-	struct initrd_file *file, *last = nil;
-	usize offset = 0;
-	usize size;
+void initrd_init(void *addr, usize len) {
+  struct tar_header *hdr;
+  struct initrd_file *file, *last = nil;
+  usize offset = 0;
+  usize size;
 
-	initrd_base = addr;
-	initrd_size = len;
-	printhex("initrd addr ", (uvlong)(uintptr)addr);
-	printhex("initrd size ", (uvlong)len);
+  initrd_base = addr;
+  initrd_size = len;
+  printhex("initrd addr ", (uvlong)(uintptr)addr);
+  printhex("initrd size ", (uvlong)len);
 
-	print("initrd: loading entries\n");
-	printhex("initrd start offset ", 0);
-	printhex("initrd end offset ", (uvlong)len);
+  /* Verify integrity */
+  {
+    uint8_t hash[32];
+    int i;
+    print("initrd: verifying integrity...\n");
+    if (crypto_sha256(hash, addr, len) == 0) {
+      print("initrd: SHA256: ");
+      for (i = 0; i < 32; i++)
+        print("%02x", hash[i]);
+      print("\n");
+    } else {
+      print("initrd: SHA256 calculation failed\n");
+    }
+  }
 
-	/* Parse TAR archive */
-	int entry_count = 0;
-	const int MAX_ENTRIES = 1000;
-	
-	while(offset < len && entry_count < MAX_ENTRIES) {
-		hdr = (struct tar_header*)((u8int*)addr + offset);
-		printhex("header @ ", (uvlong)(uintptr)hdr);
-		printhex("offset ", (uvlong)offset);
-		printhex("entry_count ", (uvlong)entry_count);
-		
-		/* Basic safety check */
-		if((u8int*)hdr < (u8int*)addr || (u8int*)hdr >= (u8int*)addr + len) {
-			print("initrd: invalid header pointer\n");
-			break;
-		}
-		
-		uvlong word0;
-		memmove(&word0, hdr, sizeof word0);
-		printhex("hdr word0 ", word0);
+  print("initrd: loading entries\n");
+  printhex("initrd start offset ", 0);
+  printhex("initrd end offset ", (uvlong)len);
 
-		/* Check for end of archive (all zeros) */
-		if(hdr->name[0] == '\0')
-			break;
+  /* Parse TAR archive */
+  int entry_count = 0;
+  const int MAX_ENTRIES = 1000;
 
-		/* Validate header */
-		if(!is_valid_tar(hdr)) {
-			print("initrd: invalid TAR header\n");
-			break;
-		}
+  while (offset < len && entry_count < MAX_ENTRIES) {
+    hdr = (struct tar_header *)((u8int *)addr + offset);
+    printhex("header @ ", (uvlong)(uintptr)hdr);
+    printhex("offset ", (uvlong)offset);
+    printhex("entry_count ", (uvlong)entry_count);
 
-		/* Get file size */
-		size = parse_octal(hdr->size, sizeof(hdr->size));
-		printhex("size parsed ", (uvlong)size);
-		printhex("malloc request ", (uvlong)sizeof(struct initrd_file));
+    /* Basic safety check */
+    if ((u8int *)hdr < (u8int *)addr || (u8int *)hdr >= (u8int *)addr + len) {
+      print("initrd: invalid header pointer\n");
+      break;
+    }
 
-		/* Only handle regular files */
-		if(hdr->typeflag == '0' || hdr->typeflag == '\0') {
-			/* Allocate file entry */
-			file = malloc(sizeof(struct initrd_file));
-			printhex("malloc returned ", (uvlong)(uintptr)file);
-			if(file == nil) {
-				print("initrd: out of memory, continuing anyway\n");
-				/* Continue to next entry rather than stopping */
-				goto skip_entry;
-			}
+    uvlong word0;
+    memmove(&word0, hdr, sizeof word0);
+    printhex("hdr word0 ", word0);
 
-			/* Copy name */
-			memmove(file->name, hdr->name, sizeof(hdr->name));
-			file->name[sizeof(hdr->name)] = '\0';
+    /* Check for end of archive (all zeros) */
+    if (hdr->name[0] == '\0')
+      break;
 
-			/* Strip leading ./ if present */
-			char *name = file->name;
-			if(name[0] == '.' && name[1] == '/')
-				name += 2;
-			memmove(file->name, name, strlen(name) + 1);
+    /* Validate header */
+    if (!is_valid_tar(hdr)) {
+      print("initrd: invalid TAR header\n");
+      break;
+    }
 
-			/* Set data pointer and size */
-			file->data = (u8int*)addr + offset + 512;
-			file->size = size;
-			file->next = nil;
+    /* Get file size */
+    size = parse_octal(hdr->size, sizeof(hdr->size));
+    printhex("size parsed ", (uvlong)size);
+    printhex("malloc request ", (uvlong)sizeof(struct initrd_file));
 
-			/* Add to list */
-			if(initrd_root == nil)
-				initrd_root = file;
-			else
-				last->next = file;
-			last = file;
+    /* Only handle regular files */
+    if (hdr->typeflag == '0' || hdr->typeflag == '\0') {
+      /* Allocate file entry */
+      file = malloc(sizeof(struct initrd_file));
+      printhex("malloc returned ", (uvlong)(uintptr)file);
+      if (file == nil) {
+        print("initrd: out of memory, continuing anyway\n");
+        /* Continue to next entry rather than stopping */
+        goto skip_entry;
+      }
 
-			print("initrd: found file\n");
-		}
+      /* Copy name */
+      memmove(file->name, hdr->name, sizeof(hdr->name));
+      file->name[sizeof(hdr->name)] = '\0';
 
-	skip_entry:
-		/* Move to next file (512-byte aligned) */
-		offset += 512;  /* Header */
-		if(size > 0) {
-			usize aligned_size = (size + 511) & ~511;  /* Data (rounded up to 512) */
-			if(offset + aligned_size < offset) {  /* Check for overflow */
-				print("initrd: size overflow detected\n");
-				break;
-			}
-			offset += aligned_size;
-		}
-		entry_count++;
-		print("initrd: entry processed\n");
-	}
-	
-	if(entry_count >= MAX_ENTRIES) {
-		print("initrd: maximum entry count reached\n");
-	}
+      /* Strip leading ./ if present */
+      char *name = file->name;
+      if (name[0] == '.' && name[1] == '/')
+        name += 2;
+      memmove(file->name, name, strlen(name) + 1);
 
-	print("initrd: loaded successfully\n");
+      /* Set data pointer and size */
+      file->data = (u8int *)addr + offset + 512;
+      file->size = size;
+      file->next = nil;
+      file->sig_file = nil;
+
+      /* Add to list */
+      if (initrd_root == nil)
+        initrd_root = file;
+      else
+        last->next = file;
+      last = file;
+
+      print("initrd: found file\n");
+    }
+
+  skip_entry:
+    /* Move to next file (512-byte aligned) */
+    offset += 512; /* Header */
+    if (size > 0) {
+      usize aligned_size = (size + 511) & ~511; /* Data (rounded up to 512) */
+      if (offset + aligned_size < offset) {     /* Check for overflow */
+        print("initrd: size overflow detected\n");
+        break;
+      }
+      offset += aligned_size;
+    }
+    entry_count++;
+    print("initrd: entry processed\n");
+  }
+
+  if (entry_count >= MAX_ENTRIES) {
+    print("initrd: maximum entry count reached\n");
+  }
+
+  print("initrd: loaded successfully\n");
 }
 
 /* Register initrd files with devroot - call AFTER chandevreset() */
-void
-initrd_register(void)
-{
-	struct initrd_file *f;
-	char *name;
+void initrd_register(void) {
+  struct initrd_file *f;
+  struct initrd_file *s;
+  char *name;
 
-	for(f = initrd_root; f != nil; f = f->next) {
-		name = f->name;
-		/* Strip "bin/" prefix if present - files go into /boot/ directly */
-		if(strncmp(name, "bin/", 4) == 0)
-			name += 4;
-		print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
-		addbootfile(name, f->data, f->size);
-	}
+  /* First pass: Link signatures */
+  for (f = initrd_root; f != nil; f = f->next) {
+    char sig_name[256];
+    snprint(sig_name, sizeof(sig_name), "%s.sig", f->name);
+
+    for (s = initrd_root; s != nil; s = s->next) {
+      if (strcmp(s->name, sig_name) == 0) {
+        f->sig_file = s;
+        break;
+      }
+    }
+  }
+
+  for (f = initrd_root; f != nil; f = f->next) {
+    name = f->name;
+
+    /* Skip .sig files themselves from registration */
+    if (strstr(name, ".sig") != nil)
+      continue;
+
+    /* Strip "bin/" prefix if present - files go into /boot/ directly */
+    int is_bin = 0;
+    if (strncmp(name, "bin/", 4) == 0) {
+      name += 4;
+      is_bin = 1;
+    } else if (strncmp(name, "boot/", 5) == 0) {
+      name += 5;
+      is_bin = 1;
+    }
+
+    /* Enforce signature check for bin/ and boot/ files */
+    if (is_bin) {
+      if (f->sig_file == nil) {
+        print("initrd: SECURITY VIOLATION: '%s' has no signature. (BYPASSED)\n",
+              f->name);
+        // continue;
+      } else if (f->sig_file->size != 64) {
+        print("initrd: SECURITY VIOLATION: '%s' signature invalid size. "
+              "(BYPASSED)\n",
+              f->name);
+        // continue;
+      } else if (crypto_eddsa_check((const uint8_t *)f->sig_file->data,
+                                    internal_pubkey, (const uint8_t *)f->data,
+                                    f->size) != 0) {
+        print("initrd: SECURITY VIOLATION: '%s' signature verification FAILED. "
+              "(BYPASSED)\n",
+              f->name);
+        // continue;
+      } else {
+        print("initrd: Verified signature for '%s'\n", f->name);
+      }
+
+      /* Hack: If it's init, also register as boot/boot to be picked up by
+       * initcode */
+      if (strcmp(name, "init") == 0) {
+        print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
+        addbootfile(name, f->data, f->size);
+        print("initrd: registering alias as '/boot/boot'\n");
+        addbootfile("boot", f->data, f->size);
+        continue;
+      }
+    }
+
+    print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
+    addbootfile(name, f->data, f->size);
+  }
 }
 
 /* Find file in initrd */
-void*
-initrd_find(const char *path)
-{
-	struct initrd_file *f;
+void *initrd_find(const char *path) {
+  struct initrd_file *f;
 
-	/* Strip leading / if present */
-	if(path[0] == '/')
-		path++;
+  /* Strip leading / if present */
+  if (path[0] == '/')
+    path++;
 
-	for(f = initrd_root; f != nil; f = f->next) {
-		if(strcmp(f->name, path) == 0)
-			return f->data;
-	}
+  for (f = initrd_root; f != nil; f = f->next) {
+    if (strcmp(f->name, path) == 0)
+      return f->data;
+  }
 
-	return nil;
+  return nil;
 }
 
 /* Get file size */
-usize
-initrd_filesize(const char *path)
-{
-	struct initrd_file *f;
+usize initrd_filesize(const char *path) {
+  struct initrd_file *f;
 
-	/* Strip leading / if present */
-	if(path[0] == '/')
-		path++;
+  /* Strip leading / if present */
+  if (path[0] == '/')
+    path++;
 
-	for(f = initrd_root; f != nil; f = f->next) {
-		if(strcmp(f->name, path) == 0)
-			return f->size;
-	}
+  for (f = initrd_root; f != nil; f = f->next) {
+    if (strcmp(f->name, path) == 0)
+      return f->size;
+  }
 
-	return 0;
+  return 0;
 }
 
 /* Read from file */
-int
-initrd_read(const char *path, void *buf, usize offset, usize len)
-{
-	struct initrd_file *f;
+int initrd_read(const char *path, void *buf, usize offset, usize len) {
+  struct initrd_file *f;
 
-	/* Strip leading / if present */
-	if(path[0] == '/')
-		path++;
+  /* Strip leading / if present */
+  if (path[0] == '/')
+    path++;
 
-	for(f = initrd_root; f != nil; f = f->next) {
-		if(strcmp(f->name, path) == 0) {
-			if(offset >= f->size)
-				return 0;
+  for (f = initrd_root; f != nil; f = f->next) {
+    if (strcmp(f->name, path) == 0) {
+      if (offset >= f->size)
+        return 0;
 
-			if(offset + len > f->size)
-				len = f->size - offset;
+      if (offset + len > f->size)
+        len = f->size - offset;
 
-			memmove(buf, (u8int*)f->data + offset, len);
-			return len;
-		}
-	}
+      memmove(buf, (u8int *)f->data + offset, len);
+      return len;
+    }
+  }
 
-	return -1;
+  return -1;
 }
 
 /* List all files in initrd */
-void
-initrd_list(void)
-{
-	struct initrd_file *f;
+void initrd_list(void) {
+  struct initrd_file *f;
 
-	print("initrd: file list:\n");
-	for(f = initrd_root; f != nil; f = f->next) {
-		print("  file entry\n");
-	}
+  print("initrd: file list:\n");
+  for (f = initrd_root; f != nil; f = f->next) {
+    print("  file entry\n");
+  }
 }

@@ -220,6 +220,7 @@ mntversion(Chan *c, char *version, int msize, int returnlen)
 			free(v);
 			exhausted("mount devices");
 		}
+		memset(m, 0, sizeof(*m));  /* Zero all fields including lock */
 		lock(&mntalloc.lock);
 	}
 	m->list = mntalloc.list;

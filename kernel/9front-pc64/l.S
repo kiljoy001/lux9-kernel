@@ -23,6 +23,7 @@ touser_attempt_count:
 .section .text
 
 .extern pebble_red_blue_exit
+.extern up
 
 /* CPU I/O port access */
 .global inb
@@ -138,9 +139,11 @@ cpuid:
 .global rdmsr
 rdmsr:
     movq %rdi, %rcx
+    movq %rsi, %r8      /* save pointer */
     rdmsr
-    shlq $32, %rdx
-    orq %rdx, %rax
+    movl %eax, 0(%r8)
+    movl %edx, 4(%r8)
+    xorq %rax, %rax     /* return 0 */
     ret
 
 .global wrmsr
@@ -239,9 +242,20 @@ splhi:
 
 .global spllo
 spllo:
+_spllo:
     pushfq
-    pop %rax
+    popq %rax
+   testq $0x200, %rax  /* Test Interrupt Flag */
+    jnz _alreadylo      /* If already enabled, skip */
+
+    /* About to enable interrupts */
     sti
+
+    /* Add a nop to ensure we can handle any immediate interrupt */
+    nop
+    nop
+
+_alreadylo:
     ret
 
 .global splx
@@ -272,6 +286,12 @@ setlabel:
     movq %rsp, 0(%rdi)         /* Save SP at offset 0 */
     movq (%rsp), %rax          /* Get return address from stack */
     movq %rax, 8(%rdi)         /* Save PC at offset 8 */
+    movq %rbp, 16(%rdi)        /* Save RBP at offset 16 - CRITICAL for local variable access */
+    movq %rbx, 24(%rdi)        /* Save RBX at offset 24 */
+    movq %r12, 32(%rdi)        /* Save R12 at offset 32 */
+    movq %r13, 40(%rdi)        /* Save R13 at offset 40 */
+    movq %r14, 48(%rdi)        /* Save R14 at offset 48 */
+    movq %r15, 56(%rdi)        /* Save R15 at offset 56 */
     xorl %eax, %eax            /* Return 0 */
     ret
 
@@ -367,10 +387,11 @@ _ldmxcsr:
 
 .global putxcr0
 putxcr0:
-    movl %esi, %eax
-    movl %edx, %edx
-    xor %ecx, %ecx
-    xsetbv
+    xor %ecx, %ecx          /* XCR number = 0 */
+    mov %rdi, %rdx          /* Copy 64-bit argument to RDX */
+    shr $32, %rdx           /* Shift right 32, EDX now has high 32 bits */
+    mov %edi, %eax          /* Copy low 32 bits to EAX */
+    xsetbv                  /* Execute XSETBV with EDX:EAX value, ECX=0 */
     ret
 
 .global _rdmsrinst
@@ -399,6 +420,12 @@ invlpg:
 gotolabel:
     movq 0(%rdi), %rsp         /* Restore SP from offset 0 */
     movq 8(%rdi), %rax         /* Load PC from offset 8 */
+    movq 16(%rdi), %rbp        /* Restore RBP from offset 16 - CRITICAL for local variables */
+    movq 24(%rdi), %rbx        /* Restore RBX from offset 24 */
+    movq 32(%rdi), %r12        /* Restore R12 from offset 32 */
+    movq 40(%rdi), %r13        /* Restore R13 from offset 40 */
+    movq 48(%rdi), %r14        /* Restore R14 from offset 48 */
+    movq 56(%rdi), %r15        /* Restore R15 from offset 56 */
     movq %rax, (%rsp)          /* Place PC on stack as return address */
     movl $1, %eax              /* Return 1 */
     ret
@@ -408,7 +435,9 @@ gotolabel:
  * --------------------------------------------------------------------- */
 .global touser
 touser:
-    swapgs
+    /* NOTE: Do NOT swapgs here! GS must remain pointing to Mach structure
+     * so that interrupts and syscalls from userspace can access it.
+     * The swapgs in syscallentry/trap handlers will handle the swap. */
 
     /* Debug: print the user stack pointer we're about to use */
     pushq %rax
@@ -422,17 +451,16 @@ touser:
     popq %rsi
     popq %rax
 
-    /* Save user SP in a register before setting up IRET frame */
-    movq %rdi, %r12             /* r12 = user SP */
-
-    /* Build IRETQ frame on current kernel stack:
-     * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
-    pushq $UD64SEL              /* SS - user data segment */
-    pushq %r12                  /* RSP - user stack pointer */
-    pushq $0x202                /* RFLAGS - interrupts enabled */
-    pushq $UESEL                /* CS - user code segment */
-    pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
-
+    	/* Save user SP in a register before setting up IRET frame */
+    	movq %rdi, %r12             /* r12 = user SP */
+    
+    	/* Build IRETQ frame on current kernel stack:
+    	 * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
+    	pushq $UD64SEL              /* SS - user data segment 64-bit (0x2B) */
+    	pushq %r12                  /* RSP - user stack pointer */
+    	pushq $0x002                /* RFLAGS - interrupts disabled */
+    	pushq $UESEL                /* CS - user code segment */
+    	pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
     /* Debug: print the IRET frame */
     pushq %rax
     pushq %rdi
@@ -456,6 +484,10 @@ touser_sp_msg:
     .string "touser: jumping to user mode with SP=%#llux\n"
 touser_iret_msg:
     .string "touser: about to IRETQ to userspace\n"
+spllo_before_sti:
+    .string "spllo: before sti\n"
+spllo_after_sti:
+    .string "spllo: after sti\n"
 _debug_vec_msg:
     .string "_intrcommon: Vector = %#llx\n"
 _debug_rip_msg:
@@ -464,24 +496,42 @@ _debug_cs_msg:
     .string "_intrcommon: CS = %#x\n"
 _debug_rflags_msg:
     .string "_intrcommon: RFLAGS = %#llx\n"
+_debug_syscallentry_msg:
+    .string "syscallentry: up=%#p ureg=%#p rsp=%#p\n"
 
 .global syscallentry
 syscallentry:
     swapgs
-    movq %gs:0, %rax            /* m */
+    /* WORKAROUND: KVM/QEMU might lose GS base, use global m pointer */
+    movq m(%rip), %rax          /* m */
     movq 16(%rax), %rbx         /* up */
+
+    /* DEBUG: Check if up is valid before using it */
+    testq %rbx, %rbx
+    jz halt_up_null             /* if NULL, halt with code 0xDEAD0001 */
+    testq %rbx, %rbx            /* test sign bit */
+    jns halt_up_not_kernel      /* if bit 63 not set, halt with code 0xDEAD0002 */
+
     movq %rsp, %r13             /* save user stack */
     movq %rbx, %rsp             /* switch to kernel stack */
 
-    pushq $UD64SEL              /* ss - 64-bit user data segment */
+    /* DEBUG: Verify RSP actually switched to kernel address */
+    testq %rsp, %rsp            /* test sign bit */
+    jns halt_rsp_not_kernel     /* if bit 63 not set, halt with code 0xDEAD0003 */
+
+    pushq $UD64SEL              /* ss - user data segment 64-bit */
     pushq %r13                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */
-    pushq %rcx                  /* user pc */
+    pushq %rcx                  /* user pc - RCX holds return addr from syscall */
     pushq $0                    /* error code */
     pushq $64                   /* trap number (VectorSYSCALL) */
 
-    subq $136, %rsp             /* space for Ureg (minus saved items) */
+    /* Allocate 136 bytes: 128 for Ureg fields (ax-gs) + 8 for alignment padding
+     * Hardware frame (type-ss) already pushed: 56 bytes
+     * Total stack: 56 (7 pushes) + 136 = 192 bytes
+     * 192 % 16 = 0 (correct alignment before call) */
+    subq $136, %rsp             /* space for Ureg registers + alignment padding */
 
     /* Save all general purpose registers for potential noteret path
      * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
@@ -498,8 +548,14 @@ syscallentry:
     movq %r11, 88(%rsp)         /* ureg->r11 (offset 80, rflags saved by syscall) */
     movq %r12, 96(%rsp)         /* ureg->r12 (offset 88) */
     movq %r13, 104(%rsp)        /* ureg->r13 (offset 96) */
-    movq %r14, 120(%rsp)        /* save previous RUSER (ureg->r14, offset 112) */
-    movq %r15, 128(%rsp)        /* save previous RMACH (ureg->r15, offset 120) */
+    movq %r14, 112(%rsp)        /* save previous RUSER (ureg->r14, offset 104) */
+    movq %r15, 120(%rsp)        /* save previous RMACH (ureg->r15, offset 112) */
+
+    /* Save segment registers (ureg->ds, es, fs, gs at offsets 120-127) */
+    movw %ds, 128(%rsp)         /* ureg->ds (offset 120) */
+    movw %es, 130(%rsp)         /* ureg->es (offset 122) */
+    movw %fs, 132(%rsp)         /* ureg->fs (offset 124) */
+    movw %gs, 134(%rsp)         /* ureg->gs (offset 126) */
 
     movq %rax, %r15             /* update RMACH */
     movq 16(%rax), %r14         /* update RUSER = up */
@@ -509,12 +565,48 @@ syscallentry:
 
     /* Return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
      * If noteret is set, jump directly to noteret.
-     * Otherwise fall through to syscallret (both use IRETQ). */
+     * Otherwise jump to syscallret (both use IRETQ). */
     movq (%rsp), %rax           /* load stack slot */
     testq %rax, %rax            /* check if noteret address is set */
     jnz noteret                 /* if set, use IRETQ path */
+    jmp syscallret              /* normal return via IRETQ */
 
-    /* Fall through to syscallret (which also uses IRETQ) */
+halt_up_null:
+    movq $0xDEAD0001, %rax
+    cli
+    hlt
+    jmp halt_up_null
+
+halt_up_not_kernel:
+    movq $0xDEAD0002, %rax
+    cli
+    hlt
+    jmp halt_up_not_kernel
+
+halt_rsp_not_kernel:
+    movq $0xDEAD0003, %rax
+    cli
+    hlt
+    jmp halt_rsp_not_kernel
+
+halt_trap_m_null:
+    movq $0xDEAD1001, %rax
+    cli
+    hlt
+    jmp halt_trap_m_null
+
+halt_trap_up_null:
+    movq $0xDEAD1002, %rax
+    cli
+    hlt
+    jmp halt_trap_up_null
+
+halt_trap_up_not_kernel:
+    movq $0xDEAD1003, %rax
+    cli
+    hlt
+    jmp halt_trap_up_not_kernel
+
     jmp syscallret
 
 /* NOTE: We use IRETQ for all returns instead of the faster SYSRET instruction.
@@ -533,7 +625,50 @@ syscallentry:
 .global syscallret
 syscallret:
 forkret:
-    jmp noteret  /* Use IRETQ path for all returns */
+    /* Syscall-specific return path (different stack layout than trap path) */
+    popq %rax                   /* discard saved pointer */
+
+    popq %rax
+    popq %rbx
+    popq %rcx
+    popq %rdx
+    popq %rsi
+    popq %rdi
+    popq %rbp
+    popq %r8
+    popq %r9
+    popq %r10
+    popq %r11
+    popq %r12
+    popq %r13
+
+    /* After popping 14 quads, RSP points to r14. CS is at r14+48 */
+    cmpq $KESEL, 48(%rsp)
+    je _syscall_iretnested
+
+    /* Returning to user mode: swap GS to restore user GS base */
+    swapgs
+
+_syscall_iretnested:
+	/* Restore preserved registers */
+	movq 0(%rsp), %r14
+	movq 8(%rsp), %r15
+
+	/* Restore data segments from stack */
+	movw 16(%rsp), %ds
+	movw 18(%rsp), %es
+
+	/* Skip past r14(8), r15(8), segments(8), trap(8), error(8) = 40 bytes total */
+	/* Stack now points at the hardware IRETQ frame: RIP, CS, RFLAGS, RSP, SS */
+	addq $40, %rsp
+
+	/* Use IRETQ (not SYSRETQ) because our GDT layout is incompatible with SYSRET */
+	iretq
+.section .rodata
+_iretq_debug_msg:
+    .string "IRETQ: pc=%#p cs=%#llx flags=%#llx sp=%#p ss=%#llx\n"
+
+.text
 
 .global _strayintr
 _strayintr:
@@ -551,20 +686,48 @@ _intrcommon:
 
     /* Check CS like 9front does */
     cmpw $KESEL, 48(%rsp)
-    je _intrnested
+    je 1f
 
     /* Coming from user mode - need to set up kernel context */
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
     swapgs
-    movq %gs:0, %r15        /* Load m into r15 */
+    /* WORKAROUND: KVM doesn't virtualize GS base - use global m */
+    movq m(%rip), %r15      /* Load m into r15 from global variable */
+
+    /* DEBUG: Check m is valid - COMMENTED OUT TO SEE PANIC
+    testq %r15, %r15
+    jz halt_trap_m_null
+    */
+
     movq 16(%r15), %r14     /* Load up into r14 */
 
+    /* DEBUG: Check up is valid - COMMENTED OUT TO TEST
+    testq %r14, %r14
+    jz halt_trap_up_null
+    testq %r14, %r14
+    jns halt_trap_up_not_kernel
+    */
+
+    /* DEBUG: If we get here, m was valid. Store r14 value at a known location */
+    movq %r14, intr_frame_r14(%rip)
+
+    jmp 2f
+
+1:
+    /* Kernel-mode trap - GS already points at Mach */
+    /* WORKAROUND: KVM doesn't properly virtualize GS base MSR, so use global m */
+    /* TODO: Check if we can use GS on bare metal for better performance */
+    movq m(%rip), %r15      /* Use global m pointer instead of %gs:0 */
+    movq 16(%r15), %r14
+
+2:
+
 _intrnested:
-    pushq %r13
-    pushq %r12
-    pushq %r11
-    pushq %r10
+	pushq %r13
+	pushq %r12
+	pushq %r11
+	pushq %r10
     pushq %r9
     pushq %r8
     pushq %rbp
@@ -572,12 +735,46 @@ _intrnested:
     pushq %rsi
     pushq %rdx
     pushq %rcx
-    pushq %rbx
-    pushq %rax
+	pushq %rbx
+	pushq %rax
 
-    movq %rsp, %rdi
-    pushq %rsp                  /* preserve stack slot for notifier */
-    call trap
+	/* Relocate Ureg to kernel stack if hardware left us on user stack */
+	movq %rsp, %rax             /* current Ureg pointer */
+	leaq intr_frame_before(%rip), %rdx
+	movq %rax, (%rdx)
+	xorq %rdx, %rdx
+	movq %rdx, intr_frame_relocated(%rip)
+	movq %r14, intr_frame_r14(%rip)
+	testq %rax, %rax
+	js 1f
+	testq %r14, %r14
+	je 1f
+	/* dst = up - (UREG_SIZE + 16) */
+	movq %r14, %rdx
+	subq $(UREG_SIZE+16), %rdx
+	movq %rdx, %rdi
+	movq %rax, %rsi
+	movq %rdx, %rsp
+	movq $(UREG_SIZE/8), %rcx
+	cld
+	rep movsq
+	movq %rsp, %rax
+	movq $1, intr_frame_relocated(%rip)
+1:
+	leaq intr_frame_addr(%rip), %rdx
+	movq %rax, (%rdx)
+	movq 0xA0(%rax), %rdx        /* flags */
+	movq %rdx, intr_frame_saved_flags(%rip)
+	movq 0xA8(%rax), %rdx        /* saved SP */
+	movq %rdx, intr_frame_saved_sp(%rip)
+	movq 0xB0(%rax), %rdx        /* saved SS */
+	movq %rdx, intr_frame_saved_ss(%rip)
+	movq 0x98(%rax), %rdx        /* saved CS */
+	movq %rdx, intr_frame_saved_cs(%rip)
+
+	movq %rax, %rdi
+	pushq %rax                  /* preserve stack slot for notifier */
+	call trap
     jmp _intrestore
 
 .global noteret
@@ -585,30 +782,37 @@ noteret:
 _intrestore:
     popq %rax                   /* discard saved pointer */
 
-    popq %rax
-    popq %rbx
-    popq %rcx
-    popq %rdx
-    popq %rsi
-    popq %rdi
-    popq %rbp
-    popq %r8
-    popq %r9
-    popq %r10
-    popq %r11
-    popq %r12
-    popq %r13
+	    popq %rax
+	    popq %rbx
+	    popq %rcx
+	    popq %rdx
+	    popq %rsi
+	    popq %rdi
+	    popq %rbp
+	    popq %r8
+	    popq %r9
+	    popq %r10
+	    popq %r11
+	    popq %r12
+	    popq %r13
 
-    cmpq $KESEL, 48(%rsp)    /* CS at offset 48, like 9front */
-    je _iretnested
+	    /* After register pops, RSP points at 24-byte locals allocation */
+	    /* Stack layout: [24 locals][vector][error][RIP][CS][RFLAGS][RSP?][SS?] */
+	    /* CS is at offset 48 (24+8+8+8) */
+	    cmpq $KESEL, 48(%rsp)
+	    je _iretnested
 
-    swapgs
-    movq 8(%rsp), %r15
-    movq 0(%rsp), %r14
+	    /* User mode interrupt: restore R14/R15 and swap GS back */
+	    swapgs
+	    movq 8(%rsp), %r15        /* r15 was stored at offset 8 */
+	    movq 0(%rsp), %r14        /* r14 was stored at offset 0 */
 
 _iretnested:
-    addq $40, %rsp   /* Skip to hardware frame */
-    iretq
+	    /* Remove: 24-byte locals + vector + error = 40 bytes */
+	    /* Leave hardware frame: RIP, CS, RFLAGS, [RSP, SS] */
+	    /* IRETQ automatically handles whether RSP/SS are present based on privilege change */
+	    addq $40, %rsp
+	    iretq
 
 .global putdr
 putdr:

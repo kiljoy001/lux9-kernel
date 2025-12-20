@@ -1,116 +1,54 @@
-# userspace/Makefile - Userspace Build Configuration
-# Builds all userspace components independently
+# Lux9 Userspace Build System
 
-# Configuration
-USERSPACE_NAME := lux9-userspace
+# Directories
 BUILD_DIR := build
-SRC_DIR := .
+INIT_BUILD_DIR := $(BUILD_DIR)/init
+INIT_BOOT_DIR := $(INIT_BUILD_DIR)/boot
+INIT_SRC_DIR := init9p
+INIT_OUT_DIR := $(INIT_SRC_DIR)/bin/Debug/net9.0
 
-# Source directories
-GO_SERVERS_DIR := go-servers
-DRIVERS_DIR := drivers
-C_SERVERS_DIR := servers
-LIBS_DIR := lib
+# Files
+INIT_DLL := $(INIT_OUT_DIR)/init.dll
+BCL_DLL := ../kernel/clr/bcl/src/System.Runtime/bin/Debug/net9.0/System.Runtime.dll
+FSHARP_CORE_DLL := $(INIT_OUT_DIR)/FSharp.Core.dll
+SHELL_SRC_DIR := shell
+SHELL_OUT_DIR := $(SHELL_SRC_DIR)/bin/Debug/net9.0
+SHELL_DLL := $(SHELL_OUT_DIR)/shell.dll
 
-# Build directories
-OBJ_DIR := $(BUILD_DIR)/obj
-BIN_DIR := $(BUILD_DIR)/bin
-LIB_DIR := $(BUILD_DIR)/lib
-INITRD_DIR := $(BUILD_DIR)/initrd
+.PHONY: all clean initrd build-init build-shell
 
-# Tool chains
-GO := go
-CC := gcc
-CXX := g++
-LD := ld
-AR := ar
+all: initrd
 
-# Go build settings
-GOFLAGS := -ldflags="-s -w" -trimpath
-GOBUILD := $(GO) build $(GOFLAGS)
-
-# C build settings
-CFLAGS := -Wall -Wextra -O2 -fPIC \
-          -I./include \
-          -I./lib \
-          -L$(LIB_DIR)
-
-LDFLAGS := -shared -Wl,-soname,
-
-# Targets
-.PHONY: all clean test install help
-
-# Main userspace build
-all: go-servers drivers c-servers libs initrd
-
-# Drivers build
-drivers:
-	@echo "Building userspace drivers..."
-	@$(MAKE) -C $(DRIVERS_DIR) all
-
-# Go servers build
-go-servers:
-	@echo "Building Go servers..."
-	@$(MAKE) -C $(GO_SERVERS_DIR) all
-
-# C servers build  
-c-servers: $(C_SERVERS_DIR)/ext4fs/ext4fs
-
-$(C_SERVERS_DIR)/ext4fs/ext4fs: $(C_SERVERS_DIR)/ext4fs/ext4fs.c
-	@mkdir -p $(dir $@)
-	@$(CC) $(CFLAGS) -o $@ $<
-
-# Libraries (placeholder)
-libs:
-	@echo "Building userspace libraries..."
-	@mkdir -p $(LIB_DIR)
-
-# Initrd creation
-initrd: $(BUILD_DIR)/initrd.tar
-	@echo "Creating initrd..."
-
-$(BUILD_DIR)/initrd.tar: go-servers drivers c-servers libs
-	@echo "Building initrd from $(GO_SERVERS_DIR), $(DRIVERS_DIR), and $(C_SERVERS_DIR)"
-	@rm -rf $(INITRD_DIR)
-	@mkdir -p $(INITRD_DIR)/{bin,lib,dev,etc,srv}
-	# Copy Go binaries
-	@find $(GO_SERVERS_DIR) -name "*.go" -prune -o -type f -executable -print \
-	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
-	# Copy driver binaries
-	@find $(DRIVERS_DIR) -name "*_driver" -type f -executable -print \
-	    | xargs -I {} cp {} $(INITRD_DIR)/bin/ 2>/dev/null || true
-	# Copy C binaries
-	@cp $(C_SERVERS_DIR)/ext4fs/ext4fs $(INITRD_DIR)/bin/ 2>/dev/null || true
-	# Create tar
-	@cd $(INITRD_DIR) && tar -cf ../initrd.tar .
-	@echo "Initrd created: $@"
-
-# Testing
-test: 
-	@echo "Running userspace tests..."
-	@$(MAKE) -C $(GO_SERVERS_DIR) test 2>/dev/null || echo "Go server tests completed"
-
-# Installation
-install: $(BUILD_DIR)/initrd.tar
-	@mkdir -p $(DESTDIR)/boot
-	@cp $< $(DESTDIR)/boot/initrd.tar
-	@echo "Userspace installed to $(DESTDIR)/boot/initrd.tar"
-
-# Cleanup
 clean:
-	@echo "Cleaning userspace build..."
-	@rm -rf $(BUILD_DIR)
-	@$(MAKE) -C $(GO_SERVERS_DIR) clean 2>/dev/null || true
-	@$(MAKE) -C $(DRIVERS_DIR) clean 2>/dev/null || true
+	rm -rf $(BUILD_DIR)
+	cd $(INIT_SRC_DIR) && dotnet clean
+	cd $(SHELL_SRC_DIR) && dotnet clean
 
-help:
-	@echo "Userspace Build Targets:"
-	@echo "  all      - Build all userspace components"
-	@echo "  go-servers - Build Go servers"
-	@echo "  drivers  - Build userspace drivers"
-	@echo "  c-servers - Build C servers"
-	@echo "  libs     - Build libraries"
-	@echo "  initrd   - Create initrd package"
-	@echo "  test     - Run userspace tests"
-	@echo "  install  - Install userspace"
-	@echo "  clean    - Clean build artifacts"
+$(INIT_DLL):
+	cd $(INIT_SRC_DIR) && dotnet build -c Debug
+
+$(SHELL_DLL):
+	cd $(SHELL_SRC_DIR) && dotnet build -c Debug
+
+# Build the initrd tarball
+# Structure:
+#   boot/init  <- The F# init binary
+#   bin/shell  <- The F# shell
+#   boot/System.Runtime.dll
+initrd: $(INIT_DLL) $(SHELL_DLL)
+	@mkdir -p $(INIT_BOOT_DIR)
+	@mkdir -p $(INIT_BUILD_DIR)/bin
+	@cp $(INIT_DLL) $(INIT_BOOT_DIR)/init
+	@cp $(SHELL_DLL) $(INIT_BUILD_DIR)/bin/shell
+	@cp $(BCL_DLL) $(INIT_BOOT_DIR)/
+	@cp $(FSHARP_CORE_DLL) $(INIT_BOOT_DIR)/
+	@# Copy deps to bin as well so shell finds them?
+	@# Actually, kernel loader shares assemblies, but for now duplicate
+	@cp $(BCL_DLL) $(INIT_BUILD_DIR)/bin/
+	@cp $(FSHARP_CORE_DLL) $(INIT_BUILD_DIR)/bin/
+	@if [ -f $(INIT_OUT_DIR)/System.Collections.dll ]; then \
+		cp $(INIT_OUT_DIR)/System.Collections.dll $(INIT_BOOT_DIR)/; \
+		cp $(INIT_OUT_DIR)/System.Collections.dll $(INIT_BUILD_DIR)/bin/; \
+	fi
+	@echo "Creating initrd.tar from $(INIT_BUILD_DIR)..."
+	@cd $(INIT_BUILD_DIR) && tar -cvf ../initrd.tar *

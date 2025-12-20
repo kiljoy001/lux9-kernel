@@ -233,19 +233,27 @@ timersinit(void)
 {
 	Timer *t;
 
+	/* DEBUG: Reduced verbose timer init printing
 	print("timersinit: ENTRY\n");
+	*/
 
 	/*
 	 * T->tf == nil means the HZ clock for this processor.
 	 */
+	/* DEBUG: Reduced verbose timer init printing
 	print("timersinit: calling todinit\n");
+	*/
 	todinit();
+	/* DEBUG: Reduced verbose timer init printing
 	print("timersinit: todinit complete, calling xalloc\n");
+	*/
 
 	t = xalloc(sizeof(*t));
 	if(t == nil)
 		panic("timersinit: no memory for Timer");
+	/* DEBUG: Reduced verbose timer init printing
 	print("timersinit: xalloc complete, setting up timer\n");
+	*/
 
 	t->tmode = Tperiodic;
 	t->tt = nil;

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<doc>
+<assembly><name>FsDriver</name></assembly>
+<members>
+<member name="T:FsDriver.Result`1">
+<summary>
+ Result type for operations
+</summary>
+</member>
+<member name="T:FsDriver.IORequest">
+<summary>
+ I/O request
+</summary>
+</member>
+<member name="T:FsDriver.MemoryRegion">
+<summary>
+ Memory region descriptor
+</summary>
+</member>
+<member name="T:FsDriver.DeviceState">
+<summary>
+ Device state
+</summary>
+</member>
+<member name="M:FsDriver.Utils.retry``1(System.Int32,Microsoft.FSharp.Core.FSharpFunc{Microsoft.FSharp.Core.Unit,FsDriver.Result{``0}})">
+<summary>
+ Retry operation up to N times
+</summary>
+</member>
+<member name="M:FsDriver.Utils.toResult(System.Boolean,System.String)">
+<summary>
+ Convert error to result
+</summary>
+</member>
+<member name="M:FsDriver.Utils.isAligned(System.UInt64,System.UInt64)">
+<summary>
+ Check if address is aligned
+</summary>
+</member>
+<member name="M:FsDriver.Utils.alignUp(System.UInt64,System.UInt64)">
+<summary>
+ Align address to page boundary
+</summary>
+</member>
+<member name="M:FsDriver.Utils.checksum(System.Byte[])">
+<summary>
+ Compute checksum of byte array
+</summary>
+</member>
+<member name="T:FsDriver.Device.DeviceDescriptor">
+<summary>
+ Device descriptor
+</summary>
+</member>
+<member name="M:FsDriver.Device.reset(FsDriver.Device.DeviceDescriptor)">
+<summary>
+ Reset device
+</summary>
+</member>
+<member name="M:FsDriver.Device.handleInterrupt(FsDriver.Device.DeviceDescriptor,System.Int32)">
+<summary>
+ Handle interrupt
+</summary>
+</member>
+<member name="M:FsDriver.Device.processIO(FsDriver.Device.DeviceDescriptor,FsDriver.IORequest)">
+<summary>
+ Process I/O request
+</summary>
+</member>
+<member name="M:FsDriver.Device.addRegion(FsDriver.Device.DeviceDescriptor,FsDriver.MemoryRegion)">
+<summary>
+ Add memory region to device
+</summary>
+</member>
+<member name="M:FsDriver.Device.initialize(FsDriver.Device.DeviceDescriptor)">
+<summary>
+ Initialize device
+</summary>
+</member>
+<member name="M:FsDriver.Device.create(System.String,System.UInt64,System.Int32)">
+<summary>
+ Create new device
+</summary>
+</member>
+<member name="T:FsDriver.Driver.DriverState">
+<summary>
+ Driver state
+</summary>
+</member>
+<member name="M:FsDriver.Driver.shutdown(FsDriver.Driver.DriverState)">
+<summary>
+ Shutdown all devices
+</summary>
+</member>
+<member name="M:FsDriver.Driver.getStats(FsDriver.Driver.DriverState)">
+<summary>
+ Get statistics
+</summary>
+</member>
+<member name="M:FsDriver.Driver.processRequest(FsDriver.Driver.DriverState,System.String,FsDriver.IORequest)">
+<summary>
+ Process request on named device
+</summary>
+</member>
+<member name="M:FsDriver.Driver.findDevice(FsDriver.Driver.DriverState,System.String)">
+<summary>
+ Find device by name
+</summary>
+</member>
+<member name="M:FsDriver.Driver.registerDevice(FsDriver.Driver.DriverState,FsDriver.Device.DeviceDescriptor)">
+<summary>
+ Register device with driver
+</summary>
+</member>
+<member name="M:FsDriver.Driver.createState(System.Int32)">
+<summary>
+ Create driver state
+</summary>
+</member>
+</members>
+</doc>

@@ -37,6 +37,7 @@ newpgrp(void)
 	p = malloc(sizeof(Pgrp));
 	if(p == nil)
 		error(Enomem);
+	memset(p, 0, sizeof(*p));
 	p->ref = 1;
 	return p;
 }
@@ -49,6 +50,7 @@ newrgrp(void)
 	r = malloc(sizeof(Rgrp));
 	if(r == nil)
 		error(Enomem);
+	memset(r, 0, sizeof(*r));
 	r->ref = 1;
 	return r;
 }
@@ -168,7 +170,8 @@ dupfgrp(Fgrp *f)
 	new = malloc(sizeof(Fgrp));
 	if(new == nil)
 		error(Enomem);
-	new->ref = 1;
+	memset(new, 0, sizeof(*new));  /* Zero all fields including lock */
+	new->ref.ref = 1;
 	if(f == nil){
 		new->nfd = DELTAFD;
 		new->fd = malloc(DELTAFD*sizeof(new->fd[0]));
@@ -182,7 +185,7 @@ dupfgrp(Fgrp *f)
 		return new;
 	}
 
-	lock(f);
+	lock(&f->lock);
 	/* Make new fd list shorter if possible, preserving quantization */
 	new->nfd = f->maxfd+1;
 	i = new->nfd%DELTAFD;
@@ -191,7 +194,7 @@ dupfgrp(Fgrp *f)
 	new->fd = malloc(new->nfd*sizeof(new->fd[0]));
 	new->flag = malloc(new->nfd*sizeof(new->flag[0]));
 	if(new->fd == nil || new->flag == nil){
-		unlock(f);
+		unlock(&f->lock);
 		free(new->flag);
 		free(new->fd);
 		free(new);
@@ -205,7 +208,7 @@ dupfgrp(Fgrp *f)
 			incref(c);
 		}
 	}
-	unlock(f);
+	unlock(&f->lock);
 
 	return new;
 }
@@ -216,7 +219,7 @@ closefgrp(Fgrp *f)
 	int i;
 	Chan *c;
 
-	if(f == nil || decref(f))
+	if(f == nil || decref(&f->ref))
 		return;
 
 	/*

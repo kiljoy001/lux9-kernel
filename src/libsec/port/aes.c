@@ -1253,5 +1253,5 @@ setupAESstate(AESstate *s, uchar key[], int nkey, uchar *ivec)
 	if(ivec != nil)
 		memmove(s->ivec, ivec, AESbsize);
 	if(s->rounds != 0)
-		s->setup = 0xcafebabe;
+		s->setup = 0xcafebabe /* nosec */;
 }

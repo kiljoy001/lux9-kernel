@@ -195,7 +195,7 @@ sigsearch(char* signature, int size)
 	uintptr p;
 	void *r;
 
-	print("sigsearch: looking for '%s' (size=%d)\n", signature, size);
+	/* DEBUG: Disabled verbose sigsearch tracing */
 
 	/*
 	 * Search for the data structure:
@@ -206,36 +206,32 @@ sigsearch(char* signature, int size)
 	 *    (but will actually check 0xe0000 to 0xfffff).
 	 */
 	if((p = ebdaseg()) != 0){
-		print("sigsearch: checking EBDA at phys=%#lux virt=%#p\n", p, KADDR(p));
+	/* DEBUG: Disabled verbose sigsearch tracing */
 		if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
-			print("sigsearch: FOUND in EBDA at %#p\n", r);
+	/* DEBUG: Disabled verbose sigsearch tracing */
 			return r;
 		}
 	}else{
-		print("sigsearch: EBDA not found (ebdaseg returned 0)\n");
+	/* DEBUG: Disabled verbose sigsearch tracing */
 	}
 
 	p = convmemsize();
-	print("sigsearch: checking convmem at phys=%#lux virt=%#p\n", p, KADDR(p));
+	/* DEBUG: Disabled verbose sigsearch tracing */
 	if((r = sigscan(KADDR(p), 1*KB, signature, size, 16)) != nil){
-		print("sigsearch: FOUND in convmem at %#p\n", r);
+	/* DEBUG: Disabled verbose sigsearch tracing */
 		return r;
 	}
 
 	/* hack for virtualbox: look in KiB below 0xa0000 */
-	print("sigsearch: checking 0xA0000-1KB area\n");
-	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil){
-		print("sigsearch: FOUND in 0xA0000 area at %#p\n", r);
+	if((r = sigscan(KADDR(0xA0000-1*KB), 1*KB, signature, size, 16)) != nil)
 		return r;
-	}
 
-	print("sigsearch: checking BIOS ROM 0xE0000-0xFFFFF\n");
+	/* Scan BIOS ROM range (0xE0000 to 0xFFFFF) - this is where _MP_ is usually found */
 	r = sigscan(KADDR(0xE0000), 128*KB, signature, size, 16);
 	if(r != nil)
-		print("sigsearch: FOUND in BIOS ROM at %#p\n", r);
-	else
-		print("sigsearch: NOT FOUND anywhere!\n");
-	return r;
+		return r;
+
+	return nil;
 }
 
 void*
@@ -675,7 +671,10 @@ meminit(void)
 	Confmem *cm;
 	int cmidx = 0;
 
-	print("meminit: ENTRY\n");
+	/*
+	 * DEBUG: Disabled verbose meminit tracing
+	 * print("meminit: ENTRY\n");
+	 */
 	umbexclude();
 	/* Skip UMB mapping - using HHDM for all physical memory access */
 	/* for(base = memmapnext(-1, MemUMB); base != -1; base = memmapnext(base, MemUMB)){
@@ -685,8 +684,11 @@ meminit(void)
 	} */
 
 	cm = &conf.mem[0];
-	for(base = memmapnext(-1, MemRAM); base != -1; base = memmapnext(base, MemRAM)){
-		print("meminit: found MemRAM at base=%#p\n", base);
+		for(base = memmapnext(-1, MemRAM); base != -1; base = memmapnext(base, MemRAM)){
+			/*
+			 * DEBUG: Disabled verbose meminit tracing
+			 * print("meminit: found MemRAM at base=%#p\n", base);
+			 */
 		size = memmapsize(base, BY2PG) & ~(BY2PG-1);
 		print("meminit: size=%#llux (%llu pages)\n", (uvlong)size, (uvlong)(size/BY2PG));
 		if(size == 0) {

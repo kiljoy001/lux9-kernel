@@ -1,0 +1,287 @@
+DIGEST 1dadd21eedde639c00af1296c450f575
+Ffsharp_complete_no_admits
+R108:122 Coq.Arith.Arith <> <> lib
+R140:153 Coq.Lists.List <> <> lib
+R163:175 Coq.Lists.List ListNotations <> mod
+ind 252:255 <> Expr
+constr 271:273 <> Num
+constr 293:296 <> Plus
+R280:283 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R277:279 Coq.Init.Datatypes <> nat ind
+R284:287 fsharp_complete_no_admits <> Expr:1 ind
+R304:307 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R300:303 fsharp_complete_no_admits <> Expr:1 ind
+R312:315 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R308:311 fsharp_complete_no_admits <> Expr:1 ind
+R316:319 fsharp_complete_no_admits <> Expr:1 ind
+scheme 252:255 <> Expr_rect
+scheme 252:255 <> Expr_ind
+scheme 252:255 <> Expr_rec
+scheme 252:255 <> Expr_sind
+def 392:395 <> eval
+R402:405 fsharp_complete_no_admits <> Expr ind
+binder 398:398 <> e:3
+R410:412 Coq.Init.Datatypes <> nat ind
+R425:425 fsharp_complete_no_admits <> e:3 var
+R436:438 fsharp_complete_no_admits <> Num constr
+R451:454 fsharp_complete_no_admits <> Plus constr
+R472:474 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R465:468 fsharp_complete_no_admits <> eval:4 def
+R475:478 fsharp_complete_no_admits <> eval:4 def
+ind 557:558 <> Ty
+constr 573:576 <> TNum
+R580:581 fsharp_complete_no_admits <> Ty:6 ind
+scheme 557:558 <> Ty_rect
+scheme 557:558 <> Ty_ind
+scheme 557:558 <> Ty_rec
+scheme 557:558 <> Ty_sind
+ind 595:599 <> typed
+constr 629:633 <> T_Num
+constr 670:675 <> T_Plus
+R607:610 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R603:606 fsharp_complete_no_admits <> Expr ind
+R613:616 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R611:612 fsharp_complete_no_admits <> Ty ind
+binder 644:644 <> n:10
+R647:651 fsharp_complete_no_admits <> typed:8 ind
+R661:664 fsharp_complete_no_admits <> TNum constr
+R654:656 fsharp_complete_no_admits <> Num constr
+R658:658 fsharp_complete_no_admits <> n:10 var
+binder 686:687 <> e1:11
+binder 689:690 <> e2:12
+R712:715 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R699:703 fsharp_complete_no_admits <> typed:8 ind
+R708:711 fsharp_complete_no_admits <> TNum constr
+R705:706 fsharp_complete_no_admits <> e1:11 var
+R729:732 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R716:720 fsharp_complete_no_admits <> typed:8 ind
+R725:728 fsharp_complete_no_admits <> TNum constr
+R722:723 fsharp_complete_no_admits <> e2:12 var
+R733:737 fsharp_complete_no_admits <> typed:8 ind
+R752:755 fsharp_complete_no_admits <> TNum constr
+R740:743 fsharp_complete_no_admits <> Plus constr
+R745:746 fsharp_complete_no_admits <> e1:11 var
+R748:749 fsharp_complete_no_admits <> e2:12 var
+scheme 595:599 <> typed_ind
+scheme 595:599 <> typed_sind
+ind 830:834 <> Instr
+constr 850:853 <> Push
+constr 874:876 <> Add
+R860:863 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R857:859 Coq.Init.Datatypes <> nat ind
+R864:868 fsharp_complete_no_admits <> Instr:13 ind
+R880:884 fsharp_complete_no_admits <> Instr:13 ind
+scheme 830:834 <> Instr_rect
+scheme 830:834 <> Instr_ind
+scheme 830:834 <> Instr_rec
+scheme 830:834 <> Instr_sind
+def 899:902 <> Code
+R907:910 Coq.Init.Datatypes <> list ind
+R912:916 fsharp_complete_no_admits <> Instr ind
+def 930:934 <> Stack
+R939:942 Coq.Init.Datatypes <> list ind
+R944:946 Coq.Init.Datatypes <> nat ind
+def 959:965 <> compile
+R972:975 fsharp_complete_no_admits <> Expr ind
+binder 968:968 <> e:15
+R980:983 fsharp_complete_no_admits <> Code def
+R996:996 fsharp_complete_no_admits <> e:15 var
+R1007:1009 fsharp_complete_no_admits <> Num constr
+R1016:1016 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1023:1023 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1017:1020 fsharp_complete_no_admits <> Push constr
+R1029:1032 fsharp_complete_no_admits <> Plus constr
+R1053:1056 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R1043:1049 fsharp_complete_no_admits <> compile:16 def
+R1067:1070 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R1057:1063 fsharp_complete_no_admits <> compile:16 def
+R1071:1071 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1075:1075 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R1072:1074 fsharp_complete_no_admits <> Add constr
+def 1094:1100 <> execute
+R1110:1113 fsharp_complete_no_admits <> Code def
+binder 1103:1106 <> code:18
+R1125:1129 fsharp_complete_no_admits <> Stack def
+binder 1117:1121 <> stack:19
+R1134:1139 Coq.Init.Datatypes <> option ind
+R1141:1145 fsharp_complete_no_admits <> Stack def
+R1158:1161 fsharp_complete_no_admits <> code:18 var
+R1172:1173 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R1178:1181 Coq.Init.Datatypes <> Some constr
+R1183:1187 fsharp_complete_no_admits <> stack:19 var
+R1199:1202 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1193:1196 fsharp_complete_no_admits <> Push constr
+R1211:1217 fsharp_complete_no_admits <> execute:20 def
+R1226:1229 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1230:1234 fsharp_complete_no_admits <> stack:19 var
+R1244:1247 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1241:1243 fsharp_complete_no_admits <> Add constr
+R1268:1272 fsharp_complete_no_admits <> stack:19 var
+R1289:1292 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1295:1298 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1309:1315 fsharp_complete_no_admits <> execute:20 def
+R1323:1323 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1331:1335 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R1326:1328 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R1357:1360 Coq.Init.Datatypes <> None constr
+prf 1491:1504 <> type_soundness
+binder 1515:1515 <> e:23
+R1532:1535 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1520:1524 fsharp_complete_no_admits <> typed ind
+R1526:1526 fsharp_complete_no_admits <> e:23 var
+R1528:1531 fsharp_complete_no_admits <> TNum constr
+R1536:1542 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R1544:1545 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 1543:1543 <> n:24
+R1552:1554 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1546:1549 fsharp_complete_no_admits <> eval def
+R1551:1551 fsharp_complete_no_admits <> e:23 var
+R1555:1555 fsharp_complete_no_admits <> n:24 var
+R1589:1592 fsharp_complete_no_admits <> eval def
+R1589:1592 fsharp_complete_no_admits <> eval def
+prf 1659:1677 <> type_checking_total
+binder 1688:1688 <> e:25
+R1693:1697 fsharp_complete_no_admits <> typed ind
+R1699:1699 fsharp_complete_no_admits <> e:25 var
+R1701:1704 fsharp_complete_no_admits <> TNum constr
+prf 1826:1843 <> eval_deterministic
+binder 1854:1854 <> e:26
+binder 1856:1857 <> n1:27
+binder 1859:1860 <> n2:28
+R1876:1879 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1871:1873 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1865:1868 fsharp_complete_no_admits <> eval def
+R1870:1870 fsharp_complete_no_admits <> e:26 var
+R1874:1875 fsharp_complete_no_admits <> n1:27 var
+R1891:1894 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R1886:1888 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1880:1883 fsharp_complete_no_admits <> eval def
+R1885:1885 fsharp_complete_no_admits <> e:26 var
+R1889:1890 fsharp_complete_no_admits <> n2:28 var
+R1897:1899 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R1895:1896 fsharp_complete_no_admits <> n1:27 var
+R1900:1901 fsharp_complete_no_admits <> n2:28 var
+prf 1987:2007 <> compile_deterministic
+binder 2018:2018 <> e:29
+binder 2020:2021 <> c1:30
+binder 2023:2024 <> c2:31
+R2043:2046 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2038:2040 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2029:2035 fsharp_complete_no_admits <> compile def
+R2037:2037 fsharp_complete_no_admits <> e:29 var
+R2041:2042 fsharp_complete_no_admits <> c1:30 var
+R2061:2064 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R2056:2058 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2047:2053 fsharp_complete_no_admits <> compile def
+R2055:2055 fsharp_complete_no_admits <> e:29 var
+R2059:2060 fsharp_complete_no_admits <> c2:31 var
+R2067:2069 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2065:2066 fsharp_complete_no_admits <> c1:30 var
+R2070:2071 fsharp_complete_no_admits <> c2:31 var
+prf 2154:2166 <> compile_total
+binder 2177:2177 <> e:32
+R2182:2188 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R2190:2191 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 2189:2189 <> c:33
+R2201:2203 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2192:2198 fsharp_complete_no_admits <> compile def
+R2200:2200 fsharp_complete_no_admits <> e:32 var
+R2204:2204 fsharp_complete_no_admits <> c:33 var
+R2234:2240 fsharp_complete_no_admits <> compile def
+R2234:2240 fsharp_complete_no_admits <> compile def
+prf 2304:2313 <> eval_total
+binder 2324:2324 <> e:34
+R2329:2335 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R2337:2338 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 2336:2336 <> n:35
+R2345:2347 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2339:2342 fsharp_complete_no_admits <> eval def
+R2344:2344 fsharp_complete_no_admits <> e:34 var
+R2348:2348 fsharp_complete_no_admits <> n:35 var
+R2378:2381 fsharp_complete_no_admits <> eval def
+R2378:2381 fsharp_complete_no_admits <> eval def
+prf 2447:2458 <> execute_push
+binder 2469:2469 <> n:36
+binder 2471:2474 <> rest:37
+binder 2476:2480 <> stack:38
+R2515:2517 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2485:2491 fsharp_complete_no_admits <> execute def
+R2500:2503 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2494:2497 fsharp_complete_no_admits <> Push constr
+R2499:2499 fsharp_complete_no_admits <> n:36 var
+R2504:2507 fsharp_complete_no_admits <> rest:37 var
+R2510:2514 fsharp_complete_no_admits <> stack:38 var
+R2518:2524 fsharp_complete_no_admits <> execute def
+R2526:2529 fsharp_complete_no_admits <> rest:37 var
+R2533:2536 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2532:2532 fsharp_complete_no_admits <> n:36 var
+R2537:2541 fsharp_complete_no_admits <> stack:38 var
+prf 2626:2636 <> execute_add
+binder 2647:2648 <> n1:39
+binder 2650:2651 <> n2:40
+binder 2653:2656 <> rest:41
+binder 2658:2662 <> stack:42
+R2708:2713 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2667:2673 fsharp_complete_no_admits <> execute def
+R2679:2682 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2676:2678 fsharp_complete_no_admits <> Add constr
+R2683:2686 fsharp_complete_no_admits <> rest:41 var
+R2692:2695 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2690:2691 fsharp_complete_no_admits <> n2:40 var
+R2698:2701 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2696:2697 fsharp_complete_no_admits <> n1:39 var
+R2702:2706 fsharp_complete_no_admits <> stack:42 var
+R2714:2720 fsharp_complete_no_admits <> execute def
+R2722:2725 fsharp_complete_no_admits <> rest:41 var
+R2728:2728 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2736:2740 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R2731:2733 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R2729:2730 fsharp_complete_no_admits <> n1:39 var
+R2734:2735 fsharp_complete_no_admits <> n2:40 var
+R2741:2745 fsharp_complete_no_admits <> stack:42 var
+prf 2832:2842 <> execute_nil
+binder 2853:2857 <> stack:43
+R2878:2880 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R2862:2868 fsharp_complete_no_admits <> execute def
+R2870:2871 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R2873:2877 fsharp_complete_no_admits <> stack:43 var
+R2881:2884 Coq.Init.Datatypes <> Some constr
+R2886:2890 fsharp_complete_no_admits <> stack:43 var
+prf 2992:3008 <> compile_non_empty
+binder 3019:3019 <> e:44
+R3024:3030 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R3034:3035 Coq.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 3031:3031 <> i:45
+binder 3033:3033 <> c:46
+R3045:3047 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R3036:3042 fsharp_complete_no_admits <> compile def
+R3044:3044 fsharp_complete_no_admits <> e:44 var
+R3049:3052 Coq.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3048:3048 fsharp_complete_no_admits <> i:45 var
+R3053:3053 fsharp_complete_no_admits <> c:46 var
+R3109:3112 fsharp_complete_no_admits <> Push constr
+R3118:3119 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3109:3112 fsharp_complete_no_admits <> Push constr
+R3118:3119 Coq.Lists.List ListNotations ::list_scope:'['_']' not
+R3204:3207 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R3218:3221 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R3208:3214 fsharp_complete_no_admits <> compile def
+R3222:3222 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3226:3226 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3223:3225 fsharp_complete_no_admits <> Add constr
+R3204:3207 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R3218:3221 Coq.Init.Datatypes <> ::list_scope:x_'++'_x not
+R3208:3214 fsharp_complete_no_admits <> compile def
+R3222:3222 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3226:3226 Coq.Lists.List ListNotations ::list_scope:'['_x_']' not
+R3223:3225 fsharp_complete_no_admits <> Add constr
+R3384:3397 fsharp_complete_no_admits <> type_soundness thm
+R3418:3436 fsharp_complete_no_admits <> type_checking_total thm
+R3457:3474 fsharp_complete_no_admits <> eval_deterministic thm
+R3495:3515 fsharp_complete_no_admits <> compile_deterministic thm
+R3536:3548 fsharp_complete_no_admits <> compile_total thm
+R3569:3578 fsharp_complete_no_admits <> eval_total thm
+R3599:3610 fsharp_complete_no_admits <> execute_push thm
+R3631:3641 fsharp_complete_no_admits <> execute_add thm
+R3662:3672 fsharp_complete_no_admits <> execute_nil thm
+R3693:3709 fsharp_complete_no_admits <> compile_non_empty thm

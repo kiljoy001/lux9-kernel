@@ -6,9 +6,10 @@
 #pragma once
 
 #include "dat.h"
+#include "blind_ledger.h" // New include for UserCapability
 
 /* Exchange page handle - physical address of the page */
-typedef uintptr ExchangeHandle;
+typedef UserCapability ExchangeHandle;
 
 /* Error codes for exchange operations */
 enum ExchangeError {
@@ -25,18 +26,17 @@ enum ExchangeError {
 void	exchangeinit(void);
 
 /* Core exchange operations */
-ExchangeHandle	exchange_prepare(uintptr vaddr);
+BlindLedgerError	exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap);
 int		exchange_prepare_range(uintptr vaddr, ulong len, ExchangeHandle *handles);
-int		exchange_accept(ExchangeHandle handle, uintptr dest_vaddr, int prot);
-int		exchange_cancel(ExchangeHandle handle);
+int		exchange_accept(const ExchangeHandle *handle, uintptr dest_vaddr, int prot);
+int		exchange_cancel(const ExchangeHandle *handle);
 
 /* Transfer operations */
-int		exchange_transfer(Proc *from, Proc *to, ExchangeHandle handle, uintptr to_vaddr);
-int		exchange_prepare_range(uintptr vaddr, ulong len, ExchangeHandle *handles);
+// No duplicate exchange_prepare_range here
 
 /* Query operations */
-int		exchange_is_valid(ExchangeHandle handle);
-Proc*		exchange_get_owner(ExchangeHandle handle);
+int		exchange_is_valid(const ExchangeHandle *handle);
+Proc*		exchange_get_owner(const ExchangeHandle *handle);
 
 /* Syscall interface */
 long	sys_exchange_prepare(va_list list);

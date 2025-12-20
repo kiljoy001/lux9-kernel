@@ -1,0 +1,3 @@
+#!/bin/sh
+
+exec cc -E -x c "${@}"

@@ -301,6 +301,7 @@ pcmpinit(void)
 	print("pcmpinit: pcmp=%#p\n", pcmp);
 	if(pcmp == nil) {
 		extern PCArch archgeneric;
+		extern int acpiinit(void);
 		extern PCArch *arch;
 		print("pcmpinit: WARNING - pcmp is nil, MP not found\n");
 		print("pcmpinit: Falling back to i8259 (PIC mode)\n");
@@ -403,6 +404,7 @@ PCArch archmp = {
 .intron=	lapicintron,
 .introff=	lapicintroff,
 .clockinit=	i8253init,
+.clockenable=	mpclockenable,
 .fastclock=	i8253read,
 .timerset=	lapictimerset,
 };
@@ -414,9 +416,9 @@ identify(void)
 	_MP_ *_mp_;
 	ulong pa, len;
 
-	print("identify: ENTRY\n");
+	/* DEBUG: Disabled verbose identify tracing */
 	if((cp = getconf("*nomp")) != nil && strcmp(cp, "0") != 0){
-		print("identify: *nomp is set, skipping MP\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
 
@@ -428,72 +430,72 @@ identify(void)
 	 * To do: check extended table checksum.
 	 */
 	_mp_ = sigsearch("_MP_", _MP_sz);
-	print("identify: sigsearch returned %#p\n", _mp_);
+	/* DEBUG: Disabled verbose identify tracing */
 	if(_mp_ == nil){
-		print("identify: FAIL - sigsearch returned nil\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
-	print("identify: _mp_->physaddr=%#lux\n", _mp_->physaddr);
+	/* DEBUG: Disabled verbose identify tracing */
 	if(_mp_->physaddr == 0){
-		print("identify: FAIL - physaddr is 0 (default config not supported)\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
 
 	len = PCMPsz;
 	pa = _mp_->physaddr;
-	print("identify: pa=%#lux len=%lud\n", pa, len);
+	/* DEBUG: Disabled verbose identify tracing */
 	if(pa + len-1 < pa){
-		print("identify: FAIL - address overflow\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
 
 	memreserve(pa, len);
-	print("identify: calling vmap(pa=%#lux, len=%lud)\n", pa, len);
+	/* DEBUG: Disabled verbose identify tracing */
 	if((pcmp = vmap(pa, len)) == nil){
-		print("identify: FAIL - vmap returned nil\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
-	print("identify: pcmp=%#p\n", pcmp);
-	print("identify: checking PCMP signature and version\n");
+	/* DEBUG: Disabled verbose identify tracing */
+	/* DEBUG: Disabled verbose identify tracing */
 	if(pcmp->length < PCMPsz){
-		print("identify: FAIL - pcmp->length=%lud < PCMPsz=%lud\n", pcmp->length, (ulong)PCMPsz);
+	/* DEBUG: Disabled verbose identify tracing */
 		goto Bad;
 	}
 	if(pa + pcmp->length-1 < pa){
-		print("identify: FAIL - pcmp length causes overflow\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		goto Bad;
 	}
 	if(memcmp(pcmp, "PCMP", 4) != 0){
-		print("identify: FAIL - PCMP signature mismatch\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		goto Bad;
 	}
 	if(pcmp->version != 1 && pcmp->version != 4){
-		print("identify: FAIL - bad version %d\n", pcmp->version);
+	/* DEBUG: Disabled verbose identify tracing */
 		goto Bad;
 	}
 
 	len = pcmp->length;
-	print("identify: PCMP valid, length=%lud, remapping\n", len);
+	/* DEBUG: Disabled verbose identify tracing */
 	memreserve(pa, len);
 	vunmap(pcmp, PCMPsz);
 	if((pcmp = vmap(pa, len)) == nil){
-		print("identify: FAIL - second vmap returned nil\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		return 1;
 	}
 
-	print("identify: checking checksum\n");
+	/* DEBUG: Disabled verbose identify tracing */
 	if(checksum(pcmp, len) != 0){
-		print("identify: FAIL - checksum failed\n");
+	/* DEBUG: Disabled verbose identify tracing */
 		goto Bad;
 	}
 
-	print("identify: SUCCESS - MP configuration found\n");
+	/* DEBUG: Disabled verbose identify tracing */
 	if(m->havetsc && getconf("*notsc") == nil)
 		archmp.fastclock = tscticks;
 
 	return 0;
 Bad:
-	print("identify: cleaning up and failing\n");
+	/* DEBUG: Disabled verbose identify tracing */
 	vunmap(pcmp, len);
 	pcmp = nil;
 	return 1;

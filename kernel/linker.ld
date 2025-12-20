@@ -42,7 +42,7 @@ SECTIONS
         idtaddr = .;
         . += 0x3000;  /* IDT is 512 entries * 16 bytes = 8KB, round to 12KB */
 
-        . = 0x13000;  /* CPU0PML4 at KZERO+0x14000 */
+        . = 0x13000;  /* CPU0PML4 at KZERO+0x13000 */
         cpu0pml4 = .;
         . += 0x1000;
         cpu0pdp = .;
@@ -52,16 +52,19 @@ SECTIONS
         cpu0pd1 = .;
         . += 0x1000;
 
+        /* CPU0GDT at KZERO+0x17000 - natural offset 0x17000 */
+        cpu0gdt = .;
+        . += 0x1000;
+
+        /* CPU0MACH at KZERO+0x18000 - natural offset 0x18000 */
+        cpu0mach = .;
+        . += 0x8000;  /* MACHSIZE */
+
         /* Reserve space for additional page tables (all levels: PDP, PD, PT) */
         /* Mapping ~2MB of kernel needs: ~4 PDPs + ~8 PDs + ~512 PTs = ~524 tables */
         /* Each table is 4KB, reserve 512 tables = 2MB to be safe */
         cpu0pt_pool = .;
         . += 0x200000;  /* 2MB = 512 page tables */
-
-        cpu0gdt = .;
-        . += 0x1000;
-        cpu0mach = .;
-        . += 0x8000;  /* MACHSIZE */
 
         *(.data .data.*)
         . = ALIGN(8);

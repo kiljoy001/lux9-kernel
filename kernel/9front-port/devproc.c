@@ -38,6 +38,7 @@ enum
 	Qprofile,
 	Qsyscall,
 	Qwatchpt,
+	Qhash,
 };
 
 enum
@@ -110,6 +111,7 @@ Dirtab procdir[] =
 	"profile",	{Qprofile},	0,			0400,
 	"syscall",	{Qsyscall},	0,			0400,	
 	"watchpt",	{Qwatchpt},	0,			0600,
+	"hash",		{Qhash},	64,			0400,
 };
 
 static
@@ -726,7 +728,7 @@ readfd1(Chan *c, Proc *p, char *buf, int nbuf)
 		return snprint(buf, nbuf, "%s\n", p->dot->path->s);
 	}
 
-	lock(fg);
+	lock(&fg->lock);
 	n = 0;
 	for(;;){
 		i = c->nrock-1;
@@ -738,7 +740,7 @@ readfd1(Chan *c, Proc *p, char *buf, int nbuf)
 			break;
 		}
 	}
-	unlock(fg);
+	unlock(&fg->lock);
 
 	return n;
 }
@@ -946,6 +948,14 @@ procread(Chan *c, void *va, long n, vlong off)
 
 	case Qnoteid:
 		return readnum(offset, va, n, p->noteid, NUMSIZE);
+
+	case Qhash:
+		if(offset >= 64)
+			return 0;
+		if(offset+n > 64)
+			n = 64 - offset;
+		memmove(va, p->text_hash + offset, n);
+		return n;
 
 	case Qppid:
 		return readnum(offset, va, n, p->parentpid, NUMSIZE);
@@ -1389,23 +1399,23 @@ procctlclosefiles(Proc *p, int all, int fd)
 	if(f == nil)
 		error(Eprocdied);
 
-	incref(f);
-	lock(f);
+	incref(&f->ref);
+	lock(&f->lock);
 	while(fd <= f->maxfd){
 		c = f->fd[fd];
 		if(c != nil){
 			f->fd[fd] = nil;
-			unlock(f);
+			unlock(&f->lock);
 			qunlock(&p->debug);
 			cclose(c);
 			qlock(&p->debug);
-			lock(f);
+			lock(&f->lock);
 		}
 		if(!all)
 			break;
 		fd++;
 	}
-	unlock(f);
+	unlock(&f->lock);
 	closefgrp(f);
 }
 
@@ -1508,18 +1518,18 @@ procctlreq(Proc *p, char *va, int n)
 		s = p->seg[TSEG];
 		if(s == nil || (s->type&SG_TYPE) != SG_TEXT)	/* won't expand */
 			error(Egreg);
-		eqlock(s);
+		eqlock(&s->qlock);
 		npc = (s->top-s->base)>>LRESPROF;
 		if(s->profile == nil){
 			s->profile = malloc(npc*sizeof(*s->profile));
 			if(s->profile == nil){
-				qunlock(s);
+				qunlock(&s->qlock);
 				error(Enomem);
 			}
 		} else {
 			memset(s->profile, 0, npc*sizeof(*s->profile));
 		}
-		qunlock(s);
+		qunlock(&s->qlock);
 		break;
 	case CMstart:
 		if(p->state != Stopped)
@@ -1655,7 +1665,7 @@ procctlmemio(Chan *c, Proc *p, uintptr offset, void *a, long n, int read)
 	if(s == nil)
 		error(Ebadarg);
 	if(waserror()){
-		qunlock(s);
+		qunlock(&s->qlock);
 		nexterror();
 	}
 	for(i = 0; i < NSEG; i++) {
@@ -1666,11 +1676,11 @@ procctlmemio(Chan *c, Proc *p, uintptr offset, void *a, long n, int read)
 		error(Egreg);	/* segment gone */
 	if(!read && (s->type&SG_TYPE) == SG_TEXT) {
 		p->seg[i] = txt2data(s);
-		qunlock(s);
+		qunlock(&s->qlock);
 		putseg(s);
 		s = p->seg[i];
 	} else {
-		qunlock(s);
+		qunlock(&s->qlock);
 	}
 	poperror();
 	sio = c->aux;
@@ -1678,7 +1688,7 @@ procctlmemio(Chan *c, Proc *p, uintptr offset, void *a, long n, int read)
 		sio = smalloc(sizeof(Segio));
 		c->aux = sio;
 	}
-	incref(s);		/* for us while we copy */
+	incref((Ref*)&s->ref);		/* for us while we copy */
 	qunlock(&p->seglock);
 	poperror();
 

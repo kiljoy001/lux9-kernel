@@ -11,7 +11,7 @@ void
 alarmkproc(void*)
 {
 	for(;;)
-		sleep(&alarmr, return0, nil);
+		tsleep(&alarmr, 0, nil, 0);
 }
 
 /*

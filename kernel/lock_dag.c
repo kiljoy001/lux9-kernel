@@ -115,6 +115,9 @@ lockdag_allow_edge(LockDagNode *from, LockDagNode *to)
 	return 0;
 }
 
+/*@
+  // Asserts acyclicity of the lock acquisition graph. Verification pending.
+ @*/
 void
 lockdag_record_acquire(Proc *p, LockDagNode *node, uintptr key)
 {

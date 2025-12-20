@@ -1,6 +1,6 @@
-#include	<u.h>
-#include	<libc.h>
-#include	<fcall.h>
+#include <u.h>
+#include <libc.h>
+#include <fcall.h>
 
 static
 uchar*

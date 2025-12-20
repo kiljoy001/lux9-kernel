@@ -121,8 +121,12 @@ mpinit(void)
 	Apic *apic;
 	char *cp;
 
+	print("mpinit: ENTRY fastclock=%p cpuhz=%llud havetsc=%d\n",
+		arch->fastclock, m->cpuhz, m->havetsc);
+
 	i8259init();
 	syncclock();
+	print("mpinit: after syncclock cpuhz=%llud tscticks=%llud\n", m->cpuhz, m->tscticks);
 
 	if(getconf("*apicdebug")){
 		Bus *b;
@@ -164,13 +168,15 @@ mpinit(void)
 	apic->online = 1;
 
 	lapicinit(apic);
+	print("mpinit: lapicinit complete\n");
 
 	/*
 	 * These interrupts are local to the processor
-	 * and do not appear in the I/O APIC so it is OK
-	 * to set them now.
+	 * and do not appear in the I/O APIC.
+	 *
+	 * NOTE: Clock interrupt enable is deferred until after schedinit()
+	 * to ensure a valid process stack exists when the timer fires.
 	 */
-	intrenable(IrqTIMER, lapicclock, 0, BUSUNKNOWN, "clock");
 	intrenable(IrqERROR, lapicerror, 0, BUSUNKNOWN, "lapicerror");
 	intrenable(IrqSPURIOUS, lapicspurious, 0, BUSUNKNOWN, "lapicspurious");
 	lapiconline();
@@ -211,6 +217,16 @@ mpinit(void)
 	 */
 	if(m->cpuidfamily == 3 || conf.nmach > 1)
 		conf.copymode = 1;
+}
+
+/*
+ * Enable clock interrupt after scheduler initialization.
+ * Must be called after schedinit() to ensure valid process stack.
+ */
+void
+mpclockenable(void)
+{
+	intrenable(IrqTIMER, lapicclock, 0, BUSUNKNOWN, "clock");
 }
 
 static int

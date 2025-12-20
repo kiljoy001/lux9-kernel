@@ -1,0 +1,3 @@
+ramdisk_state.vo ramdisk_state.glob ramdisk_state.v.beautified ramdisk_state.required_vo: ramdisk_state.v 
+ramdisk_crypto.vo ramdisk_crypto.glob ramdisk_crypto.v.beautified ramdisk_crypto.required_vo: ramdisk_crypto.v 
+ramdisk_wipe.vo ramdisk_wipe.glob ramdisk_wipe.v.beautified ramdisk_wipe.required_vo: ramdisk_wipe.v 

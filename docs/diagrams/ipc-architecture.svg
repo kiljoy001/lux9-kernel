@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .box { fill: #f0f0f0; stroke: #333; stroke-width: 2; }
+      .kernel-box { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+      .userspace-box { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; }
+      .security-box { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .data-arrow { stroke: #d32f2f; stroke-width: 2; fill: none; marker-end: url(#arrowhead-red); stroke-dasharray: 5,5; }
+      .text { font-family: monospace; font-size: 12px; fill: #333; }
+      .title { font-family: sans-serif; font-size: 16px; font-weight: bold; fill: #333; }
+      .label { font-family: sans-serif; font-size: 11px; fill: #666; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowhead-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#d32f2f" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="25" text-anchor="middle" class="title">Lux9 IPC Architecture: Ring Buffer + Page Exchange</text>
+
+  <!-- Userspace Client -->
+  <rect x="50" y="60" width="150" height="80" class="userspace-box" rx="5"/>
+  <text x="125" y="85" text-anchor="middle" class="text">Userspace Client</text>
+  <text x="125" y="105" text-anchor="middle" class="label">9P requests</text>
+  <text x="125" y="120" text-anchor="middle" class="label">(cryptosrv, etc.)</text>
+
+  <!-- Kernel IPC Layer -->
+  <rect x="300" y="50" width="200" height="120" class="kernel-box" rx="5"/>
+  <text x="400" y="75" text-anchor="middle" class="text">Kernel IPC Layer</text>
+
+  <!-- Ring Buffer -->
+  <rect x="310" y="90" width="80" height="35" class="box" rx="3"/>
+  <text x="350" y="105" text-anchor="middle" class="label">Ring Buffer</text>
+  <text x="350" y="118" text-anchor="middle" class="label">(&lt;4KB batch)</text>
+
+  <!-- Page Exchange -->
+  <rect x="410" y="90" width="80" height="35" class="box" rx="3"/>
+  <text x="450" y="105" text-anchor="middle" class="label">Page Exchange</text>
+  <text x="450" y="118" text-anchor="middle" class="label">(large msgs)</text>
+
+  <!-- Cryptosrv Server -->
+  <rect x="600" y="60" width="150" height="80" class="userspace-box" rx="5"/>
+  <text x="675" y="85" text-anchor="middle" class="text">Cryptosrv (SIP)</text>
+  <text x="675" y="105" text-anchor="middle" class="label">Blake2b, Ed25519</text>
+  <text x="675" y="120" text-anchor="middle" class="label">Isolated process</text>
+
+  <!-- Security Layer -->
+  <rect x="250" y="220" width="300" height="180" class="security-box" rx="5"/>
+  <text x="400" y="245" text-anchor="middle" class="text">Security Layer</text>
+
+  <!-- Page Ownership -->
+  <rect x="270" y="260" width="120" height="50" class="box" rx="3"/>
+  <text x="330" y="275" text-anchor="middle" class="label">Page Ownership</text>
+  <text x="330" y="288" text-anchor="middle" class="label">Borrow Checker</text>
+  <text x="330" y="301" text-anchor="middle" class="label">pageown_*</text>
+
+  <!-- TOCTOU Prevention -->
+  <rect x="410" y="260" width="120" height="50" class="box" rx="3"/>
+  <text x="470" y="275" text-anchor="middle" class="label">TOCTOU Prevention</text>
+  <text x="470" y="288" text-anchor="middle" class="label">Page Unmap</text>
+  <text x="470" y="301" text-anchor="middle" class="label">Value Copy</text>
+
+  <!-- Replay Protection -->
+  <rect x="270" y="330" width="120" height="50" class="box" rx="3"/>
+  <text x="330" y="345" text-anchor="middle" class="label">Replay Protection</text>
+  <text x="330" y="358" text-anchor="middle" class="label">Sequence Numbers</text>
+  <text x="330" y="371" text-anchor="middle" class="label">Session IDs</text>
+
+  <!-- Bounds Checking -->
+  <rect x="410" y="330" width="120" height="50" class="box" rx="3"/>
+  <text x="470" y="345" text-anchor="middle" class="label">Bounds Checking</text>
+  <text x="470" y="358" text-anchor="middle" class="label">Multi-layer validation</text>
+  <text x="470" y="371" text-anchor="middle" class="label">Overflow detection</text>
+
+  <!-- Data Flow Arrows -->
+  <!-- Client to Kernel -->
+  <path d="M 200 100 L 300 100" class="arrow"/>
+  <text x="250" y="95" text-anchor="middle" class="label">9P write</text>
+
+  <!-- Kernel to Server -->
+  <path d="M 500 100 L 600 100" class="arrow"/>
+  <text x="550" y="95" text-anchor="middle" class="label">batch/page</text>
+
+  <!-- Ring Buffer path -->
+  <path d="M 350 125 L 350 220" class="data-arrow"/>
+  <text x="360" y="170" class="label">small msgs</text>
+
+  <!-- Page Exchange path -->
+  <path d="M 450 125 L 450 220" class="data-arrow"/>
+  <text x="460" y="170" class="label">large msgs</text>
+
+  <!-- Message Flow Details -->
+  <rect x="50" y="450" width="700" height="120" class="box" rx="5"/>
+  <text x="400" y="470" text-anchor="middle" class="text">Message Flow (Ring Buffer - Batched Small Messages)</text>
+
+  <text x="60" y="495" class="label">1. Client: Multiple small 9P requests → Kernel batches into 4KB page</text>
+  <text x="60" y="510" class="label">2. Kernel: BatchHeader + [len|msg][len|msg]... → Submit page handle to ring</text>
+  <text x="60" y="525" class="label">3. Security: Unmap page, copy header to stack, validate (TOCTOU prevention)</text>
+  <text x="60" y="540" class="label">4. Server: Process messages via /dev/ring → Return page to completion queue</text>
+  <text x="60" y="555" class="label">5. Kernel: Restore page mapping, deliver responses to clients</text>
+
+  <!-- Legend -->
+  <rect x="600" y="430" width="15" height="15" class="kernel-box"/>
+  <text x="620" y="442" class="label">Kernel space</text>
+
+  <rect x="600" y="450" width="15" height="15" class="userspace-box"/>
+  <text x="620" y="462" class="label">Userspace</text>
+
+  <rect x="600" y="470" width="15" height="15" class="security-box"/>
+  <text x="620" y="482" class="label">Security layer</text>
+</svg>

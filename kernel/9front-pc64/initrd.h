@@ -1,33 +1,36 @@
 /* initrd.h - Initial ramdisk support */
 #pragma once
 
+#include "u.h"
+
 /* TAR header format (POSIX ustar) */
 struct tar_header {
-	char name[100];
-	char mode[8];
-	char uid[8];
-	char gid[8];
-	char size[12];
-	char mtime[12];
-	char checksum[8];
-	char typeflag;
-	char linkname[100];
-	char magic[6];      /* "ustar\0" */
-	char version[2];    /* "00" */
-	char uname[32];
-	char gname[32];
-	char devmajor[8];
-	char devminor[8];
-	char prefix[155];
-	char pad[12];
+  char name[100];
+  char mode[8];
+  char uid[8];
+  char gid[8];
+  char size[12];
+  char mtime[12];
+  char checksum[8];
+  char typeflag;
+  char linkname[100];
+  char magic[6];   /* "ustar\0" */
+  char version[2]; /* "00" */
+  char uname[32];
+  char gname[32];
+  char devmajor[8];
+  char devminor[8];
+  char prefix[155];
+  char pad[12];
 };
 
 /* File entry in initrd */
 struct initrd_file {
-	char name[256];
-	void *data;
-	usize size;
-	struct initrd_file *next;
+  char name[100];
+  void *data;
+  usize size;
+  struct initrd_file *next;
+  struct initrd_file *sig_file;
 };
 
 /* Global initrd file list */
@@ -39,7 +42,7 @@ extern uintptr initrd_physaddr;
 /* Functions */
 void initrd_init(void *addr, usize len);
 void initrd_register(void);
-void* initrd_find(const char *path);
+void *initrd_find(const char *path);
 usize initrd_filesize(const char *path);
 int initrd_read(const char *path, void *buf, usize offset, usize len);
 void initrd_list(void);

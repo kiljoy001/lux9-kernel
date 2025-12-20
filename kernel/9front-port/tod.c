@@ -58,26 +58,16 @@ static void todfix(void);
 void
 todinit(void)
 {
-	print("todinit: ENTRY\n");
-	if(tod.init) {
-		print("todinit: already initialized, returning\n");
+	if(tod.init)
 		return;
-	}
 
-	print("todinit: acquiring lock\n");
 	ilock(&tod.lk);
-	print("todinit: lock acquired\n");
 	tod.init = 1;			/* prevent reentry via fastticks */
-	print("todinit: calling fastticks\n");
 	tod.last = fastticks((uvlong *)&tod.hz);
-	print("todinit: fastticks returned\n");
 	tod.monolast = tod.last;
 	iunlock(&tod.lk);
-	print("todinit: calling todsetfreq\n");
 	todsetfreq(tod.hz);
-	print("todinit: calling addclock0link\n");
 	addclock0link(todfix, 100);
-	print("todinit: DONE\n");
 }
 
 /*
@@ -146,7 +136,6 @@ todset(vlong t, vlong delta, int n)
 		if(delta > 0 && n > delta)
 			n = delta;
 		if (n == 0) {
-			iprint("todset: n == 0, delta == %lld\n", delta);
 			delta = 0;
 		} else
 			delta /= n;

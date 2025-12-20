@@ -1,97 +1,124 @@
 /* Simple 8250 UART driver for early console */
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 
 #define COM1 0x3F8
 
 /* UART registers */
-#define UART_DATA    0  /* Data register (R/W) */
-#define UART_IER     1  /* Interrupt Enable Register */
-#define UART_FCR     2  /* FIFO Control Register */
-#define UART_LCR     3  /* Line Control Register */
-#define UART_MCR     4  /* Modem Control Register */
-#define UART_LSR     5  /* Line Status Register */
+#define UART_DATA 0 /* Data register (R/W) */
+#define UART_IER 1  /* Interrupt Enable Register */
+#define UART_FCR 2  /* FIFO Control Register */
+#define UART_LCR 3  /* Line Control Register */
+#define UART_MCR 4  /* Modem Control Register */
+#define UART_LSR 5  /* Line Status Register */
 
 /* Line Status Register bits */
-#define LSR_THRE  0x20  /* Transmit Holding Register Empty */
+#define LSR_THRE 0x20 /* Transmit Holding Register Empty */
 
 static int uart_base = COM1;
 static int uart_initialized = 0;
 
-static void
-uart_putc(int c)
-{
-	int i;
+static void uart_putc(int c) {
+  int i;
 
-	if(!uart_initialized)
-		return;
+  if (!uart_initialized)
+    return;
 
-	/* Wait for transmit holding register to be empty with proper timeout */
-	for(i = 0; i < 100000; i++) {
-		if(inb(uart_base + UART_LSR) & LSR_THRE)
-			break;
-		/* Small delay to avoid busy-waiting too hard */
-		for(volatile int j = 0; j < 10; j++)
-			;
-	}
+  /* Wait for transmit holding register to be empty with proper timeout */
+  for (i = 0; i < 100000; i++) {
+    if (inb(uart_base + UART_LSR) & LSR_THRE)
+      break;
+    /* Small delay to avoid busy-waiting too hard */
+    for (volatile int j = 0; j < 10; j++)
+      ;
+  }
 
-	outb(uart_base + UART_DATA, c);
+  outb(uart_base + UART_DATA, c);
 }
 
-void
-i8250console(void)
-{
-	/* Disable interrupts */
-	outb(uart_base + UART_IER, 0x00);
-
-	/* Enable DLAB (set baud rate divisor) */
-	outb(uart_base + UART_LCR, 0x80);
-
-	/* Set divisor to 1 (115200 baud) */
-	outb(uart_base + UART_DATA, 0x01);
-	outb(uart_base + UART_IER, 0x00);
-
-	/* 8 bits, no parity, one stop bit */
-	outb(uart_base + UART_LCR, 0x03);
-
-	/* Enable FIFO, clear them, with 14-byte threshold */
-	outb(uart_base + UART_FCR, 0xC7);
-
-	/* Enable IRQs, set RTS/DSR */
-	outb(uart_base + UART_MCR, 0x0B);
-
-	uart_initialized = 1;
-
-	/* Hook into screenputs */
-	screenputs = uart_screenputs;
+/* Minimal Uart implementation for devcons */
+static int i8250_getc(Uart *u) {
+  if (inb(uart_base + UART_LSR) & 0x01)
+    return inb(uart_base + UART_DATA);
+  return -1;
 }
 
-void
-uart_screenputs(char *s, int n)
-{
-	int i;
+static void i8250_putc(Uart *u, int c) { uart_putc(c); }
 
-	for(i = 0; i < n; i++){
-		if(s[i] == '\n')
-			uart_putc('\r');
-		uart_putc(s[i]);
-	}
+static void i8250_noop(Uart *u, int i) {}
+
+static void i8250_kick(Uart *u) {}
+
+static PhysUart i8250phys = {
+    .name = "i8250",
+    .getc = i8250_getc,
+    .putc = i8250_putc,
+    .enable = i8250_noop,
+    .disable = (void (*)(Uart *))i8250_noop,
+    .kick = i8250_kick,
+};
+
+static Uart i8250uart = {
+    .phys = &i8250phys,
+};
+
+void i8250console(void) {
+  /* Ensure IOPL is 3 to allow I/O instructions without TSS bitmap check */
+  asm volatile("pushfq; popq %%rax; orq $0x3000, %%rax; pushq %%rax; popfq" ::
+                   : "rax", "cc");
+
+  /* Disable interrupts */
+  outb(uart_base + UART_IER, 0x00);
+
+  /* Enable DLAB (set baud rate divisor) */
+  outb(uart_base + UART_LCR, 0x80);
+
+  /* Set divisor to 1 (115200 baud) */
+  outb(uart_base + UART_DATA, 0x01);
+  outb(uart_base + UART_IER, 0x00);
+
+  /* 8 bits, no parity, one stop bit */
+  outb(uart_base + UART_LCR, 0x03);
+
+  /* Enable FIFO, clear them, with 14-byte threshold */
+  outb(uart_base + UART_FCR, 0xC7);
+
+  /* Enable IRQs, set RTS/DSR */
+  outb(uart_base + UART_MCR, 0x0B);
+
+  uart_initialized = 1;
+
+  /* Hook into screenputs */
+  screenputs = uart_screenputs;
+
+  /* Initialize global consuart for devcons */
+  extern Uart *consuart;
+  consuart = &i8250uart;
 }
 
-void
-uartputs(char *s, int n)
-{
-	int i;
+void uart_screenputs(char *s, int n) {
+  int i;
 
-	if(!uart_initialized)
-		return;
+  for (i = 0; i < n; i++) {
+    if (s[i] == '\n')
+      uart_putc('\r');
+    uart_putc(s[i]);
+  }
+}
 
-	for(i = 0; i < n; i++){
-		if(s[i] == '\n')
-			uart_putc('\r');
-		uart_putc(s[i]);
-	}
+void uartputs(char *s, int n) {
+  int i;
+  extern int panic_debug;
+
+  if (!panic_debug || !uart_initialized)
+    return;
+
+  for (i = 0; i < n; i++) {
+    if (s[i] == '\n')
+      uart_putc('\r');
+    uart_putc(s[i]);
+  }
 }

@@ -1,0 +1,8 @@
+# Verification Metrics - 2025-12-20T02:33:11
+coq_admits=12
+coq_theorems=534
+acsl_requires=9
+acsl_ensures=0
+acsl_assigns=0
+acsl_invariants=1
+acsl_total=10

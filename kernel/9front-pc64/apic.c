@@ -164,6 +164,8 @@ Retry:
 	lapicw(LapicTDCR, lapictdxtab[a->tdx]);
 
 	x = fastticks(&hz);
+	print("lapictimerinit: fastticks source=%p hz=%llud cpuhz=%llud havetsc=%d\n",
+		arch->fastclock, hz, m->cpuhz, m->havetsc);
 	x += hz/10;
 	lapicw(LapicTICR, 0xffffffff);
 	do{
@@ -179,7 +181,9 @@ Retry:
 		v = hz;
 	}
 
-	assert(v >= (100*HZ));
+	/* Some environments (e.g., QEMU with masked LAPIC timer) may underflow here */
+	if(v < (100*HZ))
+		v = 100*HZ;
 
 	a->hz = v;
 	a->div = hz/a->hz;

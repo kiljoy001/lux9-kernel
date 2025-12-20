@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <linearGradient id="userSpace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e6fffa"/> <!-- Teal 50 -->
+      <stop offset="100%" style="stop-color:#b2f5ea"/> <!-- Teal 100 -->
+    </linearGradient>
+    <linearGradient id="kernelSpace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ebf8ff"/> <!-- Blue 50 -->
+      <stop offset="100%" style="stop-color:#bee3f8"/> <!-- Blue 100 -->
+    </linearGradient>
+    <linearGradient id="hwSpace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f7fafc"/> <!-- Gray 50 -->
+      <stop offset="100%" style="stop-color:#edf2f7"/> <!-- Gray 100 -->
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4a5568"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#2d3748">Lux9 System Architecture</text>
+
+  <!-- Layers -->
+  <!-- Userspace -->
+  <rect x="50" y="80" width="900" height="200" rx="10" fill="url(#userSpace)" stroke="#38b2ac" stroke-width="2"/>
+  <text x="70" y="110" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#2c7a7b">USERSPACE (Ring 3)</text>
+  
+  <!-- Kernel -->
+  <rect x="50" y="320" width="900" height="300" rx="10" fill="url(#kernelSpace)" stroke="#3182ce" stroke-width="2"/>
+  <text x="70" y="350" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#2b6cb0">SAFE MICROKERNEL (Ring 0)</text>
+
+  <!-- Hardware -->
+  <rect x="50" y="660" width="900" height="100" rx="10" fill="url(#hwSpace)" stroke="#a0aec0" stroke-width="2"/>
+  <text x="70" y="690" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#4a5568">HARDWARE LAYER</text>
+
+  <!-- Userspace Components -->
+  <!-- CLR App -->
+  <g transform="translate(150, 130)">
+    <rect width="180" height="120" rx="6" fill="white" stroke="#38b2ac" stroke-width="2" filter="url(#shadow)"/>
+    <text x="90" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">CLR Runtime</text>
+    <text x="90" y="55" text-anchor="middle" font-family="monospace" font-size="12" fill="#718096">/boot/boot</text>
+    <line x1="10" y1="70" x2="170" y2="70" stroke="#cbd5e0"/>
+    <text x="90" y="90" text-anchor="middle" font-family="Arial" font-size="11" fill="#4a5568">Managed Code (C#, F#)</text>
+    <text x="90" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#4a5568">Type Safety</text>
+  </g>
+
+  <!-- 9P Server Cluster -->
+  <g transform="translate(450, 130)">
+    <rect width="300" height="120" rx="6" fill="white" stroke="#805ad5" stroke-width="2" filter="url(#shadow)"/>
+    <text x="150" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Userspace Servers</text>
+    
+    <g transform="translate(20, 50)">
+       <rect x="0" y="0" width="80" height="40" rx="4" fill="#faf5ff" stroke="#805ad5"/>
+       <text x="40" y="25" text-anchor="middle" font-size="12">Shell</text>
+    </g>
+    <g transform="translate(110, 50)">
+       <rect x="0" y="0" width="80" height="40" rx="4" fill="#faf5ff" stroke="#805ad5"/>
+       <text x="40" y="25" text-anchor="middle" font-size="12">Net/Disk</text>
+    </g>
+    <g transform="translate(200, 50)">
+       <rect x="0" y="0" width="80" height="40" rx="4" fill="#faf5ff" stroke="#805ad5"/>
+       <text x="40" y="25" text-anchor="middle" font-size="12">Window</text>
+    </g>
+    <text x="150" y="110" text-anchor="middle" font-family="Arial" font-size="11" fill="#4a5568">9P Protocol</text>
+  </g>
+
+  <!-- Exchange Channel -->
+  <rect x="150" y="295" width="680" height="10" rx="2" fill="#ed8936"/>
+  <text x="490" y="290" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="#ed8936">Ring Buffer &amp; Exchange Pages (Zero Copy)</text>
+
+  <!-- Kernel Components -->
+  <!-- 9P Router -->
+  <g transform="translate(350, 360)">
+    <rect width="280" height="60" rx="6" fill="white" stroke="#dd6b20" stroke-width="2" filter="url(#shadow)"/>
+    <text x="140" y="35" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#c05621">9P Router &amp; Lock DAG</text>
+  </g>
+
+  <!-- Subsystems -->
+  <!-- Kinetic -->
+  <g transform="translate(60, 440)">
+    <rect width="150" height="160" rx="6" fill="white" stroke="#e53e3e" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Kinetic</text>
+    <line x1="10" y1="40" x2="140" y2="40" stroke="#cbd5e0"/>
+    <text x="75" y="60" text-anchor="middle" font-size="11" fill="#4a5568">BEVIS (PoW)</text>
+    <text x="75" y="80" text-anchor="middle" font-size="11" fill="#4a5568">BUTTHEAD</text>
+    <text x="75" y="100" text-anchor="middle" font-size="11" fill="#4a5568">Anomaly Detect</text>
+  </g>
+
+  <!-- Pebble Core -->
+  <g transform="translate(230, 440)">
+    <rect width="200" height="160" rx="6" fill="white" stroke="#3182ce" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Memory Safety</text>
+    <line x1="10" y1="40" x2="190" y2="40" stroke="#cbd5e0"/>
+    <text x="100" y="60" text-anchor="middle" font-size="11" fill="#4a5568">Pebble Tokens</text>
+    <text x="100" y="80" text-anchor="middle" font-size="11" fill="#4a5568">Borrow Checker</text>
+    <text x="100" y="100" text-anchor="middle" font-size="11" fill="#4a5568">Capabilities</text>
+    <text x="100" y="120" text-anchor="middle" font-size="11" fill="#4a5568">Blind Ledger</text>
+  </g>
+
+  <!-- 9front Core -->
+  <g transform="translate(450, 440)">
+    <rect width="200" height="160" rx="6" fill="white" stroke="#4a5568" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Kernel Core</text>
+    <line x1="10" y1="40" x2="190" y2="40" stroke="#cbd5e0"/>
+    <text x="100" y="60" text-anchor="middle" font-size="11" fill="#4a5568">Proc Scheduler</text>
+    <text x="100" y="80" text-anchor="middle" font-size="11" fill="#4a5568">Virtual Memory</text>
+    <text x="100" y="100" text-anchor="middle" font-size="11" fill="#4a5568">Syscall API</text>
+    <text x="100" y="120" text-anchor="middle" font-size="11" fill="#4a5568">Interrupts</text>
+  </g>
+
+  <!-- Family HAL -->
+  <g transform="translate(670, 440)">
+    <rect width="220" height="160" rx="6" fill="white" stroke="#805ad5" stroke-width="2" filter="url(#shadow)"/>
+    <text x="110" y="30" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Family HAL</text>
+    <line x1="10" y1="40" x2="210" y2="40" stroke="#cbd5e0"/>
+    <text x="110" y="60" text-anchor="middle" font-size="11" fill="#4a5568">Device Families</text>
+    <text x="110" y="80" text-anchor="middle" font-size="11" fill="#4a5568">PCI Enumeration</text>
+    <text x="110" y="100" text-anchor="middle" font-size="11" fill="#4a5568">Drivers (TPM, Net)</text>
+    <text x="110" y="120" text-anchor="middle" font-size="11" fill="#4a5568">Resource Alloc</text>
+  </g>
+
+  <!-- Hardware Components -->
+  <g transform="translate(80, 710)">
+    <rect width="820" height="40" rx="4" fill="white" stroke="#a0aec0"/>
+    <text x="410" y="25" text-anchor="middle" font-family="Arial" font-size="14" fill="#4a5568">
+      x86-64 Hardware (CPU, RAM, PCI Bus, I/O Ports, APIC)
+    </text>
+  </g>
+
+  <!-- Arrows -->
+  <path d="M 240 250 L 240 310" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <path d="M 600 250 L 600 310" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  
+  <path d="M 490 330 L 490 355" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <path d="M 490 420 L 490 440" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 390 420 L 330 440" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 590 420 L 730 440" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 290 420 L 170 440" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <path d="M 490 600 L 490 655" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+
+</svg>

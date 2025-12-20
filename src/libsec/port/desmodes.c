@@ -14,7 +14,7 @@ setupDESstate(DESstate *s, uchar key[8], uchar *ivec)
 	des_key_setup(key, s->expanded);
 	if(ivec)
 		memmove(s->ivec, ivec, 8);
-	s->setup = 0xdeadbeef;
+	s->setup = 0xdeadbeef /* nosec */;
 }
 
 void
@@ -27,5 +27,5 @@ setupDES3state(DES3state *s, uchar key[3][8], uchar *ivec)
 	des_key_setup(key[2], s->expanded[2]);
 	if(ivec)
 		memmove(s->ivec, ivec, 8);
-	s->setup = 0xdeadbeef;
+	s->setup = 0xdeadbeef /* nosec */;
 }

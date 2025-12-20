@@ -1,0 +1,4 @@
+-R . ramdisk
+ramdisk_crypto.v
+ramdisk_state.v
+ramdisk_wipe.v
