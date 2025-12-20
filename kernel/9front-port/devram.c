@@ -484,12 +484,12 @@ static int ramstat(Chan *c, uchar *dp, int n) {
   @   assumes (ulong)c->qid.path == Qsecureram;
   @   ensures secure_rd.refcount == \old(secure_rd.refcount) + 1;
   @   ensures secure_rd.refcount > 0;
-  @   assigns secure_rd.refcount, c->offset;
+  @   assigns secure_rd.refcount, c->offset, c->aux;
   @
   @ behavior other_open:
   @   assumes (ulong)c->qid.path != Qsecureram;
   @   ensures secure_rd.refcount == \old(secure_rd.refcount);
-  @   assigns c->offset;
+  @   assigns c->offset, c->aux;
   @
   @ complete behaviors;
   @ disjoint behaviors;

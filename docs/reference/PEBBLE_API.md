@@ -1,11 +1,14 @@
 # Pebble API Reference
 
-The Pebble primitives are now available in the Lux 9 kernel behind the `pebble_enabled`
-runtime flag (enabled by default; pass `pebble=0` on the kernel command line to
-disable).  Processes interact with Pebble by issuing white capabilities, verifying
-them, allocating black handles, and—when required—acquiring red snapshots of blue
-objects.  This document captures the concrete syscall surface and the invariants
-the kernel enforces today.
+**STATUS NOTE**: The Pebble system infrastructure is **operational** but **userspace access is currently blocked** by system init issues (see `docs/serious-bugs.md`). The kernel internal APIs may function, but syscall stubs prevent userspace testing.
+
+The Pebble primitives are available in the Lux 9 kernel behind the `pebble_enabled` runtime flag (enabled by default; pass `pebble=0` on the kernel command line to disable). Processes interact with Pebble by issuing white capabilities, verifying them, allocating black handles, and—when required—acquiring red snapshots of blue objects. This document captures the concrete syscall surface and the invariants the kernel enforces today.
+
+## Current Access Limitations
+
+**Kernel Internal**: ✅ Pebble infrastructure operational during bootstrap
+**Userspace Access**: ❌ Blocked by system init syscall failures
+**Testing**: ❌ Cannot verify API behavior due to exec/mount/open failures
 
 ## Syscall Surface
 
@@ -111,3 +114,12 @@ coverage for the allocator and snapshot logic.
   paths once multi-core scheduling stabilises.
 * Add Go bindings (planned `userspace/go-servers/sip/pebble.go`) once the syscall
   ABI is nailed down.
+
+## Status Summary
+
+**Infrastructure**: ✅ Operational (borrow checker, page ownership, exchange system working)
+**Kernel Self-Test**: ✅ Should function during bootstrap
+**Userspace Access**: ❌ Blocked by system init syscall failures  
+**API Integration**: ❌ Cannot test until userspace execution possible
+
+**Next Steps**: System init recovery enables pebble API testing and revolutionary 9P integration.
