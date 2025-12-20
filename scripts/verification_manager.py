@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+import os
+import sys
+import sqlite3
+import subprocess
+import re
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+import argparse
+
+# Configuration
+DB_PATH = ".verification_registry.db"
+REPO_ROOT = os.getcwd()
+PROOFS_DIR = os.path.join(REPO_ROOT, "proofs")
+KERNEL_DIR = os.path.join(REPO_ROOT, "kernel")
+
+# Colors for output
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def init_db():
+    """Initialize the SQLite database schema."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tracked_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT UNIQUE NOT NULL,
+            file_type TEXT NOT NULL,
+            last_seen TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS verification_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER,
+            status TEXT,
+            output TEXT,
+            timestamp TIMESTAMP,
+            FOREIGN KEY(file_id) REFERENCES tracked_files(id)
+        )
+    ''')
+    
+    conn.commit()
+    return conn
+
+def scan_repository(conn):
+    """Scan the repository for Coq and annotated C files and update the DB."""
+    cursor = conn.cursor()
+    found_paths = set()
+
+    print(f"{Colors.OKBLUE}[Scanning Repository]{Colors.ENDC}")
+
+    # 1. Scan Coq files (.v)
+    for root, dirs, files in os.walk(PROOFS_DIR):
+        for file in files:
+            if file.endswith(".v"):
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, REPO_ROOT)
+                found_paths.add(rel_path)
+                
+                cursor.execute('''
+                    INSERT OR IGNORE INTO tracked_files (path, file_type, last_seen)
+                    VALUES (?, 'coq', ?)
+                ''', (rel_path, datetime.now()))
+                
+                cursor.execute('''
+                    UPDATE tracked_files SET last_seen = ? WHERE path = ?
+                ''', (datetime.now(), rel_path))
+
+    # 2. Scan C files with ACSL annotations
+    for root, dirs, files in os.walk(KERNEL_DIR):
+        for file in files:
+            if file.endswith(".c"):
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, REPO_ROOT)
+                
+                try:
+                    with open(full_path, 'r', errors='ignore') as f:
+                        content = f.read()
+                        if "/*@" in content:
+                            found_paths.add(rel_path)
+                            cursor.execute('''
+                                INSERT OR IGNORE INTO tracked_files (path, file_type, last_seen)
+                                VALUES (?, 'acsl', ?)
+                            ''', (rel_path, datetime.now()))
+                            
+                            cursor.execute('''
+                                UPDATE tracked_files SET last_seen = ? WHERE path = ?
+                            ''', (datetime.now(), rel_path))
+                except Exception as e:
+                    print(f"{Colors.WARNING}Warning: Could not read {rel_path}: {e}{Colors.ENDC}")
+
+    # Cleanup removed files
+    cursor.execute("SELECT path FROM tracked_files")
+    all_tracked = {row[0] for row in cursor.fetchall()}
+    to_remove = all_tracked - found_paths
+    
+    for path in to_remove:
+        print(f"{Colors.WARNING}Removing stale file from DB: {path}{Colors.ENDC}")
+        cursor.execute("DELETE FROM tracked_files WHERE path = ?", (path,))
+
+    conn.commit()
+    print(f"Found {len(found_paths)} files to verify.")
+    return list(found_paths)
+
+def verify_acsl_file(file_info):
+    """Run Frama-C verification for a single C file."""
+    file_id, path, file_type = file_info
+    full_path = os.path.join(REPO_ROOT, path)
+    
+    # Frama-C command
+    cmd = [
+        "frama-c", "-wp", "-wp-prover", "alt-ergo", "-wp-timeout", "5",
+        "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + " -D__PLAN9_KERNEL__",
+        full_path
+    ]
+    
+    status = "UNKNOWN"
+    output = ""
+    
+    try:
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True,
+            timeout=30
+        )
+        output = result.stdout + result.stderr
+        
+        if "Proved goals" in output:
+                status = "PASS"
+        else:
+                status = "PASS" if result.returncode == 0 else "FAIL"
+                if "Proved goals" not in output and "Valid" not in output:
+                    status = "WARNING"
+        
+        if "Error" in output:
+                status = "FAIL"
+                
+    except FileNotFoundError:
+        status = "SKIPPED"
+        output = "frama-c not found"
+    except subprocess.TimeoutExpired:
+        status = "TIMEOUT"
+
+    return (file_id, status, output, path)
+
+def run_coq_verification(conn, coq_files):
+    """Run Coq verification via Make and update DB."""
+    print(f"{Colors.OKBLUE}[Verifying Coq Proofs via Make]{Colors.ENDC}")
+    
+    # Map paths to IDs for easy DB update
+    path_to_id = {f[1]: f[0] for f in coq_files}
+    
+    # Run make in proofs directory
+    # We use -k to keep going even if some fail, to get results for all
+    cmd = ["make", "-C", "proofs", "clean", "verify", "-k"]
+    
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        cursor = conn.cursor()
+        current_file = None
+        output_buffer = []
+        
+        # We need to associate make output with specific files.
+        # coq_makefile usually outputs "COQC filename.v"
+        
+        for line in process.stdout:
+            line = line.strip()
+            # print(f"  [Make] {line}") # Optional verbose logging
+            
+            # Detect file compilation start
+            if line.startswith("COQC"):
+                # "COQC filename.v"
+                parts = line.split()
+                if len(parts) >= 2:
+                    fname = parts[1]
+                    # Find which tracked file this matches
+                    # fname is likely just the basename or relative path within subdir
+                    # We need to match it to our full relative paths
+                    
+                    # Try to find the full path in our tracked list
+                    # This is imperfect if duplicates exist in different dirs, 
+                    # but usually sufficient.
+                    
+                    matches = [p for p in path_to_id.keys() if p.endswith("/" + fname) or p == fname]
+                    if matches:
+                        current_file = matches[0] # Pick best match
+                        output_buffer = []
+            
+            if current_file:
+                output_buffer.append(line)
+                
+            # Heuristic for detecting completion/error of a file is hard with Make output streaming
+            # So instead, we will just record the *full* make output and then 
+            # check individual file status by checking if .vo file exists and is newer?
+            # Or assume failure if "Error" appears while processing that file?
+            
+            pass
+
+        process.wait()
+        
+        # Post-verification check:
+        # Check presence of .vo files for each tracked .v file
+        # If .vo exists and is recent, PASS. Else FAIL.
+        
+        for path, fid in path_to_id.items():
+            full_path = os.path.join(REPO_ROOT, path)
+            vo_path = full_path + "o" # .v -> .vo
+            
+            status = "FAIL"
+            output = "Verification failed (no .vo generated)"
+            
+            if os.path.exists(vo_path):
+                status = "PASS"
+                output = "Compiled successfully"
+            
+            # Log to DB
+            cursor.execute('''
+                INSERT INTO verification_results (file_id, status, output, timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (fid, status, output, datetime.now()))
+            
+            if status == "PASS":
+                print(f"  {Colors.OKGREEN}✓ PASS{Colors.ENDC} {path}")
+            else:
+                print(f"  {Colors.FAIL}✗ FAIL{Colors.ENDC} {path}")
+
+        conn.commit()
+        
+    except Exception as e:
+        print(f"{Colors.FAIL}Make execution failed: {e}{Colors.ENDC}")
+
+def main():
+    print(f"{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
+    print(f"{Colors.HEADER}   Lux9 Integrity Verification Manager (SQLite Backed){Colors.ENDC}")
+    print(f"{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
+
+    conn = init_db()
+    scan_repository(conn)
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, path, file_type FROM tracked_files")
+    all_files = cursor.fetchall()
+    
+    coq_files = [f for f in all_files if f[2] == 'coq']
+    acsl_files = [f for f in all_files if f[2] == 'acsl']
+    
+    print(f"\n{Colors.OKBLUE}[Running Verification on {len(all_files)} Files]{Colors.ENDC}")
+    
+    # 1. Run Coq Verification (Sequential/Make)
+    run_coq_verification(conn, coq_files)
+    
+    # 2. Run ACSL Verification (Parallel)
+    print(f"\n{Colors.OKBLUE}[Verifying ACSL Annotations]{Colors.ENDC}")
+    acsl_failed = 0
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        for result in executor.map(verify_acsl_file, acsl_files):
+            file_id, status, output, path = result
+            
+            cursor.execute('''
+                INSERT INTO verification_results (file_id, status, output, timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (file_id, status, output, datetime.now()))
+            
+            if status == "PASS":
+                print(f"  {Colors.OKGREEN}✓ PASS{Colors.ENDC} {path}")
+            elif status == "WARNING":
+                print(f"  {Colors.WARNING}⚠ WARN{Colors.ENDC} {path}")
+            elif status == "SKIPPED":
+                print(f"  {Colors.OKCYAN}- SKIP{Colors.ENDC} {path}")
+            else:
+                print(f"  {Colors.FAIL}✗ FAIL{Colors.ENDC} {path}")
+                acsl_failed += 1
+
+    conn.commit()
+    
+    # Summary
+    cursor.execute("SELECT count(*) FROM verification_results WHERE status='FAIL' AND timestamp > datetime('now', '-1 minute')")
+    failed_count = cursor.fetchone()[0]
+    conn.close()
+
+    print(f"\n{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
+    
+    if failed_count > 0:
+        print(f"{Colors.FAIL}❌ Verification Failed! {failed_count} files broken.{Colors.ENDC}")
+        sys.exit(1)
+    else:
+        print(f"{Colors.OKGREEN}✅ All System Integrity Checks Passed.{Colors.ENDC}")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

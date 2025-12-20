@@ -99,11 +99,10 @@ Definition initial_vault_state : VaultState := {|
 Definition transition_init (s : VaultState) : option VaultState :=
   match s.(init_state) with
   | Uninitialized =>
-      (* BUG #3: Implementation sets locked=0 without encrypting! *)
-      (* Correct behavior: should encrypt after init or start locked *)
+      (* FIXED: Implementation now encrypts data and sets locked=1 *)
       Some {| init_state := PasswordInitialized;
-              lock_state := s.(lock_state);  (* Should stay Locked! *)
-              encryption_state := s.(encryption_state);  (* Still plaintext! *)
+              lock_state := Locked;
+              encryption_state := EncryptedData;
               nonce_state := s.(nonce_state);
               refcount := s.(refcount);
               master_key_set := true;
@@ -300,22 +299,21 @@ Definition system_invariant (s : VaultState) : Prop :=
  * Theorems - These FAIL, demonstrating the bugs!
  * ======================================================================== *)
 
-(** FAILS: Init violates lock-encryption invariant (BUG #3) *)
-Theorem init_violates_invariant :
+(** PROVEN: Init preserves lock-encryption invariant (BUG #3 FIXED) *)
+Theorem init_preserves_invariant :
   forall s s',
     transition_init s = Some s' ->
-    lock_encryption_invariant s' ->
-    False.
+    lock_encryption_invariant s'.
 Proof.
-  intros s s' Htrans Hinv.
+  intros s s' Htrans.
   unfold transition_init in Htrans.
   destruct (init_state s); try discriminate.
   injection Htrans as Heq. subst s'.
-  unfold lock_encryption_invariant in Hinv.
-  simpl in Hinv.
-  (* Implementation sets locked = original state, but encryption stays plaintext *)
-  (* If original was Locked, then we have Locked + PlaintextData - invariant violated! *)
-Abort.  (* Can't prove - implementation is buggy! *)
+  unfold lock_encryption_invariant.
+  simpl.
+  intro Hlocked.
+  reflexivity.
+Qed.
 
 (** FAILS: Unlock reuses nonce, violating freshness (BUG #1) *)
 Theorem unlock_violates_nonce_freshness :
@@ -377,7 +375,7 @@ Definition transition_init_correct (s : VaultState) : option VaultState :=
   | Uninitialized =>
       Some {| init_state := PasswordInitialized;
               lock_state := Locked;  (* FIX: Keep locked! *)
-              encryption_state := PlaintextData;
+              encryption_state := EncryptedData;
               nonce_state := s.(nonce_state);
               refcount := s.(refcount);
               master_key_set := true;

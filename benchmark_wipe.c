@@ -1,18 +1,15 @@
 // Benchmark secure wipe performance: 7 vs 35 passes
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+#include <sys/random.h>
+#include <unistd.h>
 
 #define MB (1024*1024)
 #define TEST_SIZE (100*MB)  // 100MB test
-
-static inline uint64_t rdtsc(void) {
-    uint32_t lo, hi;
-    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
-    return ((uint64_t)hi << 32) | lo;
-}
 
 void wipe_7pass(uint8_t *addr, size_t size) {
     // DoD 5220.22-M ECE standard (7 passes)
@@ -21,21 +18,21 @@ void wipe_7pass(uint8_t *addr, size_t size) {
     // Pass 2: 0xFF
     memset(addr, 0xFF, size);
     // Pass 3: random
-    for(size_t i = 0; i < size; i++)
-        addr[i] = rand() & 0xFF;
+    getrandom(addr, size, 0);
     // Pass 4: 0x00
     memset(addr, 0x00, size);
     // Pass 5: 0xFF
     memset(addr, 0xFF, size);
     // Pass 6: random
-    for(size_t i = 0; i < size; i++)
-        addr[i] = rand() & 0xFF;
+    getrandom(addr, size, 0);
     // Pass 7: 0x00
     memset(addr, 0x00, size);
 
     // Memory barrier
     __asm__ __volatile__ ("mfence" ::: "memory");
 }
+
+#define PATTERN_COUNT 33
 
 void wipe_35pass(uint8_t *addr, size_t size) {
     // Gutmann method (35 passes)
@@ -48,19 +45,17 @@ void wipe_35pass(uint8_t *addr, size_t size) {
 
     // Random passes
     for(int pass = 0; pass < 4; pass++) {
-        for(size_t i = 0; i < size; i++)
-            addr[i] = rand() & 0xFF;
+        getrandom(addr, size, 0);
     }
 
     // Pattern passes
     for(int pass = 0; pass < 27; pass++) {
-        memset(addr, patterns[pass % (sizeof(patterns))], size);
+        memset(addr, patterns[pass % PATTERN_COUNT], size);
     }
 
     // Final random passes
     for(int pass = 0; pass < 4; pass++) {
-        for(size_t i = 0; i < size; i++)
-            addr[i] = rand() & 0xFF;
+        getrandom(addr, size, 0);
     }
 
     // Memory barrier
@@ -78,17 +73,17 @@ int main(void) {
 
     printf("Benchmarking secure wipe on %d MB\n\n", TEST_SIZE/MB);
 
+    struct timespec start, end;
+
     // Benchmark 7-pass wipe
     printf("7-Pass Wipe (DoD 5220.22-M):\n");
     memset(test_area, 0xAA, TEST_SIZE); // Initialize with pattern
 
-    uint64_t start = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &start);
     wipe_7pass(test_area, TEST_SIZE);
-    uint64_t end = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-    uint64_t cycles_7 = end - start;
-    double sec_7 = (double)cycles_7 / 2.4e9; // Assume 2.4 GHz CPU
-    printf("  Cycles: %lu\n", cycles_7);
+    double sec_7 = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf("  Time: %.3f seconds\n", sec_7);
     printf("  Throughput: %.1f MB/s\n\n", TEST_SIZE/(sec_7*MB));
 
@@ -96,19 +91,17 @@ int main(void) {
     printf("35-Pass Wipe (Gutmann):\n");
     memset(test_area, 0xAA, TEST_SIZE); // Initialize with pattern
 
-    start = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &start);
     wipe_35pass(test_area, TEST_SIZE);
-    end = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-    uint64_t cycles_35 = end - start;
-    double sec_35 = (double)cycles_35 / 2.4e9;
-    printf("  Cycles: %lu\n", cycles_35);
+    double sec_35 = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf("  Time: %.3f seconds\n", sec_35);
     printf("  Throughput: %.1f MB/s\n\n", TEST_SIZE/(sec_35*MB));
 
     // Comparison
     printf("Performance comparison:\n");
-    printf("  35-pass is %.1fx slower than 7-pass\n", (double)cycles_35/cycles_7);
+    printf("  35-pass is %.1fx slower than 7-pass\n", sec_35/sec_7);
     printf("  7-pass overhead: %.3f sec per 100MB\n", sec_7);
     printf("  35-pass overhead: %.3f sec per 100MB\n", sec_35);
     printf("  Additional time for 35-pass: %.3f sec\n", sec_35 - sec_7);

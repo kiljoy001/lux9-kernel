@@ -65,6 +65,7 @@ typedef struct ProcessVault {
   uchar current_nonce[24];   /* Current XChaCha20 nonce */
   UserCapability capability; /* Pebble Black capability */
   int initialized;           /* 1 = password set, 0 = not initialized */
+  int dead;                  /* 1 = unlinked/zombie, waiting for refcount=0 */
 } ProcessVault;
 
 static ProcessVault *vault_list = nil;
@@ -150,16 +151,26 @@ void vault_cleanup_process(int pid) {
       /* Unlink first */
       *prev = v->next;
 
-      /* Secure wipe */
-      if (v->data) {
-        secure_wipe(v->data, v->size);
-        free(v->data);
+      /* Mark as dead and check for deferred free */
+      qlock(&v->lock);
+      v->dead = 1;
+
+      int can_free = (v->refcount == 0);
+      qunlock(&v->lock);
+
+      if (can_free) {
+        /* Secure wipe */
+        if (v->data) {
+          secure_wipe(v->data, v->size);
+          free(v->data);
+        }
+        crypto_wipe(v->master_key, 32);
+
+        /* FIXME: Burn capability? */
+
+        free(v);
       }
-      crypto_wipe(v->master_key, 32);
-
-      /* FIXME: Burn capability? */
-
-      free(v);
+      /* If refcount > 0, it will be freed in ramclose */
     } else {
       prev = &v->next;
     }
@@ -534,6 +545,8 @@ static Chan *ramopen(Chan *c, int omode) {
     v->locked = 1; /* Start locked */
     qunlock(&vault_list_lock);
 
+    c->aux = v;
+
     /* Update Chan to point to the new vault */
     c->qid.path = Qvaultbase + v->id * 2; /* Data file */
     c->qid.vers = 0;
@@ -569,6 +582,8 @@ static Chan *ramopen(Chan *c, int omode) {
     v->refcount++;
     check_refcount_invariant(v);
     qunlock(&v->lock);
+
+    c->aux = v;
   }
 
   return c;
@@ -597,7 +612,10 @@ static void ramclose(Chan *c) {
   ProcessVault *v;
 
   if (c->qid.path >= Qvaultbase) {
-    v = get_vault_from_path(c->qid.path);
+    v = c->aux;
+    if (v == nil)
+      v = get_vault_from_path(c->qid.path);
+
     if (v == nil)
       return; /* Should not happen */
 
@@ -612,8 +630,18 @@ static void ramclose(Chan *c) {
      * Wipe happens on process exit (vault_cleanup_process).
      * Or explicit wipe command.
      */
+    int should_free = (v->refcount == 0 && v->dead);
 
     qunlock(&v->lock);
+
+    if (should_free) {
+      if (v->data) {
+        secure_wipe(v->data, v->size);
+        free(v->data);
+      }
+      crypto_wipe(v->master_key, 32);
+      free(v);
+    }
   }
 }
 
@@ -785,6 +813,10 @@ long ramwrite(Chan *c, void *va, long n, vlong off) {
         }
 
         v->initialized = 1;
+
+        /* Encrypt initial zeroed state so it decrypts correctly */
+        xchacha20_encrypt_with_fresh_nonce(v, v->data, v->size, v->master_key);
+
         v->locked = 1; /* Start locked */
 
         crypto_wipe(cmd, sizeof(cmd));

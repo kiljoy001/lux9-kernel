@@ -548,50 +548,7 @@ static int pci_allocate_channel_auto(struct FamilyExchangePage *family,
   return 0;
 }
 
-/* Release channel and cleanup resources */
-static int pci_release_channel(struct FamilyExchangePage *family,
-                               uint64_t channel_id) {
-  struct PCIChannel *channel = lookup_channel_by_id(family, channel_id);
 
-  if (!channel) {
-    return -2; // Channel not found
-  }
-
-  /* Validate permissions */
-  if (!validate_channel_operation_permission(current_process(), channel)) {
-    return -3; // Permission denied
-  }
-
-  /* Clean up channel resources */
-  for (int i = 0; i < 6; i++) {
-    if (channel->resources.bars[i]) {
-      cleanup_pci_bar_resource(channel->resources.bars[i]);
-      free(channel->resources.bars[i]);
-      channel->resources.bars[i] = NULL;
-    }
-  }
-
-  for (int i = 0; i < 8; i++) {
-    if (channel->resources.irqs[i]) {
-      cleanup_pci_irq_resource(channel->resources.irqs[i]);
-      free(channel->resources.irqs[i]);
-      channel->resources.irqs[i] = NULL;
-    }
-  }
-
-  for (int i = 0; i < 4; i++) {
-    if (channel->resources.dmas[i]) {
-      cleanup_pci_dma_resource(channel->resources.dmas[i]);
-      free(channel->resources.dmas[i]);
-      channel->resources.dmas[i] = NULL;
-    }
-  }
-
-  /* Free channel structure */
-  free_pci_channel_struct(channel);
-
-  return 0;
-}
 
 /* Initialize PCI channel manager */
 void setup_pci_channel_manager(struct FamilyExchangePage *family) {
