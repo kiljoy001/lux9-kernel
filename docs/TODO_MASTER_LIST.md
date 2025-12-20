@@ -14,8 +14,8 @@
 | Fruity→QBE | 0 | ✅ Complete |
 | IL→Fruity | 0 | ✅ Complete |
 | QBE Exec | 0 | ✅ Complete |
-| Admitted Proofs | 17 | Active |
-| **Total** | **21** | |
+| Admitted Proofs | 12 | Active |
+| **Total** | **15** | |
 
 ---
 
@@ -65,7 +65,7 @@ All 17 TODOs implemented:
 
 | File | Count | Notes |
 |------|-------|-------|
-| `ramdisk_wipe.v` | 5 | Memory fill properties |
+| `ramdisk_wipe.v` | 0 | ✅ Complete |
 | `fsharp_complete_typechecker.v` | 3 | Type preservation |
 | `fsharp_fully_proven.v` | 3 | Type soundness |
 | `fsharp_full_language.v` | 3 | Complex cases |
@@ -83,4 +83,4 @@ All 17 TODOs implemented:
 2. **`fruity_interp.c:898`** — Static field access
 3. **`fruity_interp.c:543`** — String metadata loading
 4. **`fruity_interp.c:955`** — Type checking (CASTCLASS)
-5. **`ramdisk_wipe.v`** — Complete memory wipe proofs
+5. **`fsharp_complete_typechecker.v`** — Type inference soundness/completeness

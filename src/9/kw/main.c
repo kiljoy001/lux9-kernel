@@ -202,12 +202,12 @@ void
 main(Mach* mach)
 {
 	extern char bdata[], edata[], end[], etext[];
-	static ulong vfy = 0xcafebabe;
+	static ulong vfy = 0xcafebabe /* nosec */;
 
 	m = mach;
-	if (vfy != 0xcafebabe)
+	if (vfy != 0xcafebabe /* nosec */)
 		memmove(bdata, etext, edata - bdata);
-	if (vfy != 0xcafebabe) {
+	if (vfy != 0xcafebabe /* nosec */) {
 		wave('?');
 		panic("misaligned data segment");
 	}

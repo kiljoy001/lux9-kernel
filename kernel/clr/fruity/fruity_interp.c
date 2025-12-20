@@ -635,6 +635,10 @@ int fruity_interp_step(fruity_interp_state_t *state) {
   case FRUITY_BURN: {
     /* Release reference: obj_ref → ∅ */
     POP(a);
+    /* GAP: proofs/clr/pebble_clr.v relies on explicit refcount decrement to
+     * prove safe_from_double_free. Implementation treats release as no-op
+     * (GC/Revocation handles it). Formal model is stricter than implementation.
+     */
     lux_release(AS_REF(a));
     break;
   }

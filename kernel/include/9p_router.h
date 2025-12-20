@@ -66,6 +66,11 @@ typedef struct PebbleToken {
 #define PEBBLE_PERM_WRITE 0x02
 #define PEBBLE_PERM_EXEC 0x04
 #define PEBBLE_PERM_DELETE 0x08
+/* Holographic Channels (Bits 4-6) - Visibility Masks */
+#define PEBBLE_HOLOGRAPHIC_MASK 0x70
+#define PEBBLE_VISIBILITY_PUBLIC (0x00 << 4)  /* Visible to all servers */
+#define PEBBLE_VISIBILITY_GROUP (0x01 << 4)   /* Visible to group/shard */
+#define PEBBLE_VISIBILITY_PRIVATE (0x07 << 4) /* Local-only (Intra-server) */
 #define PEBBLE_PERM_ADMIN 0x80
 
 /* Custom 9P message types for Lux9 - defined in fcall.h enum */

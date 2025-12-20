@@ -282,13 +282,35 @@ test_il_opcodes.o: test/test_il_opcodes.c
 # Testing targets (placeholder)
 
 
-run: $(KERNEL_BINARY)
-	@echo "Running kernel in QEMU..."
-	@qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -initrd ../initrd.tar.gz -no-reboot -display none -serial stdio
+# ISO Creation
+ISO_DIR := build/iso
+ISO_BINARY := lux9.iso
 
-debug: $(KERNEL_BINARY)
-	@echo "Running kernel in QEMU with GDB..."
-	@qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL_BINARY) -no-reboot -display none -serial stdio -s -S &
+iso: $(KERNEL_BINARY)
+	@echo "Creating ISO..."
+	@mkdir -p $(ISO_DIR)/boot/limine
+	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
+	@cp ../limine.conf $(ISO_DIR)/boot/limine/limine.cfg
+	@cp ../initrd.tar.gz $(ISO_DIR)/boot/initrd.tar
+	@cp ../boot/limine/bin/limine-bios.sys $(ISO_DIR)/boot/limine/
+	@cp ../boot/limine/bin/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
+	@cp ../boot/limine/bin/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/
+	@xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
+		-no-emul-boot -boot-load-size 4 -boot-info-table \
+		--efi-boot boot/limine/limine-uefi-cd.bin \
+		-efi-boot-part --efi-boot-image --protective-msdos-label \
+		$(ISO_DIR) -o $(ISO_BINARY)
+	@../boot/limine/bin/limine bios-install $(ISO_BINARY)
+	@echo "ISO created: $(ISO_BINARY)"
+	@ls -lh $(ISO_BINARY)
+
+run: iso
+	@echo "Running kernel in QEMU (ISO)..."
+	@qemu-system-x86_64 -M q35 -m 2G -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio
+
+debug: iso
+	@echo "Running kernel in QEMU with GDB (ISO)..."
+	@qemu-system-x86_64 -M q35 -m 2G -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio -s -S &
 
 # Installation (for distribution builds)
 install: $(KERNEL_BINARY)
@@ -300,13 +322,14 @@ install: $(KERNEL_BINARY)
 clean:
 	@echo "Cleaning kernel build..."
 	@rm -f *.o
-	@rm -f $(KERNEL_BINARY)
+	@rm -f $(KERNEL_BINARY) $(ISO_BINARY)
+	@rm -rf build
 
 help:
 	@echo "Kernel Build Targets:"
 	@echo "  all     - Build kernel binary"
-	@echo "  test    - Run kernel tests"
-	@echo "  run     - Run in QEMU"
-	@echo "  debug   - Debug in QEMU+GDB"
+	@echo "  iso     - Build bootable ISO with Limine"
+	@echo "  run     - Run ISO in QEMU"
+	@echo "  debug   - Debug ISO in QEMU+GDB"
 	@echo "  install - Install kernel"
 	@echo "  clean   - Clean build artifacts"

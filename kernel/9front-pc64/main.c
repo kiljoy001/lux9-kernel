@@ -59,8 +59,8 @@ void set_boot_state(BootState s) {
 }
 
 /* CRITICAL: Global debug flag that doesn't depend on environment device */
-int panic_debug =
-    1; /* Default to debug mode to prevent reboot during early boot */
+int panic_debug = 0; /* Default to SILENT mode for performance */
+int jitdebug = 0;    /* JIT debug flag */
 
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);

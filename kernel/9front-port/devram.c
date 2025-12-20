@@ -412,6 +412,9 @@ static void ramreset(void) {
     secure_rd.size += 24;
 
   if (secure_rd.size > 0) {
+    /* LOCK for initialization to satisfy invariants and tools */
+    qlock(&secure_rd.lock);
+
     /* Allocate via Pebble Black for non-swappable backing */
     int pebble_ok = 0;
     /* pebble_black_alloc requires a process context (up != nil) */
@@ -468,6 +471,8 @@ static void ramreset(void) {
         print("ramdisk: secure vault %lud MB allocated\n",
               secure_rd.size / (1024 * 1024));
     }
+
+    qunlock(&secure_rd.lock);
   }
 }
 

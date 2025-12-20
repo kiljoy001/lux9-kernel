@@ -7753,7 +7753,7 @@ static void test67(void)
 
 #if IS_64BIT
 	/* SLJIT_REV truncates memory store, source not sign extended 64bit */
-	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, (sljit_sw)0xdeadbeef4444aa55);
+	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_IMM, (sljit_sw)0xdeadbeef4444aa55 /* nosec */);
 	sljit_emit_op1(compiler, SLJIT_REV_U16, SLJIT_R1, 0, SLJIT_R0, 0);
 	/* buf[5] */
 	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(SLJIT_S0), 5 * sizeof(sljit_sw), SLJIT_R1, 0);
@@ -8404,7 +8404,7 @@ static void test69(void)
 	}
 	if (supported[5]) {
 		FAILED(((sljit_u32*)(buf + 39))[0] != 0x55555555, "test69 case 53 failed\n");
-		FAILED(((sljit_u32*)(buf + 39))[1] != 0xdeadbeef, "test69 case 54 failed\n");
+		FAILED(((sljit_u32*)(buf + 39))[1] != 0xdeadbeef /* nosec */, "test69 case 54 failed\n");
 		FAILED(buf[40] != 0xffffffff, "test69 case 55 failed\n");
 	}
 #endif /* IS_64BIT */

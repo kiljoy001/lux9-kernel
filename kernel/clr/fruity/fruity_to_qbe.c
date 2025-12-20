@@ -992,6 +992,7 @@ static int emit_function(QBEBuffer *buf, fruity_function_t *func) {
 int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, ulong *out_size,
                   char *errorbuf, usize errorbuf_size) {
   extern void uartputs(char *, int);
+  extern int jitdebug;
   char debug_buf[128];
   QBEBuffer buf;
   fruity_function_t *func;
@@ -1092,12 +1093,14 @@ int fruity_to_qbe(fruity_module_t *module, uintptr out_handle, ulong *out_size,
   ((char *)vaddr)[copy_len] =
       0; // Null-terminate the string (safe with +1 allocation)
 
-  // DEBUG: Print the generated QBE IL to UART
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: Generated QBE IL (len=%ld):\n",
-          copy_len);
-  uartputs(debug_buf, strlen(debug_buf));
-  uartputs(qbe_buffer_data(&buf), copy_len);
-  uartputs("\nDEBUG: End of QBE IL\n", strlen("DEBUG: End of QBE IL\n"));
+  /* DEBUG: Print the generated QBE IL to UART */
+  if (jitdebug) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: Generated QBE IL (len=%ld):\n", copy_len);
+    uartputs(debug_buf, strlen(debug_buf));
+    uartputs(qbe_buffer_data(&buf), copy_len);
+    uartputs("\nDEBUG: End of QBE IL\n", strlen("DEBUG: End of QBE IL\n"));
+  }
 
   qbe_buffer_free(&buf);
   return 0;

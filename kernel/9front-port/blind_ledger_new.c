@@ -38,6 +38,10 @@ typedef struct LedgerEntryNode {
 static struct rb_root ledger_tree = RB_ROOT;
 
 // Secondary index: hash by physical address for fast PA lookups (O(1) average)
+// GAP: proofs/blind_ledger/ledger_implementation.v 'Refinement' relation only
+// maps ConcreteState (CMap) to LedgerState. This secondary PA index is an
+// optimization invisible to the formal model and thus not formally verified for
+// consistency.
 static LedgerEntryNode *ledger_pa_index[LEDGER_PA_HASHTABLE_SIZE];
 
 static Lock ledger_lock;

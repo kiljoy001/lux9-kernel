@@ -720,8 +720,14 @@ int p9_handle_doorbell(Proc *p) {
 
   /* Mark as pending */
   /*@
-    // Acquire Transition: s2 = update_page s1 page (mkPageState ... P9_Pending ...)
+    // Acquire Transition: s2 = update_page s1 page (mkPageState ... P9_Pending
+   ...)
     // Corresponds to 'Acquire_Success' in proofs/sip/sip_model.v
+    // GAP: Coq model (router_safety.v) assumes strict FSM transition
+   (Idle->Pending).
+    // Implementation uses relaxed store without CAS verification of prior Idle
+   state.
+    // This relies on single-consumer assumption not formally verified here.
    @*/
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
 
@@ -773,7 +779,8 @@ int p9_handle_doorbell(Proc *p) {
    * This ensures userspace sees the data in rep_buf before they see the
    * STATUS_COMPLETE flag. */
   /*@
-    // Release Transition: s2 = update_page s1 page (mkPageState ... P9_Complete ...)
+    // Release Transition: s2 = update_page s1 page (mkPageState ... P9_Complete
+   ...)
     // Corresponds to 'Release' in proofs/sip/sip_model.v
    @*/
   atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);

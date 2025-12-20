@@ -665,12 +665,14 @@ static inline uint bsmax(BSet *bs) { return bs->nt * NBit; }
 void bsset(BSet *bs, uint elt) {
   if (elt >= bsmax(bs)) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bsset FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
             bsmax(bs));
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(elt < bsmax(bs));
   }
@@ -680,12 +682,14 @@ void bsset(BSet *bs, uint elt) {
 void bsclr(BSet *bs, uint elt) {
   if (elt >= bsmax(bs)) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bsclr FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
             bsmax(bs));
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(elt < bsmax(bs));
   }
@@ -704,11 +708,13 @@ void bsclr(BSet *bs, uint elt) {
 void bscopy(BSet *a, BSet *b) {
   if (a->nt != b->nt) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bscopy FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(a->nt == b->nt);
   }
@@ -720,11 +726,13 @@ void bsunion(BSet *a, BSet *b) {
 
   if (a->nt != b->nt) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bsunion FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(a->nt == b->nt);
   }
@@ -737,11 +745,13 @@ void bsinter(BSet *a, BSet *b) {
 
   if (a->nt != b->nt) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bsinter FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(a->nt == b->nt);
   }
@@ -754,11 +764,13 @@ void bsdiff(BSet *a, BSet *b) {
 
   if (a->nt != b->nt) {
 #ifdef _KERNEL_QBE
+    /*
     extern void uartputs(char *, int);
     char debug_buf[128];
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: bsdiff FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
     uartputs(debug_buf, strlen(debug_buf));
+    */
 #endif
     assert(a->nt == b->nt);
   }

@@ -44,15 +44,23 @@ jobs:
           local dir=$1
           local module=$2
           
-          if [ -d "$dir" ] && ls "$dir"/*.v >/dev/null 2>&1; then
+          if [ -d "$dir" ]; then
             echo "═══════════════════════════════════════════════"
             echo "Verifying: $dir (module: $module)"
             echo "═══════════════════════════════════════════════"
             cd "$dir"
-            for vfile in *.v; do
-              echo "  Compiling $vfile..."
-              coqc -R . "$module" "$vfile" || exit 1
-            done
+            
+            if [ -f "Makefile" ]; then
+              echo "  Found Makefile, using make..."
+              make || exit 1
+            elif ls *.v >/dev/null 2>&1; then
+              for vfile in *.v; do
+                echo "  Compiling $vfile..."
+                coqc -R . "$module" "$vfile" || exit 1
+              done
+            else
+              echo "  No proofs found."
+            fi
             cd ..
           fi
         }

@@ -5,6 +5,7 @@
 #include "portlib.h"
 #include "tos.h"
 #include "u.h"
+#include <a.out.h>
 #include <error.h>
 
 #ifndef BOOTVERBOSE
@@ -152,7 +153,7 @@ static void proc0(void *arg) {
   /* Clear any existing user PML4 entries to force mmucreate to build mmuhead */
   print("BOOT[proc0]: clearing existing user PML4 entries\n");
   m->pml4[PTLX(UTZERO, 3)] = 0;
-  m->pml4[PTLX(USTKTOP-1, 3)] = 0;
+  m->pml4[PTLX(USTKTOP - 1, 3)] = 0;
 
   /*
    * Setup Text and Stack segments for initcode.
@@ -210,36 +211,108 @@ static void proc0(void *arg) {
   else
     print("BOOT[proc0]: stack pte missing\n");
 
-  print("BOOT[proc0]: creating text segment\n");
-  up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
-  print("BOOT[proc0]: text segment created\n");
-  up->seg[TSEG]->flushme = 1;
-  print("BOOT[proc0]: allocating text page\n");
-  p = newpage(UTZERO, nil);
-  print("BOOT[proc0]: text page allocated, p=%p\n", p);
-  print("BOOT[proc0]: mapping text page\n");
-  k = kmap(p);
-  print("BOOT[proc0]: text page mapped, k=%p\n", k);
-  if (k == nil)
-    panic("proc0: kmap failed");
+  /* Try to load /boot/boot (CLR) first */
+  Chan *bc = namec("/boot/boot", Aopen, OREAD, 0);
+  int loaded = 0;
 
-  /* TODO: Load and compile CLR init from /boot/boot
-   * For now, use legacy initcode[] until CLR userspace execution is working */
-  print("BOOT[proc0]: initcode size=%d, first bytes: %02x %02x %02x %02x\\n",
-        (int)sizeof(initcode), initcode[0], initcode[1], initcode[2],
-        initcode[3]);
-  memmove((uchar *)VA(k), initcode, sizeof(initcode));
-  memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
+  if (bc != nil) {
+    Exec exec;
+    if (!waserror()) {
+      print("BOOT[proc0]: Found /boot/boot, checking header...\n");
+      if (cread(bc, (uchar *)&exec, sizeof(Exec), 0) == sizeof(Exec)) {
+        /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
+        if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
+          print("BOOT[proc0]: Loading CLR from /boot/boot (text=%d data=%d)\n",
+                exec.text, exec.data);
 
-  print("BOOT[proc0]: unmapping text page\n");
-  kunmap(k);
-  if (p->pa == 0)
-    print("BOOT[proc0]: text page pa=0 (unexpected)\n");
-  else
-    print("BOOT[proc0]: text page pa nonzero\n");
-  print("BOOT[proc0]: about to call segpage for text\n");
-  segpage(up->seg[TSEG], p);
-  print("BOOT[proc0]: segpage for text completed\n");
+          ulong total_len = exec.text + exec.data + exec.bss;
+          ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
+
+          /* Create TSEG large enough for everything.
+           * Removing SG_RONLY to allow data writes if needed by simple binaries
+           */
+          print("BOOT[proc0]: Creating TSEG size=%ld pages\n", total_pages);
+          up->seg[TSEG] = newseg(SG_TEXT, UTZERO, total_pages);
+          up->seg[TSEG]->flushme = 1;
+
+          ulong file_off = sizeof(Exec); /* Skip 32-byte header */
+          ulong virt_addr = UTZERO;
+          ulong remaining = exec.text + exec.data;
+
+          for (int i = 0; i < total_pages; i++) {
+            Page *p = newpage(virt_addr, nil);
+            KMap *k = kmap(p);
+
+            long to_read = BY2PG;
+            if (remaining < BY2PG)
+              to_read = remaining;
+
+            if (to_read > 0) {
+              if (cread(bc, (uchar *)VA(k), to_read, file_off) != to_read)
+                print("BOOT: Short read on /boot/boot\n");
+              file_off += to_read;
+              remaining -= to_read;
+            }
+
+            /* Zero out BSS or partial page */
+            if (to_read < BY2PG)
+              memset((uchar *)VA(k) + to_read, 0, BY2PG - to_read);
+
+            kunmap(k);
+            segpage(up->seg[TSEG], p);
+            virt_addr += BY2PG;
+          }
+          loaded = 1;
+          print("BOOT[proc0]: CLR loaded successfully\n");
+        } else {
+          print("BOOT[proc0]: /boot/boot bad magic 0x%x (expected 0x%x)\n",
+                exec.magic, S_MAGIC);
+        }
+      } else {
+        print("BOOT[proc0]: Failed to read /boot/boot header\n");
+      }
+      poperror();
+    }
+    cclose(bc);
+  } else {
+    print("BOOT[proc0]: /boot/boot not found\n");
+  }
+
+  if (!loaded) {
+    print("BOOT[proc0]: Fallback - using legacy initcode\n");
+    print("BOOT[proc0]: creating text segment\n");
+    up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
+    print("BOOT[proc0]: text segment created\n");
+    up->seg[TSEG]->flushme = 1;
+    print("BOOT[proc0]: allocating text page\n");
+    p = newpage(UTZERO, nil);
+    print("BOOT[proc0]: text page allocated, p=%p\n", p);
+    print("BOOT[proc0]: mapping text page\n");
+    k = kmap(p);
+    print("BOOT[proc0]: text page mapped, k=%p\n", k);
+    if (k == nil)
+      panic("proc0: kmap failed");
+
+    /* TODO: Load and compile CLR init from /boot/boot
+     * For now, use legacy initcode[] until CLR userspace execution is working
+     */
+    print("BOOT[proc0]: initcode size=%d, first bytes: %02x %02x %02x %02x\\n",
+          (int)sizeof(initcode), initcode[0], initcode[1], initcode[2],
+          initcode[3]);
+    memmove((uchar *)VA(k), initcode, sizeof(initcode));
+    memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
+
+    print("BOOT[proc0]: unmapping text page\n");
+    kunmap(k);
+    if (p->pa == 0)
+      print("BOOT[proc0]: text page pa=0 (unexpected)\n");
+    else
+      print("BOOT[proc0]: text page pa nonzero\n");
+    print("BOOT[proc0]: about to call segpage for text\n");
+    segpage(up->seg[TSEG], p);
+    print("BOOT[proc0]: segpage for text completed\n");
+  }
+
   /* segpage now calls userpmap() which creates MMU structures */
   if (dbg_getpte(UTZERO) != 0)
     print("BOOT[proc0]: text pte present\n");
@@ -314,23 +387,29 @@ static void proc0(void *arg) {
     }
   }
   print("BOOT[proc0]: Exited PML4 validation, about to check USTKTOP slot\n");
-  print("BOOT[proc0]: Skipping m->pml4 check - causes hang (TODO: fix m->pml4 "
-        "access)\n");
-  /* FIXME: Accessing m->pml4[255] causes a hang/page fault
-   * This needs investigation - likely m->pml4 is not properly mapped
-   * or m is pointing to invalid memory. For now, skip this check.
-  {
-    uintptr ustktop_idx = PTLX(USTKTOP - 1, 3);
-    print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\n",
-          USTKTOP, USTKTOP - 1, (long long)ustktop_idx);
-    print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long
-  long)ustktop_idx); uintptr pml4_value = m->pml4[ustktop_idx];
-    print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx,
-  pml4_value); if (pml4_value != 0) print("BOOT[proc0]: PML4 slot before
-  mmuswitch nonzero\n"); else print("BOOT[proc0]: PML4 slot before mmuswitch
-  zero\n");
+
+  /* Verify m and m->pml4 are valid before access */
+  if (m == nil) {
+    panic("proc0: m is NULL!");
   }
-  */
+  if (m->pml4 == nil) {
+    panic("proc0: m->pml4 is NULL!");
+  }
+
+  uintptr ustktop_idx = PTLX(USTKTOP - 1, 3);
+  print("BOOT[proc0]: USTKTOP=%#p, USTKTOP-1=%#p, PTLX(USTKTOP-1,3)=%lld\n",
+        USTKTOP, USTKTOP - 1, (long long)ustktop_idx);
+
+  /* Safe access with pointer validation above */
+  print("BOOT[proc0]: About to access m->pml4[%lld]\n", (long long)ustktop_idx);
+  uintptr pml4_value = m->pml4[ustktop_idx];
+  print("BOOT[proc0]: Read m->pml4[%lld] = %#p\n", (long long)ustktop_idx,
+        pml4_value);
+
+  if (pml4_value != 0)
+    print("BOOT[proc0]: PML4 slot before mmuswitch nonzero\n");
+  else
+    print("BOOT[proc0]: PML4 slot before mmuswitch zero\n");
   if (up->mmuhead == nil)
     print("BOOT[proc0]: mmuhead nil (no user mappings staged)\n");
   else {

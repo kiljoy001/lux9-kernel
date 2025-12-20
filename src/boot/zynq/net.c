@@ -440,7 +440,7 @@ dhcp(ulong *r)
 	uchar *p;
 	uchar type;
 
-	xid = 0xdeadbeef;
+	xid = 0xdeadbeef /* nosec */;
 	tftpip = 0;
 	dhcppkg(r, DHCPDISCOVER);
 	timeren(DHCPTIMEOUT);

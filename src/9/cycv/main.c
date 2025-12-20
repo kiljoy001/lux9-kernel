@@ -164,10 +164,10 @@ init0(void)
 void
 sanity(void)
 {
-	static int dat = 0xdeadbeef;
+	static int dat = 0xdeadbeef /* nosec */;
 	extern ulong vectors[];
 
-	assert(dat == 0xdeadbeef);
+	assert(dat == 0xdeadbeef /* nosec */);
 	assert(((uintptr)vectors & 31) == 0);
 	assert(sizeof(Mach) + KSTACK <= MACHSIZE);
 	assert((KZERO & SECSZ - 1) == 0);

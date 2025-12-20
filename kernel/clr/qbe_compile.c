@@ -12,6 +12,8 @@
 
 #include "qbe_compile.h"
 
+extern int jitdebug;
+
 /* Symbol table for labels */
 typedef struct Symbol {
   char name[32];
@@ -145,7 +147,7 @@ static int next_token(char **s, char *buf, int len) {
     return 0;
 
   /* Only trace first 30 calls to avoid spam */
-  if (token_call_count <= 30) {
+  if (jitdebug && token_call_count <= 30) {
     char tb[64];
     int n = snprint(tb, sizeof(tb), "next_token: start *s=%c(0x%x)\n",
                     (**s >= 32 && **s < 127) ? **s : '?', (unsigned char)**s);
@@ -166,7 +168,7 @@ static int next_token(char **s, char *buf, int len) {
   while (**s == ',' || **s == '=' || **s == '(' || **s == ')')
     (*s)++;
 
-  if (token_call_count <= 30) {
+  if (jitdebug && token_call_count <= 30) {
     char tb[64];
     int n = snprint(tb, sizeof(tb), "next_token: done buf='%s'\n", buf);
     uartputs(tb, n);
@@ -476,7 +478,8 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: qbe_compile_page ENTERED qbe=%#p asm=%#p\n", qbe_page,
           asm_page);
-  uartputs(debug_buf, strlen(debug_buf));
+  if (jitdebug)
+    uartputs(debug_buf, strlen(debug_buf));
 
   /* Temp storage for finding max temp usage */
   int max_temp = 0;
@@ -491,17 +494,20 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: qbe_compile_page KADDR qbe=%p asm=%p\n", qbe_vaddr,
           asm_vaddr);
-  uartputs(debug_buf, strlen(debug_buf));
+  if (jitdebug)
+    uartputs(debug_buf, strlen(debug_buf));
 
   p = (char *)qbe_vaddr;
   code = (u8int *)asm_vaddr;
 
-  uartputs("DEBUG: qbe_compile_page zeroing output\n", 40);
+  if (jitdebug)
+    uartputs("DEBUG: qbe_compile_page zeroing output\n", 40);
 
   /* Zero output */
   memset(asm_vaddr, 0, BY2PG);
 
-  uartputs("DEBUG: qbe_compile_page emitting prologue\n", 43);
+  if (jitdebug)
+    uartputs("DEBUG: qbe_compile_page emitting prologue\n", 43);
 
   /* PROLOGUE */
   /* We don't know stack size yet, but let's assume max 64 temps = 512 bytes for
@@ -531,13 +537,14 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   int fixup_count = 0;
   int loop_iter = 0; /* DEBUG: iteration counter */
 
-  uartputs("DEBUG: qbe_compile_page entering parse loop\n", 45);
+  if (jitdebug)
+    uartputs("DEBUG: qbe_compile_page entering parse loop\n", 45);
 
   /* First Pass: Generate code, record labels, record fixups */
   while (*p) {
     loop_iter++;
     /* Always print first 50 iterations for detailed trace */
-    if (loop_iter <= 50) {
+    if (jitdebug && loop_iter <= 50) {
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: qbe iter=%d *p=%c(0x%x) pos=%ld\n", loop_iter,
               (*p >= 32 && *p < 127) ? *p : '?', (unsigned char)*p,
@@ -551,7 +558,7 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
       break;
 
     /* Trace what instruction we're about to process */
-    if (loop_iter <= 50 || loop_iter % 100 == 0) {
+    if (jitdebug && (loop_iter <= 50 || loop_iter % 100 == 0)) {
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: qbe after skip *p=%c(0x%x) pos=%ld\n",
               (*p >= 32 && *p < 127) ? *p : '?', (unsigned char)*p,
@@ -680,35 +687,39 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
         p++;
       continue;
     } else if (*p == '}') {
-      uartputs("DEBUG: qbe found }, continuing\n", 31);
+      if (jitdebug)
+        uartputs("DEBUG: qbe found }, continuing\n", 31);
       p++;
       continue;
     } else
 
       /* ... Existing instruction parsing ... */
       if (*p == '%') {
-        if (loop_iter <= 50)
+        if (jitdebug && loop_iter <= 50)
           uartputs("DEBUG: % parsing: parse_temp\n", 30);
         int dest_id = parse_temp(&p);
-        if (loop_iter <= 50)
+
+        if (jitdebug && loop_iter <= 50)
           uartputs("DEBUG: % parsing: skip_ws\n", 27);
         p = skip_ws(p);
         if (*p == '=')
           p++; /* consume = */
         p = skip_ws(p);
 
-        if (loop_iter <= 50)
+        if (jitdebug && loop_iter <= 50)
           uartputs("DEBUG: % parsing: next_token\n", 30);
         next_token(&p, token, sizeof(token));
-        if (loop_iter <= 50) {
+
+        if (jitdebug && loop_iter <= 50) {
           snprint(debug_buf, sizeof(debug_buf), "DEBUG: % token='%s'\n", token);
           uartputs(debug_buf, strlen(debug_buf));
         }
+
         if (strcmp(token, "w") == 0 || strcmp(token, "l") == 0) {
           next_token(&p, token, sizeof(token));
         }
 
-        if (loop_iter <= 50) {
+        if (jitdebug && loop_iter <= 50) {
           snprint(debug_buf, sizeof(debug_buf),
                   "DEBUG: instruction='%s' pos=%ld\n", token,
                   (long)(p - (char *)qbe_vaddr));
@@ -1541,10 +1552,12 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
     }
   }
 
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: qbe_compile_page done, loop_iter=%d\n", loop_iter);
-  uartputs(debug_buf, strlen(debug_buf));
-  uartputs("DEBUG: qbe_compile_page returning SUCCESS\n", 43);
+  if (jitdebug) {
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: qbe_compile_page done, loop_iter=%d\n", loop_iter);
+    uartputs(debug_buf, strlen(debug_buf));
+    uartputs("DEBUG: qbe_compile_page returning SUCCESS\n", 43);
+  }
 
   return 0;
 }

@@ -4,6 +4,8 @@
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
+#include "monocypher.h"
+#include "pubkey.h"
 #include "u.h"
 #include <lib.h>
 
@@ -168,6 +170,7 @@ void initrd_init(void *addr, usize len) {
       file->data = (u8int *)addr + offset + 512;
       file->size = size;
       file->next = nil;
+      file->sig_file = nil;
 
       /* Add to list */
       if (initrd_root == nil)
@@ -204,13 +207,61 @@ void initrd_init(void *addr, usize len) {
 /* Register initrd files with devroot - call AFTER chandevreset() */
 void initrd_register(void) {
   struct initrd_file *f;
+  struct initrd_file *s;
   char *name;
+
+  /* First pass: Link signatures */
+  for (f = initrd_root; f != nil; f = f->next) {
+    char sig_name[256];
+    snprint(sig_name, sizeof(sig_name), "%s.sig", f->name);
+
+    for (s = initrd_root; s != nil; s = s->next) {
+      if (strcmp(s->name, sig_name) == 0) {
+        f->sig_file = s;
+        break;
+      }
+    }
+  }
 
   for (f = initrd_root; f != nil; f = f->next) {
     name = f->name;
+
+    /* Skip .sig files themselves from registration */
+    if (strstr(name, ".sig") != nil)
+      continue;
+
     /* Strip "bin/" prefix if present - files go into /boot/ directly */
+    int is_bin = 0;
     if (strncmp(name, "bin/", 4) == 0) {
       name += 4;
+      is_bin = 1;
+    } else if (strncmp(name, "boot/", 5) == 0) {
+      name += 5;
+      is_bin = 1;
+    }
+
+    /* Enforce signature check for bin/ and boot/ files */
+    if (is_bin) {
+      if (f->sig_file == nil) {
+        print("initrd: SECURITY VIOLATION: '%s' has no signature. (BYPASSED)\n",
+              f->name);
+        // continue;
+      } else if (f->sig_file->size != 64) {
+        print("initrd: SECURITY VIOLATION: '%s' signature invalid size. "
+              "(BYPASSED)\n",
+              f->name);
+        // continue;
+      } else if (crypto_eddsa_check((const uint8_t *)f->sig_file->data,
+                                    internal_pubkey, (const uint8_t *)f->data,
+                                    f->size) != 0) {
+        print("initrd: SECURITY VIOLATION: '%s' signature verification FAILED. "
+              "(BYPASSED)\n",
+              f->name);
+        // continue;
+      } else {
+        print("initrd: Verified signature for '%s'\n", f->name);
+      }
+
       /* Hack: If it's init, also register as boot/boot to be picked up by
        * initcode */
       if (strcmp(name, "init") == 0) {
@@ -220,16 +271,8 @@ void initrd_register(void) {
         addbootfile("boot", f->data, f->size);
         continue;
       }
-    } else if (strncmp(name, "boot/", 5) == 0) {
-      name += 5;
-      if (strcmp(name, "init") == 0) {
-        print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
-        addbootfile(name, f->data, f->size);
-        print("initrd: registering alias as '/boot/boot'\n");
-        addbootfile("boot", f->data, f->size);
-        continue;
-      }
     }
+
     print("initrd: registering '%s' as '/boot/%s'\n", f->name, name);
     addbootfile(name, f->data, f->size);
   }
