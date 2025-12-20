@@ -242,18 +242,27 @@ Proof.
   - repeat rewrite secure_wipe_preserves_size. assumption.
   - intro i.
     destruct (lt_dec i (length (secure_wipe_7pass m1))) as [Hlt | Hnlt].
-    + rewrite secure_wipe_preserves_size in Hlt.
+    + assert (Hrw: length (secure_wipe_7pass m1) = length m1).
+      { apply secure_wipe_preserves_size. }
+      rewrite Hrw in Hlt.
       rewrite secure_wipe_final_zeros by assumption.
-      (* Need to show i < length (secure_wipe_7pass m2) *)
       rewrite secure_wipe_final_zeros.
       * reflexivity.
-      * rewrite <- Hlen. assumption.
-    + assert (HNone1: nth_error (secure_wipe_7pass m1) i = None).
-      { apply nth_error_None. lia. }
+      * replace (length (secure_wipe_7pass m2)) with (length m2).
+        { rewrite <- Hlen. assumption. }
+        symmetry. apply secure_wipe_preserves_size.
+    + assert (Hrw: length (secure_wipe_7pass m1) = length m1).
+      { apply secure_wipe_preserves_size. }
+      rewrite Hrw in Hnlt.
+      assert (offset_bound: length m1 <= i) by lia.
+      assert (HNone1: nth_error (secure_wipe_7pass m1) i = None).
+      { apply nth_error_None. rewrite secure_wipe_preserves_size. assumption. }
       rewrite HNone1.
       symmetry.
       apply nth_error_None.
-      repeat rewrite secure_wipe_preserves_size. rewrite <- Hlen. lia.
+      rewrite secure_wipe_preserves_size.
+      rewrite <- Hlen.
+      assumption.
 Qed.
 
 (** After wipe, cannot distinguish what original data was *)
@@ -329,26 +338,26 @@ Theorem secure_wipe_idempotent : forall m,
   secure_wipe_7pass (secure_wipe_7pass m) = secure_wipe_7pass m.
 Proof.
   intros m.
-  apply functional_extensionality. intros offset.
-  (* We can't use functional extensionality directly on lists this easily without index equality *)
+
   (* Better strategy: prove they are equal list by length AND elements *)
   
-  apply nth_error_eq. intro i.
-  destruct (lt_dec i (length (secure_wipe_7pass m))) as [Hlt | Hnlt].
-  - (* Both are in bounds *)
-    rewrite secure_wipe_final_zeros by assumption.
-    (* For the LHS: secure_wipe_7pass (secure_wipe_7pass m) *)
-    rewrite secure_wipe_final_zeros.
-    + reflexivity.
-    + rewrite secure_wipe_preserves_size. assumption.
-  - (* Out of bounds *)
-    rewrite nth_error_None.
-    rewrite nth_error_None.
-    split; intro H; apply nth_error_None in H.
-    + rewrite secure_wipe_preserves_size. assumption.
-    + rewrite secure_wipe_preserves_size in H. assumption.
-    + rewrite secure_wipe_preserves_size in Hnlt. assumption.
-    + rewrite secure_wipe_preserves_size. assumption.
+  apply nth_error_eq.
+  + rewrite secure_wipe_preserves_size. rewrite secure_wipe_preserves_size. trivial.
+  + intro i.
+    destruct (lt_dec i (length (secure_wipe_7pass m))) as [Hlt | Hnlt].
+    - (* Both are in bounds *)
+      rewrite secure_wipe_final_zeros by assumption.
+      rewrite secure_wipe_final_zeros.
+      * reflexivity.
+      * assumption.
+    - (* Out of bounds *)
+      assert (Hlen: length (secure_wipe_7pass m) = length m) by apply secure_wipe_preserves_size.
+      rewrite Hlen in Hnlt.
+      (* If i >= length m, then secure_wipe_7pass m has None at i *)
+      rewrite nth_error_None_iff in *.
+      rewrite Hlen in *.
+      rewrite secure_wipe_preserves_size.
+      apply nth_error_None. assumption.
 Qed.
 
 (** Wipe time is linear in memory size *)

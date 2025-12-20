@@ -297,14 +297,17 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   char debug_buf[128];
   il_to_fruity_error_t err;
 
+  print("CLR: clr_compile_method ENTERED method=%s\n", method->name);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr_compile_method ENTER method=%s\n", method->name);
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Step 1: IL → Fruity IR */
+  print("CLR: Step 1 - calling il_to_fruity_convert_method\n");
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Step 1: IL->Fruity\n");
   uartputs(debug_buf, strlen(debug_buf));
   fruity_function_t *func = il_to_fruity_convert_method(assembly, method, &err);
+  print("CLR: il_to_fruity_convert_method returned %p\n", func);
   if (func == nil) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr IL->Fruity FAILED err=%d\n", err);
@@ -317,6 +320,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Wrap in a temporary module for fruity_to_qbe */
+  print("CLR: Wrapping function in temp module\n");
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr wrapping in temp module\n");
   uartputs(debug_buf, strlen(debug_buf));
   fruity_module_t temp_mod;
@@ -330,12 +334,14 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   char errbuf[128];
 
   /* Pass 1: Query required size */
+  print("CLR: Step 2a - Querying QBE IL size\n");
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr Step 2a: Querying QBE IL size\n");
   uartputs(debug_buf, strlen(debug_buf));
   ulong qbe_il_size = 0;
   int qbe_result =
       fruity_to_qbe(&temp_mod, 0, &qbe_il_size, errbuf, sizeof(errbuf));
+  print("CLR: fruity_to_qbe returned %d, size=%ld\n", qbe_result, qbe_il_size);
   if (qbe_result < 0 || qbe_il_size == 0) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr fruity_to_qbe size query FAILED: %s\n", errbuf);
@@ -350,6 +356,8 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Pass 2: Allocate Pebble black token with exact size */
+  print("CLR: Step 2b - Allocating Pebble black token (%ld bytes)\n",
+        qbe_il_size);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr Step 2b: Allocating Pebble black token (%lud bytes)\n",
           qbe_il_size);
@@ -364,6 +372,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
     fruity_free_function(func);
     return nil;
   }
+  print("CLR: pebble_black_alloc succeeded\n");
 
   void *qbe_page = pebble_get_black_addr(&qbe_cap);
   if (qbe_page == nil) {
@@ -375,16 +384,19 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
     fruity_free_function(func);
     return nil;
   }
+  print("CLR: qbe_page=%p\n", qbe_page);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr allocated qbe_page=%p\n",
           qbe_page);
   uartputs(debug_buf, strlen(debug_buf));
 
   /* Pass 3: Fill the page with actual QBE IL */
+  print("CLR: Step 2c - Generating QBE IL to page\n");
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr Step 2c: Generating QBE IL to page\n");
   uartputs(debug_buf, strlen(debug_buf));
   qbe_result = fruity_to_qbe(&temp_mod, (uintptr)PADDR(qbe_page), &qbe_il_size,
                              errbuf, sizeof(errbuf));
+  print("CLR: fruity_to_qbe (gen) returned %d\n", qbe_result);
   if (qbe_result < 0) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr fruity_to_qbe FAILED: %s\n", errbuf);
@@ -405,6 +417,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   uartputs("DEBUG: End of QBE IL\n", 21);
 
   /* Step 3: QBE text → x86-64 binary */
+  print("CLR: Step 3 - QBE to x86-64\n");
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr Step 3: QBE->x86-64, allocating code page\n");
   uartputs(debug_buf, strlen(debug_buf));
@@ -415,10 +428,12 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
     fruity_free_function(func);
     return nil;
   }
+  print("CLR: code_page=%p\n", code_page);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr allocated code_page=%p\n",
           code_page);
   uartputs(debug_buf, strlen(debug_buf));
 
+  print("CLR: calling qbe_compile_page\n");
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: clr calling qbe_compile_page\n");
   uartputs(debug_buf, strlen(debug_buf));
@@ -426,6 +441,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   /* qbe_compile_page expects physical addresses */
   int result = qbe_compile_page(PADDR(qbe_page), PADDR(code_page), qbe_errbuf,
                                 sizeof(qbe_errbuf));
+  print("CLR: qbe_compile_page returned %d\n", result);
   if (result < 0) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: clr qbe_compile_page FAILED: %s\n", qbe_errbuf);
@@ -534,15 +550,18 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr compiled %ld bytes at %p\n",
           code_size, code);
   uartputs(debug_buf, strlen(debug_buf));
+  print("CLR: compiled entry point, code size=%ld at %p\n", code_size, code);
 
   /* Execute! */
   /* Cast to function pointer and call */
   /* For init: void Main() or int Main() */
+  print("CLR: about to execute Main()\n");
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr about to execute Main()\n");
   uartputs(debug_buf, strlen(debug_buf));
   typedef int (*main_func_t)(void);
   main_func_t main_fn = (main_func_t)code;
 
+  print("CLR: calling main_fn at %p\n", main_fn);
   int result = main_fn();
 
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Main() returned %d\n",

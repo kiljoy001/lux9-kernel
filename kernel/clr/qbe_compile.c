@@ -14,6 +14,15 @@
 
 extern int jitdebug;
 
+/*
+ * die_ - Error handler for QBE core library
+ * Required to satisfy undefined references from qbe.a
+ */
+void die_(char *file, char *s, ...) {
+  panic("QBE error in %s: %s", file, s);
+  __builtin_unreachable();
+}
+
 /* Symbol table for labels */
 typedef struct Symbol {
   char name[32];
@@ -475,6 +484,7 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   extern void uartputs(char *, int);
   char debug_buf[128];
 
+  print("QBE: qbe_compile_page ENTERED qbe=%#p asm=%#p\n", qbe_page, asm_page);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: qbe_compile_page ENTERED qbe=%#p asm=%#p\n", qbe_page,
           asm_page);
@@ -490,6 +500,7 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   /* Convert physical addresses to kernel virtual */
   qbe_vaddr = KADDR(qbe_page);
   asm_vaddr = KADDR(asm_page);
+  print("QBE: KADDR qbe=%p asm=%p\n", qbe_vaddr, asm_vaddr);
 
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: qbe_compile_page KADDR qbe=%p asm=%p\n", qbe_vaddr,
@@ -500,12 +511,17 @@ int qbe_compile_page(uintptr qbe_page, uintptr asm_page, char *errorbuf,
   p = (char *)qbe_vaddr;
   code = (u8int *)asm_vaddr;
 
+  /* Print first 40 chars of QBE IL */
+  print("QBE: First 40 chars of IL: %.40s\n", p);
+
+  print("QBE: zeroing output\n");
   if (jitdebug)
     uartputs("DEBUG: qbe_compile_page zeroing output\n", 40);
 
   /* Zero output */
   memset(asm_vaddr, 0, BY2PG);
 
+  print("QBE: emitting prologue\n");
   if (jitdebug)
     uartputs("DEBUG: qbe_compile_page emitting prologue\n", 43);
 

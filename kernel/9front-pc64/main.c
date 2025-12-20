@@ -256,10 +256,14 @@ void main_after_cr3(void) {
     i8237alloc();
   uartputs("main_after_cr3: calling pcicfginit\n", 37);
   pcicfginit();
+  print("DEBUG: pcicfginit RETURNED\n");
   uartputs("main_after_cr3: calling bootscreeninit\n", 41);
   bootscreeninit();
-  uartputs("main_after_cr3: calling fbconsoleinit\n", 40);
-  fbconsoleinit(); /* Initialize framebuffer console */
+  print("DEBUG: bootscreeninit RETURNED\n");
+  uartputs("main_after_cr3: calling fbconsoleinit ENTER\n", 46);
+  fbconsoleinit();
+  print("DEBUG: fbconsoleinit RETURNED\n");
+  uartputs("main_after_cr3: fbconsoleinit RETURNED\n", 40);
   uartputs("main_after_cr3: before cpuidentify check\n", 45);
   if (cpuidentify_done == 0)
     cpuidentify(); /* Initialize CPU data structures before cpuidprint() */

@@ -640,8 +640,10 @@ Proof.
            ++ unfold CanWrite, CanRead in *. repeat rewrite update_page_hit in *. simpl in *.
               destruct HW as [[Ho_w _]|[_ Hs_w]]; try discriminate Hs_w.
               destruct HR as [HR_W|[HR_Sh|HR_In]].
-              ** destruct HR_W as [[Ho_r _]|[_ Hs_r]]; try discriminate Hs_r.
-                 congruence.
+              ** destruct HR_W as [[Ho_r _]|[_ Hs_r]].
+                 { repeat rewrite update_page_hit in *. simpl in *.
+                   rewrite Ho_w in Ho_r. injection Ho_r. intro. subst. reflexivity. }
+                 { repeat rewrite update_page_hit in Hs_r. discriminate Hs_r. }
               ** destruct HR_Sh as [Hs_r _]. discriminate Hs_r.
               ** destruct HR_In.
            ++ unfold CanWrite in HW.
@@ -678,7 +680,10 @@ Proof.
         -- unfold CanWrite, CanRead in *. repeat rewrite update_page_hit in *. simpl in *.
            destruct HW as [[_ Hs_w]|[Hm_w _]]; try discriminate Hs_w.
            destruct HR as [HR_W|[HR_Sh|HR_In]].
-           ++ destruct HR_W as [[_ Hs_r]|[Hm_r _]]; try discriminate Hs_r. congruence.
+           ++ destruct HR_W as [[_ Hs_r]|[Hm_r _]].
+              { repeat rewrite update_page_hit in Hs_r. discriminate Hs_r. }
+              { repeat rewrite update_page_hit in *. simpl in *.
+                rewrite Hm_w in Hm_r. injection Hm_r. intro. subst. reflexivity. }
            ++ destruct HR_Sh as [Hs_r _]. discriminate Hs_r.
            ++ destruct HR_In.
         -- unfold CanWrite in HW.
@@ -718,7 +723,10 @@ Proof.
         -- unfold CanWrite, CanRead in *. repeat rewrite update_page_hit in *. simpl in *.
            destruct HW as [[Ho_w _]|[_ Hs_w]]; try discriminate Hs_w.
            destruct HR as [HR_W|[HR_Sh|HR_In]].
-           ++ destruct HR_W as [[Ho_r _]|[_ Hs_r]]; try discriminate Hs_r. congruence.
+           ++ destruct HR_W as [[Ho_r _]|[_ Hs_r]].
+              { repeat rewrite update_page_hit in *. simpl in *.
+                rewrite Ho_w in Ho_r. injection Ho_r. intro. subst. reflexivity. }
+              { repeat rewrite update_page_hit in Hs_r. discriminate Hs_r. }
            ++ destruct HR_Sh as [Hs_r _]. discriminate Hs_r.
            ++ destruct HR_In.
         -- unfold CanWrite in HW.
@@ -755,7 +763,10 @@ Proof.
         -- unfold CanWrite, CanRead in *. repeat rewrite update_page_hit in *. simpl in *.
            destruct HW as [[Ho_w _]|[_ Hs_w]]; try discriminate Hs_w.
            destruct HR as [HR_W|[HR_Sh|HR_In]].
-           ++ destruct HR_W as [[Ho_r _]|[_ Hs_r]]; try discriminate Hs_r. congruence.
+           ++ destruct HR_W as [[Ho_r _]|[_ Hs_r]].
+              { repeat rewrite update_page_hit in *. simpl in *.
+                rewrite Ho_w in Ho_r. injection Ho_r. intro. subst. reflexivity. }
+              { repeat rewrite update_page_hit in Hs_r. discriminate Hs_r. }
            ++ destruct HR_Sh as [Hs_r _]. discriminate Hs_r.
            ++ destruct HR_In.
         -- unfold CanWrite in HW.
