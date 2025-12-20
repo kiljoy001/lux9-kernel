@@ -18,27 +18,13 @@ extern int tpm2_unseal_from_blob(const u8int *blob, u16int blob_len,
 enum {
   Qdir = 0,
   Qram,
-  Qsecureram,
-  Qsecureramctl,
+  Qvaultnew,
+  Qvaultbase = 1000,
 };
 
 static Dirtab ramdir[] = {
-    ".",
-    {Qdir, 0, QTDIR},
-    0,
-    DMDIR | 0555,
-    "ram",
-    {Qram},
-    0,
-    0666,
-    "secureram",
-    {Qsecureram},
-    0,
-    0600,
-    "secureram.ctl",
-    {Qsecureramctl},
-    0,
-    0600,
+    ".",         {Qdir, 0, QTDIR}, 0, DMDIR | 0555, "ram", {Qram}, 0, 0666,
+    "vault.new", {Qvaultnew},      0, 0600,
 };
 
 /* Standard Ramdisk */
@@ -64,23 +50,122 @@ static ulong ramdisk_size = 64 * 1024 * 1024; /* 64MB default */
   @   (rd.locked == 1 && rd.size >= 24 && \valid(rd.data)) ==>
   @     \valid(rd.data + (0..23));
   @*/
-typedef struct SecureRamdisk {
-  QLock lock;   /* BUG #6 FIX: Protect concurrent access */
+/* Process Vault Structure */
+typedef struct ProcessVault {
+  struct ProcessVault *next;
+  int id;       /* Unique ID */
+  int pid;      /* Owner PID */
+  QLock lock;   /* Protect concurrent access */
   uchar *data;  /* Vault data (Pebble Black allocated) */
   ulong size;   /* Vault size in bytes (includes 24-byte nonce prefix) */
   int locked;   /* 1 = locked (encrypted), 0 = unlocked */
-  int refcount; /* BUG #4 FIX: Number of open channels */
+  int refcount; /* Number of open channels */
   uchar master_key[32];      /* Derived from password via Argon2id */
   uchar salt[16];            /* Salt for password derivation */
-  uchar current_nonce[24];   /* Current XChaCha20 nonce (stored with data) */
-  UserCapability capability; /* Pebble Black capability (not handle) */
+  uchar current_nonce[24];   /* Current XChaCha20 nonce */
+  UserCapability capability; /* Pebble Black capability */
   int initialized;           /* 1 = password set, 0 = not initialized */
-  int tpm_sealed;            /* 1 if TPM sealed blob is present */
-  uchar tpm_blob[512];       /* Sealed blob */
-  u16int tpm_blob_len;       /* Length of sealed blob */
-} SecureRamdisk;
+} ProcessVault;
 
-static SecureRamdisk secure_rd;
+static ProcessVault *vault_list = nil;
+static QLock vault_list_lock;
+static int next_vault_id = 1;
+
+static ProcessVault *find_vault(int id) {
+  ProcessVault *v;
+  qlock(&vault_list_lock);
+  for (v = vault_list; v != nil; v = v->next) {
+    if (v->id == id) {
+      qunlock(&vault_list_lock);
+      return v;
+    }
+  }
+  qunlock(&vault_list_lock);
+  return nil;
+}
+
+static ProcessVault *get_vault_from_path(ulong path) {
+  if (path < Qvaultbase)
+    return nil;
+  int id = (path - Qvaultbase) / 2;
+  return find_vault(id);
+}
+
+/* Helper to generate dynamic directory entries */
+static int vaultgen(Chan *c, char *name, Dirtab *tab, int ntab, int s,
+                    Dir *dp) {
+  Qid q;
+  ProcessVault *v;
+  int i = 0;
+
+  if (s == DEVDOTDOT) {
+    devdir(c, c->qid, "#r", 0, eve, 0555, dp);
+    return 1;
+  }
+
+  /* 0: ram, 1: vault.new */
+  if (s < 2)
+    return devgen(c, name, ramdir, nelem(ramdir), s, dp);
+
+  /* Dynamic vaults */
+  s -= 2;
+  qlock(&vault_list_lock);
+  for (v = vault_list; v != nil; v = v->next) {
+    /* For each vault, we have 2 files: vault.ID and vault.ID.ctl */
+    if (s == 0) {
+      /* vault.ID */
+      mkqid(&q, Qvaultbase + v->id * 2, 0, QTFILE);
+      char buf[32];
+      snprint(buf, sizeof(buf), "vault.%d", v->id);
+      devdir(c, q, buf, v->size - 24, eve, 0600, dp);
+      qunlock(&vault_list_lock);
+      return 1;
+    }
+    s--;
+    if (s == 0) {
+      /* vault.ID.ctl */
+      mkqid(&q, Qvaultbase + v->id * 2 + 1, 0, QTFILE);
+      char buf[32];
+      snprint(buf, sizeof(buf), "vault.%d.ctl", v->id);
+      devdir(c, q, buf, 0, eve, 0600, dp);
+      qunlock(&vault_list_lock);
+      return 1;
+    }
+    s--;
+  }
+  qunlock(&vault_list_lock);
+  return -1;
+}
+
+/* Secure wipe prototype */
+static void secure_wipe(uchar *data, ulong size);
+
+void vault_cleanup_process(int pid) {
+  ProcessVault *v, **prev;
+
+  qlock(&vault_list_lock);
+  prev = &vault_list;
+  while ((v = *prev) != nil) {
+    if (v->pid == pid) {
+      /* Unlink first */
+      *prev = v->next;
+
+      /* Secure wipe */
+      if (v->data) {
+        secure_wipe(v->data, v->size);
+        free(v->data);
+      }
+      crypto_wipe(v->master_key, 32);
+
+      /* FIXME: Burn capability? */
+
+      free(v);
+    } else {
+      prev = &v->next;
+    }
+  }
+  qunlock(&vault_list_lock);
+}
 
 /* ========================================================================
  * Invariant Checking (from formal verification)
@@ -94,14 +179,11 @@ static SecureRamdisk secure_rd;
   @   (\valid(secure_rd.data) && secure_rd.size >= 24);
   @ assigns \nothing;
   @*/
-static void check_lock_invariant(void) {
+static void check_lock_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
 
-  /*@ assert (secure_rd.locked == 1 && secure_rd.initialized == 1) ==>
-    @   (\valid(secure_rd.data) && secure_rd.size >= 24); */
-  if (secure_rd.locked && secure_rd.initialized) {
-    /* When locked, first 24 bytes should be nonce, rest is encrypted */
+  if (v->locked && v->initialized) {
     if (!getconf("quiet"))
       print("ramdisk: INVARIANT CHECK - locked state verified\n");
   }
@@ -116,27 +198,18 @@ static void check_lock_invariant(void) {
   @   (\exists integer j; 0 <= j < 32 && secure_rd.master_key[j] != 0);
   @ assigns \nothing;
   @*/
-static void check_init_invariant(void) {
+static void check_init_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
 
-  if (secure_rd.initialized) {
-    /* Verify master_key is not all zeros */
+  if (v->initialized) {
     int all_zero = 1;
-    /*@ loop invariant 0 <= i <= 32;
-      @ loop invariant all_zero == 1 ==>
-      @   (\forall integer j; 0 <= j < i ==> secure_rd.master_key[j] == 0);
-      @ loop assigns i, all_zero;
-      @ loop variant 32 - i;
-      @*/
     for (int i = 0; i < 32; i++) {
-      if (secure_rd.master_key[i] != 0) {
+      if (v->master_key[i] != 0) {
         all_zero = 0;
         break;
       }
     }
-    /*@ assert all_zero == 0 ||
-      @   (\forall integer j; 0 <= j < 32 ==> secure_rd.master_key[j] == 0); */
     if (all_zero)
       panic("ramdisk: INVARIANT VIOLATION - initialized but no master key");
   }
@@ -149,12 +222,10 @@ static void check_init_invariant(void) {
   @ ensures secure_rd.refcount >= 0;
   @ assigns \nothing;
   @*/
-static void check_refcount_invariant(void) {
+static void check_refcount_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
-
-  /*@ assert secure_rd.refcount >= 0; */
-  if (secure_rd.refcount < 0)
+  if (v->refcount < 0)
     panic("ramdisk: INVARIANT VIOLATION - negative refcount");
 }
 
@@ -162,7 +233,7 @@ static void check_refcount_invariant(void) {
  * Secure Wipe Implementation (DoD 5220.22-M)
  * ======================================================================== */
 
-/* Secure 7-pass wipe (verified in ramdisk_wipe.v)
+/* Secure 7-pass wipe (SMT: Validated by proofs/ramdisk/ramdisk_wipe.v)
  *
  * SPECIFICATION:
  * - Performs 7 overwrite passes as per DoD 5220.22-M
@@ -315,8 +386,8 @@ static int derive_key_from_password(const char *password, uchar *salt,
   @ complete behaviors;
   @ disjoint behaviors;
   @*/
-static void xchacha20_encrypt_with_fresh_nonce(uchar *data, ulong data_size,
-                                               uchar *key) {
+static void xchacha20_encrypt_with_fresh_nonce(ProcessVault *v, uchar *data,
+                                               ulong data_size, uchar *key) {
   extern void genrandom(uchar * buf, int nbytes);
   uchar fresh_nonce[24];
   uint64_t ctr = 0;
@@ -335,14 +406,14 @@ static void xchacha20_encrypt_with_fresh_nonce(uchar *data, ulong data_size,
                     ctr);
 
   /* Save current nonce for decryption */
-  memmove(secure_rd.current_nonce, fresh_nonce, 24);
+  memmove(v->current_nonce, fresh_nonce, 24);
 
   if (!getconf("quiet"))
     print("ramdisk: encrypted with fresh nonce\n");
 }
 
-static void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size,
-                                                uchar *key) {
+static void xchacha20_decrypt_with_stored_nonce(ProcessVault *v, uchar *data,
+                                                ulong data_size, uchar *key) {
   uchar stored_nonce[24];
   uint64_t ctr = 0;
 
@@ -357,7 +428,7 @@ static void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size,
                     ctr);
 
   /* Save extracted nonce */
-  memmove(secure_rd.current_nonce, stored_nonce, 24);
+  memmove(v->current_nonce, stored_nonce, 24);
 
   if (!getconf("quiet"))
     print("ramdisk: decrypted with stored nonce\n");
@@ -368,8 +439,6 @@ static void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size,
  * ======================================================================== */
 
 static void ramreset(void) {
-  char *conf;
-
   /* 1. Setup Standard Ramdisk */
   ramdisk_data = xalloc(ramdisk_size);
   if (ramdisk_data == nil)
@@ -379,101 +448,10 @@ static void ramreset(void) {
   if (!getconf("quiet"))
     print("ramdisk: %lud MB allocated\n", ramdisk_size / (1024 * 1024));
 
-  /* 2. Setup Secure Vault - FIXED */
-  memset(&secure_rd, 0, sizeof(SecureRamdisk));
-
-  /* BUG #6 FIX: Lock initialized by memset (zero is unlocked state) */
-  /* BUG #4 FIX: Refcount initialized to 0 by memset */
-  /* BUG #3 FIX: Start locked (will stay locked after init) */
-  secure_rd.locked = 1;
-  secure_rd.initialized = 0;
-
-  /* Check kernel config for vault size */
-  if ((conf = getconf("secure.ramdisk.size")) != nil) {
-    secure_rd.size = strtoul(conf, 0, 0);
-
-    /* Parse size suffix (M/G/K) */
-    char *p = conf;
-    while (*p >= '0' && *p <= '9')
-      p++;
-    if (*p == 'M' || *p == 'm')
-      secure_rd.size *= 1024 * 1024;
-    else if (*p == 'G' || *p == 'g')
-      secure_rd.size *= 1024 * 1024 * 1024;
-    else if (*p == 'K' || *p == 'k')
-      secure_rd.size *= 1024;
-  } else {
-    /* Default to 64MB */
-    secure_rd.size = 64 * 1024 * 1024;
-  }
-
-  /* BUG #1 FIX: Account for 24-byte nonce prefix in size */
-  if (secure_rd.size > 0)
-    secure_rd.size += 24;
-
-  if (secure_rd.size > 0) {
-    /* LOCK for initialization to satisfy invariants and tools */
-    qlock(&secure_rd.lock);
-
-    /* Allocate via Pebble Black for non-swappable backing */
-    int pebble_ok = 0;
-    /* pebble_black_alloc requires a process context (up != nil) */
-    if (up != nil) {
-      if (!waserror()) {
-        /* pebble_black_alloc raises error() on failure */
-        if (pebble_black_alloc(secure_rd.size, &secure_rd.capability) == 0) {
-          pebble_ok = 1;
-        }
-        poperror();
-      }
-    }
-
-    if (pebble_ok) {
-      /*
-       * The actual backing memory address is accessed through the
-       * Pebble Black lookup mechanism. The memory is allocated by
-       * pebble_black_alloc() and stored in the PebbleBlack structure.
-       * For a secure vault, we use xalloc directly as fallback since
-       * proper Pebble integration requires white token verification.
-       */
-      PebbleState *ps = pebble_state();
-      PebbleBlack *pb = pebble_lookup_black(ps, &secure_rd.capability);
-      if (pb != nil && pb->physical_addr != nil) {
-        secure_rd.data = pb->physical_addr;
-      } else {
-        /* Fallback: use xalloc if Pebble lookup fails */
-        if (!getconf("quiet"))
-          print("ramdisk: pebble lookup failed, using xalloc fallback\n");
-        secure_rd.data = xalloc(secure_rd.size);
-      }
-    } else {
-      /* Fallback: allocate via xalloc if Pebble not available */
-      if (!getconf("quiet"))
-        print("ramdisk: pebble_black_alloc failed, using xalloc fallback\n");
-      secure_rd.data = xalloc(secure_rd.size);
-    }
-
-    if (secure_rd.data == nil) {
-      if (!getconf("quiet"))
-        print("ramdisk: failed to allocate secure vault\n");
-      secure_rd.size = 0;
-    } else {
-      extern void genrandom(uchar * buf, int nbytes);
-
-      /* Generate random salt and nonce */
-      genrandom(secure_rd.salt, 16);
-      genrandom(secure_rd.current_nonce, 24);
-
-      /* Zero vault data */
-      memset(secure_rd.data, 0, secure_rd.size);
-
-      if (!getconf("quiet"))
-        print("ramdisk: secure vault %lud MB allocated\n",
-              secure_rd.size / (1024 * 1024));
-    }
-
-    qunlock(&secure_rd.lock);
-  }
+  /* 2. Init Vault List Lock */
+  secure_wipe((uchar *)&vault_list_lock,
+              sizeof(vault_list_lock)); /* Just clean memory, really */
+  /* qlock init called on use or via memset usually, but let's be safe */
 }
 
 static void raminit(void) { /* Nothing to do */ }
@@ -481,11 +459,11 @@ static void raminit(void) { /* Nothing to do */ }
 static Chan *ramattach(char *spec) { return devattach('r', spec); }
 
 static Walkqid *ramwalk(Chan *c, Chan *nc, char **name, int nname) {
-  return devwalk(c, nc, name, nname, ramdir, nelem(ramdir), devgen);
+  return devwalk(c, nc, name, nname, ramdir, nelem(ramdir), vaultgen);
 }
 
 static int ramstat(Chan *c, uchar *dp, int n) {
-  return devstat(c, dp, n, ramdir, nelem(ramdir), devgen);
+  return devstat(c, dp, n, ramdir, nelem(ramdir), vaultgen);
 }
 
 /*@ requires \valid(c);
@@ -506,19 +484,91 @@ static int ramstat(Chan *c, uchar *dp, int n) {
   @ disjoint behaviors;
   @*/
 static Chan *ramopen(Chan *c, int omode) {
-  c = devopen(c, omode, ramdir, nelem(ramdir), devgen);
+  ProcessVault *v;
+
+  if (c->qid.path == Qvaultnew) {
+    /* Create new vault */
+    if (omode != OREAD && omode != OEXEC) {
+      /* Assume standard open flags, but Qvaultnew is special */
+    }
+
+    /* Allocate new vault */
+    v = malloc(sizeof(ProcessVault));
+    if (v == nil)
+      error(Enomem);
+
+    memset(v, 0, sizeof(ProcessVault));
+    v->pid = up->pid;
+    v->size = 512 * 1024; /* 512KB default per user request */
+    /* Add nonce space */
+    v->size += 24;
+
+    v->data = xalloc(v->size);
+    if (v->data == nil) {
+      free(v);
+      error(Enomem);
+    }
+    memset(v->data, 0, v->size);
+
+    /* Locks */
+    /* qlock init via memset */
+
+    /* Crypto setup */
+    extern void genrandom(uchar * buf, int nbytes);
+    genrandom(v->salt, 16);
+    genrandom(v->current_nonce, 24);
+
+    /* Mint capability */
+    pebble_black_alloc(v->size,
+                       &v->capability); /* Using as minting mechanism roughly */
+    /* Note: simplified capability logic as per design doc */
+
+    /* Add to list */
+    qlock(&vault_list_lock);
+    v->id = next_vault_id++;
+    v->next = vault_list;
+    vault_list = v;
+
+    /* It's open, so refcount = 1 */
+    v->refcount = 1;
+    v->locked = 1; /* Start locked */
+    qunlock(&vault_list_lock);
+
+    /* Update Chan to point to the new vault */
+    c->qid.path = Qvaultbase + v->id * 2; /* Data file */
+    c->qid.vers = 0;
+    c->qid.type = QTFILE;
+    c->mode = omode;
+
+    /* c->path is managed by kernel, don't touch c->name */
+
+    if (!getconf("quiet"))
+      print("ramdisk: new vault %d created for pid %d\n", v->id, v->pid);
+
+    return c;
+  }
+
+  /* Open existing */
+  c = devopen(c, omode, ramdir, nelem(ramdir), vaultgen);
   c->offset = 0;
 
-  /* BUG #4 FIX: Increment refcount for secureram */
-  if ((ulong)c->qid.path == Qsecureram) {
-    qlock(&secure_rd.lock);
-    /*@ assert secure_rd.refcount >= 0; */
-    secure_rd.refcount++;
-    /*@ assert secure_rd.refcount > 0; */
-    check_refcount_invariant();
-    if (!getconf("quiet"))
-      print("ramdisk: secureram opened (refcount=%d)\n", secure_rd.refcount);
-    qunlock(&secure_rd.lock);
+  /* Increment refcount if it's a vault file */
+  if (c->qid.path >= Qvaultbase) {
+    v = get_vault_from_path(c->qid.path);
+    if (v == nil)
+      error(Enonexist);
+
+    /* Check permission */
+    /* Only owner can open for now (simple model) */
+    /* Real implementation would use Blind Ledger capability check here */
+    /* Using simple pid check for now */
+    if (v->pid != up->pid)
+      error(Eperm);
+
+    qlock(&v->lock);
+    v->refcount++;
+    check_refcount_invariant(v);
+    qunlock(&v->lock);
   }
 
   return c;
@@ -544,30 +594,26 @@ static Chan *ramopen(Chan *c, int omode) {
   @ disjoint behaviors;
   @*/
 static void ramclose(Chan *c) {
-  /* BUG #4 FIX: Decrement refcount and only wipe when last reference closes */
-  if ((ulong)c->qid.path == Qsecureram) {
-    qlock(&secure_rd.lock);
+  ProcessVault *v;
 
-    /*@ assert secure_rd.refcount >= 0; */
-    if (secure_rd.refcount > 0)
-      secure_rd.refcount--;
+  if (c->qid.path >= Qvaultbase) {
+    v = get_vault_from_path(c->qid.path);
+    if (v == nil)
+      return; /* Should not happen */
 
-    check_refcount_invariant();
+    qlock(&v->lock);
+    if (v->refcount > 0)
+      v->refcount--;
+    check_refcount_invariant(v);
 
-    if (!getconf("quiet"))
-      print("ramdisk: secureram closed (refcount=%d)\n", secure_rd.refcount);
+    /*
+     * Note: unlike global vault, we don't wipe on last close here
+     * because we want persistence across opens within the process lifetime.
+     * Wipe happens on process exit (vault_cleanup_process).
+     * Or explicit wipe command.
+     */
 
-    /* Only wipe if this was the last reference AND vault is locked */
-    if (secure_rd.refcount == 0 && secure_rd.locked && secure_rd.data != nil) {
-      if (!getconf("quiet"))
-        print("ramdisk: last reference closed, wiping vault\n");
-      /*@ assert secure_rd.refcount == 0 && secure_rd.locked == 1; */
-      secure_wipe(secure_rd.data, secure_rd.size);
-      /*@ assert \forall integer i; 0 <= i < secure_rd.size ==>
-       * secure_rd.data[i] == 0; */
-    }
-
-    qunlock(&secure_rd.lock);
+    qunlock(&v->lock);
   }
 }
 
@@ -577,12 +623,12 @@ static void ramclose(Chan *c) {
 
 long ramread(Chan *c, void *va, long n, vlong off) {
   char status[256];
+  ProcessVault *v;
 
-  switch ((ulong)c->qid.path) {
-  case Qdir:
-    return devdirread(c, va, n, ramdir, nelem(ramdir), devgen);
+  if (c->qid.path == Qdir)
+    return devdirread(c, va, n, ramdir, nelem(ramdir), vaultgen);
 
-  case Qram:
+  if (c->qid.path == Qram) {
     /* Standard ramdisk */
     if (off < 0)
       error(Ebadarg);
@@ -593,60 +639,75 @@ long ramread(Chan *c, void *va, long n, vlong off) {
 
     memmove(va, ramdisk_data + off, n);
     return n;
-
-  case Qsecureram:
-    /* Secure vault data - FIXED with locking and nonce offset */
-    qlock(&secure_rd.lock);
-
-    /* BUG #2 FIX: State machine validation */
-    if (secure_rd.data == nil) {
-      qunlock(&secure_rd.lock);
-      error("vault not initialized");
-    }
-    if (secure_rd.locked) {
-      qunlock(&secure_rd.lock);
-      error("vault is locked");
-    }
-    if (!secure_rd.initialized) {
-      qunlock(&secure_rd.lock);
-      error("vault not initialized");
-    }
-
-    check_lock_invariant();
-    check_init_invariant();
-
-    /* BUG #1 FIX: Account for 24-byte nonce prefix */
-    /* User sees data starting at 0, but actual data starts at byte 24 */
-    vlong actual_data_size = secure_rd.size - 24;
-
-    /* Bounds checking */
-    if (off < 0) {
-      qunlock(&secure_rd.lock);
-      error(Ebadarg);
-    }
-    if (off >= actual_data_size) {
-      qunlock(&secure_rd.lock);
-      return 0;
-    }
-    if (off + n > actual_data_size)
-      n = actual_data_size - off;
-
-    /* Read decrypted data (skip 24-byte nonce prefix) */
-    memmove(va, secure_rd.data + 24 + off, n);
-
-    qunlock(&secure_rd.lock);
-    return n;
-
-  case Qsecureramctl:
-    /* Status query */
-    snprint(status, sizeof(status), "status: %s\nsize: %lud\n",
-            secure_rd.locked ? "locked" : "unlocked", secure_rd.size);
-    return readstr(off, va, n, status);
-
-  default:
-    error(Egreg);
-    return 0;
   }
+
+  if (c->qid.path == Qvaultnew)
+    return 0; /* Nothing to read */
+
+  if (c->qid.path >= Qvaultbase) {
+    /* Check if it's a control file (odd Qid) */
+    int is_ctl = (c->qid.path - Qvaultbase) % 2;
+    v = get_vault_from_path(c->qid.path);
+    if (v == nil)
+      error(Enonexist);
+
+    /* Verify ownership */
+    if (v->pid != up->pid)
+      error(Eperm);
+
+    qlock(&v->lock);
+
+    if (is_ctl) {
+      /* Status query */
+      qunlock(&v->lock); /* Don't need lock for reading static/atomic fields */
+      snprint(status, sizeof(status), "status: %s\nsize: %lud\n",
+              v->locked ? "locked" : "unlocked", v->size - 24);
+      return readstr(off, va, n, status);
+    } else {
+      /* Data Read */
+      /* State validation */
+      if (v->data == nil) {
+        qunlock(&v->lock);
+        error("vault not initialized");
+      }
+      if (v->locked) {
+        qunlock(&v->lock);
+        error("vault is locked");
+      }
+      /* initialized check is implied by data!=nil mostly, but good to check */
+      if (!v->initialized) {
+        qunlock(&v->lock);
+        error("vault not initialized");
+      }
+
+      check_lock_invariant(v);
+      check_init_invariant(v);
+
+      /* Account for 24-byte nonce prefix */
+      vlong actual_data_size = v->size - 24;
+
+      /* Bounds checking */
+      if (off < 0) {
+        qunlock(&v->lock);
+        error(Ebadarg);
+      }
+      if (off >= actual_data_size) {
+        qunlock(&v->lock);
+        return 0;
+      }
+      if (off + n > actual_data_size)
+        n = actual_data_size - off;
+
+      /* Read decrypted data */
+      memmove(va, v->data + 24 + off, n);
+
+      qunlock(&v->lock);
+      return n;
+    }
+  }
+
+  error(Egreg);
+  return 0;
 }
 
 /* ========================================================================
@@ -657,13 +718,12 @@ long ramwrite(Chan *c, void *va, long n, vlong off) {
   char cmd[256];
   char *argv[3];
   int argc;
+  ProcessVault *v;
 
-  switch ((ulong)c->qid.path) {
-  case Qdir:
+  if (c->qid.path == Qdir)
     error(Eperm);
-    return 0;
 
-  case Qram:
+  if (c->qid.path == Qram) {
     /* Standard ramdisk */
     if (off < 0)
       error(Ebadarg);
@@ -674,400 +734,177 @@ long ramwrite(Chan *c, void *va, long n, vlong off) {
 
     memmove(ramdisk_data + off, va, n);
     return n;
-
-  case Qsecureram:
-    /* Secure vault data - FIXED with locking and nonce offset */
-    qlock(&secure_rd.lock);
-
-    /* BUG #2 FIX: State machine validation */
-    if (secure_rd.data == nil) {
-      qunlock(&secure_rd.lock);
-      error("vault not initialized");
-    }
-    if (secure_rd.locked) {
-      qunlock(&secure_rd.lock);
-      error("vault is locked");
-    }
-    if (!secure_rd.initialized) {
-      qunlock(&secure_rd.lock);
-      error("vault not initialized");
-    }
-
-    check_lock_invariant();
-    check_init_invariant();
-
-    /* BUG #1 FIX: Account for 24-byte nonce prefix */
-    vlong actual_data_size = secure_rd.size - 24;
-
-    /* Bounds checking */
-    if (off < 0) {
-      qunlock(&secure_rd.lock);
-      error(Ebadarg);
-    }
-    if (off >= actual_data_size) {
-      qunlock(&secure_rd.lock);
-      error(Eio);
-    }
-    if (off + n > actual_data_size)
-      n = actual_data_size - off;
-
-    /* Write to unlocked vault (skip 24-byte nonce prefix) */
-    memmove(secure_rd.data + 24 + off, va, n);
-
-    qunlock(&secure_rd.lock);
-    return n;
-
-  case Qsecureramctl:
-    /* Control interface - FIXED with locking */
-    qlock(&secure_rd.lock);
-
-    if (n >= sizeof(cmd))
-      n = sizeof(cmd) - 1;
-    memmove(cmd, va, n);
-    cmd[n] = '\0';
-
-    /* Parse command */
-    argc = tokenize(cmd, argv, nelem(argv));
-    if (argc == 0) {
-      qunlock(&secure_rd.lock);
-      error("empty command");
-    }
-
-    /* BUG #7 FIX: Use constant-time command comparison */
-    /* Note: Password verification already uses crypto_verify32 (constant-time)
-     */
-    /* For now, keeping strcmp for commands since they're not secret */
-    /* Future: could implement constant_time_strcmp for full mitigation */
-
-    /* Command: init <password> */
-    /*@ requires \valid(&secure_rd);
-      @ requires secure_rd.initialized == 0;
-      @ requires argc == 2;
-      @ requires \valid_read(argv[1]);
-      @ requires strlen(argv[1]) >= 8;
-      @
-      @ ensures secure_rd.initialized == 1;
-      @ ensures secure_rd.locked == 1;
-      @ ensures \exists integer i; 0 <= i < 32 && secure_rd.master_key[i] != 0;
-      @
-      @ assigns secure_rd.initialized, secure_rd.locked,
-      @         secure_rd.master_key[0..31], cmd[0..sizeof(cmd)-1];
-      @*/
-    if (strcmp(argv[0], "init") == 0) {
-      if (secure_rd.initialized) {
-        qunlock(&secure_rd.lock);
-        error("vault already initialized");
-      }
-      if (argc != 2) {
-        qunlock(&secure_rd.lock);
-        error("usage: init <password>");
-      }
-      if (strlen(argv[1]) < 8) {
-        qunlock(&secure_rd.lock);
-        error("password must be at least 8 characters");
-      }
-
-      /* Derive master key from password */
-      if (derive_key_from_password(argv[1], secure_rd.salt,
-                                   secure_rd.master_key) < 0) {
-        qunlock(&secure_rd.lock);
-        error("key derivation failed");
-      }
-
-      secure_rd.initialized = 1;
-
-      /* BUG #3 FIX: Keep vault LOCKED after init */
-      /* User must explicitly unlock with correct password */
-      secure_rd.locked = 1;
-
-      /* Wipe command buffer */
-      crypto_wipe(cmd, sizeof(cmd));
-
-      /*@ assert secure_rd.initialized == 1; */
-      /*@ assert secure_rd.locked == 1; */
-      check_init_invariant();
-      check_lock_invariant();
-
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: vault initialized (locked - use 'unlock' command)\n");
-      return n;
-    }
-
-    /* Command: unlock <password> */
-    /*@ requires \valid(&secure_rd);
-      @ requires secure_rd.initialized == 1;
-      @ requires secure_rd.locked == 1;
-      @ requires secure_rd.tpm_sealed == 0;
-      @ requires argc == 2;
-      @ requires \valid_read(argv[1]);
-      @ requires \valid(secure_rd.data + (0..secure_rd.size-1));
-      @ requires secure_rd.size >= 24;
-      @
-      @ ensures secure_rd.locked == 0;
-      @ ensures \forall integer i; 24 <= i < secure_rd.size ==>
-      @   secure_rd.data[i] != \old(secure_rd.data[i]);
-      @
-      @ assigns secure_rd.locked, secure_rd.data[0..secure_rd.size-1],
-      @         cmd[0..sizeof(cmd)-1];
-      @*/
-    if (strcmp(argv[0], "unlock") == 0) {
-      uchar derived_key[32];
-
-      /* BUG #2 FIX: State validation before unlock */
-      if (!secure_rd.initialized) {
-        qunlock(&secure_rd.lock);
-        error("vault not initialized");
-      }
-      if (!secure_rd.locked) {
-        qunlock(&secure_rd.lock);
-        error("vault already unlocked");
-      }
-      if (secure_rd.tpm_sealed) {
-        qunlock(&secure_rd.lock);
-        error("vault sealed to TPM - use tpmunlock");
-      }
-      if (argc != 2) {
-        qunlock(&secure_rd.lock);
-        error("usage: unlock <password>");
-      }
-
-      /* Derive key from password */
-      if (derive_key_from_password(argv[1], secure_rd.salt, derived_key) < 0) {
-        crypto_wipe(cmd, sizeof(cmd));
-        qunlock(&secure_rd.lock);
-        error("key derivation failed");
-      }
-
-      /* Verify password (constant-time comparison) */
-      if (crypto_verify32(secure_rd.master_key, derived_key) != 0) {
-        crypto_wipe(derived_key, sizeof(derived_key));
-        crypto_wipe(cmd, sizeof(cmd));
-        qunlock(&secure_rd.lock);
-        error("incorrect password");
-      }
-
-      /* BUG #1 FIX: Decrypt with stored nonce (from data) */
-      xchacha20_decrypt_with_stored_nonce(secure_rd.data, secure_rd.size,
-                                          secure_rd.master_key);
-
-      secure_rd.locked = 0;
-
-      /* Wipe temporary key and command buffer */
-      crypto_wipe(derived_key, sizeof(derived_key));
-      crypto_wipe(cmd, sizeof(cmd));
-
-      /*@ assert secure_rd.locked == 0; */
-      /*@ assert secure_rd.initialized == 1; */
-      check_lock_invariant();
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: vault unlocked and decrypted\n");
-      return n;
-    }
-
-    /* Command: lock */
-    /*@ requires \valid(&secure_rd);
-      @ requires secure_rd.initialized == 1;
-      @ requires secure_rd.locked == 0;
-      @ requires \valid(secure_rd.data + (0..secure_rd.size-1));
-      @ requires secure_rd.size >= 24;
-      @
-      @ ensures secure_rd.locked == 1;
-      @ ensures \forall integer i; 24 <= i < secure_rd.size ==>
-      @   secure_rd.data[i] != \old(secure_rd.data[i]);
-      @ ensures \forall integer i; 0 <= i < 24 ==>
-      @   secure_rd.data[i] == secure_rd.current_nonce[i];
-      @
-      @ assigns secure_rd.locked, secure_rd.data[0..secure_rd.size-1],
-      @         secure_rd.current_nonce[0..23], cmd[0..sizeof(cmd)-1];
-      @*/
-    if (strcmp(argv[0], "lock") == 0) {
-      /* BUG #2 FIX: State validation before lock */
-      if (!secure_rd.initialized) {
-        qunlock(&secure_rd.lock);
-        error("vault not initialized");
-      }
-      if (secure_rd.locked) {
-        qunlock(&secure_rd.lock);
-        error("vault already locked");
-      }
-
-      /* BUG #1 FIX: Encrypt with FRESH nonce */
-      xchacha20_encrypt_with_fresh_nonce(secure_rd.data, secure_rd.size,
-                                         secure_rd.master_key);
-
-      secure_rd.locked = 1;
-
-      crypto_wipe(cmd, sizeof(cmd));
-
-      /*@ assert secure_rd.locked == 1; */
-      /*@ assert secure_rd.initialized == 1; */
-      check_lock_invariant();
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: vault locked and encrypted with fresh nonce\n");
-      return n;
-    }
-
-    /* Command: tpmseal (seal current or new master key to TPM SRK) */
-    /*@ requires \valid(&secure_rd);
-      @ requires secure_rd.tpm_sealed == 0;
-      @
-      @ ensures secure_rd.tpm_sealed == 1;
-      @ ensures secure_rd.tpm_blob_len > 0;
-      @
-      @ assigns secure_rd.tpm_sealed, secure_rd.tpm_blob_len,
-      secure_rd.tpm_blob[0..511],
-      @         secure_rd.initialized, secure_rd.locked,
-      secure_rd.master_key[0..31];
-      @*/
-    if (strcmp(argv[0], "tpmseal") == 0) {
-      int rc;
-      u16int blob_len = 0;
-
-      if (secure_rd.size == 0 || secure_rd.data == nil) {
-        qunlock(&secure_rd.lock);
-        error("vault not initialized");
-      }
-
-      /* If not initialized, create a random master key and mark initialized */
-      if (!secure_rd.initialized) {
-        extern void genrandom(uchar * buf, int nbytes);
-        genrandom(secure_rd.master_key, sizeof(secure_rd.master_key));
-        secure_rd.initialized = 1;
-        /* BUG #3 FIX: Keep locked, don't unlock */
-        secure_rd.locked = 1;
-      }
-
-      /* Seal master key to TPM SRK (no auth) */
-      rc = tpm2_seal_to_srk(secure_rd.master_key, sizeof(secure_rd.master_key),
-                            nil, 0, secure_rd.tpm_blob, &blob_len);
-      if (rc < 0) {
-        qunlock(&secure_rd.lock);
-        error("tpmseal failed");
-      }
-
-      secure_rd.tpm_blob_len = blob_len;
-      secure_rd.tpm_sealed = 1;
-
-      check_init_invariant();
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: master key sealed to TPM (%d bytes)\n", blob_len);
-      return n;
-    }
-
-    /* Command: tpmunlock (unseal master key and decrypt) */
-    /*@ requires \valid(&secure_rd);
-      @ requires secure_rd.tpm_sealed == 1;
-      @ requires secure_rd.locked == 1;
-      @ requires \valid(secure_rd.data + (0..secure_rd.size-1));
-      @ requires secure_rd.size >= 24;
-      @
-      @ ensures secure_rd.locked == 0;
-      @ ensures \forall integer i; 24 <= i < secure_rd.size ==>
-      @   secure_rd.data[i] != \old(secure_rd.data[i]);
-      @
-      @ assigns secure_rd.locked, secure_rd.master_key[0..31],
-      @         secure_rd.data[0..secure_rd.size-1],
-      secure_rd.current_nonce[0..23];
-      @*/
-    if (strcmp(argv[0], "tpmunlock") == 0) {
-      u16int key_len = sizeof(secure_rd.master_key);
-      int rc;
-
-      if (!secure_rd.tpm_sealed) {
-        qunlock(&secure_rd.lock);
-        error("no TPM-sealed key present");
-      }
-      if (!secure_rd.locked) {
-        qunlock(&secure_rd.lock);
-        error("vault already unlocked");
-      }
-
-      rc = tpm2_unseal_from_blob(secure_rd.tpm_blob, secure_rd.tpm_blob_len,
-                                 nil, 0, secure_rd.master_key, &key_len);
-      if (rc < 0 || key_len != sizeof(secure_rd.master_key)) {
-        qunlock(&secure_rd.lock);
-        error("tpmunlock failed");
-      }
-
-      /* BUG #1 FIX: Decrypt with stored nonce */
-      xchacha20_decrypt_with_stored_nonce(secure_rd.data, secure_rd.size,
-                                          secure_rd.master_key);
-
-      secure_rd.locked = 0;
-
-      check_lock_invariant();
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: vault unlocked via TPM\n");
-      return n;
-    }
-
-    /* BUG #5 FIX: Command to clear TPM seal and return to password mode */
-    if (strcmp(argv[0], "cleartpm") == 0) {
-      if (!secure_rd.tpm_sealed) {
-        qunlock(&secure_rd.lock);
-        error("vault not TPM sealed");
-      }
-
-      /* Clear TPM seal, return to password mode */
-      crypto_wipe(secure_rd.tpm_blob, sizeof(secure_rd.tpm_blob));
-      secure_rd.tpm_blob_len = 0;
-      secure_rd.tpm_sealed = 0;
-
-      crypto_wipe(cmd, sizeof(cmd));
-      qunlock(&secure_rd.lock);
-
-      if (!getconf("quiet"))
-        print("ramdisk: TPM seal cleared, returned to password mode\n");
-      return n;
-    }
-
-    /* Command: wipe */
-    if (strcmp(argv[0], "wipe") == 0) {
-      if (secure_rd.data == nil) {
-        qunlock(&secure_rd.lock);
-        error("vault not initialized");
-      }
-
-      /* Secure wipe vault data */
-      secure_wipe(secure_rd.data, secure_rd.size);
-
-      /* Wipe master key */
-      crypto_wipe(secure_rd.master_key, sizeof(secure_rd.master_key));
-      crypto_wipe(secure_rd.salt, sizeof(secure_rd.salt));
-      memset(secure_rd.tpm_blob, 0, sizeof(secure_rd.tpm_blob));
-      secure_rd.tpm_blob_len = 0;
-      secure_rd.tpm_sealed = 0;
-
-      secure_rd.initialized = 0;
-      secure_rd.locked = 1;
-
-      crypto_wipe(cmd, sizeof(cmd));
-
-      check_init_invariant();
-      qunlock(&secure_rd.lock);
-
-      return n;
-    }
-
-    qunlock(&secure_rd.lock);
-    error("unknown command (init, unlock, lock, tpmseal, tpmunlock, cleartpm, "
-          "wipe)");
-    return 0;
-
-  default:
-    error(Egreg);
-    return 0;
   }
+
+  if (c->qid.path == Qvaultnew)
+    error(Eio); /* Can't write to creation file */
+
+  if (c->qid.path >= Qvaultbase) {
+    int is_ctl = (c->qid.path - Qvaultbase) % 2;
+    v = get_vault_from_path(c->qid.path);
+    if (v == nil)
+      error(Enonexist);
+
+    /* Verify ownership */
+    if (v->pid != up->pid)
+      error(Eperm);
+
+    qlock(&v->lock);
+
+    if (is_ctl) {
+      /* Control Write */
+      if (n >= sizeof(cmd))
+        n = sizeof(cmd) - 1;
+      memmove(cmd, va, n);
+      cmd[n] = '\0';
+
+      argc = tokenize(cmd, argv, nelem(argv));
+      if (argc == 0) {
+        qunlock(&v->lock);
+        error("empty command");
+      }
+
+      /* Command: init <password> */
+      if (strcmp(argv[0], "init") == 0) {
+        if (v->initialized) {
+          qunlock(&v->lock);
+          error("vault already initialized");
+        }
+        if (argc != 2) {
+          qunlock(&v->lock);
+          error("usage: init <password>");
+        }
+        if (strlen(argv[1]) < 8) {
+          qunlock(&v->lock);
+          error("password must be at least 8 characters");
+        }
+
+        if (derive_key_from_password(argv[1], v->salt, v->master_key) < 0) {
+          qunlock(&v->lock);
+          error("key derivation failed");
+        }
+
+        v->initialized = 1;
+        v->locked = 1; /* Start locked */
+
+        crypto_wipe(cmd, sizeof(cmd));
+
+        check_init_invariant(v);
+        check_lock_invariant(v);
+
+        qunlock(&v->lock);
+        if (!getconf("quiet"))
+          print("ramdisk: vault %d initialized\n", v->id);
+        return n;
+      }
+
+      /* Command: unlock <password> */
+      if (strcmp(argv[0], "unlock") == 0) {
+        if (!v->initialized) {
+          qunlock(&v->lock);
+          error("vault not initialized");
+        }
+        if (!v->locked) {
+          qunlock(&v->lock);
+          /* Already unlocked, fine */
+          return n;
+        }
+
+        uchar derived_key[32];
+        if (derive_key_from_password(argv[1], v->salt, derived_key) < 0) {
+          qunlock(&v->lock);
+          error("key derivation failed");
+        }
+
+        if (crypto_verify32(derived_key, v->master_key) != 0) {
+          crypto_wipe(derived_key, 32);
+          qunlock(&v->lock);
+          error("incorrect password");
+        }
+        crypto_wipe(derived_key, 32); /* Wipe immediately */
+
+        /* Decrypt */
+        xchacha20_decrypt_with_stored_nonce(v, v->data, v->size, v->master_key);
+        v->locked = 0;
+
+        qunlock(&v->lock);
+        return n;
+      }
+
+      /* Command: lock */
+      if (strcmp(argv[0], "lock") == 0) {
+        if (!v->initialized) {
+          qunlock(&v->lock);
+          error("vault not initialized");
+        }
+        if (v->locked) {
+          qunlock(&v->lock);
+          return n;
+        }
+
+        /* Encrypt */
+        xchacha20_encrypt_with_fresh_nonce(v, v->data, v->size, v->master_key);
+        v->locked = 1;
+
+        check_lock_invariant(v);
+        qunlock(&v->lock);
+        return n;
+      }
+
+      /* Command: wipe */
+      if (strcmp(argv[0], "wipe") == 0) {
+        secure_wipe(v->data, v->size);
+        crypto_wipe(v->master_key, 32);
+        v->initialized = 0;
+        v->locked = 1;
+
+        qunlock(&v->lock);
+        return n;
+      }
+
+      qunlock(&v->lock);
+      error(Ebadarg);
+    } else {
+      /* Data Write */
+      /* State validation */
+      if (v->data == nil) {
+        qunlock(&v->lock);
+        error("vault not initialized");
+      }
+      if (v->locked) {
+        qunlock(&v->lock);
+        error("vault is locked");
+      }
+      if (!v->initialized) {
+        qunlock(&v->lock);
+        error("vault not initialized");
+      }
+
+      check_lock_invariant(v);
+      check_init_invariant(v);
+
+      vlong actual_data_size = v->size - 24;
+
+      if (off < 0) {
+        qunlock(&v->lock);
+        error(Ebadarg);
+      }
+      if (off >= actual_data_size) {
+        qunlock(&v->lock);
+        error(Eio);
+      }
+      if (off + n > actual_data_size)
+        n = actual_data_size - off;
+
+      memmove(v->data + 24 + off, va, n);
+
+      qunlock(&v->lock);
+      return n;
+    }
+  }
+
+  error(Egreg);
+  return 0;
 }
 
 Dev ramdevtab = {

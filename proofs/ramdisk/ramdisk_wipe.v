@@ -349,15 +349,17 @@ Proof.
       rewrite secure_wipe_final_zeros by assumption.
       rewrite secure_wipe_final_zeros.
       * reflexivity.
-      * assumption.
+      * rewrite secure_wipe_preserves_size in Hlt. assumption.
     - (* Out of bounds *)
       assert (Hlen: length (secure_wipe_7pass m) = length m) by apply secure_wipe_preserves_size.
       rewrite Hlen in Hnlt.
       (* If i >= length m, then secure_wipe_7pass m has None at i *)
-      rewrite nth_error_None_iff in *.
-      rewrite Hlen in *.
-      rewrite secure_wipe_preserves_size.
-      apply nth_error_None. assumption.
+      assert (Hle: length (secure_wipe_7pass m) <= i) by lia.
+      rewrite <- nth_error_None in Hle.
+      rewrite Hle.
+      rewrite nth_error_None.
+      repeat rewrite secure_wipe_preserves_size.
+      lia.
 Qed.
 
 (** Wipe time is linear in memory size *)

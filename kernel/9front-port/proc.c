@@ -13,6 +13,7 @@
 
 /* FSM Integration */
 extern int proc_event(Proc *p, int event);
+extern void vault_cleanup_process(int pid);
 
 enum {
   Scaling = 2,
@@ -1307,6 +1308,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   /* Clean up page ownership - implement Rust "drop" semantics */
   pageown_cleanup_process(up);
   pebble_cleanup(up);
+  vault_cleanup_process(up->pid);
 
   /* nil out all the resources under lock (free later) */
   qlock(&up->debug);

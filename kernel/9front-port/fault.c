@@ -1,8 +1,8 @@
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 #include <error.h>
 
 struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {

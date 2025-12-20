@@ -196,8 +196,55 @@ Lux9 Vaults:
 **Implementation:**
 ```c
 // Per-process vault with capability
-typedef struct ProcessVault {
-    UserCapability cap;         // ← Blind Ledger capability
+    //    - Memory dump → ciphertext only
+}
+
+### 4. Kinetic Defense (BEVIS + BUTTHEAD)
+
+**The Problem They Solve Together:**
+```
+Traditional DDoS / Abuse:
+  - Making a request is cheap (CPU ~0)
+  - Processing a request is expensive (Memory, DB, etc.)
+  - Attacker floods system -> Valid users denied
+
+Lux9 Kinetic Defense:
+  - "Softwar" approach: Make attacks physically expensive
+  - BEVIS: Proof-of-Work Gating
+    - Request costs energy (CPU cycles) to submit
+    - Cost is proportional to risk/size
+  - BUTTHEAD: Anomaly Detection
+    - System tracks congestion and usage patterns
+    - High load -> Difficulty increases globally
+    - Abnormal behavior -> Difficulty increases per-source
+```
+
+**Implementation:**
+```c
+// kernel/pow_gate.c - Kinetic Defense Engine
+int pow_calculate_difficulty(int op_class, ulong magnitude) {
+    int diff = 0;
+    int congestion = MACHP(0)->load / 100; // BUTTHEAD: Load sensing
+
+    // Base difficulty by risk class (BEVIS)
+    switch(op_class) {
+        case POW_OP_ALLOC: diff = 4 + (magnitude / 64MB); break;
+        case POW_OP_SPAWN: diff = 12; break;
+    }
+
+    // Feedback Loop: Congestion Pricing
+    diff += congestion; 
+
+    return diff;
+}
+```
+
+**Security Properties:**
+- ✅ **Economic Asymmetry**: Attackers burn electricity; defenders verify in O(1).
+- ✅ **Congestion Control**: System slows down gracefully under load rather than crashing.
+- ✅ **Spam Prevention**: "Allocation Spam" becomes prohibitively expensive.
+
+## Attack Surface Analysis
     uchar *data;                // ← Encrypted with XChaCha20
     uchar master_key[32];       // ← Argon2id derived
     int locked;                 // ← 1 = encrypted

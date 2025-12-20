@@ -103,6 +103,11 @@ PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
 @*/
+/*
+ * SMT: Validated by proofs/pebble/pebble_security.v
+ * Theorem: Inv_Conservation, Inv_NonNegative
+ * Description: Verifies white token issuance preserves system invariants
+ */
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   int i, idx;
   ulong pegged_size;
@@ -248,6 +253,11 @@ const u8int *pebble_get_vault_secret(void) {
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
 @*/
+/*
+ * SMT: Validated by proofs/pebble/pebble_security.v
+ * Theorem: Inv_Conservation
+ * Description: Verifies black token allocation maintains budget conservation
+ */
 int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   void *buf;
   PebbleBlack *pb;

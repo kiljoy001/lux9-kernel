@@ -812,13 +812,17 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
         /* Use mallocz for early processes since mmualloc pool isn't ready */
         p = mallocz(sizeof(MMU), 1);
         if (p == nil) {
-          /* If malloc fails, still return page but warn - mappings will be lost on switch */
-          print("mmucreate: WARNING - failed to allocate MMU struct for early process pid=%d\n", up->pid);
+          /* If malloc fails, still return page but warn - mappings will be lost
+           * on switch */
+          print("mmucreate: WARNING - failed to allocate MMU struct for early "
+                "process pid=%d\n",
+                up->pid);
         } else {
           p->index = index;
           p->level = level;
           p->page = page;
-          p->alloc = nil; /* Mark as rampage allocation, not from mmualloc pool */
+          p->alloc =
+              nil; /* Mark as rampage allocation, not from mmualloc pool */
 
           if (level == PML4E) {
             if ((p->next = up->mmuhead) == nil)
@@ -873,9 +877,11 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   }
   table[index] = PADDR(page) | flags;
   mfence(); /* Memory barrier to ensure PTE write is visible before use */
+  /* DISABLED: This print caused hang with large framebuffer mappings
   print("mmucreate: va=%#p level=%d index=%d flags=%#llux entry=%#llux "
         "page=%#p\n",
         va, level, index, (uvlong)flags, (uvlong)table[index], page);
+  */
   return page;
 }
 

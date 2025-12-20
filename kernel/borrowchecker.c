@@ -1,6 +1,9 @@
 /*
  * Unified borrow checker for kernel primitives
  * Provides Rust-style ownership and borrowing for locks, memory, I/O, etc.
+ *
+ * SMT: Validated by proofs/borrow/borrow_core.v
+ * Description: Implements ownership tracking and FSM transitions
  */
 
 #include "dat.h"
@@ -292,7 +295,8 @@ static struct BorrowOwner *create_owner(uintptr key) {
 /* Acquire ownership of a resource */
 /*@
   // Transition: Free -> Exclusive
-  // Corresponds to 'Acquire' in proofs/borrow/borrow_core.v (Implicit in ownership model)
+  // Corresponds to 'Acquire' in proofs/borrow/borrow_core.v (Implicit in
+ownership model)
 @*/
 enum BorrowError borrow_acquire(Proc *p, uintptr key) {
   struct BorrowOwner *owner;

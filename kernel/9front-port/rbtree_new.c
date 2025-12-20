@@ -5,12 +5,11 @@
  * Provides O(log n) operations for Blind Ledger capability lookups.
  */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
-#include "dat.h"
 #include "../include/rbtree.h"
-
+#include "dat.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 
 /*
  * Augmented RB-tree Implementation
@@ -157,12 +156,16 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
   while ((!node || rb_is_black(node)) && node != root->rb_node) {
     if (parent->rb_left == node) {
       sibling = parent->rb_right;
+      if (sibling == nil)
+        break; /* Malformed tree or end of rebalancing */
 
       if (rb_is_red(sibling)) {
         rb_set_black(sibling);
         rb_set_red(parent);
         __rb_rotate_left(parent, root, augment_rotate, data);
         sibling = parent->rb_right;
+        if (sibling == nil)
+          break;
       }
 
       if ((!sibling->rb_left || rb_is_black(sibling->rb_left)) &&
@@ -187,12 +190,16 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
       }
     } else {
       sibling = parent->rb_left;
+      if (sibling == nil)
+        break; /* Malformed tree or end of rebalancing */
 
       if (rb_is_red(sibling)) {
         rb_set_black(sibling);
         rb_set_red(parent);
         __rb_rotate_right(parent, root, augment_rotate, data);
         sibling = parent->rb_left;
+        if (sibling == nil)
+          break;
       }
 
       if ((!sibling->rb_left || rb_is_black(sibling->rb_left)) &&
