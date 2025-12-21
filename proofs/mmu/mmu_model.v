@@ -70,6 +70,19 @@ Proof.
   all: assert (BY2PG > 0) by apply BY2PG_pos; lia.
 Qed.
 
+Section MapKernel.
+  Variable pt : list pte.
+
+  Inductive map_kernel : addr -> addr -> bool -> list pte -> Prop :=
+  | MapKernel :
+      forall v p w,
+        canonical_kernel v ->
+        page_aligned v ->
+        page_aligned p ->
+        (forall e, In e pt -> disjoint_from_va v e) ->
+        map_kernel v p w ({| va := v; pa := p; user := false; writable := w |} :: pt).
+End MapKernel.
+
 Section MapUser.
   Variable pt : list pte.
 
@@ -128,6 +141,29 @@ Proof.
   intros pt e [Hfor _] Hin Huser.
   pose proof (@Forall_In pte wf_entry pt e Hfor Hin) as Hwfe.
   destruct Hwfe as [_ [_ [_ Hk]]]. apply Hk; assumption.
+Qed.
+
+Lemma map_kernel_preserves_wf :
+  forall pt v p w pt',
+    wf pt ->
+    map_kernel pt v p w pt' ->
+    wf pt'.
+Proof.
+  intros pt v p w pt' [Hwf Hdisj] Hmap.
+  inversion Hmap; subst; clear Hmap.
+  split.
+  - constructor.
+    + repeat split; try assumption.
+      * simpl; intros Hu; discriminate.
+      * simpl; intros _; assumption.
+    + assumption.
+  - intros e1 e2 Hin1 Hin2 Hneq.
+    simpl in Hin1, Hin2.
+    destruct Hin1 as [Hin1 | Hin1], Hin2 as [Hin2 | Hin2]; subst.
+    * exfalso; apply Hneq; reflexivity.
+    * eapply H2; eauto.
+    * apply disjoint_sym; eapply H2; eauto.
+    * apply Hdisj; assumption.
 Qed.
 
 (* A small safety theorem capturing the intended invariant:
