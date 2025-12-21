@@ -25,17 +25,20 @@ let sendToKernel (message: byte[]) =
     let res = Lux9Send9P(message, message.Length)
     if res < 0 then
         failwith "Kernel communication failed"
-    // Note: Return value is currently just status, response is in exchange page.
-    // Ideally we would read it back. For now, assume success/async.
     ()
 
 /// 9P Protocol Helpers
 module P9 =
     let mutable tag : uint16 = 0us
+    let mutable fidCounter : uint32 = 100u
 
     let nextTag () =
         tag <- tag + 1us
         tag
+
+    let nextFid () =
+        fidCounter <- fidCounter + 1u
+        fidCounter
 
     let putByte (b: byte) (buf: byte[]) (offset: int) =
         buf.[offset] <- b
@@ -59,21 +62,121 @@ module P9 =
         Array.Copy(bytes, 0, buf, off, bytes.Length)
         off + bytes.Length
 
-    // Basic Tversion
+    let finalize (buf: byte[]) (off: int) =
+        putInt (off) buf 0 |> ignore
+        buf
+
+    // Tversion (100)
     let tVersion (msize: int) (version: string) =
         let buf = Array.zeroCreate<byte> (4 + 1 + 2 + 4 + 2 + version.Length)
-        let mutable off = 4 // Skip size for now
-        off <- putByte 100uy buf off // Tversion
+        let mutable off = 4
+        off <- putByte 100uy buf off
         off <- putShort 65535us buf off // NOTAG
         off <- putInt msize buf off
         off <- putString version buf off
-        putInt (off) buf 0 |> ignore
-        buf
+        finalize buf off
+
+    // Tattach (104): tag[2] fid[4] afid[4] uname[s] aname[s]
+    let tAttach (fid: uint32) (afid: uint32) (uname: string) (aname: string) =
+        let buf = Array.zeroCreate<byte> (100 + uname.Length + aname.Length) // Safe estimate
+        let mutable off = 4
+        off <- putByte 104uy buf off
+        off <- putShort (nextTag()) buf off
+        off <- putInt (int fid) buf off
+        off <- putInt (int afid) buf off
+        off <- putString uname buf off
+        off <- putString aname buf off
+        finalize buf off
+
+    // Twalk (110): tag[2] fid[4] newfid[4] nwname[2] nwname*(wname[s])
+    let tWalk (fid: uint32) (newfid: uint32) (names: string[]) =
+        let mutable len = 100
+        for n in names do len <- len + 2 + n.Length
+        let buf = Array.zeroCreate<byte> len
+        let mutable off = 4
+        off <- putByte 110uy buf off
+        off <- putShort (nextTag()) buf off
+        off <- putInt (int fid) buf off
+        off <- putInt (int newfid) buf off
+        off <- putShort (uint16 names.Length) buf off
+        for n in names do
+            off <- putString n buf off
+        finalize buf off
+
+    // Topen (112): tag[2] fid[4] mode[1]
+    let tOpen (fid: uint32) (mode: byte) =
+        let buf = Array.zeroCreate<byte> (4 + 1 + 2 + 4 + 1)
+        let mutable off = 4
+        off <- putByte 112uy buf off
+        off <- putShort (nextTag()) buf off
+        off <- putInt (int fid) buf off
+        off <- putByte mode buf off
+        finalize buf off
+
+    // Twrite (118): tag[2] fid[4] offset[8] count[4] data[count]
+    let tWrite (fid: uint32) (offset: uint64) (data: string) =
+        let bytes = System.Text.Encoding.UTF8.GetBytes(data)
+        let buf = Array.zeroCreate<byte> (30 + bytes.Length)
+        let mutable off = 4
+        off <- putByte 118uy buf off
+        off <- putShort (nextTag()) buf off
+        off <- putInt (int fid) buf off
+        // offset 64-bit
+        off <- putInt (int (offset &&& 0xFFFFFFFFUL)) buf off
+        off <- putInt (int (offset >>> 32)) buf off
+        
+        off <- putInt bytes.Length buf off
+        Array.Copy(bytes, 0, buf, off, bytes.Length)
+        off <- off + bytes.Length
+        finalize buf off
+
+    // Tclunk (120): tag[2] fid[4]
+    let tClunk (fid: uint32) =
+        let buf = Array.zeroCreate<byte> (4 + 1 + 2 + 4)
+        let mutable off = 4
+        off <- putByte 120uy buf off
+        off <- putShort (nextTag()) buf off
+        off <- putInt (int fid) buf off
+        finalize buf off
+
+// Globals
+let NOFID = 0xFFFFFFFFu
+let OREAD = 0uy
+let OWRITE = 1uy
+let ORDWR = 2uy
+
+// Bind helper: bind new old
+let bind (newPath: string) (oldPath: string) =
+    try
+        // 1. Attach to /mnt
+        let rootFid = P9.nextFid()
+        sendToKernel (P9.tAttach rootFid NOFID "root" "/mnt")
+        // Note: Assuming success. Real impl should read Rattach.
+
+        // 2. Walk to "ctl"
+        let ctlFid = P9.nextFid()
+        sendToKernel (P9.tWalk rootFid ctlFid [| "ctl" |])
+        // Assuming success
+
+        // 3. Open ctl
+        sendToKernel (P9.tOpen ctlFid OWRITE)
+
+        // 4. Write bind command: "bind #c /dev"
+        let cmd = sprintf "bind %s %s" newPath oldPath
+        sendToKernel (P9.tWrite ctlFid 0UL cmd)
+
+        // 5. Cleanup
+        sendToKernel (P9.tClunk ctlFid)
+        sendToKernel (P9.tClunk rootFid)
+        
+        print (sprintf "[INIT] Bound %s -> %s" newPath oldPath)
+    with ex ->
+        print (sprintf "[INIT] Bind failed for %s -> %s: %s" newPath oldPath ex.Message)
 
 /// Init entry point
 [<EntryPoint>]
 let main (args: string[]) : int =
-    print "=== Lux9 Init (WASM) ==="
+    print "=== Lux9 Init (WASM) - Namespace First ==="
     
     try
         print "[INIT] Sending Tversion..."
@@ -81,6 +184,26 @@ let main (args: string[]) : int =
         sendToKernel msg
         print "[INIT] Tversion Sent."
         
+        // Setup Standard Namespace
+        // Note: /dev, /env, /proc, /srv, /mnt must exist in root (#r)
+        print "[INIT] Setting up namespace..."
+        bind "#c" "/dev"
+        bind "#e" "/env"
+        bind "#p" "/proc"
+        bind "#s" "/srv"
+        // bind "#|" "/mnt" // Usually mounted to a specific mountpoint
+
+        // Helper: Read plan9.ini?
+        // Currently skipping read as 9P router doesn't fully support Tread on /env yet.
+        print "[INIT] Namespace setup complete"
+
+        print "[INIT] Spawning /bin/ramfs..."
+        try
+            let ramfs_pid = Lux9Spawn("/bin/ramfs")
+            print (sprintf "[INIT] RamFS running with PID %d" ramfs_pid)
+        with ex ->
+            print (sprintf "[INIT] Failed to spawn RamFS: %s" ex.Message)
+
         print "[INIT] Spawning /bin/shell..."
         try
             let pid = Lux9Spawn("/bin/shell")

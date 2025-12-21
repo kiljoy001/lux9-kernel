@@ -791,7 +791,17 @@ static MMU *mmualloc(void) {
   requires 0 <= index < 512;
   requires 0 <= level <= 3;
   assigns table[index] \from va, level, index;
-  ensures \true;
+
+  behavior success:
+    assumes \result != \null;
+    ensures \valid((uintptr*)\result + (0..511));
+    ensures ((uintptr)\result) % 4096 == 0;  // page-aligned per mmu_model.v
+
+  behavior failure:
+    assumes \result == \null;
+
+  complete behaviors;
+  disjoint behaviors;
 */
 static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   uintptr *page, flags;
@@ -899,7 +909,10 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   requires \valid(table + (0..511));
   requires 0 <= level <= 3;
   assigns \nothing;
-  ensures \true;
+
+  ensures \result == \null || \valid(\result);
+  ensures \result != \null ==> ((uintptr)\result) % 8 == 0;  // pointer
+  alignment
 */
 uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
   uintptr pte;

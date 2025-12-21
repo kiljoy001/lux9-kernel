@@ -1,29 +1,38 @@
 (** Abstract page allocator model inspired by 9front page.c.
-    Models a free-list allocator with reference counts. *)
+    Uses Z addresses and reference counts; models HHDM mapping and free list. *)
 
-From Coq Require Import List Arith Lia.
+From Coq Require Import List ZArith Lia.
 Import ListNotations.
+Local Open Scope Z_scope.
 
-Record Page := mkPage { paddr : nat; refc : nat }.
+Section PageAllocator.
+
+Context (mem_min mem_max : Z).
+Hypothesis mem_bounds : mem_min < mem_max.
+
+Record Page := mkPage { paddr : Z; refc : nat }.
 
 Definition freelist := list Page.
 
-Definition all_positive (l : freelist) : Prop := Forall (fun p => refc p = 0) l.
+Definition addr_in_bounds (a : Z) : Prop := mem_min <= a < mem_max.
+
+Definition all_free (l : freelist) : Prop :=
+  Forall (fun p => refc p = 0%nat /\ addr_in_bounds (paddr p)) l.
 
 Definition disjoint_pages (p1 p2 : Page) : Prop := paddr p1 <> paddr p2.
 
 Definition valid_freelist (l : freelist) : Prop :=
-  all_positive l /\
+  all_free l /\
   forall p1 p2, In p1 l -> In p2 l -> p1 <> p2 -> disjoint_pages p1 p2.
 
 Definition alloc_page (l : freelist) : option (Page * freelist) :=
   match l with
   | [] => None
-  | p :: tl => Some (mkPage (paddr p) 1, tl)
+  | p :: tl => Some (mkPage (paddr p) 1%nat, tl)
   end.
 
 Definition free_page (p : Page) (l : freelist) : freelist :=
-  if Nat.eqb (refc p) 0 then l else mkPage (paddr p) 0 :: l.
+  if Nat.eqb (refc p) 0 then l else mkPage (paddr p) 0%nat :: l.
 
 Lemma alloc_preserves_valid :
   forall l p l',
@@ -42,10 +51,12 @@ Qed.
 Lemma alloc_sets_refc :
   forall l p l',
     alloc_page l = Some (p, l') ->
-    refc p = 1.
+    refc p = 1%nat.
 Proof. intros l p l' H; destruct l; simpl in H; inversion H; reflexivity. Qed.
 
 Lemma alloc_not_nil :
   forall l p l',
     alloc_page l = Some (p, l') -> l <> [].
 Proof. intros l p l' H; destruct l; simpl in H; congruence. Qed.
+
+End PageAllocator.

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "P5Tnh+j0jlk=",
+  "success": true,
+  "projectFilePath": "/home/scott/Repo/lux9-kernel/userspace/ramfs/Ramfs.fsproj",
+  "expectedPackageFiles": [
+    "/home/scott/.nuget/packages/fsharp.core/9.0.101/fsharp.core.9.0.101.nupkg.sha512"
+  ],
+  "logs": []
+}
