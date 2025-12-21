@@ -14,6 +14,8 @@
 /* Compile-time configuration */
 #define PEBBLE_DEFAULT_BUDGET 0 /* per-process starts at 0 (caller-managed) */
 #define PEBBLE_BOOT_BUDGET (256 * 1024 * 1024) /* 256 MiB for boot kernel */
+#define PEBBLE_INIT_BUDGET                                                     \
+  (16 * 1024 * 1024) /* 16 MiB for init/proc0 bootstrap */
 #define PEBBLE_MAX_TOKENS 4096
 #define PEBBLE_DEBUG 0
 
@@ -108,7 +110,7 @@ typedef struct PebbleBlack {
 
 /* Per-process Pebble state */
 typedef struct PebbleState {
-  ulong colorless_bank;   /* remaining bytes for this process (COLORLESS pool) */
+  ulong colorless_bank; /* remaining bytes for this process (COLORLESS pool) */
   ulong black_inuse;    /* bytes in BLACK state */
   ulong blue_inuse;     /* bytes in BLUE state */
   ulong red_inuse;      /* bytes in RED state */

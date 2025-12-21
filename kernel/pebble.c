@@ -72,6 +72,14 @@ void pebbleprocinit(Proc *p) {
   if (p == nil)
     return;
   pebble_reset_state(&p->pebble);
+
+  /* Grant initial budget to proc0/init so it can bootstrap */
+  if (p->pid == 1) {
+    p->pebble.colorless_bank = PEBBLE_INIT_BUDGET;
+    if (pebble_debug)
+      print("PEBBLE: granted %dMB init budget to pid 1\n",
+            PEBBLE_INIT_BUDGET / (1024 * 1024));
+  }
 }
 
 static PebbleBlack *pebble_lookup_black_locked(PebbleState *ps, void *handle) {
