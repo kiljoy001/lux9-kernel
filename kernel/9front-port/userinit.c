@@ -71,6 +71,12 @@ static void proc0(void *arg) {
   KMap *k;
   Page *p;
 
+  /* Grant initial Pebble budget for proc0 bootstrap */
+  /* This must happen before any newpage() calls */
+  up->pebble.colorless_bank = PEBBLE_INIT_BUDGET;
+  print("PEBBLE: granted %dMB init budget to proc0\n",
+        PEBBLE_INIT_BUDGET / (1024 * 1024));
+
   /* Start logging now that we're on a real stack; clock already armed */
   /* DISABLED: prbuf_start_consumer() - causes hang before scheduler starts */
   /* prbuf_start_consumer(); */
