@@ -185,17 +185,12 @@ static int is_branch_target(il_to_fruity_ctx_t *ctx, uint32_t offset) {
 
 /*@ requires \valid(ctx);
     allocates  \result;
-    assigns    ctx->blocks, ctx->block_count, ctx->block_capacity, ctx->last_error;
-    behavior   success:
-      assumes \fresh(\result);
-      assumes \result != \null;
-      ensures  \result->block_id == block_id;
-      ensures  \result->instructions_head == \null;
-      ensures  \result->instructions_tail == \null;
-      ensures  \result->instruction_count == 0;
-      ensures  ctx->block_count == \old(ctx->block_count) + 1;
-    behavior failure :
-      assumes \result == \null;
+    assigns    ctx->blocks, ctx->block_count, ctx->block_capacity,
+   ctx->last_error; behavior   success: assumes \fresh(\result); assumes \result
+   != \null; ensures  \result->block_id == block_id; ensures
+   \result->instructions_head == \null; ensures  \result->instructions_tail ==
+   \null; ensures  \result->instruction_count == 0; ensures  ctx->block_count ==
+   \old(ctx->block_count) + 1; behavior failure : assumes \result == \null;
       ensures  ctx->last_error == IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
     complete behaviors;
     disjoint behaviors;
@@ -503,8 +498,25 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
     case IL_CKFINITE:
     case IL_BREAK:
     case 0x8e: /* ldlen */
+    case 0x90: /* ldelem.i1 */
+    case 0x91: /* ldelem.u1 */
+    case 0x92: /* ldelem.i2 */
+    case 0x93: /* ldelem.u2 */
+    case 0x94: /* ldelem.i4 */
+    case 0x95: /* ldelem.u4 */
+    case 0x96: /* ldelem.i8 */
+    case 0x97: /* ldelem.i */
+    case 0x98: /* ldelem.r4 */
+    case 0x99: /* ldelem.r8 */
     case 0x9a: /* ldelem.ref */
+    case 0x9c: /* stelem.i1 */
+    case 0x9d: /* stelem.i2 */
+    case 0x9e: /* stelem.i4 */
+    case 0x9f: /* stelem.i8 */
+    case 0xa0: /* stelem.r4 */
+    case 0xa1: /* stelem.r8 */
     case 0xa2: /* stelem.ref */
+    case 0xa3: /* stelem.i */
     case IL_CONV_I1:
     case IL_CONV_I2:
     case IL_CONV_I4:
@@ -573,6 +585,7 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
     case IL_STFLD:
     case IL_NEWARR:
     case IL_LDELEMA:
+    case IL_STELEM:
     case IL_BOX:
     case IL_UNBOX:
     case IL_UNBOX_ANY:
@@ -647,6 +660,13 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
 
       default:
         /* Unknown two-byte opcode */
+#ifdef KERNEL
+        print("IL_TO_FRUITY: Unsupported opcode 0xFE 0x%02x at offset 0x%04x\n",
+              op2, (unsigned int)offset);
+#else
+        printf("Unsupported opcode: 0xFE 0x%02x at offset 0x%04x\n", op2,
+               (unsigned int)offset);
+#endif
         ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
         return -1;
       }
@@ -654,6 +674,13 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
 
     default:
       /* Unknown/unsupported opcode */
+#ifdef KERNEL
+      print("IL_TO_FRUITY: Unsupported opcode 0x%02x at offset 0x%04x\n", opcode,
+            (unsigned int)offset);
+#else
+      printf("Unsupported opcode: 0x%02x at offset 0x%04x\n", opcode,
+             (unsigned int)offset);
+#endif
       ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
       return -1;
     }
@@ -704,9 +731,9 @@ static fruity_basic_block_t *get_block_at_offset(il_to_fruity_ctx_t *ctx,
   requires \valid_read(il + (0 .. il_size-1));
   requires \valid(offset_ptr);
   requires *offset_ptr < il_size;
-  assigns *offset_ptr, ctx->type_stack[0 .. IL_TYPE_STACK_MAX-1], ctx->type_stack_top;
-  assigns block->instructions_head, block->instructions_tail, block->instruction_count;
-  assigns ctx->last_error;
+  assigns *offset_ptr, ctx->type_stack[0 .. IL_TYPE_STACK_MAX-1],
+  ctx->type_stack_top; assigns block->instructions_head,
+  block->instructions_tail, block->instruction_count; assigns ctx->last_error;
   ensures *offset_ptr > \old(*offset_ptr);
   ensures \result == 0 || \result == -1;
 */
@@ -1808,6 +1835,13 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
 
     default:
       /* Unknown two-byte opcode */
+#ifdef KERNEL
+      print("IL_TO_FRUITY: Unsupported opcode 0xFE 0x%02x at offset 0x%04x\n",
+            op2, (unsigned int)offset);
+#else
+      printf("Unsupported opcode: 0xFE 0x%02x at offset 0x%04x\n", op2,
+             (unsigned int)offset);
+#endif
       ctx->last_error = IL_TO_FRUITY_ERROR_UNSUPPORTED_OPCODE;
       return -1;
     }
@@ -1815,7 +1849,10 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
   }
 
   default:
-#ifndef KERNEL
+#ifdef KERNEL
+    print("IL_TO_FRUITY: Unsupported opcode 0x%02x at offset 0x%04x\n", opcode,
+          (unsigned int)offset);
+#else
     printf("Unsupported opcode: 0x%02x at offset 0x%04x\n", opcode,
            (unsigned int)offset);
 #endif

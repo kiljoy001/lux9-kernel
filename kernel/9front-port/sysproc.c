@@ -400,7 +400,9 @@ uintptr sysexec(void *list_void) {
   Chan *tc;
   Fgrp *f;
   int saved_nerrlab;
+  const char *stage_desc;
 
+  stage_desc = "start";
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec started, list=%p\n",
           list_void);
   uartputs(debug_buf, strlen(debug_buf));
@@ -431,6 +433,7 @@ uintptr sysexec(void *list_void) {
     snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec ERROR PATH: %s\n",
             up->errstr);
     uartputs(debug_buf, strlen(debug_buf));
+    print("sysexec: error at %s: %s\n", stage_desc, up->errstr);
     free(file0);
     free(elem);
     free(args);
@@ -446,23 +449,28 @@ uintptr sysexec(void *list_void) {
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: sysexec getting file0 from uargs[0]\n");
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "arg file0";
   file0 = (char *)uargs[0];
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got file0=%p\n", file0);
   uartputs(debug_buf, strlen(debug_buf));
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: sysexec calling validaddr for file0\n");
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "validaddr file0";
   validaddr((uintptr)file0, 1, 0);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validaddr returned\n");
   uartputs(debug_buf, strlen(debug_buf));
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec getting argp0\n");
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "arg argp0";
   argp0 = (char **)uargs[1];
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got argp0=%p\n", argp0);
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "evenaddr argp0";
   evenaddr((uintptr)argp0);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec evenaddr done\n");
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "validaddr argp0";
   validaddr((uintptr)argp0, 2 * BY2WD, 0);
   snprint(debug_buf, sizeof(debug_buf),
           "DEBUG: sysexec validaddr argp0 done\n");
@@ -471,6 +479,7 @@ uintptr sysexec(void *list_void) {
     error(Ebadarg);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec checked *argp0\n");
   uartputs(debug_buf, strlen(debug_buf));
+  stage_desc = "validnamedup";
   file0 = validnamedup(file0, 1);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validated file '%s'\n",
           file0);
@@ -491,6 +500,7 @@ uintptr sysexec(void *list_void) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: sysexec about to call namec('%s')\n", file);
     uartputs(debug_buf, strlen(debug_buf));
+    stage_desc = "namec";
     tc = namec(file, Aopen, OEXEC, 0);
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: sysexec namec returned tc=%p\n", tc);
@@ -513,6 +523,7 @@ uintptr sysexec(void *list_void) {
     snprint(debug_buf, sizeof(debug_buf),
             "DEBUG: sysexec about to read from tc->type=%d\n", tc->type);
     uartputs(debug_buf, strlen(debug_buf));
+    stage_desc = "read header";
     n = devtab[tc->type]->read(tc, u.buf, sizeof(u.buf), 0);
     snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec read returned n=%d\n",
             n);
@@ -557,6 +568,7 @@ uintptr sysexec(void *list_void) {
               "DEBUG: sysexec allocating %ld bytes\n", fsize);
       uartputs(debug_buf, strlen(debug_buf));
       print("CLR: allocating %ld bytes for assembly\n", fsize);
+      stage_desc = "clr malloc";
       void *asm_data = malloc(fsize);
       if (asm_data == nil)
         error(Enomem);
@@ -571,6 +583,7 @@ uintptr sysexec(void *list_void) {
               "DEBUG: sysexec reading full file\n");
       uartputs(debug_buf, strlen(debug_buf));
       print("CLR: reading %ld bytes from device type %d\n", fsize, tc->type);
+      stage_desc = "clr read full";
       devtab[tc->type]->read(tc, asm_data, fsize, 0);
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: sysexec full file read complete\n");
@@ -598,6 +611,7 @@ uintptr sysexec(void *list_void) {
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: sysexec calling clr_execute_assembly\n");
       uartputs(debug_buf, strlen(debug_buf));
+      stage_desc = "clr execute";
       int ret = clr_execute_assembly(asm_data, fsize);
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: sysexec clr_execute_assembly returned %d\n", ret);

@@ -65,6 +65,32 @@ static struct {
   uvlong peak_black;
 } kernel_pebble_stats;
 
+static void pebble_kernel_log_msgord_failure(const char *where, void *ptr,
+                                             ulong size) {
+  uvlong total = 0;
+  uvlong blue = 0;
+  uvlong red = 0;
+
+  print("pebble_kernel_%s: MSGORD submit failed ptr=%p size=%lud\n", where, ptr,
+        size);
+  if (msgord == nil) {
+    print("pebble_kernel_%s: MSGORD unavailable (nil)\n", where);
+    return;
+  }
+
+  msgord_stats(msgord, &total, &blue, &red);
+  print("pebble_kernel_%s: MSGORD id=%d init=%d count=%ud total=%llud "
+        "blue=%llud red=%llud next_id=%ud global_seq=%llud\n",
+        where, msgord->gd_id, msgord->gd_initialized, msgord->gd_count, total,
+        blue, red, msgord->gd_next_id, msgord->gd_global_seq);
+  print("pebble_kernel_%s: pebble reserves=%llud activates=%llud frees=%llud "
+        "white=%llud black=%llud peak_white=%llud peak_black=%llud\n",
+        where, kernel_pebble_stats.total_reserves,
+        kernel_pebble_stats.total_activates, kernel_pebble_stats.total_frees,
+        kernel_pebble_stats.current_white, kernel_pebble_stats.current_black,
+        kernel_pebble_stats.peak_white, kernel_pebble_stats.peak_black);
+}
+
 /*
  * pebble_kernel_reserve - Reserve memory (COLORLESS → WHITE)
  *
@@ -77,7 +103,7 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   void *buf;
   PebbleWhite *white;
   PebbleOp op;
-  uint msg_id;
+  int msg_id;
 
   /* Enforce 8-byte alignment (Pebble quantum) */
   if (size < PEBBLE_MIN_ALLOC)
@@ -124,11 +150,12 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   op.timestamp = fastticks(nil);
 
   msg_id = msgord_submit_raw(msgord, up, &op, sizeof(op));
-  if (msg_id == 0) {
+  if (msg_id < 0) {
     /* MSGORD submission failed, continue anyway */
-    print("pebble_kernel_reserve: MSGORD submit failed\n");
+    pebble_kernel_log_msgord_failure("reserve", buf, size);
+    msg_id = 0;
   }
-  alloc->msgord_id = msg_id;
+  alloc->msgord_id = (uint)msg_id;
 
   /* Add to global tracking list */
   lock(&kernel_allocs_lock);
@@ -187,7 +214,8 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
   op.size = alloc->size;
   op.timestamp = fastticks(nil);
 
-  msgord_submit_raw(msgord, up, &op, sizeof(op));
+  if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+    pebble_kernel_log_msgord_failure("activate", alloc->ptr, alloc->size);
 }
 
 /*
@@ -229,7 +257,8 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
   op.size = alloc->size;
   op.timestamp = fastticks(nil);
 
-  msgord_submit_raw(msgord, up, &op, sizeof(op));
+  if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+    pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
 
   /* Burn WHITE token */
   if (alloc->white)

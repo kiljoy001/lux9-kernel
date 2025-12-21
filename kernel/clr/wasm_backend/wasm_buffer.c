@@ -47,6 +47,7 @@ void wasm_buf_check_cap(wasm_buffer_t *buf, ulong needed) {
     if (new_cap < buf->size + needed)
       new_cap = buf->size + needed + 64;
 
+#ifdef USERSPACE_TEST
     void *new_data = realloc(buf->data, new_cap);
     if (!new_data) {
       buf->error = 1;
@@ -54,6 +55,17 @@ void wasm_buf_check_cap(wasm_buffer_t *buf, ulong needed) {
     }
     buf->data = new_data;
     buf->capacity = new_cap;
+#else
+    void *new_data = xalloc(new_cap);
+    if (!new_data) {
+      buf->error = 1;
+      return;
+    }
+    memmove(new_data, buf->data, buf->size);
+    xfree(buf->data);
+    buf->data = new_data;
+    buf->capacity = new_cap;
+#endif
   }
 }
 

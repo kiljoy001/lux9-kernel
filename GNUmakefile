@@ -68,7 +68,7 @@ POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
 WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
 WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c
-CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c $(WASM3_C)
+CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c $(WASM3_C)
 
 # QBE compiler removed - WASM3 is now the runtime
 

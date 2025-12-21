@@ -62,7 +62,7 @@ void pebbleinit(void) {
     return;
 
   // Initialize boot state
-  boot_pstate.black_budget = PEBBLE_DEFAULT_BUDGET;
+  boot_pstate.black_budget = PEBBLE_BOOT_BUDGET;
   boot_pstate.white_generation = 1;
 
   pebble_initialized = 1;
@@ -120,9 +120,8 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   if (up != nil) {
     diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
     if (!pow_verify(up->pow_nonce, (u64int)up->pid, diff)) {
-      if (pebble_debug)
-        print("PEBBLE: PoW failure for alloc size %lud (diff %d)\n", size,
-              diff);
+      print("PEBBLE: PoW failure pid=%lud size=%lud diff=%d nonce=%llud\n",
+            up->pid, size, diff, up->pow_nonce);
       return nil; /* E_POW_REQUIRED */
     }
   }
@@ -148,6 +147,16 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
     return &ps->whites[idx];
   }
   unlock(&pebble_global_lock);
+  {
+    int active = 0;
+    for (i = 0; i < PEBBLE_MAX_TOKENS; i++)
+      if (ps->whites_active[i])
+        active++;
+    print("PEBBLE: no free white tokens pid=%lud active=%d max=%d "
+          "head=%d gen=%lud\n",
+          up ? up->pid : 0, active, PEBBLE_MAX_TOKENS, ps->white_head,
+          ps->white_generation);
+  }
   return nil;
 }
 

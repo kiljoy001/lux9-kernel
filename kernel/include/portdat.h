@@ -1,7 +1,11 @@
+#ifndef _PORTDAT_H_
+#define _PORTDAT_H_
+
+#include "types_fwd.h"
+
 typedef struct Alarms Alarms;
 typedef struct Block Block;
 typedef struct Bpool Bpool;
-typedef struct Chan Chan;
 typedef struct Cmdbuf Cmdbuf;
 typedef struct Cmdtab Cmdtab;
 typedef struct Confmem Confmem;
@@ -30,13 +34,11 @@ typedef struct Perf Perf;
 typedef struct PhysUart PhysUart;
 typedef struct Pgrp Pgrp;
 typedef struct Physseg Physseg;
-typedef struct Proc Proc;
 typedef struct Pte Pte;
 typedef struct PMach PMach;
 typedef struct QLock QLock;
 typedef struct Queue Queue;
 typedef struct Ref Ref;
-typedef struct Rendez Rendez;
 typedef struct Rendezq Rendezq;
 typedef struct Rgrp Rgrp;
 typedef struct RWLock RWLock;
@@ -1086,3 +1088,5 @@ struct Kmesg {
 };
 
 extern struct Kmesg kmesg;
+
+#endif /* _PORTDAT_H_ */

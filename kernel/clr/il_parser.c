@@ -752,9 +752,6 @@ static uint8_t *il_get_table_start(il_assembly_t *assembly,
   ptr += 24; // Skip header
 
   // Skip row counts
-  extern int print(char *, ...);
-  print("DEBUG: HeapSizes=0x%x ValidMask=0x%llx\n",
-        assembly->tables_header.heap_sizes, assembly->tables_header.valid_mask);
   for (int i = 0; i < 64; i++) {
     if (assembly->tables_header.valid_mask & (1ULL << i)) {
       ptr += 4;

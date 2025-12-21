@@ -22,9 +22,7 @@
 #define _BLIND_LEDGER_H_
 
 #include "../include/rbtree.h"
-
-struct Proc;
-typedef struct Proc Proc;
+#include "types_fwd.h"
 
 #define BLIND_LEDGER_SECRET_SIZE 32
 #define BLIND_LEDGER_TOKEN_UNIT 8   // 8 bytes per Token Unit (Peg)

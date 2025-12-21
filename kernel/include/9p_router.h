@@ -8,11 +8,8 @@
 #define _9P_ROUTER_H_
 
 /* Include base types */
+#include "types_fwd.h"
 #include "u.h"
-
-/* Forward declarations */
-typedef struct Proc Proc;
-typedef struct Fcall Fcall;
 
 /* 9P Exchange Page Layout */
 #define P9_PAGE_SIZE 8192
@@ -98,7 +95,6 @@ int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 /*
  * Async 9P Operations (Phase 3)
  */
-typedef struct Fcall Fcall;
 
 /* Completion callback type */
 typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);

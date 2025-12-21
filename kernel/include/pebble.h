@@ -1,19 +1,6 @@
 #pragma once
 
-struct Proc;
-struct Ureg;
-
-#ifndef _PROC_DEFINED
-#define _PROC_DEFINED
-typedef struct Proc Proc;
-#endif
-
-#ifndef _LOCK_DEFINED
-#define _LOCK_DEFINED
-typedef struct Lock Lock;
-#endif
-
-typedef struct Ureg Ureg;
+#include "types_fwd.h"
 
 /*
  * Pebble Primitives - Core Kernel Feature
@@ -25,8 +12,9 @@ typedef struct Ureg Ureg;
  */
 
 /* Compile-time configuration */
-#define PEBBLE_DEFAULT_BUDGET (256 * 1024 * 1024) /* 256 MiB per process */
-#define PEBBLE_MAX_TOKENS 128
+#define PEBBLE_DEFAULT_BUDGET 0 /* per-process starts at 0 (caller-managed) */
+#define PEBBLE_BOOT_BUDGET (256 * 1024 * 1024) /* 256 MiB for boot kernel */
+#define PEBBLE_MAX_TOKENS 4096
 #define PEBBLE_DEBUG 0
 
 /*
@@ -209,13 +197,14 @@ void pebble_meta_free(void *v);
 
 /*
  * B.E.V.I.S. (Byzantine Energy Verification & Isolation Subsystem)
- * B.U.T.T.H.E.A.D. (Bandwidth-Utilizing Thermodynamic Token Hardened Economic Allocation Dispatcher)
+ * B.U.T.T.H.E.A.D. (Bandwidth-Utilizing Thermodynamic Token Hardened Economic
+ * Allocation Dispatcher)
  */
-#define POW_OP_ALLOC       1
-#define POW_OP_SPAWN       2
-#define POW_OP_NET_BIND    3
-#define POW_OP_REALTIME    4
-#define POW_OP_STACK_ALLOC 5  /* CIL localloc - cheaper than heap */
+#define POW_OP_ALLOC 1
+#define POW_OP_SPAWN 2
+#define POW_OP_NET_BIND 3
+#define POW_OP_REALTIME 4
+#define POW_OP_STACK_ALLOC 5 /* CIL localloc - cheaper than heap */
 
 int pow_calculate_difficulty(int op_class, ulong magnitude);
 int pow_verify(u64int nonce, u64int context, int required_diff);

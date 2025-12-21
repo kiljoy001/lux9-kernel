@@ -7,6 +7,7 @@
 
 /* Need kernel types before lock.h */
 #include "lock.h"
+#include "types_fwd.h"
 #include "u.h"
 
 /* Borrow states - based on Rust borrow semantics */
@@ -55,11 +56,6 @@ struct BorrowOwner {
   enum BorrowState state;              /* Current ownership state */
   enum BorrowSystemOwner system_owner; /* System owner during boot */
   int is_system_owned;                 /* 1 if owned at system level */
-
-#ifndef _PROC_DEFINED
-#define _PROC_DEFINED
-  typedef struct Proc Proc;
-#endif
 
   /* Borrow Checker Interface */
   int shared_count;                   /* Number of shared borrows (&) */

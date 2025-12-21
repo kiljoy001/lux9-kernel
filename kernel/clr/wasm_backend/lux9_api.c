@@ -13,6 +13,8 @@
 #include "../wasm_runtime/wasm3/m3_core.h"
 #include "../wasm_runtime/wasm3/wasm3.h"
 
+#define CLR_PTR_TAG 0x8000000000000000ULL
+
 /* Error checking macro for WASM linking */
 #define _(x)                                                                   \
   {                                                                            \
@@ -24,19 +26,56 @@
 /* Forward declaration for 9P router hook */
 extern long p9_route_message(int pid, void *msg, ulong len);
 
+/* CLR runtime hooks */
+extern void *lux_alloc(ulong size, ulong type_token);
+extern void *lux_addref(void *ptr);
+extern void lux_release(void *ptr);
+extern void *lux_snapshot(void *ptr);
+extern void lux_commit(void *ptr);
+extern void lux_rollback(void *ptr);
+
+extern void *clr_string_from_literal(u32int us_index);
+extern ulong clr_get_type_size(u32int token);
+extern void *clr_get_static_field(u32int token);
+
+typedef struct clr_object clr_object_t;
+extern int clr_is_instance_of(clr_object_t *obj, u32int type_token);
+
+static u64int clr_tag_ptr(void *ptr) {
+  if (!ptr)
+    return 0;
+  return ((u64int)(uintptr_t)ptr) | CLR_PTR_TAG;
+}
+
+static void *clr_untag_ptr(u64int val) {
+  return (void *)(uintptr_t)(val & ~CLR_PTR_TAG);
+}
+
+static void *clr_ptr_to_mem(u64int ptr_val, void *_mem) {
+  if (ptr_val & CLR_PTR_TAG)
+    return clr_untag_ptr(ptr_val);
+  return (void *)((u8int *)_mem + (u32int)ptr_val);
+}
+
 /*
- * lux9_send_9p(ptr: i32, len: i32) -> i32
+ * lux9_send_9p(arr: ref, len: i32) -> i32
  *
- * Copies 'len' bytes from WASM memory at 'ptr' to the process's Exchange Page.
- * Then calls the kernel 9P router.
+ * Copies 'len' bytes from a managed byte[] (length-prefixed) into the
+ * process Exchange Page, then routes the 9P message.
  */
 m3ApiRawFunction(lux9_send_9p) {
-  m3ApiReturnType(uint32_t) m3ApiGetArgMem(u8int *, msg_ptr);
+  m3ApiReturnType(uint32_t) m3ApiGetArg(u64int, arr_val);
   m3ApiGetArg(u32int, msg_len);
 
   if (msg_len > 4096) { /* Exchange page size limit */
     m3ApiReturn(-1);
   }
+
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (!arr)
+    m3ApiReturn(-2);
+
+  u8int *msg_ptr = (u8int *)arr + sizeof(u64int);
 
   /* Check if process has an exchange page */
   if (!up->p9page) {
@@ -66,16 +105,20 @@ m3ApiRawFunction(lux9_yield) {
 }
 
 /*
- * lux9_debug_print(ptr: i32, len: i32) -> void
+ * lux9_debug_print(str: ref, len: i32) -> void
  *
  * Prints to kernel console (kprint).
  */
 m3ApiRawFunction(lux9_debug_print) {
-  m3ApiReturnType(void) m3ApiGetArgMem(char *, str);
+  m3ApiReturnType(void) m3ApiGetArg(u64int, str_val);
   m3ApiGetArg(u32int, len);
 
   if (len > 256)
     len = 256;
+
+  char *str = (char *)clr_ptr_to_mem(str_val, _mem);
+  if (!str)
+    m3ApiSuccess();
 
   char buf[257];
   memmove(buf, str, len);
@@ -133,11 +176,15 @@ static void kexec_trampoline(void *arg) {
 }
 
 /*
- * lux9_spawn(ptr: i32) -> i32
+ * lux9_spawn(path: ref) -> i32
  * Spawns a new process executing the CLR assembly at 'ptr'.
  */
 m3ApiRawFunction(lux9_spawn) {
-  m3ApiReturnType(uint32_t) m3ApiGetArgMem(char *, path);
+  m3ApiReturnType(uint32_t) m3ApiGetArg(u64int, path_val);
+  char *path = (char *)clr_ptr_to_mem(path_val, _mem);
+
+  if (!path)
+    m3ApiReturn(-1);
 
   // Copy path to kernel heap for the child
   char *kpath;
@@ -161,16 +208,302 @@ m3ApiRawFunction(lux9_sleep) {
   m3ApiSuccess();
 }
 
+/* CLR/Pebble runtime imports */
+m3ApiRawFunction(clr_lux_alloc) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, size);
+  m3ApiGetArg(u64int, type_token);
+  void *ptr = lux_alloc((ulong)size, (ulong)type_token);
+  m3ApiReturn(clr_tag_ptr(ptr));
+}
+
+m3ApiRawFunction(clr_lux_addref) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  void *ptr = clr_untag_ptr(ptr_val);
+  ptr = lux_addref(ptr);
+  m3ApiReturn(clr_tag_ptr(ptr));
+}
+
+m3ApiRawFunction(clr_lux_release) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  lux_release(clr_untag_ptr(ptr_val));
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_lux_snapshot) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  void *ptr = lux_snapshot(clr_untag_ptr(ptr_val));
+  m3ApiReturn(clr_tag_ptr(ptr));
+}
+
+m3ApiRawFunction(clr_lux_commit) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  lux_commit(clr_untag_ptr(ptr_val));
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_lux_rollback) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  lux_rollback(clr_untag_ptr(ptr_val));
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_string_from_literal) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, us_index);
+  void *ptr = clr_string_from_literal(us_index);
+  m3ApiReturn(clr_tag_ptr(ptr));
+}
+
+m3ApiRawFunction(clr_import_get_type_size) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+  m3ApiReturn((u64int)clr_get_type_size(token));
+}
+
+m3ApiRawFunction(clr_import_get_static_field) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+  void *ptr = clr_get_static_field(token);
+  m3ApiReturn(clr_tag_ptr(ptr));
+}
+
+m3ApiRawFunction(clr_import_is_instance_of) {
+  m3ApiReturnType(u32int) m3ApiGetArg(u64int, obj_ptr);
+  m3ApiGetArg(u32int, type_token);
+  int res = clr_is_instance_of((clr_object_t *)clr_untag_ptr(obj_ptr),
+                               type_token);
+  m3ApiReturn((u32int)res);
+}
+
+m3ApiRawFunction(clr_import_ptr_add) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, offset);
+  if (ptr_val & CLR_PTR_TAG) {
+    u64int base = ptr_val & ~CLR_PTR_TAG;
+    m3ApiReturn((base + offset) | CLR_PTR_TAG);
+  }
+  m3ApiReturn(ptr_val + offset);
+}
+
+m3ApiRawFunction(clr_import_load_i64) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  void *ptr = clr_ptr_to_mem(ptr_val, _mem);
+  m3ApiReturn(*(u64int *)ptr);
+}
+
+m3ApiRawFunction(clr_import_store_i64) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, value);
+  void *ptr = clr_ptr_to_mem(ptr_val, _mem);
+  *(u64int *)ptr = value;
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_memmove) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, src_val);
+  m3ApiGetArg(u64int, size);
+  void *dst = clr_ptr_to_mem(dst_val, _mem);
+  void *src = clr_ptr_to_mem(src_val, _mem);
+  memmove(dst, src, (ulong)size);
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_memset) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, value);
+  m3ApiGetArg(u64int, size);
+  void *dst = clr_ptr_to_mem(dst_val, _mem);
+  memset(dst, (int)value, (ulong)size);
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_newobj) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, ctor_token);
+  ulong size = clr_get_type_size(ctor_token);
+  if (size < 16)
+    size = 16;
+  void *obj = lux_alloc(size, ctor_token);
+  if (obj)
+    memset(obj, 0, size);
+  m3ApiReturn(clr_tag_ptr(obj));
+}
+
+m3ApiRawFunction(clr_import_newarr) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, elem_token);
+  m3ApiGetArg(u64int, length);
+  ulong elem_size = clr_get_type_size(elem_token);
+  if (elem_size == 0)
+    elem_size = 8;
+  if (elem_size > 64)
+    elem_size = 8;
+  ulong total = 8 + (ulong)length * elem_size;
+  void *arr = lux_alloc(total, elem_token);
+  if (arr)
+    *(u64int *)arr = (u64int)length;
+  m3ApiReturn(clr_tag_ptr(arr));
+}
+
+m3ApiRawFunction(clr_import_array_len) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, arr_val);
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (!arr)
+    m3ApiReturn(0);
+  m3ApiReturn(*(u64int *)arr);
+}
+
+m3ApiRawFunction(clr_import_array_get) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, arr_val);
+  m3ApiGetArg(u64int, index);
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (!arr)
+    m3ApiReturn(0);
+  u64int *base = (u64int *)arr;
+  m3ApiReturn(base[1 + index]);
+}
+
+m3ApiRawFunction(clr_import_array_set) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, arr_val);
+  m3ApiGetArg(u64int, index);
+  m3ApiGetArg(u64int, value);
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (arr) {
+    u64int *base = (u64int *)arr;
+    base[1 + index] = value;
+  }
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_array_elem_addr) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, arr_val);
+  m3ApiGetArg(u64int, index);
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (!arr)
+    m3ApiReturn(0);
+  u64int *base = (u64int *)arr;
+  if (arr_val & CLR_PTR_TAG) {
+    m3ApiReturn(clr_tag_ptr(&base[1 + index]));
+  }
+  {
+    u64int base_off = (u64int)((u8int *)arr - (u8int *)_mem);
+    u64int elem_off = (u64int)((u8int *)&base[1 + index] - (u8int *)arr);
+    m3ApiReturn(base_off + elem_off);
+  }
+}
+
+m3ApiRawFunction(clr_import_box) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, value);
+  void *box = lux_alloc(sizeof(u64int), 0);
+  if (box)
+    *(u64int *)box = value;
+  m3ApiReturn(clr_tag_ptr(box));
+}
+
+m3ApiRawFunction(clr_import_unbox) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, obj_val);
+  m3ApiReturn(obj_val);
+}
+
+m3ApiRawFunction(clr_import_unbox_any) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, obj_val);
+  void *ptr = clr_ptr_to_mem(obj_val, _mem);
+  if (!ptr)
+    m3ApiReturn(0);
+  m3ApiReturn(*(u64int *)ptr);
+}
+
+m3ApiRawFunction(clr_import_initobj) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, size);
+  void *dst = clr_ptr_to_mem(dst_val, _mem);
+  memset(dst, 0, (ulong)size);
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_cpobj) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, src_val);
+  m3ApiGetArg(u64int, size);
+  void *dst = clr_ptr_to_mem(dst_val, _mem);
+  void *src = clr_ptr_to_mem(src_val, _mem);
+  memmove(dst, src, (ulong)size);
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_ldobj) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, src_val);
+  void *src = clr_ptr_to_mem(src_val, _mem);
+  m3ApiReturn(*(u64int *)src);
+}
+
+m3ApiRawFunction(clr_import_stobj) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, value);
+  void *dst = clr_ptr_to_mem(dst_val, _mem);
+  *(u64int *)dst = value;
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_throw) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, ex_val);
+  (void)ex_val;
+  m3ApiTrap(m3Err_trapAbort);
+}
+
 /* Linker function to bind these to a module */
 M3Result lux9_link_wasi(IM3Module module) {
   M3Result result = m3Err_none;
 
-  _(m3_LinkRawFunction(module, "env", "lux9_send_9p", "i(ii)", &lux9_send_9p));
-  _(m3_LinkRawFunction(module, "env", "lux9_yield", "v()", &lux9_yield));
-  _(m3_LinkRawFunction(module, "env", "lux9_debug_print", "v(ii)",
-                       &lux9_debug_print));
-  _(m3_LinkRawFunction(module, "env", "lux9_spawn", "i(i)", &lux9_spawn));
-  _(m3_LinkRawFunction(module, "env", "lux9_sleep", "v(i)", &lux9_sleep));
+#define LINK_RAW(func, sig, impl)                                              \
+  do {                                                                         \
+    result = m3_LinkRawFunction(module, "env", func, sig, impl);               \
+    if (result) {                                                              \
+      print("lux9_link_wasi: link failed %s %s: %s\n", func, sig, result);      \
+      return result;                                                           \
+    }                                                                          \
+  } while (0)
+
+  LINK_RAW("lux9_send_9p", "i(Ii)", &lux9_send_9p);
+  LINK_RAW("lux9_yield", "v()", &lux9_yield);
+  LINK_RAW("lux9_debug_print", "v(Ii)", &lux9_debug_print);
+  LINK_RAW("lux9_spawn", "i(I)", &lux9_spawn);
+  LINK_RAW("lux9_sleep", "v(i)", &lux9_sleep);
+
+  LINK_RAW("lux_alloc", "I(II)", &clr_lux_alloc);
+  LINK_RAW("lux_addref", "I(I)", &clr_lux_addref);
+  LINK_RAW("lux_release", "v(I)", &clr_lux_release);
+  LINK_RAW("lux_snapshot", "I(I)", &clr_lux_snapshot);
+  LINK_RAW("lux_commit", "v(I)", &clr_lux_commit);
+  LINK_RAW("lux_rollback", "v(I)", &clr_lux_rollback);
+
+  LINK_RAW("clr_string_from_literal", "I(i)",
+           &clr_import_string_from_literal);
+  LINK_RAW("clr_get_type_size", "I(i)", &clr_import_get_type_size);
+  LINK_RAW("clr_get_static_field", "I(i)", &clr_import_get_static_field);
+  LINK_RAW("clr_is_instance_of", "i(Ii)", &clr_import_is_instance_of);
+
+  LINK_RAW("clr_ptr_add", "I(II)", &clr_import_ptr_add);
+  LINK_RAW("clr_load_i64", "I(I)", &clr_import_load_i64);
+  LINK_RAW("clr_store_i64", "v(II)", &clr_import_store_i64);
+  LINK_RAW("clr_memmove", "v(III)", &clr_import_memmove);
+  LINK_RAW("clr_memset", "v(III)", &clr_import_memset);
+
+  LINK_RAW("clr_newobj", "I(i)", &clr_import_newobj);
+  LINK_RAW("clr_newarr", "I(iI)", &clr_import_newarr);
+  LINK_RAW("clr_array_len", "I(I)", &clr_import_array_len);
+  LINK_RAW("clr_array_get", "I(II)", &clr_import_array_get);
+  LINK_RAW("clr_array_set", "v(III)", &clr_import_array_set);
+  LINK_RAW("clr_array_elem_addr", "I(II)", &clr_import_array_elem_addr);
+
+  LINK_RAW("clr_box", "I(I)", &clr_import_box);
+  LINK_RAW("clr_unbox", "I(I)", &clr_import_unbox);
+  LINK_RAW("clr_unbox_any", "I(I)", &clr_import_unbox_any);
+
+  LINK_RAW("clr_initobj", "v(II)", &clr_import_initobj);
+  LINK_RAW("clr_cpobj", "v(III)", &clr_import_cpobj);
+  LINK_RAW("clr_ldobj", "I(I)", &clr_import_ldobj);
+  LINK_RAW("clr_stobj", "v(II)", &clr_import_stobj);
+
+  LINK_RAW("clr_throw", "v(I)", &clr_import_throw);
+
+#undef LINK_RAW
 
   return result;
 }

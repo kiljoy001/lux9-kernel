@@ -3,6 +3,7 @@
 /* Include base types and architecture constants first */
 #include "mem.h"
 #include "portlib.h"
+#include "types_fwd.h"
 #include "u.h"
 
 typedef struct Conf Conf;
@@ -14,19 +15,15 @@ typedef struct FPsave FPsave;
 typedef struct PFPU PFPU;
 typedef struct ISAConf ISAConf;
 typedef struct Label Label;
-typedef struct Lock Lock;
 typedef struct MMU MMU;
-typedef struct Mach Mach;
 typedef struct PCArch PCArch;
 typedef struct Pcidev Pcidev;
 typedef struct PCMmap PCMmap;
 typedef struct PCMslot PCMslot;
 typedef struct Page Page;
 typedef struct PMMU PMMU;
-typedef struct Proc Proc;
 typedef struct Segdesc Segdesc;
 typedef vlong Tval;
-typedef struct Ureg Ureg;
 typedef struct Vctl Vctl;
 
 #pragma incomplete Pcidev

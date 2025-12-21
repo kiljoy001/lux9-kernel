@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include "../types_fwd.h"
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Forward declarations for Plan 9 types */
-typedef struct Chan Chan;
+/* Forward declarations for additional Plan 9 types */
 typedef struct Walkqid Walkqid;
 typedef unsigned char uchar;
 typedef long long vlong;

@@ -14,6 +14,7 @@ extern void xfree(void *ptr);
 #endif
 
 /* WASM Opcodes */
+#define WASM_OP_UNREACHABLE 0x00
 #define WASM_OP_BLOCK 0x02
 #define WASM_OP_LOOP 0x03
 #define WASM_OP_IF 0x04
@@ -31,328 +32,1227 @@ extern void xfree(void *ptr);
 #define WASM_OP_GLOBAL_GET 0x23
 #define WASM_OP_GLOBAL_SET 0x24
 
-#define WASM_OP_I32_LOAD 0x28
 #define WASM_OP_I64_LOAD 0x29
-#define WASM_OP_I32_STORE 0x36
 #define WASM_OP_I64_STORE 0x37
 
 #define WASM_OP_I32_CONST 0x41
 #define WASM_OP_I64_CONST 0x42
 
 #define WASM_OP_I32_EQZ 0x45
-#define WASM_OP_I32_EQ 0x46
-#define WASM_OP_I32_NE 0x47
-#define WASM_OP_I32_ADD 0x6A
-#define WASM_OP_I32_SUB 0x6B
-#define WASM_OP_I32_MUL 0x6C
-#define WASM_OP_I32_DIV_S 0x6D
-#define WASM_OP_I32_REM_S 0x6F
-#define WASM_OP_I32_AND 0x71
-#define WASM_OP_I32_OR 0x72
-#define WASM_OP_I32_XOR 0x73
-#define WASM_OP_I32_SHL 0x74
-#define WASM_OP_I32_SHR_S 0x75
-#define WASM_OP_I32_SHR_U 0x76
+
+#define WASM_OP_I64_EQZ 0x50
+#define WASM_OP_I64_EQ 0x51
+#define WASM_OP_I64_NE 0x52
+#define WASM_OP_I64_LT_S 0x53
+#define WASM_OP_I64_GT_S 0x55
+#define WASM_OP_I64_LE_S 0x57
+#define WASM_OP_I64_GE_S 0x59
+
+#define WASM_OP_I64_ADD 0x7C
+#define WASM_OP_I64_SUB 0x7D
+#define WASM_OP_I64_MUL 0x7E
+#define WASM_OP_I64_DIV_S 0x7F
+#define WASM_OP_I64_DIV_U 0x80
+#define WASM_OP_I64_REM_S 0x81
+#define WASM_OP_I64_REM_U 0x82
+#define WASM_OP_I64_AND 0x83
+#define WASM_OP_I64_OR 0x84
+#define WASM_OP_I64_XOR 0x85
+#define WASM_OP_I64_SHL 0x86
+#define WASM_OP_I64_SHR_S 0x87
+#define WASM_OP_I64_SHR_U 0x88
+
+#define WASM_OP_I64_EXTEND_I32_S 0xAC
+#define WASM_OP_I64_EXTEND_I32_U 0xAD
+#define WASM_OP_I32_WRAP_I64 0xA7
 
 /* Types */
 #define WASM_TYPE_I32 0x7F
 #define WASM_TYPE_I64 0x7E
-#define WASM_TYPE_F32 0x7D
-#define WASM_TYPE_F64 0x7C
 #define WASM_TYPE_FUNC 0x60
 #define WASM_TYPE_EMPTY 0x40
 
 /* WASM Section IDs */
-#define WASM_SEC_CUSTOM 0
 #define WASM_SEC_TYPE 1
 #define WASM_SEC_IMPORT 2
 #define WASM_SEC_FUNCTION 3
-#define WASM_SEC_TABLE 4
 #define WASM_SEC_MEMORY 5
 #define WASM_SEC_GLOBAL 6
 #define WASM_SEC_EXPORT 7
-#define WASM_SEC_START 8
-#define WASM_SEC_ELEMENT 9
 #define WASM_SEC_CODE 10
-#define WASM_SEC_DATA 11
 
-/* Section helpers */
-static void emit_section_start(wasm_buffer_t *buf, u8int id, ulong *size_pos) {
-  wasm_emit_u8(buf, id);
-  *size_pos = buf->size;
-  /* Placeholder for uleb128 size (we'll overwrite later) */
-  /* WASM sizes can be up to 5 bytes in uleb128, we use a fixed 5-byte pad for
-   * simplicity or just track and move. */
-  /* For simplicity, we just emit a 0 and will do a backpatch if small, or use a
-   * better strategy. */
-  /* Let's use a simpler approach: emit to a temporary buffer, then emit length
-   * + data to main. */
-}
-
-/* Lux9 Shadow Stack Layout
-... */
+#define CALL_SCRATCH_MAX 16
 
 /* Helpers */
-static void emit_push_i32(wasm_buffer_t *code, s32int val) {
-  /* MEM[SP] = val; SP += 8 */
-  /* Get SP */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
+static void emit_push_i64_from_local(wasm_buffer_t *code, u32int stack_ptr_local,
+                                     u32int value_local) {
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, stack_ptr_local);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, value_local);
+  wasm_emit_u8(code, WASM_OP_I64_STORE);
+  wasm_emit_uleb128(code, 3);
   wasm_emit_uleb128(code, 0);
 
-  /* Const val */
-  wasm_emit_u8(code, WASM_OP_I32_CONST);
-  wasm_emit_sleb128(code, val);
-
-  /* Store i32 */
-  wasm_emit_u8(code, WASM_OP_I32_STORE);
-  wasm_emit_uleb128(code, 2); /* align */
-  wasm_emit_uleb128(code, 0); /* offset */
-
-  /* Increment SP */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
-  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, stack_ptr_local);
   wasm_emit_u8(code, WASM_OP_I32_CONST);
   wasm_emit_sleb128(code, 8);
-  wasm_emit_u8(code, WASM_OP_I32_ADD);
-  wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
-  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, 0x6A); /* i32.add */
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, stack_ptr_local);
 }
 
-static void emit_pop_to_local(wasm_buffer_t *code, u32int local_idx) {
-  /* SP -= 8; local = MEM[SP] */
-
-  /* Decrement SP */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
-  wasm_emit_uleb128(code, 0);
-  wasm_emit_u8(code, WASM_OP_I32_CONST);
-  wasm_emit_sleb128(code, 8);
-  wasm_emit_u8(code, WASM_OP_I32_SUB);
-  wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
-  wasm_emit_uleb128(code, 0);
-
-  /* Load */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
-  wasm_emit_uleb128(code, 0);
-  wasm_emit_u8(code, WASM_OP_I32_LOAD);
-  wasm_emit_uleb128(code, 2);
-  wasm_emit_uleb128(code, 0);
-
-  /* Set local */
+static void emit_push_i64_const(wasm_buffer_t *code, u32int stack_ptr_local,
+                                u32int scratch_local, s64int value) {
+  wasm_emit_u8(code, WASM_OP_I64_CONST);
+  wasm_emit_sleb128(code, value);
   wasm_emit_u8(code, WASM_OP_LOCAL_SET);
-  wasm_emit_uleb128(code, local_idx);
+  wasm_emit_uleb128(code, scratch_local);
+  emit_push_i64_from_local(code, stack_ptr_local, scratch_local);
 }
 
-static void emit_binary_op_i32(wasm_buffer_t *code, u8int wasm_op) {
-  /* Pop rhs -> local 1 (scratch)
-     Pop lhs -> local 0 (scratch)
-     res = op(0, 1)
-     Push res
-  */
-  /* We need scratch locals. Let's assume the function preamble defines:
-     0: target_block (i32)
-     1: scratch_a (i32)
-     2: scratch_b (i32)
-     3+: CIL locals
-  */
-  emit_pop_to_local(code, 2); /* RHS */
-  emit_pop_to_local(code, 1); /* LHS */
-
+static void emit_pop_i64_to_local(wasm_buffer_t *code, u32int stack_ptr_local,
+                                  u32int dst_local) {
   wasm_emit_u8(code, WASM_OP_LOCAL_GET);
-  wasm_emit_uleb128(code, 1);
-  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
-  wasm_emit_uleb128(code, 2);
-
-  wasm_emit_u8(code, wasm_op);
-
-  /* Result is on WASM stack. We need to push it to Shadow Stack */
-  /* This requires: Get SP, Store (Result) */
-  /* But Store takes (Addr, Val). So we need Addr first. */
-
-  /* Complex: The result is on stack.
-     We need to put it in a local temp to store it?
-     Yes, store to scratch 1 again. */
-  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
-  wasm_emit_uleb128(code, 1);
-
-  /* Store to stack */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
-  wasm_emit_uleb128(code, 0); /* Addr */
-
-  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
-  wasm_emit_uleb128(code, 1); /* Val */
-
-  wasm_emit_u8(code, WASM_OP_I32_STORE);
-  wasm_emit_uleb128(code, 2);
-  wasm_emit_uleb128(code, 0);
-
-  /* Inc SP */
-  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
-  wasm_emit_uleb128(code, 0);
+  wasm_emit_uleb128(code, stack_ptr_local);
   wasm_emit_u8(code, WASM_OP_I32_CONST);
   wasm_emit_sleb128(code, 8);
-  wasm_emit_u8(code, WASM_OP_I32_ADD);
-  wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
+  wasm_emit_u8(code, 0x6B); /* i32.sub */
+  wasm_emit_u8(code, WASM_OP_LOCAL_TEE);
+  wasm_emit_uleb128(code, stack_ptr_local);
+
+  wasm_emit_u8(code, WASM_OP_I64_LOAD);
+  wasm_emit_uleb128(code, 3);
   wasm_emit_uleb128(code, 0);
+
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, dst_local);
+}
+
+static void emit_peek_i64_to_local(wasm_buffer_t *code, u32int stack_ptr_local,
+                                   u32int dst_local) {
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, stack_ptr_local);
+  wasm_emit_u8(code, WASM_OP_I32_CONST);
+  wasm_emit_sleb128(code, 8);
+  wasm_emit_u8(code, 0x6B); /* i32.sub */
+  wasm_emit_u8(code, WASM_OP_I64_LOAD);
+  wasm_emit_uleb128(code, 3);
+  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, dst_local);
+}
+
+static void emit_binary_op_i64(wasm_buffer_t *code, u32int stack_ptr_local,
+                               u32int scratch_a, u32int scratch_b, u8int op) {
+  emit_pop_i64_to_local(code, stack_ptr_local, scratch_b);
+  emit_pop_i64_to_local(code, stack_ptr_local, scratch_a);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, scratch_a);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, scratch_b);
+  wasm_emit_u8(code, op);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, scratch_a);
+  emit_push_i64_from_local(code, stack_ptr_local, scratch_a);
+}
+
+static void emit_compare_i64(wasm_buffer_t *code, u32int stack_ptr_local,
+                             u32int scratch_a, u32int scratch_b, u8int op) {
+  emit_pop_i64_to_local(code, stack_ptr_local, scratch_b);
+  emit_pop_i64_to_local(code, stack_ptr_local, scratch_a);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, scratch_a);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, scratch_b);
+  wasm_emit_u8(code, op);
+  wasm_emit_u8(code, WASM_OP_I64_EXTEND_I32_U);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, scratch_a);
+  emit_push_i64_from_local(code, stack_ptr_local, scratch_a);
+}
+
+static void emit_set_target_and_jump(wasm_buffer_t *code, u32int target_local,
+                                     u32int block_id, u32int depth) {
+  wasm_emit_u8(code, WASM_OP_I32_CONST);
+  wasm_emit_sleb128(code, block_id);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, target_local);
+  wasm_emit_u8(code, WASM_OP_BR);
+  wasm_emit_uleb128(code, depth);
+}
+
+static u8int valtype_to_wasm(clr_value_type_t t) {
+  switch (t) {
+  case CLR_INT32:
+  case CLR_BOOL:
+    return WASM_TYPE_I32;
+  case CLR_INT64:
+  case CLR_REF:
+  default:
+    return WASM_TYPE_I64;
+  }
+}
+
+/* Resolve function index in module list */
+static fruity_function_t *find_function_by_token(fruity_module_t *module,
+                                                 u32int method_token) {
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->method_token == method_token)
+      return f;
+  }
+  return nil;
+}
+
+static int resolve_function_index(fruity_module_t *module, u32int method_token) {
+  int idx = 0;
+  for (fruity_function_t *f = module->functions_head; f; f = f->next, idx++) {
+    if (f->method_token == method_token)
+      return idx;
+  }
+  return -1;
+}
+
+static int resolve_function_index_by_name(fruity_module_t *module,
+                                          const char *name) {
+  int idx = 0;
+  for (fruity_function_t *f = module->functions_head; f; f = f->next, idx++) {
+    if (f->name && name && strcmp(f->name, name) == 0)
+      return idx;
+  }
+  return -1;
+}
+
+typedef struct {
+  int lux_alloc;
+  int lux_addref;
+  int lux_release;
+  int lux_snapshot;
+  int lux_commit;
+  int lux_rollback;
+  int clr_string_from_literal;
+  int clr_get_type_size;
+  int clr_get_static_field;
+  int clr_is_instance_of;
+  int clr_ptr_add;
+  int clr_load_i64;
+  int clr_store_i64;
+  int clr_memmove;
+  int clr_memset;
+  int clr_newobj;
+  int clr_newarr;
+  int clr_array_len;
+  int clr_array_get;
+  int clr_array_set;
+  int clr_array_elem_addr;
+  int clr_box;
+  int clr_unbox;
+  int clr_unbox_any;
+  int clr_initobj;
+  int clr_cpobj;
+  int clr_ldobj;
+  int clr_stobj;
+  int clr_throw;
+} runtime_imports_t;
+
+static void resolve_runtime_imports(fruity_module_t *module,
+                                    runtime_imports_t *imp) {
+  memset(imp, 0xFF, sizeof(*imp));
+  imp->lux_alloc = resolve_function_index_by_name(module, "lux_alloc");
+  imp->lux_addref = resolve_function_index_by_name(module, "lux_addref");
+  imp->lux_release = resolve_function_index_by_name(module, "lux_release");
+  imp->lux_snapshot = resolve_function_index_by_name(module, "lux_snapshot");
+  imp->lux_commit = resolve_function_index_by_name(module, "lux_commit");
+  imp->lux_rollback = resolve_function_index_by_name(module, "lux_rollback");
+  imp->clr_string_from_literal =
+      resolve_function_index_by_name(module, "clr_string_from_literal");
+  imp->clr_get_type_size =
+      resolve_function_index_by_name(module, "clr_get_type_size");
+  imp->clr_get_static_field =
+      resolve_function_index_by_name(module, "clr_get_static_field");
+  imp->clr_is_instance_of =
+      resolve_function_index_by_name(module, "clr_is_instance_of");
+  imp->clr_ptr_add = resolve_function_index_by_name(module, "clr_ptr_add");
+  imp->clr_load_i64 = resolve_function_index_by_name(module, "clr_load_i64");
+  imp->clr_store_i64 =
+      resolve_function_index_by_name(module, "clr_store_i64");
+  imp->clr_memmove = resolve_function_index_by_name(module, "clr_memmove");
+  imp->clr_memset = resolve_function_index_by_name(module, "clr_memset");
+  imp->clr_newobj = resolve_function_index_by_name(module, "clr_newobj");
+  imp->clr_newarr = resolve_function_index_by_name(module, "clr_newarr");
+  imp->clr_array_len =
+      resolve_function_index_by_name(module, "clr_array_len");
+  imp->clr_array_get =
+      resolve_function_index_by_name(module, "clr_array_get");
+  imp->clr_array_set =
+      resolve_function_index_by_name(module, "clr_array_set");
+  imp->clr_array_elem_addr =
+      resolve_function_index_by_name(module, "clr_array_elem_addr");
+  imp->clr_box = resolve_function_index_by_name(module, "clr_box");
+  imp->clr_unbox = resolve_function_index_by_name(module, "clr_unbox");
+  imp->clr_unbox_any = resolve_function_index_by_name(module, "clr_unbox_any");
+  imp->clr_initobj = resolve_function_index_by_name(module, "clr_initobj");
+  imp->clr_cpobj = resolve_function_index_by_name(module, "clr_cpobj");
+  imp->clr_ldobj = resolve_function_index_by_name(module, "clr_ldobj");
+  imp->clr_stobj = resolve_function_index_by_name(module, "clr_stobj");
+  imp->clr_throw = resolve_function_index_by_name(module, "clr_throw");
+}
+
+static void emit_call_import(wasm_buffer_t *code, int idx) {
+  if (idx < 0)
+    return;
+  wasm_emit_u8(code, WASM_OP_CALL);
+  wasm_emit_uleb128(code, (u32int)idx);
+}
+
+static void emit_call_throw(wasm_buffer_t *code, runtime_imports_t *imp) {
+  if (imp->clr_throw < 0)
+    return;
+  wasm_emit_u8(code, WASM_OP_I64_CONST);
+  wasm_emit_sleb128(code, 0);
+  emit_call_import(code, imp->clr_throw);
+}
+
+static void emit_call_method(fruity_module_t *module, wasm_buffer_t *code,
+                             runtime_imports_t *imp, u32int stack_ptr_local,
+                             u32int scratch_a, u32int scratch_b,
+                             u32int call_arg_base, u32int method_token) {
+  fruity_function_t *target = find_function_by_token(module, method_token);
+  int target_idx = resolve_function_index(module, method_token);
+  if (target_idx < 0 || target == nil) {
+    emit_call_throw(code, imp);
+    return;
+  }
+  if (target->arg_count > CALL_SCRATCH_MAX) {
+    emit_call_throw(code, imp);
+    return;
+  }
+
+  /* Pop args into call_arg locals (reverse order) */
+  for (int i = (int)target->arg_count - 1; i >= 0; i--) {
+    emit_pop_i64_to_local(code, stack_ptr_local, call_arg_base + i);
+  }
+
+  /* Push args for call (in order) */
+  for (u32int i = 0; i < target->arg_count; i++) {
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, call_arg_base + i);
+  }
+
+  /* Call target */
+  wasm_emit_u8(code, WASM_OP_CALL);
+  wasm_emit_uleb128(code, (u32int)target_idx);
+
+  if (target->return_type != CLR_VOID) {
+    wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(code, scratch_a);
+    emit_push_i64_from_local(code, stack_ptr_local, scratch_a);
+  }
 }
 
 /* Compile a single function body */
-static int compile_function_body(fruity_function_t *func, wasm_buffer_t *code) {
-  /* Locals:
-     0: target_block (i32)
-     1: scratch_a (i32)
-     2: scratch_b (i32)
-     3..N: CIL Locals mapped 1:1
-  */
+static int compile_function_body(fruity_module_t *module, fruity_function_t *func,
+                                 runtime_imports_t *imp, wasm_buffer_t *code) {
+  u32int arg_count = func->arg_count;
+  u32int local_base = arg_count;
+
+  u32int local_target = local_base + 0;      /* i32 */
+  u32int local_frame_base = local_base + 1;  /* i32 */
+  u32int local_stack_ptr = local_base + 2;   /* i32 */
+  u32int local_i64_base = local_base + 3;    /* i64 */
+  u32int local_scratch_a = local_i64_base + 0;
+  u32int local_scratch_b = local_i64_base + 1;
+  u32int local_scratch_c = local_i64_base + 2;
+  u32int local_call_base = local_i64_base + 3;
+  u32int local_user_base = local_i64_base + 3 + CALL_SCRATCH_MAX;
+
+  u32int i32_locals = 3;
+  u32int i64_locals = 3 + CALL_SCRATCH_MAX + func->local_count;
 
   /* Declare locals */
-  u32int local_count = 3 + func->local_count;
-  /* Run-length encoding of locals */
-  /* We just say 'local_count' of type i32 */
-  wasm_emit_uleb128(code, 1); /* 1 group */
-  wasm_emit_uleb128(code, local_count);
+  wasm_emit_uleb128(code, 2); /* 2 groups */
+  wasm_emit_uleb128(code, i32_locals);
   wasm_emit_u8(code, WASM_TYPE_I32);
+  wasm_emit_uleb128(code, i64_locals);
+  wasm_emit_u8(code, WASM_TYPE_I64);
 
-  /* Init SP global if needed? No, done at module level.
-     But we should set it to STACK_BASE at start of main?
-     For now assume handled globally. */
+  /* Frame layout */
+  u32int args_offset = 0;
+  u32int locals_offset = args_offset + (u32int)(arg_count * 8);
+  u32int stack_offset = locals_offset + (u32int)(func->local_count * 8);
+  u32int frame_size = stack_offset + (u32int)(func->max_stack_depth * 8);
+
+  /* Prologue: frame_base = global_sp; global_sp += frame_size; stack_ptr = base + stack_offset */
+  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
+  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, local_frame_base);
+
+  wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
+  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_I32_CONST);
+  wasm_emit_sleb128(code, frame_size);
+  wasm_emit_u8(code, 0x6A); /* i32.add */
+  wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
+  wasm_emit_uleb128(code, 0);
+
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, local_frame_base);
+  wasm_emit_u8(code, WASM_OP_I32_CONST);
+  wasm_emit_sleb128(code, stack_offset);
+  wasm_emit_u8(code, 0x6A); /* i32.add */
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, local_stack_ptr);
+
+  wasm_emit_u8(code, WASM_OP_I32_CONST);
+  wasm_emit_sleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+  wasm_emit_uleb128(code, local_target);
+
+  /* Store args into frame memory */
+  for (u32int i = 0; i < arg_count; i++) {
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, local_frame_base);
+    wasm_emit_u8(code, WASM_OP_I32_CONST);
+    wasm_emit_sleb128(code, args_offset + (i * 8));
+    wasm_emit_u8(code, 0x6A); /* i32.add */
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, i);
+    wasm_emit_u8(code, WASM_OP_I64_STORE);
+    wasm_emit_uleb128(code, 3);
+    wasm_emit_uleb128(code, 0);
+  }
+
+  /* Zero locals */
+  for (u32int i = 0; i < func->local_count; i++) {
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, local_frame_base);
+    wasm_emit_u8(code, WASM_OP_I32_CONST);
+    wasm_emit_sleb128(code, locals_offset + (i * 8));
+    wasm_emit_u8(code, 0x6A); /* i32.add */
+    wasm_emit_u8(code, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(code, 0);
+    wasm_emit_u8(code, WASM_OP_I64_STORE);
+    wasm_emit_uleb128(code, 3);
+    wasm_emit_uleb128(code, 0);
+  }
 
   /* Loop-Switch Wrapper */
-  /* block $break (label 1) */
   wasm_emit_u8(code, WASM_OP_BLOCK);
   wasm_emit_u8(code, WASM_TYPE_EMPTY);
-
-  /* loop $loop (label 0) */
   wasm_emit_u8(code, WASM_OP_LOOP);
   wasm_emit_u8(code, WASM_TYPE_EMPTY);
 
-  /* Dispatcher: block $b0, block $b1 ... br_table */
-  /* Nested blocks for switch. Depth = block_count */
   ulong block_count = func->block_count;
 
-  /* To implement br_table to arbitary blocks, we nest them:
-     block $b_N
-      ...
-       block $b_0
-         br_table $b_0 $b_1 ... $b_N (target)
-       end
-       ... (body of b_0)
-       br $loop
-      end
-      ... (body of b_N)
-  */
-  /* This is the standard re-looper structure for flat switches */
-
-  /* 1. Emit N nested blocks */
   for (ulong i = 0; i < block_count; i++) {
     wasm_emit_u8(code, WASM_OP_BLOCK);
     wasm_emit_u8(code, WASM_TYPE_EMPTY);
   }
 
-  /* 2. Emit br_table */
   wasm_emit_u8(code, WASM_OP_BLOCK); /* Dispatch block */
   wasm_emit_u8(code, WASM_TYPE_EMPTY);
 
-  wasm_emit_u8(code, WASM_OP_LOCAL_GET); /* target_block */
-  wasm_emit_uleb128(code, 0);
+  wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+  wasm_emit_uleb128(code, local_target);
 
   wasm_emit_u8(code, WASM_OP_BR_TABLE);
-  wasm_emit_uleb128(code, block_count); /* count */
+  wasm_emit_uleb128(code, block_count);
   for (ulong i = 0; i < block_count; i++) {
-    /* Target i maps to label (block_count - i) */
-    /* label 0 is Dispatch block */
-    /* label 1 is block b_0 */
     wasm_emit_uleb128(code, i + 1);
   }
-  wasm_emit_uleb128(code, block_count); /* default: last block or break? */
+  wasm_emit_uleb128(code, block_count);
 
   wasm_emit_u8(code, WASM_OP_END); /* End Dispatch block */
 
-  /* 3. Emit Block Bodies */
-  /* Blocks are popped in reverse order of creation.
-     Inner-most was b_0. So we emit b_0 first.
-  */
   fruity_basic_block_t *bb = func->blocks_head;
   for (ulong i = 0; i < block_count; i++) {
-    /* Body of block 'i' */
     fruity_basic_block_t *current_bb = bb;
 
     if (current_bb) {
       fruity_instruction_t *instr = current_bb->instructions_head;
       while (instr) {
-        /* Emit Instruction */
         switch (instr->opcode) {
         case FRUITY_NOP:
+        case FRUITY_BREAK:
           break;
 
         case FRUITY_LDC_I4:
-          emit_push_i32(code, instr->operand.value.i32);
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              instr->operand.value.i32);
+          break;
+        case FRUITY_LDC_I8:
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              instr->operand.value.i64);
+          break;
+        case FRUITY_LDC_R4: {
+          u32int bits;
+          float v = instr->operand.value.r32;
+          memmove(&bits, &v, sizeof(bits));
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a, bits);
+          break;
+        }
+        case FRUITY_LDC_R8: {
+          u64int bits;
+          double v = instr->operand.value.r64;
+          memmove(&bits, &v, sizeof(bits));
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              (s64int)bits);
+          break;
+        }
+        case FRUITY_LDNULL:
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a, 0);
           break;
 
         case FRUITY_ADD:
-          emit_binary_op_i32(code, WASM_OP_I32_ADD);
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_ADD);
           break;
         case FRUITY_SUB:
-          emit_binary_op_i32(code, WASM_OP_I32_SUB);
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_SUB);
           break;
         case FRUITY_MUL:
-          emit_binary_op_i32(code, WASM_OP_I32_MUL);
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_MUL);
           break;
-
-        case FRUITY_LOAD_LOCAL:
-          /* Push local to stack */
+        case FRUITY_DIV:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_DIV_S);
+          break;
+        case FRUITY_DIV_UN:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_DIV_U);
+          break;
+        case FRUITY_REM:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_REM_S);
+          break;
+        case FRUITY_REM_UN:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_REM_U);
+          break;
+        case FRUITY_NEG:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, 0);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
-          wasm_emit_uleb128(code, 3 + instr->operand.value.index);
-          /* Store to Shadow Stack */
-          /* (Simplified push logic here for brevity, essentially same as
-           * emit_push_i32 but value is on stack) */
-          /* TODO: Factor out generic push */
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_SUB);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
           break;
 
-        case FRUITY_STORE_LOCAL:
-          /* Pop stack to local */
-          emit_pop_to_local(code, 3 + instr->operand.value.index);
+        case FRUITY_AND:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_AND);
+          break;
+        case FRUITY_OR:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_OR);
+          break;
+        case FRUITY_XOR:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_XOR);
+          break;
+        case FRUITY_NOT:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, -1);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_XOR);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_SHL:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_SHL);
+          break;
+        case FRUITY_SHR:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_SHR_S);
+          break;
+        case FRUITY_SHR_UN:
+          emit_binary_op_i64(code, local_stack_ptr, local_scratch_a,
+                             local_scratch_b, WASM_OP_I64_SHR_U);
+          break;
+
+        case FRUITY_CEQ:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_EQ);
+          break;
+        case FRUITY_CNE:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_NE);
+          break;
+        case FRUITY_CLT:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_LT_S);
+          break;
+        case FRUITY_CLE:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_LE_S);
+          break;
+        case FRUITY_CGT:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_GT_S);
+          break;
+        case FRUITY_CGE:
+          emit_compare_i64(code, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, WASM_OP_I64_GE_S);
+          break;
+
+        case FRUITY_CONV_I4:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I32_WRAP_I64);
+          wasm_emit_u8(code, WASM_OP_I64_EXTEND_I32_S);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_CONV_I8:
+        case FRUITY_CONV_R4:
+        case FRUITY_CONV_R8:
+          /* Kernel mode: leave as i64 */
+          break;
+
+        case FRUITY_DUP:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_DUP_REF:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_addref);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_POP:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_POP_REF:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_release);
+          break;
+
+        case FRUITY_LIME:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, 0);
+          emit_call_import(code, imp->lux_alloc);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_VANILLA:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_addref);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_BURN:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_release);
+          break;
+        case FRUITY_LOAD_STRING:
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.i32);
+          emit_call_import(code, imp->clr_string_from_literal);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+
+        case FRUITY_CHERRY:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_snapshot);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_BERRY:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_commit);
+          break;
+        case FRUITY_ROLLBACK:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->lux_rollback);
+          break;
+
+        case FRUITY_GRAPE:
+          /* MVP: no-op */
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_LEMON:
+          /* Ownership move: no-op */
+          break;
+
+        case FRUITY_LOAD_LOCAL: {
+          u32int idx = instr->operand.value.index;
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, locals_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_I64_LOAD);
+          wasm_emit_uleb128(code, 3);
+          wasm_emit_uleb128(code, 0);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        }
+        case FRUITY_STORE_LOCAL: {
+          u32int idx = instr->operand.value.index;
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, locals_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_STORE);
+          wasm_emit_uleb128(code, 3);
+          wasm_emit_uleb128(code, 0);
+          break;
+        }
+        case FRUITY_LOAD_LOCAL_ADDR: {
+          u32int idx = instr->operand.value.index;
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, locals_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_I64_EXTEND_I32_U);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        }
+        case FRUITY_LOAD_ARG: {
+          u32int idx = instr->operand.value.index;
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, args_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_I64_LOAD);
+          wasm_emit_uleb128(code, 3);
+          wasm_emit_uleb128(code, 0);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        }
+        case FRUITY_STORE_ARG: {
+          u32int idx = instr->operand.value.index;
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, args_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_STORE);
+          wasm_emit_uleb128(code, 3);
+          wasm_emit_uleb128(code, 0);
+          break;
+        }
+        case FRUITY_LOAD_ARG_ADDR: {
+          u32int idx = instr->operand.value.index;
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, args_offset + (idx * 8));
+          wasm_emit_u8(code, 0x6A);
+          wasm_emit_u8(code, WASM_OP_I64_EXTEND_I32_U);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        }
+
+        case FRUITY_LOAD_FIELD:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.i32);
+          emit_call_import(code, imp->clr_ptr_add);
+          emit_call_import(code, imp->clr_load_i64);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_STORE_FIELD:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.i32);
+          emit_call_import(code, imp->clr_ptr_add);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_call_import(code, imp->clr_store_i64);
+          break;
+        case FRUITY_LOAD_STATIC:
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_get_static_field);
+          emit_call_import(code, imp->clr_load_i64);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_STORE_STATIC:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_get_static_field);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_store_i64);
+          break;
+        case FRUITY_LDFLDA:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.i32);
+          emit_call_import(code, imp->clr_ptr_add);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_LOAD_IND:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_load_i64);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_STORE_IND:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_call_import(code, imp->clr_store_i64);
+          break;
+        case FRUITY_MEMCPY:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_c);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_c);
+          emit_call_import(code, imp->clr_memmove);
+          break;
+        case FRUITY_MEMSET:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_c);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_c);
+          emit_call_import(code, imp->clr_memset);
+          break;
+
+        case FRUITY_CASTCLASS:
+          emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_is_instance_of);
+          wasm_emit_u8(code, WASM_OP_I32_EQZ);
+          wasm_emit_u8(code, WASM_OP_IF);
+          wasm_emit_u8(code, WASM_TYPE_EMPTY);
+          emit_call_throw(code, imp);
+          wasm_emit_u8(code, WASM_OP_END);
+          break;
+        case FRUITY_ISINST:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_is_instance_of);
+          wasm_emit_u8(code, WASM_OP_IF);
+          wasm_emit_u8(code, WASM_TYPE_I64);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_ELSE);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, 0);
+          wasm_emit_u8(code, WASM_OP_END);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_BOX:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_box);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_UNBOX:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_unbox);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_UNBOX_ANY:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_unbox_any);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_INITOBJ:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_initobj);
+          break;
+        case FRUITY_CPOBJ:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_cpobj);
+          break;
+        case FRUITY_LDOBJ:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_ldobj);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_STOBJ:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_call_import(code, imp->clr_stobj);
+          break;
+        case FRUITY_NEWOBJ:
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_newobj);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_NEWARR:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_newarr);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_LDLEN:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_array_len);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_b);
+          break;
+        case FRUITY_LDELEM:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_call_import(code, imp->clr_array_get);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_c);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_c);
+          break;
+        case FRUITY_STELEM:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_c);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_c);
+          emit_call_import(code, imp->clr_array_set);
+          break;
+        case FRUITY_LDELEMA:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_b);
+          emit_call_import(code, imp->clr_array_elem_addr);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_c);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_c);
+          break;
+
+        case FRUITY_THROW:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_call_import(code, imp->clr_throw);
+          wasm_emit_u8(code, WASM_OP_UNREACHABLE);
+          break;
+        case FRUITY_RETHROW:
+          emit_call_throw(code, imp);
+          wasm_emit_u8(code, WASM_OP_UNREACHABLE);
+          break;
+
+        case FRUITY_LEAVE:
+        case FRUITY_JUMP:
+          emit_set_target_and_jump(code, local_target,
+                                   instr->operand.value.target
+                                       ? instr->operand.value.target->block_id
+                                       : 0,
+                                   (u32int)(block_count - i + 1));
           break;
 
         case FRUITY_RET:
+          /* Restore global stack top to frame base */
+          if (func->return_type != CLR_VOID) {
+            emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+            wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+            wasm_emit_uleb128(code, local_scratch_a);
+          }
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
+          wasm_emit_uleb128(code, 0);
           wasm_emit_u8(code, WASM_OP_RETURN);
           break;
 
-        case FRUITY_JUMP:
-          /* Set target, br loop */
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
-          wasm_emit_sleb128(code, instr->operand.value.target->block_id);
-          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
-          wasm_emit_uleb128(code, 0); /* target_block */
+        case FRUITY_BTRUE:
+        case FRUITY_BFALSE:
+        case FRUITY_BEQ:
+        case FRUITY_BNE:
+        case FRUITY_BLT:
+        case FRUITY_BLE:
+        case FRUITY_BGT:
+        case FRUITY_BGE: {
+          u8int cmp_op = 0;
+          int unary = 0;
+          switch (instr->opcode) {
+          case FRUITY_BTRUE:
+            unary = 1;
+            cmp_op = WASM_OP_I64_EQZ; /* invert later */
+            break;
+          case FRUITY_BFALSE:
+            unary = 1;
+            cmp_op = WASM_OP_I64_EQZ;
+            break;
+          case FRUITY_BEQ:
+            cmp_op = WASM_OP_I64_EQ;
+            break;
+          case FRUITY_BNE:
+            cmp_op = WASM_OP_I64_NE;
+            break;
+          case FRUITY_BLT:
+            cmp_op = WASM_OP_I64_LT_S;
+            break;
+          case FRUITY_BLE:
+            cmp_op = WASM_OP_I64_LE_S;
+            break;
+          case FRUITY_BGT:
+            cmp_op = WASM_OP_I64_GT_S;
+            break;
+          case FRUITY_BGE:
+            cmp_op = WASM_OP_I64_GE_S;
+            break;
+          default:
+            break;
+          }
 
-          /* Jump to loop head (label depth depends on nesting) */
-          /* We are inside 'block_count - i' blocks + Loop wrapper + Block
-           * wrapper */
-          /* Actually, we just need to break out of the current block to fall
-             through? No, we need to go back to the top dispatcher. The
-             dispatcher is at the top of the Loop. Loop is label 'block_count -
-             i + 1'.
-          */
-          wasm_emit_u8(code, WASM_OP_BR);
-          wasm_emit_uleb128(code, block_count - i + 1);
+          if (unary) {
+            emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+            wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+            wasm_emit_uleb128(code, local_scratch_a);
+            wasm_emit_u8(code, cmp_op);
+            if (instr->opcode == FRUITY_BTRUE) {
+              wasm_emit_u8(code, WASM_OP_I32_EQZ); /* invert */
+            }
+          } else {
+            emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_b);
+            emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+            wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+            wasm_emit_uleb128(code, local_scratch_a);
+            wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+            wasm_emit_uleb128(code, local_scratch_b);
+            wasm_emit_u8(code, cmp_op);
+          }
+
+          wasm_emit_u8(code, WASM_OP_IF);
+          wasm_emit_u8(code, WASM_TYPE_EMPTY);
+          emit_set_target_and_jump(code, local_target,
+                                   instr->operand.value.target
+                                       ? instr->operand.value.target->block_id
+                                       : 0,
+                                   (u32int)(block_count - i + 1));
+          wasm_emit_u8(code, WASM_OP_END);
+          break;
+        }
+
+        case FRUITY_SWITCH: {
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          fruity_switch_targets_t *targets = instr->operand.value.switch_targets;
+          if (targets && targets->count > 0) {
+            wasm_emit_u8(code, WASM_OP_BLOCK);
+            wasm_emit_u8(code, WASM_TYPE_EMPTY);
+            for (u32int t = 0; t < targets->count; t++) {
+              fruity_basic_block_t *tgt = targets->targets[t];
+              if (!tgt)
+                continue;
+              wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+              wasm_emit_uleb128(code, local_scratch_a);
+              wasm_emit_u8(code, WASM_OP_I64_CONST);
+              wasm_emit_sleb128(code, (s64int)t);
+              wasm_emit_u8(code, WASM_OP_I64_EQ);
+              wasm_emit_u8(code, WASM_OP_IF);
+              wasm_emit_u8(code, WASM_TYPE_EMPTY);
+              emit_set_target_and_jump(code, local_target, tgt->block_id,
+                                       (u32int)(block_count - i + 1));
+              wasm_emit_u8(code, WASM_OP_END);
+            }
+            wasm_emit_u8(code, WASM_OP_END);
+          }
+          break;
+        }
+
+        case FRUITY_CALL:
+          emit_call_method(module, code, imp, local_stack_ptr, local_scratch_a,
+                           local_scratch_b, local_call_base,
+                           instr->operand.value.token);
+          break;
+        case FRUITY_CALLI:
+          /* MVP: treat as direct call via token on stack */
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          emit_call_throw(code, imp);
+          break;
+        case FRUITY_LDFTN:
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              instr->operand.value.token);
+          break;
+        case FRUITY_LDVIRTFTN:
+          emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              instr->operand.value.token);
+          break;
+
+        case FRUITY_SIZEOF:
+          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_sleb128(code, instr->operand.value.token);
+          emit_call_import(code, imp->clr_get_type_size);
+          wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+          wasm_emit_uleb128(code, local_scratch_a);
+          emit_push_i64_from_local(code, local_stack_ptr, local_scratch_a);
+          break;
+        case FRUITY_LDTOKEN:
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a,
+                              instr->operand.value.token);
+          break;
+        case FRUITY_ARGLIST:
+          emit_push_i64_const(code, local_stack_ptr, local_scratch_a, 0);
+          break;
+        case FRUITY_JMP:
+        case FRUITY_CKFINITE:
+        case FRUITY_ENDFINALLY:
+        case FRUITY_PREFIX_CONSTRAINED:
+        case FRUITY_PREFIX_READONLY:
+        case FRUITY_PREFIX_NO:
+        case FRUITY_PREFIX_TAIL:
+        case FRUITY_PREFIX_UNALIGNED:
+        case FRUITY_PREFIX_VOLATILE:
+        case FRUITY_MKREFANY:
+        case FRUITY_REFANYVAL:
+        case FRUITY_REFANYTYPE:
+          /* MVP: no-op */
           break;
 
         default:
-          /* Placeholder */
+          emit_call_throw(code, imp);
+          wasm_emit_u8(code, WASM_OP_UNREACHABLE);
           break;
         }
 
         instr = instr->next;
       }
-      bb = current_bb->next; /* Advance for next iteration */
+      bb = current_bb->next;
     }
 
-    /* Check if fallthrough is needed (if last instruction wasn't a terminator)
-     */
     int needs_fallthrough = 1;
     if (current_bb && current_bb->instructions_tail) {
       switch (current_bb->instructions_tail->opcode) {
       case FRUITY_RET:
       case FRUITY_JUMP:
+      case FRUITY_LEAVE:
         needs_fallthrough = 0;
         break;
       default:
@@ -361,12 +1261,8 @@ static int compile_function_body(fruity_function_t *func, wasm_buffer_t *code) {
     }
 
     if (needs_fallthrough) {
-      wasm_emit_u8(code, WASM_OP_I32_CONST);
-      wasm_emit_sleb128(code, i + 1);
-      wasm_emit_u8(code, WASM_OP_LOCAL_SET);
-      wasm_emit_uleb128(code, 0);
-      wasm_emit_u8(code, WASM_OP_BR);
-      wasm_emit_uleb128(code, block_count - i + 1);
+      emit_set_target_and_jump(code, local_target, (u32int)(i + 1),
+                               (u32int)(block_count - i + 1));
     }
 
     wasm_emit_u8(code, WASM_OP_END); /* Close block */
@@ -374,23 +1270,9 @@ static int compile_function_body(fruity_function_t *func, wasm_buffer_t *code) {
 
   wasm_emit_u8(code, WASM_OP_END); /* Close Loop */
   wasm_emit_u8(code, WASM_OP_END); /* Close Wrapper Block */
-
-  /* End of function */
-  wasm_emit_u8(code, WASM_OP_END);
+  wasm_emit_u8(code, WASM_OP_END); /* Function end */
 
   return 0;
-}
-
-/* Helper: Map CLR type to WASM type */
-static u8int valtype_to_wasm(clr_value_type_t t) {
-  switch (t) {
-  case CLR_INT64:
-    return WASM_TYPE_I64;
-  case CLR_BOOL:
-  case CLR_INT32:
-  default:
-    return WASM_TYPE_I32;
-  }
 }
 
 int fruity_compile_to_wasm(fruity_module_t *module,
@@ -402,45 +1284,48 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   wasm_buf_init(&main_buf, 4096);
 
   /* 1. Header */
-  wasm_emit_u32(&main_buf, 0x6D736100); /* \0asm */
-  wasm_emit_u32(&main_buf, 1);          /* Version 1 */
+  wasm_emit_u32(&main_buf, 0x6D736100);
+  wasm_emit_u32(&main_buf, 1);
 
   /* Count functions */
   ulong func_count = 0;
-  {
-    fruity_function_t *f = module->functions_head;
-    while (f) {
-      func_count++;
-      f = f->next;
-    }
-  }
+  for (fruity_function_t *f = module->functions_head; f; f = f->next)
+    func_count++;
+  print("WASM: compiling module with %d functions\n", (int)func_count);
 
-  /* 2. Type Section (Index 1) */
+  /* 2. Type Section */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 128);
     wasm_emit_vec_header(&sec, func_count);
 
-    fruity_function_t *f = module->functions_head;
-    while (f) {
-      /* Emit Signature: (params) -> (result) */
-      wasm_emit_u8(&sec, WASM_TYPE_FUNC);
-
-      /* Params */
-      wasm_emit_vec_header(&sec, f->arg_count);
-      for (ulong i = 0; i < f->arg_count; i++) {
-        wasm_emit_u8(&sec, valtype_to_wasm(f->arg_types[i]));
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
+      if (f->import_info.is_import && f->name) {
+        print("WASM: import %s args=%d ret=%d", f->name, (int)f->arg_count,
+              (int)f->return_type);
+        for (ulong ai = 0; ai < f->arg_count && f->arg_types; ai++) {
+          print(" %d", (int)f->arg_types[ai]);
+        }
+        print("\n");
       }
-
-      /* Result */
+      wasm_emit_u8(&sec, WASM_TYPE_FUNC);
+      if (f->arg_count > 0 && f->arg_types == nil) {
+        print("WASM: missing arg_types for fn=%p, forcing 0 args\n", f);
+        wasm_emit_vec_header(&sec, 0);
+      } else {
+        wasm_emit_vec_header(&sec, f->arg_count);
+        for (ulong i = 0; i < f->arg_count; i++) {
+          wasm_emit_u8(&sec, valtype_to_wasm(f->arg_types[i]));
+        }
+      }
       if (f->return_type == CLR_VOID) {
         wasm_emit_vec_header(&sec, 0);
       } else {
         wasm_emit_vec_header(&sec, 1);
         wasm_emit_u8(&sec, valtype_to_wasm(f->return_type));
       }
-
-      f = f->next;
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_TYPE);
@@ -449,48 +1334,42 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 2.5 Import Section (Index 2) */
+  /* 3. Import Section */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 128);
 
     ulong import_count = 0;
-    fruity_function_t *f = module->functions_head;
-    while (f) {
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
       if (f->import_info.is_import)
         import_count++;
-      f = f->next;
     }
 
     if (import_count > 0) {
       wasm_emit_vec_header(&sec, import_count);
-      f = module->functions_head;
-      while (f) {
-        if (f->import_info.is_import) {
-          /* module, name, desc tag (0=func), type idx */
-          wasm_emit_name(&sec, f->import_info.module_name
-                                   ? f->import_info.module_name
-                                   : "env");
-          wasm_emit_name(&sec, f->import_info.function_name
-                                   ? f->import_info.function_name
-                                   : f->name);
-          wasm_emit_u8(&sec, 0x00); /* func export */
-
-          /* We need the Type Index for this function's signature.
-             We assume 1:1 mapping of Function -> Type Index, where Type Index
-             corresponds to the function's position in the list. So if this is
-             the Nth function in the list, it uses Type Index N.
-          */
-          /* Find index in list */
-          ulong type_idx = 0;
-          fruity_function_t *tf = module->functions_head;
-          while (tf != f) {
-            type_idx++;
-            tf = tf->next;
-          }
-          wasm_emit_uleb128(&sec, type_idx);
+      seen = 0;
+      for (fruity_function_t *f = module->functions_head;
+           f && seen < func_count; f = f->next, seen++) {
+        if (!f->import_info.is_import)
+          continue;
+        wasm_emit_name(&sec, f->import_info.module_name
+                                 ? f->import_info.module_name
+                                 : "env");
+        wasm_emit_name(&sec, f->import_info.function_name
+                                 ? f->import_info.function_name
+                                 : f->name);
+        wasm_emit_u8(&sec, 0x00);
+        ulong type_idx = 0;
+        ulong seen_type = 0;
+        for (fruity_function_t *tf = module->functions_head;
+             tf && seen_type < func_count; tf = tf->next, seen_type++) {
+          if (tf == f)
+            break;
+          type_idx++;
         }
-        f = f->next;
+        wasm_emit_uleb128(&sec, type_idx);
       }
 
       wasm_emit_u8(&main_buf, WASM_SEC_IMPORT);
@@ -500,29 +1379,28 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 3. Function Section (Index 3) - Locals Only */
+  /* 4. Function Section */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
 
     ulong local_func_count = 0;
-    fruity_function_t *f = module->functions_head;
-    while (f) {
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
       if (!f->import_info.is_import)
         local_func_count++;
-      f = f->next;
     }
 
     wasm_emit_vec_header(&sec, local_func_count);
 
-    f = module->functions_head;
     ulong idx = 0;
-    while (f) {
-      if (!f->import_info.is_import) {
-        wasm_emit_uleb128(&sec, idx); /* Type Index matches List Index */
-      }
+    seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
+      if (!f->import_info.is_import)
+        wasm_emit_uleb128(&sec, idx);
       idx++;
-      f = f->next;
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_FUNCTION);
@@ -531,13 +1409,13 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 4. Memory Section (Index 5) */
+  /* 5. Memory Section */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
-    wasm_emit_vec_header(&sec, 1); /* 1 memory */
-    wasm_emit_u8(&sec, 0);         /* limit: min only */
-    wasm_emit_uleb128(&sec, 1);    /* 1 page (64KB) */
+    wasm_emit_vec_header(&sec, 1);
+    wasm_emit_u8(&sec, 0);
+    wasm_emit_uleb128(&sec, 2); /* 2 pages (128KB) */
 
     wasm_emit_u8(&main_buf, WASM_SEC_MEMORY);
     wasm_emit_uleb128(&main_buf, sec.size);
@@ -545,28 +1423,42 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 5. Export Section (Index 7) */
+  /* 6. Global Section (stack top) */
+  {
+    wasm_buffer_t sec;
+    wasm_buf_init(&sec, 32);
+    wasm_emit_vec_header(&sec, 1);
+    wasm_emit_u8(&sec, WASM_TYPE_I32);
+    wasm_emit_u8(&sec, 1); /* mutable */
+    wasm_emit_u8(&sec, WASM_OP_I32_CONST);
+    wasm_emit_sleb128(&sec, 0);
+    wasm_emit_u8(&sec, WASM_OP_END);
+
+    wasm_emit_u8(&main_buf, WASM_SEC_GLOBAL);
+    wasm_emit_uleb128(&main_buf, sec.size);
+    wasm_emit_bytes(&main_buf, sec.data, sec.size);
+    wasm_buf_free(&sec);
+  }
+
+  /* 7. Export Section */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
 
-    /* 1 memory + func_count exports */
     wasm_emit_vec_header(&sec, 1 + func_count);
 
-    /* Export Memory */
     wasm_emit_name(&sec, "memory");
-    wasm_emit_u8(&sec, 0x02); /* Memory export */
+    wasm_emit_u8(&sec, 0x02);
     wasm_emit_uleb128(&sec, 0);
 
-    /* Export Functions */
-    fruity_function_t *f = module->functions_head;
     ulong idx = 0;
-    while (f) {
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
       const char *name = f->name ? f->name : "MethodUnknown";
       wasm_emit_name(&sec, name);
-      wasm_emit_u8(&sec, 0x00); /* Function export */
+      wasm_emit_u8(&sec, 0x00);
       wasm_emit_uleb128(&sec, idx++);
-      f = f->next;
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_EXPORT);
@@ -575,33 +1467,36 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 6. Code Section (Index 10) */
+  /* 8. Code Section */
   {
     wasm_buffer_t sec;
-    wasm_buf_init(&sec, 1024);
+    wasm_buf_init(&sec, 2048);
 
     ulong local_func_count = 0;
-    fruity_function_t *f = module->functions_head;
-    while (f) {
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen < func_count; f = f->next, seen++) {
       if (!f->import_info.is_import)
         local_func_count++;
-      f = f->next;
     }
 
     wasm_emit_vec_header(&sec, local_func_count);
 
-    f = module->functions_head;
-    while (f) {
-      if (!f->import_info.is_import) {
-        wasm_buffer_t body;
-        wasm_buf_init(&body, 1024);
-        compile_function_body(f, &body);
+    runtime_imports_t imports;
+    resolve_runtime_imports(module, &imports);
 
-        wasm_emit_uleb128(&sec, body.size);
-        wasm_emit_bytes(&sec, body.data, body.size);
-        wasm_buf_free(&body);
-      }
-      f = f->next;
+    ulong seen_code = 0;
+    for (fruity_function_t *f = module->functions_head;
+         f && seen_code < func_count; f = f->next, seen_code++) {
+      if (f->import_info.is_import)
+        continue;
+
+      wasm_buffer_t body;
+      wasm_buf_init(&body, 1024);
+      compile_function_body(module, f, &imports, &body);
+      wasm_emit_uleb128(&sec, body.size);
+      wasm_emit_bytes(&sec, body.data, body.size);
+      wasm_buf_free(&body);
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_CODE);
@@ -609,6 +1504,7 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_emit_bytes(&main_buf, sec.data, sec.size);
     wasm_buf_free(&sec);
   }
+  print("WASM: code section done\n");
 
   if (main_buf.error) {
     wasm_buf_free(&main_buf);
