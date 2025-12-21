@@ -25,24 +25,44 @@
     <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
       <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
     </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#cbd5e0" />
+    </marker>
   </defs>
 
   <!-- Title -->
   <text x="500" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#2d3748">
-    Lux9 Kernel Components
+    Lux9 Kernel Architecture
   </text>
 
   <!-- Main Container -->
   <rect x="30" y="55" width="940" height="730" rx="10" fill="#f7fafc" stroke="#e2e8f0" stroke-width="2"/>
 
+  <!-- Connections (Background) -->
+  <!-- Core <-> Security -->
+  <path d="M350 175 L370 175" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Core <-> Drivers -->
+  <path d="M200 425 L200 445" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Security <-> Crypto -->
+  <path d="M520 275 L520 445" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Security <-> HAL -->
+  <path d="M520 275 L520 295" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- HAL <-> Drivers -->
+  <path d="M370 360 L350 540" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+  <!-- 9P <-> Core -->
+  <path d="M690 360 L350 250" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+  <!-- CLR <-> Core -->
+  <path d="M690 175 L350 175" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+
   <!-- 9front Core Section -->
   <rect x="50" y="75" width="300" height="350" rx="8" fill="url(#coreGrad)" filter="url(#shadow)"/>
   <text x="200" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
-    9front Core (~15K LOC)
+    9front Core (~12.5K LOC)
   </text>
   
   <rect x="65" y="120" width="270" height="290" rx="5" fill="white" fill-opacity="0.15"/>
   
+  <g transform="translate(0, -5)">
   <text x="80" y="145" font-family="monospace" font-size="12" fill="white">proc.c</text>
   <text x="180" y="145" font-family="Arial" font-size="10" fill="white">- Fair-share scheduler</text>
   
@@ -81,6 +101,7 @@
   
   <text x="80" y="385" font-family="monospace" font-size="12" fill="white">squidboy.c</text>
   <text x="180" y="385" font-family="Arial" font-size="10" fill="white">- SMP startup</text>
+  </g>
 
   <!-- Pebble/Security Section -->
   <rect x="370" y="75" width="300" height="200" rx="8" fill="url(#kernelGrad)" filter="url(#shadow)"/>
@@ -111,19 +132,19 @@
   <!-- CLR Runtime Section -->
   <rect x="690" y="75" width="260" height="200" rx="8" fill="url(#clrGrad)" filter="url(#shadow)"/>
   <text x="820" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
-    CLR Runtime
+    WASM Runtime
   </text>
   
   <rect x="705" y="120" width="230" height="140" rx="5" fill="white" fill-opacity="0.15"/>
   
-  <text x="720" y="145" font-family="monospace" font-size="11" fill="white">execution_engine.c</text>
-  <text x="820" y="160" font-family="Arial" font-size="10" fill="white" text-anchor="middle">IL execution</text>
+  <text x="720" y="145" font-family="monospace" font-size="11" fill="white">wasm3.c</text>
+  <text x="820" y="160" font-family="Arial" font-size="10" fill="white" text-anchor="middle">WASM Interpreter</text>
   
   <text x="720" y="180" font-family="monospace" font-size="11" fill="white">fruity_ir.c</text>
   <text x="820" y="195" font-family="Arial" font-size="10" fill="white" text-anchor="middle">Intermediate repr</text>
   
-  <text x="720" y="215" font-family="monospace" font-size="11" fill="white">fruity_to_qbe.c</text>
-  <text x="820" y="230" font-family="Arial" font-size="10" fill="white" text-anchor="middle">QBE codegen</text>
+  <text x="720" y="215" font-family="monospace" font-size="11" fill="white">fruity_to_wasm.c</text>
+  <text x="820" y="230" font-family="Arial" font-size="10" fill="white" text-anchor="middle">WASM Codegen</text>
   
   <text x="720" y="250" font-family="monospace" font-size="11" fill="white">il_parser.c</text>
   <text x="820" y="265" font-family="Arial" font-size="10" fill="white" text-anchor="middle">Metadata parsing</text>
@@ -170,8 +191,8 @@
   
   <rect x="65" y="490" width="270" height="130" rx="5" fill="white" fill-opacity="0.15"/>
   
-  <text x="80" y="515" font-family="monospace" font-size="12" fill="white">devcons.c</text>
-  <text x="200" y="515" font-family="Arial" font-size="10" fill="white">- Console</text>
+  <text x="80" y="515" font-family="monospace" font-size="12" fill="white">devcons_minimal.c</text>
+  <text x="200" y="515" font-family="Arial" font-size="10" fill="white">- Minimal Console</text>
   
   <text x="80" y="535" font-family="monospace" font-size="12" fill="white">devram.c</text>
   <text x="200" y="535" font-family="Arial" font-size="10" fill="white">- RAM disk</text>
@@ -241,14 +262,14 @@
   </text>
   
   <text x="150" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Kernel Core</text>
-  <text x="150" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">~15K LOC</text>
+  <text x="150" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">~12.5K LOC</text>
   
-  <text x="350" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Reduction</text>
-  <text x="350" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#48bb78">70%</text>
+  <text x="350" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">System Scale</text>
+  <text x="350" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#48bb78">~159K LOC</text>
   
   <text x="550" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Security Systems</text>
-  <text x="550" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#4ecdc4">6 Layers</text>
+  <text x="550" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#4ecdc4">5 Layers</text>
   
-  <text x="750" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Formal Verification</text>
-  <text x="750" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#d69e2e">99%</text>
+  <text x="750" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Code Verification</text>
+  <text x="750" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#d69e2e">46% (9.7K/21K LOC)</text>
 </svg>

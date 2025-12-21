@@ -44,6 +44,8 @@ typedef struct Fmt Fmt;
 #include "il_parser.h"
 #include "il_to_fruity.h"
 
+extern int jitdebug;
+
 /* Forward declarations */
 extern int fruity_to_qbe(fruity_module_t *module, uintptr out_handle,
                          ulong *out_size, char *errorbuf, ulong errorbuf_size);
@@ -306,6 +308,17 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   print("CLR: Step 1 - calling il_to_fruity_convert_method\n");
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr Step 1: IL->Fruity\n");
   uartputs(debug_buf, strlen(debug_buf));
+
+  /* DEBUG: Dump first 64 bytes of IL bytecode */
+  print("CLR: method IL size=%d first 64 bytes:\n", (int)method->il_code_size);
+  int dump_size = method->il_code_size > 64 ? 64 : method->il_code_size;
+  for (int i = 0; i < dump_size; i++) {
+    print("%02x ", method->il_code[i]);
+    if ((i + 1) % 16 == 0)
+      print("\n");
+  }
+  print("\n");
+
   fruity_function_t *func = il_to_fruity_convert_method(assembly, method, &err);
   print("CLR: il_to_fruity_convert_method returned %p\n", func);
   if (func == nil) {
@@ -329,6 +342,7 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   temp_mod.functions_head = func;
   temp_mod.functions_tail = func;
   temp_mod.function_count = 1;
+  temp_mod.metadata = assembly;
 
   /* Step 2: Fruity IR → QBE text (Two-pass with Pebble allocation) */
   char errbuf[128];
@@ -412,9 +426,8 @@ static void *clr_compile_method(il_assembly_t *assembly, il_method_t *method,
   ulong qbe_len = strlen((char *)qbe_page);
   snprint(debug_buf, sizeof(debug_buf), "DEBUG: clr qbe_len=%ld\n", qbe_len);
   uartputs(debug_buf, strlen(debug_buf));
-  uartputs("DEBUG: Generated QBE IL:\n", 25);
-  uartputs((char *)qbe_page, qbe_len);
-  uartputs("DEBUG: End of QBE IL\n", 21);
+  /* Print generated QBE IL unconditionally for debugging */
+  print("CLR: Generated QBE IL (%ld bytes):\n%s\n", qbe_len, (char *)qbe_page);
 
   /* Step 3: QBE text → x86-64 binary */
   print("CLR: Step 3 - QBE to x86-64\n");

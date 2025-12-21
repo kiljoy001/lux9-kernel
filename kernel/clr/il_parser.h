@@ -133,11 +133,54 @@ typedef enum {
   TABLE_METHODDEF = 0x06,
   TABLE_PARAM = 0x08,
   TABLE_MEMBERREF = 0x0A,
+  TABLE_CONSTANT = 0x0B,
+  TABLE_CUSTOMATTRIBUTE = 0x0C,
+  TABLE_FIELDMARSHAL = 0x0D,
+  TABLE_DECLSECURITY = 0x0E,
+  TABLE_CLASSLAYOUT = 0x0F,
+  TABLE_FIELDLAYOUT = 0x10,
   TABLE_STANDALONESIG = 0x11,
+  TABLE_EVENTMAP = 0x12,
+  TABLE_EVENT = 0x14,
+  TABLE_PROPERTYMAP = 0x15,
+  TABLE_PROPERTY = 0x17,
+  TABLE_METHODSEMANTICS = 0x18,
+  TABLE_METHODIMPL = 0x19,
+  TABLE_MODULEREF = 0x1A,
   TABLE_TYPESPEC = 0x1B,
+  TABLE_IMPLMAP = 0x1C,
+  TABLE_FIELDRVA = 0x1D,
   TABLE_ASSEMBLY = 0x20,
-  TABLE_ASSEMBLYREF = 0x23
+  TABLE_ASSEMBLYPROCESSOR = 0x21,
+  TABLE_ASSEMBLYOS = 0x22,
+  TABLE_ASSEMBLYREF = 0x23,
+  TABLE_ASSEMBLYREFPROCESSOR = 0x24,
+  TABLE_ASSEMBLYREFOS = 0x25,
+  TABLE_FILE = 0x26,
+  TABLE_EXPORTEDTYPE = 0x27,
+  TABLE_MANIFESTRESOURCE = 0x28,
+  TABLE_NESTEDCLASS = 0x29,
+  TABLE_GENERICPARAM = 0x2A,
+  TABLE_METHODSPEC = 0x2B,
+  TABLE_GENERICPARAMCONSTRAINT = 0x2C
 } metadata_table_kind_t;
+
+/* ... structs ... */
+
+typedef struct {
+  uint32_t method;        /* MethodDefOrRef encoded index */
+  uint32_t instantiation; /* Blob index */
+} methodspec_row_t;
+
+/* ... inside il_assembly_t ... */
+/* I can't easily inject inside the struct without replacing the whole struct.
+   For now I'll just add the row definition and API.
+   The assembly struct update requires replacing the whole struct block.
+*/
+
+/* ... API ... */
+
+/* ... API moved to end ... */
 
 typedef struct {
   uint32_t reserved;
@@ -184,6 +227,20 @@ typedef struct {
 typedef struct {
   uint32_t signature; /* Index into #Blob heap */
 } standalonesig_row_t;
+
+typedef struct {
+  uint16_t flags;
+  uint32_t name_index; /* Index into #Strings heap */
+  uint32_t signature;  /* Index into #Blob heap */
+} field_row_t;
+
+/* MemberRef row - references to members (methods/fields) in other assemblies */
+typedef struct {
+  uint32_t class_index; /* Coded index: TypeRef, ModuleRef, MethodDef, TypeSpec,
+                           TypeDef */
+  uint32_t name_index;  /* Index into #Strings heap */
+  uint32_t signature;   /* Index into #Blob heap */
+} memberref_row_t;
 
 /* ========== Exception Clause Types (ECMA-335 II.25.4.6) ========== */
 
@@ -271,6 +328,8 @@ typedef struct {
   size_t typespec_count;
   standalonesig_row_t *standalonesigs;
   size_t standalonesig_count;
+  memberref_row_t *memberrefs;
+  size_t memberref_count;
 } il_assembly_t;
 
 /* ========== Error Codes ========== */
@@ -318,6 +377,16 @@ typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid);
 standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly,
                                           uint32_t rid);
 
+/* Get MemberRef row (1-based index) */
+memberref_row_t *il_get_memberref(il_assembly_t *assembly, uint32_t rid);
+
+/* Resolve a MemberRef token to its class/type name and method name
+ * Returns 0 on success, -1 on failure
+ * Caller provides buffers; names are copied into them */
+int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
+                         char *type_name, size_t type_len, char *method_name,
+                         size_t method_len);
+
 /* Get string from #Strings heap */
 const char *il_get_string(il_assembly_t *assembly, uint32_t index);
 
@@ -364,4 +433,17 @@ void il_dump_method(il_method_t *method);
 /* Get size in bytes of a CLR type from its metadata token */
 ulong clr_get_type_size(u32int token);
 
-#endif /* IL_PARSER_H */
+/* Get MethodSpec row (1-based index) */
+methodspec_row_t *il_get_methodspec(il_assembly_t *assembly, uint32_t rid);
+
+/* Resolve a MethodSpec token to its underlying method definition
+ * Returns 0 on success, -1 on failure
+ * Caller provides buffers; names are copied into them */
+int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
+                          char *type_name_out, size_t type_buf_len,
+                          char *method_name_out, size_t method_buf_len);
+
+/* Get Field row (1-based index) */
+field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid);
+
+#endif // IL_PARSER_H

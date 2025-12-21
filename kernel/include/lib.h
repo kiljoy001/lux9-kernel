@@ -1,6 +1,10 @@
 #ifndef _LIB_H_
 #define _LIB_H_
 
+/* If portlib.h was already included (via GNUmakefile -include), skip lib.h */
+#ifdef _PORTLIB_H_
+/* portlib.h provides all the same definitions - no need to duplicate */
+#else
 #include <stdarg.h>
 /*
  * functions (possibly) linked in, complete, from libc.
@@ -196,16 +200,16 @@ typedef struct Dir Dir;
 typedef struct OWaitmsg OWaitmsg;
 typedef struct Waitmsg Waitmsg;
 
-#define ERRMAX 128  /* max length of error string */
-#define KNAMELEN 28 /* max length of name held in kernel */
+#define ERRMAX 128          /* max length of error string */
+#define KNAMELEN 28         /* max length of name held in kernel */
 
 /* bits in Qid.type */
-#define QTDIR 0x80    /* type bit for directories */
-#define QTAPPEND 0x40 /* type bit for append only files */
-#define QTEXCL 0x20   /* type bit for exclusive use files */
-#define QTMOUNT 0x10  /* type bit for mounted channel */
-#define QTAUTH 0x08   /* type bit for authentication file */
-#define QTFILE 0x00   /* plain file */
+#define QTDIR 0x80          /* type bit for directories */
+#define QTAPPEND 0x40       /* type bit for append only files */
+#define QTEXCL 0x20         /* type bit for exclusive use files */
+#define QTMOUNT 0x10        /* type bit for mounted channel */
+#define QTAUTH 0x08         /* type bit for authentication file */
+#define QTFILE 0x00         /* plain file */
 
 /* bits in Dir.mode */
 #define DMDIR 0x80000000    /* mode bit for directories */
@@ -250,4 +254,6 @@ struct Waitmsg {
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
 
-#endif /* _PORTLIB_H_ */
+#endif /* _PORTLIB_H_ not defined - end of lib.h definitions */
+
+#endif /* _LIB_H_ */

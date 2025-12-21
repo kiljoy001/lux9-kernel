@@ -24,8 +24,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Coq
+    - name: Install Coq 8.20
       run: |
+        sudo add-apt-repository ppa:alex-p/coq -y
         sudo apt-get update
         sudo apt-get install -y coq
         coqc --version
@@ -56,7 +57,11 @@ jobs:
             elif ls *.v >/dev/null 2>&1; then
               for vfile in *.v; do
                 echo "  Compiling $vfile..."
-                coqc -R . "$module" "$vfile" || exit 1
+                if [ -n "$module" ]; then
+                  coqc -R . "$module" "$vfile" || exit 1
+                else
+                  coqc "$vfile" || exit 1
+                fi
               done
             else
               echo "  No proofs found."
@@ -69,12 +74,13 @@ jobs:
         verify_dir "pebble" "pebble"
         verify_dir "blind_ledger" "BlindLedger"
         verify_dir "ramdisk" "ramdisk"
-        verify_dir "9p_router" "router"
+        verify_dir "9p_router" "Lux9.Router"
         verify_dir "proc" "proc"
         verify_dir "scheduler" "scheduler"
         verify_dir "borrow" "borrow"
-        verify_dir "capability" "capability"
+        verify_dir "capability" "proofs.capability"
         verify_dir "clr" "CLR"
+        verify_dir "msgord" ""
         
         echo ""
         echo "✅ All Coq proofs verified!"

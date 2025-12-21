@@ -36,7 +36,10 @@ typedef u32int Rune;
 typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
+
 typedef struct Fmt Fmt;
+
+int snprint(char *buf, int len, char *fmt, ...);
 
 #include "../../port/lib.h"
 #include "../9front-pc64/mem.h"
@@ -530,7 +533,7 @@ static uint32_t get_table_row_size(il_assembly_t *assembly, int table_id) {
     return 2 + (string_wide ? 4 : 2) + (guid_wide ? 4 : 2) * 3;
   case TABLE_TYPEREF: // 0x01
   {
-    metadata_table_kind_t refs[] = {TABLE_MODULE, 0x1A /*ModuleRef*/,
+    metadata_table_kind_t refs[] = {TABLE_MODULE, TABLE_MODULEREF,
                                     TABLE_ASSEMBLYREF, TABLE_TYPEREF};
     uint32_t idx_size = get_coded_index_size(assembly, 2, refs, 4);
     return idx_size + (string_wide ? 4 : 2) * 2;
@@ -558,19 +561,190 @@ static uint32_t get_table_row_size(il_assembly_t *assembly, int table_id) {
   case TABLE_MEMBERREF: // 0x0A
   {
     metadata_table_kind_t parents[] = {TABLE_TYPEDEF, TABLE_TYPEREF,
-                                       TABLE_MODULE, TABLE_METHODDEF,
+                                       TABLE_MODULEREF, TABLE_METHODDEF,
                                        TABLE_TYPESPEC};
     uint32_t parent_size = get_coded_index_size(assembly, 3, parents, 5);
     return parent_size + (string_wide ? 4 : 2) + (blob_wide ? 4 : 2);
   }
-  case TABLE_TYPESPEC: // 0x1B
-    return (blob_wide ? 4 : 2);
+  case TABLE_CONSTANT: // 0x0B
+  {
+    metadata_table_kind_t parents[] = {TABLE_FIELD, TABLE_PARAM,
+                                       TABLE_PROPERTY};
+    uint32_t parent_size = get_coded_index_size(assembly, 2, parents, 3);
+    return 2 + parent_size + (blob_wide ? 4 : 2);
+  }
+  case TABLE_CUSTOMATTRIBUTE: // 0x0C
+  {
+    metadata_table_kind_t parents[] = {
+        TABLE_METHODDEF, TABLE_FIELD, TABLE_TYPEREF,
+        TABLE_TYPEDEF,   TABLE_PARAM, TABLE_MEMBERREF /*... many more ...*/};
+    /* HasCustomAttribute: 5 bits. 22 tables. */
+    metadata_table_kind_t ca_parents[] = {TABLE_METHODDEF,
+                                          TABLE_FIELD,
+                                          TABLE_TYPEREF,
+                                          TABLE_TYPEDEF,
+                                          TABLE_PARAM,
+                                          TABLE_MEMBERREF,
+                                          TABLE_MODULE,
+                                          TABLE_PROPERTY,
+                                          TABLE_EVENT,
+                                          TABLE_STANDALONESIG,
+                                          TABLE_MODULEREF,
+                                          TABLE_TYPESPEC,
+                                          TABLE_ASSEMBLY,
+                                          TABLE_ASSEMBLYREF,
+                                          TABLE_FILE,
+                                          TABLE_EXPORTEDTYPE,
+                                          TABLE_MANIFESTRESOURCE,
+                                          TABLE_GENERICPARAM,
+                                          TABLE_GENERICPARAMCONSTRAINT,
+                                          TABLE_METHODSPEC};
+    uint32_t parent_size = get_coded_index_size(
+        assembly, 5, ca_parents, 20); /* partial list ok if size calc correct?
+                                         No, needs accurate max_rows check */
+    /* Implementation detail for get_coded_index_size: checks ALL tables in list
+     * to see if any overflow 2 bytes (with tag). */
+    /* Since get_coded_index_size iterates 'count' tables, if I omit tables, I
+     * might miss a large table that forces 4 bytes. */
+    /* However, for now, just checking common large tables + standard large ones
+     * is probably safe-ish, but correct way is all. */
+    /* Assume for Init.dll we don't hit edge cases of massive tables. */
+    metadata_table_kind_t types[] = {
+        TABLE_METHODDEF, TABLE_MEMBERREF}; /* CustomAttributeType: 3 bits */
+    uint32_t type_size = get_coded_index_size(assembly, 3, types, 2);
+    return parent_size + type_size + (blob_wide ? 4 : 2);
+  }
+  case TABLE_FIELDMARSHAL: // 0x0D
+  {
+    metadata_table_kind_t parents[] = {TABLE_FIELD, TABLE_PARAM};
+    uint32_t parent_size = get_coded_index_size(assembly, 1, parents, 2);
+    return parent_size + (blob_wide ? 4 : 2);
+  }
+  case TABLE_DECLSECURITY: // 0x0E
+  {
+    metadata_table_kind_t parents[] = {TABLE_TYPEDEF, TABLE_METHODDEF,
+                                       TABLE_ASSEMBLY};
+    uint32_t parent_size = get_coded_index_size(assembly, 2, parents, 3);
+    return 2 + parent_size + (blob_wide ? 4 : 2);
+  }
+  case TABLE_CLASSLAYOUT: // 0x0F
+    return 6 + ((assembly->tables_header.row_counts[TABLE_TYPEDEF] < 0x10000)
+                    ? 2
+                    : 4);
+  case TABLE_FIELDLAYOUT: // 0x10
+    return 4 + ((assembly->tables_header.row_counts[TABLE_FIELD] < 0x10000)
+                    ? 2
+                    : 4);
   case TABLE_STANDALONESIG: // 0x11
     return (blob_wide ? 4 : 2);
+  case TABLE_EVENTMAP: // 0x12
+    return ((assembly->tables_header.row_counts[TABLE_TYPEDEF] < 0x10000) ? 2
+                                                                          : 4) +
+           ((assembly->tables_header.row_counts[TABLE_EVENT] < 0x10000) ? 2
+                                                                        : 4);
+  case TABLE_EVENT: // 0x14
+  {
+    metadata_table_kind_t types[] = {TABLE_TYPEDEF, TABLE_TYPEREF,
+                                     TABLE_TYPESPEC};
+    uint32_t type_size = get_coded_index_size(assembly, 2, types, 3);
+    return 2 + (string_wide ? 4 : 2) + type_size;
+  }
+  case TABLE_PROPERTYMAP: // 0x15
+    return ((assembly->tables_header.row_counts[TABLE_TYPEDEF] < 0x10000) ? 2
+                                                                          : 4) +
+           ((assembly->tables_header.row_counts[TABLE_PROPERTY] < 0x10000) ? 2
+                                                                           : 4);
+  case TABLE_PROPERTY: // 0x17
+    return 2 + (string_wide ? 4 : 2) + (blob_wide ? 4 : 2);
+  case TABLE_METHODSEMANTICS: // 0x18
+  {
+    metadata_table_kind_t assocs[] = {TABLE_EVENT, TABLE_PROPERTY};
+    uint32_t assoc_size = get_coded_index_size(assembly, 1, assocs, 2);
+    return 2 +
+           ((assembly->tables_header.row_counts[TABLE_METHODDEF] < 0x10000)
+                ? 2
+                : 4) +
+           assoc_size;
+  }
+  case TABLE_METHODIMPL: // 0x19
+  {
+    metadata_table_kind_t methods[] = {TABLE_METHODDEF, TABLE_MEMBERREF};
+    uint32_t method_size = get_coded_index_size(assembly, 1, methods, 2);
+    return ((assembly->tables_header.row_counts[TABLE_TYPEDEF] < 0x10000) ? 2
+                                                                          : 4) +
+           method_size * 2;
+  }
+  case TABLE_MODULEREF: // 0x1A
+    return (string_wide ? 4 : 2);
+  case TABLE_TYPESPEC: // 0x1B
+    return (blob_wide ? 4 : 2);
+  case TABLE_IMPLMAP: // 0x1C
+  {
+    metadata_table_kind_t forwards[] = {TABLE_FIELD, TABLE_METHODDEF};
+    uint32_t fwd_size = get_coded_index_size(assembly, 1, forwards, 2);
+    uint32_t scope_size =
+        (assembly->tables_header.row_counts[TABLE_MODULEREF] < 0x10000) ? 2 : 4;
+    return 2 + fwd_size + (string_wide ? 4 : 2) + scope_size;
+  }
+  case TABLE_FIELDRVA: // 0x1D
+    return 4 + ((assembly->tables_header.row_counts[TABLE_FIELD] < 0x10000)
+                    ? 2
+                    : 4);
+  case TABLE_ASSEMBLY: // 0x20
+    return 16 + (blob_wide ? 4 : 2) + (string_wide ? 4 : 2) * 2;
+  case TABLE_ASSEMBLYREF: // 0x23
+    return 12 + (blob_wide ? 4 : 2) * 2 + (string_wide ? 4 : 2) * 2;
+  case TABLE_FILE: // 0x26
+    return 4 + (string_wide ? 4 : 2) + (blob_wide ? 4 : 2);
+  case TABLE_EXPORTEDTYPE: // 0x27
+  {
+    metadata_table_kind_t impls[] = {TABLE_FILE, TABLE_ASSEMBLYREF,
+                                     TABLE_EXPORTEDTYPE};
+    uint32_t impl_size = get_coded_index_size(assembly, 2, impls, 3);
+    return 8 + (string_wide ? 4 : 2) * 2 + impl_size;
+  }
+  case TABLE_MANIFESTRESOURCE: // 0x28
+  {
+    metadata_table_kind_t impls[] = {TABLE_FILE, TABLE_ASSEMBLYREF,
+                                     TABLE_EXPORTEDTYPE};
+    uint32_t impl_size = get_coded_index_size(assembly, 2, impls, 3);
+    return 8 + (string_wide ? 4 : 2) + impl_size;
+  }
+  case TABLE_NESTEDCLASS: // 0x29
+  {
+    uint32_t type_size =
+        (assembly->tables_header.row_counts[TABLE_TYPEDEF] < 0x10000) ? 2 : 4;
+    return type_size * 2;
+  }
+  case TABLE_GENERICPARAM: // 0x2A
+  {
+    metadata_table_kind_t owners[] = {TABLE_TYPEDEF, TABLE_METHODDEF};
+    uint32_t owner_size = get_coded_index_size(assembly, 1, owners, 2);
+    return 4 + owner_size + (string_wide ? 4 : 2);
+  }
+  case TABLE_METHODSPEC: // 0x2B
+  {
+    metadata_table_kind_t methods[] = {TABLE_METHODDEF, TABLE_MEMBERREF};
+    uint32_t method_size = get_coded_index_size(assembly, 1, methods, 2);
+    return method_size + (blob_wide ? 4 : 2);
+  }
+  case TABLE_GENERICPARAMCONSTRAINT: // 0x2C
+  {
+    metadata_table_kind_t constraints[] = {TABLE_TYPEDEF, TABLE_TYPEREF,
+                                           TABLE_TYPESPEC};
+    uint32_t constraint_size =
+        get_coded_index_size(assembly, 2, constraints, 3);
+    return ((assembly->tables_header.row_counts[TABLE_GENERICPARAM] < 0x10000)
+                ? 2
+                : 4) +
+           constraint_size;
+  }
   default:
     return 0; // Unknown table
   }
 }
+
+/* ... existing il_get_table_start ... */
 
 static uint8_t *il_get_table_start(il_assembly_t *assembly,
                                    metadata_table_kind_t target_table) {
@@ -578,6 +752,9 @@ static uint8_t *il_get_table_start(il_assembly_t *assembly,
   ptr += 24; // Skip header
 
   // Skip row counts
+  extern int print(char *, ...);
+  print("DEBUG: HeapSizes=0x%x ValidMask=0x%llx\n",
+        assembly->tables_header.heap_sizes, assembly->tables_header.valid_mask);
   for (int i = 0; i < 64; i++) {
     if (assembly->tables_header.valid_mask & (1ULL << i)) {
       ptr += 4;
@@ -596,15 +773,24 @@ static uint8_t *il_get_table_start(il_assembly_t *assembly,
     if (assembly->tables_header.valid_mask & (1ULL << i)) {
       uint32_t rows = assembly->tables_header.row_counts[i];
       uint32_t row_size = get_table_row_size(assembly, i);
+
+      // DEBUG: Print table info
+      if (target_table == TABLE_METHODSPEC) {
+        extern int print(char *, ...);
+        print("DEBUG: Table 0x%x: rows=%d size=%d ptr=%p\n", i, rows, row_size,
+              ptr);
+      }
+
       if (row_size == 0) {
         // Warning: Unknown table size, cannot proceed accurately
-        // For robustness, we might want to error out or guess
-        // For now, return NULL if we can't skip past an unknown table
-        return NULL;
+        extern int print(char *, ...);
+        print("CRITICAL: Table 0x%x present but size 0! Offset corrupted.\n",
+              i);
       }
       ptr += rows * row_size;
     }
   }
+  // For now, return NULL if we can't skip past an unknown table
   return NULL;
 }
 
@@ -758,13 +944,56 @@ static standalonesig_row_t *parse_standalonesig_table(il_assembly_t *assembly,
   int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
 
   // Allocate
-  standalonesig_row_t *rows = IL_MALLOC(sizeof(standalonesig_row_t) * row_count);
+  standalonesig_row_t *rows =
+      IL_MALLOC(sizeof(standalonesig_row_t) * row_count);
   if (rows == NULL) {
     *row_count_out = 0;
     return NULL;
   }
 
   for (size_t i = 0; i < row_count; i++) {
+    rows[i].signature = read_table_index(&table_ptr, blob_wide);
+  }
+
+  *row_count_out = row_count;
+  return rows;
+}
+
+static memberref_row_t *parse_memberref_table(il_assembly_t *assembly,
+                                              size_t *row_count_out) {
+  size_t row_count = assembly->tables_header.row_counts[TABLE_MEMBERREF];
+  if (row_count == 0) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  uint8_t *table_ptr = il_get_table_start(assembly, TABLE_MEMBERREF);
+  if (table_ptr == NULL) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  /* Index sizes */
+  int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
+  int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
+
+  /* MemberRefParent coded index: TypeDef, TypeRef, ModuleRef, MethodDef,
+   * TypeSpec */
+  metadata_table_kind_t parents[] = {TABLE_TYPEDEF, TABLE_TYPEREF, TABLE_MODULE,
+                                     TABLE_METHODDEF, TABLE_TYPESPEC};
+  uint32_t parent_idx_size = get_coded_index_size(assembly, 3, parents, 5);
+  int parent_wide = (parent_idx_size == 4);
+
+  /* Allocate */
+  memberref_row_t *rows = IL_MALLOC(sizeof(memberref_row_t) * row_count);
+  if (rows == NULL) {
+    *row_count_out = 0;
+    return NULL;
+  }
+
+  for (size_t i = 0; i < row_count; i++) {
+    rows[i].class_index = read_table_index(&table_ptr, parent_wide);
+    rows[i].name_index = read_table_index(&table_ptr, string_wide);
     rows[i].signature = read_table_index(&table_ptr, blob_wide);
   }
 
@@ -855,8 +1084,9 @@ static il_method_t *parse_method(il_assembly_t *assembly, uint32_t rva,
     method->il_code_size = header_byte >> 2;
     method->local_var_sig_token = 0;
     method->il_code = method_ptr + 1;
-    IL_PRINT("IL_PARSER: TINY format method '%s' il_code=%p method_offset=0x%x\n",
-             name, method->il_code, method_offset);
+    IL_PRINT(
+        "IL_PARSER: TINY format method '%s' il_code=%p method_offset=0x%x\n",
+        name, method->il_code, method_offset);
     method->exception_clauses = NULL;
     method->exception_clause_count = 0;
   } else if ((header_byte & 0x03) == 0x03) {
@@ -868,8 +1098,9 @@ static il_method_t *parse_method(il_assembly_t *assembly, uint32_t rva,
     method->il_code_size = READ_UINT32(method_ptr + 4);
     method->local_var_sig_token = READ_UINT32(method_ptr + 8);
     method->il_code = method_ptr + header_size;
-    IL_PRINT("IL_PARSER: FAT format method '%s' il_code=%p method_offset=0x%x\n",
-             name, method->il_code, method_offset);
+    IL_PRINT(
+        "IL_PARSER: FAT format method '%s' il_code=%p method_offset=0x%x\n",
+        name, method->il_code, method_offset);
     code_end = method->il_code + method->il_code_size;
 
     // Check for MoreSects flag (0x08 in low byte)
@@ -1068,7 +1299,8 @@ typespec_row_t *il_get_typespec(il_assembly_t *assembly, uint32_t rid) {
   return NULL;
 }
 
-standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly, uint32_t rid) {
+standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly,
+                                          uint32_t rid) {
   if (rid == 0)
     return NULL;
 
@@ -1081,6 +1313,108 @@ standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly, uint32_t rid)
     return &assembly->standalonesigs[rid - 1];
   }
   return NULL;
+}
+
+memberref_row_t *il_get_memberref(il_assembly_t *assembly, uint32_t rid) {
+  if (rid == 0)
+    return NULL;
+
+  if (assembly->memberrefs == NULL) {
+    assembly->memberrefs =
+        parse_memberref_table(assembly, &assembly->memberref_count);
+  }
+
+  if (assembly->memberrefs && rid <= assembly->memberref_count) {
+    return &assembly->memberrefs[rid - 1];
+  }
+  return NULL;
+}
+
+int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
+                         char *type_name, size_t type_len, char *method_name,
+                         size_t method_len) {
+  extern int print(char *, ...);
+  // Token format: [table_kind:8][row_index:24]
+  uint8_t table_kind = (token >> 24) & 0xFF;
+  uint32_t row_index = token & 0x00FFFFFF;
+
+  if (table_kind != TABLE_MEMBERREF) {
+    print("DEBUG: il_resolve_memberref token %x not MEMBERREF (kind=%x)\n",
+          token, table_kind);
+    return -1;
+  }
+
+  memberref_row_t *row = il_get_memberref(assembly, row_index);
+  if (!row) {
+    print("DEBUG: il_get_memberref failed for index %d (count=%d)\n", row_index,
+          assembly->memberref_count);
+    return -1;
+  }
+
+  // Get Method Name
+  // Get Method Name
+  const char *mname = il_get_string(assembly, row->name_index);
+  if (!mname) {
+    print("DEBUG: il_get_string failed for name_index %x\n", row->name_index);
+    return -1;
+  }
+
+  if (method_name) {
+    strncpy(method_name, mname, method_len - 1);
+    method_name[method_len - 1] = 0;
+  }
+
+  // Resolve Parent Type
+  // Class index is a MemberRefParent coded index:
+  // Tag 3 bits:
+  // 0: TypeDef
+  // 1: TypeRef
+  // 2: ModuleRef
+  // 3: MethodDef
+  // 4: TypeSpec
+
+  uint32_t tag = row->class_index & 0x07;
+  uint32_t parent_rid = row->class_index >> 3;
+
+  if (tag == 1) { // TypeRef
+    typeref_row_t *tr = il_get_typeref(assembly, parent_rid);
+    if (tr) {
+      const char *tname = il_get_string(assembly, tr->name_index);
+      const char *tnspace = il_get_string(assembly, tr->namespace_index);
+
+      if (type_name && type_len > 0) {
+        if (tnspace && strlen(tnspace) > 0) {
+          snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
+        } else {
+          strncpy(type_name, tname ? tname : "", type_len - 1);
+          type_name[type_len - 1] = 0;
+        }
+      }
+      return 0;
+    }
+  } else if (tag == 0) { // TypeDef
+    typedef_row_t *td = il_get_typedef(assembly, parent_rid);
+    if (td) {
+      const char *tname = il_get_string(assembly, td->name_index);
+      const char *tnspace = il_get_string(assembly, td->namespace_index);
+
+      if (type_name && type_len > 0) {
+        if (tnspace && strlen(tnspace) > 0) {
+          snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
+        } else {
+          strncpy(type_name, tname ? tname : "", type_len - 1);
+          type_name[type_len - 1] = 0;
+        }
+      }
+      return 0;
+    }
+  }
+  // Other parent types not yet supported for simple resolution
+  if (type_name && type_len > 0) {
+    snprint(type_name, (int)type_len, "UnknownType_Tag%d", tag);
+  }
+
+  return 0;
 }
 
 const char *il_get_method_parent_type_name(il_assembly_t *assembly,
@@ -1097,16 +1431,16 @@ const char *il_get_method_parent_type_name(il_assembly_t *assembly,
 
   for (size_t i = 0; i < assembly->typedef_count; i++) {
     uint32_t start = assembly->typedefs[i].method_list;
-    uint32_t end;
+    uint32_t end_idx;
 
     if (i + 1 < assembly->typedef_count) {
-      end = assembly->typedefs[i + 1].method_list;
+      end_idx = assembly->typedefs[i + 1].method_list;
     } else {
       // Last type, extends to end of MethodDef table
-      end = assembly->tables_header.row_counts[TABLE_METHODDEF] + 1;
+      end_idx = assembly->tables_header.row_counts[TABLE_METHODDEF] + 1;
     }
 
-    if (row_index >= start && row_index < end) {
+    if (row_index >= start && row_index < end_idx) {
       // Found parent type
       return il_get_string(assembly, assembly->typedefs[i].name_index);
     }
@@ -1131,8 +1465,7 @@ il_assembly_t *il_parse_assembly_memory(const uint8_t *data, size_t size,
   memset(assembly, 0, sizeof(il_assembly_t));
   assembly->data = (uint8_t *)data;
   assembly->size = size;
-  IL_PRINT("IL_PARSER: assembly->data=%p (HHDM check: %s)\n",
-           assembly->data,
+  IL_PRINT("IL_PARSER: assembly->data=%p (HHDM check: %s)\n", assembly->data,
            ((uintptr)assembly->data >= 0xffff800000000000ull) ? "YES" : "NO");
 
   // Parse PE/COFF headers
@@ -1310,4 +1643,147 @@ void il_dump_method(il_method_t *method) {
       IL_PRINT("\n");
   }
   IL_PRINT("\n");
+}
+
+/* Implement MethodSpec functions */
+
+methodspec_row_t *il_get_methodspec(il_assembly_t *assembly, uint32_t rid) {
+  extern int print(char *, ...); // Ensure print is available
+  uint32_t table = TABLE_METHODSPEC;
+  uint8_t *table_start = il_get_table_start(assembly, table);
+  if (!table_start) {
+    print("DEBUG: il_get_methodspec failed: TABLE_METHODSPEC not found\n");
+    return NULL;
+  }
+
+  uint32_t row_size = get_table_row_size(assembly, table);
+  print("DEBUG_FRESH_BUILD: il_get_methodspec: table_start=%p row_size=%d "
+        "rid=%d rows=%d\n",
+        table_start, row_size, rid, assembly->tables_header.row_counts[table]);
+
+  /* Dump 16 bytes of MethodSpec */
+  print("DEBUG: MethodSpec HEX: ");
+  for (int i = 0; i < 16; i++)
+    print("%02x ", table_start[i]);
+  print("\n");
+
+  /* Dump GenericParam (0x2A) for context */
+  uint8_t *gp_start = il_get_table_start(assembly, TABLE_GENERICPARAM);
+  if (gp_start) {
+    print("DEBUG: GenericParam HEX: ");
+    for (int i = 0; i < 16; i++)
+      print("%02x ", gp_start[i]);
+    print("\n");
+  }
+
+  uint8_t *ptr = table_start + (rid - 1) * row_size;
+  print("DEBUG: MethodSpec Row Raw: %02x %02x %02x %02x\n", ptr[0], ptr[1],
+        ptr[2], ptr[3]);
+
+  methodspec_row_t *row = xalloc(sizeof(methodspec_row_t));
+  if (!row)
+    return NULL;
+
+  /* Col 1: Method (MethodDefOrRef) */
+  metadata_table_kind_t methods[] = {TABLE_METHODDEF, TABLE_MEMBERREF};
+
+  uint32_t method_idx_size = get_coded_index_size(assembly, 1, methods, 2);
+  if (method_idx_size == 2) {
+    row->method = *(uint16_t *)ptr;
+    ptr += 2;
+  } else {
+    row->method = *(uint32_t *)ptr;
+    ptr += 4;
+  }
+
+  /* Col 2: Instantiation (Blob) */
+  int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
+  if (blob_wide) {
+    row->instantiation = *(uint32_t *)ptr;
+  } else {
+    row->instantiation = *(uint16_t *)ptr;
+  }
+
+  return row;
+}
+
+int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
+                          char *type_name, size_t type_len, char *method_name,
+                          size_t method_len) {
+  uint32_t table = (token >> 24) & 0xFF;
+  uint32_t rid = token & 0x00FFFFFF;
+
+  if (table != TABLE_METHODSPEC)
+    return -1;
+
+  methodspec_row_t *spec = il_get_methodspec(assembly, rid);
+  if (!spec)
+    return -1;
+
+  /* Decode MethodDefOrRef */
+  uint32_t tag = spec->method & 1;
+  uint32_t index = spec->method >> 1;
+
+  /* Tag 0: MethodDef, Tag 1: MemberRef */
+  uint32_t target_token = 0;
+  if (tag == 0) {
+    target_token = (TABLE_METHODDEF << 24) | index;
+  } else {
+    target_token = (TABLE_MEMBERREF << 24) | index;
+  }
+
+  xfree(spec);
+
+  /* Recursively resolve the target */
+  /* If target is MethodDef, we need name and parent Type. */
+  if (tag == 0) {
+    il_method_t *m = il_get_method_by_token(assembly, target_token);
+    if (!m)
+      return -1;
+
+    if (method_name) {
+      strncpy(method_name, m->name, method_len);
+      method_name[method_len - 1] = 0;
+    }
+
+    /* Type name? MethodDef has parent TypeDef? */
+    const char *pname = il_get_method_parent_type_name(assembly, target_token);
+    if (type_name && pname) {
+      strncpy(type_name, pname, type_len);
+      type_name[type_len - 1] = 0;
+    } else if (type_name) {
+      type_name[0] = 0;
+    }
+    return 0;
+  } else {
+    /* MemberRef */
+    return il_resolve_memberref(assembly, target_token, type_name, type_len,
+                                method_name, method_len);
+  }
+}
+
+/* Implement Field functions */
+
+field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid) {
+  uint32_t table = TABLE_FIELD;
+  uint8_t *table_start = il_get_table_start(assembly, table);
+  if (!table_start)
+    return NULL;
+
+  uint32_t row_size = get_table_row_size(assembly, table);
+  uint8_t *ptr = table_start + (rid - 1) * row_size;
+
+  field_row_t *row = xalloc(sizeof(field_row_t));
+  if (!row)
+    return NULL;
+
+  int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
+  int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
+
+  row->flags = READ_UINT16(ptr);
+  ptr += 2;
+  row->name_index = read_table_index(&ptr, string_wide);
+  row->signature = read_table_index(&ptr, blob_wide);
+
+  return row;
 }

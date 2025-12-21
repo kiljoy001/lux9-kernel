@@ -20,22 +20,24 @@ module Kernel =
 // Pebble Memory Management
 module Pebble =
     // Maps to FRUITY_LIME (clr_object_alloc)
+    // Returns pointer to allocated object
     [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)>]
-    extern 'T Allocate<'T>()
+    extern nativeint Allocate(int typeToken)
 
     // Maps to FRUITY_VANILLA (clr_object_addref)
     [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)>]
-    extern void Share<'T>('T obj)
+    extern void Share(nativeint obj)
 
     // Maps to FRUITY_BURN (clr_object_release)
     [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)>]
-    extern void Release<'T>('T obj)
+    extern void Release(nativeint obj)
+
 
 // Message Ordering (GHOSTDAG/MSGORD)
 module MsgOrd =
     // Submit message for ordering
     [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)>]
-    extern MsgId Submit(string path, object payload)
+    extern MsgId Submit(string path, obj payload)
 
     // Check if message is ordered (BLUE)
     [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.InternalCall)>]

@@ -94,6 +94,11 @@ namespace System
             return objA.Equals(objB);
         }
 
+        public static bool ReferenceEquals(object objA, object objB)
+        {
+            return objA == objB;
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         public virtual extern int GetHashCode();
 

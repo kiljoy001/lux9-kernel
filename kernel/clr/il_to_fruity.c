@@ -2012,6 +2012,7 @@ fruity_module_t *il_to_fruity_convert_assembly(il_assembly_t *assembly,
   module->functions_head = NULL;
   module->functions_tail = NULL;
   module->function_count = 0;
+  module->metadata = assembly; /* Preserve assembly for token resolution */
 
   /* Convert each method */
   prev_func = NULL;

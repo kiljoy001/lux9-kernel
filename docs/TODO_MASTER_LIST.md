@@ -1,7 +1,8 @@
 # Lux9 Consolidated TODO List
 
-> **Last verified: 2025-12-19**
-> Scope: `kernel/`, `proofs/`, `tools/` (excludes external deps)
+> **Last verified: 2025-12-20**
+> **Strategic Pivot:** Transitioning CLR execution from Native Code (QBE/SLJIT) to WebAssembly (WASM).
+> Scope: `kernel/`, `proofs/`, `tools/`, `userspace/`
 
 ---
 
@@ -9,59 +10,94 @@
 
 | Category | Count | Status |
 |----------|-------|--------|
-| Fruity Interpreter | 0 | ✅ Complete |
-| Boot & Runtime | 3 | Active |
-| Fruity→QBE | 0 | ✅ Complete |
-| IL→Fruity | 0 | ✅ Complete |
-| QBE Exec | 0 | ✅ Complete |
+| **Phase 1: WASM Backend** | 4 | 🚀 New Priority |
+| **Phase 2: WASM Runtime** | 3 | 🚀 New Priority |
+| **Phase 3: System Interface** | 3 | 🚀 New Priority |
+| Boot & Runtime | 2 | 🔴 Blocked |
+| F# Init | 2 | 🟠 Active |
+| BCL Gaps | 3 | 🟡 Active |
 | Admitted Proofs | 12 | Active |
-| **Total** | **15** | |
+| **Total** | **29** | |
 
 ---
 
-## ✅ Fruity Interpreter (`fruity_interp.c`) - COMPLETE (2025-12-19)
+## 🚀 Phase 1: CIL -> WASM Translation (`kernel/clr/wasm_backend/`)
 
-All 17 TODOs implemented:
-- L72: White token revoke (documented as intentional no-op)
-- L81: Red snapshot via `pebble_red_snapshot`
-- L86: Blue commit (documented for future)
-- L91: Red rollback (documented for future)
-- L323: Overflow arithmetic with proper bounds checking
-- L543: String load via `clr_string_from_literal`
-- L576: Zero-copy IPC (documented, requires exchange pages)
-- L801: vtable lookup via `clr_vtable_lookup`
-- L898/905: Static field load/store via `clr_get_static_field`
-- L955: Type checking via `clr_is_instance_of`
-- L1127/1143/1149/1153/1161/1212: Misc opcodes (documented)
+The new compiler backend to replace QBE. Uses Fruity IR as input.
+
+| Task | Description |
+|------|-------------|
+| **Create `fruity_to_wasm.c`** | Implement the translation logic. Map Fruity opcodes (LDC, ADD) to WASM bytes (i32.const, i32.add). |
+| **Implement Loop-Switch** | Implement the "Loop-Switch" pattern to handle unstructured CIL control flow (goto) within structured WASM blocks. |
+| **WASM Binary Emitter** | Implement the logic to serialize the translated instructions into a valid `.wasm` binary format (header, sections). |
+| **Integrate with `il_parser.c`** | Hook the new backend into the existing metadata parser. |
 
 ---
 
-## 🔴 Boot & Runtime
+## 🚀 Phase 2: WASM Runtime Integration (`kernel/clr/wasm_runtime/`)
+
+Replacing `sljit` with a lightweight interpreter.
+
+| Task | Description |
+|------|-------------|
+| **Integrate `wasm3`** | Import `wasm3.c` and `wasm3.h` into the kernel build. Ensure it compiles without libc dependencies. |
+| **Pebble Memory Manager** | Implement a custom WASM memory allocator that uses the Pebble system (tokens) for linear memory growth (`memory.grow`). |
+| **Runtime Hook** | Modify `execution_engine.c` to instantiate the WASM VM instead of jumping to JITed machine code. |
+
+---
+
+## 🚀 Phase 3: System Interface (Lux9-WASI)
+
+Defining how WASM modules talk to the kernel.
+
+| Task | Description |
+|------|-------------|
+| **Define Host Functions** | Create the C implementation of imports: `lux9_send_9p`, `lux9_yield`, `lux9_debug_print`. |
+| **9P Bridge** | Wire `lux9_send_9p` to the internal `9p_router.c` via Exchange Pages. |
+| **Init Wrapper** | Update `userspace/init9p/Init.fs` to import these host functions instead of P/Invoke calls. |
+
+---
+
+## 🛑 Deprecated / Removed (Architecture Shift)
+
+These items are no longer relevant due to the WASM pivot.
+
+- ~~`kernel/clr/qbe`~~ (Replaced by `wasm_backend`)
+- ~~`kernel/clr/sljit`~~ (Replaced by `wasm3`)
+- ~~`fruity_to_qbe.c`~~
+- ~~`fruity_sljit.c`~~
+
+---
+
+## 🔴 Boot & Runtime (BLOCKING)
 
 | File:Line | Issue |
 |-----------|-------|
-| `userinit.c:226` | Load CLR from /boot/boot |
+| `userinit.c:226` | Load CLR from /boot/boot (Update to load WASM module or trigger translation) |
 | `userinit.c:317-319` | **FIXME**: m→pml4 hang |
-| `execution_engine.c:4582` | System.String token |
 
 ---
 
+## 🟠 F# Init (`userspace/init9p/Init.fs`)
 
-
-## ✅ Completed (2025-12-19)
-
-- `il_to_fruity.c:740` — Type-aware flavor injection ✅
-- `fruity_interp.c:689` — Method invocation (CALL) ✅
-- `fruity_interp.c:695` — Indirect call (CALLI) ✅
-- `fruity_interp.c:703` — Load function pointer (LDFTN) ✅
-- `fruity_interp.c:925` — Object construction (NEWOBJ) ✅
-- `qbe_exec.c:472` — AOT cache lookup ✅
-- `qbe_exec.c:482` — AOT precompilation ✅
-- `fruity_to_qbe.c:167` — Overflow checks (emit runtime) ✅
+| File:Line | Issue |
+|-----------|-------|
+| `Init.fs:238` | TODO: Implement wait() via 9P for child reaping |
+| `Init.fs:237-241` | Reap loop doesn't reap - needs kernel wait() |
 
 ---
 
-## ⚠️ Admitted Proofs (17)
+## 🟡 BCL Gaps (Blocking Shell)
+
+| File | Issue |
+|------|-------|
+| `System.Console.cs` | Console.ReadLine not implemented |
+| `Process.cs` | Process.WaitForExit not implemented |
+| `Process.cs` | Environment.CurrentDirectory not implemented |
+
+---
+
+## ⚠️ Admitted Proofs (12)
 
 | File | Count | Notes |
 |------|-------|-------|
@@ -73,14 +109,12 @@ All 17 TODOs implemented:
 | `fsharp_proven_zero_admits.v` | 1 | Weak substitution |
 | `fsharp_truly_minimal.v` | 1 | Minimal system |
 
-> Note: `pebble_clr.v:step_preserves_memory_safety` and `il_semantics.v:il_step_deterministic` are now **fully proven**.
-
 ---
 
 ## Top 5 Priorities
 
-1. **`userinit.c:317`** — m→pml4 hang (boot stability)
-2. **`fruity_interp.c:898`** — Static field access
-3. **`fruity_interp.c:543`** — String metadata loading
-4. **`fruity_interp.c:955`** — Type checking (CASTCLASS)
-5. **`fsharp_complete_typechecker.v`** — Type inference soundness/completeness
+1. **Phase 1:** Implement `fruity_to_wasm.c` (Loop-Switch Control Flow).
+2. **Phase 2:** Integrate `wasm3` into the kernel build.
+3. **Phase 3:** Define `lux9_send_9p` host function for 9P communication.
+4. **`userinit.c:317`** — m→pml4 hang (boot stability).
+5. **`Init.fs`** — Refactor to use WASM Imports.

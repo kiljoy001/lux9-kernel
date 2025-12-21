@@ -47,6 +47,7 @@ extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
+#ifndef __FRAMAC__
 enum {
   UTFmax = 4,         /* maximum bytes per rune */
   Runesync = 0x80,    /* cannot represent part of a UTF sequence */
@@ -54,6 +55,7 @@ enum {
   Runeerror = 0xFFFD, /* decoding error in UTF */
   Runemax = 0x10FFFF, /* 21 bit rune */
 };
+#endif
 
 /*
  * rune routines
@@ -79,6 +81,7 @@ extern int abs(int);
 /*
  * print routines
  */
+#ifndef __FRAMAC__
 typedef struct Fmt Fmt;
 typedef int (*Fmts)(Fmt *);
 struct Fmt {
@@ -95,6 +98,7 @@ struct Fmt {
   int prec;
   ulong flags;
 };
+#endif
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
@@ -223,6 +227,7 @@ typedef struct Waitmsg Waitmsg;
 #define DMWRITE 0x2         /* mode bit for write permission */
 #define DMEXEC 0x1          /* mode bit for execute permission */
 
+#ifndef __FRAMAC__
 struct Qid {
   uvlong path;
   ulong vers;
@@ -256,5 +261,6 @@ struct Waitmsg {
   ulong time[3];    /* of loved one and descendants */
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
+#endif
 
 #endif /* _PORTLIB_H_ */

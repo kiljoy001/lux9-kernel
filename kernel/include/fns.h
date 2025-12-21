@@ -456,7 +456,13 @@ void hnputs(void *, ushort);
 uvlong nhgetv(void *);
 uint nhgetl(void *);
 ushort nhgets(void *);
+/* Frama-C struggles with the UTF-8 symbol here; provide an ASCII alias. */
+#ifdef __FRAMAC__
+ulong us(void);
+#define µs us
+#else
 ulong µs(void);
+#endif
 long lcycles(void);
 extern void (*cycles)(uvlong *);
 void devmask(Pgrp *, int, char *);

@@ -7,6 +7,7 @@
 #include "fns.h"
 #include "mem.h"
 #include "u.h"
+#include "vmdetect.h"
 #include <lib.h>
 
 extern struct limine_framebuffer_request *limine_framebuffer;
@@ -425,9 +426,17 @@ void fbconsoleinit(void) {
   print("fbconsole: memset complete\n");
 
   /* Hook into screenputs - routes print() output to framebuffer */
-  print("fbconsole: PRE-HOOK\n");
-  screenputs = fbconsolescreenputs;
-  uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
+  /* SKIP in VM: MMIO framebuffer access is extremely slow in software emulation
+   */
+  if (vm_info.type != VM_NONE) {
+    uartputs("fbconsole: SKIPPING screenputs hook (VM detected - MMIO slow)\n",
+             63);
+    uartputs("fbconsole: UART remains primary output\n", 40);
+  } else {
+    print("fbconsole: PRE-HOOK\n");
+    screenputs = fbconsolescreenputs;
+    uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
+  }
 }
 
 static void fbputpixel(int x, int y, u32int color) {

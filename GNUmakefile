@@ -20,7 +20,6 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -Ikernel/include \
            -Ikernel/crypto \
            -Ikernel/clr/libmcu-cbor \
-           -Ikernel/tpm2-tss/include \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
@@ -41,8 +40,7 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
 
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
-# Shadow files to bypass reversion issues
-PORT_C := $(filter-out kernel/9front-port/blind_ledger.c, $(PORT_C))
+# Filter out conflicting/duplicate files
 PORT_C := $(filter-out kernel/9front-port/rbtree.c, $(PORT_C))
 
 # Ensure TPM drivers are included

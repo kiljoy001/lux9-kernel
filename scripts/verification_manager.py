@@ -165,7 +165,9 @@ def run_coq_verification(conn, coq_files):
     
     # Run make in proofs directory
     # We use -k to keep going even if some fail, to get results for all
-    cmd = ["make", "-C", "proofs", "clean", "verify", "-k"]
+    # Optimization: Remove 'clean' to allow incremental builds and add -j for parallel execution
+    jobs = str(os.cpu_count() or 1)
+    cmd = ["make", "-C", "proofs", "-j" + jobs, "verify", "-k"]
     
     try:
         process = subprocess.Popen(
