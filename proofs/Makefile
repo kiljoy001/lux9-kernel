@@ -19,7 +19,7 @@ verify: $(SUBDIRS) verify-root
 verify-root:
 	@echo ""
 	@echo "Verifying root proofs..."
-	@coqc *.v 2>/dev/null || echo "  ⚠️  Some root proofs failed to compile (ignored for now)"
+	@coqc -R . proofs *.v 2>/dev/null || echo "  ⚠️  Some root proofs failed to compile (ignored for now)"
 
 # Build each subdirectory
 $(SUBDIRS):
