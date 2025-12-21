@@ -10,11 +10,11 @@
 
 /*@
   predicate Inv_Conservation(struct PebbleState *ps, int total) =
-    ps->black_budget + ps->black_inuse + ps->blue_inuse + ps->red_inuse ==
+    ps->colorless_bank + ps->black_inuse + ps->blue_inuse + ps->red_inuse ==
 total;
 
   predicate Inv_NonNegative(struct PebbleState *ps) =
-    ps->black_budget >= 0 &&
+    ps->colorless_bank >= 0 &&
     ps->black_inuse >= 0 &&
     ps->blue_inuse >= 0 &&
     ps->red_inuse >= 0 &&
@@ -43,7 +43,7 @@ pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap) {
 
 static void pebble_reset_state(PebbleState *ps) {
   memset(ps, 0, sizeof(*ps));
-  ps->black_budget = PEBBLE_DEFAULT_BUDGET;
+  ps->colorless_bank = PEBBLE_DEFAULT_BUDGET;
   ps->white_head = 0;
   ps->white_pending = 0;
 }
@@ -62,7 +62,7 @@ void pebbleinit(void) {
     return;
 
   // Initialize boot state
-  boot_pstate.black_budget = PEBBLE_BOOT_BUDGET;
+  boot_pstate.colorless_bank = PEBBLE_BOOT_BUDGET;
   boot_pstate.white_generation = 1;
 
   pebble_initialized = 1;
@@ -116,7 +116,7 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   if (ps == nil)
     return nil;
 
-  /* BEVIS: Kinetic Defense - Proof-of-Work Gating */
+  /* BEVIS: Kinetic Defense - Proof-of-Work Gating (Physics Security) */
   if (up != nil) {
     diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
     if (!pow_verify(up->pow_nonce, (u64int)up->pid, diff)) {
@@ -132,10 +132,26 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   pegged_size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
 
   lock(&pebble_global_lock);
+
+  /* Check colorless budget */
+  if (ps->colorless_bank < pegged_size) {
+    unlock(&pebble_global_lock);
+    if (pebble_debug)
+      print("PEBBLE: insufficient budget for WHITE pid=%lud need=%lud "
+            "have=%lud\n",
+            up ? up->pid : 0, pegged_size, ps->colorless_bank);
+    return nil; /* Insufficient budget */
+  }
+
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
     idx = (ps->white_head + i) % PEBBLE_MAX_TOKENS;
     if (ps->whites_active[idx])
       continue;
+
+    /* Consume budget: COLORLESS → WHITE transition */
+    ps->colorless_bank -= pegged_size;
+    ps->white_pending += pegged_size;
+
     ps->white_generation++;
     ps->whites_active[idx] = 1;
     ps->whites[idx].token = PEBBLE_TOKEN_MAGIC;
@@ -184,7 +200,7 @@ int pebble_set_budget(ulong budget) {
     return -1;
 
   lock(&pebble_global_lock);
-  ps->black_budget = budget;
+  ps->colorless_bank = budget;
   unlock(&pebble_global_lock);
   return 0;
 }
@@ -197,9 +213,60 @@ ulong pebble_get_budget(void) {
   if (ps == nil)
     return 0;
   lock(&pebble_global_lock);
-  budget = ps->black_budget;
+  budget = ps->colorless_bank;
   unlock(&pebble_global_lock);
   return budget;
+}
+
+/*
+ * pebble_increase_budget - Request additional budget via Proof-of-Work
+ *
+ * Applications write "size nonce" to /dev/pebble/budget.
+ * The kernel verifies the PoW and increases the process's colorless budget.
+ *
+ * This is the ONLY way for a process to obtain Pebble budget.
+ * All allocation functions (Black, Blue, Red, White) consume from this budget.
+ *
+ * Returns 0 on success, -1 on failure (invalid PoW or other error).
+ */
+int pebble_increase_budget(ulong size, u64int nonce) {
+  PebbleState *ps;
+  int diff;
+
+  if (up == nil)
+    return -1; /* Kernel cannot use this API */
+
+  ps = pebble_state();
+  if (ps == nil)
+    return -1;
+
+  /* Round size to 8-byte token boundary (transparent to caller) */
+  if (size < PEBBLE_MIN_ALLOC)
+    size = PEBBLE_MIN_ALLOC;
+  size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+
+  /* Calculate required PoW difficulty based on requested size */
+  diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
+
+  /* Verify the provided nonce against the process PID */
+  if (!pow_verify(nonce, (u64int)up->pid, diff)) {
+    if (pebble_debug)
+      print(
+          "PEBBLE: budget PoW failure pid=%lud size=%lud diff=%d nonce=%llud\n",
+          up->pid, size, diff, nonce);
+    return -1;
+  }
+
+  /* PoW verified - increase budget */
+  lock(&pebble_global_lock);
+  ps->colorless_bank += size;
+  unlock(&pebble_global_lock);
+
+  if (pebble_debug)
+    print("PEBBLE: budget increased pid=%lud size=%lud total=%lud\n", up->pid,
+          size, ps->colorless_bank);
+
+  return 0;
 }
 
 /*
@@ -438,7 +505,7 @@ int pebble_black_free(const UserCapability *cap) {
 
   // --- Adjust Pebble budget (BLACK → COLORLESS) ---
   ps->black_inuse -= size;
-  ps->black_budget += size;
+  ps->colorless_bank += size;
   ps->total_frees++;
   unlock(&pebble_global_lock); // Unlock early before external calls
 
@@ -543,7 +610,7 @@ static void pebble_free_red(PebbleRed *red) {
 
   /* Return budget to colorless bank (state transition: RED → COLORLESS) */
   lock(&pebble_global_lock);
-  ps->black_budget += size;
+  ps->colorless_bank += size;
   ps->red_inuse -= size;
   unlock(&pebble_global_lock);
 }
@@ -576,11 +643,11 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
 
   /* Check budget (state transition: COLORLESS → BLUE) */
   lock(&pebble_global_lock);
-  if (ps->black_budget < size) {
+  if (ps->colorless_bank < size) {
     unlock(&pebble_global_lock);
     return nil; /* Insufficient budget */
   }
-  ps->black_budget -= size;
+  ps->colorless_bank -= size;
   ps->blue_inuse += size;
   unlock(&pebble_global_lock);
 
@@ -589,7 +656,7 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
   if (blue == nil) {
     /* Rollback budget */
     lock(&pebble_global_lock);
-    ps->black_budget += size;
+    ps->colorless_bank += size;
     ps->blue_inuse -= size;
     unlock(&pebble_global_lock);
     return nil;
@@ -600,7 +667,7 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
   if (blue->blue_data == nil) {
     /* Rollback budget */
     lock(&pebble_global_lock);
-    ps->black_budget += size;
+    ps->colorless_bank += size;
     ps->blue_inuse -= size;
     unlock(&pebble_global_lock);
     free(blue);
@@ -667,7 +734,7 @@ int pebble_blue_free(PebbleBlue *blue) {
 
   /* Return budget to colorless bank (state transition: BLUE → COLORLESS) */
   lock(&pebble_global_lock);
-  ps->black_budget += size;
+  ps->colorless_bank += size;
   ps->blue_inuse -= size;
   unlock(&pebble_global_lock);
 
@@ -703,11 +770,11 @@ PebbleRed *pebble_red_alloc(ulong size) {
 
   /* Check budget (state transition: COLORLESS → RED) */
   lock(&pebble_global_lock);
-  if (ps->black_budget < size) {
+  if (ps->colorless_bank < size) {
     unlock(&pebble_global_lock);
     return nil; /* Insufficient budget */
   }
-  ps->black_budget -= size;
+  ps->colorless_bank -= size;
   ps->red_inuse += size;
   unlock(&pebble_global_lock);
 
@@ -716,7 +783,7 @@ PebbleRed *pebble_red_alloc(ulong size) {
   if (red == nil) {
     /* Rollback budget */
     lock(&pebble_global_lock);
-    ps->black_budget += size;
+    ps->colorless_bank += size;
     ps->red_inuse -= size;
     unlock(&pebble_global_lock);
     return nil;
@@ -727,7 +794,7 @@ PebbleRed *pebble_red_alloc(ulong size) {
   if (red->red_data == nil) {
     /* Rollback budget */
     lock(&pebble_global_lock);
-    ps->black_budget += size;
+    ps->colorless_bank += size;
     ps->red_inuse -= size;
     unlock(&pebble_global_lock);
     free(red);
@@ -794,7 +861,7 @@ int pebble_red_free(PebbleRed *red) {
 
   /* Return budget to colorless bank (state transition: RED → COLORLESS) */
   lock(&pebble_global_lock);
-  ps->black_budget += size;
+  ps->colorless_bank += size;
   ps->red_inuse -= size;
   unlock(&pebble_global_lock);
 
@@ -903,7 +970,7 @@ void pebble_auto_verify(Proc *p, Ureg *) {
   if (ps->drop_budget != 0) {
     if (ps->drop_budget <= ps->black_inuse) {
       ps->black_inuse -= ps->drop_budget;
-      ps->black_budget += ps->drop_budget;
+      ps->colorless_bank += ps->drop_budget;
     }
     ps->drop_budget = 0;
   }
@@ -928,7 +995,7 @@ void pebble_cleanup(Proc *p) {
   red = ps->red_list;
   ps->red_list = nil;
   ps->black_inuse = 0;
-  ps->black_budget = PEBBLE_DEFAULT_BUDGET;
+  ps->colorless_bank = PEBBLE_DEFAULT_BUDGET;
   ps->white_verified = 0;
   ps->white_pending = 0;
   ps->blue_count = 0;

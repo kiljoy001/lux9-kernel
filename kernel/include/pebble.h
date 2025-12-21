@@ -108,7 +108,7 @@ typedef struct PebbleBlack {
 
 /* Per-process Pebble state */
 typedef struct PebbleState {
-  ulong black_budget;   /* remaining bytes for this process (COLORLESS pool) */
+  ulong colorless_bank;   /* remaining bytes for this process (COLORLESS pool) */
   ulong black_inuse;    /* bytes in BLACK state */
   ulong blue_inuse;     /* bytes in BLUE state */
   ulong red_inuse;      /* bytes in RED state */
@@ -161,7 +161,9 @@ int pebble_blue_discard(PebbleBlue *blue_obj); /* Use pebble_blue_free */
 PebbleState *pebble_state(void);
 int pebble_set_budget(ulong budget);
 ulong pebble_get_budget(void);
+int pebble_increase_budget(ulong size, u64int nonce);
 void pebble_auto_verify(Proc *p, Ureg *ureg);
+
 void pebble_red_blue_exit(void);
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white);
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size);
