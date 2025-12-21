@@ -43,10 +43,13 @@ _catch:
 M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
                            cbytes_t i_end) {
   IM3FuncType ftype = NULL;
+  extern int print(char *, ...);
+  print("ParseSection_Type: ENTERED\n");
 
   _try {
     u32 numTypes;
     _(ReadLEB_u32(&numTypes, &i_bytes, i_end));
+    print("ParseSection_Type: numTypes=%d\n", numTypes);
     m3log(parse, "** Type [%d]", numTypes);
 
     _throwif("too many types", numTypes > d_m3MaxSaneTypesCount);
@@ -54,17 +57,22 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
     if (numTypes) {
       // table of IM3FuncType (that point to the actual M3FuncType struct in the
       // Environment)
+      print("ParseSection_Type: allocating array\n");
       io_module->funcTypes = m3_AllocArray(IM3FuncType, numTypes);
       _throwifnull(io_module->funcTypes);
+      print("ParseSection_Type: array allocated\n");
       io_module->numFuncTypes = numTypes;
 
       for (u32 i = 0; i < numTypes; ++i) {
+        print("ParseSection_Type: loop %d\n", i);
         i8 form;
         _(ReadLEB_i7(&form, &i_bytes, i_end));
+        print("ParseSection_Type: form=%d (expecting -32/0x60)\n", (int)form);
         _throwif(m3Err_wasmMalformed, form != -32); // for Wasm MVP
 
         u32 numArgs;
         _(ReadLEB_u32(&numArgs, &i_bytes, i_end));
+        print("ParseSection_Type: numArgs=%d\n", numArgs);
 
         _throwif(m3Err_tooManyArgsRets,
                  numArgs > d_m3MaxSaneFunctionArgRetCount);
@@ -82,14 +90,19 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
           argTypes[a] = argType;
         }
 
+        print("ParseSection_Type: reading numRets\n");
         u32 numRets;
         _(ReadLEB_u32(&numRets, &i_bytes, i_end));
+        print("ParseSection_Type: numRets=%d\n", (int)numRets);
         _throwif(m3Err_tooManyArgsRets,
                  (u64)(numRets) + numArgs > d_m3MaxSaneFunctionArgRetCount);
 
+        print("ParseSection_Type: calling AllocFuncType\n");
         _(AllocFuncType(&ftype, numRets + numArgs));
+        print("ParseSection_Type: AllocFuncType returned, ftype=%p\n", ftype);
         ftype->numArgs = numArgs;
         ftype->numRets = numRets;
+        print("ParseSection_Type: fields assigned\n");
 
         for (u32 r = 0; r < numRets; ++r) {
           i8 wasmType;
@@ -99,15 +112,26 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
 
           ftype->types[r] = retType;
         }
-        memcpy(ftype->types + numRets, argTypes, numArgs);
-        m3log(parse, "    type %2d: %s", i, SPrintFuncTypeSignature(ftype));
+        // print("ParseSection_Type: calling memcpy\n");
+        // memcpy(ftype->types + numRets, argTypes, numArgs);
+
+        // m3log(parse, "    type %2d: %s", i, SPrintFuncTypeSignature(ftype));
 
         Environment_AddFuncType(io_module->environment, &ftype);
+
+        print("ParseSection_Type: loop end reached\n");
+        print("ParseSection_Type: io_module->funcTypes = %p\n",
+              io_module->funcTypes);
+        print("ParseSection_Type: ftype = %p\n", ftype);
+        print("ParseSection_Type: assigning index %d\n", i);
+
         io_module->funcTypes[i] = ftype;
+        print("ParseSection_Type: assigned\n");
         ftype = NULL; // ownership transferred to environment
       }
     }
-  }
+  } // End _try
+
 _catch:
 
   if (result) {
@@ -599,15 +623,17 @@ M3Result ParseModuleSection(M3Module *o_module, u8 i_sectionType,
 M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
                         cbytes_t i_bytes, u32 i_numBytes) {
   IM3Module module;
+  extern int print(char *, ...);
+  print("m3_ParseModule: ENTERED\n");
   m3log(parse, "load module: %d bytes", i_numBytes);
   _try {
+    // print("m3_ParseModule: allocating module\n");
     module = m3_AllocStruct(M3Module);
     _throwifnull(module);
-    module->name = ".unnamed";
-    m3log(parse, "load module: %d bytes", i_numBytes);
-    module->startFunction = -1;
-    // module->hasWasmCodeCopy = false;
+    // print("m3_ParseModule: module allocated\n");
+    // print("m3_ParseModule: module allocated ok\n");
     module->environment = i_environment;
+    module->name = ".unnamed";
 
     const u8 *pos = i_bytes;
     const u8 *end = pos + i_numBytes;
@@ -616,11 +642,15 @@ M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
     module->wasmEnd = end;
 
     u32 magic, version;
+    // print("m3_ParseModule: reading magic\n");
     _(Read_u32(&magic, &pos, end));
+    print("m3_ParseModule: magic read\n");
     _(Read_u32(&version, &pos, end));
+    print("m3_ParseModule: version read\n");
 
     _throwif(m3Err_wasmMalformed, magic != 0x6d736100);
     _throwif(m3Err_incompatibleWasmVersion, version != 1);
+    print("m3_ParseModule: header ok\n");
 
     static const u8 sectionsOrder[] = {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 10, 11, 0}; // 0 is a placeholder
@@ -628,6 +658,7 @@ M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
 
     int loop_count = 0;
     while (pos < end) {
+      print("m3_ParseModule: loop iter %d\n", loop_count);
       /* Safety: prevent infinite loops */
       if (loop_count++ > 50) {
         _throw("too many sections");
@@ -635,6 +666,8 @@ M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
 
       u8 section;
       _(ReadLEB_u7(&section, &pos, end));
+
+      print("m3_ParseModule: processing section %d\n", (int)section);
 
       if (section != 0) {
         // Ensure sections appear only once and in order
@@ -645,9 +678,13 @@ M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
 
       u32 sectionLength;
       _(ReadLEB_u32(&sectionLength, &pos, end));
+      print("m3_ParseModule: section %d length %d\n", (int)section,
+            (int)sectionLength);
       _throwif(m3Err_wasmMalformed, pos + sectionLength > end);
 
+      print("m3_ParseModule: calling ParseModuleSection %d\n", (int)section);
       _(ParseModuleSection(module, section, pos, sectionLength));
+      print("m3_ParseModule: ParseModuleSection %d DONE\n", (int)section);
 
       pos += sectionLength;
     }

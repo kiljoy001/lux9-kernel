@@ -118,19 +118,25 @@ void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
 
 #else
 
-void *m3_Malloc_Impl(size_t i_size) { return calloc(i_size, 1); }
+#include "pebble_kernel.h"
 
-void m3_Free_Impl(void *io_ptr) { free(io_ptr); }
+void *m3_Malloc_Impl(size_t i_size) {
+  return pebble_kernel_alloc((ulong)i_size);
+}
+
+void m3_Free_Impl(void *io_ptr) { pebble_kernel_free_ptr(io_ptr); }
 
 void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
   if (M3_UNLIKELY(i_newSize == i_oldSize))
     return i_ptr;
 
-  void *newPtr = realloc(i_ptr, i_newSize);
+  void *newPtr = pebble_kernel_alloc((ulong)i_newSize);
 
   if (M3_LIKELY(newPtr)) {
-    if (i_newSize > i_oldSize) {
-      memset((u8 *)newPtr + i_oldSize, 0x0, i_newSize - i_oldSize);
+    if (i_ptr) {
+      size_t copySize = (i_oldSize < i_newSize) ? i_oldSize : i_newSize;
+      memcpy(newPtr, i_ptr, copySize);
+      pebble_kernel_free_ptr(i_ptr);
     }
     return newPtr;
   }

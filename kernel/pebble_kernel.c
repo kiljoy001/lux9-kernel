@@ -276,6 +276,51 @@ void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
 /*
  * pebble_kernel_init - Initialize kernel Pebble subsystem
  */
+/*
+ * pebble_kernel_free_ptr - Free allocation by pointer (BLACK → COLORLESS)
+ *
+ * Looks up the allocation struct by pointer and frees it.
+ * This is O(N) but required for compatibility with standard malloc/free
+ * interfaces.
+ */
+void pebble_kernel_free_ptr(void *ptr) {
+  PebbleKernelAlloc *curr;
+
+  if (ptr == nil)
+    return;
+
+  lock(&kernel_allocs_lock);
+  curr = kernel_allocs_head;
+  while (curr) {
+    if (curr->ptr == ptr) {
+      /* Found match, unlock and free (free re-locks, so we must be careful) */
+      /* Actually pebble_kernel_free takes a lock, so we should separate lookup
+         from free to avoid deadlock? pebble_kernel_free takes the lock. We are
+         holding it. We should probably inline the free logic or return the
+         alloc to free outside. Or just duplicate the removal logic here.
+      */
+      break;
+    }
+    curr = curr->next;
+  }
+  unlock(&kernel_allocs_lock);
+
+  if (curr) {
+    pebble_kernel_free(curr);
+  } else {
+    /* Pointer not found in Pebble list - implies it wasn't allocated by us */
+    /* Fallback to standard free? Or warn? */
+    /* Since we are migrating the pipeline, we assume it should be here. */
+    /* But m3 might mix allocations? Unlikely if we replace m3_Malloc globally.
+     */
+    /* Safest to just return if not found, or panic if strict. */
+    print("pebble_kernel_free_ptr: warning: pointer %p not found in pebble "
+          "list\n",
+          ptr);
+    /* Try legacy free just in case? No, double free risk. */
+  }
+}
+
 void pebble_kernel_init(void) {
   memset(&kernel_pebble_stats, 0, sizeof(kernel_pebble_stats));
   memset(&kernel_allocs_lock, 0, sizeof(Lock));
