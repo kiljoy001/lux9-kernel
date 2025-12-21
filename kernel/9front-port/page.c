@@ -2,6 +2,7 @@
 #include "fns.h"
 #include "mem.h"
 #include "pageown.h"
+#include "pebble.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -269,7 +270,21 @@ Page *newpage(uintptr va, Segment *seg) {
     print("newpage[%d]: va=%p free=%lud\n", newpage_count, va,
           palloc.freecount);
 
+  /* Pebble: Check and consume budget for page allocation (userspace only) */
+  if (up != nil) {
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < BY2PG) {
+      unlock(&pebble_global_lock);
+      if (pebble_debug)
+        print("PEBBLE: insufficient budget for page va=%#p\n", va);
+      return nil; /* Insufficient budget */
+    }
+    up->pebble.colorless_bank -= BY2PG;
+    unlock(&pebble_global_lock);
+  }
+
   lock(&palloc);
+
   while (!ispages(nil)) {
     unlock(&palloc);
     if (locked)

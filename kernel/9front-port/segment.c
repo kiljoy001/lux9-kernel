@@ -2,6 +2,7 @@
 #include "fns.h"
 #include "lock_borrow.h"
 #include "mem.h"
+#include "pebble.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -704,6 +705,20 @@ uintptr ibrk(uintptr addr, int seg) {
 
   s->top = newtop;
   s->size = newsize;
+
+  /* Pebble: Consume budget for segment growth (userspace only) */
+  if (up != nil && newtop > s->base) {
+    ulong growth = newtop - s->base;
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < growth) {
+      unlock(&pebble_global_lock);
+      qunlock(&s->qlock);
+      error(Enovmem);
+    }
+    up->pebble.colorless_bank -= growth;
+    unlock(&pebble_global_lock);
+  }
+
   qunlock(&s->qlock);
   return 0;
 }
@@ -950,6 +965,17 @@ uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
 
   /* Copy in defaults */
   attr |= ps->attr;
+
+  /* Pebble: Consume budget for segment attachment (userspace only) */
+  if (up != nil) {
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < len) {
+      unlock(&pebble_global_lock);
+      error(Enovmem);
+    }
+    up->pebble.colorless_bank -= len;
+    unlock(&pebble_global_lock);
+  }
 
   s = newseg(attr, va, len / BY2PG);
   s->pseg = ps;
