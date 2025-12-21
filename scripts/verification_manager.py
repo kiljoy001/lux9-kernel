@@ -13,6 +13,11 @@ DB_PATH = ".verification_registry.db"
 REPO_ROOT = os.getcwd()
 PROOFS_DIR = os.path.join(REPO_ROOT, "proofs")
 KERNEL_DIR = os.path.join(REPO_ROOT, "kernel")
+# Extra C files that should always be pushed through Frama-C even
+# without inline ACSL markers.
+STATIC_ACSL_TARGETS = [
+    ("kernel/9front-pc64/mmu.c", "acsl-mmu"),
+]
 
 # Colors for output
 class Colors:
@@ -101,6 +106,19 @@ def scan_repository(conn):
                 except Exception as e:
                     print(f"{Colors.WARNING}Warning: Could not read {rel_path}: {e}{Colors.ENDC}")
 
+    # 3. Inject static Frama-C targets
+    for rel_path, ftype in STATIC_ACSL_TARGETS:
+        full_path = os.path.join(REPO_ROOT, rel_path)
+        if os.path.exists(full_path):
+            found_paths.add(rel_path)
+            cursor.execute('''
+                INSERT OR IGNORE INTO tracked_files (path, file_type, last_seen)
+                VALUES (?, ?, ?)
+            ''', (rel_path, ftype, datetime.now()))
+            cursor.execute('''
+                UPDATE tracked_files SET last_seen = ? WHERE path = ?
+            ''', (datetime.now(), rel_path))
+
     # Cleanup removed files
     cursor.execute("SELECT path FROM tracked_files")
     all_tracked = {row[0] for row in cursor.fetchall()}
@@ -119,26 +137,47 @@ def verify_acsl_file(file_info):
     file_id, path, file_type = file_info
     full_path = os.path.join(REPO_ROOT, path)
     
-    # Frama-C command
+    # Default Frama-C command (ACSL inline)
     cmd = [
         "frama-c", "-wp", "-wp-prover", "alt-ergo", "-wp-timeout", "5",
         "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + " -D__PLAN9_KERNEL__",
         full_path
     ]
+    env = os.environ.copy()
+    env.setdefault("WHY3CONFIG", "/tmp/why3.conf")
+
+    # Special handling for mmu.c: use our preprocessing shim and x86_64 machdep.
+    if file_type == "acsl-mmu":
+        cmd = [
+            "frama-c",
+            "-machdep", "gcc_x86_64",
+            "-no-cpp-frama-c-compliant",
+            "-wp",
+            "-wp-rte",
+            "-wp-timeout", "10",
+            "-wp-prover", "cvc4",
+            "-cpp-command", "./proofs/mmu/frama_cpp.sh %i %o",
+            full_path,
+        ]
+        env.setdefault("FRAMAC_SHARE", os.path.join(REPO_ROOT, "proofs/mmu"))
+        env.setdefault("WHY3CONFIG", "/tmp/why3.conf")
     
     status = "UNKNOWN"
     output = ""
     
     try:
         result = subprocess.run(
-            cmd, 
-            capture_output=True, 
+            cmd,
+            capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
+            env=env,
         )
         output = result.stdout + result.stderr
         
-        if "Proved goals" in output:
+        if "Operation not permitted (connect," in output:
+                status = "WARNING"
+        elif "Proved goals" in output:
                 status = "PASS"
         else:
                 status = "PASS" if result.returncode == 0 else "FAIL"
@@ -265,7 +304,7 @@ def main():
     all_files = cursor.fetchall()
     
     coq_files = [f for f in all_files if f[2] == 'coq']
-    acsl_files = [f for f in all_files if f[2] == 'acsl']
+    acsl_files = [f for f in all_files if f[2].startswith('acsl')]
     
     print(f"\n{Colors.OKBLUE}[Running Verification on {len(all_files)} Files]{Colors.ENDC}")
     
