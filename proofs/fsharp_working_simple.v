@@ -67,7 +67,7 @@ Proof.
   - (* T_Int *)
     left. constructor.
   - (* T_Var *)
-    inversion H.
+    destruct n; simpl in H; discriminate.
   - (* T_Lam *)
     left. constructor.
   - (* T_App *)

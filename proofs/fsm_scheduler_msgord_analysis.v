@@ -7,6 +7,8 @@
 Require Import Coq.Lists.List.
 Require Import Coq.Arith.Arith.
 Require Import Coq.micromega.Lia.
+Require Import Coq.ZArith.ZArith.
+Require Import Coq.Strings.String.
 Import ListNotations.
 
 (* Current system capabilities *)
@@ -193,7 +195,7 @@ Module QuantitativeAnalysis.
   
   (* Theorem: FSM enhancement provides net benefit *)
   Theorem fsm_provides_net_benefit :
-    fsm_enhanced_score > baseline_score.
+    (fsm_enhanced_score > baseline_score)%Z.
   Proof.
     unfold fsm_enhanced_score, baseline_score.
     unfold system_score, performance_improvement.
@@ -244,9 +246,9 @@ Module StrategicRecommendation.
     performance_gain : nat)
     (maintenance_increase : nat) 
     (risk_tolerance : nat) : bool :=
-    (performance_gain > 25) &&  (* Significant improvement *)
-    (maintenance_increase < 50) &&  (* Manageable complexity *)
-    (risk_tolerance > 30).  (* Acceptable risk level *)
+    (25 <? performance_gain) &&  (* Significant improvement *)
+    (maintenance_increase <? 50) &&  (* Manageable complexity *)
+    (30 <? risk_tolerance).  (* Acceptable risk level *)
   
   (* For our specific case *)
   Theorem fsm_implementation_recommended :

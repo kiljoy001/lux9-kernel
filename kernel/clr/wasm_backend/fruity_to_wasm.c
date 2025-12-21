@@ -381,6 +381,18 @@ static int compile_function_body(fruity_function_t *func, wasm_buffer_t *code) {
   return 0;
 }
 
+/* Helper: Map CLR type to WASM type */
+static u8int valtype_to_wasm(clr_value_type_t t) {
+  switch (t) {
+  case CLR_INT64:
+    return WASM_TYPE_I64;
+  case CLR_BOOL:
+  case CLR_INT32:
+  default:
+    return WASM_TYPE_I32;
+  }
+}
+
 int fruity_compile_to_wasm(fruity_module_t *module,
                            fruity_wasm_result_t *result) {
   if (!module || !result)
@@ -393,15 +405,43 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   wasm_emit_u32(&main_buf, 0x6D736100); /* \0asm */
   wasm_emit_u32(&main_buf, 1);          /* Version 1 */
 
+  /* Count functions */
+  ulong func_count = 0;
+  {
+    fruity_function_t *f = module->functions_head;
+    while (f) {
+      func_count++;
+      f = f->next;
+    }
+  }
+
   /* 2. Type Section (Index 1) */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 128);
-    wasm_emit_vec_header(&sec, 1); /* 1 type: () -> i32 (for Main) */
-    wasm_emit_u8(&sec, WASM_TYPE_FUNC);
-    wasm_emit_vec_header(&sec, 0); /* 0 params */
-    wasm_emit_vec_header(&sec, 1); /* 1 result */
-    wasm_emit_u8(&sec, WASM_TYPE_I32);
+    wasm_emit_vec_header(&sec, func_count);
+
+    fruity_function_t *f = module->functions_head;
+    while (f) {
+      /* Emit Signature: (params) -> (result) */
+      wasm_emit_u8(&sec, WASM_TYPE_FUNC);
+
+      /* Params */
+      wasm_emit_vec_header(&sec, f->arg_count);
+      for (ulong i = 0; i < f->arg_count; i++) {
+        wasm_emit_u8(&sec, valtype_to_wasm(f->arg_types[i]));
+      }
+
+      /* Result */
+      if (f->return_type == CLR_VOID) {
+        wasm_emit_vec_header(&sec, 0);
+      } else {
+        wasm_emit_vec_header(&sec, 1);
+        wasm_emit_u8(&sec, valtype_to_wasm(f->return_type));
+      }
+
+      f = f->next;
+    }
 
     wasm_emit_u8(&main_buf, WASM_SEC_TYPE);
     wasm_emit_uleb128(&main_buf, sec.size);
@@ -413,8 +453,11 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
-    wasm_emit_vec_header(&sec, 1); /* 1 function */
-    wasm_emit_uleb128(&sec, 0);    /* uses type index 0 */
+    wasm_emit_vec_header(&sec, func_count);
+
+    for (ulong i = 0; i < func_count; i++) {
+      wasm_emit_uleb128(&sec, i); /* Function i uses Type i (1:1 mapping) */
+    }
 
     wasm_emit_u8(&main_buf, WASM_SEC_FUNCTION);
     wasm_emit_uleb128(&main_buf, sec.size);
@@ -440,15 +483,25 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
-    wasm_emit_vec_header(&sec, 2); /* 2 exports */
 
+    /* 1 memory + func_count exports */
+    wasm_emit_vec_header(&sec, 1 + func_count);
+
+    /* Export Memory */
     wasm_emit_name(&sec, "memory");
     wasm_emit_u8(&sec, 0x02); /* Memory export */
     wasm_emit_uleb128(&sec, 0);
 
-    wasm_emit_name(&sec, "Main");
-    wasm_emit_u8(&sec, 0x00);   /* Function export */
-    wasm_emit_uleb128(&sec, 0); /* func index 0 */
+    /* Export Functions */
+    fruity_function_t *f = module->functions_head;
+    ulong idx = 0;
+    while (f) {
+      const char *name = f->name ? f->name : "MethodUnknown";
+      wasm_emit_name(&sec, name);
+      wasm_emit_u8(&sec, 0x00); /* Function export */
+      wasm_emit_uleb128(&sec, idx++);
+      f = f->next;
+    }
 
     wasm_emit_u8(&main_buf, WASM_SEC_EXPORT);
     wasm_emit_uleb128(&main_buf, sec.size);
@@ -460,22 +513,24 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 1024);
-    wasm_emit_vec_header(&sec, 1); /* 1 function body */
+    wasm_emit_vec_header(&sec, func_count);
 
-    wasm_buffer_t body;
-    wasm_buf_init(&body, 1024);
-    if (module->functions_head) {
-      compile_function_body(module->functions_head, &body);
+    fruity_function_t *f = module->functions_head;
+    while (f) {
+      wasm_buffer_t body;
+      wasm_buf_init(&body, 1024);
+      compile_function_body(f, &body);
+
+      wasm_emit_uleb128(&sec, body.size);
+      wasm_emit_bytes(&sec, body.data, body.size);
+      wasm_buf_free(&body);
+
+      f = f->next;
     }
-
-    wasm_emit_uleb128(&sec, body.size);
-    wasm_emit_bytes(&sec, body.data, body.size);
 
     wasm_emit_u8(&main_buf, WASM_SEC_CODE);
     wasm_emit_uleb128(&main_buf, sec.size);
     wasm_emit_bytes(&main_buf, sec.data, sec.size);
-
-    wasm_buf_free(&body);
     wasm_buf_free(&sec);
   }
 

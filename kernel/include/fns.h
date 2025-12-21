@@ -177,7 +177,7 @@ void kexit(Ureg *);
 void kickpager(void);
 void killbig(void);
 void killproc(Proc *, int);
-void kproc(char *, void (*)(void *), void *);
+int kproc(char *, void (*)(void *), void *);
 void kprocchild(Proc *, void (*)(void));
 void linkproc(void);
 extern void (*kproftimer)(uintptr);
@@ -431,9 +431,20 @@ Proc *wakeup(Rendez *);
 int walk(Chan **, char **, int, int, int *);
 void wlock(RWLock *);
 void wunlock(RWLock *);
-void *xalloc(ulong);
-void *xallocz(ulong, int);
-void xfree(void *);
+/*@ allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xalloc(ulong size);
+/*@ allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xallocz(ulong size, int zero);
+/*@ frees p;
+    assigns \nothing;
+*/
+void xfree(void *p);
 void xhole(uintptr, uintptr);
 void xinit(void);
 int xmerge(void *, void *);
@@ -474,9 +485,11 @@ extern int (*pcicfgrw8)(int, int, int, int);
 extern int (*pcicfgrw16)(int, int, int, int);
 extern int (*pcicfgrw32)(int, int, int, int);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos iprint 1
 #pragma varargck argpos panic 1
 #pragma varargck argpos pprint 1
+#endif
 
 /* Platform-specific address macros - must be provided by arch */
 #ifndef KADDR

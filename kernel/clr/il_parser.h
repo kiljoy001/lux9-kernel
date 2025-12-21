@@ -16,7 +16,7 @@
 #include <stdint.h>
 typedef uintptr_t uintptr;
 #else
-#include "qbe/kernel_compat.h"
+#include "il_compat.h"
 #endif
 /* #include <stddef.h> */
 /* #include <stdint.h> */

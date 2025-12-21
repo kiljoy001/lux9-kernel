@@ -77,6 +77,56 @@ Definition utilization_scaled (task : Task) (scale : nat) : nat :=
 Definition total_utilization_scaled (tasks : list Task) (scale : nat) : nat :=
   fold_right (fun task acc => utilization_scaled task scale + acc) 0 tasks.
 
+Lemma demand_bound_mono_tasks :
+  forall t t' tasks,
+    t <= t' ->
+    total_demand tasks t <= total_demand tasks t'.
+Proof.
+  intros t t' tasks Hle.
+  unfold total_demand.
+  induction tasks; simpl; auto.
+  specialize (IHtasks).
+  apply Nat.add_le_mono.
+  - unfold demand_bound.
+    destruct (Nat.leb (D a) t) eqn:Hleb.
+    + apply Nat.leb_le in Hle.
+      destruct (Nat.leb (D a) t') eqn:?; try lia.
+      (* both branches produce nondecreasing result since t' >= t *)
+      lia.
+    + (* if t < D, demand is 0, so <= any value *)
+      lia.
+  - apply IHtasks; assumption.
+Qed.
+
+Lemma utilization_bound_conservative :
+  forall tasks min_period,
+    min_period > 0 ->
+    (forall t, In t tasks -> T t >= min_period /\ valid_task t) ->
+    total_utilization_scaled tasks min_period <= min_period ->
+    is_schedulable tasks.
+Proof.
+  intros tasks minP Hmin Hvalid Hutil t Htpos.
+  unfold is_schedulable.
+  (* Very coarse bound: demand_bound <= utilization_scaled * (t / minP + 1) *)
+  unfold total_demand.
+  induction tasks as [|task tl IH]; simpl; try lia.
+  destruct (Hvalid task) as [HT _]; [left; reflexivity|].
+  destruct HT as [HTmin _].
+  assert (Htbound : demand_bound task t <= utilization_scaled task minP * (t / minP + 1)).
+  {
+    unfold demand_bound, utilization_scaled.
+    destruct (Nat.leb (D task) t); lia.
+  }
+  assert (Htlbound : total_demand tl t <= total_utilization_scaled tl minP * (t / minP + 1)).
+  {
+    apply IH; auto.
+    intros u Hu; apply Hvalid; right; assumption.
+  }
+  replace (total_utilization_scaled (task :: tl) minP)
+    with (utilization_scaled task minP + total_utilization_scaled tl minP) in Hutil by reflexivity.
+  specialize (IH t Htpos).
+  lia.
+Qed.
 (** 
  * Theorem: Utilization bound U <= 1 implies schedulability for D=T
  * (Liu & Layland 1973). We prove a specific instance for validation.

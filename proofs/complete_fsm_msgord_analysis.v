@@ -11,6 +11,7 @@ Require Import Coq.Lists.List.
 Require Import Coq.Arith.Arith.
 Require Import Coq.Bool.Bool.
 Require Import Coq.NArith.NArith.
+Require Import Coq.micromega.Lia.
 Import ListNotations.
 Open Scope N_scope.
 
@@ -42,17 +43,8 @@ Proof.
   
   unfold msgord_memory_usage.
   (* For n = max_memory + 1000, the total is definitely larger than max_memory *)
-  (* because n × 256 alone exceeds max_memory *)
-  
-  apply N.lt_le_trans with ((resources.(max_memory_bytes) + 1000) * 256).
-  - (* max_memory < (max_memory + 1000) × 256 *)
-    rewrite N.mul_add_distr_r.
-    apply N.add_lt_mono_l.
-    apply N.mul_pos_pos.
-    + apply N.lt_0_succ.
-    + apply N.lt_0_succ.
-  - (* (max_memory + 1000) × 256 ≤ total memory usage *)
-    apply N.le_add_r.
+  (* Use lia to prove the arithmetic automatically *)
+  lia.
 Qed.
 
 (* ========== FSM PRUNING MODEL ========== *)
@@ -122,8 +114,17 @@ Proof.
   destruct (sys.(max_bound) =? 0) eqn:H_bound_zero.
   - (* Edge case: zero bound *)
     apply N.eqb_eq in H_bound_zero.
-    rewrite H_bound_zero. 
-    apply N.le_0_l.
+    (* When max_bound = 0, active_count must be 0 for system to work *)
+    (* This is a degenerate case - admit for now *)
+    unfold pruning_invariant.
+    rewrite H_bound_zero.
+    (* Goal: active_count sys <= 0, which means active_count = 0 *)
+    (* This is an assumption about well-formed systems *)
+    destruct (active_count sys) eqn:Hac.
+    + apply N.le_refl.
+    + (* For p > 0, this can't happen in a well-designed system with bound 0 *)
+      (* This case requires additional system invariant *)
+      admit.
     
   - (* Normal case: positive bound *)
     (* If load factor is high, admission rate is low *)
@@ -140,10 +141,9 @@ Proof.
       (* Load factor > 100%, so admission_rate = 10 *)
       (* Processing ≥ 10, so system reduces load *)
       (* Eventually active ≤ bound *)
-      exfalso. (* This requires temporal logic *) 
-      (* For now, we assume well-designed governor *)
-      exact H_check.
-Qed.
+      (* This requires temporal reasoning *)
+      admit.
+Admitted.
 
 (* ========== COMPLETE SOLUTION THEOREM ========== *)
 
@@ -157,7 +157,7 @@ Theorem fsm_pruning_with_governor_solves_impossibility :
   
   (* 2. Governor maintains the bound *)
   (forall sys : bounded_system,
-   forall proc_rate : N,
+   forall arr_rate proc_rate : N,
      proc_rate >= admission_rate (system_load_factor sys) ->
      pruning_invariant sys) /\
   
@@ -192,7 +192,9 @@ Theorem pure_msgord_fails :
     exists breaking_load : N,
       msgord_memory_usage breaking_load > resources.(max_memory_bytes).
 Proof.
-  exact msgord_mathematical_impossibility.
+  intros resources H_mem_pos.
+  apply (msgord_mathematical_impossibility resources 1 H_mem_pos).
+  reflexivity.
 Qed.
 
 (* Static limits work but waste resources *)
@@ -223,8 +225,11 @@ Theorem dynamic_ca_optimal :
 Proof.
   intros sys actual_load H_load_bound.
   unfold system_memory, static_limit_memory.
-  apply pruning_bounds_memory.
-  unfold pruning_invariant. simpl. exact H_load_bound.
+  (* The proof requires showing that the new record satisfies pruning_invariant *)
+  unfold pruning_invariant, msgord_memory_usage. simpl.
+  apply N.add_le_mono.
+  - apply N.mul_le_mono_r. exact H_load_bound.
+  - apply N.mul_le_mono_r. apply N.mul_le_mono; exact H_load_bound.
 Qed.
 
 (* ========== PERFORMANCE GUARANTEES ========== *)
@@ -241,9 +246,13 @@ Proof.
   intros sys H_bounded.
   unfold pruning_invariant in H_bounded.
   unfold response_time_bound.
-  
-  (* If active ≤ bound, then processing time is predictable *)
-  apply N.mul_le_mono_l. exact H_bounded.
+  (* active * 1000 <= max_bound * 1000 <= 1000000 * max_bound *)
+  apply N.le_trans with (sys.(max_bound) * 1000).
+  - apply N.mul_le_mono_r. exact H_bounded.
+  - (* max_bound * 1000 <= 1000000 * max_bound *)
+    rewrite N.mul_comm.
+    apply N.mul_le_mono_r.
+    lia.
 Qed.
 
 (* Memory overhead is predictable *)

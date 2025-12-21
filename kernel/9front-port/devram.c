@@ -321,6 +321,12 @@ static void secure_wipe(uchar *data, ulong size) {
  * Argon2id Password-Based Key Derivation
  * ======================================================================== */
 
+/*@
+  requires password != \null && salt != \null && key_out != \null;
+  requires \valid(salt + (0..15));
+  requires \valid(key_out + (0..31));
+  assigns key_out[0..31];
+*/
 static int derive_key_from_password(const char *password, uchar *salt,
                                     uchar *key_out) {
   uint32_t nb_blocks = 4096;  /* 4MB memory (4096 blocks × 1024 bytes) */
@@ -423,6 +429,12 @@ static void xchacha20_encrypt_with_fresh_nonce(ProcessVault *v, uchar *data,
     print("ramdisk: encrypted with fresh nonce\n");
 }
 
+/*@
+  requires data != \null ==> \valid(data + (0..data_size-1));
+  requires key != \null ==> \valid(key + (0..31));
+  requires data_size >= 24;
+  assigns data[24..data_size-1], v->current_nonce[0..23];
+*/
 static void xchacha20_decrypt_with_stored_nonce(ProcessVault *v, uchar *data,
                                                 ulong data_size, uchar *key) {
   uchar stored_nonce[24];

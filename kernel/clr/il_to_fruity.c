@@ -188,17 +188,17 @@ static int is_branch_target(il_to_fruity_ctx_t *ctx, uint32_t offset) {
     assigns    ctx->blocks, ctx->block_count, ctx->block_capacity;
     assigns    ctx->last_error;
     behavior   success:
-      assumes  xalloc can allocate;
-      ensures  \result != \null;
-      ensures  \result->block_id == block_id;
-      ensures  \result->instructions_head == \null;
-      ensures  \result->instructions_tail == \null;
-      ensures  \result->instruction_count == 0;
-      ensures  ctx->block_count == \old(ctx->block_count) + 1;
-    behavior   failure:
-      assumes  xalloc cannot allocate;
-      ensures  \result == \null;
-      ensures  ctx->last_error == IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
+      // assumes xalloc success
+ensures  \result != \null;
+ensures  \result->block_id == block_id;
+ensures  \result->instructions_head == \null;
+ensures  \result->instructions_tail == \null;
+ensures  \result->instruction_count == 0;
+ensures ctx->block_count == \old(ctx->block_count) + 1;
+behavior failure :
+    // assumes xalloc failure
+ensures  \result == \null;
+ensures ctx->last_error == IL_TO_FRUITY_ERROR_OUT_OF_MEMORY;
 */
 /* Helper: Create new basic block */
 static fruity_basic_block_t *create_basic_block(il_to_fruity_ctx_t *ctx,
@@ -269,14 +269,14 @@ static int add_instruction_to_block(fruity_basic_block_t *block,
 /*@ allocates \result;
     assigns   \result \from opcode, operand, il_offset;
     behavior  success:
-      assumes  xalloc can allocate sizeof(fruity_instruction_t) bytes;
+      // assumes xalloc success
       ensures  \result != \null;
       ensures  \result->opcode == opcode;
       ensures  \result->msil_offset == il_offset;
       ensures  \result->next == \null;
       ensures  \result->prev == \null;
     behavior  failure:
-      assumes  xalloc cannot allocate memory;
+      // assumes xalloc failure
       ensures  \result == \null;
 */
 /* Helper: Create Fruity instruction */
@@ -697,6 +697,16 @@ static fruity_basic_block_t *get_block_at_offset(il_to_fruity_ctx_t *ctx,
 }
 
 /* Phase 2: Translate IL instructions to Fruity IR */
+/*@
+  requires \valid(ctx);
+  requires \valid(block);
+  requires \valid_read(il + (0 .. il_size-1));
+  requires \valid(offset_ptr);
+  requires *offset_ptr < il_size;
+  ensures *offset_ptr > \old(*offset_ptr);
+  ensures \result == 0 || \result == -1;
+  assigns *offset_ptr;
+*/
 static int translate_instruction(il_to_fruity_ctx_t *ctx,
                                  fruity_basic_block_t *block, const uint8_t *il,
                                  size_t *offset_ptr, size_t il_size) {

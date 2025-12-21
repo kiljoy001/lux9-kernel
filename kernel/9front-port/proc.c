@@ -503,6 +503,11 @@ static int queueproc(Schedq *rq, Proc *p) {
  */
 /*@
   // Safe transition to Ready per proofs/proc/proc_state_dag.v
+  requires \valid(p);
+  // DAG Precondition: machine must be cleared for New->Ready
+  requires p->state == New ==> p->mach == \null;
+  assigns p->state, nrdy;
+  ensures p->state == Ready || p->state == Waitrelease;
  @*/
 void ready(Proc *p) {
   int s, pri;
@@ -654,6 +659,9 @@ static void rebalance(void) {
  */
 /*@
   // Selects process in Valid state per proofs/proc/proc_state_dag.v
+  assigns \nothing; // Conceptually selects
+  ensures \result == \null || \valid(\result);
+  ensures \result != \null ==> \result->state == Ready;
  @*/
 Proc *runproc(void) {
   Schedq *rq;
@@ -1605,7 +1613,7 @@ void linkproc(void) {
   pexit("kproc exiting", 0);
 }
 
-void kproc(char *name, void (*func)(void *), void *arg) {
+int kproc(char *name, void (*func)(void *), void *arg) {
   static Pgrp *kpgrp;
   Proc *p;
 
@@ -1670,6 +1678,7 @@ void kproc(char *name, void (*func)(void *), void *arg) {
   procpriority(p, PriKproc, 0);
 
   ready(p);
+  return p->pid;
 }
 
 /*

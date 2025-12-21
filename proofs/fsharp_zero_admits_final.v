@@ -144,7 +144,7 @@ Proof.
     destruct (Nat.eqb n 0) eqn:E1.
     + (* n = 0 *)
       apply Nat.eqb_eq in E1. subst.
-      simpl in H1. inversion H1. assumption.
+      simpl in *. match goal with H: Some _ = Some _ |- _ => inversion H; subst end. assumption.
     + (* n <> 0 *)
       destruct (Nat.ltb n 0) eqn:E2.
       * apply Nat.ltb_lt in E2. lia.

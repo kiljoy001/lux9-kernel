@@ -114,6 +114,14 @@ int main() {
       printf("✗ WASM version INCORRECT\n");
     }
 
+    /* Save to file for external validation */
+    FILE *f = fopen("output.wasm", "wb");
+    if (f) {
+      fwrite(res.wasm_binary, 1, res.wasm_size, f);
+      fclose(f);
+      printf("✓ Saved to output.wasm\n");
+    }
+
     fruity_wasm_result_free(&res);
   } else {
     printf("FAILED: Compilation error %d\n", err);

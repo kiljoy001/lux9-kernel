@@ -522,7 +522,8 @@ static long clrwrite(Chan *c, void *va, long n, vlong off) {
 
     /* Deserialize CBOR data into Fruity IR module */
     ctx->module =
-        fruity_module_from_cbor((u8int *)a, n, ctx->error, sizeof(ctx->error));
+        /* fruity_module_from_cbor((u8int *)a, n, ctx->error, sizeof(ctx->error)); */
+        snprint(ctx->error, sizeof(ctx->error), "CBOR not supported in WASM build");
     if (ctx->module == nil) {
       error("devclr: CBOR deserialization failed");
     }

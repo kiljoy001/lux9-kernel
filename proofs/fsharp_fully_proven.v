@@ -6,7 +6,9 @@ Require Import Coq.Lists.List.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Init.Wf.
 Require Import Coq.Program.Basics.
-Require Import Coq.omega.Omega.
+Require Import Coq.micromega.Lia.
+Require Import Coq.ZArith.ZArith.
+Require Import Coq.Strings.String.
 Import ListNotations.
 
 (* ==================== F# AST ==================== *)

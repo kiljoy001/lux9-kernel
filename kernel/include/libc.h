@@ -1,5 +1,7 @@
+#ifndef __FRAMAC__
 #pragma lib "libc.a"
 #pragma src "/sys/src/libc"
+#endif
 
 #ifdef _PORTLIB_H_
 typedef long jmp_buf[16];
@@ -8,8 +10,8 @@ extern void longjmp(jmp_buf, int);
 #else
 #include <setjmp.h>
 #endif
-#include <stdarg.h>
 #include "u.h"
+#include <stdarg.h>
 
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
@@ -207,6 +209,7 @@ extern char *fmtstrflush(Fmt *);
 extern int runefmtstrinit(Fmt *);
 extern Rune *runefmtstrflush(Fmt *);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos fprint 2
 #pragma varargck argpos print 1
@@ -273,6 +276,7 @@ extern Rune *runefmtstrflush(Fmt *);
 #pragma varargck type "[" void *
 #pragma varargck type "H" void *
 #pragma varargck type "lH" void *
+#endif
 
 extern int fmtinstall(int, int (*)(Fmt *));
 extern int dofmt(Fmt *, char *);
@@ -356,7 +360,9 @@ extern double fmod(double, double);
  * Time-of-day
  */
 typedef struct Tzone Tzone;
+#ifndef __FRAMAC__
 #pragma incomplete Tzone
+#endif
 
 typedef struct Tm {
   int nsec;      /* nseconds (range 0...1e9) */
@@ -378,7 +384,9 @@ typedef struct Tmfmt {
   Tm *tm;
 } Tmfmt;
 
+#ifndef __FRAMAC__
 #pragma varargck type "τ" Tmfmt
+#endif
 
 extern Tzone *tzload(char *name);
 extern Tm *tmnow(Tm *, Tzone *);
@@ -469,9 +477,11 @@ extern ulong strtoul(char *, char **, int);
 extern vlong strtoll(char *, char **, int);
 extern uvlong strtoull(char *, char **, int);
 extern _Noreturn void sysfatal(char *, ...);
+#ifndef __FRAMAC__
 #pragma varargck argpos sysfatal 1
 extern void syslog(int, char *, char *, ...);
 #pragma varargck argpos syslog 3
+#endif
 extern long time(long *);
 extern int tolower(int);
 extern int toupper(int);
@@ -549,7 +559,9 @@ extern int rwakeupall(Rendez *);
 extern void **privalloc(void);
 
 extern void procsetname(char *, ...);
+#ifndef __FRAMAC__
 #pragma varargck argpos procsetname 1
+#endif
 
 /*
  * atomic operations

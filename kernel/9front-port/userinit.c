@@ -100,6 +100,10 @@ static void proc0(void *arg) {
 
   pebble_selftest();
 
+  /* Run WASM Pipeline Validation */
+  extern void clr_init(void);
+  clr_init();
+
   /*
    * These are o.k. because rootinit is null.
    * Then early kproc's will have a root and dot.
@@ -211,8 +215,11 @@ static void proc0(void *arg) {
   else
     print("BOOT[proc0]: stack pte missing\n");
 
-  /* Try to load /boot/boot (CLR) first */
-  Chan *bc = namec("/boot/boot", Aopen, OREAD, 0);
+  /* Try to load /boot/init (CLR) first, then /boot/boot */
+  Chan *bc = namec("/boot/init", Aopen, OREAD, 0);
+  if (bc == nil)
+    bc = namec("/boot/boot", Aopen, OREAD, 0);
+
   int loaded = 0;
 
   if (bc != nil) {

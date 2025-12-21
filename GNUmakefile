@@ -19,7 +19,7 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -nostdinc -I$(GCC_INC) \
            -Ikernel/include \
            -Ikernel/crypto \
-           -Ikernel/clr/libmcu-cbor \
+           -Ikernel/clr/wasm_runtime/wasm3/include \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
@@ -37,6 +37,8 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
            -z max-page-size=0x1000 \
            -z noexecstack \
            -T kernel/linker.ld
+
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
@@ -63,18 +65,12 @@ REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
-CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
-CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe_compile.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/clr_p9_internal.c kernel/clr/qbe/clr_core.c kernel/clr/qbe/clr_console.c kernel/clr/qbe/clr_bcl_helpers.c kernel/clr/clr_exchange_ops.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c $(CBOR_C)
+WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
+WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c
+CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c $(WASM3_C)
 
-# TPM2-TSS sources - REMOVED, using minimal SAPI instead
-# TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
-# TPM2_SAPI_C := $(wildcard kernel/tpm2-tss/sapi/*.c) $(wildcard kernel/tpm2-tss/sapi/api/*.c)
-# TPM2_TCTI_C := kernel/tpm2-tss/tcti_kernel.c
-# TPM2_TSS_C := $(TPM2_MU_C) $(TPM2_SAPI_C) $(TPM2_TCTI_C)
+# QBE compiler removed - WASM3 is now the runtime
 
-# QBE compiler core sources (for qbe.a)
-QBE_CORE_C := kernel/clr/qbe/alias.c kernel/clr/qbe/cfg.c kernel/clr/qbe/copy.c kernel/clr/qbe/fold.c kernel/clr/qbe/gas.c kernel/clr/qbe/live.c kernel/clr/qbe/load.c kernel/clr/qbe/mem.c kernel/clr/qbe/parse.c kernel/clr/qbe/rega.c kernel/clr/qbe/spill.c kernel/clr/qbe/ssa.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/emit.c kernel/clr/qbe/amd64/isel.c kernel/clr/qbe/amd64/sysv.c
-QBE_CORE_O := $(QBE_CORE_C:.c=.o)
 
 # SD/FIS support files already included by wildcard above
 
@@ -106,12 +102,9 @@ BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 CLR_O := $(CLR_C:.c=.o)
 # TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)  # Removed - using minimal SAPI
 
-# External archives
-QBE_A := kernel/clr/qbe/qbe.a
-
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(QBE_A)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -120,7 +113,7 @@ all: $(KERNEL)
 
 $(KERNEL): $(ALL_O)
 	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) $(ALL_O) -o $@
+	$(LD) $(LDFLAGS) $(ALL_O) $(LIBGCC) -o $@
 	@echo "Build complete: $(KERNEL)"
 	@ls -lh $(KERNEL)
 
@@ -129,19 +122,10 @@ $(QBE_A): $(QBE_CORE_O)
 	@echo "AR $@"
 	@ar rcs $@ $(QBE_CORE_O)
 
-# QBE needs SSE for floating point and doesn't use GNU extensions
-kernel/clr/qbe/%.o: kernel/clr/qbe/%.c
-	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
-
-kernel/clr/qbe/amd64/%.o: kernel/clr/qbe/amd64/%.c
-	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
-
-# CBOR library needs special flags
-kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
-	@echo "CC $< (CBOR)"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+# WASM3 Runtime build
+kernel/clr/wasm_runtime/wasm3/%.o: kernel/clr/wasm_runtime/wasm3/%.c
+	@echo "CC $< (WASM3)"
+	@$(CC) $(CFLAGS) -Dd_m3HasFloat=0 -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"

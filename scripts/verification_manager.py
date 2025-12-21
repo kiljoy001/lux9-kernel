@@ -157,8 +157,10 @@ def verify_acsl_file(file_info):
     
     # Default Frama-C command (ACSL inline)
     cmd = [
-        "frama-c", "-wp", "-wp-prover", "alt-ergo", "-wp-timeout", "5",
-        "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + " -D__PLAN9_KERNEL__",
+        "frama-c", "-machdep", "gcc_x86_64", "-wp", "-wp-prover", "cvc4", "-wp-timeout", "5",
+        "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + 
+        " -I" + os.path.join(KERNEL_DIR, "9front-pc64") +
+        " -D__PLAN9_KERNEL__",
         full_path
     ]
     env = os.environ.copy()

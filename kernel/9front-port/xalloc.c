@@ -212,6 +212,14 @@ void *xspanalloc(ulong size, int align, ulong span) {
   return (void *)v;
 }
 
+/*@
+  requires size < 0x80000000; // Reasonable size limit
+  ensures \result != \null ==> \valid((char*)\result + (0..size-1));
+  ensures \result != \null ==> ((uintptr)\result % 8) == 0; // Alignment
+  assigns \result \from size, xlists;
+  // property: preserves valid_holes invariant per
+  proofs/allocator/xalloc_model.v
+*/
 void *xallocz(ulong size, int zero) {
   Xhdr *p;
   Hole *h, **l;
@@ -330,6 +338,12 @@ void *xallocz(ulong size, int zero) {
 
 void *xalloc(ulong size) { return xallocz(size, 1); }
 
+/*@
+  // Header is valid implied by pointer being allocated
+  requires \valid((Xhdr*)((char*)p - sizeof(ulong)*2));
+  assigns xlists;
+  // property: preserves disjointness per proofs/allocator/xalloc_model.v
+*/
 void xfree(void *p) {
   Xhdr *x;
 
@@ -455,10 +469,12 @@ void xhole(uintptr addr, uintptr size) {
      * If we have exhausted the static free list, allocate a fresh batch
      * of Hole descriptors from the kernel malloc pool.
      * --------------------------------------------------------------- */
-    Hole *extra = (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
+    Hole *extra =
+        (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
     if (extra == nil) {
       iunlock(&xlists.lk);
-      panic("xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
+      panic(
+          "xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
     }
     for (int i = 0; i < DYNAMIC_NHOLE - 1; i++) {
       extra[i].link = &extra[i + 1];
@@ -528,3 +544,8 @@ void xalloc_test(void) {
   print("xalloc_test: freed all allocations\n");
   print("xalloc_test: test completed successfully\n");
 }
+
+/* Standard C library allocator wrappers for WASM3 and other libs */
+/* malloc, free, realloc are provided by alloc.c */
+
+void *calloc(ulong n, ulong size) { return xallocz(n * size, 1); }

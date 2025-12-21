@@ -16,9 +16,18 @@
  * mem routines
  */
 extern void *memccpy(void *, void *, int, usize);
-extern void *memset(void *, int, usize);
+/*@ requires \valid((char*)s + (0..n-1));
+    assigns ((char*)s)[0..n-1] \from c;
+    ensures \result == s;
+*/
+extern void *memset(void *s, int c, usize n);
 extern int memcmp(void *, void *, usize);
-extern void *memmove(void *, void *, usize);
+/*@ requires \valid((char*)dest + (0..n-1));
+    requires \valid_read((char*)src + (0..n-1));
+    assigns ((char*)dest)[0..n-1] \from ((char*)src)[0..n-1];
+    ensures \result == dest;
+*/
+extern void *memmove(void *dest, void *src, usize n);
 extern void *memchr(void *, int, usize);
 
 /*
@@ -33,7 +42,8 @@ extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
-extern long strlen(char *);
+/*@ assigns \result \from s[..]; */
+extern long strlen(char *s);
 extern char *strstr(char *, char *);
 extern int atoi(char *);
 extern int fullrune(char *, int);
@@ -95,6 +105,7 @@ extern int snprint(char *, int, char *, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos print 1
 #pragma varargck argpos seprint 3
@@ -138,6 +149,7 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "p" uintptr
 #pragma varargck type "p" void *
 #pragma varargck flag ','
+#endif
 
 extern int fmtstrinit(Fmt *);
 extern int fmtinstall(int, int (*)(Fmt *));
