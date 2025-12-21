@@ -55,9 +55,12 @@ uintptr hhdm_base = 0;
 
 /* Global kernel data structures */
 struct Swapalloc swapalloc;
-struct Kmesg kmesg;
+/* kmesg is defined in devcons_minimal.c */
 struct Active active;
 Mach *machp[MAXMACH];
+
+/* System name - used by devcons and 9p_router */
+char *sysname = "lux9";
 
 /* Global function pointers */
 void (*consdebug)(void) = nil;
@@ -430,3 +433,26 @@ char *utfecpy(char *to, char *e, char *from) {
 }
 
 /* UPA (user programmable arrays) provided by memory_9front.c */
+
+/* Stubs for missing console/boot functions */
+void setkprintqsize(char *s) { (void)s; }
+void printinit(void) {}
+
+/* Stubs for exit/reboot functions */
+void cpushutdown(void) {}
+void vmxshutdown(void) {}
+void vmxprocrestore(Proc *p) { (void)p; }
+
+/* Console output stub */
+void putstrn(char *str, int n) {
+  if (screenputs)
+    screenputs(str, n);
+}
+
+/* 9P routing - stub for lux9_api.c */
+long p9_route_message(int pid, void *msg, ulong len) {
+  (void)pid;
+  (void)msg;
+  (void)len;
+  return 0; /* TODO: Wire to 9p_router when ready */
+}
