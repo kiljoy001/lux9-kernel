@@ -137,12 +137,16 @@ static il_method_t *clr_find_entry_point(il_assembly_t *assembly,
 }
 
 /*
- * clr_execute_assembly
+ * clr_execute_assembly - Execute a .NET assembly
+ * @dll_data: assembly bytes
+ * @dll_size: assembly size
+ * Returns: 0 on success, -1 on error
+ * Entry point defaults to "Main" if not specified elsewhere
  */
-int clr_execute_assembly(void *dll_data, ulong dll_size,
-                         const char *entry_point) {
+int clr_execute_assembly(void *dll_data, ulong dll_size) {
   char errbuf[128];
   il_error_t err;
+  const char *entry_point = nil; /* Default entry point lookup */
 
   print("CLR: Loading assembly...\n");
   il_assembly_t *assembly =
@@ -168,35 +172,54 @@ int clr_execute_assembly(void *dll_data, ulong dll_size,
 
   /* Instantiate WASM3 */
   print("CLR: Initializing WASM3...\n");
+
+  /* Dump first 64 bytes of WASM binary for analysis */
+  print("CLR: WASM binary hex dump (first 64 bytes):\n");
+  for (int i = 0; i < 64 && i < (int)wasm_size; i++) {
+    if (i % 16 == 0)
+      print("\n  %04x: ", i);
+    print("%02x ", ((unsigned char *)wasm_bytes)[i]);
+  }
+  print("\n");
+
+  print("CLR: DEBUG: About to call m3_NewEnvironment()\n");
   IM3Environment env = m3_NewEnvironment();
+  print("CLR: DEBUG: m3_NewEnvironment() returned %p\n", env);
   if (!env) {
     print("m3_NewEnvironment failed\n");
     return -1;
   }
 
+  print("CLR: DEBUG: About to call m3_NewRuntime()\n");
   IM3Runtime runtime = m3_NewRuntime(env, 64 * 1024, nil);
+  print("CLR: DEBUG: m3_NewRuntime() returned %p\n", runtime);
   if (!runtime) {
     print("m3_NewRuntime failed\n");
     return -1;
   }
 
-  IM3Module module;
+  print("CLR: Calling m3_ParseModule...\n");
+  print("CLR: DEBUG: wasm_bytes=%p wasm_size=%lu\n", wasm_bytes, wasm_size);
+  IM3Module module = NULL;
   M3Result result = m3_ParseModule(env, &module, wasm_bytes, (u32int)wasm_size);
+  print("CLR: m3_ParseModule() returned result=%p\n", result);
   if (result) {
-    print("m3_ParseModule: %s\n", result);
+    print("m3_ParseModule error: %s\n", result);
     return -1;
   }
 
+  print("CLR: DEBUG: About to call m3_LoadModule()\n");
   result = m3_LoadModule(runtime, module);
+  print("CLR: m3_LoadModule() returned result=%p\n", result);
   if (result) {
-    print("m3_LoadModule: %s\n", result);
+    print("m3_LoadModule error: %s\n", result);
     return -1;
   }
 
   /* Link Host Functions */
   result = lux9_link_wasi(module);
   if (result) {
-    print("lux9_link_wasi: %s\n", result);
+    print("lux9_link_wasi error: %s\n", result);
     return -1;
   }
 
@@ -204,7 +227,7 @@ int clr_execute_assembly(void *dll_data, ulong dll_size,
   IM3Function f;
   result = m3_FindFunction(&f, runtime, "Main");
   if (result) {
-    print("m3_FindFunction: %s\n", result);
+    print("m3_FindFunction error: %s\n", result);
     return -1;
   }
 
@@ -229,10 +252,9 @@ void clr_test_wasm_pipeline(void) {
       "CLR-TEST: Starting Full WASM Pipeline Verification (TestAdd.dll)...\n");
 
   /* Use embedded TestAdd.dll byte array */
-  /* Target Method: "Answer" (which calls Add(20, 22) -> 42) */
+  /* Target Method: Will use default entry point (Main) */
 
-  if (clr_execute_assembly(test_assembly_bytes, test_assembly_len, "Answer") ==
-      0) {
+  if (clr_execute_assembly(test_assembly_bytes, test_assembly_len) == 0) {
     print("CLR-TEST: *** FULL PIPELINE TEST PASSED ***\n");
   } else {
     print("CLR-TEST: *** FULL PIPELINE TEST FAILED ***\n");

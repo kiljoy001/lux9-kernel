@@ -252,11 +252,16 @@ void *xallocz(ulong size, int zero) {
   size = (size + BY2V - 1) & ~(BY2V - 1); /* FIX: Round UP */
 
   /* Only print for large allocations to reduce verbose output */
-  if (size > 64 * 1024) {
+  if (size >= 4096) {
     xtrace("xallocz: adjusted size %lud bytes\n", size);
   }
 
+  /* DEBUG: Print before lock attempt */
+  if (size >= 32) {
+    uartputs("xallocz: about to ilock\n", 24);
+  }
   ilock(&xlists.lk);
+  uartputs("xallocz: ilock acquired\n", 24);
   if (size >= 4096)
     xtrace("xallocz: locked size=%lud\n", size);
 
@@ -548,4 +553,23 @@ void xalloc_test(void) {
 /* Standard C library allocator wrappers for WASM3 and other libs */
 /* malloc, free, realloc are provided by alloc.c */
 
-void *calloc(ulong n, ulong size) { return xallocz(n * size, 1); }
+void *calloc(ulong n, ulong size) {
+  static int calloc_count = 0;
+  void *result;
+
+  calloc_count++;
+  if (calloc_count <= 5) {
+    print("calloc[%d]: n=%lu size=%lu total=%lu\n", calloc_count, n, size,
+          n * size);
+  } else if (calloc_count == 100 || calloc_count == 1000) {
+    print("calloc: WARNING - called %d times!\n", calloc_count);
+  }
+
+  result = xallocz(n * size, 1);
+
+  if (calloc_count <= 5) {
+    print("calloc[%d]: returned %p\n", calloc_count, result);
+  }
+
+  return result;
+}

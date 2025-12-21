@@ -192,6 +192,22 @@ void trap(Ureg *ureg) {
 
   vno = ureg->type;
 
+  /* DEBUG: Show ALL traps during boot to catch WASM3 issues */
+  trap_count++;
+  if (trap_count <= 100) {
+    extern uintptr m3_ParseModule; /* Symbol exists */
+    uintptr pc = ureg->pc;
+    /* Check if trap occurred near m3_ParseModule */
+    if (pc >= (uintptr)m3_ParseModule &&
+        pc < (uintptr)m3_ParseModule + 0x1000) {
+      print("TRAP in m3_ParseModule! vno=%d pc=%#p sp=%#p err=%#x\n", vno, pc,
+            ureg->sp, (uint)ureg->error);
+    } else if (trap_count <= 10 || vno < 32) {
+      print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
+            ureg->sp, userureg(ureg));
+    }
+  }
+
   post_exec_trap++;
   (void)trap_count;
   (void)trapdebug;

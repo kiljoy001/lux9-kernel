@@ -4,6 +4,9 @@
  * This file formalizes the cryptographic operations and proves security
  * properties for the secure ramdisk implementation.
  *
+ * This module builds on crypto_primitives.v which provides foundational
+ * security definitions and references to published cryptographic research.
+ *
  * CRYPTOGRAPHIC BUGS FOUND:
  *
  * BUG #1: NONCE REUSE (CRITICAL SECURITY BUG)
@@ -30,15 +33,25 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sets.Ensembles.
 Require Import Lia.
 
+(* Import foundational crypto primitives *)
+Require Import Ramdisk.crypto_primitives.
+
 Import ListNotations.
 
 (* ========================================================================
  * Cryptographic Primitives Abstraction
  * ======================================================================== *)
 
-(** Abstract types for cryptographic objects *)
-Parameter Key : Type.
-Parameter Nonce : Type.
+(**
+ * We reuse the abstract types from crypto_primitives.v:
+ * - Key, Nonce, Data types are already defined
+ * - Security properties (IND-CPA, etc.) are formalized there
+ * - Here we instantiate them for the ramdisk use case
+ *)
+
+(** For ramdisk, we use the crypto_primitives.Key type directly *)
+(* Parameter Key : Type. -- Already defined in crypto_primitives *)
+(* Parameter Nonce : Type. -- Already defined in crypto_primitives *)
 Parameter Data : Type.  (* Generic data - can be plaintext or ciphertext *)
 Parameter Salt : Type.
 Parameter Password : Type.

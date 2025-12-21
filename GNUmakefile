@@ -29,7 +29,8 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -DUSE_PEBBLE_ALLOC=1 \
            -DKTZERO=0xffffffff80110000 \
            -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer \
-           -Wformat-security -Wconversion -Wshadow
+           -Wformat-security -Wconversion -Wshadow \
+           -fcf-protection=none
 
 # Linker flags
 # Phase 7: Security hardening - DEP/NX enabled
