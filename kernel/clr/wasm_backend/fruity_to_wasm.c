@@ -449,14 +449,80 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_free(&sec);
   }
 
-  /* 3. Function Section (Index 3) */
+  /* 2.5 Import Section (Index 2) */
+  {
+    wasm_buffer_t sec;
+    wasm_buf_init(&sec, 128);
+
+    ulong import_count = 0;
+    fruity_function_t *f = module->functions_head;
+    while (f) {
+      if (f->import_info.is_import)
+        import_count++;
+      f = f->next;
+    }
+
+    if (import_count > 0) {
+      wasm_emit_vec_header(&sec, import_count);
+      f = module->functions_head;
+      while (f) {
+        if (f->import_info.is_import) {
+          /* module, name, desc tag (0=func), type idx */
+          wasm_emit_name(&sec, f->import_info.module_name
+                                   ? f->import_info.module_name
+                                   : "env");
+          wasm_emit_name(&sec, f->import_info.function_name
+                                   ? f->import_info.function_name
+                                   : f->name);
+          wasm_emit_u8(&sec, 0x00); /* func export */
+
+          /* We need the Type Index for this function's signature.
+             We assume 1:1 mapping of Function -> Type Index, where Type Index
+             corresponds to the function's position in the list. So if this is
+             the Nth function in the list, it uses Type Index N.
+          */
+          /* Find index in list */
+          ulong type_idx = 0;
+          fruity_function_t *tf = module->functions_head;
+          while (tf != f) {
+            type_idx++;
+            tf = tf->next;
+          }
+          wasm_emit_uleb128(&sec, type_idx);
+        }
+        f = f->next;
+      }
+
+      wasm_emit_u8(&main_buf, WASM_SEC_IMPORT);
+      wasm_emit_uleb128(&main_buf, sec.size);
+      wasm_emit_bytes(&main_buf, sec.data, sec.size);
+    }
+    wasm_buf_free(&sec);
+  }
+
+  /* 3. Function Section (Index 3) - Locals Only */
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
-    wasm_emit_vec_header(&sec, func_count);
 
-    for (ulong i = 0; i < func_count; i++) {
-      wasm_emit_uleb128(&sec, i); /* Function i uses Type i (1:1 mapping) */
+    ulong local_func_count = 0;
+    fruity_function_t *f = module->functions_head;
+    while (f) {
+      if (!f->import_info.is_import)
+        local_func_count++;
+      f = f->next;
+    }
+
+    wasm_emit_vec_header(&sec, local_func_count);
+
+    f = module->functions_head;
+    ulong idx = 0;
+    while (f) {
+      if (!f->import_info.is_import) {
+        wasm_emit_uleb128(&sec, idx); /* Type Index matches List Index */
+      }
+      idx++;
+      f = f->next;
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_FUNCTION);
@@ -513,18 +579,28 @@ int fruity_compile_to_wasm(fruity_module_t *module,
   {
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 1024);
-    wasm_emit_vec_header(&sec, func_count);
 
+    ulong local_func_count = 0;
     fruity_function_t *f = module->functions_head;
     while (f) {
-      wasm_buffer_t body;
-      wasm_buf_init(&body, 1024);
-      compile_function_body(f, &body);
+      if (!f->import_info.is_import)
+        local_func_count++;
+      f = f->next;
+    }
 
-      wasm_emit_uleb128(&sec, body.size);
-      wasm_emit_bytes(&sec, body.data, body.size);
-      wasm_buf_free(&body);
+    wasm_emit_vec_header(&sec, local_func_count);
 
+    f = module->functions_head;
+    while (f) {
+      if (!f->import_info.is_import) {
+        wasm_buffer_t body;
+        wasm_buf_init(&body, 1024);
+        compile_function_body(f, &body);
+
+        wasm_emit_uleb128(&sec, body.size);
+        wasm_emit_bytes(&sec, body.data, body.size);
+        wasm_buf_free(&body);
+      }
       f = f->next;
     }
 

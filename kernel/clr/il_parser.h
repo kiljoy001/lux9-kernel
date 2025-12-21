@@ -446,4 +446,11 @@ int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
 /* Get Field row (1-based index) */
 field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid);
 
+/* Get P/Invoke info for a method token.
+ * Returns 0 if found and populated, -1 otherwise.
+ */
+int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
+                        char *module_out, size_t module_len, char *func_out,
+                        size_t func_len);
+
 #endif // IL_PARSER_H

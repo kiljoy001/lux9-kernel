@@ -81,7 +81,7 @@ struct fruity_instruction {
     int burns_white;
     int may_free;
     int is_speculative;
-    int pow_op_class;  /* POW_OP_* constant for tiered difficulty */
+    int pow_op_class; /* POW_OP_* constant for tiered difficulty */
   } pebble_effects;
 
   /* Debug information */
@@ -138,6 +138,12 @@ struct fruity_function {
   u32int method_token; /* ECMA-335 metadata token */
   char *name;          /* Function name */
   char *signature;     /* Type signature */
+
+  struct {
+    int is_import;
+    char *module_name;
+    char *function_name;
+  } import_info;
 
   /* Basic blocks (intrusive doubly-linked list) */
   fruity_basic_block_t *blocks_head;

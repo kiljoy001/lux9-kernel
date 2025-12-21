@@ -85,13 +85,100 @@ ulong clr_get_type_size(u32int token) {
  * clr_compile_method_to_wasm
  * Converts IL Method -> Fruity -> WASM Binary
  */
+/* Helper: Scan dependencies and add to module */
+static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
+                                  fruity_function_t *func) {
+  if (!func || !func->blocks_head)
+    return;
+
+  fruity_basic_block_t *bb = func->blocks_head;
+  while (bb) {
+    fruity_instruction_t *instr = bb->instructions_head;
+    while (instr) {
+      if (instr->operand.type == FRUITY_OP_METHOD) {
+        u32int token = instr->operand.value.token;
+
+        /* Check if exists */
+        int found = 0;
+        fruity_function_t *f = mod->functions_head;
+        while (f) {
+          if (f->method_token == token) {
+            found = 1;
+            break;
+          }
+          f = f->next;
+        }
+
+        if (!found) {
+          char modname[64] = {0};
+          char funcname[64] = {0};
+
+          if (il_get_pinvoke_info(assembly, token, modname, 64, funcname, 64) ==
+              0) {
+            /* Import */
+            fruity_function_t *imp = fruity_function_create(funcname, token);
+            if (imp) {
+              imp->import_info.is_import = 1;
+              /* Simple duplicate because strdup might not be avail */
+              imp->import_info.module_name = xalloc(strlen(modname) + 1);
+              if (imp->import_info.module_name)
+                strcpy(imp->import_info.module_name, modname);
+
+              imp->import_info.function_name = xalloc(strlen(funcname) + 1);
+              if (imp->import_info.function_name)
+                strcpy(imp->import_info.function_name, funcname);
+
+              /* Prepend (WASM requirement: Imports first) */
+              imp->next = mod->functions_head;
+              if (mod->functions_head)
+                mod->functions_head->prev = imp;
+              mod->functions_head = imp;
+              if (!mod->functions_tail)
+                mod->functions_tail = imp;
+              mod->function_count++;
+            }
+          } else {
+            /* Local */
+            il_method_t *m = il_get_method_by_token(assembly, token);
+            if (m) {
+              il_to_fruity_error_t err;
+              fruity_function_t *new_func =
+                  il_to_fruity_convert_method(assembly, m, &err);
+              if (new_func) {
+                /* Append */
+                if (mod->functions_tail) {
+                  mod->functions_tail->next = new_func;
+                  new_func->prev = mod->functions_tail;
+                  mod->functions_tail = new_func;
+                } else {
+                  mod->functions_head = mod->functions_tail = new_func;
+                }
+                mod->function_count++;
+
+                /* Recurse */
+                clr_scan_dependencies(assembly, mod, new_func);
+              }
+            }
+          }
+        }
+      }
+      instr = instr->next;
+    }
+    bb = bb->next;
+  }
+}
+
+/*
+ * clr_compile_method_to_wasm
+ * Converts IL Method -> Fruity -> WASM Binary
+ */
 static void *clr_compile_method_to_wasm(il_assembly_t *assembly,
                                         il_method_t *method, ulong *out_size) {
   il_to_fruity_error_t err;
 
   print("CLR: Compiling method %s to WASM...\n", method->name);
 
-  /* 1. IL -> Fruity */
+  /* 1. IL -> Fruity (Main) */
   fruity_function_t *func = il_to_fruity_convert_method(assembly, method, &err);
   if (!func) {
     print("CLR: IL->Fruity failed (err=%d)\n", err);
@@ -101,17 +188,23 @@ static void *clr_compile_method_to_wasm(il_assembly_t *assembly,
   fruity_module_t temp_mod;
   memset(&temp_mod, 0, sizeof(temp_mod));
   temp_mod.name = method->name;
-  temp_mod.functions_head = func;
 
-  /* 2. Fruity -> WASM */
+  /* Add Main to Module */
+  temp_mod.functions_head = temp_mod.functions_tail = func;
+  temp_mod.function_count = 1;
+
+  /* 2. Resolve Dependencies (Imports & Sub-calls) */
+  clr_scan_dependencies(assembly, &temp_mod, func);
+
+  /* 3. Fruity -> WASM */
   fruity_wasm_result_t wasm_res;
   if (fruity_compile_to_wasm(&temp_mod, &wasm_res) != 0) {
     print("CLR: Fruity->WASM failed\n");
-    fruity_free_function(func);
+    /* Leaking functions here for now, fixing leaked func earlier */
     return nil;
   }
 
-  fruity_free_function(func);
+  /* Cleanup would require traversing temp_mod.functions_head and freeing all */
 
   print("CLR: WASM binary generated (%ld bytes)\n", wasm_res.wasm_size);
   if (out_size)
@@ -198,10 +291,19 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
     return -1;
   }
 
+  unsigned long sp_val;
+  asm("mov %%rsp, %0" : "=r"(sp_val));
+  print("CLR: SP after m3_NewRuntime=%p\n", (void *)sp_val);
+
   print("CLR: Calling m3_ParseModule...\n");
   print("CLR: DEBUG: wasm_bytes=%p wasm_size=%d\n", wasm_bytes, (int)wasm_size);
+  print("CLR: Address of m3_ParseModule=%p\n", m3_ParseModule);
+  print("CLR: BEFORE m3_ParseModule call\n");
+
   IM3Module module = NULL;
   M3Result result = m3_ParseModule(env, &module, wasm_bytes, (u32int)wasm_size);
+
+  print("CLR: AFTER m3_ParseModule call\n");
   print("CLR: m3_ParseModule() returned result=%p\n", result);
   if (result) {
     print("m3_ParseModule error: %s\n", result);

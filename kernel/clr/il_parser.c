@@ -1787,3 +1787,94 @@ field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid) {
 
   return row;
 }
+
+static uint32_t read_table_index(uint8_t **ptr, int wide);
+static uint8_t *il_get_table_start(il_assembly_t *assembly,
+                                   metadata_table_kind_t table);
+
+int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
+                        char *module_out, size_t module_len, char *func_out,
+                        size_t func_len) {
+  uint32_t table = TABLE_IMPLMAP;
+  if (!assembly->tables_header.row_counts)
+    return -1;
+  uint32_t count = assembly->tables_header.row_counts[table];
+  if (count == 0)
+    return -1;
+
+  uint8_t *ptr = il_get_table_start(assembly, table);
+  if (!ptr)
+    return -1;
+
+  /* Column checks */
+  int method_rows = assembly->tables_header.row_counts[TABLE_METHODDEF];
+  int field_rows = assembly->tables_header.row_counts[TABLE_FIELD];
+  int member_fwd_wide = (method_rows > 65535 || field_rows > 65535);
+
+  int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
+
+  int moduleref_rows = assembly->tables_header.row_counts[TABLE_MODULEREF];
+  int moduleref_wide = (moduleref_rows > 65535);
+
+  for (uint32_t i = 0; i < count; i++) {
+    uint8_t *row_ptr = ptr;
+
+    /* MappingFlags (2 bytes) */
+    row_ptr += 2;
+
+    /* MemberForwarded (Coded Index) */
+    uint32_t member_fwd = read_table_index(&row_ptr, member_fwd_wide);
+
+    /* ImportName (String) */
+    uint32_t import_name_idx = read_table_index(&row_ptr, string_wide);
+
+    /* ImportScope (ModuleRef) */
+    uint32_t import_scope_idx = read_table_index(&row_ptr, moduleref_wide);
+
+    /* Update main ptr */
+    ptr = row_ptr;
+
+    /* Decode MemberForwarded */
+    uint32_t tag = member_fwd & 1;
+    uint32_t index = member_fwd >> 1;
+
+    uint32_t target_token = 0;
+    if (tag == 1) /* MethodDef */
+      target_token = (TABLE_METHODDEF << 24) | index;
+    else
+      target_token = (TABLE_FIELD << 24) | index;
+
+    if (target_token == method_token) {
+      /* FOUND */
+      const char *name = il_get_string(assembly, import_name_idx);
+      if (func_out && name) {
+        strncpy(func_out, name, func_len);
+        func_out[func_len - 1] = 0;
+      }
+
+      if (import_scope_idx > 0) {
+        uint32_t mr_table = TABLE_MODULEREF;
+        uint8_t *mr_ptr = il_get_table_start(assembly, mr_table);
+        if (mr_ptr) {
+          /* Calculate row size: just String Index */
+          int mr_row_size = string_wide ? 4 : 2;
+          mr_ptr += (import_scope_idx - 1) * mr_row_size;
+
+          uint32_t mod_name_idx = 0;
+          if (string_wide)
+            mod_name_idx = READ_UINT32(mr_ptr);
+          else
+            mod_name_idx = READ_UINT16(mr_ptr);
+
+          const char *mod_name = il_get_string(assembly, mod_name_idx);
+          if (module_out && mod_name) {
+            strncpy(module_out, mod_name, module_len);
+            module_out[module_len - 1] = 0;
+          }
+        }
+      }
+      return 0;
+    }
+  }
+  return -1;
+}
