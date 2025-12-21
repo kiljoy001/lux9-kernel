@@ -553,23 +553,4 @@ void xalloc_test(void) {
 /* Standard C library allocator wrappers for WASM3 and other libs */
 /* malloc, free, realloc are provided by alloc.c */
 
-void *calloc(ulong n, ulong size) {
-  static int calloc_count = 0;
-  void *result;
-
-  calloc_count++;
-  if (calloc_count <= 5) {
-    print("calloc[%d]: n=%lu size=%lu total=%lu\n", calloc_count, n, size,
-          n * size);
-  } else if (calloc_count == 100 || calloc_count == 1000) {
-    print("calloc: WARNING - called %d times!\n", calloc_count);
-  }
-
-  result = xallocz(n * size, 1);
-
-  if (calloc_count <= 5) {
-    print("calloc[%d]: returned %p\n", calloc_count, result);
-  }
-
-  return result;
-}
+void *calloc(ulong n, ulong size) { return xallocz(n * size, 1); }

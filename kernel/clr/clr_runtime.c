@@ -199,7 +199,7 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   }
 
   print("CLR: Calling m3_ParseModule...\n");
-  print("CLR: DEBUG: wasm_bytes=%p wasm_size=%lu\n", wasm_bytes, wasm_size);
+  print("CLR: DEBUG: wasm_bytes=%p wasm_size=%d\n", wasm_bytes, (int)wasm_size);
   IM3Module module = NULL;
   M3Result result = m3_ParseModule(env, &module, wasm_bytes, (u32int)wasm_size);
   print("CLR: m3_ParseModule() returned result=%p\n", result);
