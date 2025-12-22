@@ -23,8 +23,13 @@ total;
 @*/
 
 Lock pebble_global_lock;
+Lock pebble_bank_lock;
 int pebble_enabled = 1;
 int pebble_debug = PEBBLE_DEBUG;
+
+/* Global colorless bank - single pool for entire system */
+ulong pebble_global_colorless_bank = 0;
+ulong pebble_total_system_tokens = 0;
 
 static int pebble_initialized;
 
@@ -43,7 +48,7 @@ pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap) {
 
 static void pebble_reset_state(PebbleState *ps) {
   memset(ps, 0, sizeof(*ps));
-  ps->colorless_bank = PEBBLE_DEFAULT_BUDGET;
+  ps->colorless_bank = 0; /* Processes start with 0 tokens */
   ps->white_head = 0;
   ps->white_pending = 0;
 }
@@ -57,13 +62,50 @@ PebbleState *pebble_state(void) {
   return &up->pebble;
 }
 
+/*
+ * Calculate total system RAM from conf.mem[] entries
+ */
+static ulong pebble_calculate_system_ram(void) {
+  ulong total = 0;
+  int i;
+  for (i = 0; i < nelem(conf.mem); i++) {
+    if (conf.mem[i].npage > 0)
+      total += conf.mem[i].npage * BY2PG;
+  }
+  return total;
+}
+
 void pebbleinit(void) {
+  ulong total_ram;
+  ulong boot_tokens, init_tokens;
+
   if (pebble_initialized)
     return;
 
-  // Initialize boot state
-  boot_pstate.colorless_bank = PEBBLE_BOOT_BUDGET;
+  /* Calculate system RAM and initialize global token pool */
+  total_ram = pebble_calculate_system_ram();
+  pebble_total_system_tokens = total_ram / PEBBLE_BYTES_PER_TOKEN;
+  pebble_global_colorless_bank = pebble_total_system_tokens;
+
+  /* Reserve boot budget from global pool */
+  boot_tokens = PEBBLE_BOOT_BUDGET / PEBBLE_BYTES_PER_TOKEN;
+  if (pebble_global_colorless_bank >= boot_tokens)
+    pebble_global_colorless_bank -= boot_tokens;
+  boot_pstate.colorless_bank = boot_tokens;
   boot_pstate.white_generation = 1;
+
+  /* Reserve init budget from global pool */
+  init_tokens = PEBBLE_INIT_BUDGET / PEBBLE_BYTES_PER_TOKEN;
+  if (pebble_global_colorless_bank >= init_tokens)
+    pebble_global_colorless_bank -= init_tokens;
+  /* init_tokens will be granted to proc0 at proc0() entry */
+
+  if (pebble_debug)
+    print(
+        "PEBBLE: global pool=%lu tokens (%luMB), boot=%lu, reserved_init=%lu\n",
+        pebble_global_colorless_bank,
+        (pebble_global_colorless_bank * PEBBLE_BYTES_PER_TOKEN) / (1024 * 1024),
+        boot_tokens, init_tokens);
 
   pebble_initialized = 1;
 }
@@ -230,16 +272,22 @@ ulong pebble_get_budget(void) {
  * pebble_increase_budget - Request additional budget via Proof-of-Work
  *
  * Applications write "size nonce" to /dev/pebble/budget.
- * The kernel verifies the PoW and increases the process's colorless budget.
+ * The kernel verifies the PoW and transfers tokens from the global pool.
  *
  * This is the ONLY way for a process to obtain Pebble budget.
  * All allocation functions (Black, Blue, Red, White) consume from this budget.
  *
- * Returns 0 on success, -1 on failure (invalid PoW or other error).
+ * PoW difficulty scales with scarcity: as global pool shrinks, difficulty
+ * rises.
+ *
+ * Returns 0 on success, -1 on failure (invalid PoW, out of tokens, or other
+ * error).
  */
 int pebble_increase_budget(ulong size, u64int nonce) {
   PebbleState *ps;
   int diff;
+  ulong tokens_requested;
+  ulong scarcity_factor;
 
   if (up == nil)
     return -1; /* Kernel cannot use this API */
@@ -248,31 +296,64 @@ int pebble_increase_budget(ulong size, u64int nonce) {
   if (ps == nil)
     return -1;
 
-  /* Round size to 8-byte token boundary (transparent to caller) */
+  /* Round size to token boundary and calculate tokens needed */
   if (size < PEBBLE_MIN_ALLOC)
     size = PEBBLE_MIN_ALLOC;
-  size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+  size = ROUNDUP(size, PEBBLE_BYTES_PER_TOKEN);
+  tokens_requested = size / PEBBLE_BYTES_PER_TOKEN;
 
-  /* Calculate required PoW difficulty based on requested size */
+  /* Calculate scarcity-based PoW difficulty:
+   * As global pool shrinks, difficulty increases proportionally.
+   * scarcity_factor = (total - available) / total = usage percentage
+   * Difficulty multiplier: 1 + (scarcity_factor * 10)
+   */
+  lock(&pebble_bank_lock);
+  if (pebble_global_colorless_bank < tokens_requested) {
+    unlock(&pebble_bank_lock);
+    if (pebble_debug)
+      print(
+          "PEBBLE: out of global tokens pid=%lud requested=%lu available=%lu\n",
+          up->pid, tokens_requested, pebble_global_colorless_bank);
+    return -1; /* System out of tokens */
+  }
+
+  /* Calculate scarcity: 0 = empty, 100 = full */
+  if (pebble_total_system_tokens > 0)
+    scarcity_factor =
+        (pebble_total_system_tokens - pebble_global_colorless_bank) * 100 /
+        pebble_total_system_tokens;
+  else
+    scarcity_factor = 0;
+  unlock(&pebble_bank_lock);
+
+  /* Base difficulty + scarcity scaling */
   diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
+  diff += (int)(scarcity_factor / 10); /* +1 difficulty per 10% usage */
 
   /* Verify the provided nonce against the process PID */
   if (!pow_verify(nonce, (u64int)up->pid, diff)) {
     if (pebble_debug)
-      print(
-          "PEBBLE: budget PoW failure pid=%lud size=%lud diff=%d nonce=%llud\n",
-          up->pid, size, diff, nonce);
+      print("PEBBLE: budget PoW failure pid=%lud size=%lud diff=%d nonce=%llud "
+            "scarcity=%lu%%\n",
+            up->pid, size, diff, nonce, scarcity_factor);
     return -1;
   }
 
-  /* PoW verified - increase budget */
-  lock(&pebble_global_lock);
-  ps->colorless_bank += size;
-  unlock(&pebble_global_lock);
+  /* PoW verified - transfer tokens from global pool to process */
+  lock(&pebble_bank_lock);
+  if (pebble_global_colorless_bank < tokens_requested) {
+    unlock(&pebble_bank_lock);
+    return -1; /* Race condition: tokens taken by another process */
+  }
+  pebble_global_colorless_bank -= tokens_requested;
+  ps->colorless_bank += tokens_requested;
+  unlock(&pebble_bank_lock);
 
   if (pebble_debug)
-    print("PEBBLE: budget increased pid=%lud size=%lud total=%lud\n", up->pid,
-          size, ps->colorless_bank);
+    print("PEBBLE: budget transferred pid=%lud tokens=%lu total=%lu "
+          "global_remaining=%lu\n",
+          up->pid, tokens_requested, ps->colorless_bank,
+          pebble_global_colorless_bank);
 
   return 0;
 }

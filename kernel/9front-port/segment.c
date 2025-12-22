@@ -702,20 +702,21 @@ uintptr ibrk(uintptr addr, int seg) {
     s->map = map;
     s->mapsize = mapsize;
   }
-
   s->top = newtop;
   s->size = newsize;
 
   /* Pebble: Consume budget for segment growth (userspace only) */
+  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
   if (up != nil && newtop > s->base) {
-    ulong growth = newtop - s->base;
+    ulong growth_bytes = newtop - s->base;
+    ulong tokens_needed = growth_bytes / PEBBLE_BYTES_PER_TOKEN;
     lock(&pebble_global_lock);
-    if (up->pebble.colorless_bank < growth) {
+    if (up->pebble.colorless_bank < tokens_needed) {
       unlock(&pebble_global_lock);
       qunlock(&s->qlock);
       error(Enovmem);
     }
-    up->pebble.colorless_bank -= growth;
+    up->pebble.colorless_bank -= tokens_needed;
     unlock(&pebble_global_lock);
   }
 
@@ -967,13 +968,15 @@ uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
   attr |= ps->attr;
 
   /* Pebble: Consume budget for segment attachment (userspace only) */
+  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
   if (up != nil) {
+    ulong tokens_needed = len / PEBBLE_BYTES_PER_TOKEN;
     lock(&pebble_global_lock);
-    if (up->pebble.colorless_bank < len) {
+    if (up->pebble.colorless_bank < tokens_needed) {
       unlock(&pebble_global_lock);
       error(Enovmem);
     }
-    up->pebble.colorless_bank -= len;
+    up->pebble.colorless_bank -= tokens_needed;
     unlock(&pebble_global_lock);
   }
 

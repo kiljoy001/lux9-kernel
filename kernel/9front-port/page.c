@@ -271,15 +271,19 @@ Page *newpage(uintptr va, Segment *seg) {
           palloc.freecount);
 
   /* Pebble: Check and consume budget for page allocation (userspace only) */
+  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
   if (up != nil) {
+    ulong tokens_needed = BY2PG / PEBBLE_BYTES_PER_TOKEN;
     lock(&pebble_global_lock);
-    if (up->pebble.colorless_bank < BY2PG) {
+    if (up->pebble.colorless_bank < tokens_needed) {
       unlock(&pebble_global_lock);
       if (pebble_debug)
-        print("PEBBLE: insufficient budget for page va=%#p\n", va);
+        print("PEBBLE: insufficient tokens for page va=%#p (need %lu, have "
+              "%lu)\n",
+              va, tokens_needed, up->pebble.colorless_bank);
       return nil; /* Insufficient budget */
     }
-    up->pebble.colorless_bank -= BY2PG;
+    up->pebble.colorless_bank -= tokens_needed;
     unlock(&pebble_global_lock);
   }
 

@@ -19,11 +19,24 @@
 #define PEBBLE_MAX_TOKENS 4096
 #define PEBBLE_DEBUG 0
 
+/* Token economics: 1 token = 8 bytes of memory authorization */
+#define PEBBLE_BYTES_PER_TOKEN 8
+
 /*
  * Pebble runtime toggles.
  */
 extern int pebble_enabled;
 extern int pebble_debug;
+
+/*
+ * Global colorless bank - single pool for entire system.
+ * Total tokens = system RAM / PEBBLE_BYTES_PER_TOKEN.
+ * Processes pull tokens from this pool via PoW.
+ * PoW difficulty increases as pool shrinks (scarcity mechanism).
+ */
+extern Lock pebble_bank_lock;
+extern ulong pebble_global_colorless_bank; /* tokens available globally */
+extern ulong pebble_total_system_tokens;   /* RAM/8, constant after init */
 
 /* Error handling */
 #define PEBBLE_E_PERM "permission denied"
