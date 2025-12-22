@@ -23,6 +23,11 @@ enum {
   Qbudget,
 };
 
+typedef struct PebbleChanState {
+  char *resp;
+  ulong resp_len;
+} PebbleChanState;
+
 static Dirtab pebbledir[] = {
     ".",      {Qdir, 0, QTDIR}, 0, DMDIR | 0555, "issue", {Qissue}, 0, 0666,
     "verify", {Qverify},        0, 0666,         "alloc", {Qalloc}, 0, 0666,
@@ -43,18 +48,130 @@ static int pebstat(Chan *c, uchar *dp, int n) {
 }
 
 static Chan *pebopen(Chan *c, int omode) {
-  return devopen(c, omode, pebbledir, nelem(pebbledir), devgen);
+  PebbleChanState *st;
+
+  c = devopen(c, omode, pebbledir, nelem(pebbledir), devgen);
+  if (c->aux == nil && c->qid.path != Qdir) {
+    st = smalloc(sizeof(*st));
+    if (st == nil)
+      error(Enomem);
+    st->resp = nil;
+    st->resp_len = 0;
+    c->aux = st;
+  }
+  return c;
 }
 
-static void pebclose(Chan *c) { USED(c); }
+static void pebclose(Chan *c) {
+  PebbleChanState *st;
+
+  st = (PebbleChanState *)c->aux;
+  if (st != nil) {
+    free(st->resp);
+    free(st);
+    c->aux = nil;
+  }
+}
+
+static int pebhexval(int c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F')
+    return 10 + (c - 'A');
+  return -1;
+}
+
+static int pebparse_hex_bytes(const char *p, uchar *out, int outlen) {
+  int i, hi, lo;
+
+  for (i = 0; i < outlen; i++) {
+    hi = pebhexval(*p++);
+    lo = pebhexval(*p++);
+    if (hi < 0 || lo < 0)
+      return -1;
+    out[i] = (hi << 4) | lo;
+  }
+  return 0;
+}
+
+static int pebparse_cap_hash(const char *buf, UserCapability *cap) {
+  const char *p = buf;
+
+  while (*p == ' ' || *p == '\t')
+    p++;
+  if (strncmp(p, "cap", 3) == 0 && (p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+  } else if (strncmp(p, "hash", 4) == 0 &&
+             (p[4] == ' ' || p[4] == '\t')) {
+    p += 4;
+  }
+  while (*p == ' ' || *p == '\t')
+    p++;
+  if (*p == 0)
+    return -1;
+  if (pebparse_hex_bytes(p, cap->hash, BLIND_LEDGER_CAP_SIZE) < 0)
+    return -1;
+  cap->size = 0;
+  cap->type = 0;
+  cap->perms = 0;
+  return 0;
+}
+
+static int pebparse_uintptr(const char *buf, uintptr *out) {
+  char *end;
+  uvlong v;
+  const char *p = buf;
+
+  while (*p == ' ' || *p == '\t')
+    p++;
+  if (strncmp(p, "white", 5) == 0 && (p[5] == ' ' || p[5] == '\t')) {
+    p += 5;
+    while (*p == ' ' || *p == '\t')
+      p++;
+  }
+  v = strtoull(p, &end, 0);
+  if (end == p)
+    return -1;
+  *out = (uintptr)v;
+  return 0;
+}
+
+static void pebsetresp(Chan *c, const char *msg) {
+  PebbleChanState *st;
+  ulong len;
+
+  st = (PebbleChanState *)c->aux;
+  if (st == nil)
+    return;
+  free(st->resp);
+  len = strlen(msg);
+  st->resp = smalloc(len + 1);
+  if (st->resp == nil)
+    error(Enomem);
+  memmove(st->resp, msg, len + 1);
+  st->resp_len = len;
+}
 
 static long pebread(Chan *c, void *va, long n, vlong off) {
   char *buf;
   long rv = 0;
+  PebbleChanState *st;
 
   switch ((ulong)c->qid.path) {
   case Qdir:
     return devdirread(c, va, n, pebbledir, nelem(pebbledir), devgen);
+
+  case Qissue:
+  case Qverify:
+  case Qalloc:
+  case Qfree:
+  case Qbudget:
+    st = (PebbleChanState *)c->aux;
+    if (st == nil || st->resp == nil)
+      return 0;
+    return readstr(off, va, n, st->resp);
 
   case Qstats:
     buf = smalloc(1024);
@@ -78,12 +195,12 @@ static long pebread(Chan *c, void *va, long n, vlong off) {
 }
 
 static long pebwrite(Chan *c, void *va, long n, vlong off) {
-  char *buf, *p;
+  char *buf;
+  char tmp[256];
   ulong size;
   PebbleWhite *pw;
   void *handle;
   PebbleState *ps;
-  int err;
 
   USED(off);
 
@@ -101,95 +218,63 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
 
   switch ((ulong)c->qid.path) {
   case Qissue:
-    /* "size" -> returns token ID string?
-       Actually 9P write returns count. We can't return data easily on write.
-       Convention: Write params, Read result? Or use textual protocol?
-       Textual: Write "1024", side effect is issuance. But we need the token.
-
-       Alternative: "issue" file is read/write.
-       Write size -> Prepare. Read -> Get Token.
-
-       Let's assume write returns success/fail for now, or we log it.
-       Ideally we'd use a ctl-style interface where we write "issue 1024"
-       and read back "token: 12345".
-
-       For "issue", we likely want to return the token ID.
-       Since write() can't return data, maybe we should use `alloc` style:
-       open, write request, read response.
-
-       Let's stick to simple commands for now assuming the user knows how to
-       check stats or we'll implement a proper ctl file later if needed.
-
-       Wait, PebbleWhite is a struct.
-
-       Let's implement a "ctl" file approach instead of separate files if
-       interaction is complex. But separate files are cleaner for permissions.
-
-       Let's try: Write size to Qissue. The new token is added to process state.
-       The user can see it in Qstats or we assume the library manages it.
-
-       Actually, for `pebble_white_issue` to be useful, we need the
-       pointer/token.
-
-       Revised approach:
-       Qalloc/Qissue are distinct.
-
-       Let's implement `alloc` as: Write "size 1024".
-       It allocates immediately (Black Alloc).
-       Returns success if alloc worked.
-       But we need the address!
-
-       Okay, the standard Plan 9 way for "allocating" a resource
-       (like a window or a connection) is usually:
-       1. Read `clone` to get a directory (ID).
-       2. Open `ctl` in that dir.
-
-       Maybe we should do:
-       /dev/pebble/clone -> returns ID of new allocation
-       /dev/pebble/N/ctl -> "size 1024", "commit"
-       /dev/pebble/N/addr -> returns physical address
-
-       For now, let's stick to the existing syscalls in C if this is too complex
-       to shim without a full rewrite. But the user wants "interface".
-
-       Let's assume `devsip` is the main interface and `pebble` is a backing
-       service.
-
-       If we MUST replace syscalls:
-       We can use the `ctl` file in `/dev/sip/servers/ID/ctl` to issue commands?
-       No, that's for SIP management.
-
-       Let's look at `devexchange.c`. It does:
-       write(fd, "prepare <addr>")
-
-       We can do:
-       fd = open("/dev/pebble/alloc", ORDWR)
-       write(fd, "size 1024")
-       read(fd, buf) -> "addr: 0x..."
-
-       This works!
-    */
-
-    /* We'll implement this "RPC-like" write/read on Qissue/Qalloc later.
-       For now, let's just stub the device entry points. */
+    size = strtoul(buf, 0, 0);
+    if (size == 0) {
+      free(buf);
+      error(Ebadarg);
+    }
+    pw = pebble_issue_white(ps, nil, size);
+    if (pw == nil) {
+      free(buf);
+      error(PEBBLE_E_AGAIN);
+    }
+    snprint(tmp, sizeof(tmp), "%#p\n", pw);
+    pebsetresp(c, tmp);
     break;
 
   case Qalloc:
     /* Simple alloc: "size <bytes>" */
     size = strtoul(buf, 0, 0);
     if (size > 0) {
-      if (pebble_black_alloc(size, &handle) == 0) {
-        /* How to return handle?
-           We need a stateful channel (like clone) or write/read sequence.
-           Let's assume the Go side will use a construct that handles this.
-        */
-        print("pebble: allocated %lud bytes at %p\n", size, handle);
+      UserCapability cap;
+      if (pebble_black_alloc(size, &cap) == 0) {
+        snprint(tmp, sizeof(tmp), "cap %H size %llud perms %ud\n", cap.hash,
+                cap.size, cap.perms);
+        pebsetresp(c, tmp);
       } else {
         free(buf);
         error(Enomem);
       }
+    } else {
+      free(buf);
+      error(Ebadarg);
     }
     break;
+
+  case Qverify: {
+    uintptr wptr;
+    if (pebparse_uintptr(buf, &wptr) < 0) {
+      free(buf);
+      error(Ebadarg);
+    }
+    handle = nil;
+    if (pebble_white_verify((PebbleWhite *)wptr, &handle) != 0) {
+      free(buf);
+      error(PEBBLE_E_PERM);
+    }
+    snprint(tmp, sizeof(tmp), "%#p\n", handle);
+    pebsetresp(c, tmp);
+  } break;
+
+  case Qfree: {
+    UserCapability cap;
+    if (pebparse_cap_hash(buf, &cap) < 0) {
+      free(buf);
+      error(Ebadarg);
+    }
+    pebble_black_free(&cap);
+    pebsetresp(c, "ok\n");
+  } break;
 
   case Qbudget:
     /* Budget request: "size nonce" */
@@ -212,6 +297,8 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
         free(buf);
         error("pebble: PoW verification failed");
       }
+      snprint(tmp, sizeof(tmp), "ok budget %lud\n", pebble_get_budget());
+      pebsetresp(c, tmp);
     }
     break;
 

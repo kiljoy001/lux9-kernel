@@ -15,6 +15,10 @@
 #include <stddef.h>
 #include <stdint.h>
 typedef uintptr_t uintptr;
+typedef uint32_t u32int;
+typedef uint8_t u8int;
+typedef uint64_t u64int;
+typedef unsigned long ulong;
 #else
 #include "il_compat.h"
 #endif
@@ -270,8 +274,9 @@ typedef struct {
   size_t il_code_size;
   uint32_t max_stack;
   uint32_t local_var_sig_token;
-  uint16_t impl_flags; // MethodImplAttributes
-  uint8_t flags;       /* Tiny or fat format */
+  uint32_t signature_index; /* Index into #Blob heap for MethodDef signature */
+  uint16_t impl_flags;      // MethodImplAttributes
+  uint8_t flags;            /* Tiny or fat format */
 
   /* Metadata token for this method (TABLE_METHODDEF | row_index) */
   uint32_t method_token;
@@ -359,6 +364,12 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name);
 
 /* Get method by MethodDef token */
 il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token);
+
+/* Get MethodDef name and RVA without parsing body (returns 0 on success) */
+int il_get_methoddef_info(il_assembly_t *assembly, uint32_t token,
+                          char *name_out, size_t name_len, uint32_t *rva_out);
+int il_find_methoddef_by_name(il_assembly_t *assembly, const char *type_name,
+                              const char *method_name, uint32_t *token_out);
 
 /* Get the name of the type that owns the given method token */
 const char *il_get_method_parent_type_name(il_assembly_t *assembly,
@@ -452,5 +463,11 @@ field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid);
 int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
                         char *module_out, size_t module_len, char *func_out,
                         size_t func_len);
+
+/* Get signature token for a MethodDef token.
+ * Returns 0 on success, -1 on failure. */
+int il_get_method_signature_token(il_assembly_t *assembly, uint32_t token,
+                                  uint32_t *sig_out);
+int il_load_all_methods(il_assembly_t *assembly);
 
 #endif // IL_PARSER_H

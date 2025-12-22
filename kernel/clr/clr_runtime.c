@@ -37,7 +37,6 @@ typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 typedef struct Fmt Fmt;
-
 #include "../../port/lib.h"
 #include "../9front-pc64/mem.h"
 #include "../include/dat.h"
@@ -52,8 +51,64 @@ typedef struct Fmt Fmt;
 /* WASM3 Runtime */
 #include "wasm_runtime/wasm3/wasm3.h"
 
+static void clr_dump_wasm_error(IM3Runtime runtime);
+
 /* Forward declarations */
 extern M3Result lux9_link_wasi(IM3Module module);
+
+static const char *clr_map_lux9_method_name(const char *method_name) {
+  if (!method_name)
+    return NULL;
+
+  if (strcmp(method_name, "Lux9Send9P") == 0 ||
+      strcmp(method_name, "Send9P") == 0)
+    return "lux9_send_9p";
+  if (strcmp(method_name, "Lux9DebugPrint") == 0 ||
+      strcmp(method_name, "DebugPrint") == 0)
+    return "lux9_debug_print";
+  if (strcmp(method_name, "Lux9Yield") == 0 ||
+      strcmp(method_name, "Yield") == 0)
+    return "lux9_yield";
+  if (strcmp(method_name, "Lux9Sleep") == 0 ||
+      strcmp(method_name, "Sleep") == 0)
+    return "lux9_sleep";
+  if (strcmp(method_name, "Lux9Spawn") == 0 ||
+      strcmp(method_name, "Spawn") == 0)
+    return "lux9_spawn";
+  if (strcmp(method_name, "Lux9Throw") == 0)
+    return "lux9_throw";
+
+  return NULL;
+}
+
+static int clr_attach_token_to_import(fruity_module_t *mod, const char *name,
+                                      u32int token) {
+  fruity_function_t *imp = mod->functions_head;
+  while (imp) {
+    if (imp->name && strcmp(imp->name, name) == 0) {
+      if (imp->method_token == 0 || imp->method_token == token) {
+        imp->method_token = token;
+      } else {
+        /* Duplicate import name with a new token */
+        fruity_function_t *dup = fruity_function_create(name, token);
+        if (dup) {
+          dup->import_info = imp->import_info;
+          dup->next = mod->functions_head;
+          if (mod->functions_head)
+            mod->functions_head->prev = dup;
+          mod->functions_head = dup;
+          if (!mod->functions_tail)
+            mod->functions_tail = dup;
+          mod->function_count++;
+          print("CLR: Duplicate import %s mapped to token %x\n", name, token);
+        }
+      }
+      return 0;
+    }
+    imp = imp->next;
+  }
+  return -1;
+}
 
 /* String literal table */
 typedef struct {
@@ -95,8 +150,12 @@ void *clr_get_static_field(u32int token) {
  * clr_compile_method_to_wasm
  * Converts IL Method -> Fruity -> WASM Binary
  */
+/* Forward declarations */
+static int clr_has_import(fruity_module_t *mod, const char *name);
+
 /* Helper: Scan dependencies and add to module */
 static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
+
                                   fruity_function_t *func) {
   if (!func || !func->blocks_head)
     return;
@@ -107,6 +166,44 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
     while (instr) {
       if (instr->operand.type == FRUITY_OP_METHOD) {
         u32int token = instr->operand.value.token;
+        u8int kind = (token >> 24) & 0xFF;
+        if (token == 0x6000001)
+          print("CLR: scan saw token 0x6000001\n");
+
+        if (kind == TABLE_MEMBERREF || kind == TABLE_METHODSPEC) {
+          char type_name[96] = {0};
+          char method_name[96] = {0};
+          int res = -1;
+          u32int resolved_token = 0;
+
+          if (kind == TABLE_MEMBERREF) {
+            res = il_resolve_memberref(assembly, token, type_name,
+                                       sizeof(type_name), method_name,
+                                       sizeof(method_name));
+          } else {
+            res = il_resolve_methodspec(assembly, token, type_name,
+                                        sizeof(type_name), method_name,
+                                        sizeof(method_name));
+          }
+
+          if (res == 0 && method_name[0] != 0) {
+            if (il_find_methoddef_by_name(assembly, type_name, method_name,
+                                          &resolved_token) == 0 ||
+                il_find_methoddef_by_name(assembly, NULL, method_name,
+                                          &resolved_token) == 0) {
+              instr->operand.value.token = resolved_token;
+              token = resolved_token;
+              kind = TABLE_METHODDEF;
+            } else {
+              const char *mapped = clr_map_lux9_method_name(method_name);
+              if (mapped &&
+                  clr_attach_token_to_import(mod, mapped, token) == 0) {
+                instr = instr->next;
+                continue;
+              }
+            }
+          }
+        }
 
         /* Check if exists */
         int found = 0;
@@ -125,12 +222,44 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
 
           if (il_get_pinvoke_info(assembly, token, modname, 64, funcname, 64) ==
               0) {
+            /* Check if already added by name (runtime imports have token=0) */
+            if (clr_has_import(mod, funcname)) {
+              fruity_function_t *imp = mod->functions_head;
+              while (imp) {
+                if (imp->name && strcmp(imp->name, funcname) == 0) {
+                  if (imp->method_token == 0 || imp->method_token == token) {
+                    imp->method_token = token;
+                  } else {
+                    /* Duplicate import name with a new token */
+                    fruity_function_t *dup =
+                        fruity_function_create(funcname, token);
+                    if (dup) {
+                      dup->import_info = imp->import_info;
+                      dup->next = mod->functions_head;
+                      if (mod->functions_head)
+                        mod->functions_head->prev = dup;
+                      mod->functions_head = dup;
+                      if (!mod->functions_tail)
+                        mod->functions_tail = dup;
+                      mod->function_count++;
+                      print("CLR: Duplicate import %s mapped to token %x\n",
+                            funcname, token);
+                    }
+                  }
+                  break;
+                }
+                imp = imp->next;
+              }
+              instr = instr->next;
+              continue;
+            }
             /* Import */
             fruity_function_t *imp = fruity_function_create(funcname, token);
             if (imp) {
               print("CLR: Dependency Import Found: %s.%s (Token %x) -> New "
                     "Func %p\n",
                     modname, funcname, token, imp);
+
               imp->import_info.is_import = 1;
               /* Simple duplicate because strdup might not be avail */
               imp->import_info.module_name = xalloc(strlen(modname) + 1);
@@ -230,6 +359,90 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
                 print("CLR: Failed to compile local dep %x. Error: %d (%s)\n",
                       token, err, il_to_fruity_error_string(err));
               }
+            } else {
+              print("CLR: local dep missing token=%x\n", token);
+              char ext_name[64] = {0};
+              uint32_t ext_rva = 0;
+              int info_res = il_get_methoddef_info(assembly, token, ext_name,
+                                                   sizeof(ext_name), &ext_rva);
+              if (info_res == 0) {
+                if (ext_rva == 0) {
+                  print("CLR: methoddef info token=%x name=%s rva=0x%x\n",
+                        token, ext_name, ext_rva);
+                  print("CLR: External MethodDef token=%x name=%s rva=0x%x\n",
+                        token, ext_name, ext_rva);
+                  const char *mapped = clr_map_lux9_method_name(ext_name);
+                  if (mapped &&
+                      clr_attach_token_to_import(mod, mapped, token) == 0) {
+                    print(
+                        "CLR: Dependency External Found: %s -> %s (Token %x)\n",
+                        ext_name, mapped, token);
+                  } else {
+                    /* Try Generic P/Invoke */
+                    char modname[64] = {0};
+                    char funcname[64] = {0};
+                    if (il_get_pinvoke_info(assembly, token, modname, 64,
+                                            funcname, 64) == 0) {
+                      print("CLR: Found P/Invoke %s -> %s.%s\n", ext_name,
+                            modname, funcname);
+
+                      /* Create import stub */
+                      fruity_function_t *imp =
+                          fruity_function_create(ext_name, token);
+                      if (imp) {
+                        imp->import_info.is_import = 1;
+                        imp->import_info.module_name = strdup(modname);
+                        imp->import_info.function_name = strdup(funcname);
+
+                        /* Parse signature */
+                        uint32_t sig_tok = 0;
+                        uint32_t ac = 0;
+                        if (il_get_method_signature_token(assembly, token,
+                                                          &sig_tok) == 0) {
+                          uint32_t bsize = 0;
+                          const uint8_t *sig =
+                              il_get_blob(assembly, sig_tok, &bsize);
+                          if (sig && bsize > 1) {
+                            const uint8_t *p = sig + 1; /* Skip conv */
+                            if (sig[0] & 0x10)
+                              il_decode_compressed_uint(
+                                  (const uint8_t **)&p); /* GenParamCount */
+                            ac =
+                                il_decode_compressed_uint((const uint8_t **)&p);
+                          }
+                        }
+                        imp->arg_count = ac;
+                        imp->arg_types =
+                            xallocz(sizeof(clr_value_type_t) * ac, 1);
+                        for (uint32_t i = 0; i < ac; i++)
+                          imp->arg_types[i] = CLR_INT32;
+
+                        /* Add to module */
+                        if (!mod->functions_head) {
+                          mod->functions_head = imp;
+                          mod->functions_tail = imp;
+                        } else {
+                          mod->functions_tail->next = imp;
+                          imp->prev = mod->functions_tail;
+                          mod->functions_tail = imp;
+                        }
+                        mod->function_count++;
+                      }
+                    } else {
+                      print(
+                          "CLR: Warning: external method %s token=%x rva=0x%x "
+                          "has no mapping\n",
+                          ext_name, token, ext_rva);
+                    }
+                  }
+                } else {
+                  print("CLR: methoddef info token=%x name=%s rva=0x%x "
+                        "(non-zero rva)\n",
+                        token, ext_name, ext_rva);
+                }
+              } else {
+                print("CLR: methoddef info failed token=%x\n", token);
+              }
             }
           }
         }
@@ -299,6 +512,15 @@ static void clr_add_runtime_imports(fruity_module_t *mod) {
   const clr_value_type_t ref_i64_i64[] = {CLR_REF, CLR_INT64, CLR_INT64};
   const clr_value_type_t i32_i64_args[] = {CLR_INT32, CLR_INT64};
 
+  /* Lux9 system calls */
+  clr_add_import(mod, "lux9_send_9p", CLR_INT32, ref_i32_args, 2);
+  clr_add_import(mod, "lux9_debug_print", CLR_VOID, ref_i32_args, 2);
+  clr_add_import(mod, "lux9_spawn", CLR_INT32, ref_args, 1);
+  clr_add_import(mod, "lux9_sleep", CLR_VOID, i32_args, 1);
+  clr_add_import(mod, "lux9_yield", CLR_VOID, nil, 0);
+  clr_add_import(mod, "lux9_throw", CLR_VOID, ref_args, 1);
+
+  /* Pebble memory management */
   clr_add_import(mod, "lux_alloc", CLR_REF, i64_i64_args, 2);
   clr_add_import(mod, "lux_addref", CLR_REF, ref_args, 1);
   clr_add_import(mod, "lux_release", CLR_VOID, ref_args, 1);
@@ -306,6 +528,7 @@ static void clr_add_runtime_imports(fruity_module_t *mod) {
   clr_add_import(mod, "lux_commit", CLR_VOID, ref_args, 1);
   clr_add_import(mod, "lux_rollback", CLR_VOID, ref_args, 1);
 
+  /* CLR runtime support */
   clr_add_import(mod, "clr_string_from_literal", CLR_REF, i32_args, 1);
   clr_add_import(mod, "clr_get_type_size", CLR_INT64, i32_args, 1);
   clr_add_import(mod, "clr_get_static_field", CLR_REF, i32_args, 1);
@@ -360,11 +583,11 @@ int clr_compile_method_to_wasm(il_assembly_t *assembly, const char *method_name,
   temp_mod.functions_tail = main_func;
   temp_mod.function_count = 1;
 
-  /* 3. Scan dependencies */
-  clr_scan_dependencies(assembly, &temp_mod, main_func);
-
-  /* 4. Add runtime imports */
+  /* 3. Add runtime imports FIRST (so proper types are set) */
   clr_add_runtime_imports(&temp_mod);
+
+  /* 4. Scan dependencies (won't re-add imports that already exist) */
+  clr_scan_dependencies(assembly, &temp_mod, main_func);
 
   /* 5. Emit WASM */
   fruity_wasm_result_t wasm_res;
@@ -497,19 +720,24 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
     return -1;
   }
 
-  /* Run Main */
+  /* Run Main (try both cases) */
   IM3Function f;
   result = m3_FindFunction(&f, runtime, "Main");
+  if (result) {
+    result = m3_FindFunction(&f, runtime, "main");
+  }
   if (result) {
     print("m3_FindFunction error: %s\n", result);
     return -1;
   }
 
-  print("CLR: Executing Main...\n");
+  print("CLR: Executing Main (args=%d, rets=%d)...\n", m3_GetArgCount(f),
+        m3_GetRetCount(f));
   result = m3_CallV(f);
 
   if (result) {
     print("CLR: Execution failed: %s\n", result);
+    clr_dump_wasm_error(runtime);
     return -1;
   }
 
@@ -532,6 +760,46 @@ void clr_test_wasm_pipeline(void) {
     print("CLR-TEST: *** FULL PIPELINE TEST PASSED ***\n");
   } else {
     print("CLR-TEST: *** FULL PIPELINE TEST FAILED ***\n");
+  }
+}
+
+static void clr_dump_wasm_error(IM3Runtime runtime) {
+  M3ErrorInfo info;
+  IM3BacktraceInfo bt;
+  IM3BacktraceFrame frame;
+
+  if (runtime == nil)
+    return;
+
+  m3_GetErrorInfo(runtime, &info);
+  print("CLR: wasm error info: result=%s message=%s file=%s line=%lud\n",
+        info.result ? info.result : "(nil)",
+        info.message ? info.message : "(nil)", info.file ? info.file : "(nil)",
+        (ulong)info.line);
+  if (info.function) {
+    print("CLR: wasm error in func=%s module=%s\n",
+          m3_GetFunctionName(info.function),
+          m3_GetModuleName(m3_GetFunctionModule(info.function)));
+  }
+
+  bt = m3_GetBacktrace(runtime);
+  if (bt == nil || bt->frames == nil) {
+    print("CLR: wasm backtrace: (none)\n");
+    return;
+  }
+
+  print("CLR: wasm backtrace:\n");
+  for (frame = bt->frames; frame != nil; frame = frame->next) {
+    if (frame == M3_BACKTRACE_TRUNCATED) {
+      print("CLR:  ... (truncated)\n");
+      break;
+    }
+    if (frame->function) {
+      print("CLR:  func=%s offset=0x%lux\n",
+            m3_GetFunctionName(frame->function), (ulong)frame->moduleOffset);
+    } else {
+      print("CLR:  func=(nil) offset=0x%lux\n", (ulong)frame->moduleOffset);
+    }
   }
 }
 

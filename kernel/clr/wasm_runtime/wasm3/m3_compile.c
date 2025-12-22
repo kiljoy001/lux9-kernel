@@ -1073,7 +1073,13 @@ M3Result  ResolveBlockResults  (IM3Compilation o, IM3CompilationScope i_targetBl
 
     u16 blockHeight = GetNumBlockValuesOnStack (o);
 
-    _throwif (m3Err_typeCountMismatch, i_isBranch ? (blockHeight < numValues) : (blockHeight != numValues));
+    if (i_isBranch ? (blockHeight < numValues) : (blockHeight != numValues)) {
+        const char *fname = (o->function && o->function->names[0]) ? o->function->names[0] : "?";
+        print("m3_typeCountMismatch: func=%s opcode=%#x depth=%d blockHeight=%d numValues=%d stackIndex=%d blockStackIndex=%d\n",
+              fname, i_targetBlock->opcode, i_targetBlock->depth, blockHeight,
+              numValues, o->stackIndex, i_targetBlock->blockStackIndex);
+        _throw (m3Err_typeCountMismatch);
+    }
 
     if (numValues)
     {
@@ -1109,8 +1115,15 @@ M3Result  ReturnValues  (IM3Compilation o, IM3CompilationScope i_functionBlock, 
     u16 numReturns = GetFuncTypeNumResults (i_functionBlock->type);     // could just o->function too...
     u16 blockHeight = GetNumBlockValuesOnStack (o);
 
-    if (not IsStackPolymorphic (o))
-        _throwif (m3Err_typeCountMismatch, i_isBranch ? (blockHeight < numReturns) : (blockHeight != numReturns));
+    if (not IsStackPolymorphic (o)) {
+        if (i_isBranch ? (blockHeight < numReturns) : (blockHeight != numReturns)) {
+            const char *fname = (o->function && o->function->names[0]) ? o->function->names[0] : "?";
+            print("m3_returnCountMismatch: func=%s blockHeight=%d numReturns=%d stackIndex=%d blockStackIndex=%d\n",
+                  fname, blockHeight, numReturns, o->stackIndex,
+                  i_functionBlock->blockStackIndex);
+            _throw (m3Err_typeCountMismatch);
+        }
+    }
 
     if (numReturns)
     {

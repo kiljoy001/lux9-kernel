@@ -145,8 +145,41 @@ type FSharpList<'T> =
             | Cons(_, t) -> loop (acc + 1) t
         loop 0 this
 
+    interface System.Collections.Generic.IEnumerable<'T> with
+        member this.GetEnumerator() =
+            let mutable curr = this
+            let mutable started = false
+            { new System.Collections.Generic.IEnumerator<'T> with
+                 member _.Current = 
+                     match curr with 
+                     | Cons(h, _) -> h 
+                     | Empty -> Unchecked.defaultof<'T>
+                 member _.MoveNext() =
+                     if not started then
+                         started <- true
+                         match curr with Empty -> false | _ -> true
+                     else
+                         match curr with
+                         | Cons(_, t) -> 
+                             curr <- t
+                             match curr with Empty -> false | _ -> true
+                         | _ -> false
+                 member _.Reset() = 
+                     curr <- this
+                     started <- false
+                 member _.Dispose() = ()
+                 member _.get_Current() = 
+                     match curr with 
+                     | Cons(h, _) -> box h 
+                     | Empty -> null
+            }
+
+    interface System.Collections.IEnumerable with
+        member this.GetEnumerator() = (this :> System.Collections.Generic.IEnumerable<'T>).GetEnumerator() :> System.Collections.IEnumerator
+
 // Alias for convenient syntax
 type list<'T> = FSharpList<'T>
+type 'T list = FSharpList<'T>
 
 module List =
     let empty<'T> : FSharpList<'T> = Empty
@@ -447,60 +480,112 @@ module Set =
         List.fold (fun acc x -> add x acc) empty lst
 
 // F# Lazy Sequence (minimal implementation)
-type Seq<'T> =
-    | SeqEmpty
-    | SeqCons of head: 'T * tail: (unit -> Seq<'T>)
+// F# Sequence (alias for IEnumerable<T>)
+type seq<'T> = System.Collections.Generic.IEnumerable<'T>
+type Seq<'T> = seq<'T>
 
 module Seq =
-    let empty<'T> : Seq<'T> = SeqEmpty
+    let empty<'T> : seq<'T> = 
+        System.Linq.Enumerable.Empty<'T>()
+        
+    let singleton (x: 'T) : seq<'T> =
+        let arr = Microsoft.FSharp.Collections.Array.zeroCreate 1
+        arr.[0] <- x
+        arr :> seq<'T>
+        
+    let length (source: seq<'T>) : int =
+        System.Linq.Enumerable.Count(source)
+             
+    let isEmpty (source: seq<'T>) : bool =
+        not (System.Linq.Enumerable.Any(source))
+        
+    let map (mapping: 'T -> 'U) (source: seq<'T>) : seq<'U> =
+        System.Linq.Enumerable.Select(source, System.Func<_,_>(mapping))
+        
+    let mapi (mapping: int -> 'T -> 'U) (source: seq<'T>) : seq<'U> =
+         // Select with index supported by Enumerable
+         System.Linq.Enumerable.Select(source, System.Func<_,_,_>(fun x i -> mapping i x))
+         
+    let filter (predicate: 'T -> bool) (source: seq<'T>) : seq<'T> =
+        System.Linq.Enumerable.Where(source, System.Func<_,_>(predicate))
+        
+    let fold (folder: 'State -> 'T -> 'State) (state: 'State) (source: seq<'T>) : 'State =
+        System.Linq.Enumerable.Aggregate(source, state, System.Func<_,_,_>(folder))
+        
+    let iter (action: 'T -> unit) (source: seq<'T>) : unit =
+        use e = source.GetEnumerator()
+        while e.MoveNext() do
+            action e.Current
+            
+    let iteri (action: int -> 'T -> unit) (source: seq<'T>) : unit =
+        use e = source.GetEnumerator()
+        let mutable i = 0
+        while e.MoveNext() do
+            action i e.Current
+            i <- i + 1
+            
+    let head (source: seq<'T>) : 'T =
+        System.Linq.Enumerable.First(source)
+        
+    let tryHead (source: seq<'T>) : 'T option =
+        // FirstOrDefault returns default(T) which might be null or 0.
+        // We need explicit check.
+        use e = source.GetEnumerator()
+        if e.MoveNext() then Some e.Current else None
+        
+    let tail (source: seq<'T>) : seq<'T> =
+        System.Linq.Enumerable.Skip(source, 1)
+        
+    let toArray (source: seq<'T>) : 'T array =
+        System.Linq.Enumerable.ToArray(source)
+        
+    let toList (source: seq<'T>) : FSharpList<'T> =
+        // Avoid internal recursion if possible, build locally
+        let mutable res = Microsoft.FSharp.Collections.List.Empty
+        let arr = toArray source
+        for i = arr.Length - 1 downto 0 do
+            res <- Microsoft.FSharp.Collections.List.Cons(arr.[i], res)
+        res
+        
+    let ofList (source: FSharpList<'T>) : seq<'T> =
+        // FSharpList implements IEnumerable
+        source :> seq<'T>
+        
+    let ofArray (source: 'T array) : seq<'T> =
+        source :> seq<'T>
+        
+    let cast<'T> (source: System.Collections.IEnumerable) : seq<'T> =
+        let mutable res = Microsoft.FSharp.Collections.List.Empty
+        let e = source.GetEnumerator()
+        while e.MoveNext() do
+            res <- Microsoft.FSharp.Collections.List.Cons(unbox<'T> e.Current, res)
+        ofList (Microsoft.FSharp.Collections.List.rev res)
+        
+    let init (count: int) (initializer: int -> 'T) : seq<'T> =
+        let range = System.Linq.Enumerable.Range(0, count)
+        System.Linq.Enumerable.Select(range, System.Func<_,_>(initializer))
+        
+    let collect (mapping: 'T -> seq<'U>) (source: seq<'T>) : seq<'U> =
+        System.Linq.Enumerable.SelectMany(source, System.Func<_,_>(mapping))
+        
+    let exists (predicate: 'T -> bool) (source: seq<'T>) : bool =
+        System.Linq.Enumerable.Any(source, System.Func<_,_>(predicate))
+        
+    let forall (predicate: 'T -> bool) (source: seq<'T>) : bool =
+        System.Linq.Enumerable.All(source, System.Func<_,_>(predicate))
+        
+    let tryFind (predicate: 'T -> bool) (source: seq<'T>) : 'T option =
+        let mutable res = None
+        use e = source.GetEnumerator()
+        while res.IsNone && e.MoveNext() do
+            if predicate e.Current then res <- Some e.Current
+        res
+        
+    let find (predicate: 'T -> bool) (source: seq<'T>) : 'T =
+        match tryFind predicate source with
+        | Some x -> x
+        | None -> Microsoft.FSharp.Core.Operators.failwith "Key not found"
     
-    let isEmpty (s: Seq<'T>) =
-        match s with
-        | SeqEmpty -> true
-        | SeqCons _ -> false
-    
-    let head (s: Seq<'T>) : 'T =
-        match s with
-        | SeqCons(h, _) -> h
-        | SeqEmpty -> failwith "Sequence is empty"
-    
-    let tail (s: Seq<'T>) : Seq<'T> =
-        match s with
-        | SeqCons(_, t) -> t()
-        | SeqEmpty -> failwith "Sequence is empty"
-    
-    let rec map (f: 'a -> 'b) (s: Seq<'a>) : Seq<'b> =
-        match s with
-        | SeqEmpty -> SeqEmpty
-        | SeqCons(h, t) -> SeqCons(f h, fun () -> map f (t()))
-    
-    let rec filter (predicate: 'a -> bool) (s: Seq<'a>) : Seq<'a> =
-        match s with
-        | SeqEmpty -> SeqEmpty
-        | SeqCons(h, t) ->
-            if predicate h then SeqCons(h, fun () -> filter predicate (t()))
-            else filter predicate (t())
-    
-    let rec take (n: int) (s: Seq<'a>) : Seq<'a> =
-        if n <= 0 then SeqEmpty
-        else
-            match s with
-            | SeqEmpty -> SeqEmpty
-            | SeqCons(h, t) -> SeqCons(h, fun () -> take (n - 1) (t()))
-    
-    let toList (s: Seq<'a>) : FSharpList<'a> =
-        let rec loop acc s =
-            match s with
-            | SeqEmpty -> List.rev acc
-            | SeqCons(h, t) -> loop (Cons(h, acc)) (t())
-        loop Empty s
-    
-    let ofList (lst: FSharpList<'a>) : Seq<'a> =
-        let rec loop lst =
-            match lst with
-            | Empty -> SeqEmpty
-            | Cons(h, t) -> SeqCons(h, fun () -> loop t)
-        loop lst
 
 // F# String module
 module String =

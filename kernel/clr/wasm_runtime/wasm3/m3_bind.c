@@ -29,6 +29,7 @@ M3Result  SignatureToFuncType  (IM3FuncType * o_functionType, ccstr_t i_signatur
     IM3FuncType funcType = NULL;
 
 _try {
+    print ("m3_bind: parsing signature '%s'\n", i_signature);
     if (not o_functionType)
         _throw ("null function type");
 
@@ -106,8 +107,38 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
 
     if (not AreFuncTypesEqual (ftype, i_function->funcType))
     {
-        m3log (module, "expected: %s", SPrintFuncTypeSignature (ftype));
-        m3log (module, "   found: %s", SPrintFuncTypeSignature (i_function->funcType));
+        static const char *type_names[] = { "none", "i32", "i64", "f32", "f64" };
+        print ("m3_bind: expected (");
+        for (u32 i = 0; i < ftype->numArgs; ++i)
+        {
+            if (i != 0) print (", ");
+            u8 t = d_FuncArgType (ftype, i);
+            print ("%s", (t <= 4) ? type_names[t] : "?");
+        }
+        print (") -> ");
+        for (u32 i = 0; i < ftype->numRets; ++i)
+        {
+            if (i != 0) print (", ");
+            u8 t = d_FuncRetType (ftype, i);
+            print ("%s", (t <= 4) ? type_names[t] : "?");
+        }
+        print ("\n");
+
+        print ("m3_bind: found    (");
+        for (u32 i = 0; i < i_function->funcType->numArgs; ++i)
+        {
+            if (i != 0) print (", ");
+            u8 t = d_FuncArgType (i_function->funcType, i);
+            print ("%s", (t <= 4) ? type_names[t] : "?");
+        }
+        print (") -> ");
+        for (u32 i = 0; i < i_function->funcType->numRets; ++i)
+        {
+            if (i != 0) print (", ");
+            u8 t = d_FuncRetType (i_function->funcType, i);
+            print ("%s", (t <= 4) ? type_names[t] : "?");
+        }
+        print ("\n");
 
         _throw ("function signature mismatch");
     }
@@ -172,4 +203,3 @@ M3Result  m3_LinkRawFunction  (IM3Module            io_module,
 {
     return FindAndLinkFunction (io_module, i_moduleName, i_functionName, i_signature, (voidptr_t)i_function, NULL);
 }
-

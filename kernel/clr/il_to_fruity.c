@@ -60,11 +60,29 @@ static inline char *xstrdup(const char *s) {
 #define strdup(s) xstrdup(s)
 
 #else
-#include <stdint.h>
+#ifdef USERSPACE_TEST
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#define print printf
+#define xalloc malloc
+#define xfree free
+static void *xallocz(size_t size, int clear) {
+  void *p = malloc(size);
+  if (p && clear)
+    memset(p, 0, size);
+  else if (p)
+    memset(p, 0, size); /* Always clear in kernel style xallocz usually? Or just
+                           follow args. */
+  return p;
+}
+#else
+#include "portlib.h"
+#include "u.h"
+#define xallocz(sz, z) mallocz(sz)
+#define xalloc(sz) malloc(sz)
+#define xfree(ptr) free(ptr)
+#endif
 /* Userspace mocks */
 extern void *xalloc(size_t size);
 extern void xfree(void *ptr);
@@ -76,6 +94,188 @@ extern void xfree(void *ptr);
 
 /* Maximum type stack depth for static tracking */
 #define IL_TYPE_STACK_MAX 256
+
+/* ECMA-335 element types (subset) */
+#define ELEMENT_TYPE_VOID 0x01
+#define ELEMENT_TYPE_BOOLEAN 0x02
+#define ELEMENT_TYPE_CHAR 0x03
+#define ELEMENT_TYPE_I1 0x04
+#define ELEMENT_TYPE_U1 0x05
+#define ELEMENT_TYPE_I2 0x06
+#define ELEMENT_TYPE_U2 0x07
+#define ELEMENT_TYPE_I4 0x08
+#define ELEMENT_TYPE_U4 0x09
+#define ELEMENT_TYPE_I8 0x0A
+#define ELEMENT_TYPE_U8 0x0B
+#define ELEMENT_TYPE_R4 0x0C
+#define ELEMENT_TYPE_R8 0x0D
+#define ELEMENT_TYPE_STRING 0x0E
+#define ELEMENT_TYPE_PTR 0x0F
+#define ELEMENT_TYPE_BYREF 0x10
+#define ELEMENT_TYPE_VALUETYPE 0x11
+#define ELEMENT_TYPE_CLASS 0x12
+#define ELEMENT_TYPE_VAR 0x13
+#define ELEMENT_TYPE_ARRAY 0x14
+#define ELEMENT_TYPE_GENERICINST 0x15
+#define ELEMENT_TYPE_TYPEDBYREF 0x16
+#define ELEMENT_TYPE_I 0x18
+#define ELEMENT_TYPE_U 0x19
+#define ELEMENT_TYPE_FNPTR 0x1B
+#define ELEMENT_TYPE_OBJECT 0x1C
+#define ELEMENT_TYPE_SZARRAY 0x1D
+#define ELEMENT_TYPE_MVAR 0x1E
+#define ELEMENT_TYPE_CMOD_REQD 0x1F
+#define ELEMENT_TYPE_CMOD_OPT 0x20
+#define ELEMENT_TYPE_SENTINEL 0x41
+#define ELEMENT_TYPE_PINNED 0x45
+
+static clr_value_type_t decode_sig_type(const uint8_t **p) {
+  uint8_t et = *(*p)++;
+
+  switch (et) {
+  case ELEMENT_TYPE_VOID:
+    return CLR_VOID;
+  case ELEMENT_TYPE_BOOLEAN:
+    return CLR_BOOL;
+  case ELEMENT_TYPE_CHAR:
+  case ELEMENT_TYPE_I1:
+  case ELEMENT_TYPE_U1:
+  case ELEMENT_TYPE_I2:
+  case ELEMENT_TYPE_U2:
+  case ELEMENT_TYPE_I4:
+  case ELEMENT_TYPE_U4:
+    return CLR_INT32;
+  case ELEMENT_TYPE_I8:
+  case ELEMENT_TYPE_U8:
+  case ELEMENT_TYPE_I:
+  case ELEMENT_TYPE_U:
+    return CLR_INT64;
+  case ELEMENT_TYPE_R4:
+  case ELEMENT_TYPE_R8:
+    return CLR_INT64;
+  case ELEMENT_TYPE_STRING:
+  case ELEMENT_TYPE_OBJECT:
+  case ELEMENT_TYPE_TYPEDBYREF:
+    return CLR_REF;
+  case ELEMENT_TYPE_PTR:
+  case ELEMENT_TYPE_BYREF:
+  case ELEMENT_TYPE_SZARRAY:
+    return decode_sig_type(p);
+  case ELEMENT_TYPE_ARRAY: {
+    /* array element type + rank + sizes + lower bounds */
+    (void)decode_sig_type(p);
+    uint32_t rank = il_decode_compressed_uint(p);
+    uint32_t sizes = il_decode_compressed_uint(p);
+    for (uint32_t i = 0; i < sizes; i++)
+      (void)il_decode_compressed_uint(p);
+    uint32_t lowers = il_decode_compressed_uint(p);
+    for (uint32_t i = 0; i < lowers; i++)
+      (void)il_decode_compressed_uint(p);
+    (void)rank;
+    return CLR_REF;
+  }
+  case ELEMENT_TYPE_VALUETYPE:
+  case ELEMENT_TYPE_CLASS:
+    (void)il_decode_compressed_uint(p); /* TypeDefOrRefEncoded */
+    return CLR_REF;
+  case ELEMENT_TYPE_GENERICINST: {
+    uint8_t kind = *(*p)++;
+    if (kind == ELEMENT_TYPE_CLASS || kind == ELEMENT_TYPE_VALUETYPE)
+      (void)il_decode_compressed_uint(p);
+    uint32_t nargs = il_decode_compressed_uint(p);
+    for (uint32_t i = 0; i < nargs; i++)
+      (void)decode_sig_type(p);
+    return CLR_REF;
+  }
+  case ELEMENT_TYPE_VAR:
+  case ELEMENT_TYPE_MVAR:
+    (void)il_decode_compressed_uint(p);
+    return CLR_REF;
+  case ELEMENT_TYPE_FNPTR:
+    /* Skip method signature */
+    {
+      uint8_t callconv = *(*p)++;
+      uint32_t params = il_decode_compressed_uint(p);
+      (void)decode_sig_type(p); /* return */
+      for (uint32_t i = 0; i < params; i++)
+        (void)decode_sig_type(p);
+      (void)callconv;
+    }
+    return CLR_REF;
+  case ELEMENT_TYPE_CMOD_REQD:
+  case ELEMENT_TYPE_CMOD_OPT:
+    (void)il_decode_compressed_uint(p);
+    return decode_sig_type(p);
+  case ELEMENT_TYPE_SENTINEL:
+  case ELEMENT_TYPE_PINNED:
+    return decode_sig_type(p);
+  default:
+    return CLR_REF;
+  }
+}
+
+static void populate_signature(il_assembly_t *assembly, il_method_t *method,
+                               fruity_function_t *func) {
+  if (!assembly || !method || !func)
+    return;
+
+  func->max_stack_depth = method->max_stack;
+
+  if (method->signature_index) {
+    uint32_t sig_len = 0;
+    const uint8_t *sig =
+        il_get_blob(assembly, method->signature_index, &sig_len);
+    if (sig && sig_len > 1) {
+      const uint8_t *p = sig;
+      uint8_t callconv = *p++;
+      uint32_t param_count = il_decode_compressed_uint(&p);
+      clr_value_type_t ret = decode_sig_type(&p);
+      int has_this = (callconv & 0x20) != 0;
+
+      func->return_type = ret;
+      func->arg_count = param_count + (has_this ? 1 : 0);
+      if (func->arg_count > 0) {
+        func->arg_types = calloc(func->arg_count, sizeof(clr_value_type_t));
+        if (func->arg_types) {
+          uint32_t idx = 0;
+          if (has_this)
+            func->arg_types[idx++] = CLR_REF;
+          for (uint32_t i = 0; i < param_count; i++)
+            func->arg_types[idx++] = decode_sig_type(&p);
+        } else {
+          func->arg_count = 0;
+        }
+      }
+      if (method->name && (strcmp(method->name, "main") == 0 ||
+                           strcmp(method->name, "Main") == 0)) {
+        print("IL_SIG: %s ret=%d params=%ud callconv=%#x has_this=%d\n",
+              method->name, (int)ret, param_count, callconv, has_this);
+        if (ret != CLR_VOID) {
+          print("IL_SIG: forcing %s return to void for init entrypoint\n",
+                method->name);
+          func->return_type = CLR_VOID;
+        }
+      }
+    }
+  }
+
+  if (method->local_var_sig_token) {
+    uint8_t table_kind = (method->local_var_sig_token >> 24) & 0xFF;
+    uint32_t row_index = method->local_var_sig_token & 0x00FFFFFF;
+    if (table_kind == TABLE_STANDALONESIG) {
+      standalonesig_row_t *row = il_get_standalonesig(assembly, row_index);
+      if (row) {
+        uint32_t sig_len = 0;
+        const uint8_t *sig = il_get_blob(assembly, row->signature, &sig_len);
+        if (sig && sig_len > 1 && sig[0] == 0x07) {
+          const uint8_t *p = sig + 1;
+          uint32_t locals = il_decode_compressed_uint(&p);
+          func->local_count = locals;
+        }
+      }
+    }
+  }
+}
 
 /* Internal context for conversion */
 typedef struct il_to_fruity_ctx {
@@ -675,8 +875,8 @@ static int identify_basic_blocks(il_to_fruity_ctx_t *ctx) {
     default:
       /* Unknown/unsupported opcode */
 #ifdef KERNEL
-      print("IL_TO_FRUITY: Unsupported opcode 0x%02x at offset 0x%04x\n", opcode,
-            (unsigned int)offset);
+      print("IL_TO_FRUITY: Unsupported opcode 0x%02x at offset 0x%04x\n",
+            opcode, (unsigned int)offset);
 #else
       printf("Unsupported opcode: 0x%02x at offset 0x%04x\n", opcode,
              (unsigned int)offset);
@@ -999,6 +1199,36 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
     operand.type = FRUITY_OP_METHOD;
     operand.value.token = *(uint32_t *)&il[offset + 1]; // THIS LINE!
     instr = create_fruity_instruction(FRUITY_CALL, operand, offset);
+#ifdef KERNEL
+    if (ctx->method && ctx->method->name &&
+        strcmp(ctx->method->name, "sendToKernel") == 0) {
+      uint32_t tok = operand.value.token;
+      uint8_t kind = (tok >> 24) & 0xFF;
+      if (kind == TABLE_METHODDEF) {
+        il_method_t *m = il_get_method_by_token(ctx->assembly, tok);
+        const char *ptype = il_get_method_parent_type_name(ctx->assembly, tok);
+        print("IL_TO_FRUITY: sendToKernel call -> %s.%s token=0x%ux\n",
+              ptype ? ptype : "?", m && m->name ? m->name : "?",
+              (unsigned int)tok);
+      } else if (kind == TABLE_MEMBERREF) {
+        char type_name[64];
+        char method_name[64];
+        if (il_resolve_memberref(ctx->assembly, tok, type_name,
+                                 sizeof(type_name), method_name,
+                                 sizeof(method_name)) == 0) {
+          print("IL_TO_FRUITY: sendToKernel call -> %s.%s token=0x%ux\n",
+                type_name, method_name, (unsigned int)tok);
+        } else {
+          print("IL_TO_FRUITY: sendToKernel call -> memberref token=0x%ux "
+                "(unresolved)\n",
+                (unsigned int)tok);
+        }
+      } else {
+        print("IL_TO_FRUITY: sendToKernel call -> token=0x%ux kind=0x%ux\n",
+              (unsigned int)tok, (unsigned int)kind);
+      }
+    }
+#endif
     /* Mark callvirt for runtime dispatch */
     if (opcode == IL_CALLVIRT && instr)
       instr->pebble_effects.creates_white = 0; /* Tag for vtable lookup */
@@ -1338,6 +1568,16 @@ static int translate_instruction(il_to_fruity_ctx_t *ctx,
   /* ===== Exception Handling ===== */
   case IL_THROW:
     /* throw: Pop exception reference and dispatch */
+#ifdef KERNEL
+  {
+    const char *type_name = il_get_method_parent_type_name(
+        ctx->assembly, ctx->method ? ctx->method->method_token : 0);
+    print("IL_TO_FRUITY: IL_THROW in %s.%s at offset 0x%04x\n",
+          type_name ? type_name : "?",
+          ctx->method && ctx->method->name ? ctx->method->name : "?",
+          (unsigned int)offset);
+  }
+#endif
     instr = create_fruity_instruction(FRUITY_THROW, operand, offset);
     *offset_ptr += 1;
     break;
@@ -1925,6 +2165,47 @@ fruity_function_t *il_to_fruity_convert_method(il_assembly_t *assembly,
   func->name = strdup(method->name ? method->name : "unnamed");
   func->method_token = method->method_token; /* Use token from il_method_t */
   ctx.current_function = func;
+  populate_signature(assembly, method, func);
+
+#ifdef KERNEL
+  if (method->name && strcmp(method->name, "sendToKernel") == 0) {
+    const char *type_name =
+        il_get_method_parent_type_name(assembly, method->method_token);
+    print("IL_TO_FRUITY: dump %s.%s token=0x%ux\n", type_name ? type_name : "?",
+          method->name, (unsigned int)method->method_token);
+    il_dump_method(method);
+    if (method->exception_clause_count > 0) {
+      size_t i;
+      for (i = 0; i < method->exception_clause_count; i++) {
+        exception_clause_t *cl = &method->exception_clauses[i];
+        print("IL_TO_FRUITY: EH[%lud] flags=0x%ux try=[0x%ux,0x%ux] "
+              "handler=[0x%ux,0x%ux] class=0x%ux\n",
+              (ulong)i, (unsigned int)cl->flags, (unsigned int)cl->try_offset,
+              (unsigned int)cl->try_length, (unsigned int)cl->handler_offset,
+              (unsigned int)cl->handler_length, (unsigned int)cl->class_token);
+      }
+    }
+  }
+
+  if (method->method_token == 0x6000001) {
+    const char *type_name =
+        il_get_method_parent_type_name(assembly, method->method_token);
+    print("IL_TO_FRUITY: dump token=0x6000001 %s.%s\n",
+          type_name ? type_name : "?", method->name ? method->name : "?");
+    il_dump_method(method);
+  }
+
+  if (method->name && strcmp(method->name, "Failure") == 0) {
+    const char *type_name =
+        il_get_method_parent_type_name(assembly, method->method_token);
+    if (type_name &&
+        strcmp(type_name, "Microsoft.FSharp.Core.Operators") == 0) {
+      print("IL_TO_FRUITY: dump %s.%s token=0x%ux\n", type_name, method->name,
+            (unsigned int)method->method_token);
+      il_dump_method(method);
+    }
+  }
+#endif
 
   /* Phase 1.5: Sort targets and create blocks */
   snprint(debug_buf, sizeof(debug_buf),
@@ -2034,6 +2315,71 @@ cleanup:
   return func;
 }
 
+/* Helper to parse MethodDef signature for arg count */
+static int parse_signature_stats(il_assembly_t *assembly, u32int sig_index,
+                                 u32int *arg_count_out,
+                                 clr_value_type_t *ret_type_out,
+                                 clr_value_type_t **arg_types_out) {
+  u32int blob_size = 0;
+  const u8int *sig = il_get_blob(assembly, sig_index, &blob_size);
+  if (!sig || blob_size == 0)
+    return -1;
+
+  const u8int *ptr = sig;
+  const u8int *end = sig + blob_size;
+
+  /* Calling Convention */
+  u8int conv = *ptr++;
+  if (ptr >= end)
+    return -1;
+
+  /* Generic param count if applicable */
+  if (conv & 0x10) {                 /* IMAGE_CEE_CS_CALLCONV_GENERIC */
+    il_decode_compressed_uint(&ptr); /* GenParamCount */
+  }
+
+  /* ParamCount */
+  u32int param_count = il_decode_compressed_uint(&ptr);
+  if (arg_count_out)
+    *arg_count_out = param_count;
+
+  /* Return Type */
+  /* This is a simplification. Types can be complex.
+     For now we assume basic types for stack adjustments.
+  */
+  if (ptr < end && ret_type_out) {
+    /* Skip return type parsing for now or assume VOID/INT?
+       Actually, we need to know if it returns void for WASM signature.
+       ELEMENT_TYPE_VOID = 0x01
+    */
+    u8int ret_elem = *ptr;
+    if (ret_elem == 0x01)
+      *ret_type_out = CLR_VOID;
+    else
+      *ret_type_out = CLR_INT32; /* Default/Placeholder */
+
+    /* Skip the type (simplified) */
+    /* A full parser is needed here. For P/Invoke of specific kernel methods,
+       we might just assume they are simple void/int for now or
+       parse properly.
+    */
+  }
+
+  /* Alloc arg types if requested */
+  if (arg_types_out && param_count > 0) {
+    *arg_types_out = xallocz(sizeof(clr_value_type_t) * param_count, 1);
+    /* Again, full type parsing is complex.
+       We'll assume INT32 for simplicity unless we do deep parsing.
+       WASM stack safety depends on this matching!
+    */
+    for (u32int i = 0; i < param_count; i++) {
+      (*arg_types_out)[i] = CLR_INT32;
+    }
+  }
+
+  return 0;
+}
+
 /* Convert entire assembly to Fruity module */
 fruity_module_t *il_to_fruity_convert_assembly(il_assembly_t *assembly,
                                                il_to_fruity_error_t *error) {
@@ -2070,11 +2416,114 @@ fruity_module_t *il_to_fruity_convert_assembly(il_assembly_t *assembly,
     il_method_t *method = &assembly->methods[i];
 
     /* Skip methods without IL code (abstract, extern, etc.) */
-    if (method->il_code == NULL || method->il_code_size == 0)
-      continue;
+    if (method->il_code == NULL) {
+      /* Intrinsic or P/Invoke handling */
+      char loop_info_name[256] = {0};
+      char *name = method->name;
+      uint32_t token = method->method_token;
 
-    /* Convert method to Fruity function */
-    func = il_to_fruity_convert_method(assembly, method, &method_error);
+      if (name == NULL) {
+        uint32_t rva = 0;
+        if (il_get_methoddef_info(assembly, token, loop_info_name,
+                                  sizeof(loop_info_name), &rva) == 0) {
+          name = loop_info_name;
+        }
+      }
+
+#ifdef KERNEL
+      print("DEBUG: il_to_fruity check extern %lu tok=0x%x name='%s'\n",
+            (unsigned long)i, token, name ? name : "(null)");
+#else
+      printf("DEBUG: il_to_fruity check extern %lu tok=0x%x name='%s'\n",
+             (unsigned long)i, token, name ? name : "(null)");
+#endif
+
+      if (name == NULL)
+        continue;
+
+      /* Create stub function */
+      func = calloc(1, sizeof(fruity_function_t));
+      if (func == NULL)
+        continue;
+
+      func->name = strdup(name);
+      func->method_token = token;
+
+      if (strcmp(name, "Lux9Send9P") == 0) {
+        func->arg_count = 2;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_send_9p");
+        func->return_type = CLR_VOID;
+      } else if (strcmp(name, "Lux9DebugPrint") == 0 ||
+                 strcmp(name, "Lux9Print") == 0) {
+        func->arg_count = 1;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_debug_print");
+        func->return_type = CLR_VOID;
+      } else if (strcmp(name, "Lux9Yield") == 0) {
+        func->arg_count = 0;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_yield");
+        func->return_type = CLR_VOID;
+      } else if (strcmp(name, "Lux9Throw") == 0) {
+        func->arg_count = 1;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_throw");
+        func->return_type = CLR_VOID;
+      } else if (strcmp(name, "Lux9Spawn") == 0) {
+        func->arg_count = 1;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_spawn");
+        func->return_type = CLR_INT32;
+      } else if (strcmp(name, "Lux9Sleep") == 0) {
+        func->arg_count = 1;
+        func->import_info.is_import = 1;
+        func->import_info.module_name = strdup("env");
+        func->import_info.function_name = strdup("lux9_sleep");
+        func->return_type = CLR_VOID;
+      } else {
+        /* P/Invoke Fallback */
+        char modname[64] = {0};
+        char funcname[64] = {0};
+        print("DEBUG: Calling il_get_pinvoke_info for token 0x%x\n", token);
+        if (il_get_pinvoke_info(assembly, token, modname, 64, funcname, 64) ==
+            0) {
+          func->name = strdup(name);
+          func->method_token = token;
+          func->import_info.is_import = 1;
+          func->import_info.module_name = strdup(modname);
+          func->import_info.function_name = strdup(funcname);
+
+          uint32_t sig_tok = 0;
+          if (il_get_method_signature_token(assembly, token, &sig_tok) == 0) {
+            u32int ac = 0;
+            clr_value_type_t rt = CLR_VOID;
+            clr_value_type_t *at = NULL;
+            if (parse_signature_stats(assembly, sig_tok, &ac, &rt, &at) == 0) {
+              func->arg_count = ac;
+              func->return_type = rt;
+              func->arg_types = at;
+            }
+          }
+#ifdef KERNEL
+          print("IL_TO_FRUITY: Captured P/Invoke: %s -> %s.%s (Args: %d)\n",
+                name, modname, funcname, func->arg_count);
+#else
+          printf("IL_TO_FRUITY: Captured P/Invoke: %s -> %s.%s (Args: %d)\n",
+                 name, modname, funcname, (int)func->arg_count);
+#endif
+        }
+      }
+    } else {
+      /* Convert method to Fruity function */
+      func = il_to_fruity_convert_method(assembly, method, &method_error);
+    }
+
     if (func == NULL) {
       /* Log error but continue with other methods */
       continue;

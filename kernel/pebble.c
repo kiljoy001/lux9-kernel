@@ -161,20 +161,11 @@ PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   int i, idx;
   ulong pegged_size;
-  int diff;
 
   if (ps == nil)
     return nil;
 
-  /* BEVIS: Kinetic Defense - Proof-of-Work Gating (Physics Security) */
-  if (up != nil) {
-    diff = pow_calculate_difficulty(POW_OP_ALLOC, size);
-    if (!pow_verify(up->pow_nonce, (u64int)up->pid, diff)) {
-      print("PEBBLE: PoW failure pid=%lud size=%lud diff=%d nonce=%llud\n",
-            up->pid, size, diff, up->pow_nonce);
-      return nil; /* E_POW_REQUIRED */
-    }
-  }
+  /* PoW is enforced on budget requests; issuance only burns budget. */
 
   /* Peg size to 8-byte quantum (unit of account) */
   if (size < PEBBLE_MIN_ALLOC)

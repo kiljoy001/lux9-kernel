@@ -18,6 +18,26 @@ typedef unsigned long ulong;
 typedef unsigned long long uvlong;
 typedef long long vlong;
 typedef unsigned long usize;
+#elif defined(USERSPACE_TEST)
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define xalloc malloc
+#define xfree free
+void *xallocz(size_t size,
+              int zero); /* Defined in test harness or map to calloc */
+#define xallocz(s, z) calloc(1, s)
+#define IL_FREE free
+#define IL_ALLOC malloc
+#define snprint snprintf
+#else
+#include "portlib.h"
+#include "u.h"
+#endif
+
+/* Standard types */
+#include <stdint.h>
+#ifndef USERSPACE_TEST
 typedef unsigned long uintptr;
 typedef unsigned char u8int;
 typedef unsigned short u16int;
@@ -28,11 +48,13 @@ typedef signed short s16int;
 typedef signed int s32int;
 typedef signed long long s64int;
 typedef u32int Rune;
+#endif
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
 #define USED(x)                                                                \
   if (x) {                                                                     \
   }
 
+#ifndef USERSPACE_TEST
 typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
@@ -58,7 +80,9 @@ int snprint(char *buf, int len, char *fmt, ...);
       strcpy(_d, s);                                                           \
     _d;                                                                        \
   })
+#endif
 
+#if 0 /* Old else block? */
 #else
 /* Userspace mode: use standard C library */
 #include <stdio.h>
@@ -1213,19 +1237,160 @@ il_method_t *il_get_method_by_token(il_assembly_t *assembly, uint32_t token) {
   // Get method name from #Strings heap
   const char *method_name = il_get_string(assembly, row->name_index);
   if (method_name == NULL) {
+    if (token == 0x6000001) {
+      IL_PRINT("IL_PARSER: method token 0x6000001 has null name_index=0x%x\n",
+               row->name_index);
+    }
     IL_FREE(methods);
     return NULL;
   }
 
   // Parse method body
   il_method_t *method = parse_method(assembly, row->rva, method_name);
+  if (!method && token == 0x6000001) {
+    IL_PRINT(
+        "IL_PARSER: parse_method failed token=0x6000001 rva=0x%x name=%s\n",
+        row->rva, method_name);
+  }
   if (method) {
     method->impl_flags = row->impl_flags;
     method->method_token = token; /* Store the token for later use */
+    method->signature_index = row->signature_index;
   }
 
   IL_FREE(methods);
   return method;
+}
+
+int il_get_methoddef_info(il_assembly_t *assembly, uint32_t token,
+                          char *name_out, size_t name_len, uint32_t *rva_out) {
+  uint8_t table_kind = (token >> 24) & 0xFF;
+  uint32_t row_index = token & 0x00FFFFFF;
+
+  if (table_kind != TABLE_METHODDEF)
+    return -1;
+
+  size_t method_count;
+  methoddef_row_t *methods = parse_methoddef_table(assembly, &method_count);
+  if (methods == NULL || row_index == 0 || row_index > method_count) {
+    if (methods)
+      IL_FREE(methods);
+    return -1;
+  }
+
+  methoddef_row_t *row = &methods[row_index - 1];
+  const char *method_name = il_get_string(assembly, row->name_index);
+  if (!method_name) {
+    IL_FREE(methods);
+    return -1;
+  }
+
+  if (name_out && name_len > 0) {
+    strncpy(name_out, method_name, name_len - 1);
+    name_out[name_len - 1] = 0;
+  }
+  if (rva_out)
+    *rva_out = row->rva;
+
+  IL_FREE(methods);
+  return 0;
+}
+
+int il_get_method_signature_token(il_assembly_t *assembly, uint32_t token,
+                                  uint32_t *sig_out) {
+  uint8_t table_kind = (token >> 24) & 0xFF;
+  uint32_t row_index = token & 0x00FFFFFF;
+
+  if (table_kind != TABLE_METHODDEF)
+    return -1;
+
+  size_t method_count;
+  methoddef_row_t *methods = parse_methoddef_table(assembly, &method_count);
+  if (methods == NULL || row_index == 0 || row_index > method_count) {
+    if (methods)
+      IL_FREE(methods);
+    return -1;
+  }
+
+  methoddef_row_t *row = &methods[row_index - 1];
+  if (sig_out)
+    *sig_out = row->signature_index;
+
+  IL_FREE(methods);
+  return 0;
+}
+
+static int type_name_matches(const char *want, const char *ns,
+                             const char *name) {
+  char full[128];
+
+  if (want == NULL || want[0] == 0)
+    return 1;
+
+  if (ns && ns[0]) {
+    snprint(full, sizeof(full), "%s.%s", ns, name ? name : "");
+    if (strcmp(want, full) == 0)
+      return 1;
+  }
+
+  if (name && strcmp(want, name) == 0)
+    return 1;
+
+  return 0;
+}
+
+int il_find_methoddef_by_name(il_assembly_t *assembly, const char *type_name,
+                              const char *method_name, uint32_t *token_out) {
+  size_t method_count;
+  methoddef_row_t *methods;
+
+  if (!assembly || !method_name || !token_out)
+    return -1;
+
+  if (assembly->typedefs == NULL) {
+    assembly->typedefs =
+        parse_typedef_table(assembly, &assembly->typedef_count);
+  }
+  if (!assembly->typedefs)
+    return -1;
+
+  methods = parse_methoddef_table(assembly, &method_count);
+  if (!methods)
+    return -1;
+
+  for (size_t i = 0; i < assembly->typedef_count; i++) {
+    uint32_t start = assembly->typedefs[i].method_list;
+    uint32_t end_idx;
+
+    if (i + 1 < assembly->typedef_count)
+      end_idx = assembly->typedefs[i + 1].method_list;
+    else
+      end_idx = (uint32_t)method_count + 1;
+
+    const char *tname =
+        il_get_string(assembly, assembly->typedefs[i].name_index);
+    const char *tnspace =
+        il_get_string(assembly, assembly->typedefs[i].namespace_index);
+
+    if (!type_name_matches(type_name, tnspace, tname))
+      continue;
+
+    if (start == 0)
+      continue;
+
+    for (uint32_t m = start; m < end_idx && m <= method_count; m++) {
+      methoddef_row_t *row = &methods[m - 1];
+      const char *mname = il_get_string(assembly, row->name_index);
+      if (mname && strcmp(mname, method_name) == 0) {
+        *token_out = (TABLE_METHODDEF << 24) | m;
+        IL_FREE(methods);
+        return 0;
+      }
+    }
+  }
+
+  IL_FREE(methods);
+  return -1;
 }
 
 il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
@@ -1242,6 +1407,8 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
     if (method_name && strcmp(method_name, name) == 0) {
       // Found it!
       il_method_t *method = parse_method(assembly, methods[i].rva, name);
+      if (method)
+        method->signature_index = methods[i].signature_index;
       IL_FREE(methods);
       return method;
     }
@@ -1761,6 +1928,10 @@ int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
 
 /* Implement Field functions */
 
+static uint32_t read_table_index(uint8_t **ptr, int wide);
+static uint8_t *il_get_table_start(il_assembly_t *assembly,
+                                   metadata_table_kind_t table);
+
 field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid) {
   uint32_t table = TABLE_FIELD;
   uint8_t *table_start = il_get_table_start(assembly, table);
@@ -1785,10 +1956,6 @@ field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid) {
   return row;
 }
 
-static uint32_t read_table_index(uint8_t **ptr, int wide);
-static uint8_t *il_get_table_start(il_assembly_t *assembly,
-                                   metadata_table_kind_t table);
-
 int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
                         char *module_out, size_t module_len, char *func_out,
                         size_t func_len) {
@@ -1800,6 +1967,8 @@ int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
     return -1;
 
   uint8_t *ptr = il_get_table_start(assembly, table);
+  printf("DEBUG: il_get_pinvoke_info table=0x%x count=%u ptr=%p\n", table,
+         count, ptr);
   if (!ptr)
     return -1;
 
@@ -1841,6 +2010,10 @@ int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
     else
       target_token = (TABLE_FIELD << 24) | index;
 
+    printf("DEBUG: ImplMap row %d: MemberFwd=0x%x Tag=%d Index=%d Target=0x%x "
+           "vs Method=0x%x\n",
+           i, member_fwd, tag, index, target_token, method_token);
+
     if (target_token == method_token) {
       /* FOUND */
       const char *name = il_get_string(assembly, import_name_idx);
@@ -1874,4 +2047,56 @@ int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
     }
   }
   return -1;
+}
+
+/* Load all methods into assembly->methods cache */
+int il_load_all_methods(il_assembly_t *assembly) {
+  if (!assembly)
+    return -1;
+
+  size_t count = assembly->tables_header.row_counts[TABLE_METHODDEF];
+  if (count == 0)
+    return 0;
+
+  assembly->methods = xallocz(sizeof(il_method_t) * count, 1);
+  assembly->method_count = count;
+
+  for (size_t i = 0; i < count; i++) {
+    uint32_t token = (TABLE_METHODDEF << 24) | (i + 1);
+    il_method_t *m = il_get_method_by_token(assembly, token);
+
+    if (m) {
+      /* Copy to array */
+      assembly->methods[i] = *m;
+      /* We don't free m, but we should be careful about double free
+         of name/il_code if we free m later.
+         il_get_method_by_token allocates m.
+         We shallow copy m content.
+         We should FREE m container but keep contents.
+      */
+      IL_FREE(m);
+    } else {
+      /* RVA=0 or error. Init basic fields for IL_TO_FRUITY loop */
+      assembly->methods[i].method_token = token;
+      /* Ensure il_code is NULL so loop sees it as extern */
+      assembly->methods[i].il_code = NULL;
+      assembly->methods[i].il_code_size = 0;
+
+      char name[256] = {0};
+      uint32_t rva_dummy = 0;
+      if (il_get_methoddef_info(assembly, token, name, sizeof(name),
+                                &rva_dummy) == 0) {
+        /* We need to allocate name because il_free_assembly will free it */
+        /* In userspace test, xalloc is malloc/calloc equivalent. */
+        /* We use kstrdup or strdup if available, or just malloc+strcpy */
+        size_t len = strlen(name);
+        char *s = xalloc(len + 1);
+        if (s) {
+          strcpy(s, name);
+          assembly->methods[i].name = s;
+        }
+      }
+    }
+  }
+  return 0;
 }

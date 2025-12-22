@@ -112,8 +112,8 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
 
           ftype->types[r] = retType;
         }
-        // print("ParseSection_Type: calling memcpy\n");
-        // memcpy(ftype->types + numRets, argTypes, numArgs);
+        /* Copy argument types after return types */
+        memcpy(ftype->types + numRets, argTypes, numArgs);
 
         // m3log(parse, "    type %2d: %s", i, SPrintFuncTypeSignature(ftype));
 
@@ -634,6 +634,7 @@ M3Result m3_ParseModule(IM3Environment i_environment, IM3Module *o_module,
     // print("m3_ParseModule: module allocated ok\n");
     module->environment = i_environment;
     module->name = ".unnamed";
+    module->startFunction = -1; /* No start function by default */
 
     const u8 *pos = i_bytes;
     const u8 *end = pos + i_numBytes;

@@ -102,9 +102,21 @@ d_m3BeginExternC
                       _mem->runtime, "memory size: %zu; access offset: %zu; size: %u",     \
                       _mem->length, OFFSET, SIZE))
 #else
-  #define d_outOfBounds newTrap (m3Err_trapOutOfBoundsMemoryAccess)
+  #define d_outOfBounds do { \
+        print("m3_oob: memory size=%lud access offset=%lud\n", \
+              (ulong)_mem->length, (ulong)operand); \
+        newTrap (ErrorRuntime (m3Err_trapOutOfBoundsMemoryAccess, \
+                _mem->runtime, "memory size: %zu; access offset: %zu", \
+                _mem->length, operand)); \
+      } while (0)
 
-#   define d_outOfBoundsMemOp(OFFSET, SIZE) newTrap (m3Err_trapOutOfBoundsMemoryAccess)
+#   define d_outOfBoundsMemOp(OFFSET, SIZE) do { \
+        print("m3_oob: memory size=%lud access offset=%lud size=%ud\n", \
+              (ulong)_mem->length, (ulong)(OFFSET), (uint)(SIZE)); \
+        newTrap (ErrorRuntime (m3Err_trapOutOfBoundsMemoryAccess, \
+                _mem->runtime, "memory size: %zu; access offset: %zu; size: %u", \
+                _mem->length, OFFSET, SIZE)); \
+      } while (0)
 
 #endif
 

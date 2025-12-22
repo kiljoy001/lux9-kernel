@@ -31,4 +31,12 @@ module BCLTest =
         let v = match o with Some x -> x | None -> 0
         Printf.printfn "Option: %d" v
         
+        // Test Seq
+        let seq1 = Seq.init 5 (fun i -> i)
+        let seq2 = Seq.map (fun x -> x * 2) seq1
+        let sum = Seq.fold (fun acc x -> acc + x) 0 seq2
+        Printf.printfn "Seq Sum: %d" sum
+        
+        if sum <> 20 then failwith "Seq test failed"
+
         Printf.printfn "FSharp BCL Verification Complete"

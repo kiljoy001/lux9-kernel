@@ -75,8 +75,8 @@ static void proc0(void *arg) {
   /* This must happen before any newpage() calls */
   /* Budget is in tokens; init budget was reserved from global pool in
    * pebbleinit() */
-  up->pebble.colorless_bank = PEBBLE_INIT_BUDGET / PEBBLE_BYTES_PER_TOKEN;
-  print("PEBBLE: granted %lud tokens (%dMB) init budget to proc0\n",
+  up->pebble.colorless_bank = PEBBLE_INIT_BUDGET;
+  print("PEBBLE: granted %lud bytes (%dMB) init budget to proc0\n",
         up->pebble.colorless_bank, PEBBLE_INIT_BUDGET / (1024 * 1024));
 
   /* Start logging now that we're on a real stack; clock already armed */

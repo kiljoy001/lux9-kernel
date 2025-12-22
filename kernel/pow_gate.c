@@ -43,10 +43,19 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
   /* Base difficulty by operation class */
   switch (op_class) {
   case POW_OP_ALLOC:
-    /* Linear scaling with memory size: 1 bit per 64MB */
+    /* Budget requests: modest base cost + gradual penalty for tiny top-ups */
     if (magnitude < 4096)
-      return 0; /* Free for small allocs */
-    diff = 4 + (magnitude / (64 * 1024 * 1024));
+      magnitude = 4096;
+    diff = 1 + (magnitude / (64 * 1024 * 1024));
+    if (magnitude < (64 * 1024 * 1024)) {
+      ulong bucket = magnitude;
+      int penalty = 0;
+      while (bucket < (64 * 1024 * 1024) && penalty < 6) {
+        penalty++;
+        bucket <<= 1;
+      }
+      diff += penalty;
+    }
     break;
 
   case POW_OP_STACK_ALLOC:

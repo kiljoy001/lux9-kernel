@@ -84,7 +84,8 @@ extern void xfree(void *ptr);
 #define CALL_SCRATCH_MAX 16
 
 /* Helpers */
-static void emit_push_i64_from_local(wasm_buffer_t *code, u32int stack_ptr_local,
+static void emit_push_i64_from_local(wasm_buffer_t *code,
+                                     u32int stack_ptr_local,
                                      u32int value_local) {
   wasm_emit_u8(code, WASM_OP_LOCAL_GET);
   wasm_emit_uleb128(code, stack_ptr_local);
@@ -187,7 +188,6 @@ static u8int valtype_to_wasm(clr_value_type_t t) {
   switch (t) {
   case CLR_INT32:
   case CLR_BOOL:
-    return WASM_TYPE_I32;
   case CLR_INT64:
   case CLR_REF:
   default:
@@ -205,23 +205,80 @@ static fruity_function_t *find_function_by_token(fruity_module_t *module,
   return nil;
 }
 
-static int resolve_function_index(fruity_module_t *module, u32int method_token) {
-  int idx = 0;
-  for (fruity_function_t *f = module->functions_head; f; f = f->next, idx++) {
-    if (f->method_token == method_token)
-      return idx;
+static int resolve_function_index(fruity_module_t *module,
+                                  u32int method_token) {
+  /* WASM Function Index Space: [Imports] [Locals]
+   * We need to map the method_token to the correct index in this space.
+   * Since the linked list might be interleaved, we must calculate the
+   * correct logical index.
+   */
+  fruity_function_t *target = find_function_by_token(module, method_token);
+  if (!target)
+    return -1;
+
+  int import_count = 0;
+  int import_idx = -1;
+  int local_count = 0;
+  int local_idx = -1;
+
+  /* Single pass to calculate indices */
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->import_info.is_import) {
+      if (f == target)
+        import_idx = import_count;
+      import_count++;
+    } else {
+      if (f == target)
+        local_idx = local_count;
+      local_count++;
+    }
   }
-  return -1;
+
+  if (target->import_info.is_import) {
+    /* It's an import, its index is just its position among imports */
+    return import_idx;
+  } else {
+    /* It's a local, its index is (total_imports + position_among_locals) */
+    return import_count + local_idx;
+  }
 }
 
 static int resolve_function_index_by_name(fruity_module_t *module,
                                           const char *name) {
-  int idx = 0;
-  for (fruity_function_t *f = module->functions_head; f; f = f->next, idx++) {
-    if (f->name && name && strcmp(f->name, name) == 0)
-      return idx;
+  fruity_function_t *target = nil;
+  /* Find target first */
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->name && name && strcmp(f->name, name) == 0) {
+      target = f;
+      break;
+    }
   }
-  return -1;
+  if (!target)
+    return -1;
+
+  /* Calculate index */
+  int import_count = 0;
+  int import_idx = -1;
+  int local_count = 0;
+  int local_idx = -1;
+
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->import_info.is_import) {
+      if (f == target)
+        import_idx = import_count;
+      import_count++;
+    } else {
+      if (f == target)
+        local_idx = local_count;
+      local_count++;
+    }
+  }
+
+  if (target->import_info.is_import) {
+    return import_idx;
+  } else {
+    return import_count + local_idx;
+  }
 }
 
 typedef struct {
@@ -275,18 +332,14 @@ static void resolve_runtime_imports(fruity_module_t *module,
       resolve_function_index_by_name(module, "clr_is_instance_of");
   imp->clr_ptr_add = resolve_function_index_by_name(module, "clr_ptr_add");
   imp->clr_load_i64 = resolve_function_index_by_name(module, "clr_load_i64");
-  imp->clr_store_i64 =
-      resolve_function_index_by_name(module, "clr_store_i64");
+  imp->clr_store_i64 = resolve_function_index_by_name(module, "clr_store_i64");
   imp->clr_memmove = resolve_function_index_by_name(module, "clr_memmove");
   imp->clr_memset = resolve_function_index_by_name(module, "clr_memset");
   imp->clr_newobj = resolve_function_index_by_name(module, "clr_newobj");
   imp->clr_newarr = resolve_function_index_by_name(module, "clr_newarr");
-  imp->clr_array_len =
-      resolve_function_index_by_name(module, "clr_array_len");
-  imp->clr_array_get =
-      resolve_function_index_by_name(module, "clr_array_get");
-  imp->clr_array_set =
-      resolve_function_index_by_name(module, "clr_array_set");
+  imp->clr_array_len = resolve_function_index_by_name(module, "clr_array_len");
+  imp->clr_array_get = resolve_function_index_by_name(module, "clr_array_get");
+  imp->clr_array_set = resolve_function_index_by_name(module, "clr_array_set");
   imp->clr_array_elem_addr =
       resolve_function_index_by_name(module, "clr_array_elem_addr");
   imp->clr_box = resolve_function_index_by_name(module, "clr_box");
@@ -321,6 +374,7 @@ static void emit_call_method(fruity_module_t *module, wasm_buffer_t *code,
   fruity_function_t *target = find_function_by_token(module, method_token);
   int target_idx = resolve_function_index(module, method_token);
   if (target_idx < 0 || target == nil) {
+    print("WASM: missing method token=0x%ux\n", (unsigned int)method_token);
     emit_call_throw(code, imp);
     return;
   }
@@ -352,15 +406,16 @@ static void emit_call_method(fruity_module_t *module, wasm_buffer_t *code,
 }
 
 /* Compile a single function body */
-static int compile_function_body(fruity_module_t *module, fruity_function_t *func,
+static int compile_function_body(fruity_module_t *module,
+                                 fruity_function_t *func,
                                  runtime_imports_t *imp, wasm_buffer_t *code) {
   u32int arg_count = func->arg_count;
   u32int local_base = arg_count;
 
-  u32int local_target = local_base + 0;      /* i32 */
-  u32int local_frame_base = local_base + 1;  /* i32 */
-  u32int local_stack_ptr = local_base + 2;   /* i32 */
-  u32int local_i64_base = local_base + 3;    /* i64 */
+  u32int local_target = local_base + 0;     /* i32 */
+  u32int local_frame_base = local_base + 1; /* i32 */
+  u32int local_stack_ptr = local_base + 2;  /* i32 */
+  u32int local_i64_base = local_base + 3;   /* i64 */
   u32int local_scratch_a = local_i64_base + 0;
   u32int local_scratch_b = local_i64_base + 1;
   u32int local_scratch_c = local_i64_base + 2;
@@ -369,6 +424,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
 
   u32int i32_locals = 3;
   u32int i64_locals = 3 + CALL_SCRATCH_MAX + func->local_count;
+  int saw_return = 0;
 
   /* Declare locals */
   wasm_emit_uleb128(code, 2); /* 2 groups */
@@ -383,7 +439,8 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
   u32int stack_offset = locals_offset + (u32int)(func->local_count * 8);
   u32int frame_size = stack_offset + (u32int)(func->max_stack_depth * 8);
 
-  /* Prologue: frame_base = global_sp; global_sp += frame_size; stack_ptr = base + stack_offset */
+  /* Prologue: frame_base = global_sp; global_sp += frame_size; stack_ptr = base
+   * + stack_offset */
   wasm_emit_u8(code, WASM_OP_GLOBAL_GET);
   wasm_emit_uleb128(code, 0);
   wasm_emit_u8(code, WASM_OP_LOCAL_SET);
@@ -672,7 +729,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           emit_call_import(code, imp->lux_release);
           break;
         case FRUITY_LOAD_STRING:
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.i32);
           emit_call_import(code, imp->clr_string_from_literal);
           wasm_emit_u8(code, WASM_OP_LOCAL_SET);
@@ -823,7 +880,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           emit_call_import(code, imp->clr_store_i64);
           break;
         case FRUITY_LOAD_STATIC:
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_get_static_field);
           emit_call_import(code, imp->clr_load_i64);
@@ -833,7 +890,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           break;
         case FRUITY_STORE_STATIC:
           emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_get_static_field);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
@@ -898,10 +955,10 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           emit_peek_i64_to_local(code, local_stack_ptr, local_scratch_a);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
           wasm_emit_uleb128(code, local_scratch_a);
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_is_instance_of);
-          wasm_emit_u8(code, WASM_OP_I32_EQZ);
+          wasm_emit_u8(code, WASM_OP_I64_EQZ);
           wasm_emit_u8(code, WASM_OP_IF);
           wasm_emit_u8(code, WASM_TYPE_EMPTY);
           emit_call_throw(code, imp);
@@ -911,9 +968,11 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
           wasm_emit_uleb128(code, local_scratch_a);
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_is_instance_of);
+          wasm_emit_u8(code, WASM_OP_I64_EQZ);
+          wasm_emit_u8(code, WASM_OP_I32_EQZ);
           wasm_emit_u8(code, WASM_OP_IF);
           wasm_emit_u8(code, WASM_TYPE_I64);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
@@ -991,7 +1050,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           emit_call_import(code, imp->clr_stobj);
           break;
         case FRUITY_NEWOBJ:
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_newobj);
           wasm_emit_u8(code, WASM_OP_LOCAL_SET);
@@ -1000,7 +1059,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           break;
         case FRUITY_NEWARR:
           emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           wasm_emit_u8(code, WASM_OP_LOCAL_GET);
           wasm_emit_uleb128(code, local_scratch_a);
@@ -1077,6 +1136,9 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           break;
 
         case FRUITY_RET:
+          saw_return = 1;
+          print("WASM: emit ret func=%s return_type=%d\n",
+                func->name ? func->name : "?", (int)func->return_type);
           /* Restore global stack top to frame base */
           if (func->return_type != CLR_VOID) {
             emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
@@ -1162,7 +1224,8 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
 
         case FRUITY_SWITCH: {
           emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
-          fruity_switch_targets_t *targets = instr->operand.value.switch_targets;
+          fruity_switch_targets_t *targets =
+              instr->operand.value.switch_targets;
           if (targets && targets->count > 0) {
             wasm_emit_u8(code, WASM_OP_BLOCK);
             wasm_emit_u8(code, WASM_TYPE_EMPTY);
@@ -1207,7 +1270,7 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
           break;
 
         case FRUITY_SIZEOF:
-          wasm_emit_u8(code, WASM_OP_I32_CONST);
+          wasm_emit_u8(code, WASM_OP_I64_CONST);
           wasm_emit_sleb128(code, instr->operand.value.token);
           emit_call_import(code, imp->clr_get_type_size);
           wasm_emit_u8(code, WASM_OP_LOCAL_SET);
@@ -1268,6 +1331,22 @@ static int compile_function_body(fruity_module_t *module, fruity_function_t *fun
     wasm_emit_u8(code, WASM_OP_END); /* Close block */
   }
 
+  if (!saw_return && func->return_type != CLR_VOID) {
+    print("WASM: warning: func %s missing return, defaulting 0\n",
+          func->name ? func->name : "?");
+    wasm_emit_u8(code, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(code, 0);
+    wasm_emit_u8(code, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(code, local_scratch_a);
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, local_scratch_a);
+    wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(code, local_frame_base);
+    wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
+    wasm_emit_uleb128(code, 0);
+    wasm_emit_u8(code, WASM_OP_RETURN);
+  }
+
   wasm_emit_u8(code, WASM_OP_END); /* Close Loop */
   wasm_emit_u8(code, WASM_OP_END); /* Close Wrapper Block */
   wasm_emit_u8(code, WASM_OP_END); /* Function end */
@@ -1300,8 +1379,8 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_emit_vec_header(&sec, func_count);
 
     ulong seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
       if (f->import_info.is_import && f->name) {
         print("WASM: import %s args=%d ret=%d", f->name, (int)f->arg_count,
               (int)f->return_type);
@@ -1309,7 +1388,23 @@ int fruity_compile_to_wasm(fruity_module_t *module,
           print(" %d", (int)f->arg_types[ai]);
         }
         print("\n");
+        if (strcmp(f->name, "lux9_send_9p") == 0 && f->arg_types) {
+          print("WASM: import lux9_send_9p wasm types:");
+          for (ulong ai = 0; ai < f->arg_count; ai++)
+            print(" 0x%02x", valtype_to_wasm(f->arg_types[ai]));
+          if (f->return_type != CLR_VOID)
+            print(" -> 0x%02x", valtype_to_wasm(f->return_type));
+          print("\n");
+        }
       }
+      /* Debug: print type index and arg info for every function */
+      if (seen >= 30 && seen <= 36) {
+        print("WASM-TYPE: idx=%d name=%s arg_count=%d arg_types=%p\n",
+              (int)seen, f->name ? f->name : "?", (int)f->arg_count,
+              f->arg_types);
+      }
+
+      ulong emit_start = sec.size;
       wasm_emit_u8(&sec, WASM_TYPE_FUNC);
       if (f->arg_count > 0 && f->arg_types == nil) {
         print("WASM: missing arg_types for fn=%p, forcing 0 args\n", f);
@@ -1326,6 +1421,12 @@ int fruity_compile_to_wasm(fruity_module_t *module,
         wasm_emit_vec_header(&sec, 1);
         wasm_emit_u8(&sec, valtype_to_wasm(f->return_type));
       }
+      if (seen == 33) {
+        print("WASM-TYPE33-BYTES:");
+        for (ulong b = emit_start; b < sec.size; b++)
+          print(" %02x", sec.data[b]);
+        print(" (ret=%d)\n", (int)f->return_type);
+      }
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_TYPE);
@@ -1341,8 +1442,8 @@ int fruity_compile_to_wasm(fruity_module_t *module,
 
     ulong import_count = 0;
     ulong seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
       if (f->import_info.is_import)
         import_count++;
     }
@@ -1369,6 +1470,9 @@ int fruity_compile_to_wasm(fruity_module_t *module,
             break;
           type_idx++;
         }
+        if (f->name && strcmp(f->name, "lux9_send_9p") == 0) {
+          print("WASM: import lux9_send_9p type_idx=%lud\n", type_idx);
+        }
         wasm_emit_uleb128(&sec, type_idx);
       }
 
@@ -1386,8 +1490,8 @@ int fruity_compile_to_wasm(fruity_module_t *module,
 
     ulong local_func_count = 0;
     ulong seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
       if (!f->import_info.is_import)
         local_func_count++;
     }
@@ -1396,8 +1500,8 @@ int fruity_compile_to_wasm(fruity_module_t *module,
 
     ulong idx = 0;
     seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
       if (!f->import_info.is_import)
         wasm_emit_uleb128(&sec, idx);
       idx++;
@@ -1415,7 +1519,7 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buf_init(&sec, 64);
     wasm_emit_vec_header(&sec, 1);
     wasm_emit_u8(&sec, 0);
-    wasm_emit_uleb128(&sec, 2); /* 2 pages (128KB) */
+    wasm_emit_uleb128(&sec, 32); /* 32 pages (2MB) */
 
     wasm_emit_u8(&main_buf, WASM_SEC_MEMORY);
     wasm_emit_uleb128(&main_buf, sec.size);
@@ -1445,20 +1549,39 @@ int fruity_compile_to_wasm(fruity_module_t *module,
     wasm_buffer_t sec;
     wasm_buf_init(&sec, 64);
 
-    wasm_emit_vec_header(&sec, 1 + func_count);
+    /* Count local (non-import) functions */
+    ulong local_count = 0;
+    ulong import_count_local = 0;
+    ulong seen = 0;
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
+      if (f->import_info.is_import)
+        import_count_local++;
+      else
+        local_count++;
+    }
 
+    /* Export: memory + all local functions */
+    wasm_emit_vec_header(&sec, 1 + local_count);
+
+    /* Export memory */
     wasm_emit_name(&sec, "memory");
-    wasm_emit_u8(&sec, 0x02);
+    wasm_emit_u8(&sec, 0x02); /* kind: memory */
     wasm_emit_uleb128(&sec, 0);
 
-    ulong idx = 0;
-    ulong seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    /* Export local functions only - function index = import_count + local_idx
+     */
+    ulong local_idx = 0;
+    seen = 0;
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
+      if (f->import_info.is_import)
+        continue;
       const char *name = f->name ? f->name : "MethodUnknown";
       wasm_emit_name(&sec, name);
-      wasm_emit_u8(&sec, 0x00);
-      wasm_emit_uleb128(&sec, idx++);
+      wasm_emit_u8(&sec, 0x00); /* kind: function */
+      wasm_emit_uleb128(&sec, import_count_local + local_idx);
+      local_idx++;
     }
 
     wasm_emit_u8(&main_buf, WASM_SEC_EXPORT);
@@ -1474,8 +1597,8 @@ int fruity_compile_to_wasm(fruity_module_t *module,
 
     ulong local_func_count = 0;
     ulong seen = 0;
-    for (fruity_function_t *f = module->functions_head;
-         f && seen < func_count; f = f->next, seen++) {
+    for (fruity_function_t *f = module->functions_head; f && seen < func_count;
+         f = f->next, seen++) {
       if (!f->import_info.is_import)
         local_func_count++;
     }

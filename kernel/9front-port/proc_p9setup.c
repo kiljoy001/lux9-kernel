@@ -57,5 +57,12 @@ int proc_setup_p9page(Proc *p) {
       "proc_setup_p9page: assigned seg %p to p->seg[ESEG], base=%#p top=%#p\n",
       s, (void *)s->base, (void *)s->top);
 
+  /* Pre-map exchange pages so initcode doesn't fault on first write */
+  extern void userpmap(uintptr va, uintptr pa, int perms);
+  userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page),
+           PTEVALID | PTEUSER | PTEWRITE);
+  userpmap(EXCHANGE_PAGE_ADDR + BY2PG, PADDR(p->p9page) + BY2PG,
+           PTEVALID | PTEUSER | PTEWRITE);
+
   return 0;
 }
