@@ -848,7 +848,7 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
   print("CLR: Executing %s (args=%d, rets=%d)...\n", m3_GetFunctionName(f),
         arg_count, m3_GetRetCount(f));
 
-  m3_GetErrorInfo(runtime, nil); /* Clear stale error info */
+  m3_ResetErrorInfo(runtime); /* Clear stale error info */
   if (arg_count == 1)
     result = m3_CallV(f, (u64int)0);
   else
