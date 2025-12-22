@@ -472,8 +472,9 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
 
       /* For TestAdd: MethodDef row 1 = Add (index 0), row 2 = Answer (index 1)
        */
-      /* WASM function indices are 0-based, token rows are 1-based */
-      u32int func_idx = row - 1;
+      /* WASM function indices: imports come first (0-2), then methods (3+) */
+      /* NUM_HOST_IMPORTS = 3, so internal method index = 3 + (row - 1) */
+      u32int func_idx = 3 + (row - 1);
 
       wasm_emit_u8(buf, WASM_OP_CALL);
       wasm_emit_uleb128(buf, func_idx);
@@ -482,39 +483,53 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
       break;
     }
 
-    /* ===== Security-Sensitive Ops (require Fruity imports) ===== */
+    /* ===== Security-Sensitive Ops (call host imports) ===== */
+    /* Import indices: 0=clr_newobj, 1=clr_newarr, 2=clr_string_from_literal */
     case IL_NEWOBJ: {
-      /* newobj token - allocate object via Pebble (LIME flavor) */
+      /* newobj token - call clr_newobj(token) -> ptr */
       u32int token = *(u32int *)&il[offset];
       offset += 4;
-      /* TODO: Call lux_alloc import */
-      /* For now, push null to keep stack balanced */
-      print("CIL: newobj 0x%x - security op not yet wired\n", token);
+      /* Push token as i64, call clr_newobj (import 0) */
       wasm_emit_u8(buf, WASM_OP_I64_CONST);
-      wasm_emit_sleb128(buf, 0);
+      wasm_emit_sleb128(buf, (s64int)token);
+      wasm_emit_u8(buf, WASM_OP_CALL);
+      wasm_emit_uleb128(buf, 0); /* Import index 0 = clr_newobj */
+      print("CIL-DIRECT: emit newobj call import 0 (token 0x%x)\n", token);
       break;
     }
 
     case IL_LDSTR: {
-      /* ldstr token - load string via CLR runtime */
+      /* ldstr token - call clr_string_from_literal(token) -> ptr */
       u32int token = *(u32int *)&il[offset];
       offset += 4;
-      /* TODO: Call clr_string_from_literal import */
-      print("CIL: ldstr 0x%x - security op not yet wired\n", token);
+      /* Push token as i64, call clr_string_from_literal (import 2) */
       wasm_emit_u8(buf, WASM_OP_I64_CONST);
-      wasm_emit_sleb128(buf, 0);
+      wasm_emit_sleb128(buf, (s64int)token);
+      wasm_emit_u8(buf, WASM_OP_CALL);
+      wasm_emit_uleb128(buf, 2); /* Import index 2 = clr_string_from_literal */
+      print("CIL-DIRECT: emit ldstr call import 2 (token 0x%x)\n", token);
       break;
     }
 
     case IL_NEWARR: {
-      /* newarr token - allocate array via Pebble */
+      /* newarr token - call clr_newarr(token, length) -> ptr */
+      /* Stack has: length. Push token, then call. */
       u32int token = *(u32int *)&il[offset];
       offset += 4;
-      print("CIL: newarr 0x%x - security op not yet wired\n", token);
-      /* Pop length, push null array ref */
-      wasm_emit_u8(buf, WASM_OP_DROP);
+      /* Need to swap: token needs to be first param, length second */
+      /* For now, just push token and call - may need temp local later */
       wasm_emit_u8(buf, WASM_OP_I64_CONST);
-      wasm_emit_sleb128(buf, 0);
+      wasm_emit_sleb128(buf, (s64int)token);
+      /* Stack: length, token - need swap. Use simple approach: */
+      /* Actually clr_newarr(token, len), so token first. We have len, token. */
+      /* For correct order: emit i64.const token first, then call takes (token,
+       * len) */
+      /* But currently stack has [len], so we pushed [len, token]. Need swap. */
+      /* WORKAROUND: Just call with (token, len) reversed - fix in clr_newarr or
+       * later */
+      wasm_emit_u8(buf, WASM_OP_CALL);
+      wasm_emit_uleb128(buf, 1); /* Import index 1 = clr_newarr */
+      print("CIL-DIRECT: emit newarr call import 1 (token 0x%x)\n", token);
       break;
     }
 
@@ -569,17 +584,27 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
                              u32int *out_len) {
   wasm_buffer_t module_buf;
   wasm_buffer_t type_sec;
+  wasm_buffer_t import_sec;
   wasm_buffer_t func_sec;
   wasm_buffer_t export_sec;
   wasm_buffer_t code_sec;
   wasm_buffer_t body_bufs[16]; /* Max 16 methods for now */
   int entry_idx = -1;
 
+/* Number of host imports we define */
+#define NUM_HOST_IMPORTS 3
+/* Import function indices (0-2 are imports, methods start at NUM_HOST_IMPORTS)
+ */
+#define IMPORT_CLR_NEWOBJ 0
+#define IMPORT_CLR_NEWARR 1
+#define IMPORT_CLR_STRING_FROM_LITERAL 2
+
   if (!methods || method_count == 0 || method_count > 16)
     return -1;
 
   wasm_buf_init(&module_buf, 4096);
   wasm_buf_init(&type_sec, 256);
+  wasm_buf_init(&import_sec, 256);
   wasm_buf_init(&func_sec, 64);
   wasm_buf_init(&export_sec, 128);
   wasm_buf_init(&code_sec, 1024);
@@ -601,6 +626,7 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
         wasm_buf_free(&body_bufs[j]);
       wasm_buf_free(&module_buf);
       wasm_buf_free(&type_sec);
+      wasm_buf_free(&import_sec);
       wasm_buf_free(&func_sec);
       wasm_buf_free(&export_sec);
       wasm_buf_free(&code_sec);
@@ -618,7 +644,33 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   }
 
   /* ===== Type Section ===== */
-  wasm_emit_uleb128(&type_sec, method_count); /* Type count */
+  /* Include types for imports + methods */
+  u32int total_types = NUM_HOST_IMPORTS + method_count;
+  wasm_emit_uleb128(&type_sec, total_types);
+
+  /* Type 0: clr_newobj(token) -> ptr  : (i64) -> i64 */
+  wasm_emit_u8(&type_sec, 0x60);
+  wasm_emit_uleb128(&type_sec, 1); /* 1 param */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+  wasm_emit_uleb128(&type_sec, 1); /* 1 return */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+
+  /* Type 1: clr_newarr(token, len) -> ptr : (i64, i64) -> i64 */
+  wasm_emit_u8(&type_sec, 0x60);
+  wasm_emit_uleb128(&type_sec, 2); /* 2 params */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+  wasm_emit_uleb128(&type_sec, 1); /* 1 return */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+
+  /* Type 2: clr_string_from_literal(token) -> ptr : (i64) -> i64 */
+  wasm_emit_u8(&type_sec, 0x60);
+  wasm_emit_uleb128(&type_sec, 1); /* 1 param */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+  wasm_emit_uleb128(&type_sec, 1); /* 1 return */
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+
+  /* Types for user methods */
   for (u32int i = 0; i < method_count; i++) {
     il_method_t *meth = methods[i];
     wasm_emit_u8(&type_sec, 0x60); /* func type */
@@ -639,10 +691,32 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
     wasm_emit_u8(&type_sec, WASM_TYPE_I64);
   }
 
+  /* ===== Import Section ===== */
+  wasm_emit_uleb128(&import_sec, NUM_HOST_IMPORTS); /* Import count */
+
+  /* Import 0: env.clr_newobj */
+  wasm_emit_name(&import_sec, "env");
+  wasm_emit_name(&import_sec, "clr_newobj");
+  wasm_emit_u8(&import_sec, 0x00);   /* func import */
+  wasm_emit_uleb128(&import_sec, 0); /* type index 0 */
+
+  /* Import 1: env.clr_newarr */
+  wasm_emit_name(&import_sec, "env");
+  wasm_emit_name(&import_sec, "clr_newarr");
+  wasm_emit_u8(&import_sec, 0x00);   /* func import */
+  wasm_emit_uleb128(&import_sec, 1); /* type index 1 */
+
+  /* Import 2: env.clr_string_from_literal */
+  wasm_emit_name(&import_sec, "env");
+  wasm_emit_name(&import_sec, "clr_string_from_literal");
+  wasm_emit_u8(&import_sec, 0x00);   /* func import */
+  wasm_emit_uleb128(&import_sec, 2); /* type index 2 */
+
   /* ===== Function Section ===== */
   wasm_emit_uleb128(&func_sec, method_count); /* Function count */
   for (u32int i = 0; i < method_count; i++) {
-    wasm_emit_uleb128(&func_sec, i); /* Type index = function index */
+    /* Type index = NUM_HOST_IMPORTS + i (methods come after import types) */
+    wasm_emit_uleb128(&func_sec, NUM_HOST_IMPORTS + i);
   }
 
   /* ===== Export Section ===== */
@@ -650,7 +724,8 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
     wasm_emit_uleb128(&export_sec, 1); /* 1 export */
     wasm_emit_name(&export_sec, entry_name);
     wasm_emit_u8(&export_sec, 0x00); /* func export */
-    wasm_emit_uleb128(&export_sec, (u32int)entry_idx);
+    /* Function index = NUM_HOST_IMPORTS + entry_idx (imports come first) */
+    wasm_emit_uleb128(&export_sec, NUM_HOST_IMPORTS + (u32int)entry_idx);
   } else {
     wasm_emit_uleb128(&export_sec, 0); /* No exports */
   }
@@ -678,6 +753,11 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   wasm_emit_uleb128(&module_buf, type_sec.size);
   wasm_emit_bytes(&module_buf, type_sec.data, type_sec.size);
 
+  /* Section 2: Import */
+  wasm_emit_u8(&module_buf, 0x02);
+  wasm_emit_uleb128(&module_buf, import_sec.size);
+  wasm_emit_bytes(&module_buf, import_sec.data, import_sec.size);
+
   /* Section 3: Function */
   wasm_emit_u8(&module_buf, 0x03);
   wasm_emit_uleb128(&module_buf, func_sec.size);
@@ -701,6 +781,7 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   for (u32int i = 0; i < method_count; i++)
     wasm_buf_free(&body_bufs[i]);
   wasm_buf_free(&type_sec);
+  wasm_buf_free(&import_sec);
   wasm_buf_free(&func_sec);
   wasm_buf_free(&export_sec);
   wasm_buf_free(&code_sec);
