@@ -195,6 +195,15 @@ void freepages(Page *head, Page *tail, ulong np) {
   palloc.freecount += np;
   pagechaindone();
   unlock(&palloc);
+
+  /* Return tokens to global pool for freed pages */
+  /* Each page = BY2PG / PEBBLE_BYTES_PER_TOKEN tokens */
+  {
+    ulong tokens = np * (BY2PG / PEBBLE_BYTES_PER_TOKEN);
+    lock(&pebble_bank_lock);
+    pebble_global_colorless_bank += tokens;
+    unlock(&pebble_bank_lock);
+  }
 }
 
 ulong pagereclaim(Image *i) {

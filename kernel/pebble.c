@@ -1071,12 +1071,33 @@ void pebble_cleanup(Proc *p) {
   PebbleBlack *pb, *pbnext;
   PebbleBlue *blue, *bluenext;
   PebbleRed *red, *rednext;
+  ulong return_tokens;
 
   if (p == nil || !pebble_enabled)
     return;
   ps = &p->pebble;
 
   lock(&pebble_global_lock);
+
+  /* Calculate total tokens to return to global pool:
+   * - Unused colorless_bank tokens
+   * - black_inuse tokens (from allocations being freed)
+   * - blue_inuse and red_inuse tokens
+   */
+  return_tokens = ps->colorless_bank +
+                  (ps->black_inuse / PEBBLE_BYTES_PER_TOKEN) +
+                  (ps->blue_inuse / PEBBLE_BYTES_PER_TOKEN) +
+                  (ps->red_inuse / PEBBLE_BYTES_PER_TOKEN);
+
+  /* Return tokens to global pool */
+  lock(&pebble_bank_lock);
+  pebble_global_colorless_bank += return_tokens;
+  unlock(&pebble_bank_lock);
+
+  if (pebble_debug && return_tokens > 0)
+    print("PEBBLE: pid %lud exit, returned %lud tokens to global pool\n",
+          p->pid, return_tokens);
+
   pb = ps->black_list;
   ps->black_list = nil;
   blue = ps->blue_list;
@@ -1084,7 +1105,9 @@ void pebble_cleanup(Proc *p) {
   red = ps->red_list;
   ps->red_list = nil;
   ps->black_inuse = 0;
-  ps->colorless_bank = PEBBLE_DEFAULT_BUDGET;
+  ps->blue_inuse = 0;
+  ps->red_inuse = 0;
+  ps->colorless_bank = 0; /* All tokens returned to global pool */
   ps->white_verified = 0;
   ps->white_pending = 0;
   ps->blue_count = 0;
