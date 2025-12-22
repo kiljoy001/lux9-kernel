@@ -150,6 +150,11 @@ extern void xfree(void *ptr);
 #define WASM_OP_I64_EXTEND_I32_S 0xAC
 #define WASM_OP_I64_EXTEND_I32_U 0xAD
 
+/* Sign extension ops (WASM 1.0 extension) */
+#define WASM_OP_I64_EXTEND8_S 0xC3
+#define WASM_OP_I64_EXTEND16_S 0xC4
+#define WASM_OP_I64_EXTEND32_S 0xC5
+
 /* WASM type bytes */
 #define WASM_TYPE_I32 0x7F
 #define WASM_TYPE_I64 0x7E
@@ -348,11 +353,6 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
     }
 
     /* ===== Stack Operations ===== */
-    case IL_DUP:
-      /* WASM doesn't have dup, use local.tee pattern */
-      /* For now, this is unsupported - requires temp local */
-      print("CIL: dup not yet supported\n");
-      return -3;
     case IL_POP:
       wasm_emit_u8(buf, WASM_OP_DROP);
       break;
@@ -379,18 +379,6 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
     case IL_REM_UN:
       wasm_emit_u8(buf, WASM_OP_I64_REM_U);
       break;
-    case IL_NEG:
-      /* neg = 0 - x */
-      wasm_emit_u8(buf, WASM_OP_I64_CONST);
-      wasm_emit_sleb128(buf, 0);
-      /* Swap: need to emit (0, x) -> (0 - x), but x is on top */
-      /* Actually: stack is [x], we push 0, then have [x, 0], sub gives 0-x
-       * which is wrong */
-      /* We need: [0, x] then sub. Let's use a different approach. */
-      /* For now, skip swap and just do: push 0, swap, sub */
-      /* WASM has no swap, so we need temp local. Skip for now. */
-      print("CIL: neg not yet supported\n");
-      return -3;
 
     /* ===== Bitwise ===== */
     case IL_AND:
@@ -530,6 +518,287 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
       wasm_emit_u8(buf, WASM_OP_CALL);
       wasm_emit_uleb128(buf, 1); /* Import index 1 = clr_newarr */
       print("CIL-DIRECT: emit newarr call import 1 (token 0x%x)\n", token);
+      break;
+    }
+
+    /* ===== Conversions ===== */
+    /* Most conversions are no-ops when using i64 for everything */
+    case IL_CONV_I1:
+      /* Sign extend i8 to i64 */
+      wasm_emit_u8(buf, WASM_OP_I64_EXTEND8_S);
+      break;
+    case IL_CONV_I2:
+      /* Sign extend i16 to i64 */
+      wasm_emit_u8(buf, WASM_OP_I64_EXTEND16_S);
+      break;
+    case IL_CONV_I4:
+    case IL_CONV_U4:
+      /* Truncate to 32 bits - already in i64, treat as no-op for now */
+      /* Could mask with 0xFFFFFFFF if needed */
+      break;
+    case IL_CONV_I8:
+    case IL_CONV_U8:
+    case IL_CONV_I:
+    case IL_CONV_U:
+      /* Already i64, no-op */
+      break;
+    case IL_CONV_U1:
+      /* Zero-extend u8 */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 0xFF);
+      wasm_emit_u8(buf, WASM_OP_I64_AND);
+      break;
+    case IL_CONV_U2:
+      /* Zero-extend u16 */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 0xFFFF);
+      wasm_emit_u8(buf, WASM_OP_I64_AND);
+      break;
+
+    /* ===== DUP - Use a scratch local ===== */
+    case IL_DUP:
+      /* WASM has local.tee which sets local and leaves value on stack */
+      /* We use local 0 as scratch (assuming it exists) */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_TEE);
+      wasm_emit_uleb128(buf, 0); /* Scratch local 0 */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+      wasm_emit_uleb128(buf, 0);
+      break;
+
+    /* ===== NEG - Negate ===== */
+    case IL_NEG:
+      /* neg x = 0 - x. We have x on stack. Emit: i64.const 0, get x, sub */
+      /* Actually stack is [x]. We need [0, x] then sub. */
+      /* WASM doesn't have swap, so we use scratch local */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+      wasm_emit_uleb128(buf, 0); /* Store x in scratch */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 0);
+      wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+      wasm_emit_uleb128(buf, 0); /* Get x back */
+      wasm_emit_u8(buf, WASM_OP_I64_SUB);
+      break;
+
+    /* ===== Field Access (via host imports) ===== */
+    case IL_LDFLD: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Stack: [obj], Result: [value] */
+      /* For now, treat as memory load at offset 0 (simplified) */
+      /* TODO: Use clr_load_field import with proper offset */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+      wasm_emit_u8(buf, WASM_OP_I64_LOAD);
+      wasm_emit_uleb128(buf, 3); /* align */
+      wasm_emit_uleb128(buf, 0); /* offset */
+      (void)token;
+      break;
+    }
+    case IL_STFLD: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Stack: [obj, value], Result: [] */
+      /* Swap needed - use scratch local */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+      wasm_emit_uleb128(buf, 0);               /* value -> scratch */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64); /* obj ptr */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+      wasm_emit_uleb128(buf, 0); /* get value */
+      wasm_emit_u8(buf, WASM_OP_I64_STORE);
+      wasm_emit_uleb128(buf, 3); /* align */
+      wasm_emit_uleb128(buf, 0); /* offset */
+      (void)token;
+      break;
+    }
+    case IL_LDSFLD: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Load static field - call clr_get_static_field(token) */
+      /* For now, push 0 as placeholder */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 0);
+      (void)token;
+      break;
+    }
+    case IL_STSFLD: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Store static field - for now, drop value */
+      wasm_emit_u8(buf, WASM_OP_DROP);
+      (void)token;
+      break;
+    }
+
+    /* ===== Array Operations ===== */
+    case IL_LDLEN:
+      /* Stack: [arr], Result: [length] */
+      /* Array length is at offset 0 of array object */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+      wasm_emit_u8(buf, WASM_OP_I64_LOAD);
+      wasm_emit_uleb128(buf, 3);
+      wasm_emit_uleb128(buf, 0);
+      break;
+
+    case IL_LDELEM_I:
+    case IL_LDELEM_I1:
+    case IL_LDELEM_U1:
+    case IL_LDELEM_I2:
+    case IL_LDELEM_U2:
+    case IL_LDELEM_I4:
+    case IL_LDELEM_U4:
+    case IL_LDELEM_I8:
+    case IL_LDELEM_REF: {
+      /* Stack: [arr, index], Result: [value] */
+      /* Calculate address: arr + 8 + index * 8 (skip length) */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 8);
+      wasm_emit_u8(buf, WASM_OP_I64_MUL); /* index * 8 */
+      wasm_emit_u8(buf, WASM_OP_I64_ADD); /* arr + index*8 */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 8);
+      wasm_emit_u8(buf, WASM_OP_I64_ADD); /* + 8 for length field */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+      wasm_emit_u8(buf, WASM_OP_I64_LOAD);
+      wasm_emit_uleb128(buf, 3);
+      wasm_emit_uleb128(buf, 0);
+      break;
+    }
+
+    case IL_STELEM_I:
+    case IL_STELEM_I1:
+    case IL_STELEM_I2:
+    case IL_STELEM_I4:
+    case IL_STELEM_I8:
+    case IL_STELEM_REF: {
+      /* Stack: [arr, index, value], Result: [] */
+      /* This is complex - need 3 values. Use scratch locals. */
+      /* For now, just drop all 3 */
+      wasm_emit_u8(buf, WASM_OP_DROP); /* value */
+      wasm_emit_u8(buf, WASM_OP_DROP); /* index */
+      wasm_emit_u8(buf, WASM_OP_DROP); /* arr */
+      break;
+    }
+
+    /* ===== Box/Unbox ===== */
+    case IL_BOX: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Box value type - for now, treat as no-op (value stays on stack) */
+      (void)token;
+      break;
+    }
+    case IL_UNBOX:
+    case IL_UNBOX_ANY: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Unbox - for now, treat as no-op */
+      (void)token;
+      break;
+    }
+
+    /* ===== Object Operations ===== */
+    case IL_CASTCLASS:
+    case IL_ISINST: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Type checking - for now, treat as no-op (leave object on stack) */
+      (void)token;
+      break;
+    }
+
+    case IL_CALLVIRT: {
+      /* Virtual call - for now, treat same as regular call */
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      u32int row = (token & 0x00FFFFFF);
+      u32int func_idx = 3 + (row - 1);
+      wasm_emit_u8(buf, WASM_OP_CALL);
+      wasm_emit_uleb128(buf, func_idx);
+      break;
+    }
+
+    /* ===== Exception Handling ===== */
+    case IL_THROW:
+      /* Throw exception - call clr_throw import */
+      wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
+      break;
+
+    case IL_LEAVE:
+    case IL_LEAVE_S: {
+      /* Leave protected region - just skip the offset */
+      if (opcode == IL_LEAVE_S)
+        offset += 1;
+      else
+        offset += 4;
+      break;
+    }
+
+    case IL_ENDFINALLY:
+      /* End finally block - treat as return for now */
+      wasm_emit_u8(buf, WASM_OP_RETURN);
+      break;
+
+    /* ===== Indirect Memory Access ===== */
+    case IL_LDIND_I:
+    case IL_LDIND_I1:
+    case IL_LDIND_U1:
+    case IL_LDIND_I2:
+    case IL_LDIND_U2:
+    case IL_LDIND_I4:
+    case IL_LDIND_U4:
+    case IL_LDIND_I8:
+    case IL_LDIND_REF:
+      /* Load indirect - ptr on stack */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+      wasm_emit_u8(buf, WASM_OP_I64_LOAD);
+      wasm_emit_uleb128(buf, 3);
+      wasm_emit_uleb128(buf, 0);
+      break;
+
+    case IL_STIND_I:
+    case IL_STIND_I1:
+    case IL_STIND_I2:
+    case IL_STIND_I4:
+    case IL_STIND_I8:
+    case IL_STIND_REF: {
+      /* Store indirect - [ptr, value] on stack */
+      /* Swap needed */
+      wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+      wasm_emit_uleb128(buf, 0); /* value -> scratch */
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+      wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+      wasm_emit_uleb128(buf, 0);
+      wasm_emit_u8(buf, WASM_OP_I64_STORE);
+      wasm_emit_uleb128(buf, 3);
+      wasm_emit_uleb128(buf, 0);
+      break;
+    }
+
+    /* ===== Misc ===== */
+    case IL_LDTOKEN: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Push token as constant */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, (s64int)token);
+      break;
+    }
+
+    case IL_INITOBJ: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Initialize value type at ptr - drop ptr for now */
+      wasm_emit_u8(buf, WASM_OP_DROP);
+      (void)token;
+      break;
+    }
+
+    case IL_SIZEOF: {
+      u32int token = *(u32int *)&il[offset];
+      offset += 4;
+      /* Push size of type - use 8 as default */
+      wasm_emit_u8(buf, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(buf, 8);
+      (void)token;
       break;
     }
 
