@@ -256,5 +256,10 @@ namespace System.Text
             }
             return new string(result);
         }
+
+        public StringBuilder Insert(int index, char value)
+        {
+            return Insert(index, value.ToString());
+        }
     }
 }

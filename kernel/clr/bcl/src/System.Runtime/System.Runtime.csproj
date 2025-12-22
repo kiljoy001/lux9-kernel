@@ -18,5 +18,6 @@
     <Compile Include="../System.Numerics/Math.cs" />
     <Compile Include="../System.Threading/Threading.cs" />
     <Compile Include="../System.Reflection/Reflection.cs" />
+    <Compile Include="../System.Text/StringBuilder.cs" />
   </ItemGroup>
 </Project>

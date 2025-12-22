@@ -1,97 +1,5 @@
 namespace System.Text
 {
-    public class StringBuilder
-    {
-        private char[] _chunkChars;
-        private int _chunkLength;
-        
-        public StringBuilder() : this(16) { }
-        public StringBuilder(int capacity) 
-        {
-            _chunkChars = new char[capacity];
-            _chunkLength = 0;
-        }
-        
-        public StringBuilder(string value) : this(value.Length + 16)
-        {
-            Append(value);
-        }
-
-        public int Length 
-        { 
-            get => _chunkLength; 
-            set => _chunkLength = value; // Unsafe simplification
-        }
-
-        public StringBuilder Append(string value)
-        {
-            if (value == null) return this;
-            // Simplistic resize
-            EnsureCapacity(_chunkLength + value.Length);
-            for(int i=0; i<value.Length; i++) _chunkChars[_chunkLength + i] = value[i]; // value[i] access depends on String indexer
-            _chunkLength += value.Length;
-            return this;
-        }
-        
-        public StringBuilder Append(char value)
-        {
-             EnsureCapacity(_chunkLength + 1);
-             _chunkChars[_chunkLength++] = value;
-             return this;
-        }
-        
-        public StringBuilder Append(object value)
-        {
-            return Append(value?.ToString());
-        }
-
-        public StringBuilder Insert(int index, string value)
-        {
-            if (index < 0 || index > _chunkLength) throw new ArgumentOutOfRangeException(nameof(index));
-            if (string.IsNullOrEmpty(value)) return this;
-            
-            EnsureCapacity(_chunkLength + value.Length);
-            
-            // Move existing
-            for (int i = _chunkLength - 1; i >= index; i--)
-            {
-                _chunkChars[i + value.Length] = _chunkChars[i];
-            }
-            
-            // Insert new
-            for (int i = 0; i < value.Length; i++)
-            {
-                _chunkChars[index + i] = value[i];
-            }
-            
-            _chunkLength += value.Length;
-            return this;
-        }
-
-        public StringBuilder Insert(int index, char value)
-        {
-            return Insert(index, value.ToString());
-        }
-
-        private void EnsureCapacity(int min)
-        {
-            if (_chunkChars.Length < min)
-            {
-                int newCap = Math.Max(min, _chunkChars.Length * 2);
-                char[] newChars = new char[newCap];
-                for(int i=0; i<_chunkLength; i++) newChars[i] = _chunkChars[i];
-                _chunkChars = newChars;
-            }
-        }
-
-        public override string ToString()
-        {
-            // Requires string ctor from char array, which strictly doesn't exist in my minimal Object.cs yet
-            // Stub for now
-            return "StringBuilder_Result"; 
-        }
-    }
-
     public abstract class Encoding
     {
         public static Encoding UTF8 => new UTF8Encoding();
@@ -149,6 +57,7 @@ namespace System.Text
     
     public class ASCIIEncoding : Encoding 
     {
+        // ... (existing content logic is fine, just adding classes at the end of namespace)
         public override byte[] GetBytes(string s)
         {
             if (s == null) return new byte[0];
@@ -188,8 +97,7 @@ namespace System.Text
             return charCount;
         }
     }
-}
 
-namespace System
-{
+    public abstract class Decoder { }
+    public abstract class Encoder { }
 }
