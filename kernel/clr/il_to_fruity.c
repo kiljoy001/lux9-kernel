@@ -2457,7 +2457,7 @@ fruity_module_t *il_to_fruity_convert_assembly(il_assembly_t *assembly,
         func->return_type = CLR_VOID;
       } else if (strcmp(name, "Lux9DebugPrint") == 0 ||
                  strcmp(name, "Lux9Print") == 0) {
-        func->arg_count = 1;
+        func->arg_count = 2;
         func->import_info.is_import = 1;
         func->import_info.module_name = strdup("env");
         func->import_info.function_name = strdup("lux9_debug_print");

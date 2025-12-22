@@ -64,6 +64,7 @@ static const char *clr_map_lux9_method_name(const char *method_name) {
       strcmp(method_name, "Send9P") == 0)
     return "lux9_send_9p";
   if (strcmp(method_name, "Lux9DebugPrint") == 0 ||
+      strcmp(method_name, "Lux9Print") == 0 ||
       strcmp(method_name, "DebugPrint") == 0)
     return "lux9_debug_print";
   if (strcmp(method_name, "Lux9Yield") == 0 ||
@@ -381,6 +382,8 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
                     /* Try Generic P/Invoke */
                     char modname[64] = {0};
                     char funcname[64] = {0};
+                    print("CLR: Calling il_get_pinvoke_info for token 0x%x\n",
+                          token);
                     if (il_get_pinvoke_info(assembly, token, modname, 64,
                                             funcname, 64) == 0) {
                       print("CLR: Found P/Invoke %s -> %s.%s\n", ext_name,
@@ -394,7 +397,7 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
                         imp->import_info.module_name = strdup(modname);
                         imp->import_info.function_name = strdup(funcname);
 
-                        /* Parse signature */
+                        /* Parse signature if possible */
                         uint32_t sig_tok = 0;
                         uint32_t ac = 0;
                         if (il_get_method_signature_token(assembly, token,
@@ -412,10 +415,16 @@ static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
                           }
                         }
                         imp->arg_count = ac;
-                        imp->arg_types =
-                            xallocz(sizeof(clr_value_type_t) * ac, 1);
-                        for (uint32_t i = 0; i < ac; i++)
-                          imp->arg_types[i] = CLR_INT32;
+                        if (ac > 0) {
+                          imp->arg_types =
+                              xallocz(sizeof(clr_value_type_t) * ac, 1);
+                          if (imp->arg_types) {
+                            for (uint32_t i = 0; i < ac; i++)
+                              imp->arg_types[i] = CLR_INT32;
+                          } else {
+                            imp->arg_count = 0;
+                          }
+                        }
 
                         /* Add to module */
                         if (!mod->functions_head) {
@@ -731,9 +740,14 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
     return -1;
   }
 
-  print("CLR: Executing Main (args=%d, rets=%d)...\n", m3_GetArgCount(f),
+  u32int arg_count = m3_GetArgCount(f);
+  print("CLR: Executing Main (args=%d, rets=%d)...\n", arg_count,
         m3_GetRetCount(f));
-  result = m3_CallV(f);
+
+  if (arg_count == 1)
+    result = m3_CallV(f, 0ULL);
+  else
+    result = m3_CallV(f);
 
   if (result) {
     print("CLR: Execution failed: %s\n", result);
