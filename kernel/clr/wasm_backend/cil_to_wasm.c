@@ -813,6 +813,308 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
 }
 
 /*
+ * cil_to_wasm_emit_one_opcode - Emit a single CIL opcode to WASM
+ *
+ * This is used by the relooper to emit individual opcodes within basic blocks.
+ * It handles most non-branch opcodes. Branch opcodes should be handled by the
+ * relooper's control flow emission.
+ *
+ * Parameters:
+ *   buf: Output WASM buffer
+ *   il: CIL bytecode
+ *   offset: Pointer to current offset (updated after emit)
+ *   il_size: Total size of IL
+ *
+ * Returns: 0 on success, negative on error
+ */
+int cil_to_wasm_emit_one_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
+                                u32int il_size) {
+  if (!buf || !il || !offset || *offset >= il_size)
+    return -1;
+
+  u16int opcode = il[(*offset)++];
+
+  /* Handle two-byte opcodes (0xFE prefix) */
+  if (opcode == 0xFE && *offset < il_size) {
+    opcode = (opcode << 8) | il[(*offset)++];
+  }
+
+  /* Use the switch statement from compile_method */
+  switch (opcode) {
+  /* NOP */
+  case IL_NOP:
+    break;
+
+  /* Constants */
+  case IL_LDC_I4_M1:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, -1);
+    break;
+  case IL_LDC_I4_0:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 0);
+    break;
+  case IL_LDC_I4_1:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 1);
+    break;
+  case IL_LDC_I4_2:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 2);
+    break;
+  case IL_LDC_I4_3:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 3);
+    break;
+  case IL_LDC_I4_4:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 4);
+    break;
+  case IL_LDC_I4_5:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 5);
+    break;
+  case IL_LDC_I4_6:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 6);
+    break;
+  case IL_LDC_I4_7:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 7);
+    break;
+  case IL_LDC_I4_8:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 8);
+    break;
+  case IL_LDC_I4_S: {
+    s8int val = (s8int)il[(*offset)++];
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, val);
+    break;
+  }
+  case IL_LDC_I4: {
+    s32int val = *(s32int *)&il[*offset];
+    *offset += 4;
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, val);
+    break;
+  }
+  case IL_LDC_I8: {
+    s64int val = *(s64int *)&il[*offset];
+    *offset += 8;
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, val);
+    break;
+  }
+  case IL_LDNULL:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, 0);
+    break;
+
+  /* Arguments */
+  case IL_LDARG_0:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 0);
+    break;
+  case IL_LDARG_1:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 1);
+    break;
+  case IL_LDARG_2:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 2);
+    break;
+  case IL_LDARG_3:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 3);
+    break;
+  case IL_LDARG_S: {
+    u8int idx = il[(*offset)++];
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, idx);
+    break;
+  }
+  case IL_STARG_S: {
+    u8int idx = il[(*offset)++];
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, idx);
+    break;
+  }
+
+  /* Locals */
+  case IL_LDLOC_0:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 0);
+    break;
+  case IL_LDLOC_1:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 1);
+    break;
+  case IL_LDLOC_2:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 2);
+    break;
+  case IL_LDLOC_3:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 3);
+    break;
+  case IL_LDLOC_S: {
+    u8int idx = il[(*offset)++];
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, idx);
+    break;
+  }
+  case IL_STLOC_0:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, 0);
+    break;
+  case IL_STLOC_1:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, 1);
+    break;
+  case IL_STLOC_2:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, 2);
+    break;
+  case IL_STLOC_3:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, 3);
+    break;
+  case IL_STLOC_S: {
+    u8int idx = il[(*offset)++];
+    wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
+    wasm_emit_uleb128(buf, idx);
+    break;
+  }
+
+  /* Stack */
+  case IL_POP:
+    wasm_emit_u8(buf, WASM_OP_DROP);
+    break;
+  case IL_DUP:
+    wasm_emit_u8(buf, WASM_OP_LOCAL_TEE);
+    wasm_emit_uleb128(buf, 0);
+    wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(buf, 0);
+    break;
+
+  /* Arithmetic */
+  case IL_ADD:
+    wasm_emit_u8(buf, WASM_OP_I64_ADD);
+    break;
+  case IL_SUB:
+    wasm_emit_u8(buf, WASM_OP_I64_SUB);
+    break;
+  case IL_MUL:
+    wasm_emit_u8(buf, WASM_OP_I64_MUL);
+    break;
+  case IL_DIV:
+    wasm_emit_u8(buf, WASM_OP_I64_DIV_S);
+    break;
+  case IL_DIV_UN:
+    wasm_emit_u8(buf, WASM_OP_I64_DIV_U);
+    break;
+  case IL_REM:
+    wasm_emit_u8(buf, WASM_OP_I64_REM_S);
+    break;
+  case IL_REM_UN:
+    wasm_emit_u8(buf, WASM_OP_I64_REM_U);
+    break;
+
+  /* Bitwise */
+  case IL_AND:
+    wasm_emit_u8(buf, WASM_OP_I64_AND);
+    break;
+  case IL_OR:
+    wasm_emit_u8(buf, WASM_OP_I64_OR);
+    break;
+  case IL_XOR:
+    wasm_emit_u8(buf, WASM_OP_I64_XOR);
+    break;
+  case IL_NOT:
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, -1);
+    wasm_emit_u8(buf, WASM_OP_I64_XOR);
+    break;
+  case IL_SHL:
+    wasm_emit_u8(buf, WASM_OP_I64_SHL);
+    break;
+  case IL_SHR:
+    wasm_emit_u8(buf, WASM_OP_I64_SHR_S);
+    break;
+  case IL_SHR_UN:
+    wasm_emit_u8(buf, WASM_OP_I64_SHR_U);
+    break;
+
+  /* Comparisons */
+  case 0xFE01: /* ceq */
+    wasm_emit_u8(buf, WASM_OP_I64_EQ);
+    wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
+    break;
+  case 0xFE02: /* cgt */
+    wasm_emit_u8(buf, WASM_OP_I64_GT_S);
+    wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
+    break;
+  case 0xFE03: /* cgt.un */
+    wasm_emit_u8(buf, WASM_OP_I64_GT_U);
+    wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
+    break;
+  case 0xFE04: /* clt */
+    wasm_emit_u8(buf, WASM_OP_I64_LT_S);
+    wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
+    break;
+  case 0xFE05: /* clt.un */
+    wasm_emit_u8(buf, WASM_OP_I64_LT_U);
+    wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
+    break;
+
+  /* Call - just skip for now, relooper handles method-level calls */
+  case IL_CALL:
+  case IL_CALLVIRT: {
+    u32int token = *(u32int *)&il[*offset];
+    *offset += 4;
+    u32int row = (token & 0x00FFFFFF);
+    u32int func_idx = 3 + (row - 1);
+    wasm_emit_u8(buf, WASM_OP_CALL);
+    wasm_emit_uleb128(buf, func_idx);
+    break;
+  }
+
+  /* Skip branch opcodes - relooper handles these */
+  case IL_RET:
+  case IL_BR_S:
+  case IL_BR:
+  case IL_BRFALSE_S:
+  case IL_BRFALSE:
+  case IL_BRTRUE_S:
+  case IL_BRTRUE:
+  case IL_BEQ_S:
+  case IL_BGE_S:
+  case IL_BGT_S:
+  case IL_BLE_S:
+  case IL_BLT_S:
+  case IL_BNE_UN_S:
+  case IL_BEQ:
+  case IL_BGE:
+  case IL_BGT:
+  case IL_BLE:
+  case IL_BLT:
+  case IL_BNE_UN:
+  case IL_LEAVE:
+  case IL_LEAVE_S:
+  case IL_THROW:
+    /* These should be handled by relooper, skip here */
+    return -100; /* Signal that this is a branch opcode */
+
+  default:
+    /* Unknown opcode */
+    return -2;
+  }
+
+  return 0;
+}
+
+/*
  * cil_to_wasm_emit_function_header - Emit WASM function header
  *
  * Emits the local variable declarations for a WASM function.
