@@ -78,6 +78,8 @@ static void *clr_untag_ptr(u64int val) {
 static void *clr_ptr_to_mem(u64int ptr_val, void *_mem) {
   if (ptr_val == 0)
     return nil;
+  if (ptr_val & CLR_PTR_TAG)
+    return clr_untag_ptr(ptr_val);
   /* Treat as WASM linear memory offset */
   return (void *)((u8int *)_mem + (u32int)ptr_val);
 }
@@ -387,6 +389,27 @@ m3ApiRawFunction(clr_import_array_len) {
   m3ApiReturn(*(u64int *)arr);
 }
 
+m3ApiRawFunction(clr_import_string_get_length) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  void *ptr = clr_ptr_to_mem(ptr_val, _mem);
+  if (!ptr)
+    m3ApiReturn(0);
+  m3ApiReturn(*(u64int *)ptr);
+}
+
+m3ApiRawFunction(clr_import_string_get_char) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, index);
+  void *ptr = clr_ptr_to_mem(ptr_val, _mem);
+  if (!ptr)
+    m3ApiReturn(0);
+  u64int len = *(u64int *)ptr;
+  if (index >= len)
+    m3ApiReturn(0);
+  u16int *chars = (u16int *)((u8int *)ptr + 8);
+  m3ApiReturn(chars[index]);
+}
+
 m3ApiRawFunction(clr_import_array_get) {
   m3ApiReturnType(u64int) m3ApiGetArg(u64int, arr_val);
   m3ApiGetArg(u64int, index);
@@ -535,6 +558,8 @@ M3Result lux9_link_wasi(IM3Module module) {
   LINK_RAW("lux_rollback", "v(I)", &clr_lux_rollback);
 
   LINK_RAW("clr_string_from_literal", "I(I)", &clr_import_string_from_literal);
+  LINK_RAW("clr_string_get_length", "I(I)", &clr_import_string_get_length);
+  LINK_RAW("clr_string_get_char", "I(II)", &clr_import_string_get_char);
   LINK_RAW("clr_get_type_size", "I(I)", &clr_import_get_type_size);
   LINK_RAW("clr_get_static_field", "I(I)", &clr_import_get_static_field);
   LINK_RAW("clr_is_instance_of", "I(II)", &clr_import_is_instance_of);

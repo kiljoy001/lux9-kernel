@@ -1,0 +1,22 @@
+int il_get_method_signature_token(il_assembly_t *assembly, uint32_t token, uint32_t *sig_out) {
+  uint8_t table_kind = (token >> 24) & 0xFF;
+  uint32_t row_index = token & 0x00FFFFFF;
+
+  if (table_kind != TABLE_METHODDEF)
+    return -1;
+
+  size_t method_count;
+  methoddef_row_t *methods = parse_methoddef_table(assembly, &method_count);
+  if (methods == NULL || row_index == 0 || row_index > method_count) {
+    if (methods)
+      IL_FREE(methods);
+    return -1;
+  }
+
+  methoddef_row_t *row = &methods[row_index - 1];
+  if (sig_out)
+    *sig_out = row->signature_index;
+
+  IL_FREE(methods);
+  return 0;
+}

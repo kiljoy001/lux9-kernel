@@ -1139,16 +1139,17 @@ static int compile_function_body(fruity_module_t *module,
           saw_return = 1;
           print("WASM: emit ret func=%s return_type=%d\n",
                 func->name ? func->name : "?", (int)func->return_type);
-          /* Restore global stack top to frame base */
+          /* First restore global stack top to frame base */
+          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
+          wasm_emit_uleb128(code, local_frame_base);
+          wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
+          wasm_emit_uleb128(code, 0);
+          /* Then push return value if non-void */
           if (func->return_type != CLR_VOID) {
             emit_pop_i64_to_local(code, local_stack_ptr, local_scratch_a);
             wasm_emit_u8(code, WASM_OP_LOCAL_GET);
             wasm_emit_uleb128(code, local_scratch_a);
           }
-          wasm_emit_u8(code, WASM_OP_LOCAL_GET);
-          wasm_emit_uleb128(code, local_frame_base);
-          wasm_emit_u8(code, WASM_OP_GLOBAL_SET);
-          wasm_emit_uleb128(code, 0);
           wasm_emit_u8(code, WASM_OP_RETURN);
           break;
 
@@ -1300,6 +1301,8 @@ static int compile_function_body(fruity_module_t *module,
           break;
 
         default:
+          print("WASM: unknown fruity opcode 0x%x in %s\n", instr->opcode,
+                func->name ? func->name : "???");
           emit_call_throw(code, imp);
           wasm_emit_u8(code, WASM_OP_UNREACHABLE);
           break;

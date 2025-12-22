@@ -45,6 +45,7 @@ typedef struct Fmt Fmt;
 #include "fruity/fruity_ir.h"
 #include "il_parser.h"
 #include "il_to_fruity.h"
+#include "wasm_backend/cil_to_wasm.h"
 #include "wasm_backend/fruity_to_wasm.h"
 #include "wasm_backend/test_assembly.h"
 
@@ -78,6 +79,12 @@ static const char *clr_map_lux9_method_name(const char *method_name) {
     return "lux9_spawn";
   if (strcmp(method_name, "Lux9Throw") == 0)
     return "lux9_throw";
+
+  /* System.String properties */
+  if (strcmp(method_name, "get_Length") == 0)
+    return "clr_string_get_length";
+  if (strcmp(method_name, "get_Chars") == 0)
+    return "clr_string_get_char";
 
   return NULL;
 }
@@ -124,16 +131,88 @@ static ulong string_literal_capacity;
 
 static il_assembly_t *current_assembly;
 
-/* Helper to get user string (stub for now) */
+/* Helper to get user string (proper managed allocation) */
 void *clr_string_from_literal(u32int us_index) {
   if (!current_assembly)
     return nil;
-  char *s = il_get_user_string(current_assembly, us_index);
-  return s;
+
+  /* Check cache first */
+  for (ulong i = 0; i < string_literal_count; i++) {
+    if (string_literals[i].us_index == us_index &&
+        string_literals[i].managed_obj != nil) {
+      return string_literals[i].managed_obj;
+    }
+  }
+
+  /* Not in cache, get raw data */
+  uint32_t char_count = 0;
+  const uint16_t *chars =
+      il_get_user_string_raw(current_assembly, us_index, &char_count);
+  if (!chars)
+    return nil;
+
+  /* Allocate managed string object: 8 (header/length) + data */
+  /* System.String layout: [int length][char firstChar...] */
+  /* We use 8 bytes for length to match lux_alloc_array and alignment */
+  ulong size = 8 + (char_count * 2);
+  void *obj_data =
+      lux_alloc(size, 0); /* 0 for now (should be System.String token) */
+  if (!obj_data)
+    return nil;
+
+  /* Store length at start */
+  *(u64int *)obj_data = (u64int)char_count;
+  /* Copy characters */
+  memmove((u8int *)obj_data + 8, chars, char_count * 2);
+
+  /* Cache it */
+  if (string_literal_count >= string_literal_capacity) {
+    ulong new_cap = string_literal_capacity ? string_literal_capacity * 2 : 16;
+    clr_string_literal_t *new_table =
+        mallocz(sizeof(clr_string_literal_t) * new_cap, 1);
+    if (new_table) {
+      if (string_literals) {
+        memmove(new_table, string_literals,
+                sizeof(clr_string_literal_t) * string_literal_count);
+        free(string_literals);
+      }
+      string_literals = new_table;
+      string_literal_capacity = new_cap;
+    }
+  }
+
+  if (string_literal_count < string_literal_capacity) {
+    string_literals[string_literal_count].us_index = us_index;
+    string_literals[string_literal_count].managed_obj = obj_data;
+    string_literal_count++;
+  }
+
+  return obj_data;
+}
+
+u64int clr_string_get_length(void *ptr) {
+  if (!ptr)
+    return 0;
+  return *(u64int *)ptr;
+}
+
+u64int clr_string_get_char(void *ptr, u64int index) {
+  if (!ptr)
+    return 0;
+  u64int len = *(u64int *)ptr;
+  if (index >= len)
+    return 0;
+  u16int *chars = (u16int *)((u8int *)ptr + 8);
+  return chars[index];
 }
 
 ulong clr_get_type_size(u32int token) {
-  /* Minimal stub */
+  /* Minimal stub - should use metadata to get real size */
+  uint8_t kind = (token >> 24) & 0xFF;
+  if (kind == TABLE_TYPEDEF || kind == TABLE_TYPEREF) {
+    /* For now, just return a reasonable default for objects */
+    return 32;
+  }
   return 8;
 }
 
@@ -539,6 +618,8 @@ static void clr_add_runtime_imports(fruity_module_t *mod) {
 
   /* CLR runtime support */
   clr_add_import(mod, "clr_string_from_literal", CLR_REF, i32_args, 1);
+  clr_add_import(mod, "clr_string_get_length", CLR_INT64, ref_args, 1);
+  clr_add_import(mod, "clr_string_get_char", CLR_INT64, ref_i64_args, 2);
   clr_add_import(mod, "clr_get_type_size", CLR_INT64, i32_args, 1);
   clr_add_import(mod, "clr_get_static_field", CLR_REF, i32_args, 1);
   clr_add_import(mod, "clr_is_instance_of", CLR_INT32, ref_i32_args, 2);
@@ -615,18 +696,29 @@ int clr_compile_method_to_wasm(il_assembly_t *assembly, const char *method_name,
 
 static il_method_t *clr_find_entry_point(il_assembly_t *assembly,
                                          const char *name) {
+  print("CLR: clr_find_entry_point name='%s'\n", name ? name : "nil");
   if (name) {
     il_method_t *m = il_get_method(assembly, name);
     if (m)
       return m;
   }
   il_method_t *main = il_get_method(assembly, "Main");
-  if (main)
+  if (main) {
+    print("CLR: Found 'Main' entry point\n");
     return main;
+  }
+  main = il_get_method(assembly, "main");
+  if (main) {
+    print("CLR: Found 'main' entry point\n");
+    return main;
+  }
   if (assembly->cli_header.entry_point_token) {
+    print("CLR: Trying entry point token 0x%x\n",
+          (unsigned int)assembly->cli_header.entry_point_token);
     return il_get_method_by_token(assembly,
                                   assembly->cli_header.entry_point_token);
   }
+  print("CLR: No entry point found in assembly\n");
   return nil;
 }
 
@@ -637,7 +729,15 @@ static il_method_t *clr_find_entry_point(il_assembly_t *assembly,
  * Returns: 0 on success, -1 on error
  * Entry point defaults to "Main" if not specified elsewhere
  */
+int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
+                                    const char *entry_name);
+
 int clr_execute_assembly(void *dll_data, ulong dll_size) {
+  return clr_execute_assembly_with_entry(dll_data, dll_size, nil);
+}
+
+int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
+                                    const char *entry_name) {
   char errbuf[128];
   il_error_t err;
   const char *entry_point = nil; /* Default entry point lookup */
@@ -651,7 +751,7 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   }
   current_assembly = assembly;
 
-  il_method_t *main = clr_find_entry_point(assembly, entry_point);
+  il_method_t *main = clr_find_entry_point(assembly, entry_name);
   if (!main) {
     print("CLR: No entry point found\n");
     return -1;
@@ -731,9 +831,13 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
 
   /* Run Main (try both cases) */
   IM3Function f;
-  result = m3_FindFunction(&f, runtime, "Main");
-  if (result) {
-    result = m3_FindFunction(&f, runtime, "main");
+  if (entry_name) {
+    result = m3_FindFunction(&f, runtime, entry_name);
+  } else {
+    result = m3_FindFunction(&f, runtime, "Main");
+    if (result) {
+      result = m3_FindFunction(&f, runtime, "main");
+    }
   }
   if (result) {
     print("m3_FindFunction error: %s\n", result);
@@ -741,11 +845,12 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   }
 
   u32int arg_count = m3_GetArgCount(f);
-  print("CLR: Executing Main (args=%d, rets=%d)...\n", arg_count,
-        m3_GetRetCount(f));
+  print("CLR: Executing %s (args=%d, rets=%d)...\n", m3_GetFunctionName(f),
+        arg_count, m3_GetRetCount(f));
 
+  m3_GetErrorInfo(runtime, nil); /* Clear stale error info */
   if (arg_count == 1)
-    result = m3_CallV(f, 0ULL);
+    result = m3_CallV(f, (u64int)0);
   else
     result = m3_CallV(f);
 
@@ -767,13 +872,101 @@ void clr_test_wasm_pipeline(void) {
   print(
       "CLR-TEST: Starting Full WASM Pipeline Verification (TestAdd.dll)...\n");
 
-  /* Use embedded TestAdd.dll byte array */
-  /* Target Method: Will use default entry point (Main) */
+  /* First, try the DIRECT path (bypasses Fruity) */
+  print("CLR-TEST: === Testing DIRECT CIL->WASM path ===\n");
 
-  if (clr_execute_assembly(test_assembly_bytes, test_assembly_len) == 0) {
-    print("CLR-TEST: *** FULL PIPELINE TEST PASSED ***\n");
+  il_error_t err;
+  il_assembly_t *assembly = il_parse_assembly_memory(
+      (u8int *)test_assembly_bytes, test_assembly_len, &err);
+  if (!assembly) {
+    print("CLR-TEST: Failed to parse TestAdd.dll: %d\n", err);
+    return;
+  }
+
+  /* Get the methods we need */
+  il_method_t *add_method = il_get_method(assembly, "Add");
+  il_method_t *answer_method = il_get_method(assembly, "Answer");
+
+  if (!add_method || !answer_method) {
+    print("CLR-TEST: Could not find Add or Answer methods\n");
+    return;
+  }
+
+  print("CLR-TEST: Found Add and Answer methods\n");
+
+  /* Build WASM module using direct path */
+  il_method_t *methods[2] = {add_method, answer_method};
+  void *wasm_bytes = nil;
+  u32int wasm_len = 0;
+
+  int build_err =
+      cil_to_wasm_build_module(methods, 2, "Answer", &wasm_bytes, &wasm_len);
+  if (build_err != 0) {
+    print("CLR-TEST: Direct build failed: %d\n", build_err);
+    print("CLR-TEST: Falling back to Fruity path...\n");
+    /* Fall back to old path */
+    if (clr_execute_assembly_with_entry(test_assembly_bytes, test_assembly_len,
+                                        "Answer") == 0) {
+      print("CLR-TEST: *** FULL PIPELINE TEST PASSED (Fruity path) ***\n");
+    } else {
+      print("CLR-TEST: *** FULL PIPELINE TEST FAILED ***\n");
+    }
+    return;
+  }
+
+  print("CLR-TEST: Direct build succeeded, %d bytes\n", (int)wasm_len);
+
+  /* Instantiate and run with WASM3 */
+  IM3Environment env = m3_NewEnvironment();
+  if (!env) {
+    print("CLR-TEST: m3_NewEnvironment failed\n");
+    return;
+  }
+
+  IM3Runtime runtime = m3_NewRuntime(env, 64 * 1024, nil);
+  if (!runtime) {
+    print("CLR-TEST: m3_NewRuntime failed\n");
+    return;
+  }
+
+  IM3Module module = nil;
+  M3Result result = m3_ParseModule(env, &module, wasm_bytes, wasm_len);
+  if (result) {
+    print("CLR-TEST: m3_ParseModule error: %s\n", result);
+    return;
+  }
+
+  result = m3_LoadModule(runtime, module);
+  if (result) {
+    print("CLR-TEST: m3_LoadModule error: %s\n", result);
+    return;
+  }
+
+  IM3Function f;
+  result = m3_FindFunction(&f, runtime, "Answer");
+  if (result) {
+    print("CLR-TEST: m3_FindFunction error: %s\n", result);
+    return;
+  }
+
+  print("CLR-TEST: Calling Answer()...\n");
+  result = m3_CallV(f);
+  if (result) {
+    print("CLR-TEST: Execution failed: %s\n", result);
+    clr_dump_wasm_error(runtime);
+    print("CLR-TEST: *** DIRECT PATH TEST FAILED ***\n");
+    return;
+  }
+
+  /* Get result */
+  s64int ret_val = 0;
+  m3_GetResultsV(f, &ret_val);
+  print("CLR-TEST: Answer() returned %ld (expected 42)\n", (long)ret_val);
+
+  if (ret_val == 42) {
+    print("CLR-TEST: *** DIRECT PATH TEST PASSED ***\n");
   } else {
-    print("CLR-TEST: *** FULL PIPELINE TEST FAILED ***\n");
+    print("CLR-TEST: *** DIRECT PATH TEST FAILED (wrong result) ***\n");
   }
 }
 

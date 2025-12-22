@@ -1404,13 +1404,25 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
   // Search for method by name
   for (size_t i = 0; i < method_count; i++) {
     const char *method_name = il_get_string(assembly, methods[i].name_index);
-    if (method_name && strcmp(method_name, name) == 0) {
-      // Found it!
-      il_method_t *method = parse_method(assembly, methods[i].rva, name);
-      if (method)
-        method->signature_index = methods[i].signature_index;
-      IL_FREE(methods);
-      return method;
+    if (method_name) {
+      // print("IL_PARSER: checking method '%s'\n", method_name);
+      if (strcmp(method_name, name) == 0) {
+        // Found it!
+        il_method_t *method = parse_method(assembly, methods[i].rva, name);
+        if (method)
+          method->signature_index = methods[i].signature_index;
+        IL_FREE(methods);
+        return method;
+      }
+    }
+  }
+
+  /* Second pass: print all methods if not found */
+  print("IL_PARSER: method '%s' NOT FOUND. Available methods:\n", name);
+  for (size_t i = 0; i < method_count; i++) {
+    const char *method_name = il_get_string(assembly, methods[i].name_index);
+    if (method_name) {
+      print("  - %s\n", method_name);
     }
   }
 

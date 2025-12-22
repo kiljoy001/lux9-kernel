@@ -177,9 +177,7 @@ type FSharpList<'T> =
     interface System.Collections.IEnumerable with
         member this.GetEnumerator() = (this :> System.Collections.Generic.IEnumerable<'T>).GetEnumerator() :> System.Collections.IEnumerator
 
-// Alias for convenient syntax
-type list<'T> = FSharpList<'T>
-type 'T list = FSharpList<'T>
+// Alias removed to debug
 
 module List =
     let empty<'T> : FSharpList<'T> = Empty
