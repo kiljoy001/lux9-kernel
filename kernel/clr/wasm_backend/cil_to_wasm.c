@@ -10,6 +10,7 @@
 
 #include "../il_parser.h"
 #include "../il_to_fruity.h" /* For IL_ constants */
+#include "cil_relooper.h"
 #include "wasm_buffer.h"
 
 #ifdef USERSPACE_TEST
@@ -193,7 +194,33 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
   u32int il_size = method->il_code_size;
   u32int offset = 0;
 
-  /* All operations work on i64 (WASM's stack is typed, we use i64 uniformly) */
+  /* Check if method has any branches - if so, use relooper */
+  int has_branches = 0;
+  for (u32int i = 0; i < il_size; i++) {
+    u8int op = il[i];
+    if (op >= 0x2B && op <= 0x45) { /* Branch opcodes range */
+      has_branches = 1;
+      break;
+    }
+    if (op == IL_BR_S || op == IL_BRFALSE_S || op == IL_BRTRUE_S ||
+        op == IL_BR || op == IL_BRFALSE || op == IL_BRTRUE) {
+      has_branches = 1;
+      break;
+    }
+  }
+
+  if (has_branches) {
+    print("CIL-DIRECT: Method has branches, using relooper\n");
+    int err = reloop_compile_method(method, buf);
+    if (err == 0) {
+      return 0; /* Relooper handled it */
+    }
+    /* If relooper returned 0 (single block) or failed, fall through to linear
+     */
+    print("CIL-DIRECT: Relooper returned %d, falling back to linear\n", err);
+  }
+
+  /* Linear compilation (no branches or relooper delegated) */
   while (offset < il_size) {
     u16int opcode = il[offset++];
 

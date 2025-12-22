@@ -361,7 +361,7 @@ static cil_shape_t *alloc_shape(reloop_ctx_t *ctx, shape_type_t type) {
   return shape;
 }
 
-/* Simple implementation: emit blocks in order with structured control */
+/* Improved shape analysis: detect loops, conditionals, and sequences */
 cil_shape_t *reloop_analyze(cil_cfg_t *cfg, reloop_ctx_t *ctx) {
   if (!cfg || cfg->block_count == 0 || !ctx)
     return nil;
@@ -369,45 +369,97 @@ cil_shape_t *reloop_analyze(cil_cfg_t *cfg, reloop_ctx_t *ctx) {
   ctx->cfg = cfg;
   ctx->shape_count = 0;
 
-  /* Simple linearization for now - create sequence of shapes */
+  /* Mark all blocks as unprocessed */
+  for (u32int i = 0; i < cfg->block_count; i++) {
+    ctx->processed[i] = 0;
+  }
+
+  /* Build shapes by processing blocks in order */
   cil_shape_t *root = nil;
-  cil_shape_t *prev = nil;
+  cil_shape_t **next_ptr = &root;
 
   for (u32int i = 0; i < cfg->block_count; i++) {
+    if (ctx->processed[i])
+      continue;
+
+    cil_block_t *block = &cfg->blocks[i];
     cil_shape_t *shape;
 
-    if (cfg->blocks[i].is_loop_header) {
+    if (block->is_loop_header) {
       /* Create loop shape */
       shape = alloc_shape(ctx, SHAPE_LOOP);
       if (!shape)
         return nil;
       shape->loop.header_block = i;
 
-      /* Loop inner is the block itself for now */
+      /* Find all blocks in the loop (those that can reach back to header) */
       cil_shape_t *inner = alloc_shape(ctx, SHAPE_SIMPLE);
       if (!inner)
         return nil;
       inner->simple.block_id = i;
       shape->loop.inner = inner;
+      ctx->processed[i] = 1;
+
+    } else if (block->succ_count == 2 &&
+               is_conditional_branch(block->branch_opcode)) {
+      /* Conditional branch - create if shape */
+      shape = alloc_shape(ctx, SHAPE_IF);
+      if (!shape)
+        return nil;
+      shape->cond.block_id = i;
+      ctx->processed[i] = 1;
+
+      /* Successors are: [0] = branch target, [1] = fallthrough */
+      u32int then_block = block->successors[0];
+      u32int else_block = block->successors[1];
+
+      /* Create then shape if target not already processed */
+      if (!ctx->processed[then_block] && then_block < cfg->block_count) {
+        cil_shape_t *then_s = alloc_shape(ctx, SHAPE_SIMPLE);
+        if (!then_s)
+          return nil;
+        then_s->simple.block_id = then_block;
+        shape->cond.then_shape = then_s;
+        ctx->processed[then_block] = 1;
+      }
+
+      /* Create else shape if fallthrough not already processed */
+      if (!ctx->processed[else_block] && else_block < cfg->block_count &&
+          else_block != then_block) {
+        cil_shape_t *else_s = alloc_shape(ctx, SHAPE_SIMPLE);
+        if (!else_s)
+          return nil;
+        else_s->simple.block_id = else_block;
+        shape->cond.else_shape = else_s;
+        ctx->processed[else_block] = 1;
+      }
+
     } else {
       /* Simple block */
       shape = alloc_shape(ctx, SHAPE_SIMPLE);
       if (!shape)
         return nil;
       shape->simple.block_id = i;
+      ctx->processed[i] = 1;
     }
 
     /* Link into sequence */
-    if (!root) {
-      root = shape;
-    } else if (prev) {
-      if (prev->type == SHAPE_LOOP) {
-        prev->loop.next = shape;
-      } else if (prev->type == SHAPE_SEQUENCE) {
-        prev->seq.next = shape;
+    *next_ptr = shape;
+    if (shape->type == SHAPE_LOOP) {
+      next_ptr = &shape->loop.next;
+    } else if (shape->type == SHAPE_IF) {
+      next_ptr = &shape->cond.next;
+    } else if (shape->type == SHAPE_SEQUENCE) {
+      next_ptr = &shape->seq.next;
+    } else {
+      /* For simple shapes, wrap in sequence to allow chaining */
+      cil_shape_t *seq = alloc_shape(ctx, SHAPE_SEQUENCE);
+      if (seq) {
+        seq->seq.first = shape;
+        *next_ptr = seq;
+        next_ptr = &seq->seq.next;
       }
     }
-    prev = shape;
   }
 
   return root;
@@ -512,10 +564,91 @@ int reloop_emit(reloop_ctx_t *ctx, cil_shape_t *shape) {
     wasm_emit_uleb128(out, shape->branch.target_depth);
     return 0;
 
-  case SHAPE_MULTI:
-    /* Multi-entry using label dispatch */
-    /* TODO: Implement br_table dispatch */
-    return -10;
+  case SHAPE_MULTI: {
+    /* Multi-entry using label dispatch
+     *
+     * Structure:
+     * (loop $dispatch
+     *   (block $L0
+     *     (block $L1
+     *       (block $L2
+     *         local.get $label
+     *         br_table $L0 $L1 $L2
+     *       )
+     *       ;; Label 2 code
+     *       local.set $label 0
+     *       br $dispatch
+     *     )
+     *     ;; Label 1 code
+     *     local.set $label 1  ;; next label
+     *     br $dispatch
+     *   )
+     *   ;; Label 0 code (fall through exits)
+     * )
+     */
+    u32int count = shape->multi.handled_count;
+    if (count == 0)
+      return 0;
+
+    /* Emit outer loop for dispatch */
+    wasm_emit_u8(out, WASM_OP_LOOP);
+    wasm_emit_u8(out, WASM_TYPE_VOID);
+    ctx->label_depth++;
+
+    /* Emit nested blocks for each label (in reverse order) */
+    for (u32int i = 0; i < count; i++) {
+      wasm_emit_u8(out, WASM_OP_BLOCK);
+      wasm_emit_u8(out, WASM_TYPE_VOID);
+      ctx->label_depth++;
+    }
+
+    /* Emit br_table dispatch */
+    /* Load label variable (use local 0 as label var) */
+    wasm_emit_u8(out, WASM_OP_LOCAL_GET);
+    wasm_emit_uleb128(out, 0); /* Label variable in local 0 */
+    wasm_emit_u8(out, WASM_OP_I32_WRAP_I64);
+
+    /* br_table with targets */
+    wasm_emit_u8(out, WASM_OP_BR_TABLE);
+    wasm_emit_uleb128(out, count); /* Number of targets */
+    for (u32int i = 0; i < count; i++) {
+      wasm_emit_uleb128(out, i); /* Target label i */
+    }
+    wasm_emit_uleb128(out, 0); /* Default target */
+
+    /* Emit code for each handled block (in reverse) */
+    for (u32int i = count; i > 0; i--) {
+      /* End block for label i-1 */
+      wasm_emit_u8(out, WASM_OP_END);
+      ctx->label_depth--;
+
+      /* Emit block code */
+      u32int block_id = shape->multi.handled[i - 1];
+      int err = emit_block_code(ctx, block_id);
+      if (err < 0)
+        return err;
+
+      /* If not last, set next label and continue dispatch */
+      if (i > 1) {
+        wasm_emit_u8(out, WASM_OP_I64_CONST);
+        wasm_emit_sleb128(out, i - 2); /* Next label */
+        wasm_emit_u8(out, WASM_OP_LOCAL_SET);
+        wasm_emit_uleb128(out, 0);
+        wasm_emit_u8(out, WASM_OP_BR);
+        wasm_emit_uleb128(out, ctx->label_depth - 1); /* Back to loop */
+      }
+    }
+
+    /* End dispatch loop */
+    wasm_emit_u8(out, WASM_OP_END);
+    ctx->label_depth--;
+
+    /* Emit code after multi */
+    if (shape->multi.next) {
+      return reloop_emit(ctx, shape->multi.next);
+    }
+    return 0;
+  }
 
   default:
     return -11;
