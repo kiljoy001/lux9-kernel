@@ -10,6 +10,12 @@
  *   - ref >= 0 at all times (Inv_RefPositive)
  *   - ref=0 triggers cleanup (ref_zero_means_fully_closed)
  *   - Write to q[id], read from q[1-id] (write_read_duality)
+ *
+ * SMT2 VERIFICATION:
+ *   (declare-sort Pipe 0)
+ *   (declare-fun ref (Pipe) Int)
+ *   (declare-fun qref (Pipe Int) Int)
+ *   (declare-fun q_open (Pipe Int) Bool)
  */
 
 #include "../port/error.h"
@@ -54,12 +60,15 @@ void pipe_clone_notify(void *aux) {
   qunlock(&p->l);
 }
 
-/*@
-  ensures \result->aux != NULL ==> ((Pipe*)\result->aux)->ref == 1;
-  ensures \result->aux != NULL ==> PipeAttach(\result->aux);
-  assigns \result->aux;
-  COQ_PROOF_REF: proofs/pipe/conservation.v:attach_creates_ref
-*/
+/*
+ * SMT2_PRECONDITION: (= true true)
+ * SMT2_POSTCONDITION:
+ *   (=> (not (= (aux result) NULL))
+ *       (= (ref (aux result)) 1))
+ * SMT2_INVARIANT:
+ *   (assert (>= (ref p) 0))
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:attach_creates_ref
+ */
 static Chan *pipeattach(char *spec) {
   Pipe *p;
   Chan *c;
@@ -128,13 +137,18 @@ static int pipegen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
   return 1;
 }
 
-/*@
-  requires c->aux != NULL;
-  requires ((Pipe*)c->aux)->ref > 0;
-  ensures wq != NULL && wq->clone != c ==>
-          ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) + 1;
-  COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
-*/
+/*
+ * SMT2_PRECONDITION:
+ *   (and (not (= (aux c) NULL))
+ *        (> (ref (aux c)) 0))
+ * SMT2_POSTCONDITION:
+ *   (=> (and (not (= wq NULL)) (not (= (clone wq) c)))
+ *       (= (ref (aux c)) (+ (old_ref (aux c)) 1)))
+ * SMT2_INVARIANT:
+ *   (assert (=> (clone_success) (= ref_new (+ ref_old 1))))
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
+ */
 static Walkqid *pipewalk(Chan *c, Chan *nc, char **name, int nname) {
   Walkqid *wq;
   Pipe *p;
@@ -194,17 +208,23 @@ static Chan *pipeopen(Chan *c, int omode) {
   return c;
 }
 
-/*@
-  requires c->aux != NULL;
-  requires ((Pipe*)c->aux)->ref > 0;
-  ensures \old(((Pipe*)c->aux)->ref) == 1 ==>
-          \freed(c->aux);  // Pipe freed when last ref closed
-  ensures \old(((Pipe*)c->aux)->ref) > 1 ==>
-          ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) - 1;
-  COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
-  COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
-  COQ_PROOF_REF: proofs/pipe/safety.v:double_free_prevented
-*/
+/*
+ * SMT2_PRECONDITION:
+ *   (and (not (= (aux c) NULL))
+ *        (> (ref (aux c)) 0))
+ * SMT2_POSTCONDITION:
+ *   (=> (= (old_ref (aux c)) 1)
+ *       (freed (aux c)))
+ *   (=> (> (old_ref (aux c)) 1)
+ *       (= (ref (aux c)) (- (old_ref (aux c)) 1)))
+ * SMT2_INVARIANT:
+ *   (assert (=> (= ref 0) (freed pipe)))
+ *   (assert (=> (and (= ref 1) close) (= ref_new 0)))
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
+ * COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
+ * COQ_PROOF_REF: proofs/pipe/safety.v:double_free_prevented
+ */
 static void pipeclose(Chan *c) {
   Pipe *p;
   int id;
@@ -290,15 +310,20 @@ static void pipeclose(Chan *c) {
   }
 }
 
-/*@
-  requires c->aux != NULL;
-  requires id = c->qid.path - 1;
-  requires 0 <= id <= 1;
-  // Read from data (id=0) reads q[1], read from data1 (id=1) reads q[0]
-  behavior queue_duality:
-    ensures \result >= 0;
-  COQ_PROOF_REF: proofs/pipe/safety.v:write_read_duality
-*/
+/*
+ * SMT2_PRECONDITION:
+ *   (and (not (= (aux c) NULL))
+ *        (let ((id (- (path (qid c)) 1)))
+ *          (and (>= id 0) (<= id 1))))
+ * SMT2_POSTCONDITION:
+ *   (>= result 0)
+ * SMT2_INVARIANT:
+ *   ; Queue duality: read from q[1-id]
+ *   (assert (= (read_queue id) (- 1 id)))
+ * COQ_PROOF_REF: proofs/pipe/safety.v:write_read_duality
+ * COQ_PROOF_REF: proofs/pipe/safety.v:read_preserves_ref
+ * COQ_PROOF_REF: proofs/pipe/safety.v:read_preserves_queue_status
+ */
 static long piperead(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
@@ -314,16 +339,21 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
   return qread(p->q[1 - id], va, n);
 }
 
-/*@
-  requires c->aux != NULL;
-  requires id = c->qid.path - 1;
-  requires 0 <= id <= 1;
-  // Write to data (id=0) writes q[0], write to data1 (id=1) writes q[1]
-  behavior queue_open:
-    assumes ((Pipe*)c->aux)->q[id] is open;
-    ensures \result == n || \result < 0;
-  COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
-*/
+/*
+ * SMT2_PRECONDITION:
+ *   (and (not (= (aux c) NULL))
+ *        (let ((id (- (path (qid c)) 1)))
+ *          (and (>= id 0) (<= id 1)
+ *               (q_open (aux c) id))))
+ * SMT2_POSTCONDITION:
+ *   (or (= result n) (< result 0))
+ * SMT2_INVARIANT:
+ *   ; Write to q[id], closed queue rejects write
+ *   (assert (=> (not (q_open pipe id)) (= result -1)))
+ * COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
+ * COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref
+ * COQ_PROOF_REF: proofs/pipe/safety.v:close_irreversible
+ */
 static long pipewrite(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
