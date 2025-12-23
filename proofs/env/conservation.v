@@ -208,3 +208,94 @@ Proof.
   - assumption.
   - lia.
 Qed.
+
+(** Inverse: decref is the inverse of incref *)
+Theorem decref_inverse_of_incref :
+  forall eg1 eg2 eg3,
+  IncRef eg1 eg2 -> DecRef eg2 eg3 ->
+  eg3.(eg_ref) = eg1.(eg_ref) /\
+  eg3.(eg_alloc) = eg1.(eg_alloc) /\
+  eg3.(eg_nent) = eg1.(eg_nent).
+Proof.
+  intros eg1 eg2 eg3 Hi Hd.
+  inversion Hi. inversion Hd. subst.
+  unfold incr_ref, decr_ref. simpl.
+  repeat split; lia.
+Qed.
+
+(** Inverse: incref is the inverse of decref when ref > 1 *)
+Theorem incref_inverse_of_decref :
+  forall eg1 eg2 eg3,
+  eg1.(eg_ref) > 1 ->
+  DecRef eg1 eg2 -> IncRef eg2 eg3 ->
+  eg3.(eg_ref) = eg1.(eg_ref).
+Proof.
+  intros eg1 eg2 eg3 Hgt Hd Hi.
+  inversion Hd. inversion Hi. subst.
+  unfold incr_ref, decr_ref. simpl. lia.
+Qed.
+
+(** Inverse: Writing zero diff is identity for allocation *)
+Theorem envwrite_zero_preserves_alloc :
+  forall eg1 eg2,
+  EnvWrite 0 eg1 eg2 -> eg2.(eg_alloc) = eg1.(eg_alloc).
+Proof.
+  intros eg1 eg2 H.
+  inversion H; subst; simpl; lia.
+Qed.
+
+(** Inverse: Double incref requires double decref *)
+Theorem double_incref_double_decref :
+  forall eg1 eg2 eg3 eg4 eg5,
+  IncRef eg1 eg2 -> IncRef eg2 eg3 ->
+  DecRef eg3 eg4 -> DecRef eg4 eg5 ->
+  eg5.(eg_ref) = eg1.(eg_ref).
+Proof.
+  intros eg1 eg2 eg3 eg4 eg5 Hi1 Hi2 Hd1 Hd2.
+  inversion Hi1. inversion Hi2. inversion Hd1. inversion Hd2. subst.
+  unfold incr_ref, decr_ref. simpl. lia.
+Qed.
+
+(** Inverse: Create+remove preserves all state except vers *)
+Theorem create_remove_preserves_state :
+  forall size eg1 eg2 eg3,
+  size > 0 ->
+  EnvCreate size eg1 eg2 -> EnvRemove size eg2 eg3 ->
+  eg3.(eg_ref) = eg1.(eg_ref) /\
+  eg3.(eg_alloc) = eg1.(eg_alloc).
+Proof.
+  intros size eg1 eg2 eg3 Hsize Hc Hr.
+  inversion Hc. inversion Hr. subst.
+  unfold add_entry_alloc, remove_entry_alloc. simpl.
+  split; lia.
+Qed.
+
+(** Inverse: Version only increases (monotonic) *)
+Theorem version_monotonic_create :
+  forall size eg1 eg2,
+  EnvCreate size eg1 eg2 -> eg2.(eg_vers) = eg1.(eg_vers) + 1.
+Proof.
+  intros size eg1 eg2 H.
+  inversion H. subst. unfold add_entry_alloc. simpl. reflexivity.
+Qed.
+
+(** Inverse: Allocation is conserved across create+remove *)
+Theorem allocation_conservation :
+  forall size eg1 eg2 eg3,
+  EnvCreate size eg1 eg2 ->
+  EnvRemove size eg2 eg3 ->
+  eg3.(eg_alloc) = eg1.(eg_alloc).
+Proof.
+  intros size eg1 eg2 eg3 Hc Hr.
+  inversion Hc. inversion Hr. subst.
+  unfold add_entry_alloc, remove_entry_alloc. simpl. lia.
+Qed.
+
+(** Inverse: Ref counting is independent of allocation *)
+Theorem ref_independent_of_alloc :
+  forall size eg1 eg2,
+  EnvCreate size eg1 eg2 -> eg2.(eg_ref) = eg1.(eg_ref).
+Proof.
+  intros size eg1 eg2 H.
+  inversion H. subst. unfold add_entry_alloc. simpl. reflexivity.
+Qed.

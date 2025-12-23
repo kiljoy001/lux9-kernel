@@ -234,6 +234,16 @@ static Chan *envopen(Chan *c, int omode) {
   return c;
 }
 
+/*@ requires c != \null && c->qid.type == QTDIR;
+    requires envwritable(c);
+    ensures \result != \null ==> eg->alloc <= Maxenvsize;
+    ensures \result != \null ==> eg->vers == \old(eg->vers) + 1;
+    assigns eg->ent, eg->nent, eg->alloc, eg->vers, eg->path, eg->low;
+    // COQ_PROOF_REF: proofs/env/conservation.v:envcreate_bounded
+    // COQ_PROOF_REF: proofs/env/conservation.v:version_monotonic_create
+    // COQ_PROOF_REF: proofs/env/conservation.v:ref_independent_of_alloc
+    // COQ_PROOF_REF: proofs/env/hash.v:insert_adds_entry
+*/
 static Chan *envcreate(Chan *c, char *name, int omode, ulong) {
   Egrp *eg;
   Evalue *e, **h;
