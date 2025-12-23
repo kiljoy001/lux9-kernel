@@ -7,6 +7,7 @@
 
 #include "blind_ledger.h"
 #include "pebble.h"
+#include "uuid.h"
 
 /*@
   predicate Inv_Conservation(struct PebbleState *ps, int total) =
@@ -215,6 +216,51 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
           ps->white_generation);
   }
   return nil;
+}
+
+/*
+ * Create a UUIDv8 representation of a White token.
+ * This allows passing the token as a 128-bit value (e.g., MVID).
+ */
+int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid) {
+  PebbleState *ps;
+  int i, idx = -1;
+
+  if (white == nil || out_uuid == nil)
+    return -1;
+
+  ps = pebble_state();
+  if (ps == nil)
+    return -1;
+
+  /* Verify token validity and find index */
+  lock(&pebble_global_lock);
+  if (!pebble_valid_white_token(ps, white)) {
+    unlock(&pebble_global_lock);
+    return -1;
+  }
+
+  /* Find index for the token pointer */
+  for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
+    if (&ps->whites[i] == white) {
+      idx = i;
+      break;
+    }
+  }
+  unlock(&pebble_global_lock);
+
+  if (idx == -1)
+    return -1; /* Should have been caught by valid check, but safely handle */
+
+  /*
+   * Pack into UUID:
+   * Token: white->token (Magic)
+   * Generation: white->generation
+   * Index: idx
+   */
+  uuid_pack_pebble(out_uuid, white->token, white->generation,
+                   (unsigned short)idx);
+  return 0;
 }
 
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white) {

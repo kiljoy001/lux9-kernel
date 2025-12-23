@@ -158,6 +158,7 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap);
 void *pebble_get_black_addr(const UserCapability *cap);
 int pebble_black_free(const UserCapability *cap);
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap);
+int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid);
 
 /* Blue/Red API - Independent colored tokens for block I/O transactions */
 PebbleBlue *pebble_blue_alloc(ulong size); /* COLORLESS → BLUE */
