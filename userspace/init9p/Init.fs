@@ -5,24 +5,24 @@ open System.Runtime.InteropServices
 
 // WASM Import for Kernel 9P
 [<DllImport("env", EntryPoint="lux9_send_9p")>]
-extern int Lux9Send9P(byte[] msg, int len)
+extern int Lux9Send9P(byte[] msg, int64 len)
 
 [<DllImport("env", EntryPoint="lux9_debug_print")>]
-extern void Lux9Print(string msg, int len)
+extern void Lux9Print(byte[] msg, int64 len)
 
 [<DllImport("env", EntryPoint="lux9_spawn")>]
-extern int Lux9Spawn(string path)
+extern int64 Lux9Spawn(string path)
 
 [<DllImport("env", EntryPoint="lux9_sleep")>]
-extern void Lux9Sleep(int ms)
+extern void Lux9Sleep(int64 ms)
 
 let print (s: string) =
     let bytes = System.Text.Encoding.UTF8.GetBytes(s)
-    Lux9Print(s, bytes.Length)
+    Lux9Print(bytes, int64 bytes.Length)
 
 /// Send a 9P message to kernel via WASM host function
 let sendToKernel (message: byte[]) =
-    let res = Lux9Send9P(message, message.Length)
+    let res = Lux9Send9P(message, int64 message.Length)
     if res < 0 then
         failwith "Kernel communication failed"
     ()
@@ -176,6 +176,8 @@ let bind (newPath: string) (oldPath: string) =
 /// Init entry point
 [<EntryPoint>]
 let main (args: string[]) : int =
+    let hello = [| 0x48uy; 0x45uy; 0x4Cuy; 0x4Cuy; 0x4Fuy; 0x0Auy |] // HELLO\n
+    Lux9Print(hello, 6L)
     print "=== Lux9 Init (WASM) - Namespace First ==="
     
     try
@@ -213,7 +215,7 @@ let main (args: string[]) : int =
 
         print "[INIT] Entering residency loop..."
         while true do
-            Lux9Sleep(5000)
+            Lux9Sleep(5000L)
             
         0
     with ex ->

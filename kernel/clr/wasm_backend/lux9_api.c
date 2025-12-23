@@ -78,8 +78,11 @@ static void *clr_untag_ptr(u64int val) {
 static void *clr_ptr_to_mem(u64int ptr_val, void *_mem) {
   if (ptr_val == 0)
     return nil;
-  if (ptr_val & CLR_PTR_TAG)
-    return clr_untag_ptr(ptr_val);
+  if (ptr_val & CLR_PTR_TAG) {
+    /* Untag to get offset, then add WASM memory base */
+    u64int off = ptr_val & ~CLR_PTR_TAG;
+    return (void *)((u8int *)_mem + (u32int)off);
+  }
   /* Treat as WASM linear memory offset */
   return (void *)((u8int *)_mem + (u32int)ptr_val);
 }
@@ -104,18 +107,21 @@ m3ApiRawFunction(lux9_send_9p) {
   if (!arr)
     m3ApiReturn(-2);
 
-  u8int *msg_ptr = (u8int *)arr + sizeof(u64int);
+  /* Allocate kernel buffer for contiguous message */
+  u8int *packed_msg = xalloc(msg_len);
+  if (!packed_msg)
+    m3ApiReturn(-3);
 
-  /* Check if process has an exchange page */
-  if (!up->p9page) {
-    /* Lazy allocation could happen here, or fail */
-    m3ApiReturn(-2);
+  /* Helper to access element i in sparse array: arr + 8 + i*8 */
+  u64int *sparse_base = (u64int *)((u8int *)arr + 8);
+
+  for (u32int i = 0; i < msg_len; i++) {
+    packed_msg[i] = (u8int)sparse_base[i];
   }
 
-  /* Copy from WASM memory to Kernel Exchange Page */
-  /* Note: msg_ptr is already a pointer into the WASM linear memory */
-
-  memmove(up->p9page, msg_ptr, msg_len);
+  /* Copy to Exchange Page */
+  memmove(up->p9page, packed_msg, msg_len);
+  xfree(packed_msg);
 
   /* Route the message */
   long res = p9_route_message(up->pid, up->p9page, msg_len);
@@ -146,12 +152,17 @@ m3ApiRawFunction(lux9_debug_print) {
   if (len > 256)
     len = 256;
 
-  char *str = (char *)clr_ptr_to_mem(str_val, _mem);
-  if (!str)
+  void *arr = clr_ptr_to_mem(str_val, _mem);
+  if (!arr) {
     m3ApiSuccess();
+  }
 
+  /* Repack sparse array */
   char buf[257];
-  memmove(buf, str, len);
+  u64int *sparse_base = (u64int *)((u8int *)arr + 8);
+  for (u32int i = 0; i < len; i++) {
+    buf[i] = (char)sparse_base[i];
+  }
   buf[len] = 0;
 
   print("%s", buf);
@@ -369,16 +380,37 @@ m3ApiRawFunction(clr_import_newarr) {
   m3ApiReturnType(u64int) m3ApiGetArg(u64int, elem_token64);
   u32int elem_token = (u32int)elem_token64;
   m3ApiGetArg(u64int, length);
-  ulong elem_size = clr_get_type_size(elem_token);
-  if (elem_size == 0)
-    elem_size = 8;
-  if (elem_size > 64)
-    elem_size = 8;
+  ulong elem_size = 8; /* Force 8-byte stride to match array_get/set */
   ulong total = 8 + (ulong)length * elem_size;
   void *arr = lux_alloc(total, elem_token);
   if (arr)
     *(u64int *)arr = (u64int)length;
   m3ApiReturn(clr_tag_ptr(arr));
+}
+
+m3ApiRawFunction(clr_import_string_create) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, arr_val);
+  void *arr = clr_ptr_to_mem(arr_val, _mem);
+  if (!arr)
+    m3ApiReturn(0);
+
+  u64int len = *(u64int *)arr;
+  /* String is packed UTF-16: 8 bytes header + len*2 bytes */
+  ulong str_size = 8 + (len * 2);
+  void *str = lux_alloc(str_size, 0);
+  if (!str)
+    m3ApiReturn(0);
+
+  *(u64int *)str = len;
+
+  /* Copy Wide Array (u64) to Packed String (u16) */
+  u64int *src = (u64int *)arr + 1;
+  u16int *dst = (u16int *)((u8int *)str + 8);
+  for (u64int i = 0; i < len; i++) {
+    dst[i] = (u16int)src[i];
+  }
+
+  m3ApiReturn(clr_tag_ptr(str));
 }
 
 m3ApiRawFunction(clr_import_array_len) {
@@ -558,6 +590,7 @@ M3Result lux9_link_wasi(IM3Module module) {
   LINK_RAW("lux_rollback", "v(I)", &clr_lux_rollback);
 
   LINK_RAW("clr_string_from_literal", "I(I)", &clr_import_string_from_literal);
+  LINK_RAW("clr_string_create", "I(I)", &clr_import_string_create);
   LINK_RAW("clr_string_get_length", "I(I)", &clr_import_string_get_length);
   LINK_RAW("clr_string_get_char", "I(II)", &clr_import_string_get_char);
   LINK_RAW("clr_get_type_size", "I(I)", &clr_import_get_type_size);

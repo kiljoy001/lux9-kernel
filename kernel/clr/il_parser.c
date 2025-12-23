@@ -1584,6 +1584,101 @@ int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
       }
       return 0;
     }
+  } else if (tag == 4) { // TypeSpec
+    typespec_row_t *ts = il_get_typespec(assembly, parent_rid);
+    if (ts) {
+      uint32_t sig_len = 0;
+      const uint8_t *sig = il_get_blob(assembly, ts->signature, &sig_len);
+      if (sig && sig_len > 0) {
+        /* Simple TypeSpec parser for CLASS/VALUETYPE wrapper */
+        uint8_t etype = *sig;
+        /* Custom parsing step to skip modifiers if any? Assuming simple wrapper
+         * for now */
+        /* If generic instantiation, e.g. List<T>, we might stop or try to get
+         * generic type name */
+        /* But System.String is usually direct 0x12/0x11 if grouped in typespec?
+         */
+        /* Actually TypeSpec is mostly for GenericInst (0x15) or Array. */
+
+        /* Check if it is GenericInst (0x15) */
+        if (etype == 0x15) { // ELEMENT_TYPE_GENERICINST
+                             // Next: Class(0x12)/ValueType(0x11)
+                             // Then: Token
+        }
+
+        /* Helper to decompress u32 from sig ptr */
+        const uint8_t *p = sig;
+        if (*p == 0x15)
+          p++; /* Skip GENERICINST */
+
+        if (*p == 0x0E) { /* STRING */
+          if (type_name && type_len > 0) {
+            strncpy(type_name, "System.String", type_len - 1);
+            type_name[type_len - 1] = 0;
+          }
+          return 0;
+        }
+        if (*p == 0x1C) { /* OBJECT */
+          if (type_name && type_len > 0) {
+            strncpy(type_name, "System.Object", type_len - 1);
+            type_name[type_len - 1] = 0;
+          }
+          return 0;
+        }
+
+        if (*p == 0x12 || *p == 0x11) { /* CLASS or VALUETYPE */
+          p++;
+          /* Decompress typedef/ref/spec encoded */
+          uint32_t val = 0;
+          if ((*p & 0x80) == 0) {
+            val = *p;
+            p++;
+          } else if ((*p & 0xC0) == 0x80) {
+            val = ((*p & 0x3F) << 8) | *(p + 1);
+            p += 2;
+          } else {
+            val = ((*p & 0x1F) << 24) | (*(p + 1) << 16) | (*(p + 2) << 8) |
+                  *(p + 3);
+            p += 4;
+          }
+
+          /* Decode TypeDefOrRefOrSpec */
+          /* Tag: 0=TypeDef, 1=TypeRef, 2=TypeSpec */
+          uint32_t subtags = val & 0x03;
+          uint32_t subrid = val >> 2;
+
+          if (subtags == 1) { /* TypeRef */
+            typeref_row_t *tr = il_get_typeref(assembly, subrid);
+            if (tr) {
+              const char *tname = il_get_string(assembly, tr->name_index);
+              const char *tnspace =
+                  il_get_string(assembly, tr->namespace_index);
+              if (tnspace && strlen(tnspace) > 0)
+                snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
+              else {
+                strncpy(type_name, tname ? tname : "", type_len - 1);
+                type_name[type_len - 1] = 0;
+              }
+              return 0;
+            }
+          } else if (subtags == 0) { /* TypeDef */
+            typedef_row_t *td = il_get_typedef(assembly, subrid);
+            if (td) {
+              const char *tname = il_get_string(assembly, td->name_index);
+              const char *tnspace =
+                  il_get_string(assembly, td->namespace_index);
+              if (tnspace && strlen(tnspace) > 0)
+                snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
+              else {
+                strncpy(type_name, tname ? tname : "", type_len - 1);
+                type_name[type_len - 1] = 0;
+              }
+              return 0;
+            }
+          }
+        }
+      }
+    }
   }
   // Other parent types not yet supported for simple resolution
   if (type_name && type_len > 0) {
