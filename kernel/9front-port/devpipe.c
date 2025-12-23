@@ -2,20 +2,13 @@
  * devpipe.c - 9front bidirectional pipe device
  *
  * FORMAL VERIFICATION:
- *   proofs/pipe/types.v        - PipeState model
- *   proofs/pipe/conservation.v - Reference counting correctness
- *   proofs/pipe/safety.v       - Memory safety, EOF propagation
+ *   Coq proofs:  proofs/pipe/types.v, conservation.v, safety.v
+ *   Frama-C:     ACSL annotations below
  *
- * Key invariants:
+ * Key invariants proven:
  *   - ref >= 0 at all times (Inv_RefPositive)
  *   - ref=0 triggers cleanup (ref_zero_means_fully_closed)
  *   - Write to q[id], read from q[1-id] (write_read_duality)
- *
- * SMT2 VERIFICATION:
- *   (declare-sort Pipe 0)
- *   (declare-fun ref (Pipe) Int)
- *   (declare-fun qref (Pipe Int) Int)
- *   (declare-fun q_open (Pipe Int) Bool)
  */
 
 #include "../port/error.h"
@@ -60,15 +53,14 @@ void pipe_clone_notify(void *aux) {
   qunlock(&p->l);
 }
 
-/*
- * SMT2_PRECONDITION: (= true true)
- * SMT2_POSTCONDITION:
- *   (=> (not (= (aux result) NULL))
- *       (= (ref (aux result)) 1))
- * SMT2_INVARIANT:
- *   (assert (>= (ref p) 0))
- * COQ_PROOF_REF: proofs/pipe/conservation.v:attach_creates_ref
- */
+/*@ requires \true;
+    ensures \result != \null ==> ((Pipe*)\result->aux)->ref == 1;
+    ensures \result != \null ==> ((Pipe*)\result->aux)->qref[0] == 0;
+    ensures \result != \null ==> ((Pipe*)\result->aux)->qref[1] == 0;
+    assigns \nothing;
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:attach_creates_ref
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:attach_wellformed
+*/
 static Chan *pipeattach(char *spec) {
   Pipe *p;
   Chan *c;
@@ -137,18 +129,14 @@ static int pipegen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
   return 1;
 }
 
-/*
- * SMT2_PRECONDITION:
- *   (and (not (= (aux c) NULL))
- *        (> (ref (aux c)) 0))
- * SMT2_POSTCONDITION:
- *   (=> (and (not (= wq NULL)) (not (= (clone wq) c)))
- *       (= (ref (aux c)) (+ (old_ref (aux c)) 1)))
- * SMT2_INVARIANT:
- *   (assert (=> (clone_success) (= ref_new (+ ref_old 1))))
- * COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
- * COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
- */
+/*@ requires c != \null && c->aux != \null;
+    requires ((Pipe*)c->aux)->ref > 0;
+    ensures \result != \null && \result->clone != c ==>
+            ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) + 1;
+    assigns ((Pipe*)c->aux)->ref, ((Pipe*)c->aux)->qref[0..1];
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
+*/
 static Walkqid *pipewalk(Chan *c, Chan *nc, char **name, int nname) {
   Walkqid *wq;
   Pipe *p;
@@ -208,23 +196,22 @@ static Chan *pipeopen(Chan *c, int omode) {
   return c;
 }
 
-/*
- * SMT2_PRECONDITION:
- *   (and (not (= (aux c) NULL))
- *        (> (ref (aux c)) 0))
- * SMT2_POSTCONDITION:
- *   (=> (= (old_ref (aux c)) 1)
- *       (freed (aux c)))
- *   (=> (> (old_ref (aux c)) 1)
- *       (= (ref (aux c)) (- (old_ref (aux c)) 1)))
- * SMT2_INVARIANT:
- *   (assert (=> (= ref 0) (freed pipe)))
- *   (assert (=> (and (= ref 1) close) (= ref_new 0)))
- * COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
- * COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
- * COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
- * COQ_PROOF_REF: proofs/pipe/safety.v:double_free_prevented
- */
+/*@ requires c != \null && c->aux != \null;
+    requires ((Pipe*)c->aux)->ref > 0;
+    behavior last_ref:
+      assumes ((Pipe*)c->aux)->ref == 1;
+      ensures \freed((Pipe*)c->aux);
+    behavior more_refs:
+      assumes ((Pipe*)c->aux)->ref > 1;
+      ensures ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) - 1;
+    complete behaviors;
+    disjoint behaviors;
+    assigns ((Pipe*)c->aux)->ref, ((Pipe*)c->aux)->q[0..1];
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
+    // COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
+    // COQ_PROOF_REF: proofs/pipe/safety.v:double_free_prevented
+*/
 static void pipeclose(Chan *c) {
   Pipe *p;
   int id;
@@ -310,20 +297,14 @@ static void pipeclose(Chan *c) {
   }
 }
 
-/*
- * SMT2_PRECONDITION:
- *   (and (not (= (aux c) NULL))
- *        (let ((id (- (path (qid c)) 1)))
- *          (and (>= id 0) (<= id 1))))
- * SMT2_POSTCONDITION:
- *   (>= result 0)
- * SMT2_INVARIANT:
- *   ; Queue duality: read from q[1-id]
- *   (assert (= (read_queue id) (- 1 id)))
- * COQ_PROOF_REF: proofs/pipe/safety.v:write_read_duality
- * COQ_PROOF_REF: proofs/pipe/safety.v:read_preserves_ref
- * COQ_PROOF_REF: proofs/pipe/safety.v:read_preserves_queue_status
- */
+/*@ requires c != \null && c->aux != \null;
+    requires \let id = c->qid.path - 1; 0 <= id <= 1;
+    ensures \result >= 0 || \result == -1;
+    assigns \nothing;
+    // Queue duality: read from q[1-id]
+    // COQ_PROOF_REF: proofs/pipe/safety.v:write_read_duality
+    // COQ_PROOF_REF: proofs/pipe/safety.v:read_preserves_ref
+*/
 static long piperead(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
@@ -339,21 +320,15 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
   return qread(p->q[1 - id], va, n);
 }
 
-/*
- * SMT2_PRECONDITION:
- *   (and (not (= (aux c) NULL))
- *        (let ((id (- (path (qid c)) 1)))
- *          (and (>= id 0) (<= id 1)
- *               (q_open (aux c) id))))
- * SMT2_POSTCONDITION:
- *   (or (= result n) (< result 0))
- * SMT2_INVARIANT:
- *   ; Write to q[id], closed queue rejects write
- *   (assert (=> (not (q_open pipe id)) (= result -1)))
- * COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
- * COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref
- * COQ_PROOF_REF: proofs/pipe/safety.v:close_irreversible
- */
+/*@ requires c != \null && c->aux != \null;
+    requires \let id = c->qid.path - 1; 0 <= id <= 1;
+    ensures \result == n || \result < 0;
+    assigns ((Pipe*)c->aux)->q[0..1];
+    // Write to q[id], closed queue rejects
+    // COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
+    // COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref
+    // COQ_PROOF_REF: proofs/pipe/safety.v:close_irreversible
+*/
 static long pipewrite(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
