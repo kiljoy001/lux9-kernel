@@ -185,3 +185,119 @@ Proof.
   intros p1 p2 p3 Hwf Href1 Hclose1 Href2 Hclose2.
   inversion Hclose2. lia.
 Qed.
+
+(* ========================================================================= *)
+(* INVERSE THEOREMS                                                          *)
+(* ========================================================================= *)
+
+(** Inverse: Read is the inverse of write (for queue length) *)
+Theorem read_inverse_of_write_q0 :
+  forall len p1 p2 p3,
+  len > 0 ->
+  p1.(q0_status) = QOpen ->
+  PipeWrite 0 len p1 p2 ->
+  p1.(q1_len) >= len ->
+  PipeRead 1 len p2 p3 ->
+  p3.(q0_len) = p1.(q0_len).
+Proof.
+  intros len p1 p2 p3 Hlen Hopen Hw Hr_cond Hr.
+  inversion Hw; subst; try discriminate.
+  inversion Hr; subst; try discriminate.
+  simpl. lia.
+Qed.
+
+(** Inverse: Write then read returns queue to original length *)
+Theorem write_read_inverse_q1 :
+  forall len p1 p2 p3,
+  len > 0 ->
+  p1.(q1_status) = QOpen ->
+  PipeWrite 1 len p1 p2 ->
+  PipeRead 0 len p2 p3 ->
+  p3.(q1_len) = p1.(q1_len).
+Proof.
+  intros len p1 p2 p3 Hlen Hopen Hw Hr.
+  inversion Hw; subst; try discriminate.
+  inversion Hr; subst; try discriminate.
+  simpl. lia.
+Qed.
+
+(** Inverse: Queue status is preserved across write *)
+Theorem write_preserves_queue_status :
+  forall id len p1 p2,
+  PipeWrite id len p1 p2 ->
+  p2.(q0_status) = p1.(q0_status) /\
+  p2.(q1_status) = p1.(q1_status).
+Proof.
+  intros id len p1 p2 H.
+  inversion H; subst; simpl; split; reflexivity.
+Qed.
+
+(** Inverse: Queue status is preserved across read *)
+Theorem read_preserves_queue_status :
+  forall id len p1 p2,
+  PipeRead id len p1 p2 ->
+  p2.(q0_status) = p1.(q0_status) /\
+  p2.(q1_status) = p1.(q1_status).
+Proof.
+  intros id len p1 p2 H.
+  inversion H; subst; simpl; split; reflexivity.
+Qed.
+
+(** Inverse: Reference count is preserved across write *)
+Theorem write_preserves_ref :
+  forall id len p1 p2,
+  PipeWrite id len p1 p2 ->
+  p2.(ref) = p1.(ref).
+Proof.
+  intros id len p1 p2 H.
+  inversion H; subst; simpl; reflexivity.
+Qed.
+
+(** Inverse: Reference count is preserved across read *)
+Theorem read_preserves_ref :
+  forall id len p1 p2,
+  PipeRead id len p1 p2 ->
+  p2.(ref) = p1.(ref).
+Proof.
+  intros id len p1 p2 H.
+  inversion H; subst; simpl; reflexivity.
+Qed.
+
+(** Inverse: Multiple writes accumulate, multiple reads drain *)
+Theorem writes_accumulate :
+  forall len1 len2 p1 p2 p3,
+  PipeWrite 0 len1 p1 p2 ->
+  PipeWrite 0 len2 p2 p3 ->
+  p3.(q0_len) = p1.(q0_len) + len1 + len2.
+Proof.
+  intros len1 len2 p1 p2 p3 H1 H2.
+  inversion H1; subst; try discriminate.
+  inversion H2; subst; try discriminate.
+  simpl. lia.
+Qed.
+
+(** Inverse: Closed queue remains closed (irreversible) *)
+Theorem close_irreversible :
+  forall id len p1 p2,
+  (id = 0 /\ p1.(q0_status) = QClosed) ->
+  ~ PipeWrite id len p1 p2.
+Proof.
+  intros id len p1 p2 [Hid Hclosed] Hwrite.
+  subst. inversion Hwrite; subst.
+  - rewrite Hclosed in H1. discriminate.
+  - discriminate.
+Qed.
+
+(** Inverse: Duality symmetry - operations on id and 1-id are symmetric *)
+Theorem duality_symmetry :
+  forall len p1 p2 p3,
+  PipeWrite 0 len p1 p2 ->
+  PipeRead 1 len p2 p3 ->
+  p3.(q0_len) = p1.(q0_len) /\
+  p3.(q1_len) = p1.(q1_len).
+Proof.
+  intros len p1 p2 p3 Hw Hr.
+  inversion Hw; subst; try discriminate.
+  inversion Hr; subst; try discriminate.
+  simpl. split; lia.
+Qed.
