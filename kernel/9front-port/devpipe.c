@@ -1,3 +1,17 @@
+/*
+ * devpipe.c - 9front bidirectional pipe device
+ *
+ * FORMAL VERIFICATION:
+ *   proofs/pipe/types.v        - PipeState model
+ *   proofs/pipe/conservation.v - Reference counting correctness
+ *   proofs/pipe/safety.v       - Memory safety, EOF propagation
+ *
+ * Key invariants:
+ *   - ref >= 0 at all times (Inv_RefPositive)
+ *   - ref=0 triggers cleanup (ref_zero_means_fully_closed)
+ *   - Write to q[id], read from q[1-id] (write_read_duality)
+ */
+
 #include "../port/error.h"
 #include "dat.h"
 #include "fns.h"
@@ -40,6 +54,12 @@ void pipe_clone_notify(void *aux) {
   qunlock(&p->l);
 }
 
+/*@
+  ensures \result->aux != NULL ==> ((Pipe*)\result->aux)->ref == 1;
+  ensures \result->aux != NULL ==> PipeAttach(\result->aux);
+  assigns \result->aux;
+  COQ_PROOF_REF: proofs/pipe/conservation.v:attach_creates_ref
+*/
 static Chan *pipeattach(char *spec) {
   Pipe *p;
   Chan *c;
@@ -108,6 +128,13 @@ static int pipegen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
   return 1;
 }
 
+/*@
+  requires c->aux != NULL;
+  requires ((Pipe*)c->aux)->ref > 0;
+  ensures wq != NULL && wq->clone != c ==>
+          ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) + 1;
+  COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
+*/
 static Walkqid *pipewalk(Chan *c, Chan *nc, char **name, int nname) {
   Walkqid *wq;
   Pipe *p;
@@ -167,6 +194,17 @@ static Chan *pipeopen(Chan *c, int omode) {
   return c;
 }
 
+/*@
+  requires c->aux != NULL;
+  requires ((Pipe*)c->aux)->ref > 0;
+  ensures \old(((Pipe*)c->aux)->ref) == 1 ==>
+          \freed(c->aux);  // Pipe freed when last ref closed
+  ensures \old(((Pipe*)c->aux)->ref) > 1 ==>
+          ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) - 1;
+  COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
+  COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
+  COQ_PROOF_REF: proofs/pipe/safety.v:double_free_prevented
+*/
 static void pipeclose(Chan *c) {
   Pipe *p;
   int id;
@@ -252,6 +290,15 @@ static void pipeclose(Chan *c) {
   }
 }
 
+/*@
+  requires c->aux != NULL;
+  requires id = c->qid.path - 1;
+  requires 0 <= id <= 1;
+  // Read from data (id=0) reads q[1], read from data1 (id=1) reads q[0]
+  behavior queue_duality:
+    ensures \result >= 0;
+  COQ_PROOF_REF: proofs/pipe/safety.v:write_read_duality
+*/
 static long piperead(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
@@ -267,6 +314,16 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
   return qread(p->q[1 - id], va, n);
 }
 
+/*@
+  requires c->aux != NULL;
+  requires id = c->qid.path - 1;
+  requires 0 <= id <= 1;
+  // Write to data (id=0) writes q[0], write to data1 (id=1) writes q[1]
+  behavior queue_open:
+    assumes ((Pipe*)c->aux)->q[id] is open;
+    ensures \result == n || \result < 0;
+  COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
+*/
 static long pipewrite(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
   int id;
