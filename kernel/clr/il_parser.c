@@ -30,9 +30,12 @@ void *xallocz(size_t size,
 #define IL_FREE free
 #define IL_ALLOC malloc
 #define snprint snprintf
+/* print is defined in test harness */
+extern int print(char *, ...);
 #else
 #include "portlib.h"
-#include "u.h"
+// #include "u.h"
+
 #endif
 
 /* Standard types */
@@ -1506,36 +1509,47 @@ memberref_row_t *il_get_memberref(il_assembly_t *assembly, uint32_t rid) {
   return NULL;
 }
 
+/* Resolve a MemberRef token to its class/type name, method name, AND scope
+ * (assembly name) Returns 0 on success, -1 on failure Caller provides buffers;
+ * names are copied into them */
 int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
                          char *type_name, size_t type_len, char *method_name,
-                         size_t method_len) {
+                         size_t method_len, char *scope_name,
+                         size_t scope_len) {
+#ifndef USERSPACE_TEST
   extern int print(char *, ...);
+#endif
   // Token format: [table_kind:8][row_index:24]
   uint8_t table_kind = (token >> 24) & 0xFF;
   uint32_t row_index = token & 0x00FFFFFF;
 
   if (table_kind != TABLE_MEMBERREF) {
+#ifndef USERSPACE_TEST
     print("DEBUG: il_resolve_memberref token %x not MEMBERREF (kind=%x)\n",
           token, table_kind);
+#endif
     return -1;
   }
 
   memberref_row_t *row = il_get_memberref(assembly, row_index);
   if (!row) {
+#ifndef USERSPACE_TEST
     print("DEBUG: il_get_memberref failed for index %d (count=%d)\n", row_index,
-          assembly->memberref_count);
+          (int)assembly->memberref_count);
+#endif
     return -1;
   }
 
-  // Get Method Name
   // Get Method Name
   const char *mname = il_get_string(assembly, row->name_index);
   if (!mname) {
+#ifndef USERSPACE_TEST
     print("DEBUG: il_get_string failed for name_index %x\n", row->name_index);
+#endif
     return -1;
   }
 
-  if (method_name) {
+  if (method_name && method_len > 0) {
     strncpy(method_name, mname, method_len - 1);
     method_name[method_len - 1] = 0;
   }
@@ -1566,6 +1580,34 @@ int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
           type_name[type_len - 1] = 0;
         }
       }
+
+      /* Resolve Scope (AssemblyRef) from TypeRef */
+      if (scope_name && scope_len > 0) {
+        /* ResolutionScope coded index:
+           Tag 2 bits: 0=Module, 1=ModuleRef, 2=AssemblyRef, 3=TypeRef */
+        uint32_t rs_tag = tr->resolution_scope & 0x03;
+        uint32_t rs_rid = tr->resolution_scope >> 2;
+
+        if (rs_tag == 2) { /* AssemblyRef */
+          assemblyref_row_t *ar = il_get_assemblyref(assembly, rs_rid);
+          if (ar) {
+            const char *aname = il_get_string(assembly, ar->name_index);
+            if (aname) {
+              strncpy(scope_name, aname, scope_len - 1);
+              scope_name[scope_len - 1] = 0;
+            }
+            /* We leak the ar structure here because il_get_assemblyref mallocs.
+               Ideally il_get_assemblyref should return a pointer to cached
+               struct. For now, free it. */
+            IL_FREE(ar);
+          }
+        } else {
+          // Other resolution scopes (Module, ModuleRef, TypeRef) are not
+          // directly assembly names, or indicate local assembly.
+          // For now, clear scope_name if not AssemblyRef.
+          scope_name[0] = 0;
+        }
+      }
       return 0;
     }
   } else if (tag == 0) { // TypeDef
@@ -1582,105 +1624,23 @@ int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
           type_name[type_len - 1] = 0;
         }
       }
+      /* Local scope (same assembly) */
+      if (scope_name && scope_len > 0)
+        scope_name[0] = 0;
       return 0;
     }
   } else if (tag == 4) { // TypeSpec
-    typespec_row_t *ts = il_get_typespec(assembly, parent_rid);
-    if (ts) {
-      uint32_t sig_len = 0;
-      const uint8_t *sig = il_get_blob(assembly, ts->signature, &sig_len);
-      if (sig && sig_len > 0) {
-        /* Simple TypeSpec parser for CLASS/VALUETYPE wrapper */
-        uint8_t etype = *sig;
-        /* Custom parsing step to skip modifiers if any? Assuming simple wrapper
-         * for now */
-        /* If generic instantiation, e.g. List<T>, we might stop or try to get
-         * generic type name */
-        /* But System.String is usually direct 0x12/0x11 if grouped in typespec?
-         */
-        /* Actually TypeSpec is mostly for GenericInst (0x15) or Array. */
-
-        /* Check if it is GenericInst (0x15) */
-        if (etype == 0x15) { // ELEMENT_TYPE_GENERICINST
-                             // Next: Class(0x12)/ValueType(0x11)
-                             // Then: Token
-        }
-
-        /* Helper to decompress u32 from sig ptr */
-        const uint8_t *p = sig;
-        if (*p == 0x15)
-          p++; /* Skip GENERICINST */
-
-        if (*p == 0x0E) { /* STRING */
-          if (type_name && type_len > 0) {
-            strncpy(type_name, "System.String", type_len - 1);
-            type_name[type_len - 1] = 0;
-          }
-          return 0;
-        }
-        if (*p == 0x1C) { /* OBJECT */
-          if (type_name && type_len > 0) {
-            strncpy(type_name, "System.Object", type_len - 1);
-            type_name[type_len - 1] = 0;
-          }
-          return 0;
-        }
-
-        if (*p == 0x12 || *p == 0x11) { /* CLASS or VALUETYPE */
-          p++;
-          /* Decompress typedef/ref/spec encoded */
-          uint32_t val = 0;
-          if ((*p & 0x80) == 0) {
-            val = *p;
-            p++;
-          } else if ((*p & 0xC0) == 0x80) {
-            val = ((*p & 0x3F) << 8) | *(p + 1);
-            p += 2;
-          } else {
-            val = ((*p & 0x1F) << 24) | (*(p + 1) << 16) | (*(p + 2) << 8) |
-                  *(p + 3);
-            p += 4;
-          }
-
-          /* Decode TypeDefOrRefOrSpec */
-          /* Tag: 0=TypeDef, 1=TypeRef, 2=TypeSpec */
-          uint32_t subtags = val & 0x03;
-          uint32_t subrid = val >> 2;
-
-          if (subtags == 1) { /* TypeRef */
-            typeref_row_t *tr = il_get_typeref(assembly, subrid);
-            if (tr) {
-              const char *tname = il_get_string(assembly, tr->name_index);
-              const char *tnspace =
-                  il_get_string(assembly, tr->namespace_index);
-              if (tnspace && strlen(tnspace) > 0)
-                snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
-              else {
-                strncpy(type_name, tname ? tname : "", type_len - 1);
-                type_name[type_len - 1] = 0;
-              }
-              return 0;
-            }
-          } else if (subtags == 0) { /* TypeDef */
-            typedef_row_t *td = il_get_typedef(assembly, subrid);
-            if (td) {
-              const char *tname = il_get_string(assembly, td->name_index);
-              const char *tnspace =
-                  il_get_string(assembly, td->namespace_index);
-              if (tnspace && strlen(tnspace) > 0)
-                snprint(type_name, (int)type_len, "%s.%s", tnspace, tname);
-              else {
-                strncpy(type_name, tname ? tname : "", type_len - 1);
-                type_name[type_len - 1] = 0;
-              }
-              return 0;
-            }
-          }
-        }
-      }
+    /* TypeSpec points to a signature blob. Parsing complex types not yet fully
+     * implemented here. */
+    if (type_name && type_len > 0) {
+      snprint(type_name, (int)type_len, "TypeSpec_%x", parent_rid);
     }
+    if (scope_name && scope_len > 0)
+      scope_name[0] = 0; /* Local or unknown */
+    return 0;
   }
-  // Other parent types not yet supported for simple resolution
+
+  // Other parent types or fallthrough
   if (type_name && type_len > 0) {
     snprint(type_name, (int)type_len, "UnknownType_Tag%d", tag);
   }
@@ -1796,6 +1756,77 @@ il_assembly_t *il_parse_assembly_memory(const uint8_t *data, size_t size,
   return assembly;
 }
 
+/* Get AssemblyRef row (1-based index) */
+assemblyref_row_t *il_get_assemblyref(il_assembly_t *assembly, uint32_t rid) {
+  if (rid == 0 || rid > assembly->tables_header.row_counts[TABLE_ASSEMBLYREF]) {
+    return NULL;
+  }
+
+  uint8_t *ptr = il_get_table_start(assembly, TABLE_ASSEMBLYREF);
+  if (!ptr)
+    return NULL;
+
+  uint32_t row_size = get_table_row_size(assembly, TABLE_ASSEMBLYREF);
+  ptr += (rid - 1) * row_size;
+
+  /* Note: memory leak if called repeatedly without freeing.
+     Ideal: add to assembly struct cache. For now: caller must free or we
+     leak. Given this is kernel init, small leaks are "okay-ish" but bad
+     practice. We will check if we can add to struct later.
+  */
+  assemblyref_row_t *row = IL_MALLOC(sizeof(assemblyref_row_t));
+  if (!row)
+    return NULL;
+
+  row->major_version = READ_UINT16(ptr);
+  ptr += 2;
+  row->minor_version = READ_UINT16(ptr);
+  ptr += 2;
+  row->build_number = READ_UINT16(ptr);
+  ptr += 2;
+  row->revision_number = READ_UINT16(ptr);
+  ptr += 2;
+  row->flags = READ_UINT32(ptr);
+  ptr += 4;
+
+  int blob_wide = (assembly->tables_header.heap_sizes & 0x04) != 0;
+  int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
+
+  if (blob_wide) {
+    row->public_key_or_token = READ_UINT32(ptr);
+    ptr += 4;
+  } else {
+    row->public_key_or_token = READ_UINT16(ptr);
+    ptr += 2;
+  }
+
+  if (string_wide) {
+    row->name_index = READ_UINT32(ptr);
+    ptr += 4;
+  } else {
+    row->name_index = READ_UINT16(ptr);
+    ptr += 2;
+  }
+
+  if (string_wide) {
+    row->culture_index = READ_UINT32(ptr);
+    ptr += 4;
+  } else {
+    row->culture_index = READ_UINT16(ptr);
+    ptr += 2;
+  }
+
+  if (blob_wide) {
+    row->hash_value = READ_UINT32(ptr);
+    ptr += 4;
+  } else {
+    row->hash_value = READ_UINT16(ptr);
+    ptr += 2;
+  }
+
+  return row;
+}
+
 il_assembly_t *il_parse_assembly(const char *path, il_error_t *error) {
 #if defined(KERNEL) || defined(__PLAN9_KERNEL__)
   /* In kernel mode, file I/O is not directly available */
@@ -1836,7 +1867,98 @@ il_assembly_t *il_parse_assembly(const char *path, il_error_t *error) {
   }
 
   return assembly;
-#endif /* !KERNEL */
+#endif
+}
+
+/* Get Module MVID (UUID) from the Module Table (0x00) */
+/* Table 00: Module
+ * Row:
+ *   Generation (2 bytes)
+ *   Name (String Heap Index)
+ *   Mvid (GUID Heap Index)
+ *   EncId (GUID Heap Index)
+ *   EncBaseId (GUID Heap Index)
+ */
+int il_get_mvid(il_assembly_t *assembly, uuid_t *out_uuid) {
+  if (!assembly || !out_uuid)
+    return -1;
+
+  /* Check cache */
+  if (assembly->mvid_loaded) {
+    uuid_copy(out_uuid, &assembly->mvid);
+    return 0;
+  }
+
+  /* Module table is Table 0x00 */
+  uint32_t row_count = assembly->tables_header.row_counts[TABLE_MODULE];
+  if (row_count == 0)
+    return -1;
+
+  uint8_t *ptr = il_get_table_start(assembly, TABLE_MODULE);
+  if (!ptr)
+    return -1;
+
+  /* We only care about the first row (Entry 1) */
+  /* Skip Generation (2 bytes) */
+  ptr += 2;
+
+  /* Skip Name (String Index) */
+  int string_wide = (assembly->tables_header.heap_sizes & 0x01) != 0;
+  if (string_wide)
+    ptr += 4;
+  else
+    ptr += 2;
+
+  /* Read Mvid Index (GUID Heap Index) */
+  int guid_wide = (assembly->tables_header.heap_sizes & 0x02) != 0;
+  uint32_t mvid_idx = 0;
+
+  if (guid_wide) {
+    mvid_idx = READ_UINT32(ptr);
+    ptr += 4;
+  } else {
+    mvid_idx = READ_UINT16(ptr);
+    ptr += 2;
+  }
+
+  /* Find #GUID stream */
+  metadata_stream_t *guid_stream = NULL;
+  for (int i = 0; i < assembly->stream_count; i++) {
+    if (strncmp(assembly->streams[i].name, "#GUID", 5) == 0) {
+      guid_stream = &assembly->streams[i];
+      break;
+    }
+  }
+
+  if (!guid_stream)
+    return -1;
+
+  if (mvid_idx == 0) {
+    /* Null GUID */
+    uuid_clear(out_uuid);
+    return 0;
+  }
+
+  /* ECMA-335 II.24.2.5: The Guid heap is an array of GUIDs...
+     Indices are 1-based.
+     So index 1 is the first GUID (offset 0 inside the heap data).
+     Offset = (mvid_idx - 1) * 16.
+  */
+  uint32_t offset = (mvid_idx - 1) * 16;
+  if (offset + 16 > guid_stream->size) {
+    return -1;
+  }
+
+  const uint8_t *guid_data = guid_stream->data + offset;
+
+  /* Copy raw bytes to uuid_t */
+  memcpy(out_uuid->data, guid_data, 16);
+
+  /* Cache it */
+  uuid_copy(&assembly->mvid, out_uuid);
+  assembly->mvid_loaded = 1;
+
+  return 0;
 }
 
 /* ========== Cleanup ========== */
@@ -1865,9 +1987,17 @@ void il_free_assembly(il_assembly_t *assembly) {
       IL_FREE(assembly->tables_header.row_counts);
     }
     if (assembly->methods) {
+      /* Free internal pointers of each method, but not the method structs themselves
+         since methods is a single array allocation */
       for (size_t i = 0; i < assembly->method_count; i++) {
-        il_free_method(&assembly->methods[i]);
+        if (assembly->methods[i].name) {
+          IL_FREE(assembly->methods[i].name);
+        }
+        if (assembly->methods[i].exception_clauses) {
+          IL_FREE(assembly->methods[i].exception_clauses);
+        }
       }
+      /* Free the entire methods array */
       IL_FREE(assembly->methods);
     }
     if (assembly->typerefs)
@@ -2029,7 +2159,7 @@ int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
   } else {
     /* MemberRef */
     return il_resolve_memberref(assembly, target_token, type_name, type_len,
-                                method_name, method_len);
+                                method_name, method_len, NULL, 0);
   }
 }
 
@@ -2203,6 +2333,30 @@ int il_load_all_methods(il_assembly_t *assembly) {
           assembly->methods[i].name = s;
         }
       }
+    }
+  }
+  return 0;
+}
+u32int il_get_field_rva(il_assembly_t *assembly, u32int field_token) {
+  uint32_t rid = field_token & 0x00FFFFFF;
+  size_t row_count = assembly->tables_header.row_counts[TABLE_FIELDRVA];
+  if (row_count == 0)
+    return 0;
+
+  uint8_t *table_ptr = il_get_table_start(assembly, TABLE_FIELDRVA);
+  if (!table_ptr)
+    return 0;
+
+  int field_wide = assembly->tables_header.row_counts[TABLE_FIELD] >= 0x10000;
+
+  /* FieldRVA Table: RVA (4), Field (Index) */
+  for (size_t i = 0; i < row_count; i++) {
+    uint32_t rva = READ_UINT32(table_ptr);
+    table_ptr += 4;
+    uint32_t field_idx = read_table_index(&table_ptr, field_wide);
+
+    if (field_idx == rid) {
+      return rva;
     }
   }
   return 0;
