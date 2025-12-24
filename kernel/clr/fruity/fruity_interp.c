@@ -123,6 +123,41 @@ static void lux_rollback(void *ptr) {
 #endif
 
 #include "fruity_interp.h"
+
+static fruity_function_t *
+fruity_interp_find_function(fruity_module_t *module, u32int token,
+                            const uuid_t *mvid, int has_mvid) {
+  fruity_function_t *fallback = nil;
+
+  if (!module)
+    return nil;
+
+  if (has_mvid && mvid) {
+    for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+      if (f->method_token != token)
+        continue;
+      if (f->has_mvid && uuid_compare(mvid, &f->mvid) == 0)
+        return f;
+      if (!f->has_mvid)
+        fallback = f;
+    }
+    return fallback;
+  }
+
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->method_token != token)
+      continue;
+    if (!f->has_mvid)
+      return f;
+  }
+
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->method_token == token)
+      return f;
+  }
+
+  return nil;
+}
 #include "fruity_opcodes.h"
 
 /* External declarations */
@@ -822,15 +857,10 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     uint32_t method_token = instr->operand.value.token;
     fruity_function_t *target = nil;
 
-    /* Try to find method in module */
     if (state->module) {
-      for (fruity_function_t *f = state->module->functions_head; f;
-           f = f->next) {
-        if (f->method_token == method_token) {
-          target = f;
-          break;
-        }
-      }
+      target = fruity_interp_find_function(state->module, method_token,
+                                           &instr->method_mvid,
+                                           instr->has_method_mvid);
     }
 
     if (target == nil) {
@@ -903,13 +933,9 @@ int fruity_interp_step(fruity_interp_state_t *state) {
     uint32_t method_token = instr->operand.value.token;
     fruity_function_t *target = nil;
     if (state->module) {
-      for (fruity_function_t *f = state->module->functions_head; f;
-           f = f->next) {
-        if (f->method_token == method_token) {
-          target = f;
-          break;
-        }
-      }
+      target = fruity_interp_find_function(state->module, method_token,
+                                           &instr->method_mvid,
+                                           instr->has_method_mvid);
     }
     r = fruity_val_ref((void *)target);
     PUSH(r);

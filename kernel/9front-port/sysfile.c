@@ -1402,3 +1402,6 @@ uintptr sys_wstat(void *list_void)
 uintptr sys_fwstat(void *list_void)
 {
 	syscall_va_list list = (syscall_va_list)list_void; error("old fwstat system call - recompile"); }
+
+/* Exposed kernel read function */
+long kread(int fd, void *buf, long n) { return read(fd, buf, n, nil); }

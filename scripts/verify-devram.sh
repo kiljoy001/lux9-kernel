@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 DEVRAM_C="kernel/9front-port/devram.c"
 ACSL_H="kernel/9front-port/devram_acsl.h"
 OUTPUT_DIR="verification_results"
+CPP_FLAGS="-cpp-extra-args=\"-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__\""
 
 # Check if Frama-C is installed
 if ! command -v frama-c &> /dev/null; then
@@ -52,6 +53,7 @@ echo ""
 
 if frama-c -val -val-warn-undefined-pointer-comparison pointer \
            -val-show-progress \
+           -cpp-extra-args="-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__" \
            "$DEVRAM_C" \
            -save "$OUTPUT_DIR/value_analysis.sav" \
            > "$OUTPUT_DIR/value_analysis.log" 2>&1; then
@@ -80,6 +82,7 @@ echo "Purpose: Generates assertions for runtime errors (division by zero, overfl
 echo ""
 
 if frama-c -rte -rte-all \
+           -cpp-extra-args="-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__" \
            "$DEVRAM_C" \
            -print -ocode "$OUTPUT_DIR/devram_rte.c" \
            > "$OUTPUT_DIR/rte_analysis.log" 2>&1; then
@@ -103,6 +106,7 @@ echo ""
 
 if frama-c -wp -wp-rte -wp-timeout 30 \
            -wp-prover alt-ergo,cvc4,z3 \
+           -cpp-extra-args="-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__" \
            "$DEVRAM_C" \
            -wp-out "$OUTPUT_DIR/wp_results" \
            > "$OUTPUT_DIR/wp_analysis.log" 2>&1; then
@@ -127,6 +131,7 @@ echo "Purpose: Tracks data flow and identifies information leaks"
 echo ""
 
 if frama-c -deps \
+           -cpp-extra-args="-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__" \
            "$DEVRAM_C" \
            > "$OUTPUT_DIR/deps_analysis.log" 2>&1; then
     echo -e "${GREEN}✅ Dependency analysis completed${NC}"
@@ -149,6 +154,7 @@ echo ""
 
 if frama-c -eva -eva-warn-undefined-pointer-comparison pointer \
            -eva-precision 3 \
+           -cpp-extra-args="-Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port -D__FRAMAC__" \
            "$DEVRAM_C" \
            > "$OUTPUT_DIR/eva_analysis.log" 2>&1; then
     echo -e "${GREEN}✅ Eva analysis completed${NC}"

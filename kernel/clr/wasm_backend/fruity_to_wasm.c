@@ -2,6 +2,7 @@
 
 #include "fruity_to_wasm.h"
 #include "wasm_buffer.h"
+#include "../../include/uuid.h"
 
 #ifdef USERSPACE_TEST
 #include <stdlib.h>
@@ -196,8 +197,49 @@ static u8int valtype_to_wasm(clr_value_type_t t) {
 }
 
 /* Resolve function index in module list */
-static fruity_function_t *find_function_by_token(fruity_module_t *module,
-                                                 u32int method_token) {
+static fruity_function_t *
+find_function_by_token_mvid(fruity_module_t *module, u32int method_token,
+                            const uuid_t *mvid, int has_mvid) {
+  fruity_function_t *fallback = nil;
+
+  if (!module)
+    return nil;
+
+  if (has_mvid && mvid) {
+    for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+      if (f->method_token != method_token)
+        continue;
+      if (f->has_mvid && uuid_compare(mvid, &f->mvid) == 0)
+        return f;
+      if (!f->has_mvid)
+        fallback = f;
+    }
+    if (fallback)
+      return fallback;
+
+    /* Last-resort: if token is unique, accept it despite MVID mismatch */
+    fruity_function_t *unique = nil;
+    int count = 0;
+    for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+      if (f->method_token != method_token)
+        continue;
+      unique = f;
+      count++;
+      if (count > 1)
+        break;
+    }
+    if (count == 1)
+      return unique;
+    return nil;
+  }
+
+  for (fruity_function_t *f = module->functions_head; f; f = f->next) {
+    if (f->method_token != method_token)
+      continue;
+    if (!f->has_mvid)
+      return f;
+  }
+
   for (fruity_function_t *f = module->functions_head; f; f = f->next) {
     if (f->method_token == method_token)
       return f;
@@ -206,13 +248,15 @@ static fruity_function_t *find_function_by_token(fruity_module_t *module,
 }
 
 static int resolve_function_index(fruity_module_t *module,
-                                  u32int method_token) {
+                                  u32int method_token, const uuid_t *mvid,
+                                  int has_mvid) {
   /* WASM Function Index Space: [Imports] [Locals]
    * We need to map the method_token to the correct index in this space.
    * Since the linked list might be interleaved, we must calculate the
    * correct logical index.
    */
-  fruity_function_t *target = find_function_by_token(module, method_token);
+  fruity_function_t *target =
+      find_function_by_token_mvid(module, method_token, mvid, has_mvid);
   if (!target)
     return -1;
 
@@ -370,9 +414,15 @@ static void emit_call_throw(wasm_buffer_t *code, runtime_imports_t *imp) {
 static void emit_call_method(fruity_module_t *module, wasm_buffer_t *code,
                              runtime_imports_t *imp, u32int stack_ptr_local,
                              u32int scratch_a, u32int scratch_b,
-                             u32int call_arg_base, u32int method_token) {
-  fruity_function_t *target = find_function_by_token(module, method_token);
-  int target_idx = resolve_function_index(module, method_token);
+                             u32int call_arg_base, u32int method_token,
+                             const uuid_t *method_mvid,
+                             int has_method_mvid) {
+  fruity_function_t *target =
+      find_function_by_token_mvid(module, method_token, method_mvid,
+                                  has_method_mvid);
+  int target_idx =
+      resolve_function_index(module, method_token, method_mvid,
+                             has_method_mvid);
   if (target_idx < 0 || target == nil) {
     print("WASM: missing method token=0x%ux\n", (unsigned int)method_token);
     emit_call_throw(code, imp);
@@ -1253,7 +1303,8 @@ static int compile_function_body(fruity_module_t *module,
         case FRUITY_CALL:
           emit_call_method(module, code, imp, local_stack_ptr, local_scratch_a,
                            local_scratch_b, local_call_base,
-                           instr->operand.value.token);
+                           instr->operand.value.token, &instr->method_mvid,
+                           instr->has_method_mvid);
           break;
         case FRUITY_CALLI:
           /* MVP: treat as direct call via token on stack */

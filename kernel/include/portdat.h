@@ -847,6 +847,11 @@ struct Proc {
 
   /* Security: Hash of the running binary (Blake2b-512) */
   uchar text_hash[64];
+
+  /* CLR Thread-Local Storage (for managed code LocalDataStore) */
+#define CLR_TLS_SLOTS 64
+  void *clr_tls[CLR_TLS_SLOTS];
+  int clr_tls_next_slot;
 } __attribute__((aligned(64)));
 
 enum {

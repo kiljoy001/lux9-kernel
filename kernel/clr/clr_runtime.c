@@ -41,10 +41,11 @@ typedef struct Fmt Fmt;
 #include "../9front-pc64/mem.h"
 #include "../include/dat.h"
 #include "../include/fns.h"
-
+#include "../include/uuid.h"
+#include "clr_assemblies.h"
 #include "fruity/fruity_ir.h"
 #include "il_parser.h"
-#include "il_to_fruity.h"
+#include "wasm_backend/cil_opcodes.h"
 #include "wasm_backend/cil_to_wasm.h"
 #include "wasm_backend/fruity_to_wasm.h"
 #include "wasm_backend/test_assembly.h"
@@ -118,6 +119,30 @@ static int clr_attach_token_to_import(fruity_module_t *mod, const char *name,
   return -1;
 }
 
+static void clr_set_instr_mvid(fruity_instruction_t *instr,
+                               il_assembly_t *assembly) {
+  uuid_t mvid;
+
+  if (!instr || !assembly)
+    return;
+  if (il_get_mvid(assembly, &mvid) == 0) {
+    instr->method_mvid = mvid;
+    instr->has_method_mvid = 1;
+  }
+}
+
+static void clr_set_func_mvid(fruity_function_t *func,
+                              il_assembly_t *assembly) {
+  uuid_t mvid;
+
+  if (!func || !assembly)
+    return;
+  if (il_get_mvid(assembly, &mvid) == 0) {
+    func->mvid = mvid;
+    func->has_mvid = 1;
+  }
+}
+
 /* String literal table */
 typedef struct {
   u32int us_index;
@@ -129,7 +154,7 @@ static clr_string_literal_t *string_literals;
 static ulong string_literal_count;
 static ulong string_literal_capacity;
 
-static il_assembly_t *current_assembly;
+il_assembly_t *current_assembly;
 
 /* Helper to get user string (proper managed allocation) */
 void *clr_string_from_literal(u32int us_index) {
@@ -156,7 +181,7 @@ void *clr_string_from_literal(u32int us_index) {
   /* We use 8 bytes for length to match lux_alloc_array and alignment */
   ulong size = 8 + (char_count * 2);
   void *obj_data =
-      lux_alloc(size, 0); /* 0 for now (should be System.String token) */
+      xalloc(size); /* Using xalloc for kernel managed string allocation */
   if (!obj_data)
     return nil;
 
@@ -234,311 +259,15 @@ void *clr_get_static_field(u32int token) {
 static int clr_has_import(fruity_module_t *mod, const char *name);
 
 /* Helper: Scan dependencies and add to module */
+/* NOTE: This function is deprecated - WASM backend handles dependencies
+ * directly */
 static void clr_scan_dependencies(il_assembly_t *assembly, fruity_module_t *mod,
-
                                   fruity_function_t *func) {
-  if (!func || !func->blocks_head)
-    return;
-
-  fruity_basic_block_t *bb = func->blocks_head;
-  while (bb) {
-    fruity_instruction_t *instr = bb->instructions_head;
-    while (instr) {
-      if (instr->operand.type == FRUITY_OP_METHOD) {
-        u32int token = instr->operand.value.token;
-        u8int kind = (token >> 24) & 0xFF;
-        if (token == 0x6000001)
-          print("CLR: scan saw token 0x6000001\n");
-
-        if (kind == TABLE_MEMBERREF || kind == TABLE_METHODSPEC) {
-          char type_name[96] = {0};
-          char method_name[96] = {0};
-          int res = -1;
-          u32int resolved_token = 0;
-
-          if (kind == TABLE_MEMBERREF) {
-            res = il_resolve_memberref(assembly, token, type_name,
-                                       sizeof(type_name), method_name,
-                                       sizeof(method_name));
-          } else {
-            res = il_resolve_methodspec(assembly, token, type_name,
-                                        sizeof(type_name), method_name,
-                                        sizeof(method_name));
-          }
-
-          if (res == 0 && method_name[0] != 0) {
-            if (il_find_methoddef_by_name(assembly, type_name, method_name,
-                                          &resolved_token) == 0 ||
-                il_find_methoddef_by_name(assembly, NULL, method_name,
-                                          &resolved_token) == 0) {
-              instr->operand.value.token = resolved_token;
-              token = resolved_token;
-              kind = TABLE_METHODDEF;
-            } else {
-              const char *mapped = clr_map_lux9_method_name(method_name);
-              if (mapped &&
-                  clr_attach_token_to_import(mod, mapped, token) == 0) {
-                instr = instr->next;
-                continue;
-              }
-            }
-          }
-        }
-
-        /* Check if exists */
-        int found = 0;
-        fruity_function_t *f = mod->functions_head;
-        while (f) {
-          if (f->method_token == token) {
-            found = 1;
-            break;
-          }
-          f = f->next;
-        }
-
-        if (!found) {
-          char modname[64] = {0};
-          char funcname[64] = {0};
-
-          if (il_get_pinvoke_info(assembly, token, modname, 64, funcname, 64) ==
-              0) {
-            /* Check if already added by name (runtime imports have token=0) */
-            if (clr_has_import(mod, funcname)) {
-              fruity_function_t *imp = mod->functions_head;
-              while (imp) {
-                if (imp->name && strcmp(imp->name, funcname) == 0) {
-                  if (imp->method_token == 0 || imp->method_token == token) {
-                    imp->method_token = token;
-                  } else {
-                    /* Duplicate import name with a new token */
-                    fruity_function_t *dup =
-                        fruity_function_create(funcname, token);
-                    if (dup) {
-                      dup->import_info = imp->import_info;
-                      dup->next = mod->functions_head;
-                      if (mod->functions_head)
-                        mod->functions_head->prev = dup;
-                      mod->functions_head = dup;
-                      if (!mod->functions_tail)
-                        mod->functions_tail = dup;
-                      mod->function_count++;
-                      print("CLR: Duplicate import %s mapped to token %x\n",
-                            funcname, token);
-                    }
-                  }
-                  break;
-                }
-                imp = imp->next;
-              }
-              instr = instr->next;
-              continue;
-            }
-            /* Import */
-            fruity_function_t *imp = fruity_function_create(funcname, token);
-            if (imp) {
-              print("CLR: Dependency Import Found: %s.%s (Token %x) -> New "
-                    "Func %p\n",
-                    modname, funcname, token, imp);
-
-              imp->import_info.is_import = 1;
-              /* Simple duplicate because strdup might not be avail */
-              imp->import_info.module_name = xalloc(strlen(modname) + 1);
-              if (imp->import_info.module_name)
-                strcpy(imp->import_info.module_name, modname);
-
-              imp->import_info.function_name = xalloc(strlen(funcname) + 1);
-              if (imp->import_info.function_name)
-                strcpy(imp->import_info.function_name, funcname);
-
-              if (strcmp(modname, "env") == 0) {
-                if (strcmp(funcname, "lux9_send_9p") == 0) {
-                  imp->arg_count = 2;
-                  imp->arg_types = xalloc(sizeof(clr_value_type_t) * 2);
-                  if (imp->arg_types) {
-                    imp->arg_types[0] = CLR_REF;
-                    imp->arg_types[1] = CLR_INT32;
-                  } else {
-                    imp->arg_count = 0;
-                  }
-                  imp->return_type = CLR_INT32;
-                } else if (strcmp(funcname, "lux9_debug_print") == 0) {
-                  imp->arg_count = 2;
-                  imp->arg_types = xalloc(sizeof(clr_value_type_t) * 2);
-                  if (imp->arg_types) {
-                    imp->arg_types[0] = CLR_REF;
-                    imp->arg_types[1] = CLR_INT32;
-                  } else {
-                    imp->arg_count = 0;
-                  }
-                  imp->return_type = CLR_VOID;
-                } else if (strcmp(funcname, "lux9_spawn") == 0) {
-                  imp->arg_count = 1;
-                  imp->arg_types = xalloc(sizeof(clr_value_type_t));
-                  if (imp->arg_types)
-                    imp->arg_types[0] = CLR_REF;
-                  else
-                    imp->arg_count = 0;
-                  imp->return_type = CLR_INT32;
-                } else if (strcmp(funcname, "lux9_sleep") == 0) {
-                  imp->arg_count = 1;
-                  imp->arg_types = xalloc(sizeof(clr_value_type_t));
-                  if (imp->arg_types)
-                    imp->arg_types[0] = CLR_INT32;
-                  else
-                    imp->arg_count = 0;
-                  imp->return_type = CLR_VOID;
-                } else if (strcmp(funcname, "lux9_yield") == 0) {
-                  imp->arg_count = 0;
-                  imp->return_type = CLR_VOID;
-                } else {
-                  print("CLR: Warning: unknown env import %s, defaulting to "
-                        "void()\n",
-                        funcname);
-                }
-              }
-
-              /* Prepend (WASM requirement: Imports first) */
-              imp->next = mod->functions_head;
-              if (mod->functions_head)
-                mod->functions_head->prev = imp;
-              mod->functions_head = imp;
-              if (!mod->functions_tail)
-                mod->functions_tail = imp;
-              mod->function_count++;
-
-              print("CLR: List Update (Prepend): Head=%p Tail=%p\n",
-                    mod->functions_head, mod->functions_tail);
-            }
-          } else {
-            /* Local */
-            il_method_t *m = il_get_method_by_token(assembly, token);
-            if (m) {
-              print("CLR: Dependency Local Found: Token %x -> Compiling...\n",
-                    token);
-              il_to_fruity_error_t err;
-              fruity_function_t *new_func =
-                  il_to_fruity_convert_method(assembly, m, &err);
-              if (new_func) {
-                print("CLR: New Local Func %p\n", new_func);
-                /* Append */
-                if (mod->functions_tail) {
-                  mod->functions_tail->next = new_func;
-                  new_func->prev = mod->functions_tail;
-                  mod->functions_tail = new_func;
-                } else {
-                  mod->functions_head = mod->functions_tail = new_func;
-                }
-                mod->function_count++;
-
-                print("CLR: List Update (Append): Head=%p Tail=%p\n",
-                      mod->functions_head, mod->functions_tail);
-
-                /* Recurse */
-                clr_scan_dependencies(assembly, mod, new_func);
-              } else {
-                print("CLR: Failed to compile local dep %x. Error: %d (%s)\n",
-                      token, err, il_to_fruity_error_string(err));
-              }
-            } else {
-              print("CLR: local dep missing token=%x\n", token);
-              char ext_name[64] = {0};
-              uint32_t ext_rva = 0;
-              int info_res = il_get_methoddef_info(assembly, token, ext_name,
-                                                   sizeof(ext_name), &ext_rva);
-              if (info_res == 0) {
-                if (ext_rva == 0) {
-                  print("CLR: methoddef info token=%x name=%s rva=0x%x\n",
-                        token, ext_name, ext_rva);
-                  print("CLR: External MethodDef token=%x name=%s rva=0x%x\n",
-                        token, ext_name, ext_rva);
-                  const char *mapped = clr_map_lux9_method_name(ext_name);
-                  if (mapped &&
-                      clr_attach_token_to_import(mod, mapped, token) == 0) {
-                    print(
-                        "CLR: Dependency External Found: %s -> %s (Token %x)\n",
-                        ext_name, mapped, token);
-                  } else {
-                    /* Try Generic P/Invoke */
-                    char modname[64] = {0};
-                    char funcname[64] = {0};
-                    print("CLR: Calling il_get_pinvoke_info for token 0x%x\n",
-                          token);
-                    if (il_get_pinvoke_info(assembly, token, modname, 64,
-                                            funcname, 64) == 0) {
-                      print("CLR: Found P/Invoke %s -> %s.%s\n", ext_name,
-                            modname, funcname);
-
-                      /* Create import stub */
-                      fruity_function_t *imp =
-                          fruity_function_create(ext_name, token);
-                      if (imp) {
-                        imp->import_info.is_import = 1;
-                        imp->import_info.module_name = strdup(modname);
-                        imp->import_info.function_name = strdup(funcname);
-
-                        /* Parse signature if possible */
-                        uint32_t sig_tok = 0;
-                        uint32_t ac = 0;
-                        if (il_get_method_signature_token(assembly, token,
-                                                          &sig_tok) == 0) {
-                          uint32_t bsize = 0;
-                          const uint8_t *sig =
-                              il_get_blob(assembly, sig_tok, &bsize);
-                          if (sig && bsize > 1) {
-                            const uint8_t *p = sig + 1; /* Skip conv */
-                            if (sig[0] & 0x10)
-                              il_decode_compressed_uint(
-                                  (const uint8_t **)&p); /* GenParamCount */
-                            ac =
-                                il_decode_compressed_uint((const uint8_t **)&p);
-                          }
-                        }
-                        imp->arg_count = ac;
-                        if (ac > 0) {
-                          imp->arg_types =
-                              xallocz(sizeof(clr_value_type_t) * ac, 1);
-                          if (imp->arg_types) {
-                            for (uint32_t i = 0; i < ac; i++)
-                              imp->arg_types[i] = CLR_INT32;
-                          } else {
-                            imp->arg_count = 0;
-                          }
-                        }
-
-                        /* Add to module */
-                        if (!mod->functions_head) {
-                          mod->functions_head = imp;
-                          mod->functions_tail = imp;
-                        } else {
-                          mod->functions_tail->next = imp;
-                          imp->prev = mod->functions_tail;
-                          mod->functions_tail = imp;
-                        }
-                        mod->function_count++;
-                      }
-                    } else {
-                      print(
-                          "CLR: Warning: external method %s token=%x rva=0x%x "
-                          "has no mapping\n",
-                          ext_name, token, ext_rva);
-                    }
-                  }
-                } else {
-                  print("CLR: methoddef info token=%x name=%s rva=0x%x "
-                        "(non-zero rva)\n",
-                        token, ext_name, ext_rva);
-                }
-              } else {
-                print("CLR: methoddef info failed token=%x\n", token);
-              }
-            }
-          }
-        }
-      }
-      instr = instr->next;
-    }
-    bb = bb->next;
-  }
+  (void)assembly;
+  (void)mod;
+  (void)func;
+  /* Stub - WASM backend compiles all methods upfront in
+   * cil_to_wasm_build_module */
 }
 
 static int clr_has_import(fruity_module_t *mod, const char *name) {
@@ -651,46 +380,26 @@ static void clr_add_runtime_imports(fruity_module_t *mod) {
 
 int clr_compile_method_to_wasm(il_assembly_t *assembly, const char *method_name,
                                void **wasm_bytes, u32int *wasm_len) {
-  /* 1. Compile Main */
+  /* Find the entry method */
   il_method_t *main_m = il_get_method(assembly, method_name);
-  if (!main_m)
-    return -1;
-
-  print("CLR: Compiling method %s to WASM...\n", method_name);
-
-  il_to_fruity_error_t err;
-  fruity_function_t *main_func =
-      il_to_fruity_convert_method(assembly, main_m, &err);
-  if (!main_func) {
-    print("CLR: Main compilation failed: %d\n", err);
+  if (!main_m) {
+    print("CLR: Method '%s' not found\n", method_name);
     return -1;
   }
 
-  /* 2. Build module */
-  fruity_module_t temp_mod;
-  memset(&temp_mod, 0, sizeof(temp_mod));
-  temp_mod.functions_head = main_func;
-  temp_mod.functions_tail = main_func;
-  temp_mod.function_count = 1;
+  print("CLR: Compiling method %s to WASM (direct CIL->WASM)...\n",
+        method_name);
 
-  /* 3. Add runtime imports FIRST (so proper types are set) */
-  clr_add_runtime_imports(&temp_mod);
-
-  /* 4. Scan dependencies (won't re-add imports that already exist) */
-  clr_scan_dependencies(assembly, &temp_mod, main_func);
-
-  /* 5. Emit WASM */
-  fruity_wasm_result_t wasm_res;
-  print("CLR: Calling fruity_compile_to_wasm...\n");
-  if (fruity_compile_to_wasm(&temp_mod, &wasm_res) != 0) {
-    print("CLR: fruity_compile_to_wasm failed\n");
+  /* Use direct CIL-to-WASM path (no Fruity IR conversion) */
+  il_method_t *methods[1] = {main_m};
+  int err =
+      cil_to_wasm_build_module(methods, 1, method_name, wasm_bytes, wasm_len);
+  if (err != 0) {
+    print("CLR: cil_to_wasm_build_module failed: %d\n", err);
     return -1;
   }
-  print("CLR: fruity_compile_to_wasm returned %d bytes\n", wasm_res.wasm_size);
 
-  *wasm_bytes = wasm_res.wasm_binary;
-  *wasm_len = wasm_res.wasm_size;
-
+  print("CLR: Direct CIL->WASM succeeded, %d bytes\n", *wasm_len);
   return 0;
 }
 
@@ -701,6 +410,11 @@ static il_method_t *clr_find_entry_point(il_assembly_t *assembly,
     il_method_t *m = il_get_method(assembly, name);
     if (m)
       return m;
+  }
+  il_method_t *kernel_entry = il_get_method(assembly, "KernelEntry");
+  if (kernel_entry) {
+    print("CLR: Found 'KernelEntry' entry point\n");
+    return kernel_entry;
   }
   il_method_t *main = il_get_method(assembly, "Main");
   if (main) {
@@ -736,11 +450,16 @@ int clr_execute_assembly(void *dll_data, ulong dll_size) {
   return clr_execute_assembly_with_entry(dll_data, dll_size, nil);
 }
 
+#include "clr_assemblies.h"
+
 int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
                                     const char *entry_name) {
   char errbuf[128];
   il_error_t err;
   const char *entry_point = nil; /* Default entry point lookup */
+
+  /* Initialize Assembly Cache */
+  clr_assemblies_init();
 
   print("CLR: Loading assembly...\n");
   il_assembly_t *assembly =
@@ -749,9 +468,20 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
     print("CLR: Failed to parse assembly (%d)\n", err);
     return -1;
   }
+
+  /* Add Main Assembly to Cache (TODO: Get name from assembly def) */
+  /* For now, we assume it's the entry assembly, but let's try to get simple
+     name if possible, or just rely on it being current. Better: Get AssemblyDef
+     name.
+  */
+  // For now just add without name to ensure MVID index works?
+  // Or assume "init" if entry_name is null?
+  clr_assemblies_add(assembly, "init"); // Hardcoded for main assembly for now
+
   current_assembly = assembly;
 
   il_method_t *main = clr_find_entry_point(assembly, entry_name);
+
   if (!main) {
     print("CLR: No entry point found\n");
     return -1;
@@ -761,9 +491,35 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
   u32int wasm_size = 0;
   void *wasm_bytes = NULL;
 
-  if (clr_compile_method_to_wasm(assembly, main->name, &wasm_bytes,
-                                 &wasm_size) != 0) {
-    print("CLR: Compilation failed\n");
+  /* Collect ALL methods to ensure WASM indices match Metadata RIDs */
+  u32int method_count = assembly->tables_header.row_counts[TABLE_METHODDEF];
+  print("CLR: Assembly has %d methods. collecting...\n", method_count);
+
+  il_method_t **all_methods = xalloc(sizeof(il_method_t *) * method_count);
+  if (!all_methods) {
+    print("CLR: Failed to allocate method array\n");
+    return -1;
+  }
+
+  /* RIDs are 1-based */
+  for (u32int i = 1; i <= method_count; i++) {
+    u32int token = (TABLE_METHODDEF << 24) | i;
+    il_method_t *m = il_get_method_by_token(assembly, token);
+    if (!m) {
+      print("CLR: Warning: Failed to parse method rid %d (token %x)\n", i,
+            token);
+    }
+    all_methods[i - 1] = m;
+  }
+
+  /* Use direct CIL-to-WASM path (no Fruity IR conversion) */
+  /* Set global assembly context for CIL-to-WASM translator */
+  extern il_assembly_t *current_assembly;
+  current_assembly = assembly;
+
+  if (cil_to_wasm_build_module(all_methods, method_count, main->name,
+                               &wasm_bytes, &wasm_size) != 0) {
+    print("CLR: cil_to_wasm_build_module failed\n");
     return -1;
   }
 
@@ -771,8 +527,9 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
   print("CLR: Initializing WASM3...\n");
 
   /* Dump first 64 bytes of WASM binary for analysis */
-  print("CLR: WASM binary hex dump (first 64 bytes):\n");
-  for (int i = 0; i < 64 && i < (int)wasm_size; i++) {
+  /* Dump full WASM binary for analysis */
+  print("CLR: WASM binary hex dump (%d bytes):\n", (int)wasm_size);
+  for (int i = 0; i < (int)wasm_size; i++) {
     if (i % 16 == 0)
       print("\n  %04x: ", i);
     print("%02x ", ((unsigned char *)wasm_bytes)[i]);
@@ -829,16 +586,12 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
     return -1;
   }
 
-  /* Run Main (try both cases) */
+  /* Run Main (use main->name since that's what we exported) */
   IM3Function f;
-  if (entry_name) {
-    result = m3_FindFunction(&f, runtime, entry_name);
-  } else {
-    result = m3_FindFunction(&f, runtime, "Main");
-    if (result) {
-      result = m3_FindFunction(&f, runtime, "main");
-    }
-  }
+  const char *lookup_name = main->name ? main->name : "main";
+  print("CLR: Looking up function '%s'...\n", lookup_name);
+
+  result = m3_FindFunction(&f, runtime, lookup_name);
   if (result) {
     print("m3_FindFunction error: %s\n", result);
     return -1;
@@ -1013,4 +766,26 @@ static void clr_dump_wasm_error(IM3Runtime runtime) {
 void clr_init(void) {
   print("CLR (WASM Backend) Initialized\n");
   clr_test_wasm_pipeline();
+}
+
+/* Helpers for lux9_api.c */
+u32int clr_get_field_rva(u32int token) {
+  if (current_assembly)
+    return il_get_field_rva(current_assembly, token);
+  return 0;
+}
+u32int clr_rva_to_offset(u32int rva) {
+  if (current_assembly)
+    return il_rva_to_offset(current_assembly, rva);
+  return 0;
+}
+void *clr_get_assembly_data(void) {
+  if (current_assembly)
+    return current_assembly->data;
+  return NULL;
+}
+u32int clr_get_assembly_len(void) {
+  if (current_assembly)
+    return current_assembly->size;
+  return 0;
 }

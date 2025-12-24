@@ -67,8 +67,9 @@ PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
 WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
-WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c
-CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c $(WASM3_C)
+WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c
+SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
+CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c kernel/clr/clr_assemblies.c $(WASM3_C) $(SYMBOLIC_C)
 
 # QBE compiler removed - WASM3 is now the runtime
 
@@ -97,6 +98,7 @@ P9ROUTER_O := $(P9ROUTER_C:.c=.o)
 MSGORD_O := $(MSGORD_C:.c=.o)
 CONSENSUS_DEPTH_O := $(CONSENSUS_DEPTH_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
+UUID_O := kernel/lib/uuid.o
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 POW_GATE_O := $(POW_GATE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
@@ -105,7 +107,7 @@ CLR_O := $(CLR_C:.c=.o)
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(UUID_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -137,7 +139,7 @@ kernel/clr/wasm_runtime/wasm3/%.o: kernel/clr/wasm_runtime/wasm3/%.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(ALL_O) $(CLR_O) $(KERNEL)
+	rm -f $(ALL_O) $(CLR_O) $(UUID_O) $(KERNEL)
 	rm -f kernel/clr/qbe/qbe.a kernel/clr/qbe/**/*.o
 	rm -rf iso_root lux9.iso
 

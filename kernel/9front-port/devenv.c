@@ -540,7 +540,8 @@ char *getconfenv(void) {
   Egrp *eg = &confegrp;
   Evalue *e;
   char *p, *q;
-  int i, n, m;
+  int i;
+  ulong n, len, m;
 
   rlock(&eg->rwlock);
   n = 1;
@@ -548,7 +549,7 @@ char *getconfenv(void) {
     e = eg->ent[i];
     if (e == nil)
       continue;
-    n += strlen(e->name) + e->len + 2;
+    n += strlen(e->name) + (ulong)e->len + 2;
   }
   p = malloc(n);
   if (p == nil) {
@@ -560,10 +561,10 @@ char *getconfenv(void) {
     e = eg->ent[i];
     if (e == nil)
       continue;
-    n = strlen(e->name) + 1;
-    memmove(q, e->name, n);
+    n = (int)strlen(e->name) + 1;
+    memmove(q, e->name, (ulong)n);
     q += n;
-    memmove(q, e->value, e->len);
+    memmove(q, e->value, (ulong)e->len);
     for (m = e->len; m > 0; m--) {
       if (q[m - 1] != '\0')
         break;

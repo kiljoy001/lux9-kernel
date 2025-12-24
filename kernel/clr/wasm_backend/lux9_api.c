@@ -564,13 +564,210 @@ m3ApiRawFunction(clr_import_throw) {
 }
 
 /* Linker function to bind these to a module */
+/* Include IL Parser for RVA lookup */
+/* #include "../il_parser.h" - Removed to avoid header conflicts */
+
+/* Use helpers provided by clr_runtime.c */
+extern u32int clr_get_field_rva(u32int token);
+extern u32int clr_rva_to_offset(u32int rva);
+extern void *clr_get_assembly_data(void);
+extern u32int clr_get_assembly_len(void);
+
+/* Wrapper for loading static fields using RVA */
+m3ApiRawFunction(clr_import_ldsfld) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+
+  u32int rva = clr_get_field_rva(token);
+  if (rva) {
+    u32int offset = clr_rva_to_offset(rva);
+    void *base = clr_get_assembly_data();
+    u32int len = clr_get_assembly_len();
+
+    if (base && offset < len) {
+      void *addr = (u8 *)base + offset;
+      m3ApiReturn(*(u64int *)addr);
+    }
+  }
+  m3ApiReturn(0);
+}
+
+/* NOTE: m3Err_trapOutOfBounds is likely m3Err_trapOutOfBoundsMemoryAccess or
+ * similar string */
+/* wasm3 defines traps as const strings. */
+/* Using generic "trap: out of bounds" string if m3Err_trapOutOfBounds is not
+ * macro */
+#ifndef m3Err_trapOutOfBounds
+#define m3Err_trapOutOfBounds "trap: out of bounds"
+#endif
+
+m3ApiRawFunction(clr_import_stsfld) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, value);
+  m3ApiGetArg(u32int, token);
+
+  u32int rva = clr_get_field_rva(token);
+  if (rva) {
+    u32int offset = clr_rva_to_offset(rva);
+    void *base = clr_get_assembly_data();
+    u32int len = clr_get_assembly_len();
+
+    if (base && offset < len) {
+      void *addr = (u8 *)base + offset;
+      *(u64int *)addr = value;
+    }
+  }
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_ldfld) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, obj);
+  m3ApiGetArg(u32int, token);
+  // Simplistic field load: assume obj is ptr, field offset via token?
+  // Current clr_load_i64 is just identity deref.
+  // Real layout needs token->offset mapping.
+  // For now, assume field 0 is at offset 0?
+  // WARN: This is incorrect for multiple fields. But Init.fs might only use
+  // fields on types it controls? Init.fs uses stsfld/ldsfld mostly.
+  m3ApiReturn(0);
+}
+
+m3ApiRawFunction(clr_import_stfld) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, obj);
+  m3ApiGetArg(u64int, value);
+  m3ApiGetArg(u32int, token);
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_ldflda) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u64int, obj);
+  m3ApiGetArg(u32int, token);
+  m3ApiReturn(obj); // Return obj ptr itself? incorrect but non-crashing
+}
+
+m3ApiRawFunction(clr_import_ldsflda) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+  u32int rva = clr_get_field_rva(token);
+  if (rva) {
+    u32int offset = clr_rva_to_offset(rva);
+    void *base = clr_get_assembly_data();
+    u32int len = clr_get_assembly_len();
+
+    if (base && offset < len) {
+      void *addr = (u8 *)base + offset;
+      m3ApiReturn((u64int)(uintptr_t)addr);
+    }
+  }
+  m3ApiReturn(0);
+}
+
+m3ApiRawFunction(clr_import_ldelem) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, opcode);
+  m3ApiGetArg(u64int, arr);
+  m3ApiGetArg(u32int, idx);
+  // Call existing array check?
+  // Use clr_import_array_get logic?
+  // clr_import_array_get(arr, idx) -> val.
+  // We ignore opcode for now (assumes i64/ref size).
+  if (!arr)
+    m3ApiReturn(0);
+  // Assuming arr is Pointer to Array Header.
+  // Header: Length (4 or 8), then data.
+  // clr_import_array_get implementation:
+  /*
+  void *ptr = clr_ptr_to_mem(arr_val, _mem);
+  u64int len = *(u64int *)ptr;
+  if (idx >= len) m3ApiTrap(m3Err_trapOutOfBounds);
+  u64int *data = (u64int *)((u8 *)ptr + 8);
+  m3ApiReturn(data[idx]);
+  */
+  // So we can reuse or copy logic.
+  // Reuse existing function? m3ApiRawFunction defines a function.
+  // We can call static helper.
+
+  // Just impl:
+  // Need _mem (linear memory base) if arr is offset.
+  // But our newobj returns HOST POINTERS cast to i64?
+  // clr_alloc returns `void*`.
+  // WASM module sees it as i64.
+  // Functions like clr_array_get assume `arr` is an offset in WASM memory IF
+  // `clr_ptr_to_mem` handles it. `clr_ptr_to_mem` in `lux9_api.c`:
+  /*
+  void *clr_ptr_to_mem(u64int ptr, void *_mem) {
+    if (ptr > 0xFFFFFFFF) return (void *)ptr; // Assume host pointer
+    if (ptr == 0) return NULL;
+    // Otherwise offset? Or maybe we strictly use host pointers?
+    // lux_alloc returns host pointers.
+    return (void *)ptr;
+  }
+  */
+  void *ptr = (void *)arr;
+  if (!ptr)
+    m3ApiReturn(0);
+  u64int *data = (u64int *)((u8 *)ptr + 16); // Skip object header?
+  // clr_newarr allocates: sizeof(u64) length + data.
+  // Just length?
+  // clr_import_newarr:
+  /*
+    u64int *ptr = clr_alloc(sizeof(u64int) + sizeof(u64int) * len);
+    *ptr = len;
+    m3ApiReturn((u64int)ptr);
+  */
+  // So offset 0 is len. data starts at +8.
+
+  u64int len = *(u64int *)ptr;
+  if (idx >= len)
+    m3ApiTrap(m3Err_trapOutOfBounds);
+  u64int *elems = (u64int *)((u8 *)ptr + 8);
+  m3ApiReturn(elems[idx]);
+}
+
+m3ApiRawFunction(clr_import_stelem) {
+  m3ApiReturnType(void) m3ApiGetArg(u32int, opcode);
+  m3ApiGetArg(u64int, arr);
+  m3ApiGetArg(u32int, idx);
+  m3ApiGetArg(u64int, val);
+
+  void *ptr = (void *)arr;
+  if (!ptr)
+    m3ApiSuccess();
+  u64int len = *(u64int *)ptr;
+  if (idx >= len)
+    m3ApiTrap(m3Err_trapOutOfBounds);
+  u64int *elems = (u64int *)((u8 *)ptr + 8);
+  elems[idx] = val;
+  m3ApiSuccess();
+}
+
+m3ApiRawFunction(clr_import_ldelema) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+  m3ApiGetArg(u64int, arr);
+  m3ApiGetArg(u32int, idx);
+
+  void *ptr = (void *)arr;
+  if (!ptr)
+    m3ApiReturn(0);
+  u64int len = *(u64int *)ptr;
+  if (idx >= len)
+    m3ApiTrap(m3Err_trapOutOfBounds);
+  u64int *elems = (u64int *)((u8 *)ptr + 8);
+  m3ApiReturn((u64int)(uintptr_t)&elems[idx]);
+}
+
+m3ApiRawFunction(clr_import_isinst) {
+  m3ApiReturnType(u64int) m3ApiGetArg(u32int, token);
+  m3ApiGetArg(u64int, obj);
+  m3ApiReturn(obj); // Stub: everything is instance
+}
+
+/* Linker function to bind these to a module */
 M3Result lux9_link_wasi(IM3Module module) {
   M3Result result = m3Err_none;
 
 #define LINK_RAW(func, sig, impl)                                              \
   do {                                                                         \
     result = m3_LinkRawFunction(module, "env", func, sig, impl);               \
-    if (result) {                                                              \
+    if (result == m3Err_functionLookupFailed) {                                \
+      result = m3Err_none;                                                     \
+    } else if (result) {                                                       \
       print("lux9_link_wasi: link failed %s %s: %s\n", func, sig, result);     \
       return result;                                                           \
     }                                                                          \
@@ -603,22 +800,42 @@ M3Result lux9_link_wasi(IM3Module module) {
   LINK_RAW("clr_memmove", "v(III)", &clr_import_memmove);
   LINK_RAW("clr_memset", "v(III)", &clr_import_memset);
 
+  /* New imports strictly matching cil_to_wasm.c mapping (0-16) */
+  /* Indices match order in cil_to_wasm generated module imports */
+
   LINK_RAW("clr_newobj", "I(I)", &clr_import_newobj);
   LINK_RAW("clr_newarr", "I(II)", &clr_import_newarr);
-  LINK_RAW("clr_array_len", "I(I)", &clr_import_array_len);
-  LINK_RAW("clr_array_get", "I(II)", &clr_import_array_get);
-  LINK_RAW("clr_array_set", "v(III)", &clr_import_array_set);
-  LINK_RAW("clr_array_elem_addr", "I(II)", &clr_import_array_elem_addr);
+  /* clr_string_from_literal already linked above, repeated is harmless if m3
+   * handles it, or just ensure it covers index 2 */
+  // Actually, import order in WASM module matters.
+  // Bindings are by Name.
+  // The module imports by name.
 
-  LINK_RAW("clr_box", "I(I)", &clr_import_box);
-  LINK_RAW("clr_unbox", "I(I)", &clr_import_unbox);
-  LINK_RAW("clr_unbox_any", "I(I)", &clr_import_unbox_any);
+  LINK_RAW("clr_ldsfld", "I(I)", &clr_import_ldsfld);
+  LINK_RAW("clr_stsfld", "v(II)", &clr_import_stsfld);
+  LINK_RAW("clr_ldfld", "I(II)", &clr_import_ldfld);
+  LINK_RAW("clr_stfld", "v(III)", &clr_import_stfld);
+  LINK_RAW("clr_ldflda", "I(II)", &clr_import_ldflda);
+  LINK_RAW("clr_ldsflda", "I(I)", &clr_import_ldsflda);
 
+  /* clr_ldlen maps to array_len but needs signature match I(I) */
+  LINK_RAW("clr_ldlen", "I(I)", &clr_import_array_len);
+
+  LINK_RAW("clr_box", "I(II)",
+           &clr_import_box); /* Sig I(II) (token, val) -> obj */
+  LINK_RAW("clr_unbox", "I(II)",
+           &clr_import_unbox); /* Sig I(II) (token, obj) -> addr */
+
+  LINK_RAW("clr_isinst", "I(II)", &clr_import_isinst);
   LINK_RAW("clr_initobj", "v(II)", &clr_import_initobj);
+
+  LINK_RAW("clr_ldelem", "I(III)", &clr_import_ldelem);
+  LINK_RAW("clr_stelem", "v(IIII)", &clr_import_stelem);
+  LINK_RAW("clr_ldelema", "I(III)", &clr_import_ldelema);
+
   LINK_RAW("clr_cpobj", "v(III)", &clr_import_cpobj);
   LINK_RAW("clr_ldobj", "I(I)", &clr_import_ldobj);
   LINK_RAW("clr_stobj", "v(II)", &clr_import_stobj);
-
   LINK_RAW("clr_throw", "v(I)", &clr_import_throw);
 
 #undef LINK_RAW

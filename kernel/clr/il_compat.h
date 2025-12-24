@@ -7,12 +7,12 @@
 #define IL_COMPAT_H
 
 /* GCC provides stdint.h and stddef.h even in freestanding environment */
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef USERSPACE_TEST
 /* Kernel Mode additional definitions */
-#include <u.h>
+#include "../include/u.h"
 
 /* size_t might be defined by stddef.h, but if not: */
 #ifndef _SIZE_T
@@ -22,7 +22,7 @@ typedef ulong size_t;
 
 /* NULL */
 #ifndef NULL
-#define NULL ((void*)0)
+#define NULL ((void *)0)
 #endif
 
 #endif

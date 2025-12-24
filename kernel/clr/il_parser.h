@@ -22,6 +22,10 @@ typedef unsigned long ulong;
 #else
 #include "il_compat.h"
 #endif
+
+/* UUID Support */
+#include "../include/uuid.h"
+
 /* #include <stddef.h> */
 /* #include <stdint.h> */
 
@@ -238,6 +242,19 @@ typedef struct {
   uint32_t signature;  /* Index into #Blob heap */
 } field_row_t;
 
+/* AssemblyRef row */
+typedef struct {
+  uint16_t major_version;
+  uint16_t minor_version;
+  uint16_t build_number;
+  uint16_t revision_number;
+  uint32_t flags;
+  uint32_t public_key_or_token; /* Index into #Blob heap */
+  uint32_t name_index;          /* Index into #Strings heap */
+  uint32_t culture_index;       /* Index into #Strings heap */
+  uint32_t hash_value;          /* Index into #Blob heap */
+} assemblyref_row_t;
+
 /* MemberRef row - references to members (methods/fields) in other assemblies */
 typedef struct {
   uint32_t class_index; /* Coded index: TypeRef, ModuleRef, MethodDef, TypeSpec,
@@ -324,6 +341,10 @@ typedef struct {
   il_method_t *methods;
   size_t method_count;
 
+  /* UUID (MVID) */
+  uuid_t mvid;
+  int mvid_loaded; /* 0=not loaded, 1=loaded */
+
   // Types cache
   typeref_row_t *typerefs;
   size_t typeref_count;
@@ -335,6 +356,7 @@ typedef struct {
   size_t standalonesig_count;
   memberref_row_t *memberrefs;
   size_t memberref_count;
+
 } il_assembly_t;
 
 /* ========== Error Codes ========== */
@@ -391,12 +413,15 @@ standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly,
 /* Get MemberRef row (1-based index) */
 memberref_row_t *il_get_memberref(il_assembly_t *assembly, uint32_t rid);
 
-/* Resolve a MemberRef token to its class/type name and method name
- * Returns 0 on success, -1 on failure
- * Caller provides buffers; names are copied into them */
+/* Get AssemblyRef row (1-based index) */
+assemblyref_row_t *il_get_assemblyref(il_assembly_t *assembly, uint32_t rid);
+
+/* Resolve a MemberRef token to its class/type name, method name, AND scope
+ * (assembly name) Returns 0 on success, -1 on failure Caller provides buffers;
+ * names are copied into them */
 int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
                          char *type_name, size_t type_len, char *method_name,
-                         size_t method_len);
+                         size_t method_len, char *scope_name, size_t scope_len);
 
 /* Get string from #Strings heap */
 const char *il_get_string(il_assembly_t *assembly, uint32_t index);
@@ -454,8 +479,15 @@ int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
                           char *type_name_out, size_t type_buf_len,
                           char *method_name_out, size_t method_buf_len);
 
+/* Get StandAloneSig row (1-based index) */
+standalonesig_row_t *il_get_standalonesig(il_assembly_t *assembly,
+                                          uint32_t rid);
+
 /* Get Field row (1-based index) */
 field_row_t *il_get_field(il_assembly_t *assembly, uint32_t rid);
+
+/* Get Module MVID (UUID) */
+int il_get_mvid(il_assembly_t *assembly, uuid_t *out_uuid);
 
 /* Get P/Invoke info for a method token.
  * Returns 0 if found and populated, -1 otherwise.
@@ -469,5 +501,8 @@ int il_get_pinvoke_info(il_assembly_t *assembly, uint32_t method_token,
 int il_get_method_signature_token(il_assembly_t *assembly, uint32_t token,
                                   uint32_t *sig_out);
 int il_load_all_methods(il_assembly_t *assembly);
+
+/* Field RVA Lookup */
+u32int il_get_field_rva(il_assembly_t *assembly, u32int field_token);
 
 #endif // IL_PARSER_H

@@ -8,7 +8,7 @@
 int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf);
 
 /* Emit local variable declarations for a function */
-int cil_to_wasm_emit_locals(wasm_buffer_t *buf, u32int local_count);
+int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method);
 
 /* Build a complete WASM module from multiple methods */
 int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,

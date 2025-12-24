@@ -581,3 +581,5 @@ uvlong rdtsc(void);
 /* MMU virtual mapping (architecture-specific but commonly used) */
 void *vmap(uvlong, vlong);
 void vunmap(void *, vlong);
+
+long kread(int, void *, long);

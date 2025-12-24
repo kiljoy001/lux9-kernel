@@ -5,7 +5,7 @@
 
 #include "cil_relooper.h"
 #include "../il_parser.h"
-#include "../il_to_fruity.h" /* For IL opcode definitions */
+#include "cil_opcodes.h" /* For IL opcode definitions */
 #include "wasm_buffer.h"
 
 #ifndef nil

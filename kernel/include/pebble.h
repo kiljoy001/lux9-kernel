@@ -85,6 +85,7 @@ extern ulong pebble_total_system_tokens;   /* RAM/8, constant after init */
   ((void *)((uintptr)PEBBLE_PTR_ADDR(p) | ((wave) & PEBBLE_WAVE_MASK)))
 #define PEBBLE_TUNED(p, wave) (PEBBLE_PTR_WAVE(p) == (wave))
 
+#include "uuid.h"
 #include "blind_ledger.h"
 #include "borrowchecker.h"
 

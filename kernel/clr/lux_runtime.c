@@ -189,16 +189,12 @@ void *lux_snapshot(void *ptr) {
 /*
  * $lux_commit - Commit transactional changes (MVP no-op)
  */
-void lux_commit(void *ptr) {
-  USED(ptr);
-}
+void lux_commit(void *ptr) { USED(ptr); }
 
 /*
  * $lux_rollback - Rollback transactional changes (MVP no-op)
  */
-void lux_rollback(void *ptr) {
-  USED(ptr);
-}
+void lux_rollback(void *ptr) { USED(ptr); }
 
 /*
  * $lux_alloc_array - Allocate CIL array
@@ -215,4 +211,58 @@ void *lux_alloc_array(ulong elem_size, ulong count, ulong type_token) {
   }
 
   return arr;
+}
+
+/*
+ * Thread-Local Storage for CLR LocalDataStore
+ *
+ * Uses the clr_tls[] array in Proc structure for per-thread storage.
+ * Implements .NET LocalDataStoreSlot semantics.
+ */
+
+/*
+ * $lux_tls_alloc - Allocate a new TLS slot
+ *
+ * Returns: slot index, or -1 if no slots available
+ */
+int lux_tls_alloc(void) {
+  Proc *p = up;
+  if (p == nil)
+    return -1;
+
+  if (p->clr_tls_next_slot >= CLR_TLS_SLOTS)
+    return -1;
+
+  return p->clr_tls_next_slot++;
+}
+
+/*
+ * $lux_tls_get - Get value from TLS slot
+ *
+ * Args:
+ *   slot: TLS slot index
+ *
+ * Returns: stored value, or nil if invalid slot
+ */
+void *lux_tls_get(int slot) {
+  Proc *p = up;
+  if (p == nil || slot < 0 || slot >= CLR_TLS_SLOTS)
+    return nil;
+
+  return p->clr_tls[slot];
+}
+
+/*
+ * $lux_tls_set - Set value in TLS slot
+ *
+ * Args:
+ *   slot: TLS slot index
+ *   value: value to store
+ */
+void lux_tls_set(int slot, void *value) {
+  Proc *p = up;
+  if (p == nil || slot < 0 || slot >= CLR_TLS_SLOTS)
+    return;
+
+  p->clr_tls[slot] = value;
 }

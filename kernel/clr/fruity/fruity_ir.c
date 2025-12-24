@@ -216,6 +216,7 @@ fruity_function_t *fruity_function_create(const char *name,
   func->block_count = 0;
   func->entry_block = nil;
   func->exit_block = nil;
+  func->has_mvid = 0;
 
   return func;
 }
@@ -411,6 +412,7 @@ fruity_instruction_t *fruity_instruction_create(fruity_opcode_t opcode) {
   instr->pebble_effects.may_free = fruity_opcode_may_free(opcode);
   instr->pebble_effects.is_speculative = (opcode == FRUITY_CHERRY);
   instr->pebble_effects.pow_op_class = 1; /* POW_OP_ALLOC default */
+  instr->has_method_mvid = 0;
 
   return instr;
 }

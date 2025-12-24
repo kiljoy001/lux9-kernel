@@ -20,6 +20,7 @@
 
 #include "fruity_opcodes.h"
 #include "fruity_types.h"
+#include "../../include/uuid.h"
 
 /* Forward declarations */
 typedef struct fruity_instruction fruity_instruction_t;
@@ -89,6 +90,10 @@ struct fruity_instruction {
   u32int source_line;      /* Source code line number */
   const char *source_file; /* Source file name */
 
+  /* Method identity (for FRUITY_OP_METHOD operands) */
+  uuid_t method_mvid;
+  int has_method_mvid;
+
   /* Intrusive doubly-linked list */
   fruity_instruction_t *next;
   fruity_instruction_t *prev;
@@ -138,6 +143,8 @@ struct fruity_function {
   u32int method_token; /* ECMA-335 metadata token */
   char *name;          /* Function name */
   char *signature;     /* Type signature */
+  uuid_t mvid;         /* Assembly identity */
+  int has_mvid;
 
   struct {
     int is_import;

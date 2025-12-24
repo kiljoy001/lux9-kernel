@@ -108,10 +108,6 @@ static void proc0(void *arg) {
 
   pebble_selftest();
 
-  /* Run WASM Pipeline Validation */
-  extern void clr_init(void);
-  clr_init();
-
   /*
    * These are o.k. because rootinit is null.
    * Then early kproc's will have a root and dot.
@@ -159,6 +155,9 @@ static void proc0(void *arg) {
     }
   }
   print("BOOT[proc0]: root namespace setup complete\n");
+  /* Run WASM Pipeline Validation (needs /boot namespace available) */
+  extern void clr_init(void);
+  clr_init();
   /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");
 
@@ -234,7 +233,8 @@ static void proc0(void *arg) {
     Exec exec;
     if (!waserror()) {
       print("BOOT[proc0]: Found /boot/boot, checking header...\n");
-      if (cread(bc, (uchar *)&exec, sizeof(Exec), 0) == sizeof(Exec)) {
+      if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
+          sizeof(Exec)) {
         /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
         if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
           print("BOOT[proc0]: Loading CLR from /boot/boot (text=%d data=%d)\n",
@@ -263,7 +263,8 @@ static void proc0(void *arg) {
               to_read = remaining;
 
             if (to_read > 0) {
-              if (cread(bc, (uchar *)VA(k), to_read, file_off) != to_read)
+              if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
+                                         file_off) != to_read)
                 print("BOOT: Short read on /boot/boot\n");
               file_off += to_read;
               remaining -= to_read;

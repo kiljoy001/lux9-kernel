@@ -678,12 +678,22 @@ M3ValueType m3_GetGlobalType(IM3Global i_global) {
 }
 
 void *v_FindFunction(IM3Module i_module, const char *const i_name) {
-
+  extern int print(char *, ...); // Ensure print is available
   // Prefer exported functions
   for (u32 i = 0; i < i_module->numFunctions; ++i) {
     IM3Function f = &i_module->functions[i];
-    if (f->export_name and strcmp(f->export_name, i_name) == 0)
-      return f;
+    if (f->export_name) {
+      print("m3_debug: Checking func[%d] export_name='%s' vs '%s'\n", i,
+            f->export_name, i_name);
+
+      int cmp = strcmp(f->export_name, i_name);
+      print("m3_debug: strcmp result = %d\n", cmp);
+
+      if (cmp == 0) {
+        print("m3_debug: FOUND match! Returning function %p\n", f);
+        return f;
+      }
+    }
   }
 
   // Search internal functions
@@ -701,6 +711,7 @@ void *v_FindFunction(IM3Module i_module, const char *const i_name) {
     }
   }
 
+  print("m3_debug: v_FindFunction returning NULL\n");
   return NULL;
 }
 
@@ -715,11 +726,17 @@ M3Result m3_FindFunction(IM3Function *o_function, IM3Runtime i_runtime,
     _throw("no modules loaded");
   }
 
+  extern int print(char *, ...);
+  print("m3_debug: m3_FindFunction calling ForEachModule\n");
+
   function = (IM3Function)ForEachModule(
       i_runtime, (ModuleVisitor)v_FindFunction, (void *)i_functionName);
 
+  print("m3_debug: ForEachModule returned %p\n", function);
+
   if (function) {
     if (not function->compiled) {
+      print("m3_debug: Compiling function...\n");
       _(CompileFunction(function))
     }
   } else
