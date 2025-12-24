@@ -863,3 +863,304 @@ u32int reloop_get_block_at(cil_cfg_t *cfg, u32int offset) {
   }
   return 0;
 }
+
+/* ========== Ramsey's "Beyond Relooper" Algorithm ========== */
+/*
+ * Exact implementation of Norman Ramsey's 2022 paper:
+ * "Beyond Relooper: Recursive Translation of Unstructured Control Flow
+ *  to Structured Control Flow" (Section 5, lines 1-33)
+ */
+
+#include "cil_domtree.h"
+
+/* Forward declarations - matching paper's three mutually recursive functions */
+static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
+                  translation_ctx_t *ctx, wasm_buffer_t *buf);
+static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
+                      u32int n_ys, translation_ctx_t *ctx, wasm_buffer_t *buf);
+static int doBranch(domtree_t *tree, dt_cfg_t *cfg, u32int source,
+                    u32int target, translation_ctx_t *ctx, wasm_buffer_t *buf);
+
+/*
+ * Paper lines 27-31: index function
+ * Computes the br index for a target label in the context
+ *
+ * @coq_proof: proofs/relooper/ramsey_spec.v
+ * @theorem: index_in_context
+ *   - When index returns Some i, then i < length(ctx)
+ *   - This ensures emitted br instructions have valid depth
+ * @theorem: context_contains_target (inverse)
+ *   - When index returns Some i, target exists at some position in ctx
+ * @theorem: index_iff_in_context (biconditional)
+ *   - index succeeds ⟺ target exists in context with matching label
+ */
+/*@
+  requires \valid(ctx);
+  requires ctx->depth <= MAX_CTX_DEPTH;
+  assigns \nothing;
+  behavior found:
+    assumes \exists integer j; 0 <= j < ctx->depth &&
+            (ctx->frames[j].type == CTX_BLOCK_FOLLOWED_BY ||
+             ctx->frames[j].type == CTX_LOOP_HEADED_BY) &&
+            ctx->frames[j].label == label;
+    ensures 0 <= \result < (int)ctx->depth;
+  behavior not_found:
+    assumes \forall integer j; 0 <= j < ctx->depth ==>
+            ctx->frames[j].label != label;
+    ensures \result == -1;
+  complete behaviors;
+  disjoint behaviors;
+*/
+static int index_of(u32int label, translation_ctx_t *ctx) {
+  for (int i = (int)ctx->depth - 1; i >= 0; i--) {
+    ctx_frame_t *frame = &ctx->frames[i];
+    if (frame->type == CTX_BLOCK_FOLLOWED_BY && frame->label == label) {
+      return (int)ctx->depth - 1 - i;
+    }
+    if (frame->type == CTX_LOOP_HEADED_BY && frame->label == label) {
+      return (int)ctx->depth - 1 - i;
+    }
+  }
+  return -1; /* Not found */
+}
+
+/*
+ * Paper lines 1-6: doTree
+ *
+ * doTree (Tree.Node x children) context =
+ *   let codeForX = nodeWithin x (filter hasMergeRoot children)
+ *   in if isLoopHeader x then
+ *     WasmLoop (codeForX (LoopHeadedBy (entryLabel x) `inside` context))
+ *   else
+ *     codeForX context
+ */
+static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
+                  translation_ctx_t *ctx, wasm_buffer_t *buf) {
+  domtree_node_t *node = &tree->nodes[x];
+
+  /* filter hasMergeRoot children */
+  u32int merge_children[MAX_DOM_CHILDREN];
+  u32int n_merge = 0;
+  for (u32int i = 0; i < node->n_children; i++) {
+    u32int child = node->children[i];
+    if (tree->nodes[child].is_merge_node) {
+      merge_children[n_merge++] = child;
+    }
+  }
+
+  /* Sort by RPO descending (paper doesn't specify but this is needed) */
+  for (u32int i = 0; i < n_merge; i++) {
+    for (u32int j = i + 1; j < n_merge; j++) {
+      if (tree->nodes[merge_children[i]].rpo <
+          tree->nodes[merge_children[j]].rpo) {
+        u32int tmp = merge_children[i];
+        merge_children[i] = merge_children[j];
+        merge_children[j] = tmp;
+      }
+    }
+  }
+
+  if (node->is_loop_header) {
+    /* WasmLoop (codeForX (LoopHeadedBy x `inside` context)) */
+    wasm_emit_u8(buf, WASM_OP_LOOP);
+    wasm_emit_u8(buf, WASM_TYPE_VOID);
+
+    ctx_push(ctx, CTX_LOOP_HEADED_BY, x);
+    int err = nodeWithin(tree, cfg, x, merge_children, n_merge, ctx, buf);
+    ctx_pop(ctx);
+
+    wasm_emit_u8(buf, WASM_OP_END);
+    return err;
+  } else {
+    /* codeForX context */
+    return nodeWithin(tree, cfg, x, merge_children, n_merge, ctx, buf);
+  }
+}
+
+/*
+ * Paper lines 8-20: nodeWithin
+ *
+ * nodeWithin x (y_n:ys) context =
+ *   WasmBlock (nodeWithin x ys (BlockFollowedBy ylabel `inside` context)) <>
+ *   doTree y_n context
+ *
+ * nodeWithin x [] context =
+ *   WasmActions (txBlock xlabel (nodeBody x)) <>
+ *   case flowLeaving x of
+ *     Unconditional l -> doBranch xlabel l context
+ *     Conditional e t f ->
+ *       WasmIf (txExpr xlabel e)
+ *         (doBranch xlabel t (IfThenElse : context))
+ *         (doBranch xlabel f (IfThenElse : context))
+ *     TerminalFlow -> WasmReturn
+ */
+static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
+                      u32int n_ys, translation_ctx_t *ctx, wasm_buffer_t *buf) {
+  dt_basic_block_t *block = &cfg->blocks[x];
+  int err = 0;
+
+  if (n_ys > 0) {
+    /* Inductive case: (y_n:ys) where y_n is first element */
+    u32int y_n = ys[0];
+
+    /* WasmBlock (nodeWithin x ys (BlockFollowedBy ylabel `inside` context)) */
+    wasm_emit_u8(buf, WASM_OP_BLOCK);
+    wasm_emit_u8(buf, WASM_TYPE_VOID);
+
+    ctx_push(ctx, CTX_BLOCK_FOLLOWED_BY, y_n);
+    err = nodeWithin(tree, cfg, x, ys + 1, n_ys - 1, ctx, buf);
+    ctx_pop(ctx);
+
+    wasm_emit_u8(buf, WASM_OP_END);
+
+    if (err < 0)
+      return err;
+
+    /* <> doTree y_n context */
+    return doTree(tree, cfg, y_n, ctx, buf);
+  }
+
+  /* Base case: [] */
+
+  /* WasmActions (txBlock xlabel (nodeBody x)) */
+  /* Emit opcodes for this block, excluding terminal branch */
+  u32int offset = block->start_offset;
+  u32int end = block->end_offset;
+  if (block->terminator == TERM_CONDITIONAL ||
+      block->terminator == TERM_UNCONDITIONAL) {
+    end = block->branch_offset;
+  }
+  while (offset < end) {
+    err = cil_emit_opcode(buf, cfg->il, &offset, cfg->il_size);
+    if (err < 0 && err != -100)
+      return err;
+  }
+
+  /* case flowLeaving x of */
+  switch (block->terminator) {
+  case TERM_UNCONDITIONAL:
+    /* Unconditional l -> doBranch xlabel l context */
+    return doBranch(tree, cfg, x, block->succ[0], ctx, buf);
+
+  case TERM_CONDITIONAL:
+    /* Conditional e t f -> WasmIf (txExpr xlabel e) ... */
+    wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64); /* Convert i64 condition to i32 */
+    wasm_emit_u8(buf, WASM_OP_IF);
+    wasm_emit_u8(buf, WASM_TYPE_VOID);
+
+    /* (doBranch xlabel t (IfThenElse : context)) */
+    ctx_push(ctx, CTX_IF_THEN_ELSE, 0);
+    err = doBranch(tree, cfg, x, block->succ[0], ctx, buf);
+    ctx_pop(ctx);
+
+    wasm_emit_u8(buf, WASM_OP_ELSE);
+
+    /* (doBranch xlabel f (IfThenElse : context)) */
+    ctx_push(ctx, CTX_IF_THEN_ELSE, 0);
+    if (err >= 0) {
+      err = doBranch(tree, cfg, x, block->succ[1], ctx, buf);
+    }
+    ctx_pop(ctx);
+
+    wasm_emit_u8(buf, WASM_OP_END);
+    return err;
+
+  case TERM_RETURN:
+    /* TerminalFlow -> WasmReturn */
+    wasm_emit_u8(buf, WASM_OP_RETURN);
+    return 0;
+
+  case TERM_FALLTHROUGH:
+    if (block->n_succ > 0) {
+      return doBranch(tree, cfg, x, block->succ[0], ctx, buf);
+    }
+    return 0;
+
+  default:
+    return 0;
+  }
+}
+
+/*
+ * Paper lines 22-25: doBranch
+ *
+ * doBranch source target context
+ *   | isBackward source target = WasmBr i
+ *   | isMergeLabel target = WasmBr i
+ *   | otherwise = doTree (subtreeAt target) context
+ *   where i = index target context
+ */
+static int doBranch(domtree_t *tree, dt_cfg_t *cfg, u32int source,
+                    u32int target, translation_ctx_t *ctx, wasm_buffer_t *buf) {
+  domtree_node_t *src = &tree->nodes[source];
+  domtree_node_t *tgt = &tree->nodes[target];
+
+  /* isBackward source target: target has lower or equal RPO */
+  if (tgt->rpo <= src->rpo) {
+    int i = index_of(target, ctx);
+    if (i < 0) {
+      print("RAMSEY: Back edge %d->%d not in context\n", source, target);
+      return -1;
+    }
+    wasm_emit_u8(buf, WASM_OP_BR);
+    wasm_emit_uleb128(buf, (u32int)i);
+    return 0;
+  }
+
+  /* isMergeLabel target */
+  if (tgt->is_merge_node) {
+    int i = index_of(target, ctx);
+    if (i < 0) {
+      print("RAMSEY: Merge node %d not in context\n", target);
+      return -1;
+    }
+    wasm_emit_u8(buf, WASM_OP_BR);
+    wasm_emit_uleb128(buf, (u32int)i);
+    return 0;
+  }
+
+  /* otherwise: doTree (subtreeAt target) context */
+  return doTree(tree, cfg, target, ctx, buf);
+}
+
+/*
+ * Paper line 33: structuredControl
+ * Translate entire control-flow graph starting from root
+ */
+int reloop_compile_method_ramsey(u8int *il, u32int il_size,
+                                 wasm_buffer_t *output) {
+  if (!il || !output || il_size == 0)
+    return -1;
+
+  /* Build CFG */
+  dt_cfg_t cfg;
+  if (domtree_build_cfg(il, il_size, &cfg) < 0) {
+    print("RAMSEY: Failed to build CFG\n");
+    return -1;
+  }
+
+  /* Single block: emit linearly */
+  if (cfg.n_blocks <= 1) {
+    u32int offset = 0;
+    while (offset < il_size) {
+      int e = cil_emit_opcode(output, il, &offset, il_size);
+      if (e < 0 && e != -100)
+        return e;
+    }
+    return 0;
+  }
+
+  /* Build and analyze dominator tree */
+  domtree_t tree;
+  if (domtree_build(&cfg, &tree) < 0)
+    return -1;
+  domtree_compute_rpo(&cfg, &tree);
+  domtree_mark_special_nodes(&cfg, &tree);
+
+  /* Initialize empty context */
+  translation_ctx_t ctx;
+  ctx_init(&ctx);
+
+  /* doTree sortedDominatorTree [] */
+  return doTree(&tree, &cfg, tree.root, &ctx, output);
+}

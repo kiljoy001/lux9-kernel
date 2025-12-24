@@ -67,7 +67,7 @@ PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
 WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
-WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c
+WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c kernel/clr/wasm_backend/cil_domtree.c
 SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
 CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c kernel/clr/clr_assemblies.c $(WASM3_C) $(SYMBOLIC_C)
 

@@ -196,9 +196,9 @@ typedef struct {
 /*
  * cil_to_wasm_compile_method - Compile a single CIL method to WASM bytecode
  *
- * This function directly translates CIL opcodes to WASM opcodes, using the
- * native WASM stack. All values are treated as i64 for uniformity (matching
- * the CLR's 64-bit slot model).
+ * Uses Ramsey's "Beyond Relooper" algorithm for control flow translation.
+ * The algorithm works by induction over the dominator tree, using reverse
+ * postorder numbering to determine block nesting.
  *
  * Returns: 0 on success, negative on error
  */
@@ -208,42 +208,12 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
 
   u8int *il = method->il_code;
   u32int il_size = (u32int)method->il_code_size;
-  u32int offset = 0;
 
-  /* Check if method has any branches - if so, use relooper */
-  int has_branches = 0;
-  for (u32int i = 0; i < il_size; i++) {
-    u8int op = il[i];
-    if (op >= 0x2B && op <= 0x45) { /* Branch opcodes range */
-      has_branches = 1;
-      break;
-    }
-    if (op == IL_BR_S || op == IL_BRFALSE_S || op == IL_BRTRUE_S ||
-        op == IL_BR || op == IL_BRFALSE || op == IL_BRTRUE) {
-      has_branches = 1;
-      break;
-    }
-  }
-
-  if (has_branches) {
-    print("CIL-DIRECT: Method has branches, using relooper\n");
-    int err = reloop_compile_method(method, buf);
-    if (err == 0) {
-      return 0; /* Relooper handled it */
-    }
-    /* If relooper returned 0 (single block) or failed, fall through to linear
-     */
-    print("CIL-DIRECT: Relooper returned %d, falling back to linear\n", err);
-  }
-
-  /* Linear compilation - delegate to the single opcode emitter */
-  while (offset < il_size) {
-    int err = cil_to_wasm_emit_one_opcode(buf, il, &offset, il_size);
-    if (err < 0 && err != -100) { /* -100 means branch opcode, skip */
-      print("CIL-DIRECT: emit_one_opcode failed: %d at offset %d\n", err,
-            offset);
-      return err;
-    }
+  /* Use Ramsey algorithm exclusively for all methods */
+  int err = reloop_compile_method_ramsey(il, il_size, buf);
+  if (err < 0) {
+    print("CIL-WASM: Ramsey algorithm failed: %d\n", err);
+    return err;
   }
 
   return 0;

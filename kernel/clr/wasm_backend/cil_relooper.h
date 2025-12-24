@@ -186,6 +186,20 @@ int reloop_emit(reloop_ctx_t *ctx, cil_shape_t *shape);
  */
 int reloop_compile_method(il_method_t *method, wasm_buffer_t *output);
 
+/**
+ * reloop_compile_method_ramsey - Ramsey algorithm compilation
+ *
+ * Uses Ramsey's "Beyond Relooper" algorithm based on dominator trees
+ * and reverse postorder numbering for optimal control flow translation.
+ *
+ * @param il: CIL bytecode
+ * @param il_size: Size of bytecode
+ * @param output: Output buffer for WASM bytecode
+ * @return: 0 on success, negative on error
+ */
+int reloop_compile_method_ramsey(u8int *il, u32int il_size,
+                                 wasm_buffer_t *output);
+
 /* Helper to check if offset is a branch target */
 int reloop_is_branch_target(cil_cfg_t *cfg, u32int offset);
 
