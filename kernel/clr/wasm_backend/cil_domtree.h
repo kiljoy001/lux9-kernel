@@ -51,6 +51,11 @@ typedef struct dt_basic_block {
 
   /* For conditional: the condition is the last opcode before branch */
   u32int branch_offset; /* Offset of branch instruction */
+
+  /* Security metadata (for capability-aware translation) */
+  u32int required_permissions; /* Permissions needed for this block */
+  u8int is_sensitive_op;       /* Contains security-sensitive operation */
+  u8int requires_validation;   /* Needs capability check at entry */
 } dt_basic_block_t;
 
 /* ===== Control Flow Graph (dt_ prefix to avoid collision) ===== */

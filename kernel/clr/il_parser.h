@@ -357,6 +357,10 @@ typedef struct {
   memberref_row_t *memberrefs;
   size_t memberref_count;
 
+  /* Capability binding (created during assembly load) */
+  /* See clr_capability.h for full type definition */
+  struct clr_monotonic_capability *capability;
+
 } il_assembly_t;
 
 /* ========== Error Codes ========== */
