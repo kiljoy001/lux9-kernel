@@ -912,6 +912,7 @@ static typedef_row_t *parse_typedef_table(il_assembly_t *assembly,
     rows[i].extends = read_table_index(&table_ptr, extends_wide);
     rows[i].field_list = read_table_index(&table_ptr, field_wide);
     rows[i].method_list = read_table_index(&table_ptr, method_wide);
+    rows[i].capability = NULL;
   }
 
   *row_count_out = row_count;
@@ -1987,8 +1988,8 @@ void il_free_assembly(il_assembly_t *assembly) {
       IL_FREE(assembly->tables_header.row_counts);
     }
     if (assembly->methods) {
-      /* Free internal pointers of each method, but not the method structs themselves
-         since methods is a single array allocation */
+      /* Free internal pointers of each method, but not the method structs
+         themselves since methods is a single array allocation */
       for (size_t i = 0; i < assembly->method_count; i++) {
         if (assembly->methods[i].name) {
           IL_FREE(assembly->methods[i].name);

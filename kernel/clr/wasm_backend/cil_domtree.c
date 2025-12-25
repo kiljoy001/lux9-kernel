@@ -6,7 +6,6 @@
 
 #include "cil_domtree.h"
 
-
 /* Kernel print function */
 extern int print(char *fmt, ...);
 
@@ -111,6 +110,9 @@ static int get_op_size(u16int op) {
 
   /* Single byte opcodes */
   switch (op) {
+  case 0x00: /* nop */
+  case 0x01: /* break */
+    return 1;
   case 0x0E:
   case 0x0F:
   case 0x10:
@@ -225,8 +227,17 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
       cfg->blocks[block_id].start_offset = block_start;
       cfg->blocks[block_id].end_offset = offset;
       cfg->blocks[block_id].terminator = TERM_FALLTHROUGH;
-      cfg->blocks[block_id].succ[0] = block_id + 1;
+      cfg->blocks[block_id].succ[0] =
+          block_id + 1; /* Temp: next block ID? No, this is problematic if next
+                           block not created yet? */
+      /* Actually, FALLTHROUGH succ should be the OFFSET of the start of next
+       * block */
+      cfg->blocks[block_id].succ[0] = offset;
       cfg->blocks[block_id].n_succ = 1;
+
+      print("CFG: Created Block %d [%d-%d] Fallthrough to %d\n", block_id,
+            block_start, offset, offset);
+
       block_id++;
       block_start = offset;
     }
@@ -250,6 +261,8 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
       if (op == 0x2A) { /* ret */
         cfg->blocks[block_id].terminator = TERM_RETURN;
         cfg->blocks[block_id].n_succ = 0;
+        print("CFG: Created Block %d [%d-%d] Return\n", block_id, block_start,
+              offset + op_size);
       } else if (is_conditional_op(op)) {
         cfg->blocks[block_id].terminator = TERM_CONDITIONAL;
         /* Compute targets */
@@ -261,6 +274,9 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
         cfg->blocks[block_id].succ[0] = true_target;  /* Temp: offset */
         cfg->blocks[block_id].succ[1] = false_target; /* Temp: offset */
         cfg->blocks[block_id].n_succ = 2;
+        print("CFG: Created Block %d [%d-%d] Cond (op=%02x) True=%d False=%d\n",
+              block_id, block_start, offset + op_size, op, true_target,
+              false_target);
       } else {
         cfg->blocks[block_id].terminator = TERM_UNCONDITIONAL;
         s32int branch_off = (off_size == 1) ? (s8int)il[offset + 1]
@@ -268,6 +284,8 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
         u32int target = offset + op_size + branch_off;
         cfg->blocks[block_id].succ[0] = target; /* Temp: offset */
         cfg->blocks[block_id].n_succ = 1;
+        print("CFG: Created Block %d [%d-%d] Uncond (op=%02x) Target=%d\n",
+              block_id, block_start, offset + op_size, op, target);
       }
 
       block_id++;
@@ -286,6 +304,8 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
     cfg->blocks[block_id].end_offset = il_size;
     cfg->blocks[block_id].terminator = TERM_RETURN;
     cfg->blocks[block_id].n_succ = 0;
+    print("CFG: Created Block %d [%d-%d] End (Return)\n", block_id, block_start,
+          il_size);
     block_id++;
   }
 
@@ -296,10 +316,12 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
     dt_basic_block_t *b = &cfg->blocks[i];
     for (u32int s = 0; s < b->n_succ; s++) {
       u32int target_offset = b->succ[s];
+      int found = 0;
       /* Find block containing this offset */
       for (u32int j = 0; j < cfg->n_blocks; j++) {
         if (cfg->blocks[j].start_offset == target_offset) {
           b->succ[s] = j;
+          found = 1;
           break;
         }
       }
@@ -340,7 +362,7 @@ int domtree_build(dt_cfg_t *cfg, domtree_t *tree) {
     tree->nodes[i].block_id = i;
     tree->nodes[i].idom = i;
     tree->nodes[i].n_children = 0;
-    tree->nodes[i].rpo = 0;
+    // tree->nodes[i].rpo = 0; // Don't clear RPO, we computed it already!
     tree->nodes[i].is_loop_header = 0;
     tree->nodes[i].is_merge_node = 0;
   }
@@ -361,12 +383,12 @@ int domtree_build(dt_cfg_t *cfg, domtree_t *tree) {
       u32int new_idom = b->pred[0];
       for (u32int p = 1; p < b->n_pred; p++) {
         u32int pred = b->pred[p];
-        /* Intersect: find common dominator */
+        /* Intersect: find common dominator using RPO */
         u32int a = new_idom, b_val = pred;
         while (a != b_val) {
-          while (a > b_val)
+          while (tree->nodes[a].rpo > tree->nodes[b_val].rpo)
             a = dom[a];
-          while (b_val > a)
+          while (tree->nodes[b_val].rpo > tree->nodes[a].rpo)
             b_val = dom[b_val];
         }
         new_idom = a;
@@ -432,10 +454,14 @@ void domtree_mark_special_nodes(dt_cfg_t *cfg, domtree_t *tree) {
     u32int forward_in = 0;
     for (u32int p = 0; p < b->n_pred; p++) {
       u32int pred = b->pred[p];
+      print("DOMTREE: Block %d (rpo=%d) has pred %d (rpo=%d)\n", i, n->rpo,
+            pred, tree->nodes[pred].rpo);
       if (tree->nodes[pred].rpo < n->rpo) {
         forward_in++;
       } else {
         /* Back edge: this is a loop header */
+        print("DOMTREE: Block %d is LOOP HEADER (back edge from %d)\n", i,
+              pred);
         n->is_loop_header = 1;
       }
     }

@@ -210,7 +210,7 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
   u32int il_size = (u32int)method->il_code_size;
 
   /* Use Ramsey algorithm exclusively for all methods */
-  int err = reloop_compile_method_ramsey(il, il_size, buf);
+  int err = reloop_compile_method_ramsey(method, buf);
   if (err < 0) {
     print("CIL-WASM: Ramsey algorithm failed: %d\n", err);
     return err;
@@ -379,6 +379,9 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   wasm_buffer_t *body_bufs = xalloc(sizeof(wasm_buffer_t) * method_count);
 
   for (i = 0; i < method_count; i++) {
+    print("CIL-WASM: Compiling method %d/%d: %s\n", i + 1, method_count,
+          methods[i] ? (methods[i]->name ? methods[i]->name : "(unnamed)")
+                     : "(NULL)");
     wasm_buf_init(&body_bufs[i], 256);
 
     /* Handle NULL/Invalid methods gracefully */
@@ -402,6 +405,8 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
     wasm_emit_u8(&body_bufs[i], WASM_OP_END);
   }
 
+  print("CIL-WASM: Method compilation complete, building module...\n");
+
   /* ===== Module Header ===== */
   /* Magic + Version */
   wasm_emit_u8(&module_buf, 0x00);
@@ -414,7 +419,7 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   wasm_emit_u8(&module_buf, 0x00);
 
   /* ===== Type Section (1) ===== */
-  u32int total_types = 8;
+  u32int total_types = 9;
   wasm_emit_uleb128(&type_sec, total_types);
 
   /* Type 0: () -> () (Void-Void) */
@@ -476,6 +481,12 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   wasm_emit_uleb128(&type_sec, 1);
   wasm_emit_u8(&type_sec, WASM_TYPE_I64);
 
+  /* Type 8: (I64) -> () */
+  wasm_emit_u8(&type_sec, 0x60);
+  wasm_emit_uleb128(&type_sec, 1);
+  wasm_emit_u8(&type_sec, WASM_TYPE_I64);
+  wasm_emit_u8(&type_sec, 0x00);
+
   /* ===== Import Section (2) ===== */
   wasm_emit_uleb128(&import_sec, NUM_HOST_IMPORTS);
 
@@ -502,6 +513,7 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   EMIT_IMPORT("clr_ldelem", 5);
   EMIT_IMPORT("clr_stelem", 6);
   EMIT_IMPORT("clr_ldelema", 5);
+  EMIT_IMPORT("cap_check_permission", 8);
 
   /* ===== Function Section (3) ===== */
   wasm_emit_uleb128(&func_sec, method_count);

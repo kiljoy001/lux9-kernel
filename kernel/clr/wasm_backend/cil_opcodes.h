@@ -294,6 +294,39 @@ typedef signed long long s64int;
 #define IL_REFANYTYPE 0xFE1D
 #define IL_READONLY 0xFE1E
 
+/* Host import indices */
+#define HOST_CLR_NEWOBJ 0
+#define HOST_CLR_NEWARR 1
+#define HOST_CLR_LDSTR 2
+#define HOST_CLR_LDSFLD 3
+#define HOST_CLR_STSFLD 4
+#define HOST_CLR_LDFLD 5
+#define HOST_CLR_STFLD 6
+#define HOST_CLR_LDFLDA 7
+#define HOST_CLR_LDSFLDA 8
+#define HOST_CLR_LDLEN 9
+#define HOST_CLR_BOX 10
+#define HOST_CLR_UNBOX 11
+#define HOST_CLR_ISINST 12
+#define HOST_CLR_INITOBJ 13
+#define HOST_CLR_LDELEM 14
+#define HOST_CLR_STELEM 15
+#define HOST_CLR_LDELEMA 16
+
+/* Symbolic computing host imports (17-24) */
+#define HOST_SYM_CREATE 17
+#define HOST_SYM_EXPR 18
+#define HOST_SYM_DIFF 19
+#define HOST_SYM_INTEGRATE 20
+#define HOST_SYM_SIMPLIFY 21
+#define HOST_SYM_EVAL 22
+#define HOST_SYM_MATCH 23
+
+#define HOST_SYM_REWRITE 24
+#define HOST_CLR_CHECK_PERM 25
+
+#define NUM_HOST_IMPORTS 26
+
 /* ===== Lux9 Symbolic Computing Extensions (0xFE80-0xFE87) ===== */
 
 #define IL_SYM_CREATE 0xFE80
@@ -324,5 +357,12 @@ typedef struct wasm_buffer wasm_buffer_t;
  */
 int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
                     u32int il_size);
+
+/* Helper functions for CFG analysis and Security */
+int cil_is_branch_opcode(u8int op);
+int cil_is_conditional_branch(u8int op);
+int cil_get_branch_size(u8int op);
+int cil_get_operand_size(u16int op);
+int cil_get_instruction_size(u8int *il, u32int offset, u32int max_size);
 
 #endif /* CIL_OPCODES_H */

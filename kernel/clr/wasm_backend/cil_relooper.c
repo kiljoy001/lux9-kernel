@@ -24,6 +24,7 @@
 #define WASM_OP_BR_IF 0x0D
 #define WASM_OP_BR_TABLE 0x0E
 #define WASM_OP_RETURN 0x0F
+#define WASM_OP_CALL 0x10
 
 #define WASM_OP_LOCAL_GET 0x20
 #define WASM_OP_LOCAL_SET 0x21
@@ -872,6 +873,7 @@ u32int reloop_get_block_at(cil_cfg_t *cfg, u32int offset) {
  */
 
 #include "cil_domtree.h"
+#include "cil_security.h"
 
 /* Forward declarations - matching paper's three mutually recursive functions */
 static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
@@ -936,6 +938,16 @@ static int index_of(u32int label, translation_ctx_t *ctx) {
  */
 static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
                   translation_ctx_t *ctx, wasm_buffer_t *buf) {
+  static int call_depth = 0;
+  call_depth++;
+  if (call_depth > 50) {
+    print("RAMSEY: doTree recursion too deep (%d), aborting block %d\n",
+          call_depth, x);
+    call_depth--;
+    return -1;
+  }
+  print("RAMSEY: doTree(%d) is_loop=%d n_children=%d depth=%d\n", x,
+        tree->nodes[x].is_loop_header, tree->nodes[x].n_children, call_depth);
   domtree_node_t *node = &tree->nodes[x];
 
   /* filter hasMergeRoot children */
@@ -1023,6 +1035,16 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   /* Base case: [] */
 
   /* WasmActions (txBlock xlabel (nodeBody x)) */
+
+  /* Security: Emit permission check if required */
+  if (block->requires_validation) {
+    wasm_emit_u8(buf, WASM_OP_I64_CONST);
+    wasm_emit_sleb128(buf, block->required_permissions);
+    /* Import expects (I64)->() */
+    wasm_emit_u8(buf, WASM_OP_CALL);
+    wasm_emit_uleb128(buf, HOST_CLR_CHECK_PERM);
+  }
+
   /* Emit opcodes for this block, excluding terminal branch */
   u32int offset = block->start_offset;
   u32int end = block->end_offset;
@@ -1127,10 +1149,14 @@ static int doBranch(domtree_t *tree, dt_cfg_t *cfg, u32int source,
  * Paper line 33: structuredControl
  * Translate entire control-flow graph starting from root
  */
-int reloop_compile_method_ramsey(u8int *il, u32int il_size,
-                                 wasm_buffer_t *output) {
-  if (!il || !output || il_size == 0)
+int reloop_compile_method_ramsey(il_method_t *method, wasm_buffer_t *output) {
+  if (!method || !output || !method->il_code || method->il_code_size == 0)
     return -1;
+
+  u8int *il = method->il_code;
+  u32int il_size = (u32int)method->il_code_size;
+
+  print("RAMSEY: Compiling method, il_size=%d\n", (int)il_size);
 
   /* Build CFG */
   dt_cfg_t cfg;
@@ -1139,10 +1165,29 @@ int reloop_compile_method_ramsey(u8int *il, u32int il_size,
     return -1;
   }
 
+  /* SECURITY ANALYSIS */
+  /* Analyze CFG for sensitive operations and populate required_permissions */
+  analyze_cfg_security(&cfg, NULL); /* Pass method capability later */
+
   /* Single block: emit linearly */
   if (cfg.n_blocks <= 1) {
+    /* If single block requires validation, emit check first */
+    if (cfg.blocks[0].requires_validation) {
+      wasm_emit_u8(output, WASM_OP_I64_CONST); /* using i64 stack convention */
+      wasm_emit_sleb128(output, cfg.blocks[0].required_permissions);
+      wasm_emit_u8(output, WASM_OP_I32_WRAP_I64); /* Import expects i32? No, I
+                                                     defined (I64)->() */
+      /* Wait, my type def plan was (I64)->(). So passing I64 is correct.
+         But permissions are u32int.
+         So push i64 constant.
+      */
+      wasm_emit_u8(output, WASM_OP_CALL);
+      wasm_emit_uleb128(output, HOST_CLR_CHECK_PERM);
+    }
+
     u32int offset = 0;
     while (offset < il_size) {
+      /* Use cil_emit_opcode from cil_opcodes.c */
       int e = cil_emit_opcode(output, il, &offset, il_size);
       if (e < 0 && e != -100)
         return e;
@@ -1152,10 +1197,13 @@ int reloop_compile_method_ramsey(u8int *il, u32int il_size,
 
   /* Build and analyze dominator tree */
   domtree_t tree;
+  tree.n_nodes = cfg.n_blocks;
   if (domtree_build(&cfg, &tree) < 0)
     return -1;
   domtree_compute_rpo(&cfg, &tree);
   domtree_mark_special_nodes(&cfg, &tree);
+  domtree_dump(&tree, &cfg);
+  domtree_dump(&tree, &cfg);
 
   /* Initialize empty context */
   translation_ctx_t ctx;

@@ -105,36 +105,7 @@
 #define WASM_OP_I64_EXTEND16_S 0xC4
 #define WASM_OP_I64_EXTEND32_S 0xC5
 
-/* Host import indices */
-#define HOST_CLR_NEWOBJ 0
-#define HOST_CLR_NEWARR 1
-#define HOST_CLR_LDSTR 2
-#define HOST_CLR_LDSFLD 3
-#define HOST_CLR_STSFLD 4
-#define HOST_CLR_LDFLD 5
-#define HOST_CLR_STFLD 6
-#define HOST_CLR_LDFLDA 7
-#define HOST_CLR_LDSFLDA 8
-#define HOST_CLR_LDLEN 9
-#define HOST_CLR_BOX 10
-#define HOST_CLR_UNBOX 11
-#define HOST_CLR_ISINST 12
-#define HOST_CLR_INITOBJ 13
-#define HOST_CLR_LDELEM 14
-#define HOST_CLR_STELEM 15
-#define HOST_CLR_LDELEMA 16
-
-/* Symbolic computing host imports (17-24) */
-#define HOST_SYM_CREATE 17
-#define HOST_SYM_EXPR 18
-#define HOST_SYM_DIFF 19
-#define HOST_SYM_INTEGRATE 20
-#define HOST_SYM_SIMPLIFY 21
-#define HOST_SYM_EVAL 22
-#define HOST_SYM_MATCH 23
-#define HOST_SYM_REWRITE 24
-
-#define NUM_HOST_IMPORTS 25
+/* Host import indices -- Now defined in cil_opcodes.h */
 
 /*
  * cil_emit_opcode - Emit WASM for a single CIL opcode
@@ -1040,4 +1011,165 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
   }
 
   return 0;
+}
+
+/* Helper functions for CFG analysis and Security */
+
+int cil_is_branch_opcode(u8int op) {
+  switch (op) {
+  case IL_BR_S:
+  case IL_BRFALSE_S:
+  case IL_BRTRUE_S:
+  case IL_BEQ_S:
+  case IL_BGE_S:
+  case IL_BGT_S:
+  case IL_BLE_S:
+  case IL_BLT_S:
+  case IL_BNE_UN_S:
+  case IL_BR:
+  case IL_BRFALSE:
+  case IL_BRTRUE:
+  case IL_BEQ:
+  case IL_BGE:
+  case IL_BGT:
+  case IL_BLE:
+  case IL_BLT:
+  case IL_BNE_UN:
+  case IL_LEAVE:
+  case IL_LEAVE_S:
+  case IL_RET:
+  case IL_THROW:
+  case IL_SWITCH:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+int cil_is_conditional_branch(u8int op) {
+  switch (op) {
+  case IL_BRFALSE_S:
+  case IL_BRTRUE_S:
+  case IL_BEQ_S:
+  case IL_BGE_S:
+  case IL_BGT_S:
+  case IL_BLE_S:
+  case IL_BLT_S:
+  case IL_BNE_UN_S:
+  case IL_BRFALSE:
+  case IL_BRTRUE:
+  case IL_BEQ:
+  case IL_BGE:
+  case IL_BGT:
+  case IL_BLE:
+  case IL_BLT:
+  case IL_BNE_UN:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+int cil_get_branch_size(u8int op) {
+  switch (op) {
+  case IL_BR_S:
+  case IL_BRFALSE_S:
+  case IL_BRTRUE_S:
+  case IL_BEQ_S:
+  case IL_BGE_S:
+  case IL_BGT_S:
+  case IL_BLE_S:
+  case IL_BLT_S:
+  case IL_BNE_UN_S:
+  case IL_LEAVE_S:
+    return 1;
+  case IL_BR:
+  case IL_BRFALSE:
+  case IL_BRTRUE:
+  case IL_BEQ:
+  case IL_BGE:
+  case IL_BGT:
+  case IL_BLE:
+  case IL_BLT:
+  case IL_BNE_UN:
+  case IL_LEAVE:
+    return 4;
+  default:
+    return 0;
+  }
+}
+
+int cil_get_operand_size(u16int op) {
+  switch (op) {
+  case IL_LDARG_S:
+  case IL_LDARGA_S:
+  case IL_STARG_S:
+  case IL_LDLOC_S:
+  case IL_LDLOCA_S:
+  case IL_STLOC_S:
+  case IL_LDC_I4_S:
+    return 1;
+  case IL_LDC_I4:
+  case IL_CALL:
+  case IL_CALLI:
+  case IL_CALLVIRT:
+  case IL_NEWOBJ:
+  case IL_LDSTR:
+  case IL_LDFLD:
+  case IL_LDFLDA:
+  case IL_STFLD:
+  case IL_LDSFLD:
+  case IL_LDSFLDA:
+  case IL_STSFLD:
+  case IL_NEWARR:
+  case IL_BOX:
+  case IL_UNBOX:
+  case IL_UNBOX_ANY:
+  case IL_CASTCLASS:
+  case IL_ISINST:
+  case IL_LDTOKEN:
+  case IL_INITOBJ:
+  case IL_SIZEOF:
+  case IL_LDELEM:
+  case IL_STELEM:
+  case IL_LDELEMA:
+  case IL_CPOBJ:
+  case IL_LDOBJ:
+  case IL_STOBJ:
+    return 4;
+  case IL_LDC_I8:
+  case IL_LDC_R8:
+    return 8;
+  case IL_LDC_R4:
+    return 4;
+  default:
+    return 0;
+  }
+}
+
+int cil_get_instruction_size(u8int *il, u32int offset, u32int max_size) {
+  if (offset >= max_size)
+    return 0;
+  u16int opcode = il[offset];
+  u32int size = 1;
+
+  if (opcode == 0xFE) {
+    if (offset + 1 >= max_size)
+      return 0;
+    opcode = (opcode << 8) | il[offset + 1];
+    size = 2;
+  }
+
+  if (cil_is_branch_opcode((u8int)opcode) && opcode != IL_SWITCH) {
+    return size + cil_get_branch_size((u8int)opcode);
+  }
+
+  if (opcode == IL_SWITCH) {
+    if (offset + size + 4 > max_size)
+      return 0;
+    u32int n = *(u32int *)(il + offset + size);
+    return size + 4 + (n * 4);
+  }
+
+  return size + cil_get_operand_size(opcode);
 }

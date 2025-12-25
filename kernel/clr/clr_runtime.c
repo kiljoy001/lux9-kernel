@@ -50,8 +50,13 @@ typedef struct Fmt Fmt;
 #include "wasm_backend/fruity_to_wasm.h"
 #include "wasm_backend/test_assembly.h"
 
+/* Capability System */
+#include "clr_capability.h"
+
 /* WASM3 Runtime */
 #include "wasm_runtime/wasm3/wasm3.h"
+
+static capability_manager_t *clr_cap_manager = NULL;
 
 static void clr_dump_wasm_error(IM3Runtime runtime);
 
@@ -478,6 +483,34 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
   // Or assume "init" if entry_name is null?
   clr_assemblies_add(assembly, "init"); // Hardcoded for main assembly for now
 
+  /* Initialize Capabilities */
+  if (clr_cap_manager && assembly) {
+    print("CLR: Creating module capability...\n");
+    // Use "init" as module name for now matching cache
+    assembly->capability = cap_create_module(clr_cap_manager, "init");
+
+    // Derive capabilities for all typedefs
+    if (assembly->typedefs) {
+      print("CLR: Deriving class capabilities for %d types...\n",
+            (int)assembly->typedef_count);
+      for (size_t i = 0; i < assembly->typedef_count; i++) {
+        // Get class name
+        const char *name =
+            il_get_string(assembly, assembly->typedefs[i].name_index);
+
+        if (!name)
+          name = "Unknown";
+
+        // Policy: Classes get all permissions EXCEPT Grant (cannot create new
+        // modules/classes)
+        u32int class_perms = CAP_PERM_ALL & ~CAP_PERM_GRANT;
+
+        assembly->typedefs[i].capability = cap_derive_class(
+            clr_cap_manager, assembly->capability, name, class_perms);
+      }
+    }
+  }
+
   current_assembly = assembly;
 
   il_method_t *main = clr_find_entry_point(assembly, entry_name);
@@ -765,6 +798,16 @@ static void clr_dump_wasm_error(IM3Runtime runtime) {
 
 void clr_init(void) {
   print("CLR (WASM Backend) Initialized\n");
+
+  if (!clr_cap_manager) {
+    clr_cap_manager = cap_manager_create();
+    if (clr_cap_manager) {
+      print("CLR: Capability Manager Initialized\n");
+    } else {
+      print("CLR: Failed to initialize Capability Manager\n");
+    }
+  }
+
   clr_test_wasm_pipeline();
 }
 

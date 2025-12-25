@@ -226,6 +226,9 @@ typedef struct {
   uint32_t extends;         /* Index into TypeDef, TypeRef, or TypeSpec */
   uint32_t field_list;      /* Index into Field table */
   uint32_t method_list;     /* Index into MethodDef table */
+
+  /* Capability binding (runtime) */
+  struct clr_monotonic_capability *capability;
 } typedef_row_t;
 
 typedef struct {

@@ -197,8 +197,7 @@ int reloop_compile_method(il_method_t *method, wasm_buffer_t *output);
  * @param output: Output buffer for WASM bytecode
  * @return: 0 on success, negative on error
  */
-int reloop_compile_method_ramsey(u8int *il, u32int il_size,
-                                 wasm_buffer_t *output);
+int reloop_compile_method_ramsey(il_method_t *method, wasm_buffer_t *output);
 
 /* Helper to check if offset is a branch target */
 int reloop_is_branch_target(cil_cfg_t *cfg, u32int offset);
