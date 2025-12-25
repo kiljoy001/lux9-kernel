@@ -1195,7 +1195,6 @@ static Mntrpc *mntflushfree(Mnt *m, Mntrpc *r) {
       break;
     mntfree(r);
     r = fr;
-    ```
   }
   return r;
 }

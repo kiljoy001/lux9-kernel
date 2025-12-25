@@ -261,45 +261,31 @@ Theorem context_contains_target : forall target ctx i,
             | _ => False
             end.
 Proof.
-  intros target ctx.
+  intros target ctx i H.
+  revert i H.
   induction ctx as [| frame rest IH]; intros i H.
-  - (* Empty context: contradiction *)
-    simpl in H. discriminate.
-  - (* Non-empty context *)
-    simpl in H. destruct frame eqn:Hframe.
-    + (* IfThenElse - cannot match directly *)
-      destruct (index target rest) eqn:E; simpl in H; try discriminate.
-      injection H as Hi. subst.
-      destruct (IH n E) as [j [Hj Hmatch]].
-      exists (S j). split.
-      * simpl. lia.
-      * simpl. exact Hmatch.
-    + (* LoopHeadedBy l *)
-      destruct (Nat.eqb l target) eqn:Eq.
-      * (* Match! *)
-        exists 0. split.
-        -- simpl. lia.
-        -- simpl. exact Eq.
-      * (* No match, try rest *)
-        destruct (index target rest) eqn:E; simpl in H; try discriminate.
+  - discriminate.
+  - destruct frame.
+    + (* IfThenElse *)
+      simpl in H.
+      destruct (index target rest) eqn:E; try discriminate.
+      injection H as Hi; subst.
+      destruct (IH _ eq_refl) as [j [Hlen Hmatch]].
+      exists (S j). split; [simpl; lia | exact Hmatch].
+    + (* LoopHeadedBy *)
+      simpl in H. destruct (Nat.eqb l target) eqn:Eq.
+      * injection H as Hi. subst. exists 0. split; [simpl; lia | simpl; exact Eq].
+      * destruct (index target rest) eqn:E; try discriminate.
         injection H as Hi. subst.
-        destruct (IH n E) as [j [Hj Hmatch]].
-        exists (S j). split.
-        -- simpl. lia.
-        -- simpl. exact Hmatch.
-    + (* BlockFollowedBy l *)
-      destruct (Nat.eqb l target) eqn:Eq.
-      * (* Match! *)
-        exists 0. split.
-        -- simpl. lia.
-        -- simpl. exact Eq.
-      * (* No match, try rest *)
-        destruct (index target rest) eqn:E; simpl in H; try discriminate.
+        destruct (IH _ eq_refl) as [j [Hlen Hmatch]].
+        exists (S j). split; [simpl; lia | exact Hmatch].
+    + (* BlockFollowedBy *)
+      simpl in H. destruct (Nat.eqb l target) eqn:Eq.
+      * injection H as Hi. subst. exists 0. split; [simpl; lia | simpl; exact Eq].
+      * destruct (index target rest) eqn:E; try discriminate.
         injection H as Hi. subst.
-        destruct (IH n E) as [j [Hj Hmatch]].
-        exists (S j). split.
-        -- simpl. lia.
-        -- simpl. exact Hmatch.
+        destruct (IH _ eq_refl) as [j [Hlen Hmatch]].
+        exists (S j). split; [simpl; lia | exact Hmatch].
 Qed.
 
 (* Biconditional: index succeeds iff target is in context with matching label *)
@@ -313,38 +299,37 @@ Theorem index_iff_in_context : forall target ctx,
              end).
 Proof.
   intros target ctx. split.
-  - (* -> direction: use context_contains_target *)
-    intros [i Hi]. exact (context_contains_target target ctx i Hi).
-  - (* <- direction: construct index from position *)
-    intros [j [Hj Hmatch]].
-    induction ctx as [| frame rest IH].
+  - intros [i Hi]. eapply context_contains_target; eauto.
+  - intros [j [Hj Hmatch]].
+    induction ctx as [| frame rest IH] in j, Hj, Hmatch |- *.
     + simpl in Hj. lia.
-    + destruct j as [| j'].
-      * (* j = 0: frame matches *)
+    + simpl in Hj. destruct j as [| j'].
+      * (* Match at head *)
+        simpl in Hmatch. destruct frame.
+        -- (* IfThenElse: contradiction, cannot match target *) 
+           contradiction.
+        -- (* Loop: match found *)
+           simpl. rewrite Hmatch. exists 0. reflexivity.
+        -- (* Block: match found *)
+           simpl. rewrite Hmatch. exists 0. reflexivity.
+      * (* Match in tail *)
         simpl in Hmatch.
-        destruct frame.
-        -- (* IfThenElse *) contradiction.
-        -- (* LoopHeadedBy l *) 
-           exists 0. simpl. rewrite Hmatch. reflexivity.
-        -- (* BlockFollowedBy l *)
-           exists 0. simpl. rewrite Hmatch. reflexivity.
-      * (* j = S j': recursion *)
-        simpl in Hj. simpl in Hmatch.
         assert (Hj' : j' < length rest) by lia.
-        assert (Hmatch' : match nth_error rest j' with
-                          | Some (LoopHeadedBy l) => Nat.eqb l target = true
-                          | Some (BlockFollowedBy l) => Nat.eqb l target = true
-                          | _ => False
-                          end) by exact Hmatch.
-        destruct (IH Hj' Hmatch') as [i' Hi'].
-        simpl. destruct frame.
-        -- exists (S i'). rewrite Hi'. reflexivity.
-        -- destruct (Nat.eqb l target) eqn:Eq.
+        destruct frame.
+        -- (* IfThenElse *)
+           simpl.
+           specialize (IH _ Hj' Hmatch). destruct IH as [i Hi].
+           exists (S i). rewrite Hi. reflexivity.
+        -- (* Loop *)
+           simpl. destruct (Nat.eqb l target).
            ++ exists 0. reflexivity.
-           ++ exists (S i'). rewrite Hi'. reflexivity.
-        -- destruct (Nat.eqb l target) eqn:Eq.
+           ++ specialize (IH _ Hj' Hmatch). destruct IH as [i Hi].
+              exists (S i). rewrite Hi. reflexivity.
+        -- (* Block *)
+           simpl. destruct (Nat.eqb l target).
            ++ exists 0. reflexivity.
-           ++ exists (S i'). rewrite Hi'. reflexivity.
+           ++ specialize (IH _ Hj' Hmatch). destruct IH as [i Hi].
+              exists (S i). rewrite Hi. reflexivity.
 Qed.
 
 Print Assumptions index_in_context.

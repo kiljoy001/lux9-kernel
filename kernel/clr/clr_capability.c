@@ -31,13 +31,31 @@
   })
 #define nil NULL
 #else
-/* Kernel mode */
-extern void *xalloc(unsigned long size);
-extern void *xallocz(unsigned long size, int zero);
-extern void xfree(void *ptr);
-extern int print(char *fmt, ...);
-extern int snprint(char *buf, int len, char *fmt, ...);
-extern char *smprint(char *fmt, ...);
+/* Kernel mode - use Pebble for tracked allocations */
+#include "../include/pebble.h"
+#include "../include/u.h"
+
+/* Capability allocations use Pebble for resource tracking */
+static void *pebble_alloc_wrapper(unsigned long size) {
+  UserCapability cap;
+  void *addr;
+
+  if (pebble_black_alloc(size, &cap) != 0)
+    return nil;
+
+  /* Get the actual memory address from the capability */
+  addr = pebble_get_black_addr(&cap);
+  if (addr && size > 0) {
+    memset(addr, 0, size); /* Zero memory like xallocz */
+  }
+  return addr;
+}
+
+#define xalloc(size) pebble_alloc_wrapper(size)
+#define xallocz(size, zero)                                                    \
+  pebble_alloc_wrapper(size)     /* Pebble zeros by default */
+#define xfree(ptr) ((void)(ptr)) /* Cleanup via Pebble process exit */
+
 #define nil ((void *)0)
 #endif
 

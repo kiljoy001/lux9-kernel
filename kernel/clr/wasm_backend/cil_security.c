@@ -1,5 +1,6 @@
 #include "../clr_capability.h"
 #include "../il_parser.h"
+#include "cil_domtree.h"
 #include "cil_opcodes.h"
 
 /*

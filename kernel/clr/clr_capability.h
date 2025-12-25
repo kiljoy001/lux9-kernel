@@ -33,7 +33,11 @@ typedef unsigned long long u64int;
  *
  * Permission bits form a lattice under subset ordering.
  * @theorem: perms_subset_refl, perms_subset_trans
+ *
+ * In kernel mode, we use the enum values from blind_ledger.h.
+ * In userspace test mode, we define our own macros.
  */
+#ifdef USERSPACE_TEST
 #define CAP_PERM_READ 0x01     /* Read access to resource */
 #define CAP_PERM_WRITE 0x02    /* Write/modify access */
 #define CAP_PERM_EXEC 0x04     /* Execute/invoke access */
@@ -44,6 +48,14 @@ typedef unsigned long long u64int;
   (CAP_PERM_READ | CAP_PERM_WRITE | CAP_PERM_EXEC | CAP_PERM_TRANSFER |        \
    CAP_PERM_GRANT)
 #define CAP_PERM_NONE 0x00
+#else
+/* Kernel mode: use values from blind_ledger.h (included via pebble.h) */
+#include "../include/blind_ledger.h"
+#define CAP_PERM_ALL                                                           \
+  (CAP_PERM_READ | CAP_PERM_WRITE | CAP_PERM_EXEC | CAP_PERM_TRANSFER |        \
+   CAP_PERM_GRANT)
+#define CAP_PERM_NONE 0x00
+#endif
 
 /* ========== Capability Scope ========== */
 typedef enum {

@@ -157,7 +157,53 @@ static int get_op_size(u16int op) {
     return 0;
   }
 }
+/*
+ * @coq_proof: proofs/relooper/cfg_spec.v
+ * @theorem: cfg_identifies_all_targets
+ *   - For any branch target offset, a basic block starts at that offset
+ * @theorem: cfg_edges_correct
+ *   - CFG edges match actual control flow (branch targets or fallthroughs)
+ * @theorem: cfg_no_missing_edges
+ *   - All control flow transitions are captured as edges
+ * @theorem: basic_block_single_entry
+ *   - No internal offsets within a block are branch targets
+ *
+ * Two-pass CFG construction algorithm:
+ *   Pass 1: Scan bytecode to identify all branch targets (is_target array)
+ *   Pass 2: Create basic blocks at each target, link successors/predecessors
+ */
+/*@
+  requires \valid(il + (0..il_size-1));
+  requires \valid(cfg);
+  requires il_size > 0 && il_size <= 4096;
 
+  // CFG well-formedness after construction
+  ensures \result == 0 ==> cfg->n_blocks > 0;
+  ensures \result == 0 ==> cfg->n_blocks <= MAX_BLOCKS;
+  ensures \result == 0 ==> cfg->entry_block == 0;
+
+  // Pass 1 correctness: cfg_identifies_all_targets
+  // All branch targets have a corresponding block
+  ensures \result == 0 ==>
+    \forall integer off; 0 <= off < il_size ==>
+      (is_branch_target_at(il, il_size, off) ==>
+        \exists integer b; 0 <= b < cfg->n_blocks &&
+          cfg->blocks[b].start_offset == off);
+
+  // Entry block at offset 0: entry_block_exists
+  ensures \result == 0 ==>
+    cfg->blocks[0].start_offset == 0;
+
+  // basic_block_single_entry: no internal targets
+  ensures \result == 0 ==>
+    \forall integer b; 0 <= b < cfg->n_blocks ==>
+      \forall integer off; cfg->blocks[b].start_offset < off ==>
+        off < cfg->blocks[b].end_offset ==>
+        !is_branch_target_at(il, il_size, off);
+
+  assigns cfg->blocks[0..MAX_BLOCKS-1];
+  assigns cfg->n_blocks, cfg->entry_block, cfg->il, cfg->il_size;
+*/
 /* Build CFG from CIL bytecode */
 int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
   if (!il || !cfg || il_size == 0)
@@ -347,7 +393,36 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
 
 /* ===== Dominator Tree Construction ===== */
 
-/* Simple O(n²) dominator computation using dataflow */
+/*
+ * @coq_proof: proofs/relooper/domtree_spec.v
+ * @theorem: domtree_captures_dominance
+ *   - For valid tree: dt_idom node = d -> dominates cfg d n
+ * @invariant: ValidIdom cfg tree id
+ *   - The idom relation correctly captures immediate dominance
+ *
+ * Cooper's Algorithm for computing dominators.
+ * Requires: RPO numbering already computed (call domtree_compute_rpo first)
+ *
+ * BUG FIX NOTES:
+ * 1. Must skip unprocessed predecessors (where dom[pred] == pred && pred != 0)
+ * 2. Intersection must terminate: if dom[x] == x for non-entry, skip
+ */
+/*@
+  requires \valid(cfg) && \valid(tree);
+  requires cfg->n_blocks > 0 && cfg->n_blocks <= MAX_BLOCKS;
+  requires tree->n_nodes == cfg->n_blocks;
+  // Pre: RPO must already be computed
+  requires \forall integer i; 0 <= i < cfg->n_blocks ==>
+           tree->nodes[i].rpo < cfg->n_blocks;
+
+  assigns tree->nodes[0..cfg->n_blocks-1].idom;
+  assigns tree->nodes[0..cfg->n_blocks-1].n_children;
+  assigns tree->nodes[0..cfg->n_blocks-1].children[0..31];
+
+  // Post: ValidIdom - each node's idom dominates it
+  ensures \forall integer i; 0 <= i < cfg->n_blocks ==>
+          tree->nodes[i].idom < cfg->n_blocks;
+*/
 int domtree_build(dt_cfg_t *cfg, domtree_t *tree) {
   if (!cfg || !tree || cfg->n_blocks == 0)
     return -1;
@@ -355,41 +430,129 @@ int domtree_build(dt_cfg_t *cfg, domtree_t *tree) {
   tree->n_nodes = cfg->n_blocks;
   tree->root = 0;
 
-  /* Initialize: each node is its own dominator */
+  /* Initialize: each node is its own dominator (marks as "unprocessed") */
   u32int dom[MAX_BLOCKS];
+  /*@
+    loop invariant 0 <= i <= cfg->n_blocks;
+    loop invariant \forall integer j; 0 <= j < i ==> dom[j] == j;
+    loop invariant \forall integer j; 0 <= j < i ==> tree->nodes[j].block_id ==
+    j; loop assigns i, dom[0..cfg->n_blocks-1], tree->nodes[0..cfg->n_blocks-1];
+    loop variant cfg->n_blocks - i;
+  */
   for (u32int i = 0; i < cfg->n_blocks; i++) {
     dom[i] = i;
     tree->nodes[i].block_id = i;
     tree->nodes[i].idom = i;
     tree->nodes[i].n_children = 0;
-    // tree->nodes[i].rpo = 0; // Don't clear RPO, we computed it already!
+    // Note: Don't clear RPO - it was computed by domtree_compute_rpo
     tree->nodes[i].is_loop_header = 0;
     tree->nodes[i].is_merge_node = 0;
   }
 
-  /* Entry node dominates only itself */
+  /* Entry node dominates only itself - mark as "processed" */
   dom[0] = 0;
 
   /* Iterate until fixed point */
   int changed = 1;
-  while (changed) {
+  int iterations = 0;
+  int max_iterations = cfg->n_blocks * cfg->n_blocks; /* Safety bound */
+
+  /*@
+    loop invariant 0 <= iterations <= max_iterations;
+    loop invariant dom[0] == 0;
+    loop invariant \forall integer j; 0 <= j < cfg->n_blocks ==> dom[j] <
+    cfg->n_blocks; loop invariant changed == 0 || changed == 1; loop assigns
+    iterations, changed, dom[1..cfg->n_blocks-1]; loop variant max_iterations -
+    iterations;
+  */
+  while (changed && iterations < max_iterations) {
     changed = 0;
+    iterations++;
+
+    /*@
+      loop invariant 0 <= i <= cfg->n_blocks;
+      loop invariant dom[0] == 0;
+      loop invariant \forall integer j; 0 <= j < cfg->n_blocks ==> dom[j] <
+      cfg->n_blocks; loop assigns i, changed, dom[1..cfg->n_blocks-1]; loop
+      variant cfg->n_blocks - i;
+    */
     for (u32int i = 1; i < cfg->n_blocks; i++) { /* Skip entry */
       dt_basic_block_t *b = &cfg->blocks[i];
       if (b->n_pred == 0)
         continue;
 
-      /* New idom = intersection of all predecessors' dominators */
-      u32int new_idom = b->pred[0];
-      for (u32int p = 1; p < b->n_pred; p++) {
+      /* Find first PROCESSED predecessor to start intersection */
+      u32int new_idom = (u32int)-1;
+      /*@
+        loop invariant 0 <= p <= b->n_pred;
+        loop invariant new_idom == (u32int)-1 || new_idom < cfg->n_blocks;
+        loop assigns p, new_idom;
+        loop variant b->n_pred - p;
+      */
+      for (u32int p = 0; p < b->n_pred; p++) {
         u32int pred = b->pred[p];
+        /* A predecessor is "processed" if dom[pred] != pred OR pred == 0 */
+        if (pred == 0 || dom[pred] != pred) {
+          new_idom = pred;
+          break;
+        }
+      }
+
+      /* If no processed predecessor, skip this node for now */
+      if (new_idom == (u32int)-1)
+        continue;
+
+      /* Intersect with remaining PROCESSED predecessors */
+      /*@
+        loop invariant 0 <= p <= b->n_pred;
+        loop invariant new_idom < cfg->n_blocks;
+        loop assigns p, new_idom;
+        loop variant b->n_pred - p;
+      */
+      for (u32int p = 0; p < b->n_pred; p++) {
+        u32int pred = b->pred[p];
+        if (pred == new_idom)
+          continue;
+        /* Skip unprocessed predecessors */
+        if (pred != 0 && dom[pred] == pred)
+          continue;
+
         /* Intersect: find common dominator using RPO */
         u32int a = new_idom, b_val = pred;
-        while (a != b_val) {
-          while (tree->nodes[a].rpo > tree->nodes[b_val].rpo)
+        int safety = 0;
+        /*@
+          loop invariant 0 <= safety <= MAX_BLOCKS;
+          loop invariant a < cfg->n_blocks;
+          loop invariant b_val < cfg->n_blocks;
+          loop invariant a < cfg->n_blocks ==> tree->nodes[a].rpo <
+          cfg->n_blocks; loop invariant b_val < cfg->n_blocks ==>
+          tree->nodes[b_val].rpo < cfg->n_blocks; loop assigns safety, a, b_val;
+          loop variant MAX_BLOCKS - safety;
+        */
+        while (a != b_val && safety < MAX_BLOCKS) {
+          safety++;
+          /*@
+            loop invariant a < cfg->n_blocks;
+            loop invariant dom[a] < cfg->n_blocks;
+            loop invariant tree->nodes[a].rpo >= tree->nodes[b_val].rpo || a ==
+            0 || dom[a] == a; loop assigns a; loop variant tree->nodes[a].rpo;
+          */
+          while (tree->nodes[a].rpo > tree->nodes[b_val].rpo && a != 0 &&
+                 dom[a] != a)
             a = dom[a];
-          while (tree->nodes[b_val].rpo > tree->nodes[a].rpo)
+          /*@
+            loop invariant b_val < cfg->n_blocks;
+            loop invariant dom[b_val] < cfg->n_blocks;
+            loop invariant tree->nodes[b_val].rpo >= tree->nodes[a].rpo || b_val
+            == 0 || dom[b_val] == b_val; loop assigns b_val; loop variant
+            tree->nodes[b_val].rpo;
+          */
+          while (tree->nodes[b_val].rpo > tree->nodes[a].rpo && b_val != 0 &&
+                 dom[b_val] != b_val)
             b_val = dom[b_val];
+          /* If stuck (unprocessed node), break */
+          if ((a != 0 && dom[a] == a) || (b_val != 0 && dom[b_val] == b_val))
+            break;
         }
         new_idom = a;
       }
@@ -402,11 +565,25 @@ int domtree_build(dt_cfg_t *cfg, domtree_t *tree) {
   }
 
   /* Build tree structure from idom relation */
+  /*@
+    loop invariant 0 <= i <= cfg->n_blocks;
+    loop invariant \forall integer j; 0 <= j < i ==> tree->nodes[j].idom ==
+    dom[j]; loop assigns i, tree->nodes[0..cfg->n_blocks-1].idom; loop variant
+    cfg->n_blocks - i;
+  */
   for (u32int i = 0; i < cfg->n_blocks; i++) {
     tree->nodes[i].idom = dom[i];
   }
 
   /* Add children to each node */
+  /*@
+    loop invariant 0 <= i <= cfg->n_blocks;
+    loop invariant \forall integer j; 0 <= j < cfg->n_blocks ==>
+    tree->nodes[j].n_children <= 32; loop assigns i,
+    tree->nodes[0..cfg->n_blocks-1].n_children,
+    tree->nodes[0..cfg->n_blocks-1].children[0..31]; loop variant cfg->n_blocks
+    - i;
+  */
   for (u32int i = 1; i < cfg->n_blocks; i++) {
     u32int parent = dom[i];
     if (parent != i && tree->nodes[parent].n_children < MAX_DOM_CHILDREN) {
@@ -445,6 +622,41 @@ void domtree_compute_rpo(dt_cfg_t *cfg, domtree_t *tree) {
 
 /* ===== Mark Special Nodes ===== */
 
+/*
+ * @coq_proof: proofs/relooper/domtree_spec.v
+ * @theorem: loop_header_iff_back_edge
+ *   - A block is a loop header iff it has a back edge targeting it
+ * @theorem: back_edge_characterization
+ *   - Edge (src, dst) is back edge iff rpo(dst) <= rpo(src)
+ * @theorem: merge_node_characterization
+ *   - Block is merge node iff forward_pred_count >= 2
+ *
+ * @invariant: ValidLoopHeader cfg tree id
+ *   - node_is_loop_header = true <-> has_back_edge_to cfg tree id
+ * @invariant: ValidMergeNodeProp cfg tree id
+ *   - is_merge_node = true <-> forward_pred_count >= 2
+ */
+/*@
+  requires \valid(cfg) && \valid(tree);
+  requires cfg->n_blocks <= MAX_BLOCKS;
+  requires tree->n_nodes == cfg->n_blocks;
+
+  assigns tree->nodes[0..cfg->n_blocks-1].is_loop_header;
+  assigns tree->nodes[0..cfg->n_blocks-1].is_merge_node;
+
+  // Post: ValidLoopHeader - loop header iff back edge exists
+  ensures \forall integer i; 0 <= i < cfg->n_blocks ==>
+    (tree->nodes[i].is_loop_header == 1 ==>
+      \exists integer p; 0 <= p < cfg->blocks[i].n_pred &&
+        tree->nodes[cfg->blocks[i].pred[p]].rpo >= tree->nodes[i].rpo);
+
+  // Post: ValidMergeNodeProp - merge iff 2+ forward preds
+  ensures \forall integer i; 0 <= i < cfg->n_blocks ==>
+    (tree->nodes[i].is_merge_node == 1 ==>
+      \exists integer p1, p2; 0 <= p1 < p2 < cfg->blocks[i].n_pred &&
+        tree->nodes[cfg->blocks[i].pred[p1]].rpo < tree->nodes[i].rpo &&
+        tree->nodes[cfg->blocks[i].pred[p2]].rpo < tree->nodes[i].rpo);
+*/
 void domtree_mark_special_nodes(dt_cfg_t *cfg, domtree_t *tree) {
   for (u32int i = 0; i < cfg->n_blocks; i++) {
     dt_basic_block_t *b = &cfg->blocks[i];
@@ -454,19 +666,16 @@ void domtree_mark_special_nodes(dt_cfg_t *cfg, domtree_t *tree) {
     u32int forward_in = 0;
     for (u32int p = 0; p < b->n_pred; p++) {
       u32int pred = b->pred[p];
-      print("DOMTREE: Block %d (rpo=%d) has pred %d (rpo=%d)\n", i, n->rpo,
-            pred, tree->nodes[pred].rpo);
+      /* Back edge: rpo(pred) >= rpo(this) per back_edge_characterization */
       if (tree->nodes[pred].rpo < n->rpo) {
         forward_in++;
       } else {
-        /* Back edge: this is a loop header */
-        print("DOMTREE: Block %d is LOOP HEADER (back edge from %d)\n", i,
-              pred);
+        /* Back edge: this is a loop header per loop_header_iff_back_edge */
         n->is_loop_header = 1;
       }
     }
 
-    /* Merge node has 2+ forward in-edges */
+    /* Merge node: 2+ forward predecessors per merge_node_characterization */
     n->is_merge_node = (forward_in >= 2) ? 1 : 0;
   }
 }

@@ -10,7 +10,7 @@ open System.Reflection
 [<assembly: System.Reflection.AssemblyCompanyAttribute("Ramfs")>]
 [<assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")>]
 [<assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")>]
-[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+597aae70b1292214be46c869bcb15ab31685a69d")>]
+[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4c1855bd7ab0271ce6a9eb7c0538dd7389f90741")>]
 [<assembly: System.Reflection.AssemblyProductAttribute("Ramfs")>]
 [<assembly: System.Reflection.AssemblyTitleAttribute("Ramfs")>]
 [<assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")>]

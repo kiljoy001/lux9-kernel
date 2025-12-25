@@ -243,21 +243,19 @@ void initrd_register(void) {
     /* Enforce signature check for bin/ and boot/ files */
     if (is_bin) {
       if (f->sig_file == nil) {
-        print("initrd: SECURITY VIOLATION: '%s' has no signature. (BYPASSED)\n",
-              f->name);
-        // continue;
+        print("initrd: SECURITY VIOLATION: '%s' has no signature.\n", f->name);
+        continue;
       } else if (f->sig_file->size != 64) {
-        print("initrd: SECURITY VIOLATION: '%s' signature invalid size. "
-              "(BYPASSED)\n",
+        print("initrd: SECURITY VIOLATION: '%s' signature invalid size.\n",
               f->name);
-        // continue;
+        continue;
       } else if (crypto_eddsa_check((const uint8_t *)f->sig_file->data,
                                     internal_pubkey, (const uint8_t *)f->data,
                                     f->size) != 0) {
-        print("initrd: SECURITY VIOLATION: '%s' signature verification FAILED. "
-              "(BYPASSED)\n",
-              f->name);
-        // continue;
+        print(
+            "initrd: SECURITY VIOLATION: '%s' signature verification FAILED.\n",
+            f->name);
+        continue;
       } else {
         print("initrd: Verified signature for '%s'\n", f->name);
       }

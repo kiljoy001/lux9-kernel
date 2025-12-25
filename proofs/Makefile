@@ -2,7 +2,7 @@
 #
 # Verifies all formal proofs in the kernel
 
-SUBDIRS := ramdisk 9p_router proc pebble borrow blind_ledger capability clr msgord mmu allocator pipe env mnt
+SUBDIRS := ramdisk 9p_router proc pebble borrow blind_ledger capability clr msgord mmu allocator pipe env mnt cache
 
 .PHONY: all verify clean stats help $(SUBDIRS) verify-root
 
