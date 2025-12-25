@@ -169,6 +169,14 @@ test-build:
 userspace/build/initrd.tar:
 	@echo "Building userspace..."
 	@$(MAKE) -C userspace initrd
+	@echo "Signing initrd files..."
+	@if [ -n "$$LUX_SIGNING_KEY" ] || command -v tpm2_unseal > /dev/null 2>&1; then \
+		python3 tools/sign_manager.py && \
+		cd userspace/build/init && tar --transform 's,^./,,' -cf ../initrd.tar . ; \
+	else \
+		echo "WARNING: No signing key available (set LUX_SIGNING_KEY or use TPM)"; \
+		echo "Initrd files will NOT be signed!"; \
+	fi
 
 iso: $(KERNEL) userspace/build/initrd.tar
 	@echo "Creating ISO image..."
