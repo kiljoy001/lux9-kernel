@@ -1195,15 +1195,18 @@ static Mntrpc *mntflushfree(Mnt *m, Mntrpc *r) {
       break;
     mntfree(r);
     r = fr;
+    ```
   }
   return r;
 }
 
 /*@ ensures \result >= 0 && \result < 65535 && \result != 0;
     ensures \old(!mntalloc.tagmask[\result >> TAGSHIFT] & (1 << (\result &
-   TAGMASK))); assigns mntalloc.tagmask[0..NMASK-1];
+   TAGMASK)));
+    assigns mntalloc.tagmask[0..NMASK-1];
     // COQ_PROOF_REF: proofs/mnt/tag.v:alloctag_returns_allocated
     // COQ_PROOF_REF: proofs/mnt/tag.v:no_double_alloc
+    // COQ_PROOF_REF: proofs/mnt/tag.v:alloc_commutes
 */
 static int alloctag(void) {
   int i, j;
@@ -1226,6 +1229,8 @@ static int alloctag(void) {
     assigns mntalloc.tagmask[t >> TAGSHIFT];
     // COQ_PROOF_REF: proofs/mnt/tag.v:freetag_clears
     // COQ_PROOF_REF: proofs/mnt/tag.v:alloc_free_inverse
+    // COQ_PROOF_REF: proofs/mnt/tag.v:free_commutes
+    // COQ_PROOF_REF: proofs/mnt/tag.v:alloc_free_commutes
 */
 static void freetag(int t) {
   mntalloc.tagmask[t >> TAGSHIFT] &= ~(1 << (t & TAGMASK));
@@ -1237,6 +1242,7 @@ static void freetag(int t) {
     assigns mntalloc.nrpcfree, mntalloc.nrpcused, mntalloc.rpcfree;
     // COQ_PROOF_REF: proofs/mnt/rpc.v:mntralloc_increments_used
     // COQ_PROOF_REF: proofs/mnt/rpc.v:mntralloc_preserves_wf
+    // COQ_PROOF_REF: proofs/mnt/rpc.v:alloc_alloc_composition
 */
 static Mntrpc *mntralloc(Chan *c) {
   Mntrpc *new;

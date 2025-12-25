@@ -159,3 +159,64 @@ Proof.
   unfold tag_allocated, initial_mntalloc, ma_tags, NOTAG. simpl.
   reflexivity.
 Qed.
+
+(* ========================================================================= *)
+(* COMMUTATIVITY THEOREMS                                                    *)
+(* ========================================================================= *)
+
+(** Allocation of distinct tags commutes *)
+Theorem alloc_commutes :
+  forall t1 t2 ts,
+  t1 <> t2 ->
+  forall t,
+  alloc_tag (alloc_tag ts t1) t2 t = alloc_tag (alloc_tag ts t2) t1 t.
+Proof.
+  intros t1 t2 ts Hneq t.
+  unfold alloc_tag.
+  destruct (Z.eqb t t2) eqn:E2.
+  - apply Z.eqb_eq in E2. subst.
+    destruct (Z.eqb t2 t1) eqn:E1.
+    + apply Z.eqb_eq in E1. subst. exfalso. apply Hneq. reflexivity.
+    + reflexivity.
+  - destruct (Z.eqb t t1) eqn:E1.
+    + reflexivity.
+    + reflexivity.
+Qed.
+
+(** Freeing of distinct tags commutes *)
+Theorem free_commutes :
+  forall t1 t2 ts,
+  t1 <> t2 ->
+  forall t,
+  free_tag (free_tag ts t1) t2 t = free_tag (free_tag ts t2) t1 t.
+Proof.
+  intros t1 t2 ts Hneq t.
+  unfold free_tag.
+  destruct (Z.eqb t t2) eqn:E2.
+  - apply Z.eqb_eq in E2. subst.
+    destruct (Z.eqb t2 t1) eqn:E1.
+    + apply Z.eqb_eq in E1. subst. exfalso. apply Hneq. reflexivity.
+    + reflexivity.
+  - destruct (Z.eqb t t1) eqn:E1.
+    + reflexivity.
+    + reflexivity.
+Qed.
+
+(** Alloc and Free of distinct tags commute *)
+Theorem alloc_free_commutes :
+  forall t1 t2 ts,
+  t1 <> t2 ->
+  forall t,
+  alloc_tag (free_tag ts t2) t1 t = free_tag (alloc_tag ts t1) t2 t.
+Proof.
+  intros t1 t2 ts Hneq t.
+  unfold alloc_tag, free_tag.
+  destruct (Z.eqb t t1) eqn:E1.
+  - apply Z.eqb_eq in E1. subst.
+    destruct (Z.eqb t1 t2) eqn:E2.
+    + apply Z.eqb_eq in E2. subst. exfalso. apply Hneq. reflexivity.
+    + reflexivity.
+  - destruct (Z.eqb t t2) eqn:E2.
+    + reflexivity.
+    + reflexivity.
+Qed.

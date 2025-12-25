@@ -180,3 +180,40 @@ Proof.
   inversion Ha1; inversion Ha2; inversion Hf1; inversion Hf2;
   subst; simpl; lia.
 Qed.
+
+(* ========================================================================= *)
+(* COMPOSITION THEOREMS                                                      *)
+(* ========================================================================= *)
+
+(** Allocating twice increases used count by 2 *)
+Theorem alloc_alloc_composition :
+  forall ma1 ma2 ma3,
+  MntRalloc ma1 ma2 -> MntRalloc ma2 ma3 ->
+  ma3.(ma_nrpcused) = ma1.(ma_nrpcused) + 2.
+Proof.
+  intros ma1 ma2 ma3 Ha1 Ha2.
+  inversion Ha1; inversion Ha2; subst; simpl; lia.
+Qed.
+
+(** Freeing twice decreases used count by 2 *)
+Theorem free_free_composition :
+  forall ma1 ma2 ma3,
+  MntFree ma1 ma2 -> MntFree ma2 ma3 ->
+  ma3.(ma_nrpcused) = ma1.(ma_nrpcused) - 2.
+Proof.
+  intros ma1 ma2 ma3 Hf1 Hf2.
+  inversion Hf1; inversion Hf2; subst; simpl; lia.
+Qed.
+
+(** Alloc/Free vs Free/Alloc outcome on used count *)
+Theorem alloc_free_commutes_used :
+  forall ma1 ma2 ma3 ma2' ma3',
+  MntRalloc ma1 ma2 -> MntFree ma2 ma3 ->
+  MntFree ma1 ma2' -> MntRalloc ma2' ma3' ->
+  ma3.(ma_nrpcused) = ma3'.(ma_nrpcused).
+Proof.
+  intros ma1 ma2 ma3 ma2' ma3' Ha Hf Hf' Ha'.
+  (* Since alloc +1 used and free -1 used, both sequences yield +/- 0 change *)
+  inversion Ha; inversion Hf; inversion Hf'; inversion Ha';
+  subst; simpl; lia.
+Qed.
