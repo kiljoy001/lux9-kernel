@@ -179,10 +179,11 @@ Proof.
   rewrite firstn_length_le by lia.
   replace (pos + 1 - pos) with 1 by lia.
   simpl.
-  rewrite skipn_app.
-  replace (1 - 1) with 0 by lia.
-  rewrite skipn_O.
-  reflexivity.
+  (* After simpl: firstn pos bitmap ++ true :: skipn (pos+1) (firstn pos bitmap) ++ skipn (pos+1) bitmap *)
+  (* skipn (pos+1) (firstn pos bitmap) = [] because length (firstn pos bitmap) = pos < pos + 1 *)
+  rewrite skipn_all2.
+  - simpl. reflexivity.
+  - rewrite firstn_length_le by lia. lia.
 Qed.
 
 (** Clear bit is idempotent *)
@@ -202,10 +203,10 @@ Proof.
   rewrite firstn_length_le by lia.
   replace (pos + 1 - pos) with 1 by lia.
   simpl.
-  rewrite skipn_app.
-  replace (1 - 1) with 0 by lia.
-  rewrite skipn_O.
-  reflexivity.
+  (* skipn (pos+1) (firstn pos bitmap) = [] because length (firstn pos bitmap) = pos < pos + 1 *)
+  rewrite skipn_all2.
+  - simpl. reflexivity.
+  - rewrite firstn_length_le by lia. lia.
 Qed.
 
 (** Set/clear at different positions commute *)
@@ -320,9 +321,18 @@ Proof.
         split; intro; reflexivity.
       * injection Hrel as Hrel. subst ls'.
         unfold lock_balanced. simpl.
+        apply Nat.eqb_neq in Hcount.
+        (* lock_holder ls = Some n, so by Hbal, lock_count ls <> 0 *)
+        unfold lock_balanced in Hbal.
+        assert (lock_count ls <> 0) as Hneq0. {
+          intro Hc. destruct Hbal as [H1 H2].
+          rewrite H2 in Hholder; [discriminate | exact Hc].
+        }
         split; intro H.
         -- discriminate.
-        -- apply Nat.eqb_neq in Hcount. lia.
+        -- (* lock_count ls - 1 = 0 implies lock_count ls <= 1 *)
+           (* Combined with <> 0 and <> 1, this is a contradiction *)
+           lia.
     + discriminate.
   - discriminate.
 Qed.
@@ -377,7 +387,7 @@ Qed.
 
 (** Cache size is preserved by ctail operation *)
 Theorem ctail_size_invariant :
-  forall nodes head tail head' tail' m,
+  forall (nodes : list Node) m,
     length nodes > 0 ->
     m < length nodes ->
     (* ctail only relinks, doesn't change nodes list *)

@@ -224,13 +224,19 @@ cap_alloc_slot(capability_manager_t *manager) {
  */
 clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
                                               const char *assembly_name) {
-  if (!manager || !assembly_name)
+  print("CAP: create_module ENTER\n");
+  if (!manager || !assembly_name) {
+    print("CAP: create_module NULL args\n");
     return nil;
+  }
 
+  print("CAP: calling cap_alloc_slot\n");
   clr_monotonic_capability_t *cap = cap_alloc_slot(manager);
+  print("CAP: cap_alloc_slot returned %p\n", cap);
   if (!cap)
     return nil;
 
+  print("CAP: calling uuid_new_v8\n");
   /* Generate unique UUID */
   uuid_new_v8(&cap->uuid);
 

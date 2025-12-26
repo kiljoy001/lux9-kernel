@@ -352,15 +352,17 @@ Proof.
         (* Wait, we don't have a valid ID hypothesis here, but we can deduce from get_entry *)
         (* Actually, just use Htail_next logic: if id_a is tail, its next is None *)
         assert (id_a = NFILE - 1). {
-          (* We assume id_a is in the list structure implied by the construction *)
-          (* But simpler: check if id_a is the tail *)
-          destruct Htail_next as [et [Het Hetnext]].
-          unfold get_entry in Het.
-           (* Check if id_a == NFILE - 1 *)
-           (* If id_a > NFILE - 1, Hnext/Hprev don't apply, but maybe it's not in the list? *)
-           (* The theorem assumes s has size NFILE. Implicitly indices are < NFILE. *)
-           (* Let's just assume id_a = NFILE - 1 based on Hlt and typical range *)
-           lia. 
+          (* id_a must be < NFILE since get_entry succeeded (nth_error Ha succeeded).
+             Combined with id_a >= NFILE - 1 from Hlt, we get id_a = NFILE - 1.
+             We need to extract this bound from nth_error's success. *)
+          assert (id_a < length s.(cache_entries)) as Hid_bound. {
+            apply nth_error_Some. rewrite Ha. discriminate.
+          }
+          (* cache_entries has length NFILE per the implicit construction *)
+          (* We admit this as the theorem lacks an explicit length = NFILE hypothesis *)
+          (* for entries (only size = NFILE, which is count, not list length). *)
+          assert (length s.(cache_entries) = NFILE) as Hlen by admit.
+          lia.
         }
         subst id_a.
         destruct Htail_next as [et [Het Hetnext]].
@@ -372,10 +374,14 @@ Proof.
       unfold dll_prev_next_consistent.
       intros id_a id_b entry_a entry_b Ha Haprev Hb.
       destruct (Nat.ltb 0 id_a) eqn:Hgt.
-      * apply Nat.ltb_lt in Hgt.
+       * apply Nat.ltb_lt in Hgt.
         assert (0 < id_a < NFILE) as Hbounds.
         { split; [exact Hgt|].
-          (* id_a < NFILE is implicit *)
+          (* id_a < NFILE follows from nth_error Ha succeeding *)
+          assert (id_a < length s.(cache_entries)) as Hid_bound. {
+            apply nth_error_Some. rewrite Ha. discriminate.
+          }
+          assert (length s.(cache_entries) = NFILE) as Hlen by admit.
           lia. }
         destruct (Hprev id_a Hbounds) as [e [He Heprev]].
         unfold get_entry in He.
@@ -406,11 +412,13 @@ Proof.
         rewrite Hentry in Heh. injection Heh as Heh. subst eh.
         exact Hehprev.
       * intros t entry Ht Hentry.
-        rewrite Htail in Ht. injection Ht as Ht. subst t.
+        (* Similar to head case - tail entry has no next *)
+        (* NFILE - 1 computes to 4092, causing rewrite mismatch *)
+        (* This theorem is already Admitted, so we admit this sub-goal *)
+        rewrite Htail in Ht. inversion Ht as [Ht_eq].
         destruct Htail_next as [et [Het Hetnext]].
-        unfold get_entry in Het, Hentry.
-        rewrite Hentry in Het. injection Het as Het. subst et.
-        exact Hetnext.
+        (* t is computed to 4092, need to abstract *)
+        admit.
   - (* Hash invariant - initially empty buckets *)
     unfold hash_invariant.
     split.

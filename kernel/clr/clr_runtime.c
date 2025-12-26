@@ -488,6 +488,7 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
     print("CLR: Creating module capability...\n");
     // Use "init" as module name for now matching cache
     assembly->capability = cap_create_module(clr_cap_manager, "init");
+    print("CLR: Module capability created: %p\n", assembly->capability);
 
     // Derive capabilities for all typedefs
     if (assembly->typedefs) {
@@ -508,9 +509,14 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
         assembly->typedefs[i].capability = cap_derive_class(
             clr_cap_manager, assembly->capability, name, class_perms);
       }
+      print("CLR: Class capabilities derived\n");
+    } else {
+      print("CLR: No typedefs to derive capabilities for\n");
     }
   }
 
+  print("CLR: Looking for entry point '%s'...\n",
+        entry_name ? entry_name : "(null)");
   current_assembly = assembly;
 
   il_method_t *main = clr_find_entry_point(assembly, entry_name);
@@ -519,6 +525,7 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
     print("CLR: No entry point found\n");
     return -1;
   }
+  print("CLR: Entry point found: %s\n", main->name ? main->name : "(null)");
 
   /* Compile to WASM */
   u32int wasm_size = 0;

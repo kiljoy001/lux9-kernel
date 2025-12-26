@@ -101,6 +101,9 @@ int uuid_is_null(const uuid_t *uu) {
 
 /* Generate UUIDv8 (Custom/Experimental) per RFC 9562 */
 void uuid_new_v8(uuid_t *u) {
+  /* Use non-blocking ChaCha20 CSPRNG to avoid qlock hang in early exec */
+  extern void chacha20_csprng_fill(u8int * buf, ulong len);
+
   if (!u)
     return;
 
@@ -109,8 +112,8 @@ void uuid_new_v8(uuid_t *u) {
   /* Get time: fastticks to ns */
   uvlong ns = fastticks2ns(fastticks(nil));
 
-  /* Fill with random first */
-  randomread(u->data, 16);
+  /* Fill with random first using non-blocking CSPRNG */
+  chacha20_csprng_fill(u->data, 16);
 
   /* Overlay timestamp into first 60 bits (custom_a and custom_b) */
   /* custom_a: 48 bits (Bytes 0-5) */
