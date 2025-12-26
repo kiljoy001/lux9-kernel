@@ -4,7 +4,7 @@
 COQC = coqc
 COQFLAGS = -R . mnt
 
-VFILES = types.v tag.v rpc.v tag_queue_safety.v mntchk_safety.v channel_model.v message_routing.v queue_invariants.v
+VFILES = types.v tag.v rpc.v tag_queue_safety.v mntchk_safety.v channel_model.v message_routing.v queue_invariants.v namespace_model.v
 VOFILES = $(VFILES:.v=.vo)
 
 .PHONY: all verify clean check
@@ -45,6 +45,10 @@ message_routing.vo: message_routing.v types.vo channel_model.vo
 queue_invariants.vo: queue_invariants.v types.vo tag.vo rpc.vo message_routing.vo channel_model.vo
 	@echo "  Compiling queue_invariants.v..."
 	@$(COQC) $(COQFLAGS) queue_invariants.v
+
+namespace_model.vo: namespace_model.v channel_model.vo
+	@echo "  Compiling namespace_model.v..."
+	@$(COQC) $(COQFLAGS) namespace_model.v
 
 check: verify
 	@echo "Checking for incomplete proofs..."
