@@ -4,7 +4,7 @@
 COQC = coqc
 COQFLAGS = -R . mnt
 
-VFILES = types.v tag.v rpc.v
+VFILES = types.v tag.v rpc.v tag_queue_safety.v
 VOFILES = $(VFILES:.v=.vo)
 
 .PHONY: all verify clean check
@@ -25,6 +25,10 @@ tag.vo: tag.v types.vo
 rpc.vo: rpc.v types.vo
 	@echo "  Compiling rpc.v..."
 	@$(COQC) $(COQFLAGS) rpc.v
+
+tag_queue_safety.vo: tag_queue_safety.v types.vo tag.vo rpc.vo
+	@echo "  Compiling tag_queue_safety.v..."
+	@$(COQC) $(COQFLAGS) tag_queue_safety.v
 
 check: verify
 	@echo "Checking for incomplete proofs..."
