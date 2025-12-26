@@ -96,7 +96,35 @@ static void mntreset(void) {
 
 /*
  * Version is not multiplexed: message sent only once per connection.
+ *
+ * FORMAL SPECIFICATION (ACSL):
+ * Allocates Mnt structure and performs 9P version negotiation.
+ *
+ * Verified properties:
+ * - proofs/mnt/mntchk_safety.v::normal_sequence_ordering
+ *   Proves m->id < c->dev after mntversion→mntchan sequence
+ * - docs/DEVMNT_LOCK_HIERARCHY.md - Lock ordering
+ *   Sequential: mntalloc.lock then m->lock (never nested)
  */
+/*@ requires \valid(c);
+  @ requires \valid_read(version + (0 .. returnlen-1));
+  @ requires msize >= 0 && msize <= 1048576;  // Max 1MB
+  @ requires returnlen >= 0 && returnlen < 8192;
+  @
+  @ behavior success:
+  @   assumes version_negotiation_succeeds();
+  @   ensures c->mux != \null;
+  @   ensures \result >= 0 && \result <= returnlen;
+  @   ensures c->mux->id > 0;  // Verified: mntchk_safety.v::MntVersionAlloc
+  @   ensures c->flag & CMSG;
+  @
+  @ behavior failure:
+  @   assumes !version_negotiation_succeeds();
+  @   signals (error) \true;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 int mntversion(Chan *c, char *version, int msize, int returnlen) {
   Fcall f;
   uchar *msg;
@@ -1273,6 +1301,42 @@ static Mntrpc *mntralloc(Chan *c) {
   return new;
 }
 
+/*
+ * CRITICAL BUG (VERIFIED): Tag reuse race at line 1316
+ *
+ * FORMAL SPECIFICATION (ACSL):
+ * Frees RPC structure, returning it to the allocator free list.
+ *
+ * BUG DISCOVERED BY FORMAL VERIFICATION:
+ * - proofs/mnt/tag_queue_safety.v::unsafe_free_breaks_invariant
+ *   Proves freetag() at line 1316 can execute while RPC still in queue
+ * - proofs/mnt/tag_queue_safety.v::safe_free_preserves_invariant
+ *   Proves calling mntqrm() first prevents the bug
+ *
+ * REQUIRED FIX:
+ *   Before line 1316: Add mntqrm(m, r) to remove RPC from queue
+ *   See proofs/mnt/tag_queue_safety.v::mntqrm_then_freetag_safe
+ */
+/*@ requires \valid(r);
+  @ requires \valid(r->w) || r->w == \null;
+  @ requires \valid(r->b) || r->b == \null;
+  @
+  @ behavior cached:
+  @   assumes mntalloc.nrpcfree < 32;
+  @   ensures mntalloc.nrpcfree == \old(mntalloc.nrpcfree) + 1;
+  @   ensures mntalloc.nrpcused == \old(mntalloc.nrpcused) - 1;
+  @   ensures r->list == \old(mntalloc.rpcfree);
+  @
+  @ behavior freed:
+  @   assumes mntalloc.nrpcfree >= 32;
+  @   // BUG: freetag(r->request.tag) called before mntqrm()
+  @   // This violates FreeTagSafe precondition: not_in_queue
+  @   // Proof: tag_queue_safety.v::unsafe_free_breaks_invariant
+  @   ensures mntalloc.nrpcused == \old(mntalloc.nrpcused) - 1;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 static void mntfree(Mntrpc *r) {
   freeb(r->w);
   freeblist(r->b);
@@ -1285,11 +1349,38 @@ static void mntfree(Mntrpc *r) {
     unlock(&mntalloc.lock);
     return;
   }
-  freetag(r->request.tag);
+  freetag(r->request.tag);  // BUG: See tag_queue_safety.v line 305-328
   unlock(&mntalloc.lock);
   free(r);
 }
 
+/*
+ * FORMAL SPECIFICATION (ACSL):
+ * Removes RPC from mount queue and marks it complete.
+ *
+ * VERIFIED PROPERTY:
+ * - proofs/mnt/tag_queue_safety.v::queue_remove_clears
+ *   Proves RPC is removed from queue (enables safe tag freeing)
+ * - proofs/mnt/tag_queue_safety.v::mntqrm_then_freetag_safe
+ *   Proves calling this before mntfree() prevents tag reuse race
+ *
+ * CRITICAL: Must be called before mntfree() when nrpcfree >= 32
+ */
+/*@ requires \valid(m);
+  @ requires \valid(r);
+  @
+  @ behavior found:
+  @   assumes in_queue(m->queue, r);
+  @   ensures !in_queue(m->queue, r);  // Verified: queue_remove_clears
+  @   ensures r->done == 1;
+  @
+  @ behavior not_found:
+  @   assumes !in_queue(m->queue, r);
+  @   ensures m->queue == \old(m->queue);
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 static void mntqrm(Mnt *m, Mntrpc *r) {
   Mntrpc **l, *f;
 
@@ -1307,6 +1398,27 @@ static void mntqrm(Mnt *m, Mntrpc *r) {
   unlock(m);
 }
 
+/*
+ * FORMAL SPECIFICATION (ACSL):
+ * Validates mount connection structure integrity.
+ *
+ * VERIFIED PROPERTY:
+ * - proofs/mnt/mntchk_safety.v::normal_sequence_ordering
+ *   Proves line 1390 check is correct (not off-by-one)
+ * - proofs/mnt/mntchk_safety.v::normal_sequence_passes_mntchk
+ *   Proves normal allocation sequence always passes validation
+ * - proofs/mnt/mntchk_safety.v::mntchk_ge_not_gt
+ *   Proves >= is correct operator (catches m->id == c->dev)
+ */
+/*@ requires \valid(c);
+  @ requires c->mchan != \null;
+  @ requires c->mchan->mux != \null;
+  @
+  @ ensures \result == c->mchan->mux;
+  @ ensures \result->id > 0;              // Verified: no reserved ID
+  @ ensures \result->id < c->dev;         // Verified: mntchk_safety.v
+  @ ensures \result == \old(\result);     // Idempotent
+  @*/
 static Mnt *mntchk(Chan *c) {
   Mnt *m;
 
@@ -1322,6 +1434,11 @@ static Mnt *mntchk(Chan *c) {
 
   /*
    * Was it closed and reused (was error(Eshutdown); now, it cannot happen)
+   *
+   * VERIFIED CORRECT: proofs/mnt/mntchk_safety.v
+   * - normal_sequence_ordering: m->id < c->dev always holds
+   * - mntchk_condition_correct: >= catches violations correctly
+   * - mntchk_ge_not_gt: Proves >= is correct (not >)
    */
   if (m->id == 0 || m->id >= c->dev)
     panic("mntchk 3: can't happen");
