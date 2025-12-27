@@ -464,10 +464,6 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   void *buf;
   PebbleBlack *pb;
 
-  /* Debug: trace allocation context */
-  print("PEBBLE: black_alloc size=%lu up=%p pid=%lu\n", size, up,
-        up ? up->pid : 0);
-
   /*
    * If up == nil, we are likely in early boot (xinit/mmuinit).
    * We proceed, treating 'nil' as the Kernel process ownership.
@@ -489,7 +485,6 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   buf = xallocz(size, 1);
   if (buf == nil)
     return -1;
-  print("PEBBLE: xallocz ok buf=%p\n", buf);
 
   /* 2. Acquire ownership via Borrow Checker */
   if (up != nil) {
@@ -504,13 +499,12 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
       return -1;
     }
   }
-  print("PEBBLE: borrow_acquire ok\n");
 
   /* 3. Mint capability via Blind Ledger */
-  print("PEBBLE: calling ledger_mint\n");
+
   ledger_err = ledger_mint(out_cap, (uintptr)buf, size, up, PEBBLE_CAP_BLACK,
                            vault_secret);
-  print("PEBBLE: ledger_mint returned %d\n", ledger_err);
+
   if (ledger_err != BLIND_LEDGER_OK) {
     if (up != nil)
       borrow_release(up, (uintptr)buf);
@@ -522,7 +516,7 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
   }
 
   /* 4. Track metadata */
-  print("PEBBLE: taking ilock\n");
+
   ilock(&pebble_global_lock);
   pb = pebble_meta_alloc(sizeof(PebbleBlack));
   if (pb == nil) {

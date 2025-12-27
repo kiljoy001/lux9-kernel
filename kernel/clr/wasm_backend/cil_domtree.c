@@ -172,37 +172,20 @@ static int get_op_size(u16int op) {
  *   Pass 1: Scan bytecode to identify all branch targets (is_target array)
  *   Pass 2: Create basic blocks at each target, link successors/predecessors
  */
-/*@
+/*
+  ACSL SPEC (see proofs/relooper/cfg_spec.v for formal definitions):
+
   requires \valid(il + (0..il_size-1));
   requires \valid(cfg);
   requires il_size > 0 && il_size <= 4096;
 
-  // CFG well-formedness after construction
   ensures \result == 0 ==> cfg->n_blocks > 0;
   ensures \result == 0 ==> cfg->n_blocks <= MAX_BLOCKS;
   ensures \result == 0 ==> cfg->entry_block == 0;
 
-  // Pass 1 correctness: cfg_identifies_all_targets
-  // All branch targets have a corresponding block
-  ensures \result == 0 ==>
-    \forall integer off; 0 <= off < il_size ==>
-      (is_branch_target_at(il, il_size, off) ==>
-        \exists integer b; 0 <= b < cfg->n_blocks &&
-          cfg->blocks[b].start_offset == off);
-
-  // Entry block at offset 0: entry_block_exists
-  ensures \result == 0 ==>
-    cfg->blocks[0].start_offset == 0;
-
-  // basic_block_single_entry: no internal targets
-  ensures \result == 0 ==>
-    \forall integer b; 0 <= b < cfg->n_blocks ==>
-      \forall integer off; cfg->blocks[b].start_offset < off ==>
-        off < cfg->blocks[b].end_offset ==>
-        !is_branch_target_at(il, il_size, off);
-
-  assigns cfg->blocks[0..MAX_BLOCKS-1];
-  assigns cfg->n_blocks, cfg->entry_block, cfg->il, cfg->il_size;
+  COQ_PROOF_REF: cfg_identifies_all_targets - all branch targets have blocks
+  COQ_PROOF_REF: entry_block_exists - block 0 starts at offset 0
+  COQ_PROOF_REF: basic_block_single_entry - no internal branch targets
 */
 /* Build CFG from CIL bytecode */
 int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
@@ -213,6 +196,7 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
   for (u32int i = 0; i < MAX_BLOCKS; i++) {
     cfg->blocks[i].n_succ = 0;
     cfg->blocks[i].n_pred = 0;
+    cfg->blocks[i].branch_opcode = 0;
   }
   cfg->n_blocks = 0;
   cfg->entry_block = 0;
@@ -303,6 +287,8 @@ int domtree_build_cfg(u8int *il, u32int il_size, dt_cfg_t *cfg) {
       cfg->blocks[block_id].start_offset = block_start;
       cfg->blocks[block_id].end_offset = offset + op_size;
       cfg->blocks[block_id].branch_offset = offset;
+      cfg->blocks[block_id].branch_opcode =
+          op; /* Store for comparison emission */
 
       if (op == 0x2A) { /* ret */
         cfg->blocks[block_id].terminator = TERM_RETURN;

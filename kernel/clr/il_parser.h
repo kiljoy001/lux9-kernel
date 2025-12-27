@@ -301,6 +301,9 @@ typedef struct {
   /* Metadata token for this method (TABLE_METHODDEF | row_index) */
   uint32_t method_token;
 
+  /* WASM function index assigned during CIL->WASM compilation */
+  uint32_t wasm_func_idx;
+
   /* Exception handling */
   exception_clause_t *exception_clauses;
   size_t exception_clause_count;

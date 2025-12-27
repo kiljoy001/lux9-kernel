@@ -160,6 +160,8 @@ def verify_acsl_file(file_info):
         "frama-c", "-machdep", "gcc_x86_64", "-wp", "-wp-prover", "cvc4", "-wp-timeout", "5",
         "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + 
         " -I" + os.path.join(KERNEL_DIR, "9front-pc64") +
+        " -I" + os.path.join(KERNEL_DIR, "9front-port") +
+        " -I" + os.path.join(KERNEL_DIR, "port") +
         " -D__PLAN9_KERNEL__",
         full_path
     ]

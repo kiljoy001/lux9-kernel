@@ -35,13 +35,23 @@ extern void xfree(void *ptr);
 
 extern il_assembly_t *current_assembly;
 
-#define NUM_HOST_IMPORTS 17
+#define NUM_HOST_IMPORTS 30
+#define MAX_METHODS 256
+
+/* Global method token → WASM func_idx mapping table (row-indexed) */
+static u32int method_func_map[MAX_METHODS];
+static u32int method_func_map_count = 0;
+
+/* Get WASM func_idx for a MethodDef row (1-indexed) */
+u32int get_wasm_func_idx_for_row(u32int row) {
+  if (row > 0 && row <= method_func_map_count) {
+    return method_func_map[row - 1];
+  }
+  /* Fallback to calculation if not in map */
+  return NUM_HOST_IMPORTS + (row - 1);
+}
 
 /* ========== WASM Opcodes ========== */
-
-/* Forward declaration */
-int cil_to_wasm_emit_one_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
-                                u32int il_size);
 
 /* Control flow */
 #define WASM_OP_UNREACHABLE 0x00
@@ -179,18 +189,6 @@ int cil_to_wasm_emit_one_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 #define WASM_TYPE_F64 0x7C
 #define WASM_TYPE_VOID 0x40
 
-/* ========== Compiler Context ========== */
-
-typedef struct {
-  wasm_buffer_t *code;     /* Output buffer for function body */
-  il_method_t *method;     /* Current method being compiled */
-  il_assembly_t *assembly; /* Assembly for metadata lookups */
-  u32int arg_count;        /* Number of arguments */
-  u32int local_count;      /* Number of locals */
-  u32int local_base;       /* First local index (after args) */
-  int uses_i64;            /* Using i64 for all values */
-} cil_wasm_ctx_t;
-
 /* ========== Direct CIL→WASM Compilation ========== */
 
 /*
@@ -202,19 +200,23 @@ typedef struct {
  *
  * Returns: 0 on success, negative on error
  */
-int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
+int cil_to_wasm_compile_method(il_method_t *method, il_assembly_t *assembly,
+                               wasm_buffer_t *buf) {
   if (!method || !buf)
     return -1;
 
-  u8int *il = method->il_code;
-  u32int il_size = (u32int)method->il_code_size;
-
   /* Use Ramsey algorithm exclusively for all methods */
-  int err = reloop_compile_method_ramsey(method, buf);
+  /* NOTE: Locals are already emitted by cil_to_wasm_build_module before calling
+   * this */
+
+  int err = reloop_compile_method_ramsey(method, assembly, buf);
   if (err < 0) {
     print("CIL-WASM: Ramsey algorithm failed: %d\n", err);
     return err;
   }
+
+  /* NOTE: END opcode is emitted by cil_to_wasm_build_module after this returns
+   */
 
   return 0;
 }
@@ -234,8 +236,8 @@ int cil_to_wasm_compile_method(il_method_t *method, wasm_buffer_t *buf) {
  * Returns: 0 on success, negative on error, -100 for branch opcodes
  */
 int cil_to_wasm_emit_one_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
-                                u32int il_size) {
-  return cil_emit_opcode(buf, il, offset, il_size);
+                                u32int il_size, cil_wasm_ctx_t *ctx) {
+  return cil_emit_opcode(buf, il, offset, il_size, ctx);
 }
 
 /*
@@ -264,68 +266,35 @@ int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method) {
   u32int local_count = 0;
 
   if (method->local_var_sig_token && current_assembly) {
+    /* For debugging, force 0 locals (plus scratch) to rule out signature
+     * parsing issues */
+    /*
     u32int rid = method->local_var_sig_token & 0x00FFFFFF;
     standalonesig_row_t *row = il_get_standalonesig(current_assembly, rid);
 
     if (row) {
       u8int *sig = current_assembly->blob_heap + row->signature;
-
-      /* Skip blob size */
       read_blob_compressed_u32(&sig);
-
-      /* Check lead byte 0x07 (IMAGE_CEE_CS_CALLCONV_LOCAL_SIG) */
       if (*sig == 0x07) {
         sig++;
         local_count = read_blob_compressed_u32(&sig);
-        print("CIL-WASM: Found locals sig token=%x rid=%d count=%d\n",
-              method->local_var_sig_token, rid, local_count);
-        /* DEBUG: Dump blob bytes */
-        /*
-        u8int *blob_start = current_assembly->blob_heap + row->signature;
-        print("CIL-WASM: LocalSig Blob: %02x %02x %02x %02x\n", blob_start[0],
-        blob_start[1], blob_start[2], blob_start[3]);
-        */
-      } else {
-        print("CIL-WASM: Invalid locals sig lead byte %x for token %x\n", *sig,
-              method->local_var_sig_token);
       }
-    } else {
-      print("CIL-WASM: Failed to get StandAloneSig row for rid %d (token=%x)\n",
-            rid, method->local_var_sig_token);
     }
-  } else {
-    if (!current_assembly) {
-      print("CIL-WASM: current_assembly is NULL\n");
-    }
-    /* If no locals token, that's fine, strict CIL */
+    */
+    local_count = 127;
   }
 
-  /* Use actual local count from method metadata */
-  /* Note: removed the hack that forced 64 locals, which was causing
-   * WASM3 stack validation errors */
+  /* Always emit at least one group for CIL locals + 1 scratch local */
+  wasm_emit_uleb128(buf, 1);
+  wasm_emit_uleb128(buf, local_count + 1); /* +1 for scratch local */
+  wasm_emit_u8(buf, WASM_TYPE_I64);
 
-  if (local_count == 0 && method->max_stack > 8) {
-    /* Fallback/Hack: if we have significant stack depth but no locals, maybe
-     * just give some temp locals? */
-    /* Actually WASM relies on locals for CIL locals. */
-    /* print("CIL-WASM: Warning: local_count=0 for method %s\n", method->name);
-     */
-  }
-
-  if (local_count == 0) {
-    wasm_emit_uleb128(buf, 0); /* No local groups */
-  } else {
-    wasm_emit_uleb128(buf, 1);           /* One group */
-    wasm_emit_uleb128(buf, local_count); /* Count */
-    wasm_emit_u8(buf, WASM_TYPE_I64);    /* All i64 */
-  }
-  return 0;
+  return local_count;
 }
 
 /* ========== Complete WASM Module Builder ========== */
 
-static u8int get_wasm_return_type(il_assembly_t *assembly,
-                                  il_method_t *method) {
+u8int get_wasm_return_type(il_assembly_t *assembly, il_method_t *method) {
   if (!assembly || !method || !method->signature_index || !assembly->blob_heap)
     return 0; /* Void */
 
@@ -340,32 +309,76 @@ static u8int get_wasm_return_type(il_assembly_t *assembly,
   /* Skip CallConv */
   blob++;
 
-  /* Skip ParamCount */
-  read_blob_compressed_u32(&blob);
+  /* Read ParamCount */
+  u32int param_count = read_blob_compressed_u32(&blob);
 
   /* Read RetType */
-  u8int element_type = *blob; /* Peek first byte */
+  u8int element_type = *blob;              /* Peek first byte */
+  int has_return = (element_type != 0x01); /* 0x01 = ELEMENT_TYPE_VOID */
 
-  /* 0x01 = ELEMENT_TYPE_VOID */
-  if (element_type == 0x01)
-    return 0; /* Type 0: ()->() */
-
-  /* Everything else is treated as I64 for now (Type 7) */
-  return 7; /* Type 7: ()->i64 */
+  /* Map (param_count, has_return) to type index:
+   * Type 0: () -> ()      (0 args, no return)
+   * Type 1: (I) -> I      (1 arg, has return)
+   * Type 2: (II) -> I     (2 args, has return)
+   * Type 3: (II) -> ()    (2 args, no return)
+   * Type 4: (III) -> ()   (3 args, no return)
+   * Type 5: (III) -> I    (3 args, has return)
+   * Type 6: (IIII) -> ()  (4 args, no return)
+   * Type 7: () -> I       (0 args, has return)
+   * Type 8: (I) -> ()     (1 arg, no return)
+   */
+  if (param_count == 0) {
+    return has_return ? 7 : 0;
+  } else if (param_count == 1) {
+    return has_return ? 1 : 8;
+  } else if (param_count == 2) {
+    return has_return ? 2 : 3;
+  } else if (param_count == 3) {
+    return has_return ? 5 : 4;
+  } else if (param_count == 4) {
+    return has_return ? 5 : 6; /* Fallback to type 5/6 for 4+ args */
+  } else {
+    /* Fallback for >4 args - use closest match */
+    return has_return ? 5 : 6;
+  }
 }
 
-int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
-                             const char *entry_method_name, void **out_wasm,
-                             u32int *out_len) {
+u32int get_wasm_arg_count(il_assembly_t *assembly, il_method_t *method) {
+  if (!assembly || !method || !method->signature_index || !assembly->blob_heap)
+    return 0;
+
+  u8int *blob = assembly->blob_heap + method->signature_index;
+  read_blob_compressed_u32(&blob); /* length */
+  blob++;                          /* CallConv */
+  return read_blob_compressed_u32(&blob);
+}
+
+u32int cil_get_local_count(il_assembly_t *assembly, il_method_t *method) {
+  u32int local_count = 0;
+  if (method->local_var_sig_token && assembly) {
+    u32int rid = method->local_var_sig_token & 0x00FFFFFF;
+    standalonesig_row_t *row = il_get_standalonesig(assembly, rid);
+    if (row) {
+      u8int *sig = assembly->blob_heap + row->signature;
+      read_blob_compressed_u32(&sig);
+      if (*sig == 0x07) {
+        sig++;
+        local_count = read_blob_compressed_u32(&sig);
+      }
+    }
+  }
+  return local_count;
+}
+
+int cil_to_wasm_build_module(il_assembly_t *assembly, il_method_t **methods,
+                             u32int method_count, const char *entry_method_name,
+                             void **out_wasm, u32int *out_len) {
   wasm_buffer_t module_buf, type_sec, import_sec, func_sec, export_sec,
       code_sec;
   u32int i;
 
-  if (!methods || method_count == 0)
+  if (!methods || method_count == 0 || !assembly)
     return -1;
-
-  /* Assume all belong to the same assembly. */
-  il_assembly_t *assembly = current_assembly;
 
   wasm_buf_init(&module_buf, 4096);
   wasm_buf_init(&type_sec, 256);
@@ -397,7 +410,7 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
     cil_to_wasm_emit_locals(&body_bufs[i], methods[i]);
 
     /* Compile body */
-    int err = cil_to_wasm_compile_method(methods[i], &body_bufs[i]);
+    int err = cil_to_wasm_compile_method(methods[i], assembly, &body_bufs[i]);
     if (err != 0) {
       print("CIL: Failed to compile method %s: %d\n",
             methods[i]->name ? methods[i]->name : "?", err);
@@ -513,7 +526,22 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   EMIT_IMPORT("clr_ldelem", 5);
   EMIT_IMPORT("clr_stelem", 6);
   EMIT_IMPORT("clr_ldelema", 5);
-  EMIT_IMPORT("cap_check_permission", 8);
+  /* Symbolic computing host imports (17-24) */
+  EMIT_IMPORT("sym_create", 1);           /* 17: (I) -> I */
+  EMIT_IMPORT("sym_expr", 5);             /* 18: (III) -> I */
+  EMIT_IMPORT("sym_diff", 2);             /* 19: (II) -> I */
+  EMIT_IMPORT("sym_integrate", 2);        /* 20: (II) -> I */
+  EMIT_IMPORT("sym_simplify", 1);         /* 21: (I) -> I */
+  EMIT_IMPORT("sym_eval", 2);             /* 22: (II) -> I */
+  EMIT_IMPORT("sym_match", 2);            /* 23: (II) -> I */
+  EMIT_IMPORT("sym_rewrite", 2);          /* 24: (II) -> I */
+  EMIT_IMPORT("cap_check_permission", 8); /* 25 */
+  EMIT_IMPORT("lux9_send_9p", 2);         /* 26: (II) -> I */
+  EMIT_IMPORT("lux9_debug_print", 8);     /* 27: (I) -> () */
+  EMIT_IMPORT("lux9_yield", 0);           /* 28: () -> () */
+  EMIT_IMPORT("lux9_print_i64", 8);       /* 29: (I) -> () */
+
+#undef EMIT_IMPORT
 
   /* ===== Function Section (3) ===== */
   wasm_emit_uleb128(&func_sec, method_count);
@@ -521,17 +549,31 @@ int cil_to_wasm_build_module(il_method_t **methods, u32int method_count,
   u32int entry_func_idx = 0xFFFFFFFF;
 
   for (i = 0; i < method_count; i++) {
-    il_method_t *m = methods[i];
+    il_method_t *meth = methods[i];
     u32int type_idx = 0;
 
-    if (m) {
-      type_idx = get_wasm_return_type(assembly, m);
+    if (meth) {
+      type_idx = get_wasm_return_type(assembly, meth);
+      /* Store the WASM func_idx in the method for call resolution */
+      meth->wasm_func_idx = NUM_HOST_IMPORTS + i;
+
+      /* Also populate global method_func_map for call opcode resolution */
+      if (meth->method_token) {
+        u32int row = meth->method_token & 0x00FFFFFF;
+        if (row > 0 && row <= MAX_METHODS) {
+          method_func_map[row - 1] = NUM_HOST_IMPORTS + i;
+          if (row > method_func_map_count) {
+            method_func_map_count = row;
+          }
+        }
+      }
+
       print("CIL: Assigning WASM func_idx=%d to method '%s' -> Type %d\n",
-            NUM_HOST_IMPORTS + i, m->name ? m->name : "?", type_idx);
+            NUM_HOST_IMPORTS + i, meth->name ? meth->name : "?", type_idx);
 
       /* Check if this is entry point */
-      if (entry_method_name && m->name &&
-          strcmp(m->name, entry_method_name) == 0) {
+      if (entry_method_name && meth->name &&
+          strcmp(meth->name, entry_method_name) == 0) {
         entry_func_idx = NUM_HOST_IMPORTS + i;
       }
     } else {

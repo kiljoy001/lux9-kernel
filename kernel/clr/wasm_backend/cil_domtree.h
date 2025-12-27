@@ -51,6 +51,7 @@ typedef struct dt_basic_block {
 
   /* For conditional: the condition is the last opcode before branch */
   u32int branch_offset; /* Offset of branch instruction */
+  u8int branch_opcode;  /* CIL branch opcode (BLE.S, BGE.S, etc.) */
 
   /* Security metadata (for capability-aware translation) */
   u32int required_permissions; /* Permissions needed for this block */
@@ -112,6 +113,9 @@ typedef struct translation_ctx {
   /* Fallthrough label (for br elimination optimization) */
   u32int fallthrough_label;
   u8int has_fallthrough;
+
+  /* CIL->WASM compiler context for opcode emission */
+  cil_wasm_ctx_t *wasm_ctx;
 } translation_ctx_t;
 
 /* ===== API Functions ===== */

@@ -62,6 +62,24 @@ void set_boot_state(BootState s) {
 int panic_debug = 0; /* Default to SILENT mode for performance */
 int jitdebug = 0;    /* JIT debug flag */
 
+/* Boot verbosity control */
+static int boot_verbose = 0;
+extern void uartputs(char *, int);
+
+static void boot_debug_uart(char *str, int len) {
+  if (boot_verbose)
+    uartputs(str, len);
+}
+
+static void boot_debug_print(char *fmt, ...) {
+  va_list arg;
+  if (boot_verbose) {
+    va_start(arg, fmt);
+    print(fmt, arg);
+    va_end(arg);
+  }
+}
+
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
 extern uintptr saved_limine_hhdm_offset;
@@ -71,6 +89,9 @@ void confinit(void) {
   char *p;
   int i, userpcnt;
   ulong kpages;
+
+  if ((p = getconf("verbose")) != nil && *p != '0')
+    boot_verbose = 1;
 
   if (p = getconf("service")) {
     if (strcmp(p, "cpu") == 0)
@@ -221,55 +242,54 @@ void main_after_cr3(void) {
   char *p;
 
   /* CRITICAL: First output must be via UART to verify we got here */
-  extern void uartputs(char *, int);
-  uartputs("main_after_cr3: ENTERED\n", 24);
+  boot_debug_uart("main_after_cr3: ENTERED\n", 24);
   set_boot_state(BOOT_XINIT);
 
   /* Skip print() until we've reinitialized - it was set up with old stack */
 
-  uartputs("main_after_cr3: calling xinit\n", 31);
+  boot_debug_uart("main_after_cr3: calling xinit\n", 31);
   xinit();
 
   /* Transition memory tracking to dynamic allocator */
   establish_memory_ownership_zones_dynamic();
 
   set_boot_state(BOOT_PAGES_OWN);
-  uartputs("main_after_cr3: calling pageowninit\n", 37);
+  boot_debug_uart("main_after_cr3: calling pageowninit\n", 37);
   pageowninit();
 
   set_boot_state(BOOT_EXCHANGE);
-  uartputs("main_after_cr3: calling exchangeinit\n", 38);
+  boot_debug_uart("main_after_cr3: calling exchangeinit\n", 38);
   exchangeinit();
 
-  uartputs("DEBUG: pre-pebble-selftest [SKIPPED]\n", 35);
+  boot_debug_uart("DEBUG: pre-pebble-selftest [SKIPPED]\n", 35);
   /* Run Pebble Self-Test (xalloc works now) */
   /* extern void pebble_selftest(void); */
   /* pebble_selftest(); */
-  uartputs("DEBUG: post-pebble-selftest\n", 26);
+  boot_debug_uart("DEBUG: post-pebble-selftest\n", 26);
 
   set_boot_state(BOOT_TRAP);
-  uartputs("main_after_cr3: calling trapinit\n", 35);
+  boot_debug_uart("main_after_cr3: calling trapinit\n", 35);
   trapinit();
-  uartputs("main_after_cr3: calling mathinit\n", 35);
+  boot_debug_uart("main_after_cr3: calling mathinit\n", 35);
   mathinit();
   if (i8237alloc != nil)
     i8237alloc();
-  uartputs("main_after_cr3: calling pcicfginit\n", 37);
+  boot_debug_uart("main_after_cr3: calling pcicfginit\n", 37);
   pcicfginit();
-  print("DEBUG: pcicfginit RETURNED\n");
-  uartputs("main_after_cr3: calling bootscreeninit\n", 41);
+  boot_debug_print("DEBUG: pcicfginit RETURNED\n");
+  boot_debug_uart("main_after_cr3: calling bootscreeninit\n", 41);
   bootscreeninit();
-  print("DEBUG: bootscreeninit RETURNED\n");
-  uartputs("main_after_cr3: calling fbconsoleinit ENTER\n", 46);
+  boot_debug_print("DEBUG: bootscreeninit RETURNED\n");
+  boot_debug_uart("main_after_cr3: calling fbconsoleinit ENTER\n", 46);
   fbconsoleinit();
-  print("DEBUG: fbconsoleinit RETURNED\n");
-  uartputs("main_after_cr3: fbconsoleinit RETURNED\n", 40);
-  uartputs("main_after_cr3: before cpuidentify check\n", 45);
+  boot_debug_print("DEBUG: fbconsoleinit RETURNED\n");
+  boot_debug_uart("main_after_cr3: fbconsoleinit RETURNED\n", 40);
+  boot_debug_uart("main_after_cr3: before cpuidentify check\n", 45);
   if (cpuidentify_done == 0)
     cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
-  uartputs("main_after_cr3: calling fpuinit\n", 33);
+  boot_debug_uart("main_after_cr3: calling fpuinit\n", 33);
   fpuinit(); /* Initialize FPU - must happen after xinit() */
-  uartputs("main_after_cr3: fpuinit returned, calling cpuidprint\n", 55);
+  boot_debug_uart("main_after_cr3: fpuinit returned, calling cpuidprint\n", 55);
   cpuidprint();
 
   /* FIX: Move configuration environment setup earlier to prevent reboot */
@@ -283,43 +303,44 @@ void main_after_cr3(void) {
 
   /* Initialize r15 to point to Mach structure after mmuinit sets up GS */
   __asm__ volatile("movq %0, %%r15" : : "r"(m) : "r15");
-  print("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
+  boot_debug_print("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
 
   /* Debug: check if IDT is still valid after mmuinit */
   {
     extern Segdesc temp_idt[];
-    print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
-    print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46 * 2].d0);
-    print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46 * 2].d1);
-    if (temp_idt[0x46 * 2].d0 == 0 && temp_idt[0x46 * 2].d1 == 0)
-      print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
-    else
-      print("OK: IDT[0x46] still valid after mmuinit\n");
+    if (boot_verbose) {
+      print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
+      print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46 * 2].d0);
+      print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46 * 2].d1);
+      if (temp_idt[0x46 * 2].d0 == 0 && temp_idt[0x46 * 2].d1 == 0)
+        print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
+      else
+        print("OK: IDT[0x46] still valid after mmuinit\n");
 
-    /* Check timer interrupt IDT entry (vector 32) */
-    print("DEBUG: Checking IDT[32] (timer):\n");
-    print("  IDT[32*2].d0 = %#lux\n", temp_idt[32 * 2].d0);
-    print("  IDT[32*2].d1 = %#lux\n", temp_idt[32 * 2].d1);
-    print("  IST field = %d (bits 0-2 of d1)\n",
-          (int)(temp_idt[32 * 2].d1 & 0x7));
+      /* Check timer interrupt IDT entry (vector 32) */
+      print("DEBUG: Checking IDT[32] (timer):\n");
+      print("  IDT[32*2].d0 = %#lux\n", temp_idt[32 * 2].d0);
+      print("  IDT[32*2].d1 = %#lux\n", temp_idt[32 * 2].d1);
+      print("  IST field = %d (bits 0-2 of d1)\n",
+            (int)(temp_idt[32 * 2].d1 & 0x7));
+    }
   }
 
-  print("DEBUG: About to call arch->intrinit\n");
+  boot_debug_print("DEBUG: About to call arch->intrinit\n");
 
   /* Re-map ACPI tables after CR3 switch (if ACPI is being used) */
   extern PCArch archacpi;
   if (arch == &archacpi) {
     extern void acpi_remap_tables(void);
-    print("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
+    boot_debug_print("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
     acpi_remap_tables();
   }
 
   if (arch->intrinit) {
     set_boot_state(BOOT_ARCH);
-    print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
+    boot_debug_print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
     arch->intrinit();
-    extern void uartputs(char *, int);
-    uartputs("DEBUG: arch->intrinit complete\n", 33);
+    boot_debug_uart("DEBUG: arch->intrinit complete\n", 33);
 
     /* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
     {
@@ -341,29 +362,29 @@ void main_after_cr3(void) {
 
   set_boot_state(BOOT_PROC_INIT);
   procinit0();
-  uartputs("DEBUG: procinit0 complete\n", 28);
+  boot_debug_uart("DEBUG: procinit0 complete\n", 28);
 
   set_boot_state(BOOT_SEG_INIT);
   initseg();
-  uartputs("DEBUG: initseg complete\n", 26);
+  boot_debug_uart("DEBUG: initseg complete\n", 26);
 
   set_boot_state(BOOT_LINKS);
   links();
-  uartputs("DEBUG: links complete\n", 24);
+  boot_debug_uart("DEBUG: links complete\n", 24);
 
   /* Initialize I/O port allocation after links() */
   set_boot_state(BOOT_IO);
   iomapinit(0xFFFF);
-  uartputs("DEBUG: iomapinit complete\n", 29);
+  boot_debug_uart("DEBUG: iomapinit complete\n", 29);
 
   /* Reset and initialize all devices before environment setup */
   set_boot_state(BOOT_CHANDEV_RESET);
   chandevreset();
-  uartputs("DEBUG: chandevreset complete\n", 32);
+  boot_debug_uart("DEBUG: chandevreset complete\n", 32);
 
   set_boot_state(BOOT_PAGEK);
   pageinit();
-  uartputs("DEBUG: pageinit complete\n", 27);
+  boot_debug_uart("DEBUG: pageinit complete\n", 27);
 
   set_boot_state(BOOT_PRINT);
   printinit();
@@ -395,12 +416,12 @@ void main_after_cr3(void) {
   /* Initialize device drivers BEFORE spawning proc0 */
   set_boot_state(BOOT_CHANDEV_INIT);
   chandevinit();
-  uartputs("DEBUG: chandevinit complete\n", 30);
+  boot_debug_uart("DEBUG: chandevinit complete\n", 30);
 
   /* Now spawn proc0 - devices are ready */
   set_boot_state(BOOT_USERINIT);
   userinit();
-  uartputs("DEBUG: userinit complete\n", 28);
+  boot_debug_uart("DEBUG: userinit complete\n", 28);
 
   /* Debug: show scheduler state before entering schedinit */
   extern ulong runvec;
@@ -410,7 +431,7 @@ void main_after_cr3(void) {
   splhi();
   timersinit();
   spllo(); /* Re-enable interrupts for scheduler - CRITICAL */
-  uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
+  boot_debug_uart("DEBUG: timersinit complete, interrupts enabled\n", 48);
   set_boot_state(BOOT_SCHED);
   schedinit();
 }

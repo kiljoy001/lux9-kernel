@@ -911,8 +911,7 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   assigns \nothing;
 
   ensures \result == \null || \valid(\result);
-  ensures \result != \null ==> ((uintptr)\result) % 8 == 0;  // pointer
-  alignment
+  ensures \result != \null ==> ((uintptr)\result) % 8 == 0;
 */
 uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
   uintptr pte;

@@ -397,8 +397,8 @@ int clr_compile_method_to_wasm(il_assembly_t *assembly, const char *method_name,
 
   /* Use direct CIL-to-WASM path (no Fruity IR conversion) */
   il_method_t *methods[1] = {main_m};
-  int err =
-      cil_to_wasm_build_module(methods, 1, method_name, wasm_bytes, wasm_len);
+  int err = cil_to_wasm_build_module(assembly, methods, 1, method_name,
+                                     wasm_bytes, wasm_len);
   if (err != 0) {
     print("CLR: cil_to_wasm_build_module failed: %d\n", err);
     return -1;
@@ -552,12 +552,7 @@ int clr_execute_assembly_with_entry(void *dll_data, ulong dll_size,
     all_methods[i - 1] = m;
   }
 
-  /* Use direct CIL-to-WASM path (no Fruity IR conversion) */
-  /* Set global assembly context for CIL-to-WASM translator */
-  extern il_assembly_t *current_assembly;
-  current_assembly = assembly;
-
-  if (cil_to_wasm_build_module(all_methods, method_count, main->name,
+  if (cil_to_wasm_build_module(assembly, all_methods, method_count, main->name,
                                &wasm_bytes, &wasm_size) != 0) {
     print("CLR: cil_to_wasm_build_module failed\n");
     return -1;
@@ -692,8 +687,8 @@ void clr_test_wasm_pipeline(void) {
   void *wasm_bytes = nil;
   u32int wasm_len = 0;
 
-  int build_err =
-      cil_to_wasm_build_module(methods, 2, "Answer", &wasm_bytes, &wasm_len);
+  int build_err = cil_to_wasm_build_module(assembly, methods, 2, "Answer",
+                                           &wasm_bytes, &wasm_len);
   if (build_err != 0) {
     print("CLR-TEST: Direct build failed: %d\n", build_err);
     print("CLR-TEST: Falling back to Fruity path...\n");
@@ -815,7 +810,7 @@ void clr_init(void) {
     }
   }
 
-  clr_test_wasm_pipeline();
+  /* clr_test_wasm_pipeline(); */
 }
 
 /* Helpers for lux9_api.c */

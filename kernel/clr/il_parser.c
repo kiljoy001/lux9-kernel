@@ -1382,11 +1382,11 @@ int il_find_methoddef_by_name(il_assembly_t *assembly, const char *type_name,
     if (start == 0)
       continue;
 
-    for (uint32_t m = start; m < end_idx && m <= method_count; m++) {
-      methoddef_row_t *row = &methods[m - 1];
+    for (uint32_t mi = start; mi < end_idx && mi <= method_count; mi++) {
+      methoddef_row_t *row = &methods[mi - 1];
       const char *mname = il_get_string(assembly, row->name_index);
       if (mname && strcmp(mname, method_name) == 0) {
-        *token_out = (TABLE_METHODDEF << 24) | m;
+        *token_out = (TABLE_METHODDEF << 24) | mi;
         IL_FREE(methods);
         return 0;
       }
@@ -1398,7 +1398,26 @@ int il_find_methoddef_by_name(il_assembly_t *assembly, const char *type_name,
 }
 
 il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
-  // Parse MethodDef table
+  uint32_t token = 0;
+  char type_name[256];
+  char method_name[256];
+  const char *dot = strrchr(name, '.');
+
+  if (dot) {
+    size_t type_len = dot - name;
+    if (type_len < sizeof(type_name)) {
+      memcpy(type_name, name, type_len);
+      type_name[type_len] = '\0';
+      strncpy(method_name, dot + 1, sizeof(method_name));
+
+      if (il_find_methoddef_by_name(assembly, type_name, method_name, &token) ==
+          0) {
+        return il_get_method_by_token(assembly, token);
+      }
+    }
+  }
+
+  // Parse MethodDef table for simple name search
   size_t method_count;
   methoddef_row_t *methods = parse_methoddef_table(assembly, &method_count);
   if (methods == NULL) {
@@ -1407,11 +1426,9 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
 
   // Search for method by name
   for (size_t i = 0; i < method_count; i++) {
-    const char *method_name = il_get_string(assembly, methods[i].name_index);
-    if (method_name) {
-      // print("IL_PARSER: checking method '%s'\n", method_name);
-      if (strcmp(method_name, name) == 0) {
-        // Found it!
+    const char *cur_name = il_get_string(assembly, methods[i].name_index);
+    if (cur_name) {
+      if (strcmp(cur_name, name) == 0) {
         il_method_t *method = parse_method(assembly, methods[i].rva, name);
         if (method)
           method->signature_index = methods[i].signature_index;
@@ -1424,9 +1441,9 @@ il_method_t *il_get_method(il_assembly_t *assembly, const char *name) {
   /* Second pass: print all methods if not found */
   print("IL_PARSER: method '%s' NOT FOUND. Available methods:\n", name);
   for (size_t i = 0; i < method_count; i++) {
-    const char *method_name = il_get_string(assembly, methods[i].name_index);
-    if (method_name) {
-      print("  - %s\n", method_name);
+    const char *cur_name = il_get_string(assembly, methods[i].name_index);
+    if (cur_name) {
+      print("  - %s\n", cur_name);
     }
   }
 
@@ -1511,8 +1528,8 @@ memberref_row_t *il_get_memberref(il_assembly_t *assembly, uint32_t rid) {
 }
 
 /* Resolve a MemberRef token to its class/type name, method name, AND scope
- * (assembly name) Returns 0 on success, -1 on failure Caller provides buffers;
- * names are copied into them */
+ * (assembly name) Returns 0 on success, -1 on failure Caller provides
+ * buffers; names are copied into them */
 int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
                          char *type_name, size_t type_len, char *method_name,
                          size_t method_len, char *scope_name,
@@ -1597,9 +1614,9 @@ int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
               strncpy(scope_name, aname, scope_len - 1);
               scope_name[scope_len - 1] = 0;
             }
-            /* We leak the ar structure here because il_get_assemblyref mallocs.
-               Ideally il_get_assemblyref should return a pointer to cached
-               struct. For now, free it. */
+            /* We leak the ar structure here because il_get_assemblyref
+               mallocs. Ideally il_get_assemblyref should return a pointer to
+               cached struct. For now, free it. */
             IL_FREE(ar);
           }
         } else {
@@ -1631,8 +1648,8 @@ int il_resolve_memberref(il_assembly_t *assembly, uint32_t token,
       return 0;
     }
   } else if (tag == 4) { // TypeSpec
-    /* TypeSpec points to a signature blob. Parsing complex types not yet fully
-     * implemented here. */
+    /* TypeSpec points to a signature blob. Parsing complex types not yet
+     * fully implemented here. */
     if (type_name && type_len > 0) {
       snprint(type_name, (int)type_len, "TypeSpec_%x", parent_rid);
     }
@@ -1773,8 +1790,7 @@ assemblyref_row_t *il_get_assemblyref(il_assembly_t *assembly, uint32_t rid) {
   /* Note: memory leak if called repeatedly without freeing.
      Ideal: add to assembly struct cache. For now: caller must free or we
      leak. Given this is kernel init, small leaks are "okay-ish" but bad
-     practice. We will check if we can add to struct later.
-  */
+     practice. We will check if we can add to struct later. */
   assemblyref_row_t *row = IL_MALLOC(sizeof(assemblyref_row_t));
   if (!row)
     return NULL;
@@ -2139,12 +2155,12 @@ int il_resolve_methodspec(il_assembly_t *assembly, uint32_t token,
   /* Recursively resolve the target */
   /* If target is MethodDef, we need name and parent Type. */
   if (tag == 0) {
-    il_method_t *m = il_get_method_by_token(assembly, target_token);
-    if (!m)
+    il_method_t *meth = il_get_method_by_token(assembly, target_token);
+    if (!meth)
       return -1;
 
     if (method_name) {
-      strncpy(method_name, m->name, method_len);
+      strncpy(method_name, meth->name, method_len);
       method_name[method_len - 1] = 0;
     }
 
@@ -2299,20 +2315,15 @@ int il_load_all_methods(il_assembly_t *assembly) {
   assembly->methods = xallocz(sizeof(il_method_t) * count, 1);
   assembly->method_count = count;
 
-  for (size_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < assembly->method_count; i++) {
     uint32_t token = (TABLE_METHODDEF << 24) | (i + 1);
-    il_method_t *m = il_get_method_by_token(assembly, token);
+    il_method_t *meth = il_get_method_by_token(assembly, token);
 
-    if (m) {
+    if (meth) {
       /* Copy to array */
-      assembly->methods[i] = *m;
-      /* We don't free m, but we should be careful about double free
-         of name/il_code if we free m later.
-         il_get_method_by_token allocates m.
-         We shallow copy m content.
-         We should FREE m container but keep contents.
-      */
-      IL_FREE(m);
+      assembly->methods[i] = *meth;
+      /* We free meth container but keep contents (shallow copy) */
+      IL_FREE(meth);
     } else {
       /* RVA=0 or error. Init basic fields for IL_TO_FRUITY loop */
       assembly->methods[i].method_token = token;
@@ -2324,9 +2335,6 @@ int il_load_all_methods(il_assembly_t *assembly) {
       uint32_t rva_dummy = 0;
       if (il_get_methoddef_info(assembly, token, name, sizeof(name),
                                 &rva_dummy) == 0) {
-        /* We need to allocate name because il_free_assembly will free it */
-        /* In userspace test, xalloc is malloc/calloc equivalent. */
-        /* We use kstrdup or strdup if available, or just malloc+strcpy */
         size_t len = strlen(name);
         char *s = xalloc(len + 1);
         if (s) {

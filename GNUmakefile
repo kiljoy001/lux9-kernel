@@ -67,8 +67,8 @@ PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
 WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
-WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c kernel/clr/wasm_backend/cil_domtree.c kernel/clr/wasm_backend/cil_security.c
-SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
+WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c kernel/clr/wasm_backend/cil_domtree.c kernel/clr/wasm_backend/cil_security.c kernel/clr/wasm_backend/host_symbolic.c
+SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c kernel/clr/symbolic_expr.c
 CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c kernel/clr/clr_assemblies.c kernel/clr/clr_capability.c $(WASM3_C) $(SYMBOLIC_C)
 
 # QBE compiler removed - WASM3 is now the runtime
@@ -171,8 +171,8 @@ userspace/build/initrd.tar:
 	@$(MAKE) -C userspace initrd
 	@echo "Signing initrd files..."
 	@if [ -n "$$LUX_SIGNING_KEY" ] || command -v tpm2_unseal > /dev/null 2>&1; then \
-		python3 tools/sign_manager.py && \
-		cd userspace/build/init && tar --transform 's,^./,,' -cf ../initrd.tar . ; \
+		(python3 tools/sign_manager.py && \
+		cd userspace/build/init && tar --transform 's,^./,,' -cf ../initrd.tar . ) || echo "WARNING: Signing failed, using unsigned initrd"; \
 	else \
 		echo "WARNING: No signing key available (set LUX_SIGNING_KEY or use TPM)"; \
 		echo "Initrd files will NOT be signed!"; \

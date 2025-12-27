@@ -294,6 +294,31 @@ typedef signed long long s64int;
 #define IL_REFANYTYPE 0xFE1D
 #define IL_READONLY 0xFE1E
 
+#ifndef WASM_BUFFER_H
+typedef struct wasm_buffer wasm_buffer_t;
+#endif
+
+#include "../il_parser.h"
+
+/* Prefixes */
+#define IL_PREFIX_FE 0xFE
+
+/* ========== Compiler Context ========== */
+
+typedef struct {
+  wasm_buffer_t *code;     /* Output buffer for function body */
+  il_method_t *method;     /* Current method being compiled */
+  il_assembly_t *assembly; /* Assembly for metadata lookups */
+  u32int arg_count;        /* Number of arguments */
+  u32int local_count;      /* Number of locals */
+  u32int local_base;       /* First local index (after args) */
+  u32int scratch_local;    /* Index of scratch local for DUP */
+  int uses_i64;            /* Using i64 for all values */
+  
+  /* Stack tracking */
+  int stack_depth;         /* Current virtual stack depth */
+} cil_wasm_ctx_t;
+
 /* Host import indices */
 #define HOST_CLR_NEWOBJ 0
 #define HOST_CLR_NEWARR 1
@@ -321,11 +346,16 @@ typedef signed long long s64int;
 #define HOST_SYM_SIMPLIFY 21
 #define HOST_SYM_EVAL 22
 #define HOST_SYM_MATCH 23
-
 #define HOST_SYM_REWRITE 24
-#define HOST_CLR_CHECK_PERM 25
 
-#define NUM_HOST_IMPORTS 26
+/* Lux9 Application APIs */
+#define HOST_CLR_CHECK_PERM 25
+#define HOST_LUX9_SEND9P 26
+#define HOST_LUX9_DEBUG_PRINT 27
+#define HOST_LUX9_YIELD 28
+#define HOST_LUX9_PRINT_I64 29
+
+#define NUM_HOST_IMPORTS 30
 
 /* ===== Lux9 Symbolic Computing Extensions (0xFE80-0xFE87) ===== */
 
@@ -356,7 +386,10 @@ typedef struct wasm_buffer wasm_buffer_t;
  * Returns: 0 on success, -1 on error, -100 for branch opcodes
  */
 int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
-                    u32int il_size);
+                    u32int il_size, cil_wasm_ctx_t *ctx);
+
+/* Get stack effect (push - pop) for an IL opcode */
+int cil_get_opcode_stack_effect(u16int opcode);
 
 /* Helper functions for CFG analysis and Security */
 int cil_is_branch_opcode(u8int op);

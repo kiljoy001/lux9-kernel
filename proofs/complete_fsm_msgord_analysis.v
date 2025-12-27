@@ -297,9 +297,9 @@ Theorem analysis_verified :
 Proof.
   split; [| split; [| split]].
   - intros resources H_pos. 
-    apply msgord_mathematical_impossibility; [exact H_pos | apply N.pos_1].
+    apply (msgord_mathematical_impossibility resources 1 H_pos). lia.
   - exact pruning_bounds_memory.
-  - exact governor_maintains_bound.
+  - intros sys proc_rate. apply (governor_maintains_bound sys 0 proc_rate).
   - unfold msgord_memory_usage. simpl. reflexivity.
 Qed.
 

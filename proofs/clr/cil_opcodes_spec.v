@@ -825,10 +825,10 @@ Axiom host_operations_correct : True.
 (* CALL, CALLVIRT: Function calls - handled by WASM call instruction *)
 (* Function index = NUM_HOST_IMPORTS + (token_row - 1) *)
 Definition cil_call_func_idx (token : Z) : nat :=
-  Z.to_nat (17 + ((Z.land token 16777215) - 1)).  (* 17 host imports, mask 0x00FFFFFF *)
+  Z.to_nat (29 + ((Z.land token 16777215) - 1)).  (* 29 host imports, mask 0x00FFFFFF *)
 
 Definition wasm_call_idx (token : Z) : nat :=
-  Z.to_nat (17 + ((Z.land token 16777215) - 1)).
+  Z.to_nat (29 + ((Z.land token 16777215) - 1)).
 
 Theorem cil_call_correct : forall token,
   cil_call_func_idx token = wasm_call_idx token.

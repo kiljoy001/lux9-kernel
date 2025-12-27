@@ -23,8 +23,9 @@
  */
 
 #include "cil_opcodes.h"
-#include "../il_parser.h"
+#include "cil_to_wasm.h" /* For get_wasm_func_idx_for_row */
 #include "wasm_buffer.h"
+/* il_parser.h is included by cil_opcodes.h */
 
 /* WASM Opcodes */
 #define WASM_OP_UNREACHABLE 0x00
@@ -122,6 +123,22 @@
 
 /* Host import indices -- Now defined in cil_opcodes.h */
 
+/* Helper to read compressed unsigned integer from blob signature */
+static u32int read_blob_compressed_u32(u8int **ptr) {
+  u8int b1 = *(*ptr)++;
+  if ((b1 & 0x80) == 0) {
+    return b1;
+  } else if ((b1 & 0xC0) == 0x80) {
+    u8int b2 = *(*ptr)++;
+    return ((b1 & 0x3F) << 8) | b2;
+  } else {
+    u8int b2 = *(*ptr)++;
+    u8int b3 = *(*ptr)++;
+    u8int b4 = *(*ptr)++;
+    return ((b1 & 0x1F) << 24) | (b2 << 16) | (b3 << 8) | b4;
+  }
+}
+
 /*
  * cil_emit_opcode - Emit WASM for a single CIL opcode
  *
@@ -135,15 +152,25 @@
  * relooper)
  */
 int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
-                    u32int il_size) {
+                    u32int il_size, cil_wasm_ctx_t *ctx) {
   if (!buf || !il || !offset || *offset >= il_size)
     return -1;
 
+  u32int start_offset = *offset;
   u16int opcode = il[(*offset)++];
 
   /* Handle two-byte opcodes (0xFE prefix) */
   if (opcode == 0xFE && *offset < il_size) {
     opcode = (opcode << 8) | il[(*offset)++];
+  }
+
+  /* Update stack depth */
+  if (ctx) {
+    int effect = cil_get_opcode_stack_effect((u8int)opcode);
+    /* For variable stack effect opcodes, we handle updates inside the switch */
+    if (opcode != IL_CALL && opcode != IL_CALLVIRT && opcode != IL_NEWOBJ && opcode != IL_CALLI) {
+        ctx->stack_depth += effect;
+    }
   }
 
   switch (opcode) {
@@ -252,6 +279,17 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
     wasm_emit_uleb128(buf, 3);
     break;
+  case IL_PREFIX_FE: {
+    u8int op2 = il[(*offset)++];
+    if (op2 == 0x14) { /* tail. */
+      /* For now, we don't implement tail call optimization in WASM,
+         so we treat it as a no-op prefix. The following call will
+         still work but won't be optimized. */
+      return -100; /* Signal prefix */
+    }
+    print("CIL: Unknown FE prefix %02x\n", op2);
+    return -1;
+  }
   case IL_LDARG_S: {
     u8int idx = il[(*offset)++];
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
@@ -297,73 +335,73 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
   /* ===== LOCALS ===== */
   case IL_LDLOC_0:
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, 0);
+    wasm_emit_uleb128(buf, ctx->arg_count + 0);
     break;
   case IL_LDLOC_1:
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, 1);
+    wasm_emit_uleb128(buf, ctx->arg_count + 1);
     break;
   case IL_LDLOC_2:
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, 2);
+    wasm_emit_uleb128(buf, ctx->arg_count + 2);
     break;
   case IL_LDLOC_3:
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, 3);
+    wasm_emit_uleb128(buf, ctx->arg_count + 3);
     break;
   case IL_LDLOC_S: {
     u8int idx = il[(*offset)++];
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
   case IL_LDLOCA_S: {
     u8int idx = il[(*offset)++];
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
   case IL_STLOC_0:
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, 0);
+    wasm_emit_uleb128(buf, ctx->arg_count + 0);
     break;
   case IL_STLOC_1:
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, 1);
+    wasm_emit_uleb128(buf, ctx->arg_count + 1);
     break;
   case IL_STLOC_2:
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, 2);
+    wasm_emit_uleb128(buf, ctx->arg_count + 2);
     break;
   case IL_STLOC_3:
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, 3);
+    wasm_emit_uleb128(buf, ctx->arg_count + 3);
     break;
   case IL_STLOC_S: {
     u8int idx = il[(*offset)++];
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
   case IL_LDLOC: {
     u16int idx = *(u16int *)&il[*offset];
     *offset += 2;
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
   case IL_LDLOCA: {
     u16int idx = *(u16int *)&il[*offset];
     *offset += 2;
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
   case IL_STLOC: {
     u16int idx = *(u16int *)&il[*offset];
     *offset += 2;
     wasm_emit_u8(buf, WASM_OP_LOCAL_SET);
-    wasm_emit_uleb128(buf, idx);
+    wasm_emit_uleb128(buf, ctx->arg_count + idx);
     break;
   }
 
@@ -372,16 +410,17 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
     wasm_emit_u8(buf, WASM_OP_DROP);
     break;
   case IL_DUP:
-    /* Duplicate top of stack using local.tee */
+    /* Duplicate top of stack using local.tee to a safe scratch local */
     wasm_emit_u8(buf, WASM_OP_LOCAL_TEE);
-    wasm_emit_uleb128(buf, 0); /* Use local 0 as scratch */
+    wasm_emit_uleb128(buf, ctx->scratch_local);
     wasm_emit_u8(buf, WASM_OP_LOCAL_GET);
-    wasm_emit_uleb128(buf, 0);
+    wasm_emit_uleb128(buf, ctx->scratch_local);
     break;
 
   /* ===== ARITHMETIC ===== */
   /* VERIFIED: proofs/clr/cil_opcodes_spec.v
-   * All arithmetic operations proven correct (cil_add_correct, cil_sub_correct, cil_mul_correct, etc.) */
+   * All arithmetic operations proven correct (cil_add_correct, cil_sub_correct,
+   * cil_mul_correct, etc.) */
   case IL_ADD:
     wasm_emit_u8(buf, WASM_OP_I64_ADD);
     break;
@@ -432,7 +471,8 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 
   /* ===== BITWISE ===== */
   /* VERIFIED: proofs/clr/cil_opcodes_spec.v
-   * All bitwise operations proven correct (cil_and_correct, cil_or_correct, cil_xor_correct, etc.) */
+   * All bitwise operations proven correct (cil_and_correct, cil_or_correct,
+   * cil_xor_correct, etc.) */
   case IL_AND:
     wasm_emit_u8(buf, WASM_OP_I64_AND);
     break;
@@ -459,7 +499,8 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 
   /* ===== COMPARISONS ===== */
   /* VERIFIED: proofs/clr/cil_opcodes_spec.v
-   * All comparison operations proven correct (cil_ceq_correct, cil_cgt_correct, cil_clt_correct) */
+   * All comparison operations proven correct (cil_ceq_correct, cil_cgt_correct,
+   * cil_clt_correct) */
   case IL_CEQ:
     wasm_emit_u8(buf, WASM_OP_I64_EQ);
     wasm_emit_u8(buf, WASM_OP_I64_EXTEND_I32_U);
@@ -483,8 +524,9 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 
   /* ===== CONVERSIONS ===== */
   /* VERIFIED: proofs/clr/cil_opcodes_spec.v
-   * All conversions proven correct (cil_conv_i1_correct, cil_conv_i2_correct, cil_conv_i4_correct, etc.)
-   * Including signed/unsigned variants and overflow-checking versions */
+   * All conversions proven correct (cil_conv_i1_correct, cil_conv_i2_correct,
+   * cil_conv_i4_correct, etc.) Including signed/unsigned variants and
+   * overflow-checking versions */
   case IL_CONV_I1:
     wasm_emit_u8(buf, WASM_OP_I64_EXTEND8_S);
     break;
@@ -664,7 +706,140 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
     u32int token = *(u32int *)&il[*offset];
     *offset += 4;
     u32int row = (token & 0x00FFFFFF);
-    u32int func_idx = NUM_HOST_IMPORTS + (row - 1);
+    u32int table = (token >> 24) & 0xFF;
+    u32int func_idx = 0;
+
+    if (table == TABLE_MEMBERREF) {
+      char type_name[256], method_name[256], scope_name[256];
+      type_name[0] = 0; method_name[0] = 0;
+      
+      if (il_resolve_memberref(
+              ctx->assembly, token, type_name, sizeof(type_name), method_name,
+              sizeof(method_name), scope_name, sizeof(scope_name)) == 0) {
+        
+        /* DEBUG: Print what we found */
+        print("CIL: CALL MemberRef %08x -> %s::%s\n", token, type_name, method_name);
+
+        /* Check for known Lux9 host functions */
+        if (strcmp(method_name, "Lux9Send9P") == 0 ||
+            strcmp(method_name, "Send9P") == 0) {
+          func_idx = HOST_LUX9_SEND9P;
+        } else if (strcmp(method_name, "Lux9DebugPrint") == 0 ||
+                   strcmp(method_name, "Lux9Print") == 0 ||
+                   strcmp(method_name, "DebugPrint") == 0) {
+          func_idx = HOST_LUX9_DEBUG_PRINT;
+        } else if ((strcmp(type_name, "System.Console") == 0 ||
+                    strcmp(type_name, "Console") == 0) &&
+                   (strcmp(method_name, "WriteLine") == 0 ||
+                    strcmp(method_name, "Internal_WriteLine") == 0)) {
+          
+          u32int sig_idx = 0;
+          memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
+          if (mr) {
+             u8int *sig = ctx->assembly->blob_heap + mr->signature;
+             /* Skip length */
+             u32int len = 0;
+             u8int b1 = *sig++;
+             if ((b1 & 0x80) == 0) len = b1;
+             else if ((b1 & 0xC0) == 0x80) { len = ((b1 & 0x3F) << 8) | *sig++; }
+             else { sig += 3; } /* Skip 4 byte len (approx) */
+             
+             /* CallConv */
+             sig++; 
+             /* ParamCount */
+             u32int pcount = *sig++; 
+             
+             /* Skip RetType (Assume Void for WriteLine) */
+             /* Check if RetType is multi-byte (e.g. Class/ValueType) */
+             u8int ret_type = *sig++;
+             if (ret_type == 0x11 || ret_type == 0x12) { /* VALUETYPE or CLASS */
+                 /* Compressed token follows */
+                 u8int t1 = *sig;
+                 if ((t1 & 0x80) == 0) sig++;
+                 else if ((t1 & 0xC0) == 0x80) sig += 2;
+                 else sig += 4;
+             }
+             
+             if (pcount == 1) {
+                 /* Param Type */
+                 u8int type = *sig;
+                 print("CIL: WriteLine param type: 0x%02x\n", type);
+                 
+                 if (type == 0x0E) { /* ELEMENT_TYPE_STRING */
+                     func_idx = HOST_LUX9_DEBUG_PRINT;
+                 } else if (type == 0x08 || type == 0x09 || type == 0x0A || type == 0x0C) { 
+                     /* I4, U4, I8, R8 */
+                     func_idx = HOST_LUX9_PRINT_I64;
+                 } else {
+                     /* Default to I64 print */
+                     func_idx = HOST_LUX9_PRINT_I64;
+                 }
+             } else {
+                 print("CIL: WriteLine param count %d not supported\n", pcount);
+                 func_idx = HOST_LUX9_DEBUG_PRINT;
+             }
+          }
+        } else if (strcmp(method_name, "Lux9Yield") == 0 ||
+                   strcmp(method_name, "Yield") == 0) {
+          func_idx = HOST_LUX9_YIELD;
+        }
+      } else {
+          print("CIL: Failed to resolve MemberRef %08x\n", token);
+      }
+      
+      if (func_idx == 0) {
+          print("CIL: UNRESOLVED EXTERNAL CALL: %s::%s\n", type_name, method_name);
+          /* Emit UNREACHABLE to crash cleanly instead of calling random method */
+          wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
+          break; /* Skip the CALL emit */
+      }
+    }
+
+    if (func_idx == 0) {
+      /* Look up WASM func_idx using global mapping table (MethodDefs only) */
+      func_idx = get_wasm_func_idx_for_row(row);
+    }
+
+    /* Stack Effect Calculation */
+    if (ctx) {
+        u32int pcount = 0;
+        int has_ret = 0;
+        u8int *sig = nil;
+
+        if (table == TABLE_MEMBERREF) {
+            memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
+            if (mr) sig = ctx->assembly->blob_heap + mr->signature;
+        } else if (table == TABLE_METHODDEF) {
+            il_method_t *m = il_get_method_by_token(ctx->assembly, (TABLE_METHODDEF << 24) | row);
+            if (m) sig = ctx->assembly->blob_heap + m->signature_index;
+        }
+
+        if (sig) {
+             /* Skip length */
+             u8int b1 = *sig++;
+             if ((b1 & 0x80) == 0) { }
+             else if ((b1 & 0xC0) == 0x80) { sig++; }
+             else { sig += 3; }
+             
+             /* CallConv */
+             sig++; 
+             /* ParamCount */
+             pcount = read_blob_compressed_u32(&sig);
+             
+             /* Skip RetType (Assume Void for WriteLine) */
+             u8int ret_type = *sig;
+             has_ret = (ret_type != 0x01); /* VOID */
+        }
+        
+        ctx->stack_depth -= pcount;
+        if (has_ret) ctx->stack_depth += 1;
+        
+        if (opcode == IL_CALLVIRT) {
+            ctx->stack_depth -= 1; /* 'this' pointer */
+        }
+        print("CIL-STACK: CALL token=%x pcount=%d ret=%d depth=%d\n", token, pcount, has_ret, ctx->stack_depth);
+    }
+
     wasm_emit_u8(buf, WASM_OP_CALL);
     wasm_emit_uleb128(buf, func_idx);
     break;
@@ -767,6 +942,37 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
      * the heap allocation model proven in the Coq specification */
     u32int token = *(u32int *)&il[*offset];
     *offset += 4;
+    
+    if (ctx) {
+        u32int row = (token & 0x00FFFFFF);
+        u32int table = (token >> 24) & 0xFF;
+        u8int *sig = nil;
+        
+        if (table == TABLE_MEMBERREF) {
+            memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
+            if (mr) sig = ctx->assembly->blob_heap + mr->signature;
+        } else if (table == TABLE_METHODDEF) {
+            il_method_t *m = il_get_method_by_token(ctx->assembly, (TABLE_METHODDEF << 24) | row);
+            if (m) sig = ctx->assembly->blob_heap + m->signature_index;
+        }
+        
+        if (sig) {
+             /* Skip length */
+             u8int b1 = *sig++;
+             if ((b1 & 0x80) == 0) { }
+             else if ((b1 & 0xC0) == 0x80) { sig++; }
+             else { sig += 3; }
+             
+             /* CallConv */
+             sig++; 
+             /* ParamCount */
+             u32int pcount = read_blob_compressed_u32(&sig);
+             
+             ctx->stack_depth -= pcount;
+        }
+        ctx->stack_depth += 1; /* Pushes object */
+    }
+
     wasm_emit_u8(buf, WASM_OP_I64_CONST);
     wasm_emit_sleb128(buf, token);
     wasm_emit_u8(buf, WASM_OP_CALL);
@@ -1063,6 +1269,188 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 }
 
 /* Helper functions for CFG analysis and Security */
+
+int cil_get_opcode_stack_effect(u16int opcode) {
+  switch (opcode) {
+  case IL_NOP:
+  case IL_BREAK:
+    return 0;
+
+  /* Push 1 */
+  case IL_LDARG_0:
+  case IL_LDARG_1:
+  case IL_LDARG_2:
+  case IL_LDARG_3:
+  case IL_LDARG_S:
+  case IL_LDARGA_S:
+  case IL_LDARG:
+  case IL_LDARGA:
+  case IL_LDLOC_0:
+  case IL_LDLOC_1:
+  case IL_LDLOC_2:
+  case IL_LDLOC_3:
+  case IL_LDLOC_S:
+  case IL_LDLOCA_S:
+  case IL_LDLOC:
+  case IL_LDLOCA:
+  case IL_LDC_I4_M1:
+  case IL_LDC_I4_0:
+  case IL_LDC_I4_1:
+  case IL_LDC_I4_2:
+  case IL_LDC_I4_3:
+  case IL_LDC_I4_4:
+  case IL_LDC_I4_5:
+  case IL_LDC_I4_6:
+  case IL_LDC_I4_7:
+  case IL_LDC_I4_8:
+  case IL_LDC_I4_S:
+  case IL_LDC_I4:
+  case IL_LDC_I8:
+  case IL_LDC_R4:
+  case IL_LDC_R8:
+  case IL_LDNULL:
+  case IL_DUP:
+  case IL_LDSTR:
+  case IL_LDTOKEN:
+  case IL_LDSFLD:
+  case IL_LDSFLDA:
+  case IL_LDFLD:
+  case IL_LDFLDA:
+  case IL_LDLEN:
+  case IL_LDFTN:
+  case IL_LDVIRTFTN:
+  case IL_SIZEOF:
+  case IL_ARGLIST:
+    return 1;
+
+  /* Pop 1 */
+  case IL_POP:
+  case IL_STARG_S:
+  case IL_STARG:
+  case IL_STLOC_0:
+  case IL_STLOC_1:
+  case IL_STLOC_2:
+  case IL_STLOC_3:
+  case IL_STLOC_S:
+  case IL_STLOC:
+  case IL_STSFLD:
+  case IL_UNBOX:
+  case IL_UNBOX_ANY:
+  case IL_BOX:
+  case IL_CASTCLASS:
+  case IL_ISINST:
+  case IL_INITOBJ:
+  case IL_THROW:
+  case IL_RET: /* Variable, handle in cil_emit_opcode */
+    return 0;
+  case IL_SWITCH:
+  case IL_BRTRUE:
+  case IL_BRTRUE_S:
+  case IL_BRFALSE:
+  case IL_BRFALSE_S:
+    return -1;
+
+  /* Pop 2, Push 1 (Net -1) */
+  case IL_ADD:
+  case IL_SUB:
+  case IL_MUL:
+  case IL_DIV:
+  case IL_DIV_UN:
+  case IL_REM:
+  case IL_REM_UN:
+  case IL_AND:
+  case IL_OR:
+  case IL_XOR:
+  case IL_SHL:
+  case IL_SHR:
+  case IL_SHR_UN:
+  case IL_CEQ:
+  case IL_CGT:
+  case IL_CGT_UN:
+  case IL_CLT:
+  case IL_CLT_UN:
+  case IL_LDELEM:
+  case IL_LDELEM_I1:
+  case IL_LDELEM_U1:
+  case IL_LDELEM_I2:
+  case IL_LDELEM_U2:
+  case IL_LDELEM_I4:
+  case IL_LDELEM_U4:
+  case IL_LDELEM_I8:
+  case IL_LDELEM_I:
+  case IL_LDELEM_R4:
+  case IL_LDELEM_R8:
+  case IL_LDELEM_REF:
+  case IL_LDELEMA:
+    return -1;
+
+  /* Pop 2, Push 0 (Net -2) */
+  case IL_STFLD: /* obj, val -> void */
+  case IL_STIND_I1:
+  case IL_STIND_I2:
+  case IL_STIND_I4:
+  case IL_STIND_I8:
+  case IL_STIND_I:
+  case IL_STIND_R4:
+  case IL_STIND_R8:
+  case IL_STIND_REF:
+  case IL_CPOBJ: /* dest, src -> void */
+  case IL_STOBJ: /* addr, val -> void */
+    return -2;
+
+  /* Pop 3, Push 0 (Net -3) */
+  case IL_STELEM:
+  case IL_STELEM_I:
+  case IL_STELEM_I1:
+  case IL_STELEM_I2:
+  case IL_STELEM_I4:
+  case IL_STELEM_I8:
+  case IL_STELEM_R4:
+  case IL_STELEM_R8:
+  case IL_STELEM_REF:
+  case IL_CPBLK:
+  case IL_INITBLK:
+    return -3;
+
+  /* Pop 1, Push 1 (Net 0) */
+  case IL_NEG:
+  case IL_NOT:
+  case IL_CONV_I1:
+  case IL_CONV_I2:
+  case IL_CONV_I4:
+  case IL_CONV_I8:
+  case IL_CONV_R4:
+  case IL_CONV_R8:
+  case IL_CONV_U4:
+  case IL_CONV_U8:
+  case IL_CONV_I:
+  case IL_CONV_U:
+  case IL_CONV_R_UN:
+  case IL_CONV_OVF_I1:
+  case IL_CONV_OVF_U1:
+  case IL_CONV_OVF_I2:
+  case IL_CONV_OVF_U2:
+  case IL_CONV_OVF_I4:
+  case IL_CONV_OVF_U4:
+  case IL_CONV_OVF_I8:
+  case IL_CONV_OVF_U8:
+  case IL_LDIND_I1:
+  case IL_LDIND_U1:
+  case IL_LDIND_I2:
+  case IL_LDIND_U2:
+  case IL_LDIND_I4:
+  case IL_LDIND_U4:
+  case IL_LDIND_I8:
+  case IL_LDIND_I:
+  case IL_LDIND_R4:
+  case IL_LDIND_R8:
+  case IL_LDIND_REF:
+    return 0;
+
+  default:
+    return 0;
+  }
+}
 
 int cil_is_branch_opcode(u8int op) {
   switch (op) {

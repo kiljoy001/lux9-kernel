@@ -123,6 +123,7 @@ struct cil_shape {
 typedef struct {
   cil_cfg_t *cfg;
   il_method_t *method;
+  il_assembly_t *assembly;
   wasm_buffer_t *output;
 
   /* Label stack for nested structures */
@@ -184,7 +185,8 @@ int reloop_emit(reloop_ctx_t *ctx, cil_shape_t *shape);
  * @param output: Output buffer for WASM bytecode
  * @return: 0 on success, negative on error
  */
-int reloop_compile_method(il_method_t *method, wasm_buffer_t *output);
+int reloop_compile_method(il_method_t *method, il_assembly_t *assembly,
+                          wasm_buffer_t *output);
 
 /**
  * reloop_compile_method_ramsey - Ramsey algorithm compilation
@@ -197,7 +199,8 @@ int reloop_compile_method(il_method_t *method, wasm_buffer_t *output);
  * @param output: Output buffer for WASM bytecode
  * @return: 0 on success, negative on error
  */
-int reloop_compile_method_ramsey(il_method_t *method, wasm_buffer_t *output);
+int reloop_compile_method_ramsey(il_method_t *method, il_assembly_t *assembly,
+                                 wasm_buffer_t *output);
 
 /* Helper to check if offset is a branch target */
 int reloop_is_branch_target(cil_cfg_t *cfg, u32int offset);

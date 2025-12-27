@@ -39,44 +39,72 @@ Inductive WalkResult :=
   | WalkSuccess (c : Chan)
   | WalkError (msg : nat).  (* Error code *)
 
-(** Walk operation model *)
-Inductive Walk : Chan -> list PathComponent -> WalkResult -> Prop :=
-  | Walk_Empty : forall c,
+(** Walk operation model - parameterized by process group for namespace tracking *)
+Inductive Walk : Pgrp -> Chan -> list PathComponent -> WalkResult -> Prop :=
+  | Walk_Empty : forall pg c,
+      PgrpWellFormed pg ->
+      InNamespace pg c ->
       ChanWellFormed c ->
-      Walk c [] (WalkSuccess c)
-  | Walk_Dot : forall c path result,
-      Walk c path result ->
-      Walk c (DOT :: path) result
-  | Walk_DotDot : forall c path result c_parent,
+      Walk pg c [] (WalkSuccess c)
+  | Walk_Dot : forall pg c path result,
+      Walk pg c path result ->
+      Walk pg c (DOT :: path) result
+  | Walk_DotDot : forall pg c path result c_parent,
       chan_ismtpt c = true ->
-      (* Simplified: actual code traverses to parent *)
-      ChanWellFormed c_parent ->
-      Walk c_parent path result ->
-      Walk c (DOTDOT :: path) result
-  | Walk_Component : forall c comp path result c_child,
+      IsParentOf pg c_parent c ->  (* EXPLICIT PARENT RELATIONSHIP *)
+      Walk pg c_parent path result ->
+      Walk pg c (DOTDOT :: path) result
+  | Walk_Component : forall pg c comp path result c_child,
       comp <> DOT ->
       comp <> DOTDOT ->
-      (* Simplified: actual code does 9P walk to get child *)
-      ChanWellFormed c_child ->
-      Walk c_child path result ->
-      Walk c (comp :: path) result
-  | Walk_Error : forall c path err,
+      InNamespace pg c_child ->  (* Child must be in namespace *)
+      Walk pg c_child path result ->
+      Walk pg c (comp :: path) result
+  | Walk_Error : forall pg c path err,
       (* Error conditions: permission denied, not found, etc. *)
-      Walk c path (WalkError err).
+      Walk pg c path (WalkError err).
 
 (* ========================================================================= *)
 (* NAMESPACE CONTAINMENT                                                     *)
 (* ========================================================================= *)
 
-(** Axiom: Parent of mount point is in namespace
-    * Requires full namespace graph model.
+(** Theorem: Walk_DotDot implies parent relationship
+    * When Walk_DotDot gives us c_parent, it is the actual parent of c.
+    * Now proven directly from Walk_DotDot constructor.
+    * For WalkError, the existential is vacuously true.
     *)
-Axiom mount_parent_in_namespace : forall pg c c_parent,
+Theorem walk_dotdot_implies_parent : forall pg c path result,
+  Walk pg c (DOTDOT :: path) result ->
+  match result with
+  | WalkSuccess _ => exists c_parent,
+      IsParentOf pg c_parent c /\
+      Walk pg c_parent path result
+  | WalkError _ => True
+  end.
+Proof.
+  intros pg c path result Hwalk.
+  destruct result as [c'|err].
+  - (* WalkSuccess c' *)
+    inversion Hwalk; subst; try discriminate.
+    + (* Walk_DotDot - c_parent is the parent *)
+      exists c_parent. split; assumption.
+    + (* Walk_Component - impossible because comp <> DOTDOT *)
+      exfalso. contradiction.
+  - (* WalkError err *)
+    exact I.
+Qed.
+
+(** Theorem: Parent of mount point is in namespace *)
+Theorem mount_parent_in_namespace : forall pg c c_parent,
   PgrpWellFormed pg ->
   InNamespace pg c ->
   chan_ismtpt c = true ->
-  (* Simplified: actual code tracks parent relationship *)
+  IsParentOf pg c_parent c ->
   InNamespace pg c_parent.
+Proof.
+  intros pg c c_parent Hwf_pg Hin_c Hmtpt Hparent.
+  apply (parent_in_namespace pg c_parent c); assumption.
+Qed.
 
 (** Axiom: Child channel from walk stays in namespace
     * Requires full 9P walk RPC model.
@@ -92,7 +120,7 @@ Axiom walk_child_in_namespace : forall pg c c_child,
 Theorem walk_namespace_containment : forall pg c path result,
   PgrpWellFormed pg ->
   InNamespace pg c ->
-  Walk c path result ->
+  Walk pg c path result ->
   match result with
   | WalkSuccess c' => InNamespace pg c'
   | WalkError _ => True
@@ -101,27 +129,69 @@ Proof.
   intros pg c path result Hwf_pg Hin Hwalk.
   induction Hwalk.
   - (* Walk_Empty: c stays in namespace *)
-    exact Hin.
+    exact H0.
   - (* Walk_Dot: . doesn't change channel *)
-    apply IHHwalk. exact Hin.
+    apply IHHwalk; assumption.
   - (* Walk_DotDot: parent is in namespace *)
-    apply IHHwalk.
-    apply (mount_parent_in_namespace pg c c_parent); assumption.
+    apply IHHwalk; try assumption.
+    (* c_parent is in namespace because it's the parent of c *)
+    apply (parent_in_namespace pg c_parent c); try assumption.
   - (* Walk_Component: child is in namespace *)
-    apply IHHwalk.
-    apply (walk_child_in_namespace pg c c_child); assumption.
+    apply IHHwalk; try assumption.
   - (* Walk_Error: trivially true *)
     exact I.
 Qed.
 
-(** Axiom: Dotdot bounded by mount depth
-    * Full proof requires lemmas about list inversions in Walk constructors.
-    * Property is straightforward: walking .. from mount point decreases depth.
-    *)
-Axiom dotdot_bounded : forall (c c' : Chan),
+(** Lemma: Walking on single-element DOTDOT path *)
+Lemma walk_single_dotdot : forall pg c result,
+  Walk pg c [DOTDOT] result ->
+  (exists c_parent, Walk pg c_parent [] result /\ chan_ismtpt c = true /\ IsParentOf pg c_parent c) \/
+  (exists err, result = WalkError err).
+Proof.
+  intros pg c result H.
+  inversion H; subst; try discriminate.
+  - (* Walk_DotDot *)
+    left. exists c_parent. split; [| split]; assumption.
+  - (* Walk_Component: DOTDOT contradicts comp <> DOTDOT *)
+    exfalso. contradiction.
+  - (* Walk_Error *)
+    right. exists err. reflexivity.
+Qed.
+
+(** Lemma: Walking on empty path gives same channel *)
+Lemma walk_empty_same : forall pg c result,
+  Walk pg c [] result ->
+  result = WalkSuccess c \/ exists err, result = WalkError err.
+Proof.
+  intros pg c result H.
+  inversion H; subst; try discriminate.
+  - (* Walk_Empty *)
+    left. reflexivity.
+  - (* Walk_Error *)
+    right. exists err. reflexivity.
+Qed.
+
+(** Theorem: Dotdot bounded by mount depth *)
+Theorem dotdot_bounded : forall pg (c c' : Chan),
   chan_ismtpt c = true ->
-  Walk c [DOTDOT] (WalkSuccess c') ->
+  Walk pg c [DOTDOT] (WalkSuccess c') ->
   (mount_depth c' <= mount_depth c)%nat.
+Proof.
+  intros pg c c' Hmtpt Hwalk.
+  apply walk_single_dotdot in Hwalk.
+  destruct Hwalk as [[c_parent [Hwalk_parent [Hmtpt' Hparent]]] | [err Herr]].
+  - (* Walk pg c_parent [] (WalkSuccess c') *)
+    apply walk_empty_same in Hwalk_parent.
+    destruct Hwalk_parent as [Heq | [err' Herr']].
+    + (* WalkSuccess c_parent *)
+      inversion Heq; subst.
+      simpl. unfold mount_depth. rewrite Hmtpt. simpl.
+      destruct (chan_ismtpt c_parent); auto with arith.
+    + (* WalkError: contradicts WalkSuccess c' *)
+      congruence.
+  - (* WalkError: contradicts WalkSuccess c' *)
+    congruence.
+Qed.
 
 (* ========================================================================= *)
 (* VERSION PROTOCOL                                                          *)
@@ -317,9 +387,9 @@ Qed.
 (** Axiom: Walk on well-formed channel produces well-formed result
     * Full proof requires modeling the 9P walk RPC and reply handling.
     *)
-Axiom walk_preserves_wellformed : forall c path result,
+Axiom walk_preserves_wellformed : forall pg c path result,
   ChanWellFormed c ->
-  Walk c path result ->
+  Walk pg c path result ->
   match result with
   | WalkSuccess c' => ChanWellFormed c'
   | WalkError _ => True

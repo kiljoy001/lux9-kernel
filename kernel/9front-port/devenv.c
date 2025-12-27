@@ -11,13 +11,13 @@
  *   - Hash chain lookupname finds existing entries
  */
 
-#include "../include/lock_borrow.h"
-#include "../port/error.h"
-#include "../port/lib.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "u.h"
+#include <error.h>
+#include <lib.h>
+#include <lock_borrow.h>
 
 enum {
   Maxenvsize = 1 * MB,

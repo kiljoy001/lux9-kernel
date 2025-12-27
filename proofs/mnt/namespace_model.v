@@ -87,6 +87,20 @@ Definition mount_depth (c : Chan) : nat :=
 Definition is_mountpoint (c : Chan) : Prop :=
   chan_ismtpt c = true.
 
+(** Parent relationship: c_parent is parent of c if c is mounted on c_parent *)
+Definition IsParentOf (pg : Pgrp) (c_parent c : Chan) : Prop :=
+  exists mh : Mhead,
+    In (Some mh) (pgrp_mnthash pg) /\
+    mhead_from mh = c_parent /\
+    (exists m, In m (mhead_mounts mh) /\ mount_to m = c).
+
+(** Every mount point has a parent in the namespace *)
+Definition HasParentInNamespace (pg : Pgrp) (c : Chan) : Prop :=
+  chan_ismtpt c = true ->
+  exists c_parent,
+    IsParentOf pg c_parent c /\
+    InNamespace pg c_parent.
+
 (* ========================================================================= *)
 (* NAMESPACE WELL-FORMEDNESS                                                 *)
 (* ========================================================================= *)
@@ -239,6 +253,23 @@ Proof.
   apply Huniq; assumption.
 Qed.
 
+(** Theorem: Parent of mount point is in namespace *)
+Theorem parent_in_namespace : forall pg c_parent c,
+  PgrpWellFormed pg ->
+  InNamespace pg c ->
+  IsParentOf pg c_parent c ->
+  InNamespace pg c_parent.
+Proof.
+  intros pg c_parent c Hwf_pg Hin_c Hparent.
+  unfold IsParentOf in Hparent.
+  destruct Hparent as [mh [Hin_mh [Heq_from [m [Hin_m Heq_to]]]]].
+  unfold InNamespace.
+  exists mh. split.
+  - exact Hin_mh.
+  - left. exact Heq_from.
+Qed.
+
 Print Assumptions add_mount_preserves_wellformed.
 Print Assumptions remove_mount_preserves_wellformed.
 Print Assumptions mount_ids_unique.
+Print Assumptions parent_in_namespace.

@@ -11,12 +11,12 @@
  *   - Write to q[id], read from q[1-id] (write_read_duality)
  */
 
-#include "../port/error.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "portlib.h"
 #include "u.h"
+#include <error.h>
 
 #define PIPESIZE (4096)
 
@@ -298,7 +298,7 @@ static void pipeclose(Chan *c) {
 }
 
 /*@ requires c != \null && c->aux != \null;
-    requires \let id = c->qid.path - 1; 0 <= id <= 1;
+    requires 0 <= c->qid.path - 1 <= 1;
     ensures \result >= 0 || \result == -1;
     assigns \nothing;
     // Queue duality: read from q[1-id]
@@ -321,7 +321,7 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
 }
 
 /*@ requires c != \null && c->aux != \null;
-    requires \let id = c->qid.path - 1; 0 <= id <= 1;
+    requires 0 <= c->qid.path - 1 <= 1;
     ensures \result == n || \result < 0;
     assigns ((Pipe*)c->aux)->q[0..1];
     // Write to q[id], closed queue rejects

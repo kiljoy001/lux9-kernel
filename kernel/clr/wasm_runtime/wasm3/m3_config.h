@@ -102,11 +102,11 @@
 # endif
 
 # ifndef d_m3LogCompile
-#   define d_m3LogCompile                       0       // wasm -> metacode generation phase
+#   define d_m3LogCompile                       1       // wasm -> metacode generation phase
 # endif
 
 # ifndef d_m3LogWasmStack
-#   define d_m3LogWasmStack                     0       // dump the wasm stack when pushed or popped
+#   define d_m3LogWasmStack                     1       // dump the wasm stack when pushed or popped
 # endif
 
 # ifndef d_m3LogEmit

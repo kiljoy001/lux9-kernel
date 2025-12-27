@@ -7,34 +7,14 @@
 #include "../../include/dat.h"
 #include "../../include/error.h"
 #include "../../include/fns.h"
-#include "../../include/mem.h"
 #include "../../include/portlib.h"
 #include "../../include/u.h"
+#include "../il_parser.h"
+#include "cil_to_wasm.h"
+/* Pebble Deep Integration */
+#include "../../include/pebble.h"
 #include "../wasm_runtime/wasm3/m3_core.h"
 #include "../wasm_runtime/wasm3/wasm3.h"
-
-/* WASM bump allocator - allocates from WASM linear memory */
-#define WASM_HEAP_START                                                        \
-  (64 * 1024) /* Start at 64KB (leave room for stack/data) */
-
-#define WASM_HEAP_MAX (2 * 1024 * 1024) /* 2MB memory size */
-
-static u32int wasm_heap_ptr = WASM_HEAP_START;
-
-static u32int wasm_bump_alloc(u32int size) {
-  /* Align to 8 bytes */
-  size = (size + 7) & ~7;
-
-  u32int offset = wasm_heap_ptr;
-  wasm_heap_ptr += size;
-
-  if (wasm_heap_ptr > WASM_HEAP_MAX) {
-    print("WASM: heap exhausted (ptr=%d, size=%d)\n", offset, size);
-    return 0; /* Out of memory */
-  }
-
-  return offset;
-}
 
 #define CLR_PTR_TAG 0x8000000000000000ULL
 
@@ -64,6 +44,9 @@ extern void *clr_get_static_field(u32int token);
 typedef struct clr_object clr_object_t;
 extern int clr_is_instance_of(clr_object_t *obj, u32int type_token);
 
+/* Symbolic computing host functions (from host_symbolic.c) */
+extern M3Result sym_link_host_functions(IM3Module module);
+
 static u64int clr_tag_ptr(void *ptr) {
   if (!ptr)
     return 0;
@@ -74,10 +57,20 @@ static void *clr_untag_ptr(u64int val) {
   return (void *)(uintptr_t)(val & ~CLR_PTR_TAG);
 }
 
-/* Convert WASM value to memory pointer - now always uses WASM offset */
-static void *clr_ptr_to_mem(u64int ptr_val, void *_mem) {
+/* Convert WASM value to memory pointer - Handles Kernel Pointers & WASM Offsets
+ */
+void *clr_ptr_to_mem(u64int ptr_val, void *_mem) {
   if (ptr_val == 0)
     return nil;
+
+  /* Check for absolute kernel pointer (Upper bits set)
+   * Canonical AMD64 kernel space: 0xFFFF800000000000 range.
+   * We check if the top 16 bits are set (0xFFFF...).
+   */
+  if ((ptr_val & 0xFFFF000000000000ULL) == 0xFFFF000000000000ULL) {
+    return (void *)(uintptr_t)ptr_val;
+  }
+
   if (ptr_val & CLR_PTR_TAG) {
     /* Untag to get offset, then add WASM memory base */
     u64int off = ptr_val & ~CLR_PTR_TAG;
@@ -140,33 +133,60 @@ m3ApiRawFunction(lux9_yield) {
 }
 
 /*
- * lux9_debug_print(str: ref, len: i32) -> void
+ * lux9_print_i64(val: i64) -> void
  *
- * Prints to kernel console (kprint).
+ * Prints a 64-bit integer to kernel console.
+ */
+m3ApiRawFunction(lux9_print_i64) {
+  m3ApiReturnType(void) m3ApiGetArg(u64int, val);
+  print("INT: %lld\n", val);
+  m3ApiSuccess();
+}
+
+/*
+ * lux9_debug_print(str: ref) -> void
+ *
+ * Prints a CLR string to kernel console (kprint).
+ * Expects a String object: [Length (u64)][Char0 (u16)][Char1 (u16)]...
  */
 m3ApiRawFunction(lux9_debug_print) {
   m3ApiReturnType(void) m3ApiGetArg(u64int, str_val);
-  m3ApiGetArg(u64int, len64);
-  u32int len = (u32int)len64;
 
-  if (len > 256)
-    len = 256;
-
-  void *arr = clr_ptr_to_mem(str_val, _mem);
-  if (!arr) {
+  void *ptr = clr_ptr_to_mem(str_val, _mem);
+  /* print("STR_PTR: %#llux -> %p\n", str_val, ptr); */
+  
+  if (!ptr) {
+    print("STR: (null)\n");
     m3ApiSuccess();
   }
 
-  /* Repack sparse array */
-  char buf[257];
-  u64int *sparse_base = (u64int *)((u8int *)arr + 8);
+  u64int len = *(u64int *)ptr;
+  /* print("STR_LEN: %llu\n", len); */
+  
+  if (len > 512)
+    len = 512; /* Cap for sanity */
+
+  char buf[513];
+  u16int *chars = (u16int *)((u8int *)ptr + 8);
+
   for (u32int i = 0; i < len; i++) {
-    buf[i] = (char)sparse_base[i];
+    buf[i] = (char)chars[i]; /* Truncate to ASCII */
   }
   buf[len] = 0;
 
-  print("%s", buf);
+  print("STR: %s\n", buf);
+  m3ApiSuccess();
+}
 
+/*
+ * clr_cap_check_permission(mask: i64) -> void
+ *
+ * Checks if current context has permission.
+ * Stub for now.
+ */
+m3ApiRawFunction(clr_cap_check_permission) {
+  m3ApiGetArg(u64int, perm_mask);
+  /* TODO: Contextual check */
   m3ApiSuccess();
 }
 
@@ -250,27 +270,107 @@ m3ApiRawFunction(lux9_sleep) {
   m3ApiSuccess();
 }
 
-/* CLR/Pebble runtime imports - using WASM linear memory */
+/* CLR/Pebble runtime imports - using Deep Pebble Integration */
+/*
+ * LIME Operation: Allocate Black + Issue White
+ */
 m3ApiRawFunction(clr_lux_alloc) {
   m3ApiReturnType(u64int) m3ApiGetArg(u64int, size);
   m3ApiGetArg(u64int, type_token);
   USED(type_token);
 
-  /* Allocate from WASM linear memory (returns offset, not kernel ptr) */
-  u32int offset = wasm_bump_alloc((u32int)size);
-  m3ApiReturn((u64int)offset);
+  PebbleState *ps = pebble_state();
+  if (ps == nil) {
+    print("clr_lux_alloc: no pebble state\n");
+    m3ApiReturn(0);
+  }
+
+  UserCapability cap;
+  /* 1. Allocate Black Pebble (Physical Memory) */
+  if (pebble_black_alloc((ulong)size, &cap) != 0) {
+    print("clr_lux_alloc: pebble_black_alloc failed\n");
+    m3ApiReturn(0);
+  }
+
+  void *addr = pebble_get_black_addr(&cap);
+  if (addr == nil) {
+    print("clr_lux_alloc: got nil address from black cap\n");
+    pebble_black_free(&cap);
+    m3ApiReturn(0);
+  }
+
+  /* 2. Issue White Token (Reference/Reservation) */
+  /* This officially brings the memory into the Pebble Economy */
+  PebbleWhite *white = pebble_issue_white(ps, addr, (ulong)size);
+  if (white == nil) {
+    print("clr_lux_alloc: pebble_issue_white failed\n");
+    pebble_black_free(&cap);
+    m3ApiReturn(0);
+  }
+
+  /* Return absolute kernel address */
+  m3ApiReturn((u64int)(uintptr_t)addr);
 }
 
 m3ApiRawFunction(clr_lux_addref) {
   m3ApiReturnType(u64int) m3ApiGetArg(u64int, ptr_val);
-  /* Bump allocator - no refcounting, just return same offset */
+
+  /* LIME/VANILLA: Issue another white token for existing object */
+  void *addr = clr_ptr_to_mem(ptr_val, _mem);
+  if (!addr)
+    m3ApiReturn(0);
+
+  PebbleState *ps = pebble_state();
+  if (ps) {
+    /* Re-issue white token (this models addref in Pebble) */
+    /* Note: We don't have size here, defaulting to MIN for handle tracking */
+    pebble_issue_white(ps, addr, 8);
+  }
+
   m3ApiReturn(ptr_val);
 }
 
 m3ApiRawFunction(clr_lux_release) {
   m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
-  USED(ptr_val);
-  /* Bump allocator - no freeing */
+
+  void *addr = clr_ptr_to_mem(ptr_val, _mem);
+  if (!addr)
+    m3ApiSuccess();
+
+  PebbleState *ps = pebble_state();
+  if (ps == nil)
+    m3ApiSuccess();
+
+  /* BURN: Lookup Black Pebble and Free it */
+  /* We iterate the black list to find the one matching this address */
+  lock(&pebble_global_lock);
+
+  PebbleBlack *pb = ps->black_list;
+  PebbleBlack *found = nil;
+  UserCapability cap_to_free;
+  int do_free = 0;
+
+  while (pb != nil) {
+    if (pb->physical_addr == addr) {
+      found = pb;
+      break;
+    }
+    pb = pb->next;
+  }
+
+  if (found) {
+    /* Copy capability to stack so we can unlock before freeing */
+    cap_to_free = found->capability;
+    do_free = 1;
+  }
+
+  unlock(&pebble_global_lock);
+
+  if (do_free) {
+    /* Free the black pebble (returns budget) */
+    pebble_black_free(&cap_to_free);
+  }
+
   m3ApiSuccess();
 }
 
@@ -567,11 +667,11 @@ m3ApiRawFunction(clr_import_throw) {
 /* Include IL Parser for RVA lookup */
 /* #include "../il_parser.h" - Removed to avoid header conflicts */
 
-/* Use helpers provided by clr_runtime.c */
 extern u32int clr_get_field_rva(u32int token);
 extern u32int clr_rva_to_offset(u32int rva);
 extern void *clr_get_assembly_data(void);
 extern u32int clr_get_assembly_len(void);
+extern u32int cil_get_local_count(il_assembly_t *assembly, il_method_t *method);
 
 /* Wrapper for loading static fields using RVA */
 m3ApiRawFunction(clr_import_ldsfld) {
@@ -775,9 +875,11 @@ M3Result lux9_link_wasi(IM3Module module) {
 
   LINK_RAW("lux9_send_9p", "I(II)", &lux9_send_9p);
   LINK_RAW("lux9_yield", "v()", &lux9_yield);
-  LINK_RAW("lux9_debug_print", "v(II)", &lux9_debug_print);
+  LINK_RAW("lux9_debug_print", "v(I)", &lux9_debug_print);
+  LINK_RAW("lux9_print_i64", "v(I)", &lux9_print_i64);
   LINK_RAW("lux9_spawn", "I(I)", &lux9_spawn);
   LINK_RAW("lux9_sleep", "v(I)", &lux9_sleep);
+  LINK_RAW("cap_check_permission", "v(I)", &clr_cap_check_permission);
 
   LINK_RAW("lux_alloc", "I(II)", &clr_lux_alloc);
   LINK_RAW("lux_addref", "I(I)", &clr_lux_addref);
@@ -839,6 +941,11 @@ M3Result lux9_link_wasi(IM3Module module) {
   LINK_RAW("clr_throw", "v(I)", &clr_import_throw);
 
 #undef LINK_RAW
+
+  /* Link symbolic computing host functions */
+  result = sym_link_host_functions(module);
+  if (result)
+    return result;
 
   return result;
 }
