@@ -262,7 +262,8 @@ static u32int read_blob_compressed_u32(u8int **ptr) {
   }
 }
 
-int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method, il_assembly_t *assembly) {
+int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method,
+                            il_assembly_t *assembly) {
   u32int local_count = 0;
 
   if (method && method->local_var_sig_token && assembly) {
@@ -272,8 +273,8 @@ int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method, il_assembly
     if (row) {
       u8int *sig = assembly->blob_heap + row->signature;
       read_blob_compressed_u32(&sig); // Read length
-      if (*sig == 0x07) { // ELEMENT_TYPE_VAR
-        sig++; // Skip 0x07
+      if (*sig == 0x07) {             // ELEMENT_TYPE_VAR
+        sig++;                        // Skip 0x07
         local_count = read_blob_compressed_u32(&sig);
       }
     }
@@ -282,7 +283,7 @@ int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method, il_assembly
   /* Always emit at least one group for CIL locals + 1 scratch local */
   wasm_emit_uleb128(buf, 1);
   wasm_emit_uleb128(buf, local_count + 1); /* +1 for scratch local */
-  wasm_emit_u8(buf, WASM_TYPE_I64); // All locals are I64
+  wasm_emit_u8(buf, WASM_TYPE_I64);        // All locals are I64
 
   return local_count;
 }
@@ -404,12 +405,14 @@ int cil_to_wasm_build_module(il_assembly_t *assembly, il_method_t **methods,
     /* Emit locals */
     cil_to_wasm_emit_locals(&body_bufs[i], methods[i], assembly);
 
-    /* Compile body */
+    /* Compile method body using Ramsey algorithm */
     int err = cil_to_wasm_compile_method(methods[i], assembly, &body_bufs[i]);
-    if (err != 0) {
-      print("CIL: Failed to compile method %s: %d\n",
+    if (err < 0) {
+      print("CIL-WASM: Failed to compile method '%s': %d\n",
             methods[i]->name ? methods[i]->name : "?", err);
     }
+
+    /* End of function body */
     wasm_emit_u8(&body_bufs[i], WASM_OP_END);
   }
 

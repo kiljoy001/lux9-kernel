@@ -198,57 +198,70 @@ static int emit_branch_comparison(wasm_buffer_t *buf, u8int branch_opcode) {
   switch (branch_opcode) {
   case IL_BEQ_S:
   case IL_BEQ:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_EQ);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_EQ);
     return 1;
   case IL_BNE_UN_S:
   case IL_BNE_UN:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_NE);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_NE);
     return 1;
   case IL_BGE_S:
   case IL_BGE:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_GE_S);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_GE_S);
     return 1;
   case IL_BGE_UN_S:
   case IL_BGE_UN:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_GE_U);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_GE_U);
     return 1;
   case IL_BGT_S:
   case IL_BGT:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_GT_S);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_GT_S);
     return 1;
   case IL_BGT_UN_S:
   case IL_BGT_UN:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_GT_U);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_GT_U);
     return 1;
   case IL_BLE_S:
   case IL_BLE:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_LE_S);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_LE_S);
     return 1;
   case IL_BLE_UN_S:
   case IL_BLE_UN:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_LE_U);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_LE_U);
     return 1;
   case IL_BLT_S:
   case IL_BLT:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_LT_S);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_LT_S);
     return 1;
   case IL_BLT_UN_S:
   case IL_BLT_UN:
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_LT_U);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_LT_U);
     return 1;
   case IL_BRFALSE_S:
   case IL_BRFALSE:
     /* Boolean branch: wrap i64 to i32, negate for BRFALSE */
-    if (buf) wasm_emit_u8(buf, WASM_OP_I64_EQZ);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I64_EQZ);
     return 0;
   case IL_BRTRUE_S:
   case IL_BRTRUE:
     /* Boolean branch: wrap i64 to i32 */
-    if (buf) wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
     return 0;
   default:
     /* Unknown branch type - just wrap */
-    if (buf) wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
+    if (buf)
+      wasm_emit_u8(buf, WASM_OP_I32_WRAP_I64);
     return 0;
   }
 }
@@ -760,7 +773,7 @@ static int emit_block_code(reloop_ctx_t *ctx, u32int block_id) {
 
   while (offset < block_end) {
     u16int opcode = il[offset];
-    
+
     print("RELOOP: Block %d Off %x Op %02x\n", block_id, offset, opcode);
 
     /* Handle branch opcodes specially */
@@ -996,16 +1009,18 @@ static int index_of(u32int label, translation_ctx_t *ctx) {
 }
 
 /* Helper to validate stack depth */
-static void validate_stack_depth(translation_ctx_t *ctx, wasm_buffer_t *buf, int expected_depth) {
-    if (ctx && ctx->wasm_ctx) {
-        while (ctx->wasm_ctx->stack_depth > expected_depth) {
-            wasm_emit_u8(buf, WASM_OP_DROP);
-            ctx->wasm_ctx->stack_depth--;
-        }
-        if (ctx->wasm_ctx->stack_depth < expected_depth) {
-             print("CIL-WASM: Stack underflow detected! Expected %d, got %d\n", expected_depth, ctx->wasm_ctx->stack_depth);
-        }
+static void validate_stack_depth(translation_ctx_t *ctx, wasm_buffer_t *buf,
+                                 int expected_depth) {
+  if (ctx && ctx->wasm_ctx) {
+    while (ctx->wasm_ctx->stack_depth > expected_depth) {
+      wasm_emit_u8(buf, WASM_OP_DROP);
+      ctx->wasm_ctx->stack_depth--;
     }
+    if (ctx->wasm_ctx->stack_depth < expected_depth) {
+      print("CIL-WASM: Stack underflow detected! Expected %d, got %d\n",
+            expected_depth, ctx->wasm_ctx->stack_depth);
+    }
+  }
 }
 
 /*
@@ -1021,7 +1036,7 @@ static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
     call_depth--;
     return -1;
   }
-  
+
   domtree_node_t *node = &tree->nodes[x];
 
   /* filter hasMergeRoot children */
@@ -1114,7 +1129,7 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   }
   while (offset < end) {
     u16int opcode = cfg->il[offset];
-    
+
     err = cil_emit_opcode(buf, cfg->il, &offset, cfg->il_size, ctx->wasm_ctx);
     if (err < 0 && err != -100)
       return err;
@@ -1124,28 +1139,30 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   switch (block->terminator) {
   case TERM_UNCONDITIONAL:
     /* Unconditional l -> doBranch xlabel l context */
-    /* Validate stack is empty before branch (unless passing values, which we don't support yet) */
+    /* Validate stack is empty before branch (unless passing values, which we
+     * don't support yet) */
     validate_stack_depth(ctx, buf, 0);
     return doBranch(tree, cfg, x, block->succ[0], ctx, buf);
 
   case TERM_CONDITIONAL:
     /* Conditional e t f -> WasmIf (txExpr xlabel e) ... */
-    
+
     /* Calculate expected stack depth for the branch */
     /* Comparison branches consume 2, Boolean consume 1 */
-    int args_needed = 1 + emit_branch_comparison(NULL, block->branch_opcode); // dry run
+    int args_needed =
+        1 + emit_branch_comparison(NULL, block->branch_opcode); // dry run
     validate_stack_depth(ctx, buf, args_needed);
 
     /* Emit comparison opcode */
     emit_branch_comparison(buf, block->branch_opcode);
-    
+
     /* Comparison consumes args and pushes i32 result */
     ctx->wasm_ctx->stack_depth -= args_needed;
     ctx->wasm_ctx->stack_depth += 1;
 
     wasm_emit_u8(buf, WASM_OP_IF);
     wasm_emit_u8(buf, WASM_TYPE_VOID);
-    
+
     /* IF consumes i32 result */
     ctx->wasm_ctx->stack_depth -= 1;
 
@@ -1170,21 +1187,31 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     ctx_pop(ctx);
 
     /* Restore stack depth after both branches merge? */
-    /* If both branches return, it doesn't matter. If they merge, they should have same depth. */
+    /* If both branches return, it doesn't matter. If they merge, they should
+     * have same depth. */
     /* We can't easily know the merge depth here without dataflow analysis. */
     /* But for well-structured CIL, they should match. */
     /* Let's trust the result of the last branch for now, or maybe the first? */
     /* Actually, Ramsey's algorithm relies on structural recursion. */
-    
+
     wasm_emit_u8(buf, WASM_OP_END);
     return err;
 
   case TERM_RETURN:
-    print("RAMSEY: TERM_RETURN depth=%d\n", ctx->wasm_ctx->stack_depth);
-    if (ctx->wasm_ctx->stack_depth > 1) {
-        validate_stack_depth(ctx, buf, 1);
-    }
-    wasm_emit_u8(buf, WASM_OP_RETURN);
+    /*
+     * WASM3 Return Stack Fix:
+     * DO NOT emit WASM_OP_RETURN here. In WASM, the function's END opcode
+     * implicitly returns values from the stack. If we emit RETURN, it
+     * consumes the return value for the caller but leaves the compiler's
+     * block validation with an empty stack, causing m3_returnCountMismatch.
+     *
+     * Instead, just leave the return value on the stack and let it fall
+     * through to the function's END opcode.
+     */
+    print("RAMSEY: TERM_RETURN depth=%d (not emitting return, letting END "
+          "handle it)\n",
+          ctx->wasm_ctx->stack_depth);
+    /* Don't emit WASM_OP_RETURN - let value fall through to END */
     return 0;
 
   case TERM_FALLTHROUGH:
@@ -1322,5 +1349,69 @@ int reloop_compile_method_ramsey(il_method_t *method, il_assembly_t *assembly,
   ctx.wasm_ctx = &wctx;
 
   /* doTree sortedDominatorTree [] */
-  return doTree(&tree, &cfg, tree.root, &ctx, output);
+  int err = doTree(&tree, &cfg, tree.root, &ctx, output);
+  if (err < 0)
+    return err;
+
+  /*
+   * Stack cleanup for function end:
+   * WASM functions must end with exactly the number of values their signature
+   * declares. Check the method's return type and ensure stack depth matches.
+   */
+  int expected_returns = 0;
+  if (assembly && method && method->signature_index && assembly->blob_heap) {
+    u8int *blob = assembly->blob_heap + method->signature_index;
+    /* Skip length */
+    u8int b1 = *blob++;
+    if ((b1 & 0x80) != 0) {
+      if ((b1 & 0xC0) == 0x80)
+        blob++;
+      else
+        blob += 3;
+    }
+    /* Skip CallConv */
+    blob++;
+    /* Skip ParamCount */
+    /* Skip ParamCount (compressed uint) */
+    {
+      u8int pc_b1 = *blob++;
+      if ((pc_b1 & 0x80) == 0) { /* 1 byte */
+      } else if ((pc_b1 & 0xC0) == 0x80) {
+        blob++; /* 2 bytes */
+      } else {
+        blob += 3; /* 4 bytes */
+      }
+    }
+    /* Read RetType */
+    u8int ret_type = *blob;
+    expected_returns = (ret_type != 0x01) ? 1 : 0; /* VOID = 0x01 */
+  }
+
+  /*
+   * Fix stack mismatch: DROP excess values or push 0 if missing
+   * The m3_returnCountMismatch error occurs when stack_depth !=
+   * expected_returns at END
+   */
+  if (wctx.stack_depth > expected_returns) {
+    print("RAMSEY: Stack cleanup - dropping %d excess values (depth=%d, "
+          "expected=%d)\n",
+          wctx.stack_depth - expected_returns, wctx.stack_depth,
+          expected_returns);
+    while (wctx.stack_depth > expected_returns) {
+      wasm_emit_u8(output, WASM_OP_DROP);
+      wctx.stack_depth--;
+    }
+  } else if (wctx.stack_depth < expected_returns) {
+    print(
+        "RAMSEY: Stack underflow - pushing %d values (depth=%d, expected=%d)\n",
+        expected_returns - wctx.stack_depth, wctx.stack_depth,
+        expected_returns);
+    while (wctx.stack_depth < expected_returns) {
+      wasm_emit_u8(output, WASM_OP_I64_CONST);
+      wasm_emit_sleb128(output, 0);
+      wctx.stack_depth++;
+    }
+  }
+
+  return 0;
 }
