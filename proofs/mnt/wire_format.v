@@ -383,27 +383,6 @@ Proof.
   rewrite Hmod. lia.
 Qed.
 
-Lemma reconstruct_from_3_bytes : forall n,
-  0 <= n < 16777216 ->
-  n mod 256 + (n / 256) mod 256 * 256 + (n / 65536) mod 256 * 65536 = n.
-Proof.
-  intros n [H0 H24].
-  (* Manually expand using div_mod *)
-  pose proof (Z.div_mod n 256 ltac:(lia)) as E1.
-  pose proof (Z.div_mod (n / 256) 256 ltac:(lia)) as E2.
-  assert (Hdiv: (n / 256) / 256 = n / 65536) by (rewrite Z.div_div by lia; reflexivity).
-  assert (Hb: 0 <= n / 256 < 65536).
-  { split. apply Z.div_pos; lia. apply Z.div_lt_upper_bound; lia. }
-  assert (Hb2: 0 <= n / 65536 < 256).
-  { split. apply Z.div_pos; lia. apply Z.div_lt_upper_bound; lia. }
-  pose proof (Z.mod_small (n / 65536) 256 Hb2) as Hmod2.
-  (* Use E1, E2 to manually build up the equation *)
-  rewrite E1 at 2.
-  f_equal.
-  rewrite E2, Hdiv, Hmod2.
-  lia.
-Qed.
-
 (** Helper: reconstruct 32-bit value from bytes - step by step *)
 Lemma decode_u32_reconstruct : forall n,
   0 <= n < 4294967296 ->
@@ -437,16 +416,11 @@ Proof.
   pose proof (Z.div_mod (n / 65536) 256 ltac:(lia)) as E3.
   assert (Hdiv2: (n / 256) / 256 = n / 65536) by (rewrite Z.div_div by lia; reflexivity).
   assert (Hdiv3: (n / 65536) / 256 = n / 16777216) by (rewrite Z.div_div by lia; reflexivity).
-  assert (Hb3: 0 <= n / 16777216 < 256).
+  assert (Hbound3: 0 <= n / 16777216 < 256).
   { split. apply Z.div_pos; lia. apply Z.div_lt_upper_bound; lia. }
-  pose proof (Z.mod_small (n / 16777216) 256 Hb3) as Hmod3.
-  (* Use E1, E2, E3 to build up *)
-  rewrite E1 at 2.
-  f_equal.
-  rewrite E2, Hdiv2.
-  ring_simplify.
-  f_equal.
-  rewrite E3, Hdiv3, Hmod3.
+  pose proof (Z.mod_small (n / 16777216) 256 Hbound3) as Hmod3.
+  (* Just rewrite everything and let lia handle it *)
+  rewrite E1, E2, E3, Hdiv2, Hdiv3, Hmod3.
   lia.
 Qed.
 

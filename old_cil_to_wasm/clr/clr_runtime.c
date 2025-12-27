@@ -163,8 +163,10 @@ il_assembly_t *current_assembly;
 
 /* Helper to get user string (proper managed allocation) */
 void *clr_string_from_literal(u32int us_index) {
-  if (!current_assembly)
+  if (!current_assembly) {
+    print("CLR: string_from_literal: current_assembly is nil\n");
     return nil;
+  }
 
   /* Check cache first */
   for (ulong i = 0; i < string_literal_count; i++) {
@@ -178,8 +180,11 @@ void *clr_string_from_literal(u32int us_index) {
   uint32_t char_count = 0;
   const uint16_t *chars =
       il_get_user_string_raw(current_assembly, us_index, &char_count);
-  if (!chars)
+  if (!chars) {
+    print("CLR: string_from_literal: raw chars nil for idx=%x heap=%x\n",
+          us_index, current_assembly->us_heap_size);
     return nil;
+  }
 
   /* Allocate managed string object: 8 (header/length) + data */
   /* System.String layout: [int length][char firstChar...] */
@@ -351,7 +356,7 @@ static void clr_add_runtime_imports(fruity_module_t *mod) {
   clr_add_import(mod, "lux_rollback", CLR_VOID, ref_args, 1);
 
   /* CLR runtime support */
-  clr_add_import(mod, "clr_string_from_literal", CLR_REF, i32_args, 1);
+  clr_add_import(mod, "clr_string_from_literal", CLR_REF, i64_args, 1);
   clr_add_import(mod, "clr_string_get_length", CLR_INT64, ref_args, 1);
   clr_add_import(mod, "clr_string_get_char", CLR_INT64, ref_i64_args, 2);
   clr_add_import(mod, "clr_get_type_size", CLR_INT64, i32_args, 1);

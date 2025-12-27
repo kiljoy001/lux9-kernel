@@ -793,13 +793,18 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
         } else if (strcmp(method_name, "Lux9Yield") == 0 ||
                    strcmp(method_name, "Yield") == 0) {
           func_idx = HOST_LUX9_YIELD;
+        } else if (strcmp(type_name, "System.Attribute") == 0 &&
+                   strcmp(method_name, ".ctor") == 0) {
+          /* Workaround: Map Attribute constructor to print_i64 (consumes
+           * 'this') */
+          func_idx = HOST_LUX9_PRINT_I64;
         }
       } else {
         print("CIL: Failed to resolve MemberRef %08x\n", token);
       }
     }
 
-    if (func_idx == 0) {
+    if (func_idx == 0 && table == TABLE_METHODDEF) {
       /* Look up WASM func_idx using global mapping table (MethodDefs only) */
       func_idx = get_wasm_func_idx_for_row(row);
     }
@@ -863,6 +868,9 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
     /* Check for unresolved external AFTER stack effect is applied */
     if (table == TABLE_MEMBERREF && func_idx == 0) {
       /* Already printed UNRESOLVED error above during resolution */
+      if (func_idx == 0) {
+        print("CIL: UNRESOLVED EXTERNAL CALL: Token=%x\n", token);
+      }
       /* Emit UNREACHABLE to crash cleanly instead of calling random method */
       wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
       break; /* Skip the CALL emit */
@@ -1024,6 +1032,7 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
   }
   case IL_LDSTR: {
     u32int token = *(u32int *)&il[*offset];
+    print("CIL: Emitting LDSTR token=%08x\n", token);
     *offset += 4;
     wasm_emit_u8(buf, WASM_OP_I64_CONST);
     wasm_emit_sleb128(buf, token);

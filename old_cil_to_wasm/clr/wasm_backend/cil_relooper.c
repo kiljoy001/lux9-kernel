@@ -1013,6 +1013,8 @@ static int index_of(u32int label, translation_ctx_t *ctx) {
 static void validate_stack_depth(translation_ctx_t *ctx, wasm_buffer_t *buf,
                                  int expected_depth) {
   if (ctx && ctx->wasm_ctx) {
+    /* print("CIL-WASM: Validate stack depth. Expected %d, Current %d\n",
+     * expected_depth, ctx->wasm_ctx->stack_depth); */
     while (ctx->wasm_ctx->stack_depth > expected_depth) {
       wasm_emit_u8(buf, WASM_OP_DROP);
       ctx->wasm_ctx->stack_depth--;
@@ -1022,6 +1024,19 @@ static void validate_stack_depth(translation_ctx_t *ctx, wasm_buffer_t *buf,
             expected_depth, ctx->wasm_ctx->stack_depth);
     }
   }
+}
+
+/* Helper to check if subtree contains TERM_RETURN (needs i64 type) */
+static int subtree_has_return(domtree_t *tree, dt_cfg_t *cfg, u32int x) {
+  if (cfg->blocks[x].terminator == TERM_RETURN)
+    return 1;
+
+  domtree_node_t *node = &tree->nodes[x];
+  for (u32int i = 0; i < node->n_children; i++) {
+    if (subtree_has_return(tree, cfg, node->children[i]))
+      return 1;
+  }
+  return 0;
 }
 
 /*
@@ -1063,12 +1078,16 @@ static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
   }
 
   if (node->is_loop_header) {
+    print("RAMSEY: Loop Start node=%d stack_depth=%d\n", x,
+          ctx->wasm_ctx->stack_depth);
     /* Validate stack before loop entry (must be empty relative to block) */
     validate_stack_depth(ctx, buf, 0);
 
-    /* WasmLoop (codeForX (LoopHeadedBy x `inside` context)) */
+    /* Emit LOOP */
+    /* Strict Ramsey uses VOID for control blocks. */
+    int loop_type = WASM_TYPE_VOID;
     wasm_emit_u8(buf, WASM_OP_LOOP);
-    wasm_emit_u8(buf, WASM_TYPE_VOID);
+    wasm_emit_u8(buf, (u8int)loop_type);
 
     ctx_push(ctx, CTX_LOOP_HEADED_BY, x);
     int err = nodeWithin(tree, cfg, x, merge_children, n_merge, ctx, buf);
@@ -1084,7 +1103,6 @@ static int doTree(domtree_t *tree, dt_cfg_t *cfg, u32int x,
     return err;
   }
 }
-
 /*
  * Paper lines 8-20: nodeWithin
  */
@@ -1100,9 +1118,16 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     /* Validate stack before block entry */
     validate_stack_depth(ctx, buf, 0);
 
-    /* WasmBlock (nodeWithin x ys (BlockFollowedBy ylabel `inside` context)) */
+    /* WasmBlock (nodeWithin x ys (BlockFollowedBy ylabel `inside` context))
+     */
+    int block_type = WASM_TYPE_VOID;
+    if (subtree_has_return(tree, cfg,
+                           x)) { // Check if X or its children return
+      block_type = WASM_TYPE_I64;
+    }
+
     wasm_emit_u8(buf, WASM_OP_BLOCK);
-    wasm_emit_u8(buf, WASM_TYPE_VOID);
+    wasm_emit_u8(buf, (u8int)block_type);
 
     ctx_push(ctx, CTX_BLOCK_FOLLOWED_BY, y_n);
     err = nodeWithin(tree, cfg, x, ys + 1, n_ys - 1, ctx, buf);
@@ -1127,9 +1152,16 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   if (block->terminator == TERM_CONDITIONAL ||
       block->terminator == TERM_UNCONDITIONAL) {
     end = block->branch_offset;
+  } else if (block->terminator == TERM_RETURN) {
+    /* Exclude IL_RET (0x2A) */
+    if (end > offset && cfg->il[end - 1] == 0x2A) {
+      end--;
+    }
   }
   while (offset < end) {
     u16int opcode = cfg->il[offset];
+    /* print("RAMSEY: Emitting opcode %02x at offset %d (stack %d)\n", opcode,
+     * offset, ctx->wasm_ctx->stack_depth); */
 
     err = cil_emit_opcode(buf, cfg->il, &offset, cfg->il_size, ctx->wasm_ctx);
     if (err < 0 && err != -100)
@@ -1163,22 +1195,14 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     ctx->wasm_ctx->stack_depth += 1;
 
     /*
-     * Determine IF block type based on successor terminators:
-     * If both successors end in RETURN, they produce a return value,
-     * so the IF block should be typed to produce i64.
-     * Otherwise use void.
+     * Determine IF block type.
+     * Always use VOID for IF blocks. Even if branches return, they use explicit
+     * RETURN. The block itself does not need to yield a value to the caller.
      */
-    int if_block_type = WASM_TYPE_VOID;
-    if (block->n_succ >= 2) {
-      dt_basic_block_t *succ0 = &cfg->blocks[block->succ[0]];
-      dt_basic_block_t *succ1 = &cfg->blocks[block->succ[1]];
-      if (succ0->terminator == TERM_RETURN &&
-          succ1->terminator == TERM_RETURN) {
-        /* Both branches return - IF produces the return value */
-        if_block_type = WASM_TYPE_I64;
-        print("RAMSEY: IF block typed as i64 (both branches return)\n");
-      }
-    }
+    int if_block_type = WASM_TYPE_VOID; // WASM_TYPE_I64 logic removed
+
+    /* Convert (i64) condition to (i32) for WASM IF */
+    /* CIL logic pushes I64 (uniform stack). WASM IF consumes I32. */
 
     wasm_emit_u8(buf, WASM_OP_IF);
     wasm_emit_u8(buf, (u8int)if_block_type);
@@ -1186,36 +1210,42 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     /* IF consumes i32 result */
     ctx->wasm_ctx->stack_depth -= 1;
 
+    // Check if IF block is terminating (both branches return)
+    int is_terminating = subtree_has_return(tree, cfg, block->succ[0]) &&
+                         subtree_has_return(tree, cfg, block->succ[1]);
+
     /* Save stack depth for restoration */
     int saved_depth = ctx->wasm_ctx->stack_depth;
 
     /* (doBranch xlabel t (IfThenElse : context)) */
     ctx_push(ctx, CTX_IF_THEN_ELSE, 0);
-    err = doBranch(tree, cfg, x, block->succ[0], ctx, buf);
-    ctx_pop(ctx);
+
+    /* Then branch */
+    // Use doBranch to handle edges properly
+    doBranch(tree, cfg, x, block->succ[0], ctx, buf);
 
     wasm_emit_u8(buf, WASM_OP_ELSE);
 
-    /* Restore stack depth for else branch */
+    /* Else branch */
+    // Restore stack depth for else branch simulation (M3 verifies stack at
+    // entry to Else)
     ctx->wasm_ctx->stack_depth = saved_depth;
 
-    /* (doBranch xlabel f (IfThenElse : context)) */
-    ctx_push(ctx, CTX_IF_THEN_ELSE, 0);
-    if (err >= 0) {
-      err = doBranch(tree, cfg, x, block->succ[1], ctx, buf);
-    }
-    ctx_pop(ctx);
-
-    /* Restore stack depth after both branches merge? */
-    /* If both branches return, it doesn't matter. If they merge, they should
-     * have same depth. */
-    /* We can't easily know the merge depth here without dataflow analysis. */
-    /* But for well-structured CIL, they should match. */
-    /* Let's trust the result of the last branch for now, or maybe the first? */
-    /* Actually, Ramsey's algorithm relies on structural recursion. */
+    // (doBranch xlabel f (IfThenElse : context))
+    // We reuse the context frame CTX_IF_THEN_ELSE
+    doBranch(tree, cfg, x, block->succ[1], ctx, buf);
 
     wasm_emit_u8(buf, WASM_OP_END);
-    return err;
+    ctx_pop(ctx);
+
+    if (is_terminating) {
+      wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
+    }
+
+    /* After IF, stack depth is indeterminate if both merge?
+       But if terminating, it's unreachable.
+       If NOT terminating, logic falls through. */
+    return 0;
 
   case TERM_RETURN:
     /*
@@ -1225,14 +1255,16 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
      * The END opcode implicitly returns values from the stack.
      *
      * If we emit RETURN here, it consumes the return value from the stack,
-     * leaving the function's END validation expecting a value that isn't there.
+     * leaving the function's END validation expecting a value that isn't
+     * there.
      *
      * Note: WASM RETURN is only needed for early exits from deeply nested
      * control structures, which our structured Ramsey translation doesn't
      * produce.
      */
-    print("RAMSEY: TERM_RETURN depth=%d (no RETURN emitted, value to END)\n",
+    print("RAMSEY: TERM_RETURN depth=%d (emitting RETURN)\n",
           ctx->wasm_ctx->stack_depth);
+    wasm_emit_u8(buf, WASM_OP_RETURN);
     return 0;
 
   case TERM_FALLTHROUGH:
@@ -1268,6 +1300,8 @@ static int doBranch(domtree_t *tree, dt_cfg_t *cfg, u32int source,
       print("RAMSEY: Back edge %d->%d not in context\n", source, target);
       return -1;
     }
+    print("RAMSEY: Back edge %d->%d stack_depth=%d target_depth=?\n", source,
+          target, ctx->wasm_ctx->stack_depth);
     wasm_emit_u8(buf, WASM_OP_BR);
     wasm_emit_uleb128(buf, (u32int)i);
     return 0;
@@ -1280,6 +1314,8 @@ static int doBranch(domtree_t *tree, dt_cfg_t *cfg, u32int source,
       print("RAMSEY: Merge node %d not in context\n", target);
       return -1;
     }
+    print("RAMSEY: Back edge %d->%d stack_depth=%d target_depth=?\n", source,
+          target, ctx->wasm_ctx->stack_depth);
     wasm_emit_u8(buf, WASM_OP_BR);
     wasm_emit_uleb128(buf, (u32int)i);
     return 0;
@@ -1423,10 +1459,10 @@ int reloop_compile_method_ramsey(il_method_t *method, il_assembly_t *assembly,
       wctx.stack_depth--;
     }
   } else if (wctx.stack_depth < expected_returns) {
-    print(
-        "RAMSEY: Stack underflow - pushing %d values (depth=%d, expected=%d)\n",
-        expected_returns - wctx.stack_depth, wctx.stack_depth,
-        expected_returns);
+    print("RAMSEY: Stack underflow - pushing %d values (depth=%d, "
+          "expected=%d)\n",
+          expected_returns - wctx.stack_depth, wctx.stack_depth,
+          expected_returns);
     while (wctx.stack_depth < expected_returns) {
       wasm_emit_u8(output, WASM_OP_I64_CONST);
       wasm_emit_sleb128(output, 0);

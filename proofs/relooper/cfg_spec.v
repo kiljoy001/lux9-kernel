@@ -357,7 +357,7 @@ Qed.
 (* Definition for well-formed CFG - built correctly from bytecode *)
 Definition well_formed_cfg (bc: Bytecode) (cfg: CFG) (bc_size: nat) : Prop :=
   let targets := collect_targets bc in
-  cfg = build_blocks bc targets bc_size targets 0.
+  Sorted targets /\ NoDup targets /\ cfg = build_blocks bc targets bc_size targets 0.
 
 (* ===== Helper Lemma: compute_succs produces valid IDs ===== *)
 
@@ -794,6 +794,7 @@ Proof.
   unfold cfg_has_edge in Hedge.
   destruct Hedge as [b [Hin [Hid Hsucc]]].
   unfold well_formed_cfg in Hwf.
+  destruct Hwf as [Hsorted [Hnodup Hcfg]].
   subst cfg.
   set (targets := collect_targets bc).
   (* Use build_blocks_valid_succs to show target_offset < length targets *)

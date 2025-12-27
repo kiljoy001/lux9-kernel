@@ -128,7 +128,7 @@ m3ApiRawFunction(lux9_send_9p) {
  * Yields the CPU.
  */
 m3ApiRawFunction(lux9_yield) {
-  m3ApiReturnType(void) sched();
+  sched();
   m3ApiSuccess();
 }
 
@@ -138,7 +138,7 @@ m3ApiRawFunction(lux9_yield) {
  * Prints a 64-bit integer to kernel console.
  */
 m3ApiRawFunction(lux9_print_i64) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, val);
+  m3ApiGetArg(u64int, val);
   print("INT: %lld\n", val);
   m3ApiSuccess();
 }
@@ -150,11 +150,12 @@ m3ApiRawFunction(lux9_print_i64) {
  * Expects a String object: [Length (u64)][Char0 (u16)][Char1 (u16)]...
  */
 m3ApiRawFunction(lux9_debug_print) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, str_val);
+  m3ApiGetArg(u64int, str_val);
 
   void *ptr = clr_ptr_to_mem(str_val, _mem);
+  print("DEBUG: lux9_debug_print val=%#llux ptr=%p\n", str_val, ptr);
   /* print("STR_PTR: %#llux -> %p\n", str_val, ptr); */
-  
+
   if (!ptr) {
     print("STR: (null)\n");
     m3ApiSuccess();
@@ -162,7 +163,7 @@ m3ApiRawFunction(lux9_debug_print) {
 
   u64int len = *(u64int *)ptr;
   /* print("STR_LEN: %llu\n", len); */
-  
+
   if (len > 512)
     len = 512; /* Cap for sanity */
 
@@ -260,7 +261,7 @@ m3ApiRawFunction(lux9_spawn) {
  * lux9_sleep(ms: i32) -> void
  */
 m3ApiRawFunction(lux9_sleep) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ms64);
+  m3ApiGetArg(u64int, ms64);
   u32int ms = (u32int)ms64;
 
   if (ms > 0) {
@@ -331,7 +332,7 @@ m3ApiRawFunction(clr_lux_addref) {
 }
 
 m3ApiRawFunction(clr_lux_release) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, ptr_val);
 
   void *addr = clr_ptr_to_mem(ptr_val, _mem);
   if (!addr)
@@ -381,21 +382,25 @@ m3ApiRawFunction(clr_lux_snapshot) {
 }
 
 m3ApiRawFunction(clr_lux_commit) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, ptr_val);
   USED(ptr_val);
   m3ApiSuccess();
 }
 
 m3ApiRawFunction(clr_lux_rollback) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, ptr_val);
   USED(ptr_val);
   m3ApiSuccess();
 }
 
 m3ApiRawFunction(clr_import_string_from_literal) {
   m3ApiReturnType(u64int) m3ApiGetArg(u64int, us_index64);
-  u32int us_index = (u32int)us_index64;
+  /* Strip token type (0x70 derived) to get heap offset */
+  u32int us_index = (u32int)us_index64 & 0x00FFFFFF;
+  /* print("CLR: import_string_from_literal(raw=%#llux, idx=%#x)\n", us_index64,
+   * us_index); */
   void *ptr = clr_string_from_literal(us_index);
+  /* print("CLR: ptr=%p\n", ptr); */
   m3ApiReturn(clr_tag_ptr(ptr));
 }
 
@@ -438,7 +443,7 @@ m3ApiRawFunction(clr_import_load_i64) {
 }
 
 m3ApiRawFunction(clr_import_store_i64) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ptr_val);
+  m3ApiGetArg(u64int, ptr_val);
   m3ApiGetArg(u64int, value);
   void *ptr = clr_ptr_to_mem(ptr_val, _mem);
   *(u64int *)ptr = value;
@@ -446,7 +451,7 @@ m3ApiRawFunction(clr_import_store_i64) {
 }
 
 m3ApiRawFunction(clr_import_memmove) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, dst_val);
   m3ApiGetArg(u64int, src_val);
   m3ApiGetArg(u64int, size);
   void *dst = clr_ptr_to_mem(dst_val, _mem);
@@ -456,7 +461,7 @@ m3ApiRawFunction(clr_import_memmove) {
 }
 
 m3ApiRawFunction(clr_import_memset) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, dst_val);
   m3ApiGetArg(u64int, value);
   m3ApiGetArg(u64int, size);
   void *dst = clr_ptr_to_mem(dst_val, _mem);
@@ -553,7 +558,7 @@ m3ApiRawFunction(clr_import_array_get) {
 }
 
 m3ApiRawFunction(clr_import_array_set) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, arr_val);
+  m3ApiGetArg(u64int, arr_val);
   m3ApiGetArg(u64int, index);
   m3ApiGetArg(u64int, value);
   void *arr = clr_ptr_to_mem(arr_val, _mem);
@@ -603,7 +608,7 @@ m3ApiRawFunction(clr_import_unbox_any) {
 }
 
 m3ApiRawFunction(clr_import_initobj) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, dst_val);
   m3ApiGetArg(u64int, size);
   void *dst = clr_ptr_to_mem(dst_val, _mem);
   memset(dst, 0, (ulong)size);
@@ -611,7 +616,7 @@ m3ApiRawFunction(clr_import_initobj) {
 }
 
 m3ApiRawFunction(clr_import_cpobj) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, dst_val);
   m3ApiGetArg(u64int, src_val);
   m3ApiGetArg(u64int, size);
   void *dst = clr_ptr_to_mem(dst_val, _mem);
@@ -627,7 +632,7 @@ m3ApiRawFunction(clr_import_ldobj) {
 }
 
 m3ApiRawFunction(clr_import_stobj) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, dst_val);
+  m3ApiGetArg(u64int, dst_val);
   m3ApiGetArg(u64int, value);
   void *dst = clr_ptr_to_mem(dst_val, _mem);
   *(u64int *)dst = value;
@@ -635,7 +640,7 @@ m3ApiRawFunction(clr_import_stobj) {
 }
 
 m3ApiRawFunction(clr_import_throw) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, ex_val);
+  m3ApiGetArg(u64int, ex_val);
   print("CLR: throw invoked ex=%#llux\n", (uvlong)ex_val);
   {
     IM3BacktraceInfo bt = m3_GetBacktrace(runtime);
@@ -701,7 +706,7 @@ m3ApiRawFunction(clr_import_ldsfld) {
 #endif
 
 m3ApiRawFunction(clr_import_stsfld) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, value);
+  m3ApiGetArg(u64int, value);
   m3ApiGetArg(u32int, token);
 
   u32int rva = clr_get_field_rva(token);
@@ -731,7 +736,7 @@ m3ApiRawFunction(clr_import_ldfld) {
 }
 
 m3ApiRawFunction(clr_import_stfld) {
-  m3ApiReturnType(void) m3ApiGetArg(u64int, obj);
+  m3ApiGetArg(u64int, obj);
   m3ApiGetArg(u64int, value);
   m3ApiGetArg(u32int, token);
   m3ApiSuccess();
@@ -821,7 +826,7 @@ m3ApiRawFunction(clr_import_ldelem) {
 }
 
 m3ApiRawFunction(clr_import_stelem) {
-  m3ApiReturnType(void) m3ApiGetArg(u32int, opcode);
+  m3ApiGetArg(u32int, opcode);
   m3ApiGetArg(u64int, arr);
   m3ApiGetArg(u32int, idx);
   m3ApiGetArg(u64int, val);

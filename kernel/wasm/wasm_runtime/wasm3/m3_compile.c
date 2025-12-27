@@ -567,8 +567,12 @@ static M3Result Pop(IM3Compilation o) {
     } else if (slot >= o->slotFirstDynamicIndex) {
       DeallocateSlot(o, slot, type);
     }
-  } else if (not IsStackPolymorphic(o))
+  } else if (not IsStackPolymorphic(o)) {
+    extern int print(char *, ...);
+    print("M3_ERR: Pop underrun! stackIndex=%d blockStackIndex=%d\n",
+          (int)o->stackIndex, (int)o->block.blockStackIndex);
     result = m3Err_functionStackUnderrun;
+  }
 
   return result;
 }
@@ -1115,9 +1119,13 @@ static M3Result Compile_Const_i64(IM3Compilation o, m3opcode_t i_opcode) {
 
   i64 value;
   _(ReadLEB_i64(&value, &o->wasm, o->wasmEnd));
+
+  print("M3_COMPILE: Compile_Const_i64 - Before PushConst: o->stackIndex=%d\n",
+        o->stackIndex);
   _(PushConst(o, value, c_m3Type_i64));
-  m3log(compile, d_indent " (const i64 = %" PRIi64 ")", get_indention_string(o),
-        value);
+  print("M3_COMPILE: Compile_Const_i64 - After PushConst: o->stackIndex=%d\n",
+        o->stackIndex);
+
 _catch:
   return result;
 }
@@ -1193,6 +1201,9 @@ static M3Result Compile_Return(IM3Compilation o, m3opcode_t i_opcode) {
     IM3CompilationScope functionScope;
     _(GetBlockScope(o, &functionScope, o->block.depth));
 
+    print("M3_COMPILE: Compile_Return - Before ReturnValues: o->stackIndex=%d, "
+          "blockStackIndex=%d\n",
+          o->stackIndex, functionScope->blockStackIndex);
     _(ReturnValues(o, functionScope, true));
 
     _(EmitOp(o, op_Return));
@@ -1203,7 +1214,6 @@ static M3Result Compile_Return(IM3Compilation o, m3opcode_t i_opcode) {
 _catch:
   return result;
 }
-
 static M3Result ValidateBlockEnd(IM3Compilation o) {
   M3Result result = m3Err_none;
   /*
@@ -1231,6 +1241,19 @@ static M3Result Compile_End(IM3Compilation o, m3opcode_t i_opcode) {
     //      if (not IsStackPolymorphic (o))
     {
       if (o->function) {
+        u16 numReturns = GetFuncTypeNumResults(o->block.type);
+        print("M3_COMPILE: Compile_End - Before ReturnValues: func='%s', "
+              "o->stackIndex=%d, blockStackIndex=%d, numReturns=%d\n",
+              o->function->names[0], o->stackIndex, o->block.blockStackIndex,
+              numReturns);
+        _(ReturnValues(o, &o->block, false));
+      } else { // o->function is NULL (func='<nil>')
+        u16 numReturns_from_block_type = GetFuncTypeNumResults(o->block.type);
+        print("M3_COMPILE: Compile_End - Before ReturnValues: func='<nil>', "
+              "o->stackIndex=%d, blockStackIndex=%d, numReturns=%d (from "
+              "o->block.type)\n",
+              o->stackIndex, o->block.blockStackIndex,
+              numReturns_from_block_type);
         _(ReturnValues(o, &o->block, false));
       }
 
@@ -2591,6 +2614,11 @@ M3Result CompileBlockStatements(IM3Compilation o) {
     m3opcode_t opcode;
     o->lastOpcodeStart = o->wasm;
     _(Read_opcode(&opcode, &o->wasm, o->wasmEnd));
+    {
+      extern int print(char *, ...);
+      print("M3_TRACE: Processing op 0x%02x stackIndex=%d\n", opcode,
+            (int)o->stackIndex);
+    }
     log_opcode(o, opcode);
 
     // Restrict opcodes when evaluating expressions
