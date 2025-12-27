@@ -168,8 +168,9 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
   if (ctx) {
     int effect = cil_get_opcode_stack_effect((u8int)opcode);
     /* For variable stack effect opcodes, we handle updates inside the switch */
-    if (opcode != IL_CALL && opcode != IL_CALLVIRT && opcode != IL_NEWOBJ && opcode != IL_CALLI) {
-        ctx->stack_depth += effect;
+    if (opcode != IL_CALL && opcode != IL_CALLVIRT && opcode != IL_NEWOBJ &&
+        opcode != IL_CALLI) {
+      ctx->stack_depth += effect;
     }
   }
 
@@ -711,14 +712,16 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
 
     if (table == TABLE_MEMBERREF) {
       char type_name[256], method_name[256], scope_name[256];
-      type_name[0] = 0; method_name[0] = 0;
-      
+      type_name[0] = 0;
+      method_name[0] = 0;
+
       if (il_resolve_memberref(
               ctx->assembly, token, type_name, sizeof(type_name), method_name,
               sizeof(method_name), scope_name, sizeof(scope_name)) == 0) {
-        
+
         /* DEBUG: Print what we found */
-        print("CIL: CALL MemberRef %08x -> %s::%s\n", token, type_name, method_name);
+        print("CIL: CALL MemberRef %08x -> %s::%s\n", token, type_name,
+              method_name);
 
         /* Check for known Lux9 host functions */
         if (strcmp(method_name, "Lux9Send9P") == 0 ||
@@ -732,66 +735,67 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
                     strcmp(type_name, "Console") == 0) &&
                    (strcmp(method_name, "WriteLine") == 0 ||
                     strcmp(method_name, "Internal_WriteLine") == 0)) {
-          
+
           u32int sig_idx = 0;
           memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
           if (mr) {
-             u8int *sig = ctx->assembly->blob_heap + mr->signature;
-             /* Skip length */
-             u32int len = 0;
-             u8int b1 = *sig++;
-             if ((b1 & 0x80) == 0) len = b1;
-             else if ((b1 & 0xC0) == 0x80) { len = ((b1 & 0x3F) << 8) | *sig++; }
-             else { sig += 3; } /* Skip 4 byte len (approx) */
-             
-             /* CallConv */
-             sig++; 
-             /* ParamCount */
-             u32int pcount = *sig++; 
-             
-             /* Skip RetType (Assume Void for WriteLine) */
-             /* Check if RetType is multi-byte (e.g. Class/ValueType) */
-             u8int ret_type = *sig++;
-             if (ret_type == 0x11 || ret_type == 0x12) { /* VALUETYPE or CLASS */
-                 /* Compressed token follows */
-                 u8int t1 = *sig;
-                 if ((t1 & 0x80) == 0) sig++;
-                 else if ((t1 & 0xC0) == 0x80) sig += 2;
-                 else sig += 4;
-             }
-             
-             if (pcount == 1) {
-                 /* Param Type */
-                 u8int type = *sig;
-                 print("CIL: WriteLine param type: 0x%02x\n", type);
-                 
-                 if (type == 0x0E) { /* ELEMENT_TYPE_STRING */
-                     func_idx = HOST_LUX9_DEBUG_PRINT;
-                 } else if (type == 0x08 || type == 0x09 || type == 0x0A || type == 0x0C) { 
-                     /* I4, U4, I8, R8 */
-                     func_idx = HOST_LUX9_PRINT_I64;
-                 } else {
-                     /* Default to I64 print */
-                     func_idx = HOST_LUX9_PRINT_I64;
-                 }
-             } else {
-                 print("CIL: WriteLine param count %d not supported\n", pcount);
-                 func_idx = HOST_LUX9_DEBUG_PRINT;
-             }
+            u8int *sig = ctx->assembly->blob_heap + mr->signature;
+            /* Skip length */
+            u32int len = 0;
+            u8int b1 = *sig++;
+            if ((b1 & 0x80) == 0)
+              len = b1;
+            else if ((b1 & 0xC0) == 0x80) {
+              len = ((b1 & 0x3F) << 8) | *sig++;
+            } else {
+              sig += 3;
+            } /* Skip 4 byte len (approx) */
+
+            /* CallConv */
+            sig++;
+            /* ParamCount */
+            u32int pcount = *sig++;
+
+            /* Skip RetType (Assume Void for WriteLine) */
+            /* Check if RetType is multi-byte (e.g. Class/ValueType) */
+            u8int ret_type = *sig++;
+            if (ret_type == 0x11 || ret_type == 0x12) { /* VALUETYPE or CLASS */
+              /* Compressed token follows */
+              u8int t1 = *sig;
+              if ((t1 & 0x80) == 0)
+                sig++;
+              else if ((t1 & 0xC0) == 0x80)
+                sig += 2;
+              else
+                sig += 4;
+            }
+
+            if (pcount == 1) {
+              /* Param Type */
+              u8int type = *sig;
+              print("CIL: WriteLine param type: 0x%02x\n", type);
+
+              if (type == 0x0E) { /* ELEMENT_TYPE_STRING */
+                func_idx = HOST_LUX9_DEBUG_PRINT;
+              } else if (type == 0x08 || type == 0x09 || type == 0x0A ||
+                         type == 0x0C) {
+                /* I4, U4, I8, R8 */
+                func_idx = HOST_LUX9_PRINT_I64;
+              } else {
+                /* Default to I64 print */
+                func_idx = HOST_LUX9_PRINT_I64;
+              }
+            } else {
+              print("CIL: WriteLine param count %d not supported\n", pcount);
+              func_idx = HOST_LUX9_DEBUG_PRINT;
+            }
           }
         } else if (strcmp(method_name, "Lux9Yield") == 0 ||
                    strcmp(method_name, "Yield") == 0) {
           func_idx = HOST_LUX9_YIELD;
         }
       } else {
-          print("CIL: Failed to resolve MemberRef %08x\n", token);
-      }
-      
-      if (func_idx == 0) {
-          print("CIL: UNRESOLVED EXTERNAL CALL: %s::%s\n", type_name, method_name);
-          /* Emit UNREACHABLE to crash cleanly instead of calling random method */
-          wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
-          break; /* Skip the CALL emit */
+        print("CIL: Failed to resolve MemberRef %08x\n", token);
       }
     }
 
@@ -800,44 +804,68 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
       func_idx = get_wasm_func_idx_for_row(row);
     }
 
-    /* Stack Effect Calculation */
+    /* Stack Effect Calculation - MUST happen before potential UNREACHABLE break
+     */
     if (ctx) {
-        u32int pcount = 0;
-        int has_ret = 0;
-        u8int *sig = nil;
+      u32int pcount = 0;
+      int has_ret = 0;
+      u8int *sig = nil;
 
-        if (table == TABLE_MEMBERREF) {
-            memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
-            if (mr) sig = ctx->assembly->blob_heap + mr->signature;
-        } else if (table == TABLE_METHODDEF) {
-            il_method_t *m = il_get_method_by_token(ctx->assembly, (TABLE_METHODDEF << 24) | row);
-            if (m) sig = ctx->assembly->blob_heap + m->signature_index;
+      if (table == TABLE_MEMBERREF) {
+        memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
+        if (mr)
+          sig = ctx->assembly->blob_heap + mr->signature;
+      } else if (table == TABLE_METHODDEF) {
+        il_method_t *m = il_get_method_by_token(ctx->assembly,
+                                                (TABLE_METHODDEF << 24) | row);
+        if (m)
+          sig = ctx->assembly->blob_heap + m->signature_index;
+      }
+
+      if (sig) {
+        /* Skip length */
+        u8int b1 = *sig++;
+        if ((b1 & 0x80) == 0) {
+        } else if ((b1 & 0xC0) == 0x80) {
+          sig++;
+        } else {
+          sig += 3;
         }
 
-        if (sig) {
-             /* Skip length */
-             u8int b1 = *sig++;
-             if ((b1 & 0x80) == 0) { }
-             else if ((b1 & 0xC0) == 0x80) { sig++; }
-             else { sig += 3; }
-             
-             /* CallConv */
-             sig++; 
-             /* ParamCount */
-             pcount = read_blob_compressed_u32(&sig);
-             
-             /* Skip RetType (Assume Void for WriteLine) */
-             u8int ret_type = *sig;
-             has_ret = (ret_type != 0x01); /* VOID */
+        /* CallConv - check HASTHIS flag for instance methods */
+        u8int callconv = *sig++;
+        int has_this = (callconv & 0x20) != 0; /* HASTHIS flag */
+
+        /* ParamCount */
+        pcount = read_blob_compressed_u32(&sig);
+
+        /* Skip RetType (Assume Void for WriteLine) */
+        u8int ret_type = *sig;
+        has_ret = (ret_type != 0x01); /* VOID */
+
+        /* Instance methods consume 'this' pointer */
+        /* For CALLVIRT this is always counted; for CALL only if HASTHIS */
+        if (has_this) {
+          ctx->stack_depth -= 1; /* 'this' pointer */
         }
-        
-        ctx->stack_depth -= pcount;
-        if (has_ret) ctx->stack_depth += 1;
-        
-        if (opcode == IL_CALLVIRT) {
-            ctx->stack_depth -= 1; /* 'this' pointer */
-        }
-        print("CIL-STACK: CALL token=%x pcount=%d ret=%d depth=%d\n", token, pcount, has_ret, ctx->stack_depth);
+      }
+
+      ctx->stack_depth -= pcount;
+      if (has_ret)
+        ctx->stack_depth += 1;
+
+      /* Note: CALLVIRT adjustment removed - now handled by HASTHIS check above
+       */
+      print("CIL-STACK: CALL token=%x pcount=%d ret=%d depth=%d\n", token,
+            pcount, has_ret, ctx->stack_depth);
+    }
+
+    /* Check for unresolved external AFTER stack effect is applied */
+    if (table == TABLE_MEMBERREF && func_idx == 0) {
+      /* Already printed UNRESOLVED error above during resolution */
+      /* Emit UNREACHABLE to crash cleanly instead of calling random method */
+      wasm_emit_u8(buf, WASM_OP_UNREACHABLE);
+      break; /* Skip the CALL emit */
     }
 
     wasm_emit_u8(buf, WASM_OP_CALL);
@@ -942,35 +970,41 @@ int cil_emit_opcode(wasm_buffer_t *buf, u8int *il, u32int *offset,
      * the heap allocation model proven in the Coq specification */
     u32int token = *(u32int *)&il[*offset];
     *offset += 4;
-    
+
     if (ctx) {
-        u32int row = (token & 0x00FFFFFF);
-        u32int table = (token >> 24) & 0xFF;
-        u8int *sig = nil;
-        
-        if (table == TABLE_MEMBERREF) {
-            memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
-            if (mr) sig = ctx->assembly->blob_heap + mr->signature;
-        } else if (table == TABLE_METHODDEF) {
-            il_method_t *m = il_get_method_by_token(ctx->assembly, (TABLE_METHODDEF << 24) | row);
-            if (m) sig = ctx->assembly->blob_heap + m->signature_index;
+      u32int row = (token & 0x00FFFFFF);
+      u32int table = (token >> 24) & 0xFF;
+      u8int *sig = nil;
+
+      if (table == TABLE_MEMBERREF) {
+        memberref_row_t *mr = il_get_memberref(ctx->assembly, row);
+        if (mr)
+          sig = ctx->assembly->blob_heap + mr->signature;
+      } else if (table == TABLE_METHODDEF) {
+        il_method_t *m = il_get_method_by_token(ctx->assembly,
+                                                (TABLE_METHODDEF << 24) | row);
+        if (m)
+          sig = ctx->assembly->blob_heap + m->signature_index;
+      }
+
+      if (sig) {
+        /* Skip length */
+        u8int b1 = *sig++;
+        if ((b1 & 0x80) == 0) {
+        } else if ((b1 & 0xC0) == 0x80) {
+          sig++;
+        } else {
+          sig += 3;
         }
-        
-        if (sig) {
-             /* Skip length */
-             u8int b1 = *sig++;
-             if ((b1 & 0x80) == 0) { }
-             else if ((b1 & 0xC0) == 0x80) { sig++; }
-             else { sig += 3; }
-             
-             /* CallConv */
-             sig++; 
-             /* ParamCount */
-             u32int pcount = read_blob_compressed_u32(&sig);
-             
-             ctx->stack_depth -= pcount;
-        }
-        ctx->stack_depth += 1; /* Pushes object */
+
+        /* CallConv */
+        sig++;
+        /* ParamCount */
+        u32int pcount = read_blob_compressed_u32(&sig);
+
+        ctx->stack_depth -= pcount;
+      }
+      ctx->stack_depth += 1; /* Pushes object */
     }
 
     wasm_emit_u8(buf, WASM_OP_I64_CONST);
