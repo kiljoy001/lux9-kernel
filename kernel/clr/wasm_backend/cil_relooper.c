@@ -50,6 +50,7 @@
 
 #define WASM_OP_I64_EXTEND_I32_U 0xAD
 
+#define WASM_TYPE_I64 0x7E
 #define WASM_TYPE_VOID 0x40
 
 /* ========== CFG Building ========== */
@@ -1145,10 +1146,11 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     return doBranch(tree, cfg, x, block->succ[0], ctx, buf);
 
   case TERM_CONDITIONAL:
-    /* Conditional e t f -> WasmIf (txExpr xlabel e) ... */
+      /* Conditional e t f -> WasmIf (txExpr xlabel e) ... */
 
-    /* Calculate expected stack depth for the branch */
-    /* Comparison branches consume 2, Boolean consume 1 */
+      /* Calculate expected stack depth for the branch */
+      /* Comparison branches consume 2, Boolean consume 1 */
+      ; /* Empty statement to fix "declaration after label" C23 warning */
     int args_needed =
         1 + emit_branch_comparison(NULL, block->branch_opcode); // dry run
     validate_stack_depth(ctx, buf, args_needed);
@@ -1160,8 +1162,26 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     ctx->wasm_ctx->stack_depth -= args_needed;
     ctx->wasm_ctx->stack_depth += 1;
 
+    /*
+     * Determine IF block type based on successor terminators:
+     * If both successors end in RETURN, they produce a return value,
+     * so the IF block should be typed to produce i64.
+     * Otherwise use void.
+     */
+    int if_block_type = WASM_TYPE_VOID;
+    if (block->n_succ >= 2) {
+      dt_basic_block_t *succ0 = &cfg->blocks[block->succ[0]];
+      dt_basic_block_t *succ1 = &cfg->blocks[block->succ[1]];
+      if (succ0->terminator == TERM_RETURN &&
+          succ1->terminator == TERM_RETURN) {
+        /* Both branches return - IF produces the return value */
+        if_block_type = WASM_TYPE_I64;
+        print("RAMSEY: IF block typed as i64 (both branches return)\n");
+      }
+    }
+
     wasm_emit_u8(buf, WASM_OP_IF);
-    wasm_emit_u8(buf, WASM_TYPE_VOID);
+    wasm_emit_u8(buf, (u8int)if_block_type);
 
     /* IF consumes i32 result */
     ctx->wasm_ctx->stack_depth -= 1;
@@ -1200,18 +1220,19 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   case TERM_RETURN:
     /*
      * WASM3 Return Stack Fix:
-     * DO NOT emit WASM_OP_RETURN here. In WASM, the function's END opcode
-     * implicitly returns values from the stack. If we emit RETURN, it
-     * consumes the return value for the caller but leaves the compiler's
-     * block validation with an empty stack, causing m3_returnCountMismatch.
+     * DO NOT emit WASM_OP_RETURN here. The Ramsey algorithm produces
+     * structured code where all returns flow to the function's END opcode.
+     * The END opcode implicitly returns values from the stack.
      *
-     * Instead, just leave the return value on the stack and let it fall
-     * through to the function's END opcode.
+     * If we emit RETURN here, it consumes the return value from the stack,
+     * leaving the function's END validation expecting a value that isn't there.
+     *
+     * Note: WASM RETURN is only needed for early exits from deeply nested
+     * control structures, which our structured Ramsey translation doesn't
+     * produce.
      */
-    print("RAMSEY: TERM_RETURN depth=%d (not emitting return, letting END "
-          "handle it)\n",
+    print("RAMSEY: TERM_RETURN depth=%d (no RETURN emitted, value to END)\n",
           ctx->wasm_ctx->stack_depth);
-    /* Don't emit WASM_OP_RETURN - let value fall through to END */
     return 0;
 
   case TERM_FALLTHROUGH:
