@@ -17,6 +17,8 @@ typedef struct Waitmsg Waitmsg;
 #include "fns.h"
 #include "mem.h"
 #include "proc_packet.h"
+#include "wasm/wasm_9p_integration.h"
+#include "wasm/wasm_fileserver.h"
 
 /* Process FSM integration - use real FSM from proc_fsm.c */
 extern int proc_event(Proc *p, int event);
@@ -31,6 +33,7 @@ extern int mnt_9p_handle(Proc *p, Fcall *t, Fcall *r);
 static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int rpipe_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static void rpipe_clone_notify(void *aux);
+static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 extern uintptr sysexec(void *list_void); /* System exec call */
 
 /*
@@ -235,6 +238,7 @@ static int check_permission(Proc *p, int required_perm) {
 #define TYPE_SRV 4
 #define TYPE_MNT 5
 #define TYPE_FD 6
+#define TYPE_WASM 9  /* WASM servers with capability-based access */
 
 /* Device subtypes for TYPE_DEV FIDs */
 #define DEV_CONS 1
@@ -423,8 +427,22 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   }
 
   if (t->type == Tattach) {
-    /* Determine type from path */
-    if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0)
+    /* Check for capability-based attach (WASM servers) */
+    uuid_t cap_uuid;
+    if (wasm_9p_extract_cap_uuid(t->aname, &cap_uuid) == 0) {
+      /* Capability found in aname - validate it */
+      UserCapability pebble_cap;
+      if (wasm_9p_validate_capability(&cap_uuid, CAP_PERM_READ, &pebble_cap)) {
+        type = TYPE_WASM;
+        print("9p_router: WASM attach with validated capability\n");
+      } else {
+        r->type = Rerror;
+        r->ename = "invalid or insufficient capability";
+        return -1;
+      }
+    }
+    /* If no capability, determine type from path */
+    else if (path_match(t->aname, "/proc/") || strcmp(t->aname, "/proc") == 0)
       type = TYPE_PROC;
     else if (path_match(t->aname, "/dev/") || strcmp(t->aname, "/dev") == 0)
       type = TYPE_DEV;
@@ -466,6 +484,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     ret = mnt_9p_handle(p, t, r);
   else if (type == TYPE_FD) {
     ret = fd_9p_handle(p, t, r);
+  } else if (type == TYPE_WASM) {
+    ret = wasm_9p_handle(p, t, r);
   } else {
     r->type = Rerror;
     r->ename = "fid not found or unknown path";
@@ -2946,6 +2966,104 @@ int fd_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   default:
     r->type = Rerror;
     r->ename = "fd operation not supported";
+    return -1;
+  }
+}
+
+/* ========== WASM 9P Handler ========== */
+
+/* TODO: Proper server lookup - for now just stub */
+static wasm_fileserver_t *global_wasm_server = nil;
+
+static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
+  r->tag = t->tag;
+
+  switch (t->type) {
+  case Tattach:
+    /* Capability already validated in router - just attach to root */
+    /* TODO: Initialize WASM server if not already loaded */
+    r->type = Rattach;
+    r->qid.type = QTDIR;
+    r->qid.path = 0;
+    r->qid.vers = 0;
+    r->iounit = 0;
+    return 0;
+
+  case Twalk:
+  case Topen:
+  case Tcreate:
+  case Tread:
+  case Twrite:
+  case Tstat:
+  case Twstat:
+  case Tremove: {
+    /* Submit to WASM server via msgord + exchange pages */
+    if (!global_wasm_server) {
+      r->type = Rerror;
+      r->ename = "no wasm server loaded";
+      return -1;
+    }
+
+    /* Submit message to WASM server's msgord queue
+     * This is non-blocking - message will be processed in consensus order
+     * Response will be delivered asynchronously
+     *
+     * TODO: For synchronous 9P, we need to block and wait for response
+     * TODO: Implement async completion callback to return response
+     *
+     * For now, return stub responses
+     */
+
+    char path[256];
+    snprint(path, sizeof(path), "wasm_server");
+
+    uint msg_id = wasm_fs_submit(global_wasm_server, caller, t, path);
+    if (msg_id == 0) {
+      r->type = Rerror;
+      r->ename = "message submission failed";
+      return -1;
+    }
+
+    /* Stub responses until async completion is implemented */
+    switch (t->type) {
+    case Twalk:
+      r->type = Rwalk;
+      r->nwqid = 0;
+      break;
+    case Topen:
+      r->type = Ropen;
+      r->qid.type = QTFILE;
+      r->qid.path = 0;
+      r->iounit = 0;
+      break;
+    case Tread:
+      r->type = Rread;
+      r->count = 0;
+      r->data = nil;
+      break;
+    case Twrite:
+      r->type = Rwrite;
+      r->count = t->count;
+      break;
+    case Tstat:
+      r->type = Rerror;
+      r->ename = "stat not implemented";
+      return -1;
+    default:
+      r->type = Rerror;
+      r->ename = "operation not implemented";
+      return -1;
+    }
+    return 0;
+  }
+
+  case Tclunk:
+    r->type = Rclunk;
+    return 0;
+
+  default:
+    r->type = Rerror;
+    r->ename = "operation not supported";
     return -1;
   }
 }
