@@ -262,32 +262,27 @@ static u32int read_blob_compressed_u32(u8int **ptr) {
   }
 }
 
-int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method) {
+int cil_to_wasm_emit_locals(wasm_buffer_t *buf, il_method_t *method, il_assembly_t *assembly) {
   u32int local_count = 0;
 
-  if (method->local_var_sig_token && current_assembly) {
-    /* For debugging, force 0 locals (plus scratch) to rule out signature
-     * parsing issues */
-    /*
+  if (method && method->local_var_sig_token && assembly) {
     u32int rid = method->local_var_sig_token & 0x00FFFFFF;
-    standalonesig_row_t *row = il_get_standalonesig(current_assembly, rid);
+    standalonesig_row_t *row = il_get_standalonesig(assembly, rid);
 
     if (row) {
-      u8int *sig = current_assembly->blob_heap + row->signature;
-      read_blob_compressed_u32(&sig);
-      if (*sig == 0x07) {
-        sig++;
+      u8int *sig = assembly->blob_heap + row->signature;
+      read_blob_compressed_u32(&sig); // Read length
+      if (*sig == 0x07) { // ELEMENT_TYPE_VAR
+        sig++; // Skip 0x07
         local_count = read_blob_compressed_u32(&sig);
       }
     }
-    */
-    local_count = 127;
   }
 
   /* Always emit at least one group for CIL locals + 1 scratch local */
   wasm_emit_uleb128(buf, 1);
   wasm_emit_uleb128(buf, local_count + 1); /* +1 for scratch local */
-  wasm_emit_u8(buf, WASM_TYPE_I64);
+  wasm_emit_u8(buf, WASM_TYPE_I64); // All locals are I64
 
   return local_count;
 }
@@ -407,7 +402,7 @@ int cil_to_wasm_build_module(il_assembly_t *assembly, il_method_t **methods,
     }
 
     /* Emit locals */
-    cil_to_wasm_emit_locals(&body_bufs[i], methods[i]);
+    cil_to_wasm_emit_locals(&body_bufs[i], methods[i], assembly);
 
     /* Compile body */
     int err = cil_to_wasm_compile_method(methods[i], assembly, &body_bufs[i]);

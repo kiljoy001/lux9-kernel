@@ -1115,8 +1115,6 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
   while (offset < end) {
     u16int opcode = cfg->il[offset];
     
-    print("RAMSEY: CIL Emit opcode %02x at offset %x, current depth %d\n", opcode, offset, ctx->wasm_ctx->stack_depth);
-
     err = cil_emit_opcode(buf, cfg->il, &offset, cfg->il_size, ctx->wasm_ctx);
     if (err < 0 && err != -100)
       return err;
@@ -1182,13 +1180,6 @@ static int nodeWithin(domtree_t *tree, dt_cfg_t *cfg, u32int x, u32int *ys,
     return err;
 
   case TERM_RETURN:
-    /* TerminalFlow -> WasmReturn */
-    /* Return value should be on stack if needed. For now assuming non-void? */
-    /* If void, expected 0. If int, expected 1. We need signature... */
-    /* Just validate 0/1 based on current stack? */
-    /* Safe assumption: if there's something on stack, it's the return value. */
-    /* But if there's >1, we have garbage. */
-    /* We can't know for sure without signature. Let's assume max 1. */
     print("RAMSEY: TERM_RETURN depth=%d\n", ctx->wasm_ctx->stack_depth);
     if (ctx->wasm_ctx->stack_depth > 1) {
         validate_stack_depth(ctx, buf, 1);
