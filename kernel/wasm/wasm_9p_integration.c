@@ -5,8 +5,12 @@
  */
 
 #include "wasm_9p_integration.h"
+#include "../capability/clr_capability.h"
 #include "../include/u.h"
 #include <string.h>
+
+/* Global capability manager (defined in kernel init) */
+extern capability_manager_t *global_cap_manager;
 
 #ifndef nil
 #define nil ((void*)0)
@@ -91,27 +95,67 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
     return 0;
   }
 
-  /* TODO: Lookup capability in Pebble/BlindLedger
-   * This requires access to the blind ledger to validate:
-   *   1. (token, generation, index) maps to valid allocation
-   *   2. Capability hasn't been revoked
-   *   3. Permissions include required_perms
-   *
-   * For now, stub with basic validation
-   */
-
-  /* Stub: Assume valid for development
-   * Real implementation would call blind_ledger_lookup() */
   print("9p: validating cap token=%u gen=%u idx=%u perms=0x%x\n",
         token, generation, index, required_perms);
 
-  /* Fill output capability (stub) */
-  memset(pebble_cap_out, 0, sizeof(UserCapability));
-  pebble_cap_out->type = CAP_TYPE_IPC;
-  pebble_cap_out->perms = required_perms; /* TODO: Get real perms from ledger */
-  pebble_cap_out->size = 0;
+  /* Reconstruct UserCapability from UUID to verify against ledger
+   * The capability hash is derived from the Pebble token.
+   * We need to reconstruct it or look it up by (token, gen, index).
+   *
+   * Problem: UUID → (token, gen, idx) but we need the full hash to verify.
+   * The hash = SHA256(process_hash || leaf_hash) which we don't have from UUID alone.
+   *
+   * Solution: The BlindLedger should support lookup by (token, gen, idx) OR
+   * we need to store UUID → hash mapping in the capability table.
+   *
+   * For now, we'll use the language capability manager to lookup by UUID.
+   */
 
-  return 1; /* Valid (stub) */
+  if (!global_cap_manager) {
+    print("9p: capability manager not initialized\n");
+    return 0;
+  }
+
+  /* Lookup capability by UUID in capability manager */
+  clr_monotonic_capability_t *lang_cap = cap_find_by_uuid(global_cap_manager, uuid);
+  if (!lang_cap) {
+    print("9p: capability UUID not found in manager\n");
+    return 0;
+  }
+
+  /* Check if capability is revoked */
+  if (lang_cap->is_revoked) {
+    print("9p: capability has been revoked\n");
+    return 0;
+  }
+
+  /* Check permissions */
+  if ((lang_cap->permissions & required_perms) != required_perms) {
+    print("9p: insufficient permissions (have=0x%x, need=0x%x)\n",
+          lang_cap->permissions, required_perms);
+    return 0;
+  }
+
+  /* Validate derivation chain */
+  if (!lang_cap->is_validated) {
+    if (!cap_validate_chain(global_cap_manager, lang_cap)) {
+      print("9p: capability chain validation failed\n");
+      return 0;
+    }
+  }
+
+  /* Build UserCapability output (map language cap to Pebble cap) */
+  memset(pebble_cap_out, 0, sizeof(UserCapability));
+
+  /* Copy UUID as first 16 bytes of hash */
+  memmove(pebble_cap_out->hash, uuid->data, 16);
+
+  pebble_cap_out->type = CAP_TYPE_IPC;
+  pebble_cap_out->perms = lang_cap->permissions;
+  pebble_cap_out->size = 0; /* IPC capabilities have no size */
+
+  print("9p: capability validated successfully (perms=0x%x)\n", lang_cap->permissions);
+  return 1;
 }
 
 /* ========== Session Management ========== */
