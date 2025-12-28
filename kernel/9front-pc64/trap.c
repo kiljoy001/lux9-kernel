@@ -192,20 +192,12 @@ void trap(Ureg *ureg) {
 
   vno = ureg->type;
 
-  /* DEBUG: Show ALL traps during boot to catch WASM3 issues */
+  /* DEBUG: Show first few traps during boot */
   trap_count++;
-  if (trap_count <= 100) {
-    extern uintptr m3_ParseModule; /* Symbol exists */
+  if (trap_count <= 10 || vno < 32) {
     uintptr pc = ureg->pc;
-    /* Check if trap occurred near m3_ParseModule */
-    if (pc >= (uintptr)m3_ParseModule &&
-        pc < (uintptr)m3_ParseModule + 0x1000) {
-      print("TRAP in m3_ParseModule! vno=%d pc=%#p sp=%#p err=%#x\n", vno, pc,
-            ureg->sp, (uint)ureg->error);
-    } else if (trap_count <= 10 || vno < 32) {
-      print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
-            ureg->sp, userureg(ureg));
-    }
+    print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
+          ureg->sp, userureg(ureg));
   }
 
   post_exec_trap++;
@@ -435,16 +427,44 @@ static void faultamd64(Ureg *ureg, void *) {
   uintptr addr;
   int read, user;
   static int fault_count = 0;
+  extern int borrow_is_owned(uintptr key);
+  extern Proc *borrow_get_owner(uintptr key);
 
   addr = getcr2();
   read = !(ureg->error & 2);
   user = userureg(ureg);
 
-  /* Minimal debug - just show fault number, address, and mode */
+  /* Enhanced debug - show detailed fault info */
   fault_count++;
-  if (fault_count <= 5 || fault_count % 100 == 0)
-    print("fault[%d]: addr=%#p pc=%#p %s %s\n", fault_count, addr, ureg->pc,
-          user ? "user" : "kern", read ? "R" : "W");
+  if (fault_count <= 20 || fault_count % 100 == 0) {
+    print("\n=== PAGE FAULT #%d ===\n", fault_count);
+    print("  Address:    %#p\n", addr);
+    print("  PC:         %#p\n", ureg->pc);
+    print("  SP:         %#p\n", ureg->sp);
+    print("  Mode:       %s\n", user ? "user" : "kernel");
+    print("  Access:     %s\n", read ? "READ" : "WRITE");
+    print("  Error code: %#lux ", ureg->error);
+    if (ureg->error & 1) print("[P] ");
+    if (ureg->error & 2) print("[W] ");
+    if (ureg->error & 4) print("[U] ");
+    if (ureg->error & 8) print("[RSVD] ");
+    if (ureg->error & 16) print("[I] ");
+    print("\n");
+
+    /* Check borrow checker ownership */
+    if (borrow_is_owned(addr & ~0xFFF)) {
+      Proc *owner = borrow_get_owner(addr & ~0xFFF);
+      if (owner)
+        print("  Borrow:     Page owned by proc '%s' (pid=%d)\n",
+              owner->text ? owner->text : "???", owner->pid);
+      else
+        print("  Borrow:     Page tracked but no owner\n");
+    } else {
+      print("  Borrow:     Page not tracked/owned\n");
+    }
+
+    print("========================\n\n");
+  }
   if (!user) {
     extern void _peekinst(void);
 
@@ -477,7 +497,36 @@ static void faultamd64(Ureg *ureg, void *) {
         poperror();
         return;
       }
+
+      /* DEGRADED MODE: Log detailed info and attempt recovery */
+      print("\n!!! KERNEL FAULT - ATTEMPTING RECOVERY !!!\n");
       dumpregs(ureg);
+
+      /* Check if this is during boot/initialization */
+      extern int xinit_done;
+      if (!xinit_done) {
+        print("FAULT: During early boot - attempting to continue\n");
+        /* Zero out fault address in case it's a read */
+        if (read && up != nil) {
+          print("FAULT: Setting AX=0 and skipping instruction\n");
+          ureg->ax = 0;
+          ureg->pc += 4; /* Skip faulting instruction (approximate) */
+          poperror();
+          return;
+        }
+      }
+
+      /* If we have a process context, try to kill it instead of panicking */
+      if (up != nil) {
+        print("FAULT: Killing process '%s' (pid=%d) instead of panic\n",
+              up->text, up->pid);
+        print("FAULT: This is a DEGRADED recovery - system may be unstable\n");
+        poperror();
+        pexit("kernel fault", 1);
+        return;
+      }
+
+      /* Last resort: panic */
       panic("kernel fault: %s addr=%#p", read ? "read" : "write", addr);
     }
     faultnote("fault", read ? "read" : "write", addr);

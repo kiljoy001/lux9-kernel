@@ -1,5 +1,6 @@
 /* initrd.c - Initial ramdisk support */
 #include "initrd.h"
+#include "borrowchecker.h"
 #include "crypto.h"
 #include "dat.h"
 #include "fns.h"
@@ -85,24 +86,90 @@ void initrd_init(void *addr, usize len) {
   struct initrd_file *file, *last = nil;
   usize offset = 0;
   usize size;
+  extern uintptr saved_limine_hhdm_offset;
+  extern enum BorrowError borrow_acquire_range_phys(uintptr start_pa, usize size, enum BorrowSystemOwner owner);
+  extern int borrow_range_owned_by_system(uintptr start_pa, usize size, enum BorrowSystemOwner owner);
 
   initrd_base = addr;
   initrd_size = len;
   printhex("initrd addr ", (uvlong)(uintptr)addr);
   printhex("initrd size ", (uvlong)len);
 
-  /* Verify integrity */
+  /* Calculate physical address for borrow checker */
+  uintptr phys_addr = (uintptr)addr - saved_limine_hhdm_offset;
+  print("initrd: physical addr %#p, size %#lux\n", phys_addr, len);
+
+  /* Check if memory is accessible, map it if needed */
+  print("initrd: checking memory accessibility...\n");
+  extern uintptr dbg_getpte(uintptr va);
+  uintptr first_pte = dbg_getpte((uintptr)addr);
+  uintptr last_pte = dbg_getpte((uintptr)addr + len - 1);
+  print("initrd: first page PTE=%#p, last page PTE=%#p\n", first_pte, last_pte);
+
+  if (first_pte == 0 || last_pte == 0) {
+    print("initrd: Memory not mapped, creating page table entries...\n");
+    extern void *vmap(uvlong pa, vlong size);
+    void *mapped = vmap((uvlong)phys_addr, (vlong)len);
+    if (mapped == nil) {
+      print("initrd: ERROR - failed to map initrd memory!\n");
+      return;
+    }
+    print("initrd: Mapped %#lux bytes at virtual %#p (phys %#p)\n",
+          len, mapped, phys_addr);
+    /* Update addr to use the newly mapped region */
+    addr = mapped;
+    initrd_base = addr;
+  } else {
+    print("initrd: Memory already mapped\n");
+  }
+
+  /* Register initrd memory with borrow checker BEFORE accessing it */
+  print("initrd: registering memory with borrow checker...\n");
+  extern int xinit_done;
+  if (xinit_done) {
+    enum BorrowError err = borrow_acquire_range_phys(phys_addr, len, OWNER_KERNEL);
+    if (err != BORROW_OK && err != BORROW_EALREADY) {
+      print("initrd: WARNING - failed to register with borrow checker (err=%d)\n", err);
+      print("initrd: Attempting to continue anyway...\n");
+    } else {
+      print("initrd: Memory registered with borrow checker\n");
+    }
+  } else {
+    print("initrd: Early boot - using memory_range_add for tracking\n");
+    extern void memory_range_add(uintptr start, uintptr end, enum BorrowSystemOwner owner);
+    memory_range_add(phys_addr, phys_addr + len, OWNER_KERNEL);
+  }
+
+  /* Verify integrity with bounds checking */
   {
     uint8_t hash[32];
     int i;
     print("initrd: verifying integrity...\n");
-    if (crypto_sha256(hash, addr, len) == 0) {
-      print("initrd: SHA256: ");
-      for (i = 0; i < 32; i++)
-        print("%02x", hash[i]);
-      print("\n");
+
+    /* Bounds check: ensure len doesn't overflow and is reasonable */
+    if (len == 0) {
+      print("initrd: ERROR - zero length initrd\n");
+      return;
+    }
+    if (len > 256 * 1024 * 1024) { /* 256MB max */
+      print("initrd: ERROR - initrd too large (%#lux bytes)\n", len);
+      return;
+    }
+
+    /* Verify memory is owned before reading */
+    if (!borrow_range_owned_by_system(phys_addr, len, OWNER_KERNEL)) {
+      print("initrd: WARNING - memory not fully owned by kernel\n");
+      print("initrd: Skipping SHA256 verification\n");
     } else {
-      print("initrd: SHA256 calculation failed\n");
+      /* Safe to hash now */
+      if (crypto_sha256(hash, addr, len) == 0) {
+        print("initrd: SHA256: ");
+        for (i = 0; i < 32; i++)
+          print("%02x", hash[i]);
+        print("\n");
+      } else {
+        print("initrd: SHA256 calculation failed\n");
+      }
     }
   }
 
