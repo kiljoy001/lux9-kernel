@@ -37,15 +37,31 @@
 #include "../include/u.h"
 #include "../include/exchange.h"
 #include "../include/msgord.h"
+#include "wasm_runtime/wasm3/wasm3.h"
 
 /* Forward declarations */
 typedef struct Fcall Fcall;
 typedef struct Proc Proc;
-typedef struct IM3Runtime* IM3Runtime;
-typedef struct IM3Module* IM3Module;
 
 /* Default page pool size for WASM servers */
 #define WASM_DEFAULT_PAGE_POOL 16
+
+/* Auto-scaling configuration */
+typedef struct {
+  u32int enabled;        /* Auto-scaling enabled? */
+  u32int min_pages;      /* Minimum pool size (never shrink below) */
+  u32int max_pages;      /* Maximum pool size (never grow above) */
+  u32int target_util;    /* Target utilization % (e.g., 75) */
+  u32int high_threshold; /* Grow when util > this (e.g., 85) */
+  u32int low_threshold;  /* Shrink when util < this (e.g., 50) */
+  u32int check_interval; /* How often to check (milliseconds) */
+
+  /* Algorithm state (internal) */
+  u32int smoothed_util;  /* EMA-smoothed utilization */
+  u32int ema_alpha;      /* EMA smoothing factor (0-100, e.g., 30 = 0.3) */
+  u64int last_check;     /* Last check timestamp (fastticks) */
+  u32int stable_count;   /* How many intervals at stable size */
+} WasmAutoScaleConfig;
 
 /* WASM file server instance */
 typedef struct wasm_fileserver {
@@ -61,6 +77,9 @@ typedef struct wasm_fileserver {
 
   /* MSGORD for message ordering */
   MsgOrd *msgord;         /* Message ordering DAG */
+
+  /* Auto-scaling state */
+  WasmAutoScaleConfig autoscale;
 } wasm_fileserver_t;
 
 /* Load WASM module as file server with page pool */
@@ -111,5 +130,79 @@ int wasm_fs_process_all(wasm_fileserver_t *server);
  * Round-robin allocation from page pool.
  */
 int wasm_fs_get_page(wasm_fileserver_t *server);
+
+/* Resize exchange page pool at runtime
+ *
+ * @param server: WASM file server instance
+ * @param new_size: New pool size (number of pages)
+ * @returns: 0 on success, -1 on error
+ *
+ * Dynamically grows or shrinks the exchange page pool.
+ * Allows adapting to changing load without restarting the server.
+ * Handles copying existing pages and freeing old pool.
+ */
+int wasm_fs_resize_pool(wasm_fileserver_t *server, u32int new_size);
+
+/* Get current pool size
+ *
+ * @param server: WASM file server instance
+ * @returns: Current number of pages in pool
+ */
+u32int wasm_fs_get_pool_size(wasm_fileserver_t *server);
+
+/* Get pool utilization percentage
+ *
+ * @param server: WASM file server instance
+ * @returns: Utilization 0-100%
+ *
+ * Estimates how many pages are currently in use based on
+ * pending messages in MSGORD queue.
+ */
+u32int wasm_fs_get_pool_utilization(wasm_fileserver_t *server);
+
+/* Enable auto-scaling with specified configuration
+ *
+ * @param server: WASM file server instance
+ * @param cfg: Auto-scaling configuration (or nil for defaults)
+ * @returns: 0 on success, -1 on error
+ *
+ * Enables automatic pool resizing based on utilization.
+ * Uses hybrid AIMD + EMA algorithm with hysteresis.
+ *
+ * Default config (if cfg == nil):
+ *   min_pages: current size / 2
+ *   max_pages: current size * 8
+ *   target_util: 75%
+ *   high_threshold: 85%
+ *   low_threshold: 50%
+ *   check_interval: 1000ms
+ *   ema_alpha: 30 (0.3)
+ */
+int wasm_fs_enable_autoscale(wasm_fileserver_t *server, WasmAutoScaleConfig *cfg);
+
+/* Disable auto-scaling
+ *
+ * @param server: WASM file server instance
+ *
+ * Stops automatic pool resizing. Current pool size is preserved.
+ */
+void wasm_fs_disable_autoscale(wasm_fileserver_t *server);
+
+/* Run one iteration of auto-scaling algorithm
+ *
+ * @param server: WASM file server instance
+ * @returns: 1 if pool was resized, 0 if no change, -1 on error
+ *
+ * Called periodically (e.g., from timer interrupt or scheduler).
+ * Measures utilization, updates EMA, and resizes pool if needed.
+ *
+ * Algorithm: Hybrid AIMD + EMA with Hysteresis
+ *   1. Measure current utilization
+ *   2. Update EMA: smoothed = α×current + (1-α)×smoothed
+ *   3. If smoothed > high_threshold: grow by 50%
+ *   4. Elif smoothed < low_threshold: shrink by 25%
+ *   5. Else: no change (deadband)
+ */
+int wasm_fs_autoscale_tick(wasm_fileserver_t *server);
 
 #endif /* WASM_FILESERVER_H */

@@ -155,9 +155,7 @@ static void proc0(void *arg) {
     }
   }
   print("BOOT[proc0]: root namespace setup complete\n");
-  /* Run WASM Pipeline Validation (needs /boot namespace available) */
-  extern void clr_init(void);
-  clr_init();
+  /* CLR moved to userspace - no kernel initialization needed */
   /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");
 

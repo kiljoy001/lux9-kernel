@@ -59,6 +59,9 @@ static void *pebble_alloc_wrapper(unsigned long size) {
 #define nil ((void *)0)
 #endif
 
+/* Global capability manager instance - initialized during kernel boot */
+capability_manager_t *global_cap_manager = nil;
+
 /* ========== Permission Utilities ========== */
 
 /*

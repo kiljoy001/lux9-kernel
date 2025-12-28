@@ -41,10 +41,7 @@ typedef ulong *syscall_va_list;
 
 #include <a.out.h>
 
-/* CLR compilation includes */
-#include "../clr/fruity/fruity_ir.h"
-#include "../clr/fruity/fruity_to_qbe.h"
-#include "../clr/qbe_compile.h"
+/* CLR compilation includes removed - CLR moved to userspace */
 #include "exchange.h"
 
 extern void crypto_blake2b_final(crypto_blake2b_ctx *ctx, u8int *out);
@@ -368,8 +365,6 @@ uvlong beswav(uvlong v) {
          ((uvlong)p[6] << 8) | (uvlong)p[7];
 }
 
-extern int clr_execute_assembly(void *dll_data, ulong dll_size);
-
 uintptr sysexec(void *list_void) {
   extern void uartputs(char *, int);
   char debug_buf[128];
@@ -544,90 +539,10 @@ uintptr sysexec(void *list_void) {
 
     /* Check for .NET/CLR PE/COFF signature ("MZ") */
     if (n >= 2 && u.buf[0] == 'M' && u.buf[1] == 'Z') {
-      /* Found a potential .NET assembly */
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec detected CLR assembly (MZ)\n");
-      uartputs(debug_buf, strlen(debug_buf));
-
-      /* Read the full file into memory to execute it */
-      /* Get file size first */
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec calling dirchanstat\n");
-      uartputs(debug_buf, strlen(debug_buf));
-      Dir *dir = dirchanstat(tc);
-      if (dir == nil)
-        error(Eio);
-      ulong fsize = dir->length;
-      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec file size=%ld\n",
-              fsize);
-      uartputs(debug_buf, strlen(debug_buf));
-      free(dir);
-
-      /* Allocate buffer */
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec allocating %ld bytes\n", fsize);
-      uartputs(debug_buf, strlen(debug_buf));
-      print("CLR: allocating %ld bytes for assembly\n", fsize);
-      stage_desc = "clr malloc";
-      void *asm_data = malloc(fsize);
-      if (asm_data == nil)
-        error(Enomem);
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec allocated asm_data=%p\n", asm_data);
-      uartputs(debug_buf, strlen(debug_buf));
-      print("CLR: malloc returned %p\n", asm_data);
-
-      /* Read full content */
-      /* Rewind first (offset is at 'n' now) */
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec reading full file\n");
-      uartputs(debug_buf, strlen(debug_buf));
-      print("CLR: reading %ld bytes from device type %d\n", fsize, tc->type);
-      stage_desc = "clr read full";
-      devtab[tc->type]->read(tc, asm_data, fsize, 0);
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec full file read complete\n");
-      uartputs(debug_buf, strlen(debug_buf));
-      print("CLR: file read complete, first 8 bytes: %02x %02x %02x %02x %02x "
-            "%02x %02x %02x\n",
-            ((uchar *)asm_data)[0], ((uchar *)asm_data)[1],
-            ((uchar *)asm_data)[2], ((uchar *)asm_data)[3],
-            ((uchar *)asm_data)[4], ((uchar *)asm_data)[5],
-            ((uchar *)asm_data)[6], ((uchar *)asm_data)[7]);
-      /* We ignore read errors for now assuming success if stat worked */
-
-      /* Close file as we have it in memory */
-      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec closing channel\n");
-      uartputs(debug_buf, strlen(debug_buf));
+      /* CLR execution moved to userspace - use userspace runtime */
       cclose(tc);
-      poperror(); /* cclose error handler */
-      snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec channel closed\n");
-      uartputs(debug_buf, strlen(debug_buf));
-
-      /* Execute assembly */
-      /* Note: This runs in kernel context for now, effectively taking over the
-       * process */
-      /* If clr_execute_assembly returns, the program exited */
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec calling clr_execute_assembly\n");
-      uartputs(debug_buf, strlen(debug_buf));
-      stage_desc = "clr execute";
-      int ret = clr_execute_assembly(asm_data, fsize);
-      snprint(debug_buf, sizeof(debug_buf),
-              "DEBUG: sysexec clr_execute_assembly returned %d\n", ret);
-      uartputs(debug_buf, strlen(debug_buf));
-
-      /* Cleanup */
-      free(asm_data);
-      free(file0);
-      free(elem);
-      free(args);
-
-      /* Exit process with return code */
-      char exit_status[32];
-      snprint(exit_status, sizeof(exit_status), "%d", ret);
-      pexit(exit_status, 1);
-      /* Not reached */
+      poperror();
+      error("CLR execution moved to userspace - recompile for WASM or use userspace CLR");
     }
 
     if (n >= sizeof(Exec)) {

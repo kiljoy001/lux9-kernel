@@ -44,7 +44,7 @@ LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
 # Filter out conflicting/duplicate files
-PORT_C := $(filter-out kernel/9front-port/rbtree.c, $(PORT_C))
+PORT_C := $(filter-out kernel/9front-port/rbtree.c kernel/9front-port/devclr.c, $(PORT_C))
 
 # Ensure TPM drivers are included
 TPM_C := kernel/9front-port/tpm2_driver.c kernel/9front-port/tpm2_sapi_minimal.c
@@ -66,10 +66,12 @@ REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
-WASM3_C := $(wildcard kernel/clr/wasm_runtime/wasm3/*.c)
-WASM_BACKEND_C := kernel/clr/wasm_backend/fruity_to_wasm.c kernel/clr/wasm_backend/wasm_buffer.c kernel/clr/wasm_backend/lux9_api.c kernel/clr/wasm_backend/cil_to_wasm.c kernel/clr/wasm_backend/cil_relooper.c kernel/clr/wasm_backend/cil_opcodes.c kernel/clr/wasm_backend/cil_domtree.c kernel/clr/wasm_backend/cil_security.c kernel/clr/wasm_backend/host_symbolic.c
-SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c kernel/clr/symbolic_expr.c
-CLR_C := kernel/clr/fruity/fruity_ir.c $(WASM_BACKEND_C) kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/clr-kernel/clr_pebble_integration.c kernel/clr/clr-kernel/clr_vtable.c kernel/clr/lux_runtime.c kernel/clr/clr_assemblies.c kernel/clr/clr_capability.c $(WASM3_C) $(SYMBOLIC_C)
+CAPABILITY_C := kernel/capability/clr_capability.c
+# CLR moved to userspace (old_cil_to_wasm/)
+# Keep only WASM3 runtime and new WASM file servers
+WASM3_C := $(wildcard kernel/wasm/wasm_runtime/wasm3/*.c)
+WASM_FILESERVER_C := kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c
+WASM_C := $(WASM3_C) $(WASM_FILESERVER_C)
 
 # QBE compiler removed - WASM3 is now the runtime
 
@@ -102,12 +104,13 @@ UUID_O := kernel/lib/uuid.o
 PEBBLE_O := $(PEBBLE_C:.c=.o)
 POW_GATE_O := $(POW_GATE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
-CLR_O := $(CLR_C:.c=.o)
+CAPABILITY_O := $(CAPABILITY_C:.c=.o)
+WASM_O := $(WASM_C:.c=.o)
 # TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)  # Removed - using minimal SAPI
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(UUID_O)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(UUID_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -125,10 +128,15 @@ $(QBE_A): $(QBE_CORE_O)
 	@echo "AR $@"
 	@ar rcs $@ $(QBE_CORE_O)
 
-# WASM3 Runtime build
-kernel/clr/wasm_runtime/wasm3/%.o: kernel/clr/wasm_runtime/wasm3/%.c
+# WASM3 Runtime build - use WASM3's compatibility headers
+kernel/wasm/wasm_runtime/wasm3/%.o: kernel/wasm/wasm_runtime/wasm3/%.c
 	@echo "CC $< (WASM3)"
-	@$(CC) $(CFLAGS) -Dd_m3HasFloat=0 -c $< -o $@
+	@$(CC) $(CFLAGS) -Dd_m3HasFloat=0 -Ikernel/wasm/wasm_runtime/wasm3/include -c $< -o $@
+
+# WASM file server code also needs WASM3 headers
+kernel/wasm/%.o: kernel/wasm/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"
@@ -139,8 +147,7 @@ kernel/clr/wasm_runtime/wasm3/%.o: kernel/clr/wasm_runtime/wasm3/%.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(ALL_O) $(CLR_O) $(UUID_O) $(KERNEL)
-	rm -f kernel/clr/qbe/qbe.a kernel/clr/qbe/**/*.o
+	rm -f $(ALL_O) $(UUID_O) $(KERNEL)
 	rm -rf iso_root lux9.iso
 
 count:

@@ -4,9 +4,13 @@
  * Integrates Pebble capabilities (UUID-encoded) with 9P protocol.
  */
 
+#include "../include/u.h"
+#include "../include/portlib.h"
+#include "../include/mem.h"
+#include "../include/dat.h"
+#include "../include/fcall.h"
 #include "wasm_9p_integration.h"
 #include "../capability/clr_capability.h"
-#include "../include/u.h"
 #include <string.h>
 
 /* Global capability manager (defined in kernel init) */
