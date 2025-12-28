@@ -15,6 +15,7 @@ typedef struct Waitmsg Waitmsg;
 
 #include "9p_router.h"
 #include "fns.h"
+#include "include/distributed_pebble.h"
 #include "mem.h"
 #include "proc_packet.h"
 #include "wasm/wasm_9p_integration.h"
@@ -238,7 +239,7 @@ static int check_permission(Proc *p, int required_perm) {
 #define TYPE_SRV 4
 #define TYPE_MNT 5
 #define TYPE_FD 6
-#define TYPE_WASM 9  /* WASM servers with capability-based access */
+#define TYPE_WASM 9 /* WASM servers with capability-based access */
 
 /* Device subtypes for TYPE_DEV FIDs */
 #define DEV_CONS 1
@@ -424,6 +425,91 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = Rerror;
     r->ename = "Texec: exec returned unexpectedly";
     return -1;
+  }
+
+  /* Handle Ttoken (80) - Token transfer between machines */
+  if (t->type == Ttoken) {
+    TokenTransfer transfer;
+    TokenType tok_type;
+    u64int amount;
+
+    if (local_machine_bank == nil) {
+      r->type = Rerror;
+      r->ename = "distributed pebble not initialized";
+      return -1;
+    }
+
+    /* Parse token transfer from message data */
+    if (t->count < sizeof(TokenType) + sizeof(u64int)) {
+      r->type = Rerror;
+      r->ename = "Ttoken: message too short";
+      return -1;
+    }
+
+    tok_type = (TokenType)GBIT32(t->data);
+    amount = GBIT64(t->data + 4);
+
+    /* Receive the transfer */
+    memset(&transfer, 0, sizeof(transfer));
+    transfer.token_type = tok_type;
+    transfer.amount = amount;
+    /* Copy proof from message if present */
+    if (t->count >= sizeof(TokenType) + sizeof(u64int) + sizeof(TokenProof)) {
+      memmove(&transfer.proof, t->data + 12, sizeof(TokenProof));
+    }
+
+    if (transfer_receive(local_machine_bank, &transfer) < 0) {
+      r->type = Rerror;
+      r->ename = "token transfer failed";
+      return -1;
+    }
+
+    /* Build Rtoken response */
+    r->type = Rtoken;
+    r->tag = t->tag;
+    /* Encode new balance in response data */
+    PBIT64(r->data, local_machine_bank->available[tok_type]);
+    r->count = 8;
+
+    print("9p_router: Ttoken received %llu tokens type %d\n", amount, tok_type);
+    return 0;
+  }
+
+  /* Handle Tbudget (82) - Query remote budget */
+  if (t->type == Tbudget) {
+    TokenType tok_type;
+
+    if (local_machine_bank == nil) {
+      r->type = Rerror;
+      r->ename = "distributed pebble not initialized";
+      return -1;
+    }
+
+    if (t->count < sizeof(TokenType)) {
+      r->type = Rerror;
+      r->ename = "Tbudget: message too short";
+      return -1;
+    }
+
+    tok_type = (TokenType)GBIT32(t->data);
+    if (tok_type >= TOK_MAX) {
+      r->type = Rerror;
+      r->ename = "invalid token type";
+      return -1;
+    }
+
+    /* Build Rbudget response with balance and Merkle root */
+    r->type = Rbudget;
+    r->tag = t->tag;
+    PBIT64(r->data, local_machine_bank->available[tok_type]);
+    PBIT64(r->data + 8, local_machine_bank->epoch);
+    memmove(r->data + 16, &local_machine_bank->bank_root,
+            sizeof(BlindLedgerHash));
+    r->count = 16 + sizeof(BlindLedgerHash);
+
+    print("9p_router: Tbudget query type=%d balance=%llu\n", tok_type,
+          local_machine_bank->available[tok_type]);
+    return 0;
   }
 
   if (t->type == Tattach) {
