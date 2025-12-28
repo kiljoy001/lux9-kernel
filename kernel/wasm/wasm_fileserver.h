@@ -37,11 +37,14 @@
 #include "../include/u.h"
 #include "../include/exchange.h"
 #include "../include/msgord.h"
-#include "wasm_runtime/wasm3/wasm3.h"
 
 /* Forward declarations */
 typedef struct Fcall Fcall;
 typedef struct Proc Proc;
+
+/* WASM3 opaque types (actual definitions in wasm_fileserver.c) */
+typedef struct M3Runtime* IM3Runtime;
+typedef struct M3Module* IM3Module;
 
 /* Default page pool size for WASM servers */
 #define WASM_DEFAULT_PAGE_POOL 16
