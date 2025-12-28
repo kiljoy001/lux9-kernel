@@ -402,6 +402,12 @@ void main_after_cr3(void) {
   msgord_init(3); /* k=3 for robust ordering */
   print("=== MSGORD Consensus Initialized ===\n");
 
+  /* Initialize distributed Pebble token economy */
+  extern void distributed_pebble_init(void);
+  print("=== Initializing Distributed Pebble ===\n");
+  distributed_pebble_init();
+  print("=== Distributed Pebble Initialized ===\n");
+
   /* Initialize crypto subsystem early for testing */
   extern int crypto_tpm_key_init(void);
   set_boot_state(BOOT_CRYPTO);
