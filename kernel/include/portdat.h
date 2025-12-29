@@ -605,7 +605,20 @@ enum {
 /*
  *  process memory segments - NSEG always last !
  */
-enum { SSEG, TSEG, DSEG, BSEG, ESEG, P9SEG, LSEG, SEG1, SEG2, SEG3, SEG4, NSEG };
+enum {
+  SSEG,
+  TSEG,
+  DSEG,
+  BSEG,
+  ESEG,
+  P9SEG,
+  LSEG,
+  SEG1,
+  SEG2,
+  SEG3,
+  SEG4,
+  NSEG
+};
 
 enum {
   Dead = 0, /* Process states */
@@ -680,7 +693,8 @@ struct Proc {
   char *text;
   char *user;
 
-  uintptr entry_point; /* Entry point for process (ELF e_entry or UTZERO for a.out) */
+  uintptr entry_point; /* Entry point for process (ELF e_entry or UTZERO for
+                          a.out) */
 
   char *args;
   int nargs;   /* number of bytes of args */
@@ -697,7 +711,8 @@ struct Proc {
   /* 9P Exchange Page for pure 9P architecture */
   void *p9page; /* DEPRECATED: Fixed exchange page (legacy).
                  * New code should use exchange_channel via #X device.
-                 * Kept for backwards compatibility with existing doorbell code. */
+                 * Kept for backwards compatibility with existing doorbell code.
+                 */
 
   void *exchange_channel; /* ExchangeChannel from #X device (devexchange.c)
                            * Provides: ring buffer, page pool, capabilities */
@@ -865,12 +880,13 @@ struct Proc {
    * WASM programs run as first-class processes, not separate instances.
    */
   struct {
-    int initialized;         /* 1 if this is a WASM process, 0 for native */
-    void *runtime;           /* IM3Runtime - wasm3 runtime for this process */
-    void *module;            /* IM3Module - loaded WASM module */
-    u8int *linear_memory;    /* WASM linear memory (mapped to seg[LSEG]) */
-    u32int memory_size;      /* Size of linear memory in bytes */
-    u32int memory_pages;     /* Number of 64KB WASM pages */
+    int initialized;       /* 1 if this is a WASM process, 0 for native */
+    void *runtime;         /* IM3Runtime - wasm3 runtime for this process */
+    void *module;          /* IM3Module - loaded WASM module */
+    u8int *linear_memory;  /* WASM linear memory (mapped to seg[LSEG]) */
+    u32int memory_size;    /* Size of linear memory in bytes */
+    u32int memory_pages;   /* Number of 64KB WASM pages */
+    arena_branch_t branch; /* Local Pebble branch bank for this container */
   } wasm;
 } __attribute__((aligned(64)));
 

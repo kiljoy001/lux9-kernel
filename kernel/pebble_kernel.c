@@ -42,6 +42,7 @@ typedef struct PebbleKernelAlloc {
   ulong size;         /* Size in bytes (8-byte aligned) */
   PebbleWhite *white; /* WHITE token (reservation) */
   int is_black;       /* 0 = WHITE (reserved), 1 = BLACK (used) */
+  int from_branch;    /* 1 = allocated from arena branch, 0 = global pebble */
   uint msgord_id;     /* MSGORD message ID for tracking */
 
   /* List linkage */
@@ -123,11 +124,22 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
     error("pebble state not initialized");
   }
 
-  /* Issue WHITE token (reservation) */
-  white = pebble_issue_white(ps, buf, size);
-  if (white == nil) {
-    xfree(buf);
-    error(PEBBLE_E_AGAIN);
+  /* Check if this is a WASM process with an active arena branch */
+  if (up && up->wasm.initialized) {
+    /* Use local arena branch for allocation (lock-free optimization) */
+    if (arena_branch_alloc(&up->wasm.branch, size) < 0) {
+      xfree(buf);
+      error(PEBBLE_E_AGAIN);
+    }
+    white = nil; /* Branch allocations track budget locally, no individual white
+                    tokens */
+  } else {
+    /* Issue WHITE token from global/process bank */
+    white = pebble_issue_white(ps, buf, size);
+    if (white == nil) {
+      xfree(buf);
+      error(PEBBLE_E_AGAIN);
+    }
   }
 
   /* Create allocation tracking structure */
@@ -142,6 +154,7 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   alloc->size = size;
   alloc->white = white;
   alloc->is_black = 0; /* Still WHITE (reserved) */
+  alloc->from_branch = (white == nil);
 
   /* Track in MSGORD for ordering - SKIP during boot when scheduler not ready */
   if (up != nil && msgord != nil) {
@@ -268,9 +281,15 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
       pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
   }
 
-  /* Burn WHITE token */
-  if (alloc->white)
+  /* Burn WHITE token OR return to branch */
+  if (alloc->from_branch) {
+    if (up && up->wasm.initialized) {
+      arena_branch_free(&up->wasm.branch, alloc->size);
+    }
+    /* If WASM process died, branch is already drained, so just free memory */
+  } else if (alloc->white) {
     alloc->white->token = 0;
+  }
 
   /* Return to COLORLESS bank */
   xfree(alloc->ptr);

@@ -1316,6 +1316,23 @@ _Noreturn void pexit(char *exitstr, int freemem) {
 
   /* Clean up page ownership - implement Rust "drop" semantics */
   pageown_cleanup_process(up);
+
+  /* Clean up WASM resources if this was a WASM process */
+  if (up->wasm.initialized) {
+    /* Free wasm3 runtime FIRST (frees module and linear memory, returning
+     * tokens to branch) */
+    if (up->wasm.runtime) {
+      extern void m3_FreeRuntime(void *);
+      m3_FreeRuntime(up->wasm.runtime);
+      up->wasm.runtime = nil;
+    }
+
+    /* THEN drain arena branch back to process colorless bank */
+    arena_branch_drain(&up->wasm.branch);
+
+    up->wasm.initialized = 0;
+  }
+
   pebble_cleanup(up);
   vault_cleanup_process(up->pid);
 
