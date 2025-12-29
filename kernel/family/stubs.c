@@ -1,102 +1,78 @@
+/* Stubs for missing functionality */
 #include "dat.h"
-#include "family/family.h"
+#include "error.h"
 #include "fns.h"
 #include "mem.h"
 #include "portlib.h"
 #include "u.h"
 
-/* Global lock_init */
+/* WASM Stubs (disabled for now) */
+void *wasm_9p_extract_cap_uuid(void *a) { return nil; }
+int wasm_9p_validate_capability(void *a, void *b) { return -1; }
+int wasm_fs_submit(void *a) { return -1; }
+
+/* UUID Stubs */
+/* uuid_pack_pebble is in uuid.c */
+
+/* Compiler Builtins */
+/* __popcountdi2 - count bits set in 64-bit integer */
+int __popcountdi2(long long a) {
+  unsigned long long x = (unsigned long long)a;
+  x -= (x >> 1) & 0x5555555555555555ULL;
+  x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
+  x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0fULL;
+  return (x * 0x0101010101010101ULL) >> 56;
+}
+
+/* PCI Family Stubs */
+/* Map pci_config_* to 9front pcicfgrw* function pointers */
+/* Tbdf is int: (bus<<16)|(dev<<11)|(func<<8) */
+#define MKBUS(b, d, f) (((b) << 16) | ((d) << 11) | ((f) << 8))
+
+extern int (*pcicfgrw32)(int tbdf, int rno, int data, int read);
+extern int (*pcicfgrw16)(int tbdf, int rno, int data, int read);
+extern int (*pcicfgrw8)(int tbdf, int rno, int data, int read);
+
+u32int pci_config_read32(int b, int d, int f, int r) {
+  if (pcicfgrw32)
+    return pcicfgrw32(MKBUS(b, d, f), r, 0, 1);
+  return 0xFFFFFFFF;
+}
+u16int pci_config_read16(int b, int d, int f, int r) {
+  if (pcicfgrw16)
+    return pcicfgrw16(MKBUS(b, d, f), r, 0, 1);
+  return 0xFFFF;
+}
+u8int pci_config_read8(int b, int d, int f, int r) {
+  if (pcicfgrw8)
+    return pcicfgrw8(MKBUS(b, d, f), r, 0, 1);
+  return 0xFF;
+}
+void pci_config_write32(int b, int d, int f, int r, u32int v) {
+  if (pcicfgrw32)
+    pcicfgrw32(MKBUS(b, d, f), r, v, 0);
+}
+void pci_config_write16(int b, int d, int f, int r, u16int v) {
+  if (pcicfgrw16)
+    pcicfgrw16(MKBUS(b, d, f), r, v, 0);
+}
+void pci_config_write8(int b, int d, int f, int r, u8int v) {
+  if (pcicfgrw8)
+    pcicfgrw8(MKBUS(b, d, f), r, v, 0);
+}
+
+/* Family Internal Stubs (missing implementations) */
+void setup_pci_event_system(void *f) {}
+void setup_pci_transaction_manager(void *f) {}
+void update_pci_family_stats(void *f) {}
+void notify_pci_device_removed(void *f) {}
+
+/* Process Wrappers */
+Proc *current_process(void) { return up; /* up is defined in dat.h/macro */ }
+
+/* Lock Stubs */
 void lock_init(Lock *l) { memset(l, 0, sizeof(Lock)); }
 
-/* ctype support */
-unsigned char _ctype[257] = {0};
-
-/* PCI Config wrappers */
-/* Defined in pcipc.c */
-extern int (*pcicfgrw32)(int, int, int, int);
-extern int (*pcicfgrw16)(int, int, int, int);
-extern int (*pcicfgrw8)(int, int, int, int);
-
-int pci_config_read32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                      uint32_t *data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw32)
-    *data = pcicfgrw32(tbdf, offset, 0, 1);
-  else
-    *data = 0xFFFFFFFF;
-  return 0;
-}
-
-int pci_config_write32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                       uint32_t data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw32)
-    pcicfgrw32(tbdf, offset, data, 0);
-  return 0;
-}
-
-int pci_config_read16(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                      uint16_t *data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw16)
-    *data = pcicfgrw16(tbdf, offset, 0, 1);
-  else
-    *data = 0xFFFF;
-  return 0;
-}
-
-int pci_config_write16(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                       uint16_t data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw16)
-    pcicfgrw16(tbdf, offset, data, 0);
-  return 0;
-}
-
-int pci_config_read8(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                     uint8_t *data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw8)
-    *data = pcicfgrw8(tbdf, offset, 0, 1);
-  else
-    *data = 0xFF;
-  return 0;
-}
-
-int pci_config_write8(uint8_t bus, uint8_t dev, uint8_t func, uint8_t offset,
-                      uint8_t data) {
-  int tbdf = (bus << 16) | (dev << 11) | (func << 8);
-  if (pcicfgrw8)
-    pcicfgrw8(tbdf, offset, data, 0);
-  return 0;
-}
-
-/* Process stub */
-void *current_process(void) { return up; }
-
-/* Permission stub */
-int validate_channel_operation_permission(void *proc, void *channel) {
-  return 1;
-}
-
-/* Stubs for missing family functions - with debug logging */
-void setup_pci_event_system(struct FamilyExchangePage *family) {
-  if (family != nil)
-    print("PCI: event system initialized for family %p\n", family);
-}
-
-void setup_pci_transaction_manager(struct FamilyExchangePage *family) {
-  if (family != nil)
-    print("PCI: transaction manager initialized for family %p\n", family);
-}
-
-void update_pci_family_stats(struct FamilyExchangePage *family) {
-  /* Update family statistics - currently no-op */
-  (void)family;
-}
-
-int notify_pci_device_removed(struct FamilyExchangePage *family, void *dev) {
-  if (family != nil && dev != nil)
-    print("PCI: device %p removed from family %p\n", dev, family);
-  return 0;
+int validate_channel_operation_permission(void *chan, int op) {
+  return 1; // Allow for now
 }

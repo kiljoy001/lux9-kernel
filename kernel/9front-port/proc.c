@@ -813,11 +813,11 @@ Proc *newproc(void) {
   else
     p->capabilities = 0; /* User processes start isolated */
 
-  /* Phase 6: Allocate 9P exchange page for pure 9P architecture
-   * This page is mapped into userspace for direct 9P message passing */
-  /* Phase 6: Exchange page allocation moved to explicit call
-   * (proc_setup_exchange) */
-  p->p9page = nil;
+  /* Phase 6: Exchange pages now allocated via #X device (devexchange.c)
+   * instead of fixed allocation. Processes open #X/clone to get an
+   * exchange channel with ring buffer and page pool. */
+  p->p9page = nil;           /* Legacy fixed page (deprecated) */
+  p->exchange_channel = nil; /* ExchangeChannel from #X device */
   p->seg[P9SEG] = nil;
 
   return p;

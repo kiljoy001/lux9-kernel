@@ -59,7 +59,7 @@ void set_boot_state(BootState s) {
 }
 
 /* CRITICAL: Global debug flag that doesn't depend on environment device */
-int panic_debug = 0; /* Default to SILENT mode for performance */
+int panic_debug = 1; /* Enabled for Tsyscall testing */
 int jitdebug = 0;    /* JIT debug flag */
 
 /* Boot verbosity control */
@@ -515,10 +515,11 @@ void main(void) {
                          ...); /* Formatted UART output before prbuf is ready */
 
   mach0init();
+  i8250console();
+  uartputs("TEST: main() started\n", 21);
   bootargsinit();
   trapinit0();
   ioinit();
-  i8250console();
 
   /* Debug: check if trapinit0() actually initialized the IDT */
   {

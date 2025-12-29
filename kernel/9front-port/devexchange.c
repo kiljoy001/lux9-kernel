@@ -658,6 +658,19 @@ exchread(Chan *c, void *buf, long n, vlong off)
 		channel_put(ch);
 		return n;
 
+	case Qring:
+		/* Return ring buffer capability for mapping */
+		chan_id = CHANID(c->qid.path);
+		ch = channel_get(chan_id);
+		if(ch == nil)
+			error("invalid channel");
+
+		if(n < sizeof(UserCapability))
+			n = sizeof(UserCapability);
+		memmove(buf, &ch->ring_cap, sizeof(UserCapability));
+		channel_put(ch);
+		return sizeof(UserCapability);
+
 	case Qpeers:
 		/* Return peer list (if any) */
 		chan_id = CHANID(c->qid.path);
@@ -802,6 +815,21 @@ exchwrite(Chan *c, void *vp, long n, vlong off)
 			ch->pool_size = new_size;
 			unlock(&ch->pool_lock);
 		}
+		else if(strcmp(fields[0], "mapring") == 0){
+			/* Map ring buffer into process address space
+			 * For Phase 2, we store the channel in the process
+			 * and userspace will use segattach() to map it.
+			 * This command just prepares the channel for mapping.
+			 */
+			lock(&ch->lock);
+			/* Mark channel as ready for mapping */
+			ch->owner = up;
+			unlock(&ch->lock);
+
+			/* Store channel pointer in process for later segattach */
+			/* In full implementation, would use up->exch_channel or similar */
+			/* For now, userspace can use segattach(SG_PHYSICAL, "#X/N/ring", ...) */
+		}
 		else {
 			channel_put(ch);
 			free(buf);
@@ -944,6 +972,11 @@ exchwrite(Chan *c, void *vp, long n, vlong off)
 	free(buf);
 	return 0;
 }
+
+/* Phase 3 will implement capability-based mapping
+ * For now, Phase 2 exposes capabilities via read(#X/N/ring)
+ * and userspace will use those capabilities to map memory
+ */
 
 static void
 exchremove(Chan *c)

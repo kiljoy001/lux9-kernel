@@ -55,9 +55,8 @@ void machine_bank_init(MachineBank *bank, uuid_t *machine_id, u64int ram_bytes,
 
   print("DPEBBLE: bank init mem=%llud cpu=%llud gpu=%llud net=%llud "
         "tokens\n",
-        bank->total_tokens[TOK_MEMORY],
-        bank->total_tokens[TOK_CPU], bank->total_tokens[TOK_GPU],
-        bank->total_tokens[TOK_NETWORK]);
+        bank->total_tokens[TOK_MEMORY], bank->total_tokens[TOK_CPU],
+        bank->total_tokens[TOK_GPU], bank->total_tokens[TOK_NETWORK]);
 }
 
 /* Hash helper using BLAKE2b */
@@ -212,8 +211,7 @@ ArenaBranch *branch_create(MachineBank *bank, u32int flags) {
 
   unlock(&bank->lock);
 
-  print("DPEBBLE: branch created flags=%x\n",
-        flags);
+  print("DPEBBLE: branch created flags=%x\n", flags);
   return branch;
 }
 
@@ -482,8 +480,7 @@ int transfer_initiate(MachineBank *local, uuid_t *remote_machine,
   machine_bank_update_root(local);
   unlock(&local->lock);
 
-  print("DPEBBLE: transfer initiated amount=%llud type=%d\n",
-        amount, type);
+  print("DPEBBLE: transfer initiated amount=%llud type=%d\n", amount, type);
 
   return 0;
 }
@@ -507,8 +504,7 @@ int transfer_receive(MachineBank *local, const TokenTransfer *transfer) {
 
   unlock(&local->lock);
 
-  print("DPEBBLE: transfer received amount=%llud\n",
-        transfer->amount);
+  print("DPEBBLE: transfer received amount=%llud\n", transfer->amount);
 
   return 0;
 }
@@ -549,10 +545,11 @@ void distributed_pebble_init(void) {
   uuid_new_v8(&machine_id);
 
   /* Initialize with local resources */
-  machine_bank_init(local_machine_bank, &machine_id, (u64int)conf.npage * BY2PG, /* RAM */
-                    1,                /* CPU cores (placeholder) */
-                    0,                /* GPU memory */
-                    100 * 1024 * 1024 /* 100MB/s network */
+  machine_bank_init(local_machine_bank, &machine_id,
+                    (u64int)conf.npage * BY2PG, /* RAM */
+                    1,                          /* CPU cores (placeholder) */
+                    0,                          /* GPU memory */
+                    100 * 1024 * 1024           /* 100MB/s network */
   );
 
   print("DPEBBLE: distributed pebble initialized\n");

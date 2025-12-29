@@ -693,7 +693,12 @@ struct Proc {
   ushort hdr_checksum; /* CRC-16 of critical fields */
 
   /* 9P Exchange Page for pure 9P architecture */
-  void *p9page; /* Exchange page for 9P messages */
+  void *p9page; /* DEPRECATED: Fixed exchange page (legacy).
+                 * New code should use exchange_channel via #X device.
+                 * Kept for backwards compatibility with existing doorbell code. */
+
+  void *exchange_channel; /* ExchangeChannel from #X device (devexchange.c)
+                           * Provides: ring buffer, page pool, capabilities */
 
   /* 9P FID tracking for syscall translation layer */
   u32int fid_counter;     /* Next FID to allocate for this process */

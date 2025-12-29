@@ -19,6 +19,7 @@ typedef unsigned int Rune;
   } else                                                                       \
     panic("assert: %s", #x)
 
+#ifndef _LIB_H_
 /*
  * mem routines
  */
@@ -262,5 +263,6 @@ struct Waitmsg {
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
 #endif
+#endif /* _LIB_H_ */
 
 #endif /* _PORTLIB_H_ */

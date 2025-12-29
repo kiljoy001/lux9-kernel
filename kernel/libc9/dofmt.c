@@ -1,6 +1,10 @@
-#include "fmtdef.h"
-#include <libc.h>
 #include <u.h>
+
+#define _BREAK_SORT_1 1
+#include <libc.h>
+
+#define _BREAK_SORT_2 1
+#include "fmtdef.h"
 
 /* format the output into f->to and return the number of characters fmted  */
 int dofmt(Fmt *f, char *fmt) {

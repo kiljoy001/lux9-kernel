@@ -518,9 +518,18 @@ static void proc0(void *arg) {
    *	prepare the stack for initcode
    *	switch to usermode to run initcode
    */
-  /* Phase 6: Setup 9P exchange page for proc0 */
-  if (proc_setup_p9page(up) < 0)
-    panic("proc0: p9page setup failed");
+  /* Phase 6: Exchange pages now allocated via #X device (devexchange.c)
+   * instead of fixed allocation at boot.
+   * Processes open #X/clone to get an exchange channel with pool of pages.
+   * This provides:
+   * - Dynamic allocation (only processes that need it)
+   * - Multiple exchange pages per process
+   * - Capability-based addressing via Blind Ledger
+   * - Ring buffer for high-throughput message batching
+   */
+  /* Old fixed allocation removed - see devexchange.c for new approach */
+  /* if (proc_setup_p9page(up) < 0)
+    panic("proc0: p9page setup failed"); */
 
   print("BOOT[proc0]: about to call init0 - switching to userspace\n");
   init0();
