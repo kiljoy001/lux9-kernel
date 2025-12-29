@@ -43,3 +43,12 @@ long	sys_exchange_prepare(va_list list);
 long	sys_exchange_prepare_range(va_list list);
 long	sys_exchange_accept(va_list list);
 long	sys_exchange_cancel(va_list list);
+
+/* Phase 3: Capability-Based Mapping */
+uintptr	exchange_map_by_cap(const UserCapability *cap);
+int	exchange_unmap_by_cap(const UserCapability *cap, uintptr va);
+int	exchange_verify_and_map(const UserCapability *cap, uintptr va, int prot);
+
+/* TOCTOU Protection */
+int	exchange_lock_page(const UserCapability *cap);
+void	exchange_unlock_page(const UserCapability *cap);
