@@ -153,6 +153,45 @@ enum {
   /* Lux9 custom message types */
   Texec = 128,
   Rexec,
+
+  /* Lux9 syscall message types - for pure 9P message passing */
+  Tsysopen = 130, /* open(path, mode) */
+  Rsysopen,
+  Tsyscreate = 132, /* create(path, mode, perm) */
+  Rsyscreate,
+  Tsysclose = 134, /* close(fd) */
+  Rsysclose,
+  Tsysread = 136, /* pread(fd, buf, n, offset) or read(fd, buf, n) */
+  Rsysread,
+  Tsyswrite = 138, /* pwrite(fd, buf, n, offset) or write(fd, buf, n) */
+  Rsyswrite,
+  Tsysseek = 140, /* seek(fd, offset, type) */
+  Rsysseek,
+  Tsysstat = 142, /* stat(path, buf) or fstat(fd, buf) */
+  Rsysstat,
+  Tsyswstat = 144, /* wstat(path, buf) or fwstat(fd, buf) */
+  Rsyswstat,
+  Tsysexit = 146, /* exits(status) */
+  Rsysexit,
+  Tsyswait = 148, /* wait() or await(buf, n) */
+  Rsyswait,
+  Tsysdup = 150, /* dup(oldfd, newfd) */
+  Rsysdup,
+  Tsyspipe = 152, /* pipe(fd[2]) */
+  Rsyspipe,
+  Tsysbrk = 154, /* brk(addr) */
+  Rsysbrk,
+  Tsyschdir = 156, /* chdir(path) */
+  Rsyschdir,
+  Tsysbind = 158, /* bind(name, old, flags) */
+  Rsysbind,
+  Tsysmount = 160, /* mount(fd, afd, old, flags, aname) */
+  Rsysmount,
+  Tsysunmount = 162, /* unmount(name, old) */
+  Rsysunmount,
+  Tsysfork = 164, /* rfork(flags) */
+  Rsysfork,
+  Tsysmax,
 };
 
 uint convM2S(uchar *, uint, Fcall *);

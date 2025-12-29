@@ -427,6 +427,103 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     return -1;
   }
 
+  /* Handle Tsysopen (130) - open(path, mode) via 9P */
+  if (t->type == Tsysopen) {
+    ulong args[2];
+    args[0] = (ulong)t->name; /* path */
+    args[1] = (ulong)t->mode; /* mode */
+    print("p9_dispatch: Tsysopen '%s' mode=%d\n", t->name, t->mode);
+
+    extern uintptr sysopen(void *);
+    uintptr fd = sysopen(args);
+
+    r->type = Rsysopen;
+    r->tag = t->tag;
+    r->fid = (u32int)fd;
+    r->count = fd;
+    return 0;
+  }
+
+  /* Handle Tsysclose (134) - close(fd) via 9P */
+  if (t->type == Tsysclose) {
+    ulong args[1];
+    args[0] = (ulong)t->fid; /* fd */
+    print("p9_dispatch: Tsysclose fd=%d\n", t->fid);
+
+    extern uintptr sysclose(void *);
+    sysclose(args);
+
+    r->type = Rsysclose;
+    r->tag = t->tag;
+    r->count = 0;
+    return 0;
+  }
+
+  /* Handle Tsysread (136) - read/pread via 9P */
+  if (t->type == Tsysread) {
+    ulong args[4];
+    args[0] = (ulong)t->fid;    /* fd */
+    args[1] = (ulong)t->data;   /* buf */
+    args[2] = (ulong)t->count;  /* n */
+    args[3] = (ulong)t->offset; /* offset */
+    print("p9_dispatch: Tsysread fd=%d count=%d offset=%lld\n", t->fid,
+          t->count, t->offset);
+
+    extern uintptr syspread(void *);
+    uintptr n = syspread(args);
+
+    r->type = Rsysread;
+    r->tag = t->tag;
+    r->count = (u32int)n;
+    return 0;
+  }
+
+  /* Handle Tsyswrite (138) - write/pwrite via 9P */
+  if (t->type == Tsyswrite) {
+    ulong args[4];
+    args[0] = (ulong)t->fid;    /* fd */
+    args[1] = (ulong)t->data;   /* buf */
+    args[2] = (ulong)t->count;  /* n */
+    args[3] = (ulong)t->offset; /* offset */
+    print("p9_dispatch: Tsyswrite fd=%d count=%d offset=%lld\n", t->fid,
+          t->count, t->offset);
+
+    extern uintptr syspwrite(void *);
+    uintptr n = syspwrite(args);
+
+    r->type = Rsyswrite;
+    r->tag = t->tag;
+    r->count = (u32int)n;
+    return 0;
+  }
+
+  /* Handle Tsysexit (146) - exits(status) via 9P */
+  if (t->type == Tsysexit) {
+    print("p9_dispatch: Tsysexit '%s'\n", t->name ? t->name : "");
+
+    ulong args[1];
+    args[0] = (ulong)t->name; /* status string */
+    extern void sysexits(void *);
+    sysexits(args);
+    /* Not reached */
+    return 0;
+  }
+
+  /* Handle Tsysfork (164) - rfork(flags) via 9P */
+  if (t->type == Tsysfork) {
+    ulong args[1];
+    args[0] = (ulong)t->fid; /* flags */
+    print("p9_dispatch: Tsysfork flags=%#x\n", t->fid);
+
+    extern uintptr sysrfork(void *);
+    uintptr pid = sysrfork(args);
+
+    r->type = Rsysfork;
+    r->tag = t->tag;
+    r->count = (u32int)pid;
+    return 0;
+  }
+
   /* Handle Ttoken (80) - Token transfer between machines */
   if (t->type == Ttoken) {
     TokenTransfer transfer;

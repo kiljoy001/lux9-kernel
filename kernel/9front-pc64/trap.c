@@ -588,12 +588,105 @@ void syscall(Ureg *ureg) {
    * Re-enabled to use doorbell/9P mechanism instead of legacy syscalls */
   print("SYSCALL: Attempting doorbell for syscall %d\n", scallnr);
   if (p9_handle_doorbell(up) < 0) {
-    /* Fallback: Doorbell not rung? Try legacy syscall dispatch */
-    print("SYSCALL: Doorbell failed, falling back to legacy dosyscall\n");
-    dosyscall(
-        scallnr,
-        (Sargs *)(ureg->sp), /* No offset - SYSCALL doesn't push return addr */
-        (uintptr *)(&ureg->ax));
+    /* Auto-translate: Synthesize 9P message from syscall args
+     * This enables backward compatibility with Plan 9 binaries while
+     * moving toward pure 9P message passing.
+     */
+    Fcall t, r;
+    Sargs *sa = (Sargs *)(ureg->sp);
+    int translated = 1;
+
+    memset(&t, 0, sizeof(t));
+    memset(&r, 0, sizeof(r));
+    t.tag = 0;
+
+    /* Map Plan 9 syscall to 9P message type */
+    switch (scallnr) {
+    case 14: /* OPEN */
+      t.type = Tsysopen;
+      t.fid = 0;                    /* Will be filled by handler */
+      t.name = (char *)sa->args[0]; /* path */
+      t.mode = (uchar)sa->args[1];  /* mode */
+      break;
+    case 22: /* CREATE */
+      t.type = Tsyscreate;
+      t.name = (char *)sa->args[0]; /* path */
+      t.mode = (uchar)sa->args[1];  /* mode */
+      t.perm = (u32int)sa->args[2]; /* perm */
+      break;
+    case 4: /* CLOSE */
+      t.type = Tsysclose;
+      t.fid = (u32int)sa->args[0]; /* fd */
+      break;
+    case 15: /* READ */
+      t.type = Tsysread;
+      t.fid = (u32int)sa->args[0];   /* fd */
+      t.data = (char *)sa->args[1];  /* buf */
+      t.count = (u32int)sa->args[2]; /* n */
+      t.offset = 0;                  /* read from current pos */
+      break;
+    case 50: /* PREAD */
+      t.type = Tsysread;
+      t.fid = (u32int)sa->args[0];   /* fd */
+      t.data = (char *)sa->args[1];  /* buf */
+      t.count = (u32int)sa->args[2]; /* n */
+      t.offset = (vlong)sa->args[3]; /* offset */
+      break;
+    case 20: /* WRITE */
+      t.type = Tsyswrite;
+      t.fid = (u32int)sa->args[0];   /* fd */
+      t.data = (char *)sa->args[1];  /* buf */
+      t.count = (u32int)sa->args[2]; /* n */
+      t.offset = 0;                  /* write at current pos */
+      break;
+    case 51: /* PWRITE */
+      t.type = Tsyswrite;
+      t.fid = (u32int)sa->args[0];   /* fd */
+      t.data = (char *)sa->args[1];  /* buf */
+      t.count = (u32int)sa->args[2]; /* n */
+      t.offset = (vlong)sa->args[3]; /* offset */
+      break;
+    case 7: /* EXEC */
+      t.type = Texec;
+      t.name = (char *)sa->args[0]; /* path */
+      t.count = 0;                  /* argc handled by handler */
+      break;
+    case 8: /* EXITS */
+      t.type = Tsysexit;
+      t.name = (char *)sa->args[0]; /* status string */
+      break;
+    case 19: /* RFORK */
+      t.type = Tsysfork;
+      t.fid = (u32int)sa->args[0]; /* flags */
+      break;
+    case 3: /* CHDIR */
+      t.type = Tsyschdir;
+      t.name = (char *)sa->args[0]; /* path */
+      break;
+    case 5: /* DUP */
+      t.type = Tsysdup;
+      t.fid = (u32int)sa->args[0];    /* oldfd */
+      t.newfid = (u32int)sa->args[1]; /* newfd */
+      break;
+    case 21: /* PIPE */
+      t.type = Tsyspipe;
+      t.data = (char *)sa->args[0]; /* fd[2] */
+      break;
+    default:
+      /* Unsupported syscall - fall back to legacy for now */
+      print("SYSCALL: No 9P translation for syscall %d, using legacy\n",
+            scallnr);
+      translated = 0;
+      dosyscall(scallnr, sa, (uintptr *)(&ureg->ax));
+      break;
+    }
+
+    if (translated) {
+      print("SYSCALL: Translated to 9P type %d\n", t.type);
+      extern int p9_dispatch(Proc *, Fcall *, Fcall *);
+      int result = p9_dispatch(up, &t, &r);
+      ureg->ax = (result == 0) ? r.count : -1;
+    }
   } else {
     print("SYSCALL: Doorbell succeeded\n");
   }
