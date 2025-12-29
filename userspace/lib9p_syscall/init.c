@@ -1,95 +1,106 @@
-/* init.c - Comprehensive test of 9P syscall infrastructure
- *
- * Tests the new Tsys* message types via lib9p_syscall
- * Phase 8: Testing and Validation
+/* Minimal init using syscall message passing
+ * Demonstrates proper Tsyscall/SYS_WRITE via exchange page
  */
 
-#include "lib9p.h"
+#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
+#define P9_CONTROL_OFFSET 0xF00
+#define Tsyscall 130
+#define SYS_WRITE 4
 
-/* Simple write helper */
-static void
-write_msg(int fd, const char *msg)
-{
-  int len = 0;
-  const char *p = msg;
-  while (*p++)
-    len++;
-  p9_write(fd, (void*)msg, len);
+typedef unsigned int uint;
+typedef unsigned char uchar;
+typedef unsigned long long uvlong;
+
+/* P9 Control structure */
+struct P9Control {
+    uint doorbell;
+    uint status;
+    uint req_head;
+    uint req_tail;
+    uint rep_head;
+    uint rep_tail;
+};
+
+/* Simple memory operations */
+static void *memcpy(void *dst, const void *src, unsigned long n) {
+    uchar *d = dst;
+    const uchar *s = src;
+    while (n--) *d++ = *s++;
+    return dst;
 }
 
-/* Entry point - called by _start in start.S */
+static void *memset(void *dst, int c, unsigned long n) {
+    uchar *d = dst;
+    while (n--) *d++ = (uchar)c;
+    return dst;
+}
+
+/* Write little-endian integers */
+static void put_u32(uchar *p, uint val) {
+    p[0] = val;
+    p[1] = val >> 8;
+    p[2] = val >> 16;
+    p[3] = val >> 24;
+}
+
+static void put_u16(uchar *p, unsigned short val) {
+    p[0] = val;
+    p[1] = val >> 8;
+}
+
+static void put_u64(uchar *p, uvlong val) {
+    p[0] = val;
+    p[1] = val >> 8;
+    p[2] = val >> 16;
+    p[3] = val >> 24;
+    p[4] = val >> 32;
+    p[5] = val >> 40;
+    p[6] = val >> 48;
+    p[7] = val >> 56;
+}
+
 void main(void) {
-  int cons_fd, test_fd;
-  char buf[256];
-  int n;
+    volatile uchar *exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+    volatile struct P9Control *ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
+    const char *msg = "Hello from userspace!\n";
+    unsigned int msg_len = 22;
+    unsigned int counter = 0;
 
-  /* Test 1: Open console for output */
-  write_msg(1, "[TEST] Opening console...\n");
-  cons_fd = p9_open("#c/cons", OWRITE);
-  if (cons_fd < 0) {
-    p9_exit("FAIL: open console");
-  }
-  write_msg(cons_fd, "[PASS] Console opened\n");
+    while(1) {
+        /* Build Tsyscall message: [size:4] [type:1] [tag:2] [scallnr:4] [scount:4] [sdata:n]
+         * sdata for SYS_WRITE: [fid:4] [offset:8] [count:4] [data...]
+         */
+        uchar *req = (uchar *)exchange;
+        unsigned int sdata_size = 4 + 8 + 4 + msg_len;  /* fid + offset + count + data */
+        unsigned int size = 4 + 1 + 2 + 4 + 4 + sdata_size;  /* full message size */
+        unsigned int pos = 0;
 
-  /* Test 2: Write test message */
-  write_msg(cons_fd, "[TEST] Writing test message...\n");
-  n = p9_write(cons_fd, "Hello from Phase 8 init!\n", 25);
-  if (n < 0) {
-    write_msg(cons_fd, "[FAIL] Write failed\n");
-    p9_exit("FAIL: write");
-  }
-  write_msg(cons_fd, "[PASS] Write succeeded\n");
+        /* Clear request buffer */
+        memset(req, 0, 256);
 
-  /* Test 3: Open console for reading */
-  write_msg(cons_fd, "[TEST] Opening console for read...\n");
-  test_fd = p9_open("#c/cons", OREAD);
-  if (test_fd < 0) {
-    write_msg(cons_fd, "[FAIL] Open for read failed\n");
-  } else {
-    write_msg(cons_fd, "[PASS] Open for read succeeded\n");
+        /* Write Tsyscall header */
+        put_u32(req + pos, size); pos += 4;           /* size */
+        req[pos++] = Tsyscall;                        /* type = 130 */
+        put_u16(req + pos, 1); pos += 2;              /* tag */
+        put_u32(req + pos, SYS_WRITE); pos += 4;      /* scallnr = 4 */
+        put_u32(req + pos, sdata_size); pos += 4;     /* scount */
 
-    /* Test 4: Attempt to read (will likely timeout/block) */
-    write_msg(cons_fd, "[TEST] Attempting read (may block)...\n");
-    /* Skip read test for now - console read blocks without input */
-    /* n = p9_read(test_fd, buf, 10); */
+        /* Write SYS_WRITE payload (sdata) */
+        put_u32(req + pos, 1); pos += 4;              /* fid = 1 (stdout fd) */
+        put_u64(req + pos, counter); pos += 8;        /* offset (use counter to show repeated messages) */
+        put_u32(req + pos, msg_len); pos += 4;        /* count */
+        memcpy(req + pos, msg, msg_len);              /* data */
 
-    p9_close(test_fd);
-    write_msg(cons_fd, "[PASS] Close read fd\n");
-  }
+        /* Ring the doorbell */
+        ctl->doorbell = 1;
 
-  /* Test 5: Open/close test */
-  write_msg(cons_fd, "[TEST] Open/close cycle test...\n");
-  for (int i = 0; i < 3; i++) {
-    test_fd = p9_open("#c/cons", OWRITE);
-    if (test_fd < 0) {
-      write_msg(cons_fd, "[FAIL] Open in loop\n");
-      break;
+        /* Issue syscall (doorbell trigger) */
+        __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+
+        /* Wait a bit to make output readable */
+        for (volatile int i = 0; i < 1000000; i++)
+            ;
+
+        counter++;
     }
-    p9_close(test_fd);
-  }
-  write_msg(cons_fd, "[PASS] Open/close cycle complete\n");
-
-  /* Test 6: Multiple writes */
-  write_msg(cons_fd, "[TEST] Multiple writes...\n");
-  write_msg(cons_fd, "  Line 1\n");
-  write_msg(cons_fd, "  Line 2\n");
-  write_msg(cons_fd, "  Line 3\n");
-  write_msg(cons_fd, "[PASS] Multiple writes complete\n");
-
-  /* Summary */
-  write_msg(cons_fd, "\n");
-  write_msg(cons_fd, "=================================\n");
-  write_msg(cons_fd, "Phase 8 Test Summary\n");
-  write_msg(cons_fd, "=================================\n");
-  write_msg(cons_fd, "Tsyscall infrastructure: WORKING\n");
-  write_msg(cons_fd, "SYS_OPEN:   PASS\n");
-  write_msg(cons_fd, "SYS_WRITE:  PASS\n");
-  write_msg(cons_fd, "SYS_CLOSE:  PASS\n");
-  write_msg(cons_fd, "SYS_READ:   SKIP (blocks)\n");
-  write_msg(cons_fd, "=================================\n");
-  write_msg(cons_fd, "\n");
-
-  /* Clean exit */
-  p9_close(cons_fd);
-  p9_exit("Phase 8 tests complete");
 }

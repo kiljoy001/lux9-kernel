@@ -1266,6 +1266,56 @@ int p9_handle_doorbell(Proc *p) {
              PTEVALID | PTEUSER | PTEWRITE);
   }
 
+  /*
+   * OWNERSHIP TRANSFER: Userspace -> Kernel
+   * ========================================
+   * Userspace has written the 9P message and issued syscall.
+   * The syscall is userspace saying "I'm done writing, kernel can process now".
+   *
+   * Transfer exclusive ownership from userspace to kernel:
+   * 1. Userspace releases ownership
+   * 2. Kernel acquires system-level ownership
+   * 3. Kernel can now safely read/write exchange pages (exclusive access guaranteed)
+   */
+  uintptr req_pa = PADDR(p->p9page);
+  uintptr rep_pa = PADDR(p->p9page) + BY2PG;
+  enum BorrowError berr;
+
+  /* Release ownership from userspace */
+  berr = borrow_release(p, req_pa);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: WARNING - userspace didn't own req_page (berr=%d)\n", berr);
+    /* Continue anyway - maybe first syscall after boot */
+  }
+
+  berr = borrow_release(p, rep_pa);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: WARNING - userspace didn't own rep_page (berr=%d)\n", berr);
+  }
+
+  /* Acquire kernel ownership for exclusive access */
+  berr = borrow_acquire_system(req_pa, OWNER_KERNEL);
+  if(berr != BORROW_OK && berr != BORROW_EALREADY){
+    print("p9_handle_doorbell: FATAL - kernel can't acquire req_page (berr=%d)\n", berr);
+    /* Re-acquire by userspace and fail */
+    borrow_acquire(p, req_pa);
+    borrow_acquire(p, rep_pa);
+    return -1;
+  }
+
+  berr = borrow_acquire_system(rep_pa, OWNER_KERNEL);
+  if(berr != BORROW_OK && berr != BORROW_EALREADY){
+    print("p9_handle_doorbell: FATAL - kernel can't acquire rep_page (berr=%d)\n", berr);
+    /* Rollback and fail */
+    borrow_release_system(req_pa, OWNER_KERNEL);
+    borrow_acquire(p, req_pa);
+    borrow_acquire(p, rep_pa);
+    return -1;
+  }
+
+  print("p9_handle_doorbell: ownership transferred to kernel (req_pa=%#p rep_pa=%#p)\n",
+        req_pa, rep_pa);
+
   /* Get control block and buffers */
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   req_buf = (uchar *)p->p9page + P9_REQUEST_OFFSET;
@@ -1289,11 +1339,21 @@ int p9_handle_doorbell(Proc *p) {
   memset(&t, 0, sizeof(t));
   req_size = ctl->req_tail - ctl->req_head;
 
+  /* Debug: Show control structure state */
+  print("p9_handle_doorbell: ctl->req_head=%ud req_tail=%ud doorbell=%ud\n",
+        ctl->req_head, ctl->req_tail, ctl->doorbell);
+  print("p9_handle_doorbell: req_buf first 16 bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+        req_buf[0], req_buf[1], req_buf[2], req_buf[3],
+        req_buf[4], req_buf[5], req_buf[6], req_buf[7],
+        req_buf[8], req_buf[9], req_buf[10], req_buf[11],
+        req_buf[12], req_buf[13], req_buf[14], req_buf[15]);
+
   if (req_size == 0 || req_size > P9_REQUEST_SIZE) {
     /* Fallback: Check if message header has valid size (GBIT32) */
     /* This allows clients to just write message and ring doorbell without
      * managing tail pointers */
     uint msg_size = GBIT32(req_buf + ctl->req_head);
+    print("p9_handle_doorbell: fallback - msg_size from GBIT32=%ud\n", msg_size);
     if (msg_size > 4 && msg_size <= P9_REQUEST_SIZE) {
       req_size = msg_size;
       /* Update tail to match */
@@ -1301,7 +1361,8 @@ int p9_handle_doorbell(Proc *p) {
     } else {
       print("p9_handle_doorbell: invalid request size %ud\n", req_size);
       atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-      return -1;
+      result = -1;
+      goto cleanup_ownership;
     }
   }
 
@@ -1309,7 +1370,8 @@ int p9_handle_doorbell(Proc *p) {
     print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
           req_buf[ctl->req_head]);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-    return -1;
+    result = -1;
+    goto cleanup_ownership;
   }
 
   /* Dispatch through 9P router with MSGORD ordering */
@@ -1321,7 +1383,8 @@ int p9_handle_doorbell(Proc *p) {
   if (rep_size == 0) {
     print("p9_handle_doorbell: failed to serialize reply\n");
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-    return -1;
+    result = -1;
+    goto cleanup_ownership;
   }
 
   /* Update reply buffer pointers */
@@ -1338,6 +1401,51 @@ int p9_handle_doorbell(Proc *p) {
     // Corresponds to 'Release' in proofs/sip/sip_model.v
    @*/
   atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+
+cleanup_ownership:
+  /*
+   * OWNERSHIP TRANSFER: Kernel -> Userspace (Return Path)
+   * ======================================================
+   * Syscall is complete - kernel has finished processing the 9P message.
+   * Transfer exclusive ownership back to userspace so they can read the reply.
+   *
+   * This completes the ownership cycle:
+   * 1. Userspace claims pages (kernel_setup_init_exchange)
+   * 2. Userspace writes message
+   * 3. Syscall transfers ownership to kernel (above)
+   * 4. Kernel processes message
+   * 5. Kernel transfers ownership back to userspace (HERE)
+   * 6. Userspace reads reply
+   */
+
+  /* Release kernel system ownership */
+  berr = borrow_release_system(req_pa, OWNER_KERNEL);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: WARNING - failed to release kernel req_page (berr=%d)\n", berr);
+    /* Continue - we MUST return ownership to userspace */
+  }
+
+  berr = borrow_release_system(rep_pa, OWNER_KERNEL);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: WARNING - failed to release kernel rep_page (berr=%d)\n", berr);
+  }
+
+  /* Re-acquire ownership for userspace */
+  berr = borrow_acquire(p, req_pa);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: FATAL - can't return req_page to userspace (berr=%d)\n", berr);
+    panic("p9_handle_doorbell: ownership consistency violation - cannot return pages to userspace");
+  }
+
+  berr = borrow_acquire(p, rep_pa);
+  if(berr != BORROW_OK){
+    print("p9_handle_doorbell: FATAL - can't return rep_page to userspace (berr=%d)\n", berr);
+    borrow_release(p, req_pa);  /* Rollback first page */
+    panic("p9_handle_doorbell: ownership consistency violation - cannot return pages to userspace");
+  }
+
+  print("p9_handle_doorbell: ownership returned to userspace (req_pa=%#p rep_pa=%#p)\n",
+        req_pa, rep_pa);
 
   return result;
 }

@@ -5,7 +5,9 @@
 #include "portlib.h"
 #include "tos.h"
 #include "u.h"
+#include "9p_router.h"
 #include <a.out.h>
+#include <elf.h>
 #include <error.h>
 
 #ifndef BOOTVERBOSE
@@ -31,18 +33,6 @@ extern void initrd_register(void);
 uintptr dbg_getpte(uintptr);
 
 /*
- * The initcode array contains the binary text of the first
- * user process. Its job is to invoke the exec system call
- * for /boot/boot.
- * Initcode does not link with standard plan9 libc _main()
- * trampoline due to size constrains. Instead it is linked
- * with a small machine specific trampoline init9.s that
- * only sets the base address register and passes arguments
- * to startboot() (see port/initcode.c).
- */
-#include "initcode.i"
-
-/*
  * The first process kernel process starts here.
  */
 static void uartprint_hex(uvlong v) {
@@ -55,6 +45,149 @@ static void uartprint_hex(uvlong v) {
   }
   hex[16] = 0;
   uartputs(hex, 16);
+}
+
+/* Load ELF64 executable into process address space
+ * Returns 1 on success, 0 on failure
+ * Sets up TSEG with all PT_LOAD segments
+ */
+static int load_elf64(Chan *c, uintptr *out_entry) {
+  Elf64_Ehdr ehdr;
+  Elf64_Phdr *phdrs = nil;
+  int i;
+
+  /* Read ELF header */
+  if (devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0) != sizeof(ehdr)) {
+    print("ELF: Failed to read ELF header\n");
+    return 0;
+  }
+
+  /* Verify ELF magic */
+  if (ehdr.e_ident[0] != ELF_MAGIC_0 || ehdr.e_ident[1] != ELF_MAGIC_1 ||
+      ehdr.e_ident[2] != ELF_MAGIC_2 || ehdr.e_ident[3] != ELF_MAGIC_3) {
+    print("ELF: Bad magic: 0x%x%c%c%c\n", ehdr.e_ident[0], ehdr.e_ident[1],
+          ehdr.e_ident[2], ehdr.e_ident[3]);
+    return 0;
+  }
+
+  /* Verify ELF64 and x86-64 */
+  if (ehdr.e_ident[4] != ELFCLASS64) {
+    print("ELF: Not 64-bit (class=%d)\n", ehdr.e_ident[4]);
+    return 0;
+  }
+  if (ehdr.e_machine != EM_X86_64) {
+    print("ELF: Not x86-64 (machine=%d)\n", ehdr.e_machine);
+    return 0;
+  }
+  if (ehdr.e_type != ET_EXEC) {
+    print("ELF: Not executable (type=%d)\n", ehdr.e_type);
+    return 0;
+  }
+
+  print("ELF: Valid ELF64 x86-64 executable, entry=0x%llx\n", ehdr.e_entry);
+  print("ELF: %d program headers at offset 0x%llx\n", ehdr.e_phnum, ehdr.e_phoff);
+
+  /* Allocate space for program headers */
+  phdrs = malloc(ehdr.e_phnum * sizeof(Elf64_Phdr));
+  if (phdrs == nil) {
+    print("ELF: Failed to allocate program headers\n");
+    return 0;
+  }
+
+  /* Read program headers */
+  if (devtab[c->type]->read(c, (uchar *)phdrs, ehdr.e_phnum * sizeof(Elf64_Phdr),
+                            ehdr.e_phoff) != ehdr.e_phnum * sizeof(Elf64_Phdr)) {
+    print("ELF: Failed to read program headers\n");
+    free(phdrs);
+    return 0;
+  }
+
+  /* Find memory range needed */
+  uintptr min_addr = ~0ULL;
+  uintptr max_addr = 0;
+  for (i = 0; i < ehdr.e_phnum; i++) {
+    if (phdrs[i].p_type != PT_LOAD)
+      continue;
+    if (phdrs[i].p_vaddr < min_addr)
+      min_addr = phdrs[i].p_vaddr;
+    if (phdrs[i].p_vaddr + phdrs[i].p_memsz > max_addr)
+      max_addr = phdrs[i].p_vaddr + phdrs[i].p_memsz;
+  }
+
+  if (min_addr == ~0ULL) {
+    print("ELF: No loadable segments found\n");
+    free(phdrs);
+    return 0;
+  }
+
+  /* Calculate pages needed */
+  ulong total_len = max_addr - min_addr;
+  ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
+  print("ELF: Memory range 0x%llx-0x%llx (%ld pages)\n", min_addr, max_addr,
+        total_pages);
+
+  /* Create TSEG */
+  up->seg[TSEG] = newseg(SG_TEXT, min_addr, total_pages);
+  up->seg[TSEG]->flushme = 1;
+
+  /* Load each PT_LOAD segment */
+  for (i = 0; i < ehdr.e_phnum; i++) {
+    if (phdrs[i].p_type != PT_LOAD)
+      continue;
+
+    print("ELF: Loading segment %d: vaddr=0x%llx filesz=%lld memsz=%lld\n", i,
+          phdrs[i].p_vaddr, phdrs[i].p_filesz, phdrs[i].p_memsz);
+
+    uintptr vaddr = phdrs[i].p_vaddr;
+    ulong file_off = phdrs[i].p_offset;
+    ulong file_remaining = phdrs[i].p_filesz;
+    ulong mem_remaining = phdrs[i].p_memsz;
+
+    /* Allocate and load pages for this segment */
+    while (mem_remaining > 0) {
+      uintptr page_addr = vaddr & ~(BY2PG - 1);
+      ulong page_off = vaddr & (BY2PG - 1);
+
+      /* Allocate page if not already allocated */
+      Page *p = newpage(page_addr, nil);
+      KMap *k = kmap(p);
+
+      /* Read file data for this page */
+      ulong to_read = BY2PG - page_off;
+      if (to_read > file_remaining)
+        to_read = file_remaining;
+
+      if (to_read > 0) {
+        if (devtab[c->type]->read(c, (uchar *)VA(k) + page_off, to_read,
+                                  file_off) != to_read) {
+          print("ELF: Short read at offset 0x%lx\n", file_off);
+        }
+        file_off += to_read;
+        file_remaining -= to_read;
+      }
+
+      /* Zero-fill BSS portion */
+      ulong to_zero = BY2PG - page_off - to_read;
+      if (to_zero > mem_remaining - to_read)
+        to_zero = mem_remaining - to_read;
+      if (to_zero > 0) {
+        memset((uchar *)VA(k) + page_off + to_read, 0, to_zero);
+      }
+
+      kunmap(k);
+      segpage(up->seg[TSEG], p);
+
+      /* Advance to next page */
+      ulong consumed = to_read + to_zero;
+      vaddr += consumed;
+      mem_remaining -= consumed;
+    }
+  }
+
+  free(phdrs);
+  *out_entry = ehdr.e_entry;
+  print("ELF: Loaded successfully, entry point at 0x%llx\n", *out_entry);
+  return 1;
 }
 
 static void proc0(void *arg) {
@@ -165,7 +298,8 @@ static void proc0(void *arg) {
   m->pml4[PTLX(USTKTOP - 1, 3)] = 0;
 
   /*
-   * Setup Text and Stack segments for initcode.
+   * Setup Stack segment for init process.
+   * Text segment (TSEG) is set up by ELF loader when loading /boot/init.
    */
   print("BOOT[proc0]: calling newseg for stack\n");
   up->seg[SSEG] =
@@ -220,111 +354,94 @@ static void proc0(void *arg) {
   else
     print("BOOT[proc0]: stack pte missing\n");
 
-  /* Try to load /boot/init (CLR) first, then /boot/boot */
+  /* Try to load /boot/init first, then /boot/boot */
   Chan *bc = namec("/boot/init", Aopen, OREAD, 0);
   if (bc == nil)
     bc = namec("/boot/boot", Aopen, OREAD, 0);
 
   int loaded = 0;
+  uintptr elf_entry = 0;
 
   if (bc != nil) {
     Exec exec;
     if (!waserror()) {
-      print("BOOT[proc0]: Found /boot/boot, checking header...\n");
-      if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
-          sizeof(Exec)) {
-        /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
-        if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
-          print("BOOT[proc0]: Loading CLR from /boot/boot (text=%d data=%d)\n",
-                exec.text, exec.data);
+      print("BOOT[proc0]: Found /boot/init or /boot/boot, checking header...\n");
 
-          ulong total_len = exec.text + exec.data + exec.bss;
-          ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
-
-          /* Create TSEG large enough for everything.
-           * Removing SG_RONLY to allow data writes if needed by simple binaries
-           */
-          print("BOOT[proc0]: Creating TSEG size=%ld pages\n", total_pages);
-          up->seg[TSEG] = newseg(SG_TEXT, UTZERO, total_pages);
-          up->seg[TSEG]->flushme = 1;
-
-          ulong file_off = sizeof(Exec); /* Skip 32-byte header */
-          ulong virt_addr = UTZERO;
-          ulong remaining = exec.text + exec.data;
-
-          for (int i = 0; i < total_pages; i++) {
-            Page *p = newpage(virt_addr, nil);
-            KMap *k = kmap(p);
-
-            long to_read = BY2PG;
-            if (remaining < BY2PG)
-              to_read = remaining;
-
-            if (to_read > 0) {
-              if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
-                                         file_off) != to_read)
-                print("BOOT: Short read on /boot/boot\n");
-              file_off += to_read;
-              remaining -= to_read;
-            }
-
-            /* Zero out BSS or partial page */
-            if (to_read < BY2PG)
-              memset((uchar *)VA(k) + to_read, 0, BY2PG - to_read);
-
-            kunmap(k);
-            segpage(up->seg[TSEG], p);
-            virt_addr += BY2PG;
-          }
-          loaded = 1;
-          print("BOOT[proc0]: CLR loaded successfully\n");
-        } else {
-          print("BOOT[proc0]: /boot/boot bad magic 0x%x (expected 0x%x)\n",
-                exec.magic, S_MAGIC);
-        }
+      /* Try ELF first */
+      if (load_elf64(bc, &elf_entry)) {
+        loaded = 1;
+        up->entry_point = elf_entry;
+        print("BOOT[proc0]: ELF binary loaded successfully, entry=0x%lx\n", elf_entry);
       } else {
-        print("BOOT[proc0]: Failed to read /boot/boot header\n");
+        /* Try Plan 9 a.out format */
+        print("BOOT[proc0]: Not ELF, trying Plan 9 a.out...\n");
+
+        if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
+            sizeof(Exec)) {
+          /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
+          if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
+            print("BOOT[proc0]: Loading a.out binary (text=%d data=%d)\n",
+                  exec.text, exec.data);
+
+            ulong total_len = exec.text + exec.data + exec.bss;
+            ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
+
+            print("BOOT[proc0]: Creating TSEG size=%ld pages\n", total_pages);
+            up->seg[TSEG] = newseg(SG_TEXT, UTZERO, total_pages);
+            up->seg[TSEG]->flushme = 1;
+
+            ulong file_off = sizeof(Exec); /* Skip 32-byte header */
+            ulong virt_addr = UTZERO;
+            ulong remaining = exec.text + exec.data;
+
+            for (int i = 0; i < total_pages; i++) {
+              Page *p = newpage(virt_addr, nil);
+              KMap *k = kmap(p);
+
+              long to_read = BY2PG;
+              if (remaining < BY2PG)
+                to_read = remaining;
+
+              if (to_read > 0) {
+                if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
+                                           file_off) != to_read)
+                  print("BOOT: Short read on /boot/init\n");
+                file_off += to_read;
+                remaining -= to_read;
+              }
+
+              /* Zero out BSS or partial page */
+              if (to_read < BY2PG)
+                memset((uchar *)VA(k) + to_read, 0, BY2PG - to_read);
+
+              kunmap(k);
+              segpage(up->seg[TSEG], p);
+              virt_addr += BY2PG;
+            }
+            loaded = 1;
+            up->entry_point = UTZERO;
+            print("BOOT[proc0]: a.out binary loaded successfully, entry=0x%lx\n", UTZERO);
+          } else {
+            print("BOOT[proc0]: Bad a.out magic 0x%x (expected 0x%x)\n",
+                  exec.magic, S_MAGIC);
+          }
+        } else {
+          print("BOOT[proc0]: Failed to read a.out header\n");
+        }
       }
       poperror();
     }
     cclose(bc);
   } else {
-    print("BOOT[proc0]: /boot/boot not found\n");
+    print("BOOT[proc0]: /boot/init and /boot/boot not found\n");
   }
 
   if (!loaded) {
-    print("BOOT[proc0]: Fallback - using legacy initcode\n");
-    print("BOOT[proc0]: creating text segment\n");
-    up->seg[TSEG] = newseg(SG_TEXT | SG_RONLY, UTZERO, 1);
-    print("BOOT[proc0]: text segment created\n");
-    up->seg[TSEG]->flushme = 1;
-    print("BOOT[proc0]: allocating text page\n");
-    p = newpage(UTZERO, nil);
-    print("BOOT[proc0]: text page allocated, p=%p\n", p);
-    print("BOOT[proc0]: mapping text page\n");
-    k = kmap(p);
-    print("BOOT[proc0]: text page mapped, k=%p\n", k);
-    if (k == nil)
-      panic("proc0: kmap failed");
-
-    /* TODO: Load and compile CLR init from /boot/boot
-     * For now, use legacy initcode[] until CLR userspace execution is working
+    /* /boot/init not found - this is a fatal error.
+     * With the new boot architecture, init MUST be present in initrd.
+     * The legacy initcode.S fallback has been removed (Phase 6 cleanup).
      */
-    print("BOOT[proc0]: initcode size=%d, first bytes: %02x %02x %02x %02x\\n",
-          (int)sizeof(initcode), initcode[0], initcode[1], initcode[2],
-          initcode[3]);
-    memmove((uchar *)VA(k), initcode, sizeof(initcode));
-    memset((uchar *)VA(k) + sizeof(initcode), 0, BY2PG - sizeof(initcode));
-
-    print("BOOT[proc0]: unmapping text page\n");
-    kunmap(k);
-    if (p->pa == 0)
-      print("BOOT[proc0]: text page pa=0 (unexpected)\n");
-    else
-      print("BOOT[proc0]: text page pa nonzero\n");
-    print("BOOT[proc0]: about to call segpage for text\n");
-    segpage(up->seg[TSEG], p);
-    print("BOOT[proc0]: segpage for text completed\n");
+    panic("BOOT[proc0]: /boot/init not found in initrd - cannot boot");
   }
 
   /* segpage now calls userpmap() which creates MMU structures */
@@ -515,21 +632,56 @@ static void proc0(void *arg) {
    * init0():
    *	call chandevinit()
    *	setup environment variables
-   *	prepare the stack for initcode
-   *	switch to usermode to run initcode
+   *	prepare the stack for init process
+   *	switch to usermode to run /boot/init
    */
-  /* Phase 6: Exchange pages now allocated via #X device (devexchange.c)
-   * instead of fixed allocation at boot.
-   * Processes open #X/clone to get an exchange channel with pool of pages.
-   * This provides:
-   * - Dynamic allocation (only processes that need it)
-   * - Multiple exchange pages per process
-   * - Capability-based addressing via Blind Ledger
-   * - Ring buffer for high-throughput message batching
+  /* ============================================================================
+   * BOOT ARCHITECTURE: Kernel-Initiated Exchange Setup (Phase 6+)
+   * ============================================================================
+   *
+   * PROBLEM: Chicken-Egg Dilemma
+   * ----------------------------
+   * Init needs syscalls to open #X device and get exchange pages.
+   * But syscalls require exchange pages to send 9P messages.
+   * This creates a circular dependency.
+   *
+   * SOLUTION: Kernel Proactively Sets Up Exchange Infrastructure
+   * -------------------------------------------------------------
+   * Instead of waiting for init to open #X/clone, the kernel directly calls
+   * into devexchange.c during proc0 initialization to create an exchange
+   * channel with pool of pages.
+   *
+   * This approach:
+   * 1. Eliminates the chicken-egg problem
+   * 2. Provides init with ready-to-use exchange pages at boot
+   * 3. Uses the same #X device infrastructure as normal processes
+   * 4. Allows init to immediately use syscalls for 9P operations
+   *
+   * HOW IT WORKS:
+   * -------------
+   * 1. kernel_setup_init_exchange() called from proc0() during boot
+   * 2. Creates ExchangeChannel via channel_alloc() (same as #X/clone)
+   * 3. Allocates ring buffer control page with UUIDv8 session ID
+   * 4. Allocates pool of exchange pages (2 pages: request + reply)
+   * 5. Maps pages to userspace at EXCHANGE_PAGE_ADDR (0x7FFFFEEFF000)
+   * 6. Stores channel in up->exchange_channel for future use
+   * 7. Stores p9page in up->p9page for doorbell handler compatibility
+   *
+   * FUTURE: Normal Process Flow
+   * ---------------------------
+   * After boot, normal processes will:
+   * 1. Open #X/clone to get a channel ID
+   * 2. Read/write #X/N/pool to allocate/free exchange pages
+   * 3. Map #X/N/ring for batched message submission
+   * 4. Use capability-based addressing via Blind Ledger
+   *
+   * This init-specific setup is a bootstrap mechanism that uses the same
+   * underlying infrastructure but bypasses the VFS layer.
+   * ============================================================================
    */
-  /* Old fixed allocation removed - see devexchange.c for new approach */
-  /* if (proc_setup_p9page(up) < 0)
-    panic("proc0: p9page setup failed"); */
+  up->exchange_channel = kernel_setup_init_exchange(up);
+  if (up->exchange_channel == nil)
+    panic("proc0: failed to setup exchange channel");
 
   print("BOOT[proc0]: about to call init0 - switching to userspace\n");
   init0();

@@ -1,36 +1,40 @@
-/* linker.ld - Linker script for pure 9P init
- *
- * Simple ELF layout placed at 0x200000 to match kernel expectations
+/* Linker script for userspace init
+ * Clean userspace using shared kernel libc9
  */
 
+OUTPUT_FORMAT(elf64-x86-64)
+OUTPUT_ARCH(i386:x86-64)
 ENTRY(_start)
 
 SECTIONS
 {
+    /* Userspace loaded at 2MB (UTZERO) to match kernel expectations */
     . = 0x200000;
-    
-    .text : {
-        *(.text)
-        *(.text.*)
+
+    .text : ALIGN(4K)
+    {
+        *(.text*)
     }
-    
-    .rodata : {
-        *(.rodata)
-        *(.rodata.*)
+
+    .rodata : ALIGN(4K)
+    {
+        *(.rodata*)
     }
-    
-    .data : {
-        *(.data)
-        *(.data.*)
+
+    .data : ALIGN(4K)
+    {
+        *(.data*)
     }
-    
-    .bss : {
-        *(.bss)
-        *(.bss.*)
+
+    .bss : ALIGN(4K)
+    {
+        *(.bss*)
         *(COMMON)
     }
-    
-    /DISCARD/ : {
+
+    /* Discard sections we don't need */
+    /DISCARD/ :
+    {
         *(.note*)
         *(.comment*)
         *(.eh_frame*)

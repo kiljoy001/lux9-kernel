@@ -21,6 +21,7 @@
 #include "blind_ledger.h"
 #include "pebble.h"
 #include "uuid.h"
+#include "9p_router.h"  /* For EXCHANGE_PAGE_ADDR */
 #include <error.h>
 
 enum {
@@ -1023,4 +1024,106 @@ static void
 exchreset(void)
 {
 	/* Nothing to prime yet; hook exists to satisfy chandevreset(). */
+}
+
+/* Kernel boot integration - setup exchange infrastructure for init process
+ * Called from proc0() during kernel boot to proactively set up 9P exchange.
+ * This eliminates the chicken-egg problem of init needing syscalls to open #X.
+ *
+ * Returns: ExchangeChannel on success, nil on failure
+ */
+void*
+kernel_setup_init_exchange(Proc *p)
+{
+	ExchangeChannel *ch;
+	UserCapability cap;
+	uintptr ring_pa, pool_pa;
+
+	if(p == nil)
+		return nil;
+
+	print("BOOT[kernel_setup_init_exchange]: allocating exchange channel for PID %ld\n", p->pid);
+
+	/* Allocate exchange channel using same infrastructure as #X/clone */
+	ch = channel_alloc(p);
+	if(ch == nil){
+		print("BOOT[kernel_setup_init_exchange]: channel_alloc failed\n");
+		return nil;
+	}
+
+	print("BOOT[kernel_setup_init_exchange]: channel %d allocated, ring at %#p\n",
+		ch->chan_id, ch->ring_kaddr);
+
+	/* Allocate initial pool pages (2 pages for request/reply) */
+	if(pool_alloc_page(ch, &cap) < 0){
+		channel_put(ch);
+		print("BOOT[kernel_setup_init_exchange]: pool_alloc_page failed\n");
+		return nil;
+	}
+
+	/* Get physical addresses from capabilities for mapping */
+	/* The capability contains the kernel physical address in the hash
+	 * For now, we'll allocate dedicated pages and map them directly */
+
+	/* Allocate 2 exchange pages (request + reply) */
+	void *exch_pages = mallocalign(BY2PG * 2, BY2PG, 0, 0);
+	if(exch_pages == nil){
+		channel_put(ch);
+		print("BOOT[kernel_setup_init_exchange]: failed to allocate exchange pages\n");
+		return nil;
+	}
+	memset(exch_pages, 0, BY2PG * 2);
+
+	/* Store exchange pages in p->p9page for doorbell handler */
+	p->p9page = exch_pages;
+
+	/* Get physical addresses for borrowchecker tracking */
+	uintptr req_pa = PADDR(exch_pages);
+	uintptr rep_pa = PADDR(exch_pages) + BY2PG;
+
+	/*
+	 * CRITICAL: Userspace claims pages FIRST (per user requirement)
+	 * "During init, once the page is setup, USERSPACE (init) claims the page FIRST.
+	 *  This is logical: the kernel creates the way to communicate with it,
+	 *  the init (an application running on top of the kernel) utilizes the method provided."
+	 *
+	 * Acquire ownership for init process via borrowchecker.
+	 * This ensures exclusive access - only userspace can read/write until syscall doorbell.
+	 */
+	enum BorrowError berr = borrow_acquire(p, req_pa);
+	if(berr != BORROW_OK){
+		print("BOOT[kernel_setup_init_exchange]: borrow_acquire(req_page) failed: %d\n", berr);
+		channel_put(ch);
+		return nil;
+	}
+
+	berr = borrow_acquire(p, rep_pa);
+	if(berr != BORROW_OK){
+		print("BOOT[kernel_setup_init_exchange]: borrow_acquire(rep_page) failed: %d\n", berr);
+		borrow_release(p, req_pa);  /* Rollback first page */
+		channel_put(ch);
+		return nil;
+	}
+
+	/* Map exchange pages to userspace at EXCHANGE_PAGE_ADDR
+	 * Page 1: Request buffer (0x7FFFFEEFF000)
+	 * Page 2: Reply buffer (0x7FFFFEF00000)
+	 *
+	 * Pages are now owned exclusively by userspace (init process).
+	 * Kernel CANNOT access until ownership is transferred via syscall doorbell.
+	 */
+	userpmap(EXCHANGE_PAGE_ADDR, req_pa, PTEVALID | PTEUSER | PTEWRITE);
+	userpmap(EXCHANGE_PAGE_ADDR + BY2PG, rep_pa, PTEVALID | PTEUSER | PTEWRITE);
+
+	print("BOOT[kernel_setup_init_exchange]: userspace claimed exchange pages at %#p (PA req=%#p rep=%#p)\n",
+		EXCHANGE_PAGE_ADDR, req_pa, rep_pa);
+
+	/* Map ring buffer control page to userspace (for future use)
+	 * The ring buffer provides batched message submission/completion */
+	ring_pa = PADDR(ch->ring_kaddr);
+	/* Note: Ring mapping will be done when init calls segattach() on #X/N/ring */
+
+	print("BOOT[kernel_setup_init_exchange]: exchange channel ready (id=%d)\n", ch->chan_id);
+
+	return ch;
 }

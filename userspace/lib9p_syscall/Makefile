@@ -1,17 +1,19 @@
-# Makefile for pure 9P init using lib9p_syscall
-#
-# This builds a minimal ELF binary that uses only 9P message passing
+# Userspace init using shared kernel libc9
+# Ensures 9P message format stays in sync
 
 KERNEL = ../../kernel
 
 CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
          -mno-red-zone -mcmodel=small -fPIC -O2 -Wall \
-         -Iinclude -I$(KERNEL)/include -include u.h -include libc.h
+         -fcf-protection=none \
+         -I$(KERNEL)/include
 
-ASFLAGS = 
 LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 
-OBJS = start.o lib9p.o libexchange.o init.o convM2S.o convS2M.o
+# Use kernel's libc9 for 9P messages - single source of truth
+KERNEL_LIBC9 = $(KERNEL)/libc9/convM2S.c $(KERNEL)/libc9/convS2M.c
+
+OBJS = start.o init.o
 
 all: init
 
@@ -19,20 +21,7 @@ init: $(OBJS) linker.ld
 	$(LD) $(LDFLAGS) -T linker.ld $(OBJS) -o init
 
 start.o: start.S
-	$(AS) $(ASFLAGS) -o $@ $<
-
-# Rules to build kernel sources (convM2S.c, convS2M.c)
-convM2S.o: $(KERNEL)/libc9/convM2S.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-convS2M.o: $(KERNEL)/libc9/convS2M.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-lib9p.o: lib9p.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-libexchange.o: libexchange.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(AS) -o $@ $<
 
 init.o: init.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -40,8 +29,4 @@ init.o: init.c
 clean:
 	rm -f *.o init
 
-install: init
-	@echo "Copying init to /boot/init in initrd..."
-	cp init ../build/boot/init 2>/dev/null || \
-	cp init ../../initrd/boot/init 2>/dev/null || \
-	echo "Please manually copy init to initrd/boot/init"
+.PHONY: all clean

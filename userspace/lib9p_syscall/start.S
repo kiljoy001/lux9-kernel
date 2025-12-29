@@ -1,21 +1,19 @@
-/* start.S - Entry point for pure 9P init
- *
- * Sets up minimal stack and calls main()
- * After main returns, calls p9_exit
- */
-
 .section .text
 .global _start
-
 _start:
-    /* Stack is already set up by kernel at sysexec */
-    /* Just call main */
+    # Set up stack
+    movq $stack_top, %rsp
+    
+    # Call main
     call main
     
-    /* If main returns, exit with 0 */
-    xor %rdi, %rdi
-    call p9_exit
-    
-    /* Should not reach here */
-.Lhang:
-    jmp .Lhang
+    # Exit (infinite loop for now)
+1:
+    hlt
+    jmp 1b
+
+.section .bss
+.align 16
+stack_bottom:
+    .skip 16384  # 16KB stack
+stack_top:
