@@ -489,14 +489,11 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
      */
 
   case Rsyscall:
-    size += BIT32SZ + f->scount;
-    if (p) {
-      PBIT32(p, f->scount);
-      p += BIT32SZ;
-      if (f->scount > 0)
-        memmove(p, f->sdata, f->scount);
-      p += f->scount;
-    }
+    PBIT32(p, f->scount);
+    p += BIT32SZ;
+    if (f->scount > 0)
+      memmove(p, f->sdata, f->scount);
+    p += f->scount;
     break;
 
   /* Tsys* - specific syscall message serialization */

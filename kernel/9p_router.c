@@ -559,11 +559,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       cclose(c);
       poperror();
 
+      /* Allocate small buffer for 4-byte return value */
+      static uchar reply_data[8];  /* Static buffer for return value */
       r->type = Rsyscall;
       r->tag = t->tag;
       r->scount = 4;
-      r->sdata = t->sdata;
-      PBIT32(t->sdata, n);
+      r->sdata = reply_data;  /* Use separate buffer instead of request buffer */
+      PBIT32(reply_data, n);
       return 0;
     }
 
