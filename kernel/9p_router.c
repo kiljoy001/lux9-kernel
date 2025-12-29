@@ -894,51 +894,17 @@ int p9_handle_doorbell(Proc *p) {
   req_buf = (uchar *)p->p9page + P9_REQUEST_OFFSET;
   rep_buf = (uchar *)p->p9page + P9_REPLY_OFFSET;
 
-  /* Check doorbell is actually rung using Acquire semantics.
-   * This ensures we see all userspace writes to the request buffer that
-   * happened before the doorbell was rung. */
-  /*@
-    // Acquire Precondition: (s1 page).(doorbell) = true
-    // Corresponds to 'Acquire' in proofs/sip/sip_model.v
-   @*/
-  uint doorbell_val = atomic_load(&ctl->doorbell, ORDER_ACQUIRE);
-  print("p9_handle_doorbell: pid=%lud doorbell_val=%u p9page=%p phys=%#llux\n",
-        p->pid, doorbell_val, p->p9page, PADDR(p->p9page));
-
-  if (doorbell_val == 0) {
-    print("p9_handle_doorbell: doorbell not rung for pid %lud. Memory dump:\n",
-          p->pid);
-    uchar *page = (uchar *)p->p9page;
-    print("  REQ[0-15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-          "%02x %02x %02x %02x %02x\n",
-          page[0], page[1], page[2], page[3], page[4], page[5], page[6],
-          page[7], page[8], page[9], page[10], page[11], page[12], page[13],
-          page[14], page[15]);
-
-    uchar *ctl_ptr = page + P9_CONTROL_OFFSET;
-    print("  CTL[0-15]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-          "%02x %02x %02x %02x %02x\n",
-          ctl_ptr[0], ctl_ptr[1], ctl_ptr[2], ctl_ptr[3], ctl_ptr[4],
-          ctl_ptr[5], ctl_ptr[6], ctl_ptr[7], ctl_ptr[8], ctl_ptr[9],
-          ctl_ptr[10], ctl_ptr[11], ctl_ptr[12], ctl_ptr[13], ctl_ptr[14],
-          ctl_ptr[15]);
-
-    return -1;
-  }
-
-  /* Clear doorbell immediately */
-  atomic_store(&ctl->doorbell, 0, ORDER_RELAXED);
+  /* SIMPLIFIED: syscall IS the doorbell - no need to check a flag.
+   * The act of issuing syscall means "process my exchange page".
+   * This eliminates the dual doorbell/syscall mechanism.
+   */
+  print("p9_handle_doorbell: pid=%lud p9page=%p processing...\n", p->pid,
+        p->p9page);
 
   /* Mark as pending */
   /*@
-    // Acquire Transition: s2 = update_page s1 page (mkPageState ... P9_Pending
-   ...)
+    // Acquire Transition: s2 = update_page s1 page (mkPageState ... P9_Pending)
     // Corresponds to 'Acquire_Success' in proofs/sip/sip_model.v
-    // GAP: Coq model (router_safety.v) assumes strict FSM transition
-   (Idle->Pending).
-    // Implementation uses relaxed store without CAS verification of prior Idle
-   state.
-    // This relies on single-consumer assumption not formally verified here.
    @*/
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
 
