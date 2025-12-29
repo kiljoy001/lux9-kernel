@@ -59,9 +59,10 @@ CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtim
 # fruity_sljit.o and qbe_exec.o temporarily disabled due to sljit/kernel header conflicts
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
 MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o
+WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c
+WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o
 
-
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O) $(WASM_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -149,6 +150,11 @@ pebble_family.o: family/pebble.c
 %.o: family/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+# WASM compilation
+%.o: wasm/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -Iwasm/wasm_runtime -c $< -o $@
 
 # CLR Fruity IR compilation
 fruity_ir.o: clr/fruity/fruity_ir.c

@@ -680,6 +680,8 @@ struct Proc {
   char *text;
   char *user;
 
+  uintptr entry_point; /* Entry point for process (ELF e_entry or UTZERO for a.out) */
+
   char *args;
   int nargs;   /* number of bytes of args */
   int setargs; /* process changed its args */
@@ -857,6 +859,19 @@ struct Proc {
 #define CLR_TLS_SLOTS 64
   void *clr_tls[CLR_TLS_SLOTS];
   int clr_tls_next_slot;
+
+  /* WASM execution context (only populated if this is a WASM process)
+   * See ADR_WASM_AS_PROCESSES.md for architecture rationale.
+   * WASM programs run as first-class processes, not separate instances.
+   */
+  struct {
+    int initialized;         /* 1 if this is a WASM process, 0 for native */
+    void *runtime;           /* IM3Runtime - wasm3 runtime for this process */
+    void *module;            /* IM3Module - loaded WASM module */
+    u8int *linear_memory;    /* WASM linear memory (mapped to seg[LSEG]) */
+    u32int memory_size;      /* Size of linear memory in bytes */
+    u32int memory_pages;     /* Number of 64KB WASM pages */
+  } wasm;
 } __attribute__((aligned(64)));
 
 enum {

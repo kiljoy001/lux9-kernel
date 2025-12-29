@@ -13,11 +13,16 @@
 #define M3_VERSION_REV   1
 #define M3_VERSION       "0.5.1"
 
+/* Kernel build: use kernel headers instead of system headers */
+#ifdef __PLAN9_KERNEL__
+/* Kernel provides these types in u.h and portlib.h */
+#else
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdarg.h>
+#endif
 
 #include "wasm3_defs.h"
 

@@ -408,6 +408,12 @@ void main_after_cr3(void) {
   distributed_pebble_init();
   print("=== Distributed Pebble Initialized ===\n");
 
+  /* Initialize WASM3 Runtime (Layer 1) */
+  extern void wasm_runtime_init(void);
+  print("=== Initializing WASM3 Runtime (Layer 1) ===\n");
+  wasm_runtime_init();
+  print("=== WASM3 Runtime Initialized ===\n");
+
   /* Initialize crypto subsystem early for testing */
   extern int crypto_tpm_key_init(void);
   set_boot_state(BOOT_CRYPTO);
@@ -506,7 +512,8 @@ void init0(void) {
   if (m->proc == nil)
     panic("BOOT[init0]: m->proc is NULL before touser()!");
   uartputs("init0: calling touser\n", 22);
-  touser(sp);
+  print("BOOT[init0]: entry_point=0x%lx\n", up->entry_point);
+  touser(sp, up->entry_point);
 }
 
 void main(void) {

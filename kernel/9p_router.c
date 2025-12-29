@@ -21,6 +21,7 @@ typedef struct Waitmsg Waitmsg;
 #include "proc_packet.h"
 #include "wasm/wasm_9p_integration.h"
 #include "wasm/wasm_fileserver.h"
+#include "wasm/wasm_runtime.h"
 
 /* Process FSM integration - use real FSM from proc_fsm.c */
 extern int proc_event(Proc *p, int event);
@@ -590,6 +591,42 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       } else {
         pexit("", 1);
       }
+      return 0;
+    }
+
+    case SYS_WASM_COMPILE: {
+      print("p9_dispatch: Tsyscall SYS_WASM_COMPILE\n");
+
+      /* Call Layer 1 wasm3 runtime handler */
+      if (sys_wasm_compile(t, r) != 0) {
+        /* Error already set in r by handler */
+        return -1;
+      }
+
+      return 0;
+    }
+
+    case SYS_WASM_EXECUTE: {
+      print("p9_dispatch: Tsyscall SYS_WASM_EXECUTE\n");
+
+      /* Call Layer 1 wasm3 runtime handler */
+      if (sys_wasm_execute(t, r) != 0) {
+        /* Error already set in r by handler */
+        return -1;
+      }
+
+      return 0;
+    }
+
+    case SYS_WASM_DESTROY: {
+      print("p9_dispatch: Tsyscall SYS_WASM_DESTROY\n");
+
+      /* Call Layer 1 wasm3 runtime handler */
+      if (sys_wasm_destroy(t, r) != 0) {
+        /* Error already set in r by handler */
+        return -1;
+      }
+
       return 0;
     }
 
