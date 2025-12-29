@@ -4,6 +4,7 @@
  * Routes 9P messages from Exchange Pages to kernel services.
  */
 
+#include "error.h"
 #include "portlib.h"
 #include "u.h"
 
@@ -427,100 +428,476 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     return -1;
   }
 
-  /* Handle Tsysopen (130) - open(path, mode) via 9P */
+  /* Handle Generic Tsyscall (130) */
+  if (t->type == Tsyscall) {
+    uchar *p = t->sdata;
+    uchar *ep = t->sdata + t->scount;
+
+    switch (t->scallnr) {
+    case SYS_OPEN: {
+      extern int newfd(Chan *, int);
+      extern int openmode(ulong);
+      /* Format: [fid 4] [path s] [mode 1] */
+      if (p + 4 + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+      int fid = GBIT32(p);
+      p += 4;
+      int len = GBIT16(p);
+      p += 2;
+      if (p + len + 1 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      char *path = smalloc(len + 1);
+      memmove(path, p, len);
+      path[len] = 0;
+      p += len;
+
+      int mode = GBIT8(p);
+      p += 1;
+
+      print("p9_dispatch: Tsyscall SYS_OPEN ptr '%s' mode=%d\n", path, mode);
+
+      int fd;
+      Chan *c = 0;
+      if (waserror()) {
+        if (c)
+          cclose(c);
+        free(path);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      openmode(mode);
+      c = namec(path, Aopen, mode, 0);
+      fd = newfd(c, mode);
+      poperror();
+      free(path);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 4;
+      r->sdata = t->sdata;
+      PBIT32(t->sdata, fd);
+
+      return 0;
+    }
+
+    case SYS_CLOSE: {
+      extern void fdclose(int, int);
+      extern Chan *fdtochan(int, int, int, int);
+      /* Format: [fid 4] */
+      if (p + 4 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      int fd = GBIT32(p);
+      p += 4;
+
+      print("p9_dispatch: SYS_CLOSE fd=%d\n", fd);
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      Chan *c = fdtochan(fd, -1, 0, 0);
+      if (c)
+        cclose(c);
+      fdclose(fd, 0);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 0;
+      return 0;
+    }
+
+    case SYS_WRITE: {
+      /* Format: [fid 4] [offset 8] [count 4] [data...] */
+      if (p + 4 + 8 + 4 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      int fid = GBIT32(p);
+      p += 4;
+      vlong offset = GBIT64(p);
+      p += 8;
+      int count = GBIT32(p);
+      p += 4;
+      if (p + count > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+
+      print("p9_dispatch: SYS_WRITE fd=%d count=%d off=%lld\n", fid, count,
+            offset);
+
+      extern Chan *fdtochan(int, int, int, int);
+      Chan *c;
+      long n;
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      c = fdtochan(fid, OWRITE, 1, 1);
+      if (waserror()) {
+        cclose(c);
+        nexterror();
+      }
+      if (c->qid.type & QTDIR)
+        error(Eisdir);
+      n = devtab[c->type]->write(c, p, count, offset);
+      poperror();
+      cclose(c);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 4;
+      r->sdata = t->sdata;
+      PBIT32(t->sdata, n);
+      return 0;
+    }
+
+    case SYS_EXIT: {
+      /* Format: [status string] */
+      char *status = nil;
+      if (p + 2 <= ep) {
+        int len = GBIT16(p);
+        p += 2;
+        if (p + len <= ep) {
+          status = smalloc(len + 1);
+          memmove(status, p, len);
+          status[len] = 0;
+        }
+      }
+      print("p9_dispatch: SYS_EXIT '%s'\n", status ? status : "nil");
+      extern void pexit(char *, int);
+      if (status) {
+        char *s = status;
+        status = nil;
+        pexit(s, 1);
+      } else {
+        pexit("", 1);
+      }
+      return 0;
+    }
+
+    default:
+      r->type = Rerror;
+      snprint(r->ename, sizeof(r->ename), "unknown syscall %d", t->scallnr);
+      return -1;
+    }
+  }
+
+  /* Handle Tsys* - Specific syscall message types (132-205) */
+
+  /* I/O Operations */
   if (t->type == Tsysopen) {
-    ulong args[2];
-    args[0] = (ulong)t->name; /* path */
-    args[1] = (ulong)t->mode; /* mode */
-    print("p9_dispatch: Tsysopen '%s' mode=%d\n", t->name, t->mode);
+    extern int newfd(Chan *, int);
+    extern int openmode(ulong);
+    Chan *c = nil;
+    int fd;
 
-    extern uintptr sysopen(void *);
-    uintptr fd = sysopen(args);
+    if (waserror()) {
+      if (c)
+        cclose(c);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
 
+    /* t->name contains path, t->mode contains mode */
+    openmode(t->mode);
+    c = namec(t->name, Aopen, t->mode, 0);
+    fd = newfd(c, t->mode);
+    poperror();
+
+    /* Build Rsysopen response */
     r->type = Rsysopen;
     r->tag = t->tag;
-    r->fid = (u32int)fd;
-    r->count = fd;
+    r->fid = fd;
+    r->qid = c->qid;
+    r->iounit = c->iounit;
+
+    print("p9_dispatch: Tsysopen '%s' -> fd=%d\n", t->name, fd);
     return 0;
   }
 
-  /* Handle Tsysclose (134) - close(fd) via 9P */
+  if (t->type == Tsyscreate) {
+    extern int newfd(Chan *, int);
+    extern int openmode(ulong);
+    Chan *c = nil;
+    int fd;
+
+    if (waserror()) {
+      if (c)
+        cclose(c);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    /* t->name contains path, t->perm contains permissions, t->mode contains mode */
+    openmode(t->mode);
+    c = namec(t->name, Acreate, t->mode, t->perm);
+    fd = newfd(c, t->mode);
+    poperror();
+
+    /* Build Rsyscreate response */
+    r->type = Rsyscreate;
+    r->tag = t->tag;
+    r->fid = fd;
+    r->qid = c->qid;
+    r->iounit = c->iounit;
+
+    print("p9_dispatch: Tsyscreate '%s' perm=0%o -> fd=%d\n", t->name, t->perm, fd);
+    return 0;
+  }
+
+  if (t->type == Tsysread || t->type == Tsyspread) {
+    extern Chan *fdtochan(int, int, int, int);
+    Chan *c;
+    long n;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    c = fdtochan(t->fid, OREAD, 1, 1);
+    if (waserror()) {
+      cclose(c);
+      nexterror();
+    }
+
+    if (c->qid.type & QTDIR)
+      error(Eisdir);
+
+    /* Allocate buffer for read data - use exchange page data area */
+    if (t->count > P9_REPLY_SIZE - 100) {
+      error("read count too large");
+    }
+
+    n = devtab[c->type]->read(c, r->data, t->count, t->offset);
+    poperror();
+    cclose(c);
+    poperror();
+
+    /* Build Rsysread response */
+    r->type = (t->type == Tsysread) ? Rsysread : Rsyspread;
+    r->tag = t->tag;
+    r->count = n;
+    /* r->data already contains the data */
+
+    print("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
+          t->type == Tsysread ? "Tsysread" : "Tsyspread",
+          t->fid, t->count, t->offset, n);
+    return 0;
+  }
+
+  if (t->type == Tsyswrite || t->type == Tsyspwrite) {
+    extern Chan *fdtochan(int, int, int, int);
+    Chan *c;
+    long n;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    c = fdtochan(t->fid, OWRITE, 1, 1);
+    if (waserror()) {
+      cclose(c);
+      nexterror();
+    }
+
+    if (c->qid.type & QTDIR)
+      error(Eisdir);
+
+    n = devtab[c->type]->write(c, t->data, t->count, t->offset);
+    poperror();
+    cclose(c);
+    poperror();
+
+    /* Build Rsyswrite response */
+    r->type = (t->type == Tsyswrite) ? Rsyswrite : Rsyspwrite;
+    r->tag = t->tag;
+    r->count = n;
+
+    print("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
+          t->type == Tsyswrite ? "Tsyswrite" : "Tsyspwrite",
+          t->fid, t->count, t->offset, n);
+    return 0;
+  }
+
   if (t->type == Tsysclose) {
-    ulong args[1];
-    args[0] = (ulong)t->fid; /* fd */
-    print("p9_dispatch: Tsysclose fd=%d\n", t->fid);
+    extern void fdclose(int, int);
+    extern Chan *fdtochan(int, int, int, int);
 
-    extern uintptr sysclose(void *);
-    sysclose(args);
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
 
+    Chan *c = fdtochan(t->fid, -1, 0, 0);
+    if (c)
+      cclose(c);
+    fdclose(t->fid, 0);
+    poperror();
+
+    /* Build Rsysclose response */
     r->type = Rsysclose;
     r->tag = t->tag;
-    r->count = 0;
+
+    print("p9_dispatch: Tsysclose fd=%d\n", t->fid);
     return 0;
   }
 
-  /* Handle Tsysread (136) - read/pread via 9P */
-  if (t->type == Tsysread) {
-    ulong args[4];
-    args[0] = (ulong)t->fid;    /* fd */
-    args[1] = (ulong)t->data;   /* buf */
-    args[2] = (ulong)t->count;  /* n */
-    args[3] = (ulong)t->offset; /* offset */
-    print("p9_dispatch: Tsysread fd=%d count=%d offset=%lld\n", t->fid,
-          t->count, t->offset);
+  if (t->type == Tsysremove) {
+    Chan *c = nil;
 
-    extern uintptr syspread(void *);
-    uintptr n = syspread(args);
+    if (waserror()) {
+      if (c)
+        cclose(c);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
 
-    r->type = Rsysread;
+    c = namec(t->name, Aremove, 0, 0);
+    poperror();
+
+    /* Build Rsysremove response */
+    r->type = Rsysremove;
     r->tag = t->tag;
-    r->count = (u32int)n;
+
+    print("p9_dispatch: Tsysremove '%s'\n", t->name);
     return 0;
   }
 
-  /* Handle Tsyswrite (138) - write/pwrite via 9P */
-  if (t->type == Tsyswrite) {
-    ulong args[4];
-    args[0] = (ulong)t->fid;    /* fd */
-    args[1] = (ulong)t->data;   /* buf */
-    args[2] = (ulong)t->count;  /* n */
-    args[3] = (ulong)t->offset; /* offset */
-    print("p9_dispatch: Tsyswrite fd=%d count=%d offset=%lld\n", t->fid,
-          t->count, t->offset);
-
-    extern uintptr syspwrite(void *);
-    uintptr n = syspwrite(args);
-
-    r->type = Rsyswrite;
-    r->tag = t->tag;
-    r->count = (u32int)n;
-    return 0;
-  }
-
-  /* Handle Tsysexit (146) - exits(status) via 9P */
+  /* Process Control */
   if (t->type == Tsysexit) {
-    print("p9_dispatch: Tsysexit '%s'\n", t->name ? t->name : "");
+    extern void pexit(char *, int);
 
-    ulong args[1];
-    args[0] = (ulong)t->name; /* status string */
-    extern void sysexits(void *);
-    sysexits(args);
-    /* Not reached */
+    print("p9_dispatch: Tsysexit '%s'\n", t->ename ? t->ename : "");
+
+    /* pexit never returns */
+    pexit(t->ename ? t->ename : "", 1);
+
+    /* Not reached, but satisfies compiler */
     return 0;
   }
 
-  /* Handle Tsysfork (164) - rfork(flags) via 9P */
-  if (t->type == Tsysfork) {
-    ulong args[1];
-    args[0] = (ulong)t->fid; /* flags */
-    print("p9_dispatch: Tsysfork flags=%#x\n", t->fid);
+  if (t->type == Tsysbrk) {
+    extern uintptr ibrk(uintptr, int);
+    uintptr ret;
 
-    extern uintptr sysrfork(void *);
-    uintptr pid = sysrfork(args);
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
 
-    r->type = Rsysfork;
+    /* Call ibrk with address */
+    ret = ibrk((uintptr)t->addr, BSEG);
+    poperror();
+
+    /* Build Rsysbrk response */
+    r->type = Rsysbrk;
     r->tag = t->tag;
-    r->count = (u32int)pid;
+    r->addr = ret;
+
+    print("p9_dispatch: Tsysbrk addr=0x%llx -> 0x%llx\n", t->addr, (u64int)ret);
+    return 0;
+  }
+
+  /* Namespace Operations */
+  if (t->type == Tsyschdir) {
+    Chan *c = nil;
+
+    if (waserror()) {
+      if (c)
+        cclose(c);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    c = namec(t->name, Atodir, 0, 0);
+    cclose(up->dot);
+    up->dot = c;
+    poperror();
+
+    /* Build Rsyschdir response */
+    r->type = Rsyschdir;
+    r->tag = t->tag;
+
+    print("p9_dispatch: Tsyschdir '%s'\n", t->name);
+    return 0;
+  }
+
+  /* FD Operations */
+  if (t->type == Tsysdup) {
+    extern int newfd(Chan *, int);
+    extern Chan *fdtochan(int, int, int, int);
+    Chan *c;
+    int nfd;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    /* Get the channel from oldfd */
+    c = fdtochan(t->fid, -1, 0, 1);
+    incref(&c->ref);
+
+    /* Create new fd */
+    if (t->newfid == -1) {
+      nfd = newfd(c, 0);
+    } else {
+      /* Dup to specific fd - use newfd to handle it properly */
+      extern void fdclose(int, int);
+      if (t->newfid >= 0) {
+        fdclose(t->newfid, 0);
+        /* Try to place channel at specific fd */
+        up->fgrp->fd[t->newfid] = c;
+        nfd = t->newfid;
+      } else {
+        cclose(c);
+        error("invalid fd");
+      }
+    }
+    poperror();
+
+    /* Build Rsysdup response */
+    r->type = Rsysdup;
+    r->tag = t->tag;
+    r->fid = nfd;
+
+    print("p9_dispatch: Tsysdup oldfd=%d newfd=%d -> %d\n", t->fid, t->newfid, nfd);
     return 0;
   }
 
@@ -1431,7 +1808,7 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     d.gid = "kernel";
     d.muid = "kernel";
 
-    n = convD2M(&d, statbuf, sizeof(statbuf));
+    n = (int)convD2M(&d, statbuf, sizeof(statbuf));
     if (n <= 0) {
       r->type = Rerror;
       r->ename = "stat conversion failed";
