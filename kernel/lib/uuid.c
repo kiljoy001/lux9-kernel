@@ -276,3 +276,127 @@ int uuid_unpack_pebble(const uuid_t *u, unsigned int *token,
 
   return 0;
 }
+
+/* Capability UUID Packing
+   Layout:
+   data_a (48 bits): PA hash high 48 bits
+   data_b (12 bits): Type (8) | Perms (4)
+   data_c (62 bits): Epoch (16) | PA hash low 46 bits
+*/
+void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
+                          unsigned short epoch, unsigned char type,
+                          unsigned char perms) {
+  if (!u || !pa_hash)
+    return;
+
+  /* Extract 94 bits from PA hash (32 bytes = 256 bits)
+   * We take the first 94 bits (11.75 bytes)
+   * High 48 bits: bytes 0-5
+   * Low 46 bits: bytes 6-11, upper 6 bits of byte 12
+   */
+
+  /* data_a: PA hash high 48 bits (bytes 0-5) */
+  unsigned long long data_a = 0;
+  for (int i = 0; i < 6; i++) {
+    data_a = (data_a << 8) | pa_hash[i];
+  }
+
+  /* data_b: Type (8 bits) | Perms (4 bits) = 12 bits */
+  unsigned short data_b = ((unsigned short)type << 4) | (perms & 0x0F);
+
+  /* data_c: Epoch (16 bits) | PA hash low (46 bits) = 62 bits
+   * PA hash low: bytes 6-11 (48 bits) but we only use 46 bits
+   * So: bytes 6-11 = 48 bits, take upper 46 bits (shift right 2)
+   */
+  unsigned long long pa_low = 0;
+  for (int i = 6; i < 12; i++) {
+    pa_low = (pa_low << 8) | pa_hash[i];
+  }
+  /* Take upper 46 bits of pa_low (48 bits → 46 bits) */
+  pa_low >>= 2;
+
+  /* Pack: Epoch (16 bits) in high, PA low (46 bits) in low */
+  unsigned long long data_c = ((unsigned long long)epoch << 46) | pa_low;
+
+  uuid_pack_v8(u, data_a, data_b, data_c);
+}
+
+int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
+                            unsigned char *type, unsigned char *perms) {
+  if (!u)
+    return -1;
+
+  const unsigned char *d = u->data;
+
+  /* Version Check: Byte 6 high should be 8 */
+  if ((d[6] >> 4) != 8)
+    return -1;
+
+  /* Variant Check: Byte 8 high should be 10 */
+  if ((d[8] >> 6) != 2)
+    return -1;
+
+  /* data_b: Byte 6 (low 4) | Byte 7 (8) = Type (8) | Perms (4) */
+  unsigned int data_b = ((d[6] & 0x0F) << 8) | d[7];
+
+  if (type)
+    *type = (unsigned char)(data_b >> 4);
+  if (perms)
+    *perms = (unsigned char)(data_b & 0x0F);
+
+  /* data_c: Byte 8 (low 6) | Bytes 9-15 (56) = 62 bits
+   * Epoch (16 bits) in high, PA low (46 bits) in low
+   */
+  unsigned long long data_c = (unsigned long long)(d[8] & 0x3F);
+  for (int i = 9; i < 16; i++) {
+    data_c = (data_c << 8) | d[i];
+  }
+
+  if (epoch)
+    *epoch = (unsigned short)(data_c >> 46);
+
+  return 0;
+}
+
+void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
+  if (!u || !pa_hash_out)
+    return;
+
+  const unsigned char *d = u->data;
+
+  /* Extract PA hash (94 bits total):
+   * High 48 bits: Bytes 0-5 (data_a)
+   * Low 46 bits: From data_c (after epoch)
+   */
+
+  /* High 48 bits: bytes 0-5 → pa_hash_out[0-5] */
+  for (int i = 0; i < 6; i++) {
+    pa_hash_out[i] = d[i];
+  }
+
+  /* Low 46 bits: Extract from data_c
+   * data_c is in bytes 8-15 (62 bits total)
+   * Epoch is high 16 bits, PA low is low 46 bits
+   */
+  unsigned long long data_c = (unsigned long long)(d[8] & 0x3F);
+  for (int i = 9; i < 16; i++) {
+    data_c = (data_c << 8) | d[i];
+  }
+
+  /* Extract low 46 bits */
+  unsigned long long pa_low = data_c & 0x3FFFFFFFFFFFULL; /* 46 bits mask */
+
+  /* Shift back to 48 bits (pad with 2 zero bits on right) */
+  pa_low <<= 2;
+
+  /* Store in pa_hash_out[6-11] */
+  for (int i = 11; i >= 6; i--) {
+    pa_hash_out[i] = (unsigned char)(pa_low & 0xFF);
+    pa_low >>= 8;
+  }
+
+  /* Zero out remaining bytes (94 bits = 11.75 bytes, so bytes 12-31 are zero) */
+  for (int i = 12; i < 32; i++) {
+    pa_hash_out[i] = 0;
+  }
+}

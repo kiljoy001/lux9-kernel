@@ -31,4 +31,25 @@ void uuid_pack_pebble(uuid_t *u, unsigned int token, unsigned int generation,
 int uuid_unpack_pebble(const uuid_t *u, unsigned int *token,
                        unsigned int *generation, unsigned short *index);
 
+/* Capability UUID Packing (PA hash + Type + Perms + Epoch)
+ * UUIDv8 Layout for capabilities:
+ * Bits 0-47:   PA hash high (48 bits)
+ * Bits 48-51:  Version = 8 (0b1000)
+ * Bits 52-59:  Type (8 bits: CAP_TYPE_MEMORY, etc.)
+ * Bits 60-63:  Permissions (4 bits: R/W/X/T)
+ * Bits 64-65:  Variant = 0b10
+ * Bits 66-81:  Epoch (16 bits)
+ * Bits 82-127: PA hash low (46 bits)
+ * Total PA hash: 94 bits from 32-byte BLAKE2b
+ */
+void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
+                          unsigned short epoch, unsigned char type,
+                          unsigned char perms);
+
+int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
+                            unsigned char *type, unsigned char *perms);
+
+/* Extract PA hash bits from capability UUID (94 bits total) */
+void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out);
+
 #endif /* _UUID_H_ */

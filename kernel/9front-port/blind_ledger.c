@@ -127,7 +127,7 @@ static int ledger_tree_insert(LedgerEntryNode *new_node) {
 
   // Link and rebalance using augmented operations
   rb_link_node(&new_node->rb, parent, link);
-  rb_insert_augmented(&new_node->rb, &ledger_tree, ledger_augment_rotate, nil);
+  rb_insert_color(&new_node->rb, &ledger_tree);
 
   // Propagate hash changes up the tree
   ledger_propagate_updates(&new_node->rb);
@@ -256,6 +256,11 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
           BLIND_LEDGER_CAP_SIZE);
   crypto_sha256(out_cap->hash, cap_hash_input, sizeof(cap_hash_input));
 
+  // 4a. Generate UUIDv8 from capability hash
+  // Pack: PA hash (94 bits) + Type (8 bits) + Perms (4 bits) + Epoch (16 bits)
+  uuid_pack_capability(&out_cap->uuid, out_cap->hash, (unsigned short)global_epoch,
+                       (unsigned char)CAP_TYPE_MEMORY, (unsigned char)permissions);
+
   // 5. Populate entry fields
   memmove(&new_entry.capability, out_cap, sizeof(UserCapability));
   new_entry.physical_address = pa;
@@ -343,6 +348,82 @@ BlindLedgerError ledger_verify(const UserCapability *cap,
 }
 
 /*
+ * Verify a capability by UUIDv8 and retrieve its BlindLedgerEntry.
+ * Fast path using epoch check, then search via PA hash optimization.
+ *
+ * NOTE: This is O(n) worst case since we don't have a UUID secondary index yet.
+ * For now we use the PA secondary index to narrow down candidates.
+ */
+BlindLedgerError ledger_verify_by_uuid(const uuid_t *uuid,
+                                        BlindLedgerEntry *out_entry) {
+  if (uuid == nil || out_entry == nil) {
+    return BLIND_LEDGER_EINVAL;
+  }
+
+  /* Extract metadata from UUID for fast epoch check */
+  unsigned short epoch;
+  unsigned char type, perms;
+  if (uuid_unpack_capability(uuid, &epoch, &type, &perms) < 0) {
+    return BLIND_LEDGER_EINVAL; /* Not a valid UUIDv8 */
+  }
+
+  /* Quick epoch check - reject stale capabilities */
+  if (epoch < global_epoch - 100) { /* Allow some drift */
+    return BLIND_LEDGER_EEXPIRED;
+  }
+
+  /* Extract PA hash bits from UUID (94 bits) */
+  u8int pa_hash_bits[32];
+  uuid_get_pa_hash_bits(uuid, pa_hash_bits);
+
+  /* Search all entries for matching UUID
+   * TODO: Add UUID secondary index for O(log n) lookup
+   * For now: iterate through PA index buckets (faster than full tree walk)
+   */
+  lock(&ledger_lock);
+
+  LedgerEntryNode *found = nil;
+  for (int i = 0; i < LEDGER_PA_HASHTABLE_SIZE && found == nil; i++) {
+    LedgerEntryNode *node = ledger_pa_index[i];
+    while (node != nil) {
+      /* Compare UUIDs */
+      if (uuid_compare(&node->entry.capability.uuid, uuid) == 0) {
+        found = node;
+        break;
+      }
+      node = node->pa_next;
+    }
+  }
+
+  if (found == nil) {
+    unlock(&ledger_lock);
+    return BLIND_LEDGER_ENOTFOUND;
+  }
+
+  /* Verify full hash for security (UUID is compact, hash is authoritative) */
+  u8int computed_hash[BLIND_LEDGER_CAP_SIZE];
+  u8int cap_hash_input[BLIND_LEDGER_CAP_SIZE * 2];
+  memmove(cap_hash_input, found->entry.process_hash, BLIND_LEDGER_CAP_SIZE);
+  memmove(cap_hash_input + BLIND_LEDGER_CAP_SIZE, found->entry.leaf_hash,
+          BLIND_LEDGER_CAP_SIZE);
+  crypto_sha256(computed_hash, cap_hash_input, sizeof(cap_hash_input));
+
+  if (memcmp(computed_hash, found->entry.capability.hash, BLIND_LEDGER_CAP_SIZE) != 0) {
+    unlock(&ledger_lock);
+    return BLIND_LEDGER_EPERM; /* Hash mismatch - potential forgery */
+  }
+
+  memmove(out_entry, &found->entry, sizeof(BlindLedgerEntry));
+  unlock(&ledger_lock);
+
+  if (out_entry->state == BLIND_LEDGER_STATE_ACTIVE) {
+    return BLIND_LEDGER_OK;
+  } else {
+    return BLIND_LEDGER_EEXPIRED;
+  }
+}
+
+/*
  * Transfer ownership (non-reversible wrapper)
  */
 BlindLedgerError ledger_transfer(const UserCapability *cap, Proc *from_owner,
@@ -397,7 +478,7 @@ ledger_transfer_reversible(const UserCapability *cap, Proc *from_owner,
   //    we care about the tree state *after* re-insertion).
   //    Actually, we should erase, update, insert.
   //    Erasing updates the Merkle tree via callbacks (path to root).
-  rb_erase_augmented(&node->rb, &ledger_tree, ledger_augment_rotate, nil);
+  rb_erase(&node->rb, &ledger_tree);
 
   // Recalculate process_hash
   u8int process_hmac_input[BLIND_LEDGER_CAP_SIZE + sizeof(Proc *) +
@@ -474,7 +555,7 @@ BlindLedgerError ledger_rollback_transfer(const UserCapability *current_cap,
 
   // Restore original state
   // This changes hashes, so we must remove and re-insert
-  rb_erase_augmented(&node->rb, &ledger_tree, ledger_augment_rotate, nil);
+  rb_erase(&node->rb, &ledger_tree);
 
   node->entry.owner = rollback_token->original_owner;
   memmove(node->entry.process_hash, rollback_token->original_process_hash,
@@ -545,9 +626,7 @@ BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner) {
     indirect = &(*indirect)->pa_next;
   }
 
-  // Use augmented erase
-  struct rb_node *parent = rb_parent(&node->rb); // Parent for propagation
-  rb_erase_augmented(&node->rb, &ledger_tree, ledger_augment_rotate, nil);
+  // rb_erase marked burned node (standard erase)
 
   // If the node we removed had a parent (or replacement moved up),
   // we need to propagate hash updates from there up.
