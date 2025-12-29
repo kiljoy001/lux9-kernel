@@ -40,11 +40,9 @@ static void *pebble_alloc_wrapper(unsigned long size) {
   UserCapability cap;
   void *addr;
 
-  if (pebble_black_alloc(size, &cap) != 0)
+  if (pebble_alloc_with_white(size, &cap, &addr) != 0)
     return nil;
 
-  /* Get the actual memory address from the capability */
-  addr = pebble_get_black_addr(&cap);
   if (addr && size > 0) {
     memset(addr, 0, size); /* Zero memory like xallocz */
   }

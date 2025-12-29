@@ -322,7 +322,7 @@ static void remove_fid(int fid) { fdclose(fid, 0); }
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
 
-  /* Handle Texec (120) - Direct execution message */
+  /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
     char *path;
     char *argv[2];
@@ -776,11 +776,19 @@ int p9_handle_doorbell(Proc *p) {
     return -1;
   }
 
-  /* Ensure the exchange page is mapped into userspace so user code can ring the
-   * doorbell. Some early processes may not have it mapped yet. */
+  /* Ensure BOTH exchange pages are mapped into userspace.
+   * Critical: userpmap() modifies m->pml4 (CPU page table) which is cleared
+   * by flushmmu(). We must remap on every doorbell if mapping is invalid.
+   */
   uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
-  if (pte == nil || (*pte & PTEVALID) == 0) {
+  uintptr *pte2 = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR + BY2PG, 0, 0);
+  if (pte == nil || (*pte & PTEVALID) == 0 || pte2 == nil ||
+      (*pte2 & PTEVALID) == 0) {
+    print("p9_handle_doorbell: remapping exchange pages for pid %lud\n",
+          p->pid);
     userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page),
+             PTEVALID | PTEUSER | PTEWRITE);
+    userpmap(EXCHANGE_PAGE_ADDR + BY2PG, PADDR(p->p9page) + BY2PG,
              PTEVALID | PTEUSER | PTEWRITE);
   }
 

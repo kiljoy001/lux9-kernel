@@ -156,7 +156,8 @@ int family_pebble_allocate_resource(struct FamilyExchangePage *family,
   }
 
   /* Allocate black pebble resource */
-  if (pebble_black_alloc(resource_size, &black_handle) != 0) {
+  UserCapability cap;
+  if (pebble_alloc_with_white(resource_size, &cap, &black_handle) != 0) {
     return FAMILY_ENOMEM;
   }
 

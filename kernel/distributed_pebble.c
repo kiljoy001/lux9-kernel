@@ -53,9 +53,9 @@ void machine_bank_init(MachineBank *bank, uuid_t *machine_id, u64int ram_bytes,
   /* Compute initial Merkle root */
   machine_bank_update_root(bank);
 
-  print("DPEBBLE: bank init machine=%H mem=%llu cpu=%llu gpu=%llu net=%llu "
+  print("DPEBBLE: bank init mem=%llud cpu=%llud gpu=%llud net=%llud "
         "tokens\n",
-        machine_id->data, bank->total_tokens[TOK_MEMORY],
+        bank->total_tokens[TOK_MEMORY],
         bank->total_tokens[TOK_CPU], bank->total_tokens[TOK_GPU],
         bank->total_tokens[TOK_NETWORK]);
 }
@@ -149,28 +149,29 @@ int machine_bank_verify_proof(const TokenProof *proof,
     return 0;
 
   /* Verify the Merkle path reconstructs to expected root */
-  BlindLedgerHash computed = proof->balance_proof.target_hash;
+  BlindLedgerHash computed;
+  memmove(&computed, &proof->balance_proof.target_hash, BLIND_LEDGER_CAP_SIZE);
 
   for (u32int i = 0; i < proof->balance_proof.depth; i++) {
     u8int combined[BLIND_LEDGER_CAP_SIZE * 2];
     int is_right = (proof->balance_proof.path_bits >> i) & 1;
 
     if (is_right) {
-      memmove(combined, &proof->balance_proof.siblings[i],
+      memmove(combined, (void *)&proof->balance_proof.siblings[i],
               BLIND_LEDGER_CAP_SIZE);
       memmove(combined + BLIND_LEDGER_CAP_SIZE, &computed,
               BLIND_LEDGER_CAP_SIZE);
     } else {
       memmove(combined, &computed, BLIND_LEDGER_CAP_SIZE);
       memmove(combined + BLIND_LEDGER_CAP_SIZE,
-              &proof->balance_proof.siblings[i], BLIND_LEDGER_CAP_SIZE);
+              (void *)&proof->balance_proof.siblings[i], BLIND_LEDGER_CAP_SIZE);
     }
 
     crypto_blake2b((u8int *)&computed, BLIND_LEDGER_CAP_SIZE, combined,
                    sizeof(combined));
   }
 
-  return memcmp(&computed, expected_root, BLIND_LEDGER_CAP_SIZE) == 0;
+  return memcmp(&computed, (void *)expected_root, BLIND_LEDGER_CAP_SIZE) == 0;
 }
 
 /* ========== Arena Branch ========== */
@@ -211,7 +212,7 @@ ArenaBranch *branch_create(MachineBank *bank, u32int flags) {
 
   unlock(&bank->lock);
 
-  print("DPEBBLE: branch created id=%H flags=%x\n", branch->branch_id.data,
+  print("DPEBBLE: branch created flags=%x\n",
         flags);
   return branch;
 }
@@ -481,8 +482,8 @@ int transfer_initiate(MachineBank *local, uuid_t *remote_machine,
   machine_bank_update_root(local);
   unlock(&local->lock);
 
-  print("DPEBBLE: transfer initiated id=%H amount=%llu type=%d\n",
-        out_transfer->transfer_id.data, amount, type);
+  print("DPEBBLE: transfer initiated amount=%llud type=%d\n",
+        amount, type);
 
   return 0;
 }
@@ -506,8 +507,8 @@ int transfer_receive(MachineBank *local, const TokenTransfer *transfer) {
 
   unlock(&local->lock);
 
-  print("DPEBBLE: transfer received id=%H amount=%llu\n",
-        transfer->transfer_id.data, transfer->amount);
+  print("DPEBBLE: transfer received amount=%llud\n",
+        transfer->amount);
 
   return 0;
 }
@@ -536,8 +537,6 @@ int transfer_cancel(MachineBank *local, uuid_t *transfer_id) {
 /* ========== Initialization ========== */
 
 void distributed_pebble_init(void) {
-  extern ulong physmem; /* From kernel memory init */
-
   /* Create local machine bank */
   local_machine_bank = mallocz(sizeof(MachineBank), 1);
   if (local_machine_bank == nil) {
@@ -550,8 +549,7 @@ void distributed_pebble_init(void) {
   uuid_new_v8(&machine_id);
 
   /* Initialize with local resources */
-  /* CPU tokens: estimate from nelem(conf.mem) or similar */
-  machine_bank_init(local_machine_bank, &machine_id, physmem, /* RAM */
+  machine_bank_init(local_machine_bank, &machine_id, (u64int)conf.npage * BY2PG, /* RAM */
                     1,                /* CPU cores (placeholder) */
                     0,                /* GPU memory */
                     100 * 1024 * 1024 /* 100MB/s network */

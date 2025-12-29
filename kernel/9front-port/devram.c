@@ -526,25 +526,14 @@ static Chan *ramopen(Chan *c, int omode) {
     /* Add nonce space */
     v->size += 24;
 
-    v->data = xalloc(v->size);
-    if (v->data == nil) {
+    /* Mint capability and allocate memory */
+    if (pebble_alloc_with_white(v->size, &v->capability, (void**)&v->data) < 0) {
       free(v);
       error(Enomem);
     }
     memset(v->data, 0, v->size);
 
     /* Locks */
-    /* qlock init via memset */
-
-    /* Crypto setup */
-    extern void genrandom(uchar * buf, int nbytes);
-    genrandom(v->salt, 16);
-    genrandom(v->current_nonce, 24);
-
-    /* Mint capability */
-    pebble_black_alloc(v->size,
-                       &v->capability); /* Using as minting mechanism roughly */
-    /* Note: simplified capability logic as per design doc */
 
     /* Add to list */
     qlock(&vault_list_lock);

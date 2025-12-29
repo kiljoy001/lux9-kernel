@@ -921,7 +921,10 @@ uintptr sysexec(void *list_void) {
       putseg(s);
     }
   }
-  for (i = ESEG + 1; i < NSEG; i++) {
+  /* Preserve P9SEG and segments with SG_CEXEC=0 */
+  for (i = ESEG; i < NSEG; i++) {
+    if (i == P9SEG)
+      continue;
     s = up->seg[i];
     if (s != nil && (s->type & SG_CEXEC) != 0) {
       up->seg[i] = nil;
@@ -1761,6 +1764,7 @@ uintptr syspebbleblackalloc(void *list_void) {
   uintptr size;
   void **userp;
   void *handle;
+  UserCapability cap;
 
   size = SYSCALL_ARG(list, uintptr);
   userp = SYSCALL_ARG(list, void **);
@@ -1770,7 +1774,10 @@ uintptr syspebbleblackalloc(void *list_void) {
     error(PEBBLE_E_PERM);
   validaddr((uintptr)userp, sizeof(void *), 1);
   handle = nil;
-  pebble_black_alloc(size, &handle);
+  
+  if (pebble_alloc_with_white(size, &cap, &handle) != 0)
+    error(PEBBLE_E_NOMEM);
+    
   *userp = handle;
   return (uintptr)handle;
 }

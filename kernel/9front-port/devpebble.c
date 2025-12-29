@@ -237,9 +237,10 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
     size = strtoul(buf, 0, 0);
     if (size > 0) {
       UserCapability cap;
-      if (pebble_black_alloc(size, &cap) == 0) {
-        snprint(tmp, sizeof(tmp), "cap %H size %llud perms %ud\n", cap.hash,
-                cap.size, cap.perms);
+      void *addr;
+      if (pebble_alloc_with_white(size, &cap, &addr) == 0) {
+        snprint(tmp, sizeof(tmp), "cap %H size %llud perms %ud addr %#p\n", cap.hash,
+                cap.size, cap.perms, addr);
         pebsetresp(c, tmp);
       } else {
         free(buf);

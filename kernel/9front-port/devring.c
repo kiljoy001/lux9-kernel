@@ -99,7 +99,9 @@ ringmmap(Chan *c, void *addr, long len, ulong offset)
     
     if (channels[0] == nil) {
         void *p;
-        if (pebble_black_alloc(4096, &p) < 0)
+        UserCapability cap;
+        
+        if (pebble_alloc_with_white(4096, &cap, &p) < 0)
             error(Enomem);
             
         cs = xalloc(sizeof(struct ChannelState));

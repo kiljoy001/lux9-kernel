@@ -818,6 +818,7 @@ Proc *newproc(void) {
   /* Phase 6: Exchange page allocation moved to explicit call
    * (proc_setup_exchange) */
   p->p9page = nil;
+  p->seg[P9SEG] = nil;
 
   return p;
 }

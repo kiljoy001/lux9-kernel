@@ -2,6 +2,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
+#include "pageown.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -51,18 +52,34 @@ int proc_setup_p9page(Proc *p) {
   s->pseg->next = nil;
   s->pseg->prev = nil;
 
-  /* Assign segment to process at ESEG slot */
-  p->seg[ESEG] = s;
+  /* Assign segment to process at P9SEG slot */
+  p->seg[P9SEG] = s;
   print(
-      "proc_setup_p9page: assigned seg %p to p->seg[ESEG], base=%#p top=%#p\n",
+      "proc_setup_p9page: assigned seg %p to p->seg[P9SEG], base=%#p top=%#p\n",
       s, (void *)s->base, (void *)s->top);
 
   /* Pre-map exchange pages so initcode doesn't fault on first write */
   extern void userpmap(uintptr va, uintptr pa, int perms);
-  userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page),
-           PTEVALID | PTEUSER | PTEWRITE);
+  userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page), PTEVALID | PTEUSER | PTEWRITE);
   userpmap(EXCHANGE_PAGE_ADDR + BY2PG, PADDR(p->p9page) + BY2PG,
            PTEVALID | PTEUSER | PTEWRITE);
+
+  /* Register exchange pages with borrow checker for ownership tracking */
+  extern uintptr saved_limine_hhdm_offset;
+  uintptr pa1 = PADDR(p->p9page);
+  uintptr pa2 = PADDR(p->p9page) + BY2PG;
+  uintptr hhdm_va1 = pa1 + saved_limine_hhdm_offset;
+  uintptr hhdm_va2 = pa2 + saved_limine_hhdm_offset;
+
+  /* Acquire ownership - these pages belong to this process */
+  if (pageown_acquire(p, pa1, hhdm_va1) != POWN_OK) {
+    print(
+        "proc_setup_p9page: failed to acquire ownership of exchange page 1\n");
+  }
+  if (pageown_acquire(p, pa2, hhdm_va2) != POWN_OK) {
+    print(
+        "proc_setup_p9page: failed to acquire ownership of exchange page 2\n");
+  }
 
   return 0;
 }

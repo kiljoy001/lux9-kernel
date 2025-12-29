@@ -605,7 +605,7 @@ enum {
 /*
  *  process memory segments - NSEG always last !
  */
-enum { SSEG, TSEG, DSEG, BSEG, ESEG, LSEG, SEG1, SEG2, SEG3, SEG4, NSEG };
+enum { SSEG, TSEG, DSEG, BSEG, ESEG, P9SEG, LSEG, SEG1, SEG2, SEG3, SEG4, NSEG };
 
 enum {
   Dead = 0, /* Process states */

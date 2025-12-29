@@ -135,6 +135,19 @@ static int ledger_tree_insert(LedgerEntryNode *new_node) {
   return 0;
 }
 
+/* Format helper for printing hashes */
+int Hfmt(Fmt *f) {
+  u8int *h = va_arg(f->args, u8int *);
+  if (h == nil)
+    return fmtprint(f, "<nil>");
+
+  for (int i = 0; i < BLIND_LEDGER_CAP_SIZE; i++) {
+    if (fmtprint(f, "%02x", h[i]) < 0)
+      return -1;
+  }
+  return 0;
+}
+
 // =========================================================================
 //  Blind Ledger Core Functions
 // =========================================================================
@@ -146,6 +159,8 @@ void blind_ledger_init(void) {
   extern int crypto_hw_rdrand_available(void);
   extern u64int chacha20_csprng_u64(void);
   extern u8int derivation_key[32];
+
+  fmtinstall('H', Hfmt);
 
   memset(ledger_pa_index, 0, sizeof(ledger_pa_index));
   memset(&ledger_lock, 0, sizeof(Lock));

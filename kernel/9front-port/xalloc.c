@@ -4,6 +4,8 @@
 #include "portlib.h"
 #include "u.h"
 
+#include "borrow_enforce.h"
+
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
 extern uintptr saved_limine_hhdm_offset;
 int xinit_done = 0;
@@ -220,13 +222,14 @@ void *xspanalloc(ulong size, int align, ulong span) {
   // property: preserves valid_holes invariant per
   proofs/allocator/xalloc_model.v
 */
-void *xallocz(ulong size, int zero) {
+static void *xalloc_internal(ulong size, int zero, int raw) {
   Xhdr *p;
   Hole *h, **l;
   ulong orig_size = size;
   ulong overhead;
   uintptr addr_check;
 
+  /* DEBUG removed - causes recursion */
   if (size >= 4096)
     xtrace("xallocz start size=%lud zero=%d caller=%#p\n", size, zero,
            getcallerpc(&size));
@@ -236,14 +239,14 @@ void *xallocz(ulong size, int zero) {
 
   /* Detect potential overflow when adding header overhead */
   if (size > ~0UL - overhead) {
-    print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size,
-          overhead);
+    /* print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size,
+          overhead); */
     panic("xallocz: request size overflow (size=%lud)", size);
   }
 
   /* Additional check for unreasonably large allocations */
   if (size > 128 * 1024 * 1024) { /* More than 128MB */
-    print("xallocz: unreasonably large allocation request: %lud bytes\n", size);
+    /* print("xallocz: unreasonably large allocation request: %lud bytes\n", size); */
     panic("xallocz: unreasonably large allocation request (size=%lud)", size);
   }
 
@@ -257,11 +260,7 @@ void *xallocz(ulong size, int zero) {
   }
 
   /* DEBUG: Print before lock attempt */
-  if (size >= 32) {
-    uartputs("xallocz: about to ilock\n", 24);
-  }
   ilock(&xlists.lk);
-  uartputs("xallocz: ilock acquired\n", 24);
   if (size >= 4096)
     xtrace("xallocz: locked size=%lud\n", size);
 
@@ -286,8 +285,8 @@ void *xallocz(ulong size, int zero) {
         h->addr = aligned_addr;
         h->size -= waste;
 
-        print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
-              (void *)addr_check, (void *)aligned_addr, waste);
+        /* print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
+              (void *)addr_check, (void *)aligned_addr, waste); */
       }
 
       p = (Xhdr *)h->addr;
@@ -324,6 +323,12 @@ void *xallocz(ulong size, int zero) {
       if (size >= 4096)
         xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
       xtrace("xallocz: about to return p->data=%p\n", p->data);
+
+      /* Borrow Checker: Acquire kernel ownership of allocated memory (unless RAW) */
+      if (!raw) {
+        BORROW_ACQUIRE_ALLOC(p->data, size - overhead);
+      }
+
       /* Lock already released at line 294 */
       return p->data;
     }
@@ -336,12 +341,26 @@ void *xallocz(ulong size, int zero) {
   /* TEST 2A: Track allocation failure */
   xalloc_failures++;
   xalloc_last_failure_size = orig_size;
-  print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures,
-        orig_size, getcallerpc(&orig_size));
+  /* print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures,
+        orig_size, getcallerpc(&orig_size)); */
   return nil;
 }
 
-void *xalloc(ulong size) { return xallocz(size, 1); }
+void *xallocz(ulong size, int zero) {
+  return xalloc_internal(size, zero, 0);
+}
+
+void *xallocz_raw(ulong size, int zero) {
+  return xalloc_internal(size, zero, 1);
+}
+
+void *xalloc(ulong size) {
+  return xalloc_internal(size, 1, 0);
+}
+
+void *xalloc_raw(ulong size) {
+  return xalloc_internal(size, 1, 1);
+}
 
 /*@
   // Header is valid implied by pointer being allocated

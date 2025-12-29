@@ -35,10 +35,12 @@ _start:
 	movw $0x7469, 21(%rdi)			/* "it" */
 	/* 23 bytes total message size */
 
-	/* Update req_tail to 23 (Message Size) 
-	 * Control block is at offset 0xF00. req_tail is at 0xF0C (offset 12)
+	/* Update control block pointers
+	 * Control block is at offset 0xF00. 
+	 * req_head at 0xF08, req_tail at 0xF0C (offsets 8 and 12)
 	 */
-	movl $23, 0xF0C(%rdi)
+	movl $0, 0xF08(%rdi)		/* req_head = 0 */
+	movl $23, 0xF0C(%rdi)		/* req_tail = 23 */
 
 	/* Ring the doorbell - write 1 to doorbell field (offset 0xF00) */
 	movl $1, 0xF00(%rdi)

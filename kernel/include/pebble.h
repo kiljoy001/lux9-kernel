@@ -155,7 +155,7 @@ typedef struct PebbleState {
 extern Lock pebble_global_lock;
 
 /* Core API functions */
-int pebble_black_alloc(ulong size, UserCapability *out_cap);
+int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability *out_cap);
 void *pebble_get_black_addr(const UserCapability *cap);
 int pebble_black_free(const UserCapability *cap);
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap);

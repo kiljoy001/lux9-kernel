@@ -444,11 +444,16 @@ static void faultamd64(Ureg *ureg, void *) {
     print("  Mode:       %s\n", user ? "user" : "kernel");
     print("  Access:     %s\n", read ? "READ" : "WRITE");
     print("  Error code: %#lux ", ureg->error);
-    if (ureg->error & 1) print("[P] ");
-    if (ureg->error & 2) print("[W] ");
-    if (ureg->error & 4) print("[U] ");
-    if (ureg->error & 8) print("[RSVD] ");
-    if (ureg->error & 16) print("[I] ");
+    if (ureg->error & 1)
+      print("[P] ");
+    if (ureg->error & 2)
+      print("[W] ");
+    if (ureg->error & 4)
+      print("[U] ");
+    if (ureg->error & 8)
+      print("[RSVD] ");
+    if (ureg->error & 16)
+      print("[I] ");
     print("\n");
 
     /* Check borrow checker ownership */
@@ -460,7 +465,10 @@ static void faultamd64(Ureg *ureg, void *) {
       else
         print("  Borrow:     Page tracked but no owner\n");
     } else {
-      print("  Borrow:     Page not tracked/owned\n");
+      if (up == nil)
+        print("  Borrow:     Page not tracked (up==nil, early boot)\n");
+      else
+        print("  Borrow:     Page not tracked (not yet allocated)\n");
     }
 
     print("========================\n\n");

@@ -37,11 +37,14 @@ static Private pmainpriv;
  * Pebble Arena Allocator: Backs Main/Image/Secret pools.
  * Acquires a Black Token for the entire arena.
  */
-#include <pebble.h> /* For Pebble definitions */
+#include "pageown.h" /* For borrow checker registration */
+#include <pebble.h>  /* For Pebble definitions */
 
 static void *pebble_arena_alloc(ulong size) {
   UserCapability cap;
   void *addr;
+  PebbleWhite *white;
+  PebbleState *ps;
 
   /*
    * Early-boot bypass: Before the first process (up) exists, Pebble
@@ -49,20 +52,53 @@ static void *pebble_arena_alloc(ulong size) {
    * Use raw xalloc for initial pool arena allocations.
    */
   if (up == nil) {
-    return xalloc(size);
+    return xalloc_raw(size);
   }
 
-  /* 1. Allocate a Pebble Black Token */
-  if (pebble_black_alloc(size, &cap) < 0) {
+  ps = pebble_state();
+  if (ps == nil)
+    return nil;
+
+  /* 1. Reserve budget (WHITE token) */
+  white = pebble_issue_white(ps, nil, size);
+  if (white == nil)
+    return nil;
+
+  /* 2. Allocate RAW memory (breaks recursion loop) */
+  addr = xallocz_raw(size, 1);
+  if (addr == nil)
+    return nil;
+
+  /* 3. Bind and Verify WHITE */
+  white->data_ptr = addr;
+  void *black_handle;
+  if (pebble_white_verify(white, &black_handle) != 0) {
+    /* FIXME: leak raw addr if verify fails */
     return nil;
   }
 
-  /* 2. Retrieve the confirmed physical address */
-  addr = pebble_get_black_addr(&cap);
-
-  /* 3. Verify address is valid */
-  if (addr == nil) {
+  /* 4. Convert to BLACK token */
+  if (pebble_black_alloc(white, addr, size, &cap) < 0) {
     return nil;
+  }
+
+  /* 5. Register with borrow checker (after userspace init only)
+   * This tracks all pool allocations for memory safety verification.
+   * Only done after BOOT_USERINIT (state 18) when borrow checker is active.
+   */
+  extern int current_boot_state;
+  if (current_boot_state >= 18) {
+    extern uintptr saved_limine_hhdm_offset;
+    /* Register each page in the allocation */
+    uintptr pa = PADDR(addr);
+    uintptr end_pa = pa + size;
+    for (uintptr page_pa = pa & ~(BY2PG - 1); page_pa < end_pa;
+         page_pa += BY2PG) {
+      uintptr hhdm_va = page_pa + saved_limine_hhdm_offset;
+      /* Don't panic on failure - page may already be tracked by another
+       * allocation */
+      pageown_acquire(up, page_pa, hhdm_va);
+    }
   }
 
   return addr;
@@ -136,7 +172,7 @@ static Pool pmetamem = {
     .maxsize = 4 * 1024 * 1024,
     .minarena = 4096,
     .quantum = 32,
-    .alloc = xalloc, /* RAW BACKING */
+    .alloc = xalloc_raw, /* RAW BACKING - No Borrow Checker tracking */
     .merge = xmerge,
     .flags = 0,
 

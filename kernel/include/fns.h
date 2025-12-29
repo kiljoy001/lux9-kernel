@@ -440,7 +440,13 @@ void *xalloc(ulong size);
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
+void *xalloc_raw(ulong size);
+/*@ allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
 void *xallocz(ulong size, int zero);
+void *xallocz_raw(ulong size, int zero);
 /*@ frees p;
     assigns \nothing;
 */

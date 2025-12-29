@@ -450,6 +450,7 @@ const u8int *pebble_get_vault_secret(void) {
 
 /*@
   requires size > 0;
+  requires white != nil;
   requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
@@ -458,11 +459,30 @@ const u8int *pebble_get_vault_secret(void) {
 /*
  * SMT: Validated by proofs/pebble/pebble_security.v
  * Theorem: Inv_Conservation
- * Description: Verifies black token allocation maintains budget conservation
+ * Description: Verifies BLACK token allocation from verified WHITE token
+ *
+ * CRITICAL: This function REQUIRES a verified WHITE token.
+ * WHITE tokens must be issued first (pebble_issue_white), then verified
+ * (pebble_white_verify), before calling this function.
+ *
+ * Flow: WHITE (reserve) → Verify → BLACK (allocate)
  */
-int pebble_black_alloc(ulong size, UserCapability *out_cap) {
-  void *buf;
+int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability *out_cap) {
   PebbleBlack *pb;
+
+  /*
+   * Verify WHITE token was provided (WHITE → BLACK conversion required)
+   */
+  if (white == nil) {
+    print("pebble_black_alloc: ERROR - WHITE token required!\n");
+    print("  Must issue WHITE token first via pebble_issue_white()\n");
+    return -1;
+  }
+
+  if (buf == nil) {
+    print("pebble_black_alloc: ERROR - buffer address required!\n");
+    return -1;
+  }
 
   /*
    * If up == nil, we are likely in early boot (xinit/mmuinit).
@@ -481,10 +501,15 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
     size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
   }
 
-  /* 1. Allocate physical memory (kernel heap for now) */
-  buf = xallocz(size, 1);
-  if (buf == nil)
+  /* Verify WHITE token matches the size */
+  if (white->size != size) {
+    print("pebble_black_alloc: WHITE token size mismatch (white=%lud, requested=%lud)\n",
+          white->size, size);
     return -1;
+  }
+
+  /* 1. Memory already allocated - WHITE token should point to it */
+  /* NOTE: buf is provided by caller after xallocz() */
 
   /* 2. Acquire ownership via Borrow Checker */
   if (up != nil) {
@@ -534,8 +559,94 @@ int pebble_black_alloc(ulong size, UserCapability *out_cap) {
 
   pb->next = pebble_state()->black_list;
   pebble_state()->black_list = pb;
+
+  /*
+   * Enforce consumption: A WHITE token can only be converted to BLACK ONCE.
+   * Zeroing the magic prevents reuse if the caller keeps the pointer.
+   */
+  white->token = 0;
+
   iunlock(&pebble_global_lock);
 
+  return 0;
+}
+
+/*
+ * Helper function: Full WHITE→BLACK allocation flow
+ *
+ * This implements the proper Pebble economy:
+ * 1. Issue WHITE token (reservation from COLORLESS budget)
+ * 2. Allocate physical memory
+ * 3. Bind WHITE to address
+ * 4. Verify WHITE (consumes it)
+ * 5. Convert to BLACK token
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int pebble_alloc_with_white(ulong size, UserCapability *out_cap, void **out_addr) {
+  PebbleState *ps;
+  PebbleWhite *white;
+  void *buf;
+  void *black_handle;
+
+  if (out_cap == nil || out_addr == nil)
+    return -1;
+
+  ps = pebble_state();
+  if (ps == nil)
+    return -1;
+
+  /* Enforce granularity */
+  if (size < PEBBLE_MIN_ALLOC)
+    size = PEBBLE_MIN_ALLOC;
+  if (size % PEBBLE_MEM_PER_TOKEN != 0)
+    size = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+
+  /* Step 1: Issue WHITE token (reservation from COLORLESS budget) */
+  white = pebble_issue_white(ps, nil, size);
+  if (white == nil) {
+    print("pebble_alloc_with_white: WHITE issue failed (no budget?)\n");
+    return -1;
+  }
+
+  /* Step 2: Allocate physical memory */
+  buf = xallocz(size, 1);
+  if (buf == nil) {
+    /* Return WHITE to budget */
+    lock(&pebble_global_lock);
+    ps->colorless_bank += size;
+    ps->white_pending -= size;
+    /* Deactivate the white token slot */
+    for (int i = 0; i < PEBBLE_MAX_TOKENS; i++) {
+      if (&ps->whites[i] == white) {
+        ps->whites_active[i] = 0;
+        white->token = 0;
+        break;
+      }
+    }
+    unlock(&pebble_global_lock);
+    print("pebble_alloc_with_white: xallocz failed\n");
+    return -1;
+  }
+
+  /* Step 3: Bind WHITE token to allocated address */
+  white->data_ptr = buf;
+
+  /* Step 4: Verify WHITE (consumes it) */
+  if (pebble_white_verify(white, &black_handle) != 0) {
+    xfree(buf);
+    print("pebble_alloc_with_white: WHITE verify failed\n");
+    return -1;
+  }
+
+  /* Step 5: Convert to BLACK token */
+  if (pebble_black_alloc(white, buf, size, out_cap) != 0) {
+    xfree(buf);
+    print("pebble_alloc_with_white: BLACK alloc failed\n");
+    return -1;
+  }
+
+  *out_addr = buf;
   return 0;
 }
 
@@ -1174,7 +1285,6 @@ void pebble_cleanup(Proc *p) {
 
 void pebble_selftest(void) {
   PebbleState *ps;
-  PebbleWhite *white;
   UserCapability black_cap;
   PebbleBlue *blue;
   PebbleRed *red;
@@ -1188,17 +1298,14 @@ void pebble_selftest(void) {
 
   uartprintf("PEBBLE: selftest begin\n");
 
-  /* Test 1: White -> Black allocation */
-  white = pebble_issue_white(ps, nil, PEBBLE_MIN_ALLOC);
-  if (white == nil) {
-    uartprintf("pebble selftest: white issue failed\n");
+  /* Test 1: White -> Black allocation (full flow) */
+  void *black_addr = nil;
+  if (pebble_alloc_with_white(PEBBLE_MIN_ALLOC, &black_cap, &black_addr) != 0) {
+    uartprintf("pebble selftest: WHITE->BLACK allocation failed\n");
     return;
   }
-
-  void *black_handle = nil;
-  pebble_white_verify(white, &black_handle);
-  if (pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0) {
-    uartprintf("pebble selftest: black alloc failed\n");
+  if (black_addr == nil) {
+    uartprintf("pebble selftest: BLACK allocation returned nil address\n");
     return;
   }
 
@@ -1304,7 +1411,7 @@ void pebble_sip_issue_test(void) {
   pebble_white_verify(white, &black_handle);
 
   /* Test 2: Black allocation from white token */
-  if (pebble_black_alloc(PEBBLE_MIN_ALLOC, &black_cap) != 0)
+  if (pebble_black_alloc(white, black_handle, PEBBLE_MIN_ALLOC, &black_cap) != 0)
     error("pebble sip issue: black alloc failed");
 
   /* Test 3: Independent Blue allocation */
