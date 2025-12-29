@@ -6,10 +6,12 @@
 #include "portlib.h"
 #include "u.h"
 
-/* WASM Stubs (disabled for now) */
-void *wasm_9p_extract_cap_uuid(void *a) { return nil; }
-int wasm_9p_validate_capability(void *a, void *b) { return -1; }
-int wasm_fs_submit(void *a) { return -1; }
+/* WASM Stubs - REMOVED: Real implementations exist in kernel/wasm/ */
+/* The following functions are now implemented in:
+ * - wasm_9p_extract_cap_uuid: kernel/wasm/wasm_9p_integration.c
+ * - wasm_9p_validate_capability: kernel/wasm/wasm_9p_integration.c
+ * - wasm_fs_submit: kernel/wasm/wasm_fileserver.c
+ */
 
 /* UUID Stubs */
 /* uuid_pack_pebble is in uuid.c */

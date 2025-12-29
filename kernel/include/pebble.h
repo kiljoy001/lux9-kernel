@@ -85,9 +85,9 @@ extern ulong pebble_total_system_tokens;   /* RAM/8, constant after init */
   ((void *)((uintptr)PEBBLE_PTR_ADDR(p) | ((wave) & PEBBLE_WAVE_MASK)))
 #define PEBBLE_TUNED(p, wave) (PEBBLE_PTR_WAVE(p) == (wave))
 
-#include "uuid.h"
 #include "blind_ledger.h"
 #include "borrowchecker.h"
+#include "uuid.h"
 
 /* White token structure - opaque to user */
 typedef struct PebbleWhite {
@@ -151,11 +151,45 @@ typedef struct PebbleState {
   int white_head;
 } PebbleState;
 
+/*
+ * Arena Branch Bank - Per-Container Resource Management
+ *
+ * Each WASM container (or other arena) gets its own branch bank
+ * for lock-free local allocations. Branches periodically reconcile
+ * with the process colorless bank.
+ *
+ * Token flow: Process colorless_bank → branch local_colorless → BLACK
+ * All transitions remain 1:1 (token conservation).
+ *
+ * See docs/WASM_ARENA_BRANCH_BANKS.md for design details.
+ */
+typedef struct arena_branch {
+  Lock lock;                /* Per-branch lock (no global contention) */
+  ulong local_colorless;    /* Tokens available locally in this branch */
+  ulong borrowed_from_proc; /* Tokens borrowed from process bank */
+  ulong low_water;          /* Request refill when below this threshold */
+  ulong high_water;         /* Return excess when above this threshold */
+  ulong total_allocated;    /* Statistics: total bytes allocated from branch */
+  ulong total_freed;        /* Statistics: total bytes freed to branch */
+  PebbleState *owner_ps;    /* Back-pointer to owning process PebbleState */
+} arena_branch_t;
+
+/* Arena Branch API */
+void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
+                       ulong initial_budget);
+int arena_branch_alloc(arena_branch_t *branch,
+                       ulong size); /* Branch tokens → allocation */
+void arena_branch_free(arena_branch_t *branch,
+                       ulong size); /* Allocation → branch tokens */
+int arena_branch_refill(arena_branch_t *branch); /* Process bank → branch */
+void arena_branch_drain(arena_branch_t *branch); /* Branch → process bank */
+
 /* Global Pebble lock - one system-wide lock for now */
 extern Lock pebble_global_lock;
 
 /* Core API functions */
-int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability *out_cap);
+int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
+                       UserCapability *out_cap);
 void *pebble_get_black_addr(const UserCapability *cap);
 int pebble_black_free(const UserCapability *cap);
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap);

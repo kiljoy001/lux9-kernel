@@ -467,7 +467,8 @@ const u8int *pebble_get_vault_secret(void) {
  *
  * Flow: WHITE (reserve) → Verify → BLACK (allocate)
  */
-int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability *out_cap) {
+int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
+                       UserCapability *out_cap) {
   PebbleBlack *pb;
 
   /*
@@ -503,7 +504,8 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability
 
   /* Verify WHITE token matches the size */
   if (white->size != size) {
-    print("pebble_black_alloc: WHITE token size mismatch (white=%lud, requested=%lud)\n",
+    print("pebble_black_alloc: WHITE token size mismatch (white=%lud, "
+          "requested=%lud)\n",
           white->size, size);
     return -1;
   }
@@ -583,7 +585,8 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size, UserCapability
  *
  * Returns: 0 on success, -1 on failure
  */
-int pebble_alloc_with_white(ulong size, UserCapability *out_cap, void **out_addr) {
+int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
+                            void **out_addr) {
   PebbleState *ps;
   PebbleWhite *white;
   void *buf;
@@ -1411,7 +1414,8 @@ void pebble_sip_issue_test(void) {
   pebble_white_verify(white, &black_handle);
 
   /* Test 2: Black allocation from white token */
-  if (pebble_black_alloc(white, black_handle, PEBBLE_MIN_ALLOC, &black_cap) != 0)
+  if (pebble_black_alloc(white, black_handle, PEBBLE_MIN_ALLOC, &black_cap) !=
+      0)
     error("pebble sip issue: black alloc failed");
 
   /* Test 3: Independent Blue allocation */
@@ -1432,4 +1436,219 @@ void pebble_sip_issue_test(void) {
 
   poperror();
   print("PEBBLE: /dev/sip/issue test PASS (circular economy validated)\n");
+}
+
+/* ========== Arena Branch Banks ==========
+ *
+ * Per-container (WASM, SIP, etc.) resource management using colorless branch
+ * banks. See docs/WASM_ARENA_BRANCH_BANKS.md for architecture details.
+ *
+ * Token flow: Process colorless_bank → branch local_colorless → allocation
+ * All transitions are 1:1 (token conservation enforced).
+ */
+
+/*
+ * arena_branch_init - Initialize a branch bank with budget from process
+ *
+ * @branch: Branch to initialize
+ * @ps: Owning process PebbleState
+ * @initial_budget: Initial tokens to provision from process bank
+ */
+void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
+                       ulong initial_budget) {
+  if (branch == nil || ps == nil)
+    return;
+
+  memset(branch, 0, sizeof(arena_branch_t));
+
+  /* Set water marks for auto-refill/drain (default: 25%/75%) */
+  branch->low_water = initial_budget / 4;
+  branch->high_water = (initial_budget * 3) / 4;
+  branch->owner_ps = ps;
+
+  /* Provision initial budget from process colorless bank */
+  lock(&pebble_global_lock);
+  if (ps->colorless_bank >= initial_budget) {
+    ps->colorless_bank -= initial_budget;
+    branch->local_colorless = initial_budget;
+    branch->borrowed_from_proc = initial_budget;
+  } else {
+    /* Partial provision if insufficient budget */
+    branch->local_colorless = ps->colorless_bank;
+    branch->borrowed_from_proc = ps->colorless_bank;
+    ps->colorless_bank = 0;
+  }
+  unlock(&pebble_global_lock);
+
+  if (pebble_debug)
+    print(
+        "PEBBLE: arena_branch_init provisioned %lu tokens (low=%lu high=%lu)\n",
+        branch->local_colorless, branch->low_water, branch->high_water);
+}
+
+/*
+ * arena_branch_alloc - Consume tokens from branch for allocation
+ *
+ * @branch: Branch to allocate from
+ * @size: Bytes to allocate (will be rounded to token boundary)
+ * @returns: 0 on success, -1 on insufficient tokens
+ *
+ * Fast path: Only takes branch->lock, not pebble_global_lock.
+ * If branch is low, triggers refill from process bank.
+ */
+int arena_branch_alloc(arena_branch_t *branch, ulong size) {
+  ulong tokens_needed;
+
+  if (branch == nil)
+    return -1;
+
+  /* Round to token boundary */
+  if (size < PEBBLE_MIN_ALLOC)
+    size = PEBBLE_MIN_ALLOC;
+  tokens_needed = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+
+  lock(&branch->lock);
+
+  /* Check if branch has enough */
+  if (branch->local_colorless < tokens_needed) {
+    unlock(&branch->lock);
+    /* Try refill from process bank */
+    if (arena_branch_refill(branch) != 0)
+      return -1;
+    /* Retry after refill */
+    lock(&branch->lock);
+    if (branch->local_colorless < tokens_needed) {
+      unlock(&branch->lock);
+      return -1; /* Still not enough after refill */
+    }
+  }
+
+  /* Consume tokens (1:1 conservation) */
+  branch->local_colorless -= tokens_needed;
+  branch->total_allocated += tokens_needed;
+
+  unlock(&branch->lock);
+  return 0;
+}
+
+/*
+ * arena_branch_free - Return tokens to branch after deallocation
+ *
+ * @branch: Branch to return tokens to
+ * @size: Bytes being freed
+ *
+ * Tokens return to local branch pool; excess returned to process on drain.
+ */
+void arena_branch_free(arena_branch_t *branch, ulong size) {
+  ulong tokens;
+
+  if (branch == nil)
+    return;
+
+  tokens = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+
+  lock(&branch->lock);
+  branch->local_colorless += tokens;
+  branch->total_freed += tokens;
+  unlock(&branch->lock);
+
+  /* Check if branch is over high water mark */
+  if (branch->local_colorless > branch->high_water) {
+    /* Return excess to process bank (cold path) */
+    lock(&pebble_global_lock);
+    lock(&branch->lock);
+    if (branch->local_colorless > branch->high_water) {
+      ulong excess = branch->local_colorless - branch->high_water;
+      branch->local_colorless -= excess;
+      branch->borrowed_from_proc -= (excess < branch->borrowed_from_proc)
+                                        ? excess
+                                        : branch->borrowed_from_proc;
+      branch->owner_ps->colorless_bank += excess;
+    }
+    unlock(&branch->lock);
+    unlock(&pebble_global_lock);
+  }
+}
+
+/*
+ * arena_branch_refill - Request tokens from process bank when low
+ *
+ * @branch: Branch to refill
+ * @returns: 0 on success (some tokens obtained), -1 on failure (process empty)
+ */
+int arena_branch_refill(arena_branch_t *branch) {
+  PebbleState *ps;
+  ulong refill_amount;
+
+  if (branch == nil || branch->owner_ps == nil)
+    return -1;
+
+  ps = branch->owner_ps;
+
+  /* Refill up to high water mark */
+  lock(&pebble_global_lock);
+  lock(&branch->lock);
+
+  if (branch->local_colorless >= branch->low_water) {
+    /* Not actually low */
+    unlock(&branch->lock);
+    unlock(&pebble_global_lock);
+    return 0;
+  }
+
+  refill_amount = branch->high_water - branch->local_colorless;
+
+  if (ps->colorless_bank >= refill_amount) {
+    ps->colorless_bank -= refill_amount;
+    branch->local_colorless += refill_amount;
+    branch->borrowed_from_proc += refill_amount;
+  } else if (ps->colorless_bank > 0) {
+    /* Partial refill */
+    branch->local_colorless += ps->colorless_bank;
+    branch->borrowed_from_proc += ps->colorless_bank;
+    ps->colorless_bank = 0;
+  } else {
+    unlock(&branch->lock);
+    unlock(&pebble_global_lock);
+    return -1; /* Process exhausted */
+  }
+
+  unlock(&branch->lock);
+  unlock(&pebble_global_lock);
+
+  if (pebble_debug)
+    print("PEBBLE: arena_branch_refill added %lu tokens (now %lu)\n",
+          refill_amount, branch->local_colorless);
+
+  return 0;
+}
+
+/*
+ * arena_branch_drain - Return ALL tokens from branch to process bank
+ *
+ * @branch: Branch to drain
+ *
+ * Called during container cleanup to return resources 1:1.
+ */
+void arena_branch_drain(arena_branch_t *branch) {
+  ulong drained;
+
+  if (branch == nil || branch->owner_ps == nil)
+    return;
+
+  lock(&pebble_global_lock);
+  lock(&branch->lock);
+
+  drained = branch->local_colorless;
+  branch->owner_ps->colorless_bank += drained;
+  branch->local_colorless = 0;
+  branch->borrowed_from_proc = 0;
+
+  unlock(&branch->lock);
+  unlock(&pebble_global_lock);
+
+  if (pebble_debug)
+    print("PEBBLE: arena_branch_drain returned %lu tokens to process "
+          "(alloc=%lu freed=%lu)\n",
+          drained, branch->total_allocated, branch->total_freed);
 }

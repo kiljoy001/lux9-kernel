@@ -562,6 +562,7 @@ void procrestore(Proc *);      /* Restore process state */
 void procsetup(Proc *);        /* Setup process state */
 void procfork(Proc *);         /* Fork process state */
 int proc_setup_p9page(Proc *); /* Setup 9P exchange page */
+void* kernel_setup_init_exchange(Proc *); /* Kernel boot: setup #X exchange channel for init */
 
 /* MMU and page table functions */
 uintptr *mmuwalk(uintptr *, uintptr, int, int); /* Walk page table */

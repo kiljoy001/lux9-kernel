@@ -4,27 +4,30 @@
  * Integrates Pebble capabilities (UUID-encoded) with 9P protocol.
  */
 
-#include "../include/u.h"
-#include "../include/portlib.h"
-#include "../include/mem.h"
-#include "../include/dat.h"
-#include "../include/fcall.h"
 #include "wasm_9p_integration.h"
 #include "../capability/clr_capability.h"
-#include <string.h>
+#include "../include/dat.h"
+#include "../include/fcall.h"
+#include "../include/fns.h"
+#include "../include/mem.h"
+#include "../include/portlib.h"
+#include "../include/u.h"
 
 /* Global capability manager (defined in kernel init) */
 extern capability_manager_t *global_cap_manager;
 
 #ifndef nil
-#define nil ((void*)0)
+#define nil ((void *)0)
 #endif
 
 /* Helper: Convert hex char to nibble */
 static int hex_to_nibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
   return -1;
 }
 
@@ -42,13 +45,16 @@ static int parse_uuid_hex(const char *hex, uuid_t *uuid) {
       continue; /* Skip dashes */
 
     int hi = hex_to_nibble(hex[i]);
-    if (hi < 0) return -1;
+    if (hi < 0)
+      return -1;
 
     i++;
-    if (!hex[i]) return -1;
+    if (!hex[i])
+      return -1;
 
     int lo = hex_to_nibble(hex[i]);
-    if (lo < 0) return -1;
+    if (lo < 0)
+      return -1;
 
     uuid->data[byte_idx++] = (hi << 4) | lo;
   }
@@ -84,8 +90,7 @@ int wasm_9p_extract_cap_uuid(const char *aname, uuid_t *uuid_out) {
 
 /* ========== Capability Validation ========== */
 
-int wasm_9p_validate_capability(const uuid_t *uuid,
-                                u32int required_perms,
+int wasm_9p_validate_capability(const uuid_t *uuid, u32int required_perms,
                                 UserCapability *pebble_cap_out) {
   if (!uuid || !pebble_cap_out)
     return 0;
@@ -99,15 +104,16 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
     return 0;
   }
 
-  print("9p: validating cap token=%u gen=%u idx=%u perms=0x%x\n",
-        token, generation, index, required_perms);
+  print("9p: validating cap token=%u gen=%u idx=%u perms=0x%x\n", token,
+        generation, index, required_perms);
 
   /* Reconstruct UserCapability from UUID to verify against ledger
    * The capability hash is derived from the Pebble token.
    * We need to reconstruct it or look it up by (token, gen, index).
    *
    * Problem: UUID → (token, gen, idx) but we need the full hash to verify.
-   * The hash = SHA256(process_hash || leaf_hash) which we don't have from UUID alone.
+   * The hash = SHA256(process_hash || leaf_hash) which we don't have from UUID
+   * alone.
    *
    * Solution: The BlindLedger should support lookup by (token, gen, idx) OR
    * we need to store UUID → hash mapping in the capability table.
@@ -121,7 +127,8 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
   }
 
   /* Lookup capability by UUID in capability manager */
-  clr_monotonic_capability_t *lang_cap = cap_find_by_uuid(global_cap_manager, uuid);
+  clr_monotonic_capability_t *lang_cap =
+      cap_find_by_uuid(global_cap_manager, uuid);
   if (!lang_cap) {
     print("9p: capability UUID not found in manager\n");
     return 0;
@@ -158,7 +165,8 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
   pebble_cap_out->perms = lang_cap->permissions;
   pebble_cap_out->size = 0; /* IPC capabilities have no size */
 
-  print("9p: capability validated successfully (perms=0x%x)\n", lang_cap->permissions);
+  print("9p: capability validated successfully (perms=0x%x)\n",
+        lang_cap->permissions);
   return 1;
 }
 
@@ -166,7 +174,8 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
 
 static u64int next_session_id = 1;
 
-wasm_9p_session_t *wasm_9p_create_session(const uuid_t *uuid, void *wasm_server) {
+wasm_9p_session_t *wasm_9p_create_session(const uuid_t *uuid,
+                                          void *wasm_server) {
   if (!uuid || !wasm_server)
     return nil;
 
@@ -187,8 +196,8 @@ wasm_9p_session_t *wasm_9p_create_session(const uuid_t *uuid, void *wasm_server)
   session->session_id = next_session_id++;
   session->wasm_server = wasm_server;
 
-  print("9p: created session %llu with perms=0x%x\n",
-        session->session_id, session->permissions);
+  print("9p: created session %llu with perms=0x%x\n", session->session_id,
+        session->permissions);
 
   return session;
 }

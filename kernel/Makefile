@@ -61,8 +61,13 @@ CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
 MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o
 WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c
 WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o
+WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wasm/wasm_runtime/wasm3/m3_code.o \
+           wasm/wasm_runtime/wasm3/m3_compile.o wasm/wasm_runtime/wasm3/m3_parse.o wasm/wasm_runtime/wasm3/m3_bind.o \
+           wasm/wasm_runtime/wasm3/m3_function.o wasm/wasm_runtime/wasm3/m3_module.o wasm/wasm_runtime/wasm3/m3_exec.o \
+           wasm/wasm_runtime/wasm3/m3_info.o
+CAP_O := capability/clr_capability.o
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O) $(WASM_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O) $(WASM_O) $(WASM3_O) $(CAP_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -309,6 +314,7 @@ iso: $(KERNEL_BINARY)
 	@echo "Creating ISO..."
 	@mkdir -p $(ISO_DIR)/boot/limine
 	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
+	@cp ../limine.conf $(ISO_DIR)/limine.conf
 	@cp ../limine.conf $(ISO_DIR)/boot/limine/limine.cfg
 	@cp ../initrd.tar.gz $(ISO_DIR)/boot/initrd.tar
 	@cp ../boot/limine/bin/limine-bios.sys $(ISO_DIR)/boot/limine/

@@ -4,15 +4,28 @@
  * High-bandwidth, lock-free, totally ordered message processing.
  */
 
-#include "../include/u.h"
-#include "../include/portlib.h"
+#include "../include/dat.h"
+#include "../include/fns.h"
 #include "../include/mem.h"
+#include "../include/portlib.h"
+#include "../include/u.h"
+
+/* Provide C99 types for wasm3 (kernel uses u8int, u32int, u64int) */
+typedef u8int uint8_t;
+typedef u16int uint16_t;
+typedef u32int uint32_t;
+typedef u64int uint64_t;
+typedef s8int int8_t;
+typedef s16int int16_t;
+typedef s32int int32_t;
+typedef s64int int64_t;
+typedef usize size_t;
+
 #include "wasm_fileserver.h"
 #include "wasm_runtime/wasm3/wasm3.h"
-#include <string.h>
 
 #ifndef nil
-#define nil ((void*)0)
+#define nil ((void *)0)
 #endif
 
 /* Global WASM environment (shared across all servers) */
@@ -20,7 +33,8 @@ static IM3Environment wasm_env = nil;
 
 /* ========== File Server Management ========== */
 
-wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path, u32int num_pages) {
+wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path,
+                                        u32int num_pages) {
   M3Result result;
 
   if (!wasm_path)
@@ -56,7 +70,7 @@ wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path, u32int num_pages)
    */
 
   /* TODO: Parse and load module */
-  server->module = nil;  /* Will be set when we have actual WASM bytes */
+  server->module = nil; /* Will be set when we have actual WASM bytes */
 
   /* Get linear memory pointer */
   server->memory = m3_GetMemory(server->runtime, &server->memory_size, 0);
@@ -89,7 +103,9 @@ wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path, u32int num_pages)
     return nil;
   }
 
-  print("wasm_fileserver: created server with %u page pool (WASM runtime ready)\n", num_pages);
+  print("wasm_fileserver: created server with %u page pool (WASM runtime "
+        "ready)\n",
+        num_pages);
   return server;
 }
 
@@ -128,7 +144,8 @@ int wasm_fs_get_page(wasm_fileserver_t *server) {
 
 /* ========== Message Submission ========== */
 
-uint wasm_fs_submit(wasm_fileserver_t *server, Proc *caller, Fcall *request, char *path) {
+uint wasm_fs_submit(wasm_fileserver_t *server, Proc *caller, Fcall *request,
+                    char *path) {
   if (!server || !caller || !request || !path)
     return 0;
 
@@ -156,10 +173,10 @@ int wasm_fs_resize_pool(wasm_fileserver_t *server, u32int new_size) {
     return -1;
 
   if (new_size == server->num_pages)
-    return 0;  /* No change */
+    return 0; /* No change */
 
-  print("wasm_fs: resizing pool from %u to %u pages\n",
-        server->num_pages, new_size);
+  print("wasm_fs: resizing pool from %u to %u pages\n", server->num_pages,
+        new_size);
 
   /* Allocate new pool */
   ExchangeHandle *new_pages = malloc(new_size * sizeof(ExchangeHandle));
@@ -169,7 +186,8 @@ int wasm_fs_resize_pool(wasm_fileserver_t *server, u32int new_size) {
   }
 
   /* Copy existing pages (up to min of old/new size) */
-  u32int copy_count = (new_size < server->num_pages) ? new_size : server->num_pages;
+  u32int copy_count =
+      (new_size < server->num_pages) ? new_size : server->num_pages;
   if (copy_count > 0) {
     memmove(new_pages, server->pages, copy_count * sizeof(ExchangeHandle));
   }
@@ -212,12 +230,13 @@ u32int wasm_fs_get_pool_utilization(wasm_fileserver_t *server) {
    * In production, maintain a bitmap of busy pages */
 
   /* Placeholder: assume moderate utilization */
-  return 50;  /* 50% - replace with actual tracking */
+  return 50; /* 50% - replace with actual tracking */
 }
 
 /* ========== Auto-Scaling ========== */
 
-int wasm_fs_enable_autoscale(wasm_fileserver_t *server, WasmAutoScaleConfig *cfg) {
+int wasm_fs_enable_autoscale(wasm_fileserver_t *server,
+                             WasmAutoScaleConfig *cfg) {
   if (!server)
     return -1;
 
@@ -249,8 +268,7 @@ int wasm_fs_enable_autoscale(wasm_fileserver_t *server, WasmAutoScaleConfig *cfg
   server->autoscale.stable_count = 0;
 
   print("wasm_fs: auto-scaling enabled (min=%u, max=%u, target=%u%%)\n",
-        server->autoscale.min_pages,
-        server->autoscale.max_pages,
+        server->autoscale.min_pages, server->autoscale.max_pages,
         server->autoscale.target_util);
 
   return 0;
@@ -286,7 +304,8 @@ int wasm_fs_autoscale_tick(wasm_fileserver_t *server) {
    * smoothed = α × current + (1-α) × smoothed
    * α is stored as integer 0-100, so divide by 100 */
   u32int alpha = cfg->ema_alpha;
-  cfg->smoothed_util = (alpha * current_util + (100 - alpha) * cfg->smoothed_util) / 100;
+  cfg->smoothed_util =
+      (alpha * current_util + (100 - alpha) * cfg->smoothed_util) / 100;
 
   u32int current_size = server->num_pages;
   u32int new_size = current_size;
@@ -305,8 +324,7 @@ int wasm_fs_autoscale_tick(wasm_fileserver_t *server) {
             cfg->smoothed_util, cfg->high_threshold, current_size, new_size);
       cfg->stable_count = 0;
     }
-  }
-  else if (cfg->smoothed_util < cfg->low_threshold) {
+  } else if (cfg->smoothed_util < cfg->low_threshold) {
     /* UNDERUTILIZED: Shrink pool slowly (multiplicative decrease)
      * Shrink by 25% to avoid thrashing
      * Only shrink if stable for at least 3 intervals (avoid oscillation) */
@@ -325,8 +343,7 @@ int wasm_fs_autoscale_tick(wasm_fileserver_t *server) {
     } else {
       cfg->stable_count++;
     }
-  }
-  else {
+  } else {
     /* IN DEADBAND: No action, increment stability counter */
     cfg->stable_count++;
     if (cfg->stable_count > 10)
@@ -379,7 +396,7 @@ int wasm_fs_process_next(wasm_fileserver_t *server) {
     u32int msg_offset = 0;
     u32int msg_size = 1024; /* TODO: actual message size */
 
-    result = m3_Call(func, msg_offset, msg_size);
+    result = m3_CallV(func, msg_offset, msg_size);
     if (result) {
       print("wasm_fs: WASM call failed: %s\n", result);
       goto complete;

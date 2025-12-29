@@ -143,17 +143,21 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   alloc->white = white;
   alloc->is_black = 0; /* Still WHITE (reserved) */
 
-  /* Track in MSGORD for ordering */
-  op.type = PEBBLE_OP_RESERVE;
-  op.ptr = buf;
-  op.size = size;
-  op.timestamp = fastticks(nil);
+  /* Track in MSGORD for ordering - SKIP during boot when scheduler not ready */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_RESERVE;
+    op.ptr = buf;
+    op.size = size;
+    op.timestamp = fastticks(nil);
 
-  msg_id = msgord_submit_raw(msgord, up, &op, sizeof(op));
-  if (msg_id < 0) {
-    /* MSGORD submission failed, continue anyway */
-    pebble_kernel_log_msgord_failure("reserve", buf, size);
-    msg_id = 0;
+    msg_id = msgord_submit_raw(msgord, up, &op, sizeof(op));
+    if (msg_id < 0) {
+      /* MSGORD submission failed, continue anyway */
+      pebble_kernel_log_msgord_failure("reserve", buf, size);
+      msg_id = 0;
+    }
+  } else {
+    msg_id = 0; /* Boot-time allocation, no MSGORD tracking */
   }
   alloc->msgord_id = (uint)msg_id;
 
@@ -208,14 +212,16 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
 
   unlock(&kernel_allocs_lock);
 
-  /* Track transition in MSGORD */
-  op.type = PEBBLE_OP_ACTIVATE;
-  op.ptr = alloc->ptr;
-  op.size = alloc->size;
-  op.timestamp = fastticks(nil);
+  /* Track transition in MSGORD - SKIP during boot */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_ACTIVATE;
+    op.ptr = alloc->ptr;
+    op.size = alloc->size;
+    op.timestamp = fastticks(nil);
 
-  if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
-    pebble_kernel_log_msgord_failure("activate", alloc->ptr, alloc->size);
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+      pebble_kernel_log_msgord_failure("activate", alloc->ptr, alloc->size);
+  }
 }
 
 /*
@@ -251,14 +257,16 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
 
   unlock(&kernel_allocs_lock);
 
-  /* Track free in MSGORD */
-  op.type = PEBBLE_OP_FREE;
-  op.ptr = alloc->ptr;
-  op.size = alloc->size;
-  op.timestamp = fastticks(nil);
+  /* Track free in MSGORD - SKIP during boot */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_FREE;
+    op.ptr = alloc->ptr;
+    op.size = alloc->size;
+    op.timestamp = fastticks(nil);
 
-  if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
-    pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+      pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
+  }
 
   /* Burn WHITE token */
   if (alloc->white)

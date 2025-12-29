@@ -439,28 +439,31 @@ touser:
      * so that interrupts and syscalls from userspace can access it.
      * The swapgs in syscallentry/trap handlers will handle the swap. */
 
-    /* Debug: print the user stack pointer we're about to use */
+    /* Debug: print the user stack pointer and entry point we're about to use */
     pushq %rax
-    pushq %rsi
+    pushq %rdx
+    pushq %rsi                  /* save entry point */
     pushq %rdi                  /* save user SP argument */
+    movq %rsi, %rdx             /* arg3 = entry point */
     movq %rdi, %rsi             /* arg2 = user sp value */
     leaq touser_sp_msg(%rip), %rdi  /* arg1 = format string */
     xorq %rax, %rax             /* no vector args */
     call print
     popq %rdi                   /* restore user SP */
-    popq %rsi
+    popq %r13                   /* restore entry point to r13 */
+    popq %rdx
     popq %rax
 
-    	/* Save user SP in a register before setting up IRET frame */
+    	/* Save user SP and entry point in registers before setting up IRET frame */
     	movq %rdi, %r12             /* r12 = user SP */
-    
+
     	/* Build IRETQ frame on current kernel stack:
     	 * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
     	pushq $UD64SEL              /* SS - user data segment 64-bit (0x2B) */
     	pushq %r12                  /* RSP - user stack pointer */
     	pushq $0x002                /* RFLAGS - interrupts disabled */
     	pushq $UESEL                /* CS - user code segment */
-    	pushq $UTZERO               /* RIP - entry point in initcode (no offset) */
+    	pushq %r13                  /* RIP - entry point from parameter (was r13) */
     /* Debug: print the IRET frame */
     pushq %rax
     pushq %rdi
@@ -481,7 +484,7 @@ touser:
 
 .section .rodata
 touser_sp_msg:
-    .string "touser: jumping to user mode with SP=%#llux\n"
+    .string "touser: jumping to user mode with SP=%#llux, entry=%#llux\n"
 touser_iret_msg:
     .string "touser: about to IRETQ to userspace\n"
 spllo_before_sti:
