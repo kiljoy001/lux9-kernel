@@ -60,6 +60,37 @@ typedef struct Fcall {
       ushort nstat; /* Twstat, Rstat */
       uchar *stat;  /* Twstat, Rstat */
     };
+    struct {
+      u32int scallnr; /* Tsyscall */
+      uchar *sdata;   /* Tsyscall, Rsyscall */
+      u32int scount;  /* Tsyscall, Rsyscall */
+    };
+    /* Tsys* message fields */
+    struct {
+      u32int flags;   /* Tsysfork (rfork flags), Tsysbind, Tsysmount */
+      u32int pid;     /* Rsysfork, Rsyswait */
+    };
+    struct {
+      char **argv;    /* Tsysexec - argument array */
+      u32int argc;    /* Tsysexec - argument count */
+    };
+    struct {
+      u64int addr;    /* Tsysbrk, Rsysbrk - memory address */
+    };
+    struct {
+      char *oldpath;  /* Tsysbind, Tsysmount, Tsysunmount - old path */
+      u32int fd;      /* Tsysmount - file descriptor */
+    };
+    struct {
+      u32int fid0;    /* Rsyspipe - first pipe fid */
+      u32int fid1;    /* Rsyspipe - second pipe fid */
+    };
+    struct {
+      int whence;     /* Tsysseek - seek type (SEEK_SET, etc.) */
+    };
+    struct {
+      u64int handler; /* Tsysnotify - notification handler address */
+    };
   };
 } Fcall;
 
@@ -155,42 +186,79 @@ enum {
   Rexec,
 
   /* Lux9 syscall message types - for pure 9P message passing */
-  Tsysopen = 130, /* open(path, mode) */
+  /* Generic Syscall Message: Tsyscall (130) - kept for backwards compatibility */
+  Tsyscall = 130,
+  Rsyscall,
+
+  /* Specific syscall wrappers - provide syscall-like semantics over 9P */
+  /* I/O Operations */
+  Tsysopen = 132,      /* open(path, mode) -> fid */
   Rsysopen,
-  Tsyscreate = 132, /* create(path, mode, perm) */
+  Tsyscreate = 134,    /* create(path, perm, mode) -> fid */
   Rsyscreate,
-  Tsysclose = 134, /* close(fd) */
-  Rsysclose,
-  Tsysread = 136, /* pread(fd, buf, n, offset) or read(fd, buf, n) */
+  Tsysread = 136,      /* read(fid, offset, count) -> data */
   Rsysread,
-  Tsyswrite = 138, /* pwrite(fd, buf, n, offset) or write(fd, buf, n) */
+  Tsyswrite = 138,     /* write(fid, offset, data) -> count */
   Rsyswrite,
-  Tsysseek = 140, /* seek(fd, offset, type) */
-  Rsysseek,
-  Tsysstat = 142, /* stat(path, buf) or fstat(fd, buf) */
+  Tsysclose = 140,     /* close(fid) */
+  Rsysclose,
+  Tsyspread = 142,     /* pread(fid, offset, count) -> data */
+  Rsyspread,
+  Tsyspwrite = 144,    /* pwrite(fid, offset, data) -> count */
+  Rsyspwrite,
+  Tsysremove = 146,    /* remove(path) */
+  Rsysremove,
+
+  /* File Info Operations */
+  Tsysstat = 148,      /* stat(path) -> Dir */
   Rsysstat,
-  Tsyswstat = 144, /* wstat(path, buf) or fwstat(fd, buf) */
+  Tsysfstat = 150,     /* fstat(fid) -> Dir */
+  Rsysfstat,
+  Tsyswstat = 152,     /* wstat(path, Dir) */
   Rsyswstat,
-  Tsysexit = 146, /* exits(status) */
-  Rsysexit,
-  Tsyswait = 148, /* wait() or await(buf, n) */
-  Rsyswait,
-  Tsysdup = 150, /* dup(oldfd, newfd) */
-  Rsysdup,
-  Tsyspipe = 152, /* pipe(fd[2]) */
-  Rsyspipe,
-  Tsysbrk = 154, /* brk(addr) */
-  Rsysbrk,
-  Tsyschdir = 156, /* chdir(path) */
-  Rsyschdir,
-  Tsysbind = 158, /* bind(name, old, flags) */
-  Rsysbind,
-  Tsysmount = 160, /* mount(fd, afd, old, flags, aname) */
-  Rsysmount,
-  Tsysunmount = 162, /* unmount(name, old) */
-  Rsysunmount,
-  Tsysfork = 164, /* rfork(flags) */
+  Tsysfwstat = 154,    /* fwstat(fid, Dir) */
+  Rsysfwstat,
+
+  /* Process Control */
+  Tsysfork = 160,      /* rfork(flags) -> pid */
   Rsysfork,
+  Tsysexec = 162,      /* exec(path, argv) */
+  Rsysexec,
+  Tsysexit = 164,      /* exits(status) */
+  Rsysexit,
+  Tsyswait = 166,      /* wait() -> Waitmsg */
+  Rsyswait,
+  Tsysbrk = 168,       /* brk(addr) -> addr */
+  Rsysbrk,
+  Tsyssleep = 170,     /* sleep(millisecs) */
+  Rsyssleep,
+
+  /* Namespace Operations */
+  Tsysbind = 180,      /* bind(name, old, flags) */
+  Rsysbind,
+  Tsysmount = 182,     /* mount(fd, afd, old, flags, aname) */
+  Rsysmount,
+  Tsysunmount = 184,   /* unmount(name, old) */
+  Rsysunmount,
+  Tsyschdir = 186,     /* chdir(path) */
+  Rsyschdir,
+
+  /* FD Operations */
+  Tsysdup = 190,       /* dup(oldfd, newfd) -> fid */
+  Rsysdup,
+  Tsyspipe = 192,      /* pipe(fd[2]) -> fid[2] */
+  Rsyspipe,
+  Tsysfd2path = 194,   /* fd2path(fid) -> path */
+  Rsysfd2path,
+
+  /* Misc Operations */
+  Tsysseek = 200,      /* seek(fid, offset, type) -> offset */
+  Rsysseek,
+  Tsysnotify = 202,    /* notify(handler) */
+  Rsysnotify,
+  Tsysalarm = 204,     /* alarm(millisecs) -> previous */
+  Rsysalarm,
+
   Tsysmax,
 };
 
@@ -214,5 +282,20 @@ int read9pmsg(int, void *, uint);
 #pragma varargck type "M" ulong
 #pragma varargck type "D" Dir *
 #endif
+
+/* Syscall Numbers */
+enum {
+  SYS_OPEN = 1,
+  SYS_CLOSE,
+  SYS_READ,
+  SYS_WRITE,
+  SYS_PREAD,
+  SYS_PWRITE,
+  SYS_CREATE,
+  SYS_EXIT,
+  SYS_FORK,
+  SYS_STAT,
+  SYS_WSTAT
+};
 
 #endif /* _FCALL_H_ */

@@ -1,5 +1,9 @@
-#include <u.h>
+#include "../include/u.h"
+
+#define _BREAK_SORT_1 1
 #include <libc.h>
+
+#define _BREAK_SORT_2 1
 #include <fcall.h>
 
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
@@ -198,6 +202,383 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
       return 0;
     f->data = (char *)p;
     p += f->count;
+    break;
+
+  case Tsyscall:
+    if (p + BIT32SZ + BIT32SZ > ep)
+      return 0;
+    f->scallnr = GBIT32(p);
+    p += BIT32SZ;
+    f->scount = GBIT32(p);
+    p += BIT32SZ;
+    if (p + f->scount > ep)
+      return 0;
+    f->sdata = p;
+    p += f->scount;
+    break;
+
+  /* Tsys* - specific syscall message types */
+
+  /* I/O Operations */
+  case Tsysopen:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    if (p + BIT8SZ > ep)
+      return 0;
+    f->mode = GBIT8(p);
+    p += BIT8SZ;
+    break;
+
+  case Tsyscreate:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ + BIT8SZ > ep)
+      return 0;
+    f->perm = GBIT32(p);
+    p += BIT32SZ;
+    f->mode = GBIT8(p);
+    p += BIT8SZ;
+    break;
+
+  case Tsysread:
+  case Tsyspread:
+    if (p + BIT32SZ + BIT64SZ + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    f->offset = GBIT64(p);
+    p += BIT64SZ;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsyswrite:
+  case Tsyspwrite:
+    if (p + BIT32SZ + BIT64SZ + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    f->offset = GBIT64(p);
+    p += BIT64SZ;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    if (p + f->count > ep)
+      return 0;
+    f->data = (char *)p;
+    p += f->count;
+    break;
+
+  case Tsysclose:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsysremove:
+    p = gstring(p, ep, &f->name);
+    break;
+
+  /* File Info Operations */
+  case Tsysstat:
+    p = gstring(p, ep, &f->name);
+    break;
+
+  case Tsysfstat:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsyswstat:
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    if (p + BIT16SZ > ep)
+      return 0;
+    f->nstat = GBIT16(p);
+    p += BIT16SZ;
+    if (p + f->nstat > ep)
+      return 0;
+    f->stat = p;
+    p += f->nstat;
+    break;
+
+  case Tsysfwstat:
+    if (p + BIT32SZ + BIT16SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    f->nstat = GBIT16(p);
+    p += BIT16SZ;
+    if (p + f->nstat > ep)
+      return 0;
+    f->stat = p;
+    p += f->nstat;
+    break;
+
+  /* Process Control */
+  case Tsysfork:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->flags = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsysexec:
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->argc = GBIT32(p);
+    p += BIT32SZ;
+    /* Note: argv array parsing would go here if needed */
+    break;
+
+  case Tsysexit:
+    p = gstring(p, ep, &f->ename);
+    break;
+
+  case Tsyswait:
+    /* No arguments */
+    break;
+
+  case Tsysbrk:
+    if (p + BIT64SZ > ep)
+      return 0;
+    f->addr = GBIT64(p);
+    p += BIT64SZ;
+    break;
+
+  case Tsyssleep:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  /* Namespace Operations */
+  case Tsysbind:
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    p = gstring(p, ep, &f->oldpath);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->flags = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsysmount:
+    if (p + BIT32SZ + BIT32SZ > ep)
+      return 0;
+    f->fd = GBIT32(p);
+    p += BIT32SZ;
+    f->afid = GBIT32(p);
+    p += BIT32SZ;
+    p = gstring(p, ep, &f->oldpath);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->flags = GBIT32(p);
+    p += BIT32SZ;
+    p = gstring(p, ep, &f->aname);
+    break;
+
+  case Tsysunmount:
+    p = gstring(p, ep, &f->name);
+    if (p == nil)
+      break;
+    p = gstring(p, ep, &f->oldpath);
+    break;
+
+  case Tsyschdir:
+    p = gstring(p, ep, &f->name);
+    break;
+
+  /* FD Operations */
+  case Tsysdup:
+    if (p + BIT32SZ + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    f->newfid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsyspipe:
+    /* No arguments */
+    break;
+
+  case Tsysfd2path:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  /* Misc Operations */
+  case Tsysseek:
+    if (p + BIT32SZ + BIT64SZ + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    f->offset = GBIT64(p);
+    p += BIT64SZ;
+    f->whence = (int)GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Tsysnotify:
+    if (p + BIT64SZ > ep)
+      return 0;
+    f->handler = GBIT64(p);
+    p += BIT64SZ;
+    break;
+
+  case Tsysalarm:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  /* Rsys* - syscall replies */
+
+  case Rsysopen:
+  case Rsyscreate:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    p = gqid(p, ep, &f->qid);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->iounit = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Rsysread:
+  case Rsyspread:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    if (p + f->count > ep)
+      return 0;
+    f->data = (char *)p;
+    p += f->count;
+    break;
+
+  case Rsyswrite:
+  case Rsyspwrite:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Rsysclose:
+  case Rsysremove:
+  case Rsysexit:
+  case Rsyssleep:
+  case Rsysbind:
+  case Rsysmount:
+  case Rsysunmount:
+  case Rsyschdir:
+  case Rsysnotify:
+  case Rsysexec:
+    /* No response data */
+    break;
+
+  case Rsysstat:
+  case Rsysfstat:
+    if (p + BIT16SZ > ep)
+      return 0;
+    f->nstat = GBIT16(p);
+    p += BIT16SZ;
+    if (p + f->nstat > ep)
+      return 0;
+    f->stat = p;
+    p += f->nstat;
+    break;
+
+  case Rsyswstat:
+  case Rsysfwstat:
+    /* No response data */
+    break;
+
+  case Rsysfork:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->pid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Rsyswait:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->pid = GBIT32(p);
+    p += BIT32SZ;
+    p = gstring(p, ep, &f->ename);
+    break;
+
+  case Rsysbrk:
+    if (p + BIT64SZ > ep)
+      return 0;
+    f->addr = GBIT64(p);
+    p += BIT64SZ;
+    break;
+
+  case Rsysdup:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->fid = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Rsyspipe:
+    if (p + BIT32SZ + BIT32SZ > ep)
+      return 0;
+    f->fid0 = GBIT32(p);
+    p += BIT32SZ;
+    f->fid1 = GBIT32(p);
+    p += BIT32SZ;
+    break;
+
+  case Rsysfd2path:
+    p = gstring(p, ep, &f->name);
+    break;
+
+  case Rsysseek:
+    if (p + BIT64SZ > ep)
+      return 0;
+    f->offset = GBIT64(p);
+    p += BIT64SZ;
+    break;
+
+  case Rsysalarm:
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->count = GBIT32(p);
+    p += BIT32SZ;
     break;
 
   case Tstat:
