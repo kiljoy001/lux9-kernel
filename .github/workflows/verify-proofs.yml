@@ -103,11 +103,19 @@ jobs:
         cd proofs && make stats >> ../proof_report.md 2>/dev/null || echo "Stats not available" >> ../proof_report.md
         echo '```' >> proof_report.md
 
-    - name: Upload proof report
+    - name: Generate proof coverage report
+      run: |
+        python3 scripts/proof_coverage.py --md > coq_coverage_report.md
+        echo "" >> proof_report.md
+        cat coq_coverage_report.md >> proof_report.md
+
+    - name: Upload proof reports
       uses: actions/upload-artifact@v4
       with:
         name: proof-report
-        path: proof_report.md
+        path: |
+          proof_report.md
+          coq_coverage_report.md
 
     - name: Comment PR with proof status
       if: github.event_name == 'pull_request'
