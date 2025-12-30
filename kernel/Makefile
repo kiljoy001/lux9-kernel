@@ -60,7 +60,7 @@ CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtim
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
 MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o
 WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c
-WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o
+WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o wasm_arena_test.o
 WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wasm/wasm_runtime/wasm3/m3_code.o \
            wasm/wasm_runtime/wasm3/m3_compile.o wasm/wasm_runtime/wasm3/m3_parse.o wasm/wasm_runtime/wasm3/m3_bind.o \
            wasm/wasm_runtime/wasm3/m3_function.o wasm/wasm_runtime/wasm3/m3_module.o wasm/wasm_runtime/wasm3/m3_exec.o \

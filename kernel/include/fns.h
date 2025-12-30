@@ -590,3 +590,7 @@ void *vmap(uvlong, vlong);
 void vunmap(void *, vlong);
 
 long kread(int, void *, long);
+
+/* WASM runtime functions */
+void wasm_runtime_init(void);
+void wasm_arena_test(void);

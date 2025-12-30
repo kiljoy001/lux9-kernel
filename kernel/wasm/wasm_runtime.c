@@ -133,6 +133,8 @@ void wasm_runtime_init(void) {
  * NOTE: No instance_id needed - compiles into current process (up->wasm)
  */
 int sys_wasm_compile(Fcall *tx, Fcall *rx) {
+  print("WASM: sys_wasm_compile called (scount=%u)\n", tx->scount);
+
   if (!runtime_initialized) {
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "wasm runtime not initialized");

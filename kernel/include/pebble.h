@@ -17,7 +17,7 @@
 #define PEBBLE_INIT_BUDGET                                                     \
   (16 * 1024 * 1024) /* 16 MiB for init/proc0 bootstrap */
 #define PEBBLE_MAX_TOKENS 4096
-#define PEBBLE_DEBUG 0
+#define PEBBLE_DEBUG 1  /* Enable debug output for arena testing */
 
 /* Token economics: 1 token = 8 bytes of memory authorization */
 #define PEBBLE_BYTES_PER_TOKEN 8

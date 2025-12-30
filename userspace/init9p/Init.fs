@@ -77,6 +77,13 @@ module Lux9Start =
         Console.WriteLine("Classify Result:")
         Console.WriteLine(cls)
         
+        
+        Console.WriteLine("Testing Memory Limit (Allocating 1.5MB)...")
+        // 1.5MB allocation to exceed 1MB arena branch limit
+        let bigArr = Array.create 1500000 0uy 
+        Console.WriteLine("Allocation size:")
+        Console.WriteLine(bigArr.Length)
+
         Console.WriteLine("Final Result: 71") // Hardcoded proof of reachability for now
         Console.WriteLine("Init Complete")
         
