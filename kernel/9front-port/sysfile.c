@@ -212,9 +212,8 @@ int openmode(ulong o) {
   return o;
 }
 
-uintptr sysfd2path(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysfd2path(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   Chan *c;
   char *buf;
   uint len;
@@ -230,9 +229,8 @@ uintptr sysfd2path(void *list_void)
   return 0;
 }
 
-uintptr syspipe(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syspipe(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   static char *datastr[] = {"data", "data1"};
   int fd[2], *ufd;
   Chan *c[2];
@@ -265,9 +263,8 @@ uintptr syspipe(void *list_void)
   return 0;
 }
 
-uintptr sysdup(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysdup(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   Chan *c, *oc;
   Fgrp *f = up->fgrp;
@@ -308,9 +305,8 @@ uintptr sysdup(void *list_void)
   return (uintptr)fd;
 }
 
-uintptr sysopen(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysopen(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   Chan *c;
   char *name;
@@ -351,9 +347,8 @@ void fdclose(int fd, int flag) {
   cclose(c);
 }
 
-uintptr sysclose(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysclose(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
 
   fd = SYSCALL_ARG(list, int);
@@ -719,9 +714,8 @@ static long read(int fd, uchar *p, long n, vlong *offp) {
   return nnn;
 }
 
-uintptr sys_read(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sys_read(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   void *buf;
   long len;
@@ -732,9 +726,8 @@ uintptr sys_read(void *list_void)
   return (uintptr)read(fd, buf, len, nil);
 }
 
-uintptr syspread(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syspread(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   void *buf;
   long len;
@@ -800,9 +793,8 @@ static long write(int fd, void *buf, long len, vlong *offp) {
   return m;
 }
 
-uintptr sys_write(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sys_write(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   void *buf;
   long len;
@@ -813,9 +805,8 @@ uintptr sys_write(void *list_void)
   return (uintptr)write(fd, buf, len, nil);
 }
 
-uintptr syspwrite(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syspwrite(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd;
   void *buf;
   long len;
@@ -897,9 +888,8 @@ static vlong sseek(int fd, vlong o, int type) {
   return off;
 }
 
-uintptr sysseek(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysseek(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd, t;
   vlong n, *v;
 
@@ -916,9 +906,8 @@ uintptr sysseek(void *list_void)
   return 0;
 }
 
-uintptr sysoseek(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysoseek(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd, t;
   long n;
 
@@ -966,9 +955,8 @@ static char *pathlast(Path *p) {
   return p->s;
 }
 
-uintptr sysfstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysfstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   uchar *s;
   Chan *c;
@@ -992,9 +980,8 @@ uintptr sysfstat(void *list_void)
   return r;
 }
 
-uintptr sysstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   uchar *s;
   Chan *c;
@@ -1018,9 +1005,8 @@ uintptr sysstat(void *list_void)
   return r;
 }
 
-uintptr syschdir(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syschdir(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   Chan *c;
   char *name;
 
@@ -1100,9 +1086,8 @@ static int bindmount(int ismount, int fd, int afd, char *arg0, char *arg1,
   return ret;
 }
 
-uintptr sysbind(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysbind(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *arg0, *arg1;
   int flag;
 
@@ -1117,9 +1102,8 @@ uintptr sysbind(void *list_void)
   return (uintptr)bindmount(0, -1, -1, arg0, arg1, flag, nil);
 }
 
-uintptr sysmount(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysmount(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *arg1, *spec;
   int flag;
   int fd, afd;
@@ -1136,9 +1120,8 @@ uintptr sysmount(void *list_void)
   return (uintptr)bindmount(1, fd, afd, nil, arg1, flag, spec);
 }
 
-uintptr sys_mount(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sys_mount(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *arg1, *spec;
   int flag;
   int fd;
@@ -1150,9 +1133,8 @@ uintptr sys_mount(void *list_void)
   return (uintptr)bindmount(1, fd, -1, nil, arg1, flag, spec);
 }
 
-uintptr sysunmount(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysunmount(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   Chan *cmount, *cmounted;
   char *name, *old;
 
@@ -1180,9 +1162,8 @@ uintptr sysunmount(void *list_void)
   return 0;
 }
 
-uintptr syscreate(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syscreate(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   int fd, mode, perm;
   char *name;
   Chan *c;
@@ -1204,9 +1185,8 @@ uintptr syscreate(void *list_void)
   return (uintptr)fd;
 }
 
-uintptr sysremove(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysremove(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   Chan *c;
 
@@ -1263,9 +1243,8 @@ static long wstat(Chan *c, uchar *d, int nd) {
   return l;
 }
 
-uintptr syswstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr syswstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   uchar *s;
   Chan *c;
@@ -1281,9 +1260,8 @@ uintptr syswstat(void *list_void)
   return (uintptr)wstat(c, s, l);
 }
 
-uintptr sysfwstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sysfwstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   uchar *s;
   Chan *c;
   uint l;
@@ -1331,9 +1309,8 @@ static void packoldstat(uchar *buf, Dir *d) {
   PBIT16(p, d->dev);
 }
 
-uintptr sys_stat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sys_stat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   uchar *s;
   Chan *c;
@@ -1363,9 +1340,8 @@ uintptr sys_stat(void *list_void)
   return 0;
 }
 
-uintptr sys_fstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void;
+uintptr sys_fstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
   char *name;
   uchar *s;
   Chan *c;
@@ -1395,13 +1371,23 @@ uintptr sys_fstat(void *list_void)
   return 0;
 }
 
-uintptr sys_wstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void; error("old wstat system call - recompile"); }
+uintptr sys_wstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
+  error("old wstat system call - recompile");
+}
 
-uintptr sys_fwstat(void *list_void)
-{
-	syscall_va_list list = (syscall_va_list)list_void; error("old fwstat system call - recompile"); }
+uintptr sys_fwstat(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
+  error("old fwstat system call - recompile");
+}
 
 /* Exposed kernel read function */
 long kread(int fd, void *buf, long n) { return read(fd, buf, n, nil); }
+
+/* Exposed kernel write function */
+long kwrite(int fd, void *buf, long n) { return write(fd, buf, n, nil); }
+
+/* Exposed kernel seek function */
+vlong kseek(int fd, vlong offset, int whence) {
+  return sseek(fd, offset, whence);
+}

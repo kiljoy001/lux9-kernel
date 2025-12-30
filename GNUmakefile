@@ -175,15 +175,11 @@ test-build:
 
 userspace/build/initrd.tar:
 	@echo "Building userspace..."
-	@$(MAKE) -C userspace initrd
-	@echo "Signing initrd files..."
-	@if [ -n "$$LUX_SIGNING_KEY" ] || command -v tpm2_unseal > /dev/null 2>&1; then \
-		(python3 tools/sign_manager.py && \
-		cd userspace/build/init && tar --transform 's,^./,,' -cf ../initrd.tar . ) || echo "WARNING: Signing failed, using unsigned initrd"; \
-	else \
-		echo "WARNING: No signing key available (set LUX_SIGNING_KEY or use TPM)"; \
-		echo "Initrd files will NOT be signed!"; \
-	fi
+	@$(MAKE) -C userspace
+	@echo "Copying initrd to boot/..."
+	@mkdir -p boot
+	@cp userspace/build/initrd.tar boot/initrd.tar
+	@echo "✓ initrd.tar copied to boot/"
 
 iso: $(KERNEL) userspace/build/initrd.tar
 	@echo "Creating ISO image..."

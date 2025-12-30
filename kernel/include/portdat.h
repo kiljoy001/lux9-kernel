@@ -887,6 +887,7 @@ struct Proc {
     u32int memory_size;    /* Size of linear memory in bytes */
     u32int memory_pages;   /* Number of 64KB WASM pages */
     arena_branch_t branch; /* Local Pebble branch bank for this container */
+    void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
   } wasm;
 } __attribute__((aligned(64)));
 

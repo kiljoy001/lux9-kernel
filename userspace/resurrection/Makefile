@@ -1,30 +1,37 @@
-# Makefile for Resurrection Server (Phase 1)
-# Native C userspace service monitor running at Layer 2
+# Makefile for Resurrection Server
+# Layer 2 service monitor using 9P syscalls (no POSIX)
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
-LDFLAGS = -static
+KERNEL = ../../kernel
+
+CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
+         -mno-red-zone -mcmodel=small -fPIC -O2 -Wall \
+         -fcf-protection=none \
+         -I$(KERNEL)/include
+
+LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 
 TARGET = resurrection
 SRC = resurrection.c
 OBJ = $(SRC:.c=.o)
 
-all: $(TARGET)
+# Use same start.S as init
+START_OBJ = ../lib9p_syscall/start.o
 
-$(TARGET): $(OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
-	@echo "Built resurrection server binary: $@"
+all: $(START_OBJ) $(TARGET)
+
+$(TARGET): $(START_OBJ) $(OBJ) ../lib9p_syscall/linker.ld
+	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld $(START_OBJ) $(OBJ) -o $@
+	@echo "Built resurrection server: $@"
 	@ls -lh $@
+
+$(START_OBJ):
+	$(MAKE) -C ../lib9p_syscall start.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f $(TARGET) $(OBJ)
-	@echo "Cleaned resurrection build artifacts"
+	@echo "Cleaned resurrection build"
 
-install: $(TARGET)
-	cp $(TARGET) ../../initrd/boot/
-	@echo "Installed $(TARGET) to initrd/boot/"
-
-.PHONY: all clean install
+.PHONY: all clean

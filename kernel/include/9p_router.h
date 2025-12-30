@@ -11,14 +11,28 @@
 #include "types_fwd.h"
 #include "u.h"
 
-/* 9P Exchange Page Layout */
-#define P9_PAGE_SIZE 8192
-#define P9_REQUEST_OFFSET 0x000
-#define P9_REQUEST_SIZE 0xF00
-#define P9_REPLY_OFFSET 0x1000
-#define P9_REPLY_SIZE 0x1000
+/*
+ * 9P Exchange Page Layout - SINGLE 4KB PAGE MODEL
+ * ================================================
+ * Each process has ONE 4KB page for syscall communication.
+ * Ownership flips between process and kernel via borrow checker.
+ *
+ * Layout:
+ *   0x000 - 0xEFF: Message area (3840 bytes) - request OR reply
+ *   0xF00 - 0xFFF: Control block (256 bytes)
+ */
+#define P9_PAGE_SIZE 4096
+#define P9_MSG_OFFSET 0x000
+#define P9_MSG_SIZE 0xF00 /* 3840 bytes for message */
 #define P9_CONTROL_OFFSET 0xF00
-#define P9_CONTROL_SIZE 0x100
+#define P9_CONTROL_SIZE 0x100 /* 256 bytes for control */
+
+/* Legacy aliases (for transition) */
+#define P9_REQUEST_OFFSET P9_MSG_OFFSET
+#define P9_REQUEST_SIZE P9_MSG_SIZE
+#define P9_REPLY_OFFSET P9_MSG_OFFSET /* Same location - ownership-flip model  \
+                                       */
+#define P9_REPLY_SIZE P9_MSG_SIZE
 
 /* Fixed user virtual address for the Exchange Page (below stack at
  * 0x7FFFFEFFF000) */

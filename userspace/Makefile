@@ -1,63 +1,61 @@
 # Lux9 Userspace Build System
+# Pure C userspace with automatic init database signing
 
-# Directories
 BUILD_DIR := build
 INIT_BUILD_DIR := $(BUILD_DIR)/init
 INIT_BOOT_DIR := $(INIT_BUILD_DIR)/boot
-INIT_SRC_DIR := init9p
-INIT_OUT_DIR := $(INIT_SRC_DIR)/bin/Debug/net9.0
+C_INIT_DIR := lib9p_syscall
+RESURRECTION_DIR := resurrection
+INIT_DB := ../scripts/init_db.py
 
-# Files
-INIT_DLL := $(INIT_OUT_DIR)/init.dll
-BCL_DLL := ../kernel/clr/bcl/src/System.Runtime/bin/Debug/net9.0/System.Runtime.dll
-FSHARP_CORE_DLL := $(INIT_OUT_DIR)/FSharp.Core.dll
-SHELL_SRC_DIR := shell
-SHELL_OUT_DIR := $(SHELL_SRC_DIR)/bin/Debug/net9.0
-SHELL_DLL := $(SHELL_OUT_DIR)/shell.dll
+.PHONY: all clean initrd sign
 
-.PHONY: all clean initrd build-init build-shell
-
-all: initrd
+all: initrd sign
 
 clean:
 	rm -rf $(BUILD_DIR)
-	cd $(INIT_SRC_DIR) && dotnet clean
-	cd $(SHELL_SRC_DIR) && dotnet clean
-	cd $(RAMFS_SRC_DIR) && dotnet clean
+	$(MAKE) -C $(C_INIT_DIR) clean
+	$(MAKE) -C $(RESURRECTION_DIR) clean
 
-$(INIT_DLL):
-	cd $(INIT_SRC_DIR) && dotnet build -c Debug
+# Build the C init binary
+$(C_INIT_DIR)/init:
+	$(MAKE) -C $(C_INIT_DIR)
 
-$(SHELL_DLL):
-	cd $(SHELL_SRC_DIR) && dotnet build -c Debug
-
-RAMFS_SRC_DIR := ramfs
-RAMFS_OUT_DIR := $(RAMFS_SRC_DIR)/bin/Debug/net9.0
-RAMFS_DLL := $(RAMFS_OUT_DIR)/Ramfs.dll
-
-$(RAMFS_DLL):
-	cd $(RAMFS_SRC_DIR) && dotnet build -c Debug
+# Build the resurrection server
+$(RESURRECTION_DIR)/resurrection:
+	$(MAKE) -C $(RESURRECTION_DIR)
 
 # Build the initrd tarball
 # Structure:
-#   boot/init  <- The F# init binary
-#   bin/shell  <- The F# shell
-#   boot/System.Runtime.dll
-initrd: $(INIT_DLL) $(SHELL_DLL) $(RAMFS_DLL)
+#   boot/init         <- Init process (PID 1)
+#   boot/resurrection <- Resurrection server (started by init)
+initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection
 	@mkdir -p $(INIT_BOOT_DIR)
-	@mkdir -p $(INIT_BUILD_DIR)/bin
-	@cp $(INIT_DLL) $(INIT_BOOT_DIR)/init
-	@cp $(SHELL_DLL) $(INIT_BUILD_DIR)/bin/shell
-	@cp $(RAMFS_DLL) $(INIT_BUILD_DIR)/bin/ramfs
-	@cp $(BCL_DLL) $(INIT_BOOT_DIR)/
-	@cp $(FSHARP_CORE_DLL) $(INIT_BOOT_DIR)/
-	@# Copy deps to bin as well so shell finds them?
-	@# Actually, kernel loader shares assemblies, but for now duplicate
-	@cp $(BCL_DLL) $(INIT_BUILD_DIR)/bin/
-	@cp $(FSHARP_CORE_DLL) $(INIT_BUILD_DIR)/bin/
-	@if [ -f $(INIT_OUT_DIR)/System.Collections.dll ]; then \
-		cp $(INIT_OUT_DIR)/System.Collections.dll $(INIT_BOOT_DIR)/; \
-		cp $(INIT_OUT_DIR)/System.Collections.dll $(INIT_BUILD_DIR)/bin/; \
-	fi
+	@cp $(C_INIT_DIR)/init $(INIT_BOOT_DIR)/init
+	@cp $(RESURRECTION_DIR)/resurrection $(INIT_BOOT_DIR)/resurrection
 	@echo "Creating initrd.tar from $(INIT_BUILD_DIR)..."
 	@cd $(INIT_BUILD_DIR) && tar -cvf ../initrd.tar *
+	@ls -lh $(BUILD_DIR)/initrd.tar
+
+# Register and sign binaries using init database
+sign: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection
+	@echo "Registering binaries with init database..."
+	@python3 $(INIT_DB) init 2>/dev/null || true
+	@python3 $(INIT_DB) register $(C_INIT_DIR)/init "C init (4KB exchange)" 2>/dev/null || \
+		echo "  init already registered"
+	@python3 $(INIT_DB) register $(RESURRECTION_DIR)/resurrection "Resurrection server" 2>/dev/null || \
+		echo "  resurrection already registered"
+	@echo "Signing binaries (requires LUX_SIGNING_KEY or TPM)..."
+	@if [ -n "$$LUX_SIGNING_KEY" ]; then \
+		INIT_ID=$$(python3 $(INIT_DB) list 2>/dev/null | grep "$(C_INIT_DIR)/init" | head -1 | awk '{print $$1}'); \
+		RES_ID=$$(python3 $(INIT_DB) list 2>/dev/null | grep "$(RESURRECTION_DIR)/resurrection" | head -1 | awk '{print $$1}'); \
+		[ -n "$$INIT_ID" ] && python3 $(INIT_DB) sign $$INIT_ID 2>/dev/null || true; \
+		[ -n "$$RES_ID" ] && python3 $(INIT_DB) sign $$RES_ID 2>/dev/null || true; \
+		echo "✅ Binaries signed"; \
+	else \
+		echo "⚠️  LUX_SIGNING_KEY not set - binaries will be unsigned"; \
+		echo "   Set LUX_SIGNING_KEY=<64-char-hex> to enable signing"; \
+	fi
+	@echo "Verifying binaries..."
+	@python3 $(INIT_DB) verify $(C_INIT_DIR)/init || true
+	@python3 $(INIT_DB) verify $(RESURRECTION_DIR)/resurrection || true

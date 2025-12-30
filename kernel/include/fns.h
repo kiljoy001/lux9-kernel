@@ -562,7 +562,8 @@ void procrestore(Proc *);      /* Restore process state */
 void procsetup(Proc *);        /* Setup process state */
 void procfork(Proc *);         /* Fork process state */
 int proc_setup_p9page(Proc *); /* Setup 9P exchange page */
-void* kernel_setup_init_exchange(Proc *); /* Kernel boot: setup #X exchange channel for init */
+void *kernel_setup_init_exchange(
+    Proc *); /* Kernel boot: setup #X exchange channel for init */
 
 /* MMU and page table functions */
 uintptr *mmuwalk(uintptr *, uintptr, int, int); /* Walk page table */
@@ -590,6 +591,8 @@ void *vmap(uvlong, vlong);
 void vunmap(void *, vlong);
 
 long kread(int, void *, long);
+long kwrite(int, void *, long);
+vlong kseek(int, vlong, int);
 
 /* WASM runtime functions */
 void wasm_runtime_init(void);

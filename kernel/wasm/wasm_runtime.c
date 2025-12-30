@@ -30,6 +30,7 @@ typedef usize size_t;
 typedef ssize ssize_t;
 
 /* WASM3 headers */
+#include "wasi_lux9_shim.h"
 #include "wasm_runtime/wasm3/wasm3.h"
 
 #ifndef nil
@@ -215,6 +216,21 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
    */
   arena_branch_init(&up->wasm.branch, pebble_state(), 1024 * 1024);
 
+  /* Initialize WASI Context */
+  up->wasm.wasi_ctx = malloc(sizeof(wasi_context_t));
+  if (!up->wasm.wasi_ctx) {
+    print("wasm_runtime: failed to allocate WASI context\n");
+    // Cleanup?
+  } else {
+    wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx);
+
+    /* Link WASI functions */
+    M3Result link_res = LinkWasi((IM3Module)up->wasm.module);
+    if (link_res) {
+      print("wasm_runtime: WASI link warning: %s\n", link_res);
+    }
+  }
+
   wasm_runtime.stats.total_modules++;
   wasm_runtime.stats.active_instances++;
 
@@ -357,6 +373,13 @@ int sys_wasm_destroy(Fcall *tx, Fcall *rx) {
 
   /* Drain arena branch back to process colorless bank (1:1 conservation) */
   arena_branch_drain(&up->wasm.branch);
+
+  /* Destroy WASI Context */
+  if (up->wasm.wasi_ctx) {
+    wasi_lux9_destroy_context((wasi_context_t *)up->wasm.wasi_ctx);
+    free(up->wasm.wasi_ctx);
+    up->wasm.wasi_ctx = nil;
+  }
 
   /* Mark WASM as uninitialized */
   up->wasm.initialized = 0;
