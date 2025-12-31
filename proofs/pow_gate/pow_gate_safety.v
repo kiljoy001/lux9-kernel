@@ -52,10 +52,34 @@ Theorem large_alloc_protection :
 Proof.
   intros size count Hsize Hcount.
   unfold attack_cost, bcra_cost.
-  unfold calculate_difficulty, alloc_magnitude_scaling.
-  (* For large allocations, base difficulty >= 2 *)
-  admit. (* TODO: Complete with proper analysis *)
-Admitted.
+  unfold calculate_difficulty.
+  fold raw_diff.
+  simpl.
+  replace (alloc_magnitude_scaling size + 0) with (alloc_magnitude_scaling size) by lia.
+  set (mb64 := 64 * 1024 * 1024).
+  assert (Hscale_ge2 : 2 <= alloc_magnitude_scaling size). {
+    assert (Hmono : alloc_magnitude_scaling mb64 <= alloc_magnitude_scaling size). {
+      apply alloc_magnitude_monotonic_large; lia.
+    }
+    assert (Hmb64_val : alloc_magnitude_scaling mb64 = 2) by (unfold mb64; vm_compute; reflexivity).
+    rewrite Hmb64_val in Hmono.
+    exact Hmono.
+  }
+  assert (Hdiff_ge2 : 2 <= Z.min 32 (alloc_magnitude_scaling size)). {
+    apply Z.min_glb; lia.
+  }
+  assert (Hpow_ge4 : 4 <= Z.pow 2 (Z.min 32 (alloc_magnitude_scaling size))). {
+    replace 4 with (Z.pow 2 2) by reflexivity.
+    apply Z.pow_le_mono_r; lia.
+  }
+  assert (Hcount_nonneg : 0 <= count) by lia.
+  assert (Hpow_ge4' :
+    count * 4 <= count * Z.pow 2 (Z.min 32 (alloc_magnitude_scaling size))). {
+    apply Z.mul_le_mono_nonneg_l; lia.
+  }
+  apply Z.le_ge.
+  exact Hpow_ge4'.
+Qed.
 
 (* ============================================================================
    FAIRNESS PROPERTIES
@@ -98,13 +122,25 @@ Theorem congestion_affects_all :
 Proof.
   intros op1 magnitude congestion Hcong.
   unfold calculate_difficulty.
-  destruct op1; simpl;
-  unfold alloc_magnitude_scaling, stack_alloc_scaling, base_difficulty;
-  try (destruct (magnitude <? _));
-  apply Z.min_case_strong; intros; try lia.
-  all: try (left; lia).
-  all: try (right; reflexivity).
-Admitted.
+  change (Z.min 32 (raw_diff op1 magnitude + congestion) >
+          Z.min 32 (raw_diff op1 magnitude + 0) \/
+          Z.min 32 (raw_diff op1 magnitude + congestion) = 32).
+  set (rd := raw_diff op1 magnitude).
+  replace (rd + 0) with rd by lia.
+  destruct (rd + congestion <? 32) eqn:Hlt.
+  - left.
+    apply Z.ltb_lt in Hlt.
+    assert (Hrd_cong_le32 : rd + congestion <= 32) by lia.
+    assert (Hrd_le32 : rd <= 32) by lia.
+    change (Z.min 32 (rd + congestion) > Z.min 32 rd).
+    rewrite (Z.min_r 32 (rd + congestion)) by exact Hrd_cong_le32.
+    rewrite (Z.min_r 32 rd) by exact Hrd_le32.
+    lia.
+  - right.
+    apply Z.ltb_ge in Hlt.
+    rewrite Z.min_l by lia.
+    reflexivity.
+Qed.
 
 (* Property: No operation is free (minimum difficulty is 1) *)
 Theorem no_free_operations :
@@ -113,10 +149,13 @@ Theorem no_free_operations :
 Proof.
   intros op magnitude.
   unfold calculate_difficulty.
-  destruct op; unfold alloc_magnitude_scaling, stack_alloc_scaling, base_difficulty;
-  try (destruct (magnitude <? _)); simpl;
-  apply Z.min_case_strong; intros; try lia.
-Admitted.
+  change (Z.min 32 (raw_diff op magnitude + 0) >= 1).
+  set (rd := raw_diff op magnitude).
+  replace (rd + 0) with rd by lia.
+  assert (Hrd_ge1 : 1 <= rd) by (unfold rd; apply raw_diff_ge_1).
+  apply Z.le_ge.
+  apply Z.min_glb; lia.
+Qed.
 
 (* ============================================================================
    REAL-TIME PRIORITY PROTECTION
@@ -192,5 +231,3 @@ Proof.
   apply andb_prop in Hperm.
   exact Hperm.
 Qed.
-
-

@@ -134,13 +134,13 @@ Proof.
       rewrite Z.max_l with (n:=magnitude) (m:=4096); [|lia].
       set (mag := magnitude).
       assert (Hm: mag >= 4096) by lia.
-      assert (Hmag_ge0: mag >= 0) by lia. (* Explicit positivity for Z.div_pos *)
+      assert (Hmag_ge0: 0 <= mag) by lia. (* Explicit positivity for Z.div_pos *)
       
       (* Explicitly prove mag / mb64 >= 0 using Z.div_pos *)
       assert (Hmag_div_mb64_ge0: 0 <= mag / (64 * 1024 * 1024)). {
         apply Z.div_pos.
-        - lia. (* 64*1024*1024 > 0 *)
         - exact Hmag_ge0.
+        - lia. (* 64*1024*1024 > 0 *)
       }
       
       destruct (mag <? 64 * 1024 * 1024) eqn:Hmag_lt_mb64.
@@ -148,12 +148,20 @@ Proof.
         assert (Hmag_pos: mag > 0) by lia. (* Explicit positivity *)
         set (penalty := Z.min 6 (Z.log2 (67108864 / mag))).
         (* We just need to prove penalty >= 0 *)
-        assert (Hpenalty_ge0: penalty >= 0). {
-          unfold penalty. apply Z.min_case_strong; intros.
-          - lia.
-          - apply Z.log2_nonneg. apply Z.div_str_pos; lia.
+        assert (Hpenalty_ge0: 0 <= penalty). {
+          unfold penalty.
+          apply Z.min_glb; [lia | apply Z.log2_nonneg].
         }
-        lia. (* Goal is 1 + (mag/67108864) + penalty >= 1 *)
+        change 67108864 with (64 * 1024 * 1024).
+        change (Z.min 6 (Z.log2 (64 * 1024 * 1024 / mag))) with penalty.
+        assert (Hsum_ge0 : 0 <= mag / (64 * 1024 * 1024) + penalty). {
+          apply Z.add_nonneg_nonneg; [exact Hmag_div_mb64_ge0 | exact Hpenalty_ge0].
+        }
+        replace 1 with (1 + 0) by lia.
+        replace (1 + 0 + mag / (64 * 1024 * 1024) + penalty)
+          with (1 + (mag / (64 * 1024 * 1024) + penalty)) by lia.
+        apply (proj1 (Z.add_le_mono_l 0 (mag / (64 * 1024 * 1024) + penalty) 1)).
+        exact Hsum_ge0.
       * (* Large allocation (mag >= 67108864) *)
         lia. (* Goal is 1 + (mag/67108864) >= 1 *)
   - (* POW_OP_STACK_ALLOC *)
@@ -164,7 +172,9 @@ Proof.
     + (* Larger stack alloc (magnitude >= 1024): cost is 2 + magnitude/16MB *)
       set (mb16 := 16 * 1024 * 1024).
       assert (Hmb16_pos: mb16 > 0). { unfold mb16; lia. }
-      assert (Hmag_div_mb16_ge0: magnitude / mb16 >= 0). { apply Z.div_pos; lia. }
+      assert (Hmag_div_mb16_ge0: 0 <= magnitude / mb16). {
+        apply Z.div_pos; lia.
+      }
       lia.
   - (* Other ops *) unfold base_difficulty; lia.
   - unfold base_difficulty; lia.
@@ -186,9 +196,9 @@ Proof.
     + (* Case: result is 32 *)
       lia.
     + (* Case: result is raw_diff + congestion *)
-      assert (0 <= congestion) by auto.
       assert (1 <= raw_diff op magnitude) as Hraw_diff_ge_1. { apply raw_diff_ge_1. }
-      lia.
+      assert (0 <= raw_diff op magnitude) as Hraw_diff_ge_0 by lia.
+      apply Z.add_nonneg_nonneg; [exact Hraw_diff_ge_0 | exact Hcong].
 
   - (* Upper bound: difficulty <= 32 (by Z.min) *)
     apply Z.le_min_l.
@@ -212,8 +222,8 @@ Proof.
   assert (m2 <? mb64 = false). { apply Z.ltb_ge. lia. }
   rewrite H1, H2.
   (* Now we just compare base + 0 <= base + 0 *)
-  apply Z.add_le_compat_l.
-  apply Z.div_le_compat_r; lia.
+  apply (proj1 (Z.add_le_mono_l _ _ _)).
+  apply Z.div_le_mono; lia.
 Qed.
 
 (* Property 3: Congestion increases difficulty *)
@@ -276,8 +286,8 @@ Proof.
   unfold pow_verify_spec.
   simpl. (* 32 <=? 0 is false, so it simplifies to the check *)
   split; intros H.
-  - apply Z.leb_le in H. exact H.
-  - apply Z.leb_le. exact H.
+  - apply Z.geb_ge in H. exact H.
+  - apply Z.geb_ge. exact H.
 Qed.
 
 (* ============================================================================
@@ -297,8 +307,6 @@ Proof.
     lia.
   - (* Case: result is 32 *)
     lia.
-  - (* Case: result is 32 *)
-    lia.
 Qed.
 
 (* Property 9: Real-time scheduling is the most expensive of fixed-cost ops *)
@@ -314,13 +322,13 @@ Proof.
   unfold calculate_difficulty.
   destruct op; try congruence.
   - (* SPAWN: 12 <= 16 *)
-    simpl. apply Z.min_le_compat_r. lia.
+    cbn [raw_diff base_difficulty]. apply Z.min_le_compat_l. lia.
   - (* NET: 8 <= 16 *)
-    simpl. apply Z.min_le_compat_r. lia.
+    cbn [raw_diff base_difficulty]. apply Z.min_le_compat_l. lia.
   - (* REALTIME: 16 <= 16 *)
     apply Z.le_refl.
   - (* DEFAULT: 4 <= 16 *)
-    simpl. apply Z.min_le_compat_r. lia.
+    cbn [raw_diff base_difficulty]. apply Z.min_le_compat_l. lia.
 Qed.
 
 (* Property 10: Stack allocations are cheaper than heap for normal sizes (<= 16MB) *)
@@ -348,40 +356,46 @@ Proof.
   
   (* Heap cost = 1 + min(6, log2(64MB/m)) *)
   
-  (* Simplify stack side *)
-  destruct (m <? 1024) eqn:Hstack_small.
-  - (* Stack < 1024: cost is 1 *)
-    (* Heap cost is 1 + penalty. Penalty >= 0. *)
-    (* We need to show penalty >= 0. *)
-    assert (mb64 / m > 0). { apply Z.div_str_pos; lia. }
-    assert (Z.log2 (mb64 / m) >= 0). { apply Z.log2_nonneg. }
-    lia.
-    
-  - (* Stack >= 1024: cost is 2 + m/16MB *)
-    assert (m / mb16 <= 1). {
-      apply Z.div_le_upper_bound; try lia.
-      unfold mb16; lia.
+  (* Simplify stack side: since m >= 4096, this branch is always false. *)
+  assert (Hstack_small : (m <? 1024) = false). { apply Z.ltb_ge; lia. }
+  rewrite Hstack_small.
+  (* Stack >= 1024: cost is 2 + m/16MB *)
+  assert (m / mb16 <= 1). {
+    apply Z.div_le_upper_bound; lia.
+  }
+  (* Stack cost is at most 2 + 1 = 3 *)
+  
+  (* Heap cost: 
+     m <= 16MB -> 64MB/m >= 4.
+     log2(64MB/m) >= 2.
+     min(6, log2) >= 2.
+     Heap cost >= 1 + 2 = 3.
+  *)
+    assert (4 <= mb64 / m). {
+      apply Z.div_le_lower_bound; lia.
     }
-    (* Stack cost is at most 2 + 1 = 3 *)
-    
-    (* Heap cost: 
-       m <= 16MB -> 64MB/m >= 4.
-       log2(64MB/m) >= 2.
-       min(6, log2) >= 2.
-       Heap cost >= 1 + 2 = 3.
-    *)
-    assert (mb64 / m >= 4). {
-      apply Z.div_ge_lower_bound; try lia.
-      unfold mb64, mb16 in *; lia.
-    }
-    assert (Z.log2 (mb64 / m) >= 2). {
-      assert (Z.log2 4 = 2) by reflexivity.
-      transitivity (Z.log2 4); try lia.
-      apply Z.log2_le_mono; lia.
+    assert (Hlog2_ge2 : 2 <= Z.log2 (mb64 / Z.max m 4096)). {
+      assert (Z.log2 4 = 2) as Hlog2_4 by reflexivity.
+      rewrite <- Hlog2_4.
+      apply Z.log2_le_mono.
+      rewrite <- H in H3.
+      exact H3.
     }
     
     (* Final comparison *)
-    lia.
+    assert (Hpenalty_ge2 : 2 <= Z.min 6 (Z.log2 (mb64 / Z.max m 4096))). {
+      apply Z.min_glb; [lia | exact Hlog2_ge2].
+    }
+    apply Z.le_trans with (m := 3).
+    - replace 3 with (2 + 1) by lia.
+      apply (proj1 (Z.add_le_mono_l (m / mb16) 1 2)).
+      exact H2.
+    - replace 3 with (1 + 2) by lia.
+      replace (1 + 0 + Z.min 6 (Z.log2 (mb64 / m)))
+        with (1 + Z.min 6 (Z.log2 (mb64 / m))) by lia.
+      rewrite H in Hpenalty_ge2.
+      apply (proj1 (Z.add_le_mono_l 2 (Z.min 6 (Z.log2 (mb64 / m))) 1)).
+      exact Hpenalty_ge2.
 Qed.
 
 (* ============================================================================

@@ -155,15 +155,13 @@ def verify_acsl_file(file_info):
     file_id, path, file_type = file_info
     full_path = os.path.join(REPO_ROOT, path)
     
-    # Default Frama-C command (ACSL inline)
+    # Default Frama-C command (Plan 9 wrapper for preprocessing)
     cmd = [
-        "frama-c", "-machdep", "gcc_x86_64", "-wp", "-wp-prover", "cvc4", "-wp-timeout", "5",
-        "-cpp-extra-args=-I" + os.path.join(KERNEL_DIR, "include") + 
-        " -I" + os.path.join(KERNEL_DIR, "9front-pc64") +
-        " -I" + os.path.join(KERNEL_DIR, "9front-port") +
-        " -I" + os.path.join(KERNEL_DIR, "port") +
-        " -D__PLAN9_KERNEL__",
-        full_path
+        os.path.join(REPO_ROOT, "scripts", "frama-c-plan9"),
+        "-wp",
+        "-wp-prover", "cvc4",
+        "-wp-timeout", "5",
+        full_path,
     ]
     env = os.environ.copy()
     env.setdefault("WHY3CONFIG", "/tmp/why3.conf")
@@ -299,6 +297,7 @@ def main():
     print(f"{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
 
     conn = init_db()
+    run_start = now_ts()
     scan_repository(conn)
     
     cursor = conn.cursor()
@@ -341,7 +340,10 @@ def main():
     conn.commit()
     
     # Summary
-    cursor.execute("SELECT count(*) FROM verification_results WHERE status='FAIL' AND timestamp > datetime('now', '-1 minute')")
+    cursor.execute(
+        "SELECT count(*) FROM verification_results WHERE status='FAIL' AND timestamp >= ?",
+        (run_start,)
+    )
     failed_count = cursor.fetchone()[0]
     conn.close()
 

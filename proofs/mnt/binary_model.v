@@ -106,8 +106,12 @@ Lemma binary_to_Z_shift : forall bs pos,
   binary_to_Z bs (S pos) = 2 * binary_to_Z bs pos.
 Proof.
   induction bs as [| b rest IH]; intros pos.
-  - simpl. reflexivity.
-  - simpl. rewrite IH. rewrite pow2_succ. lia.
+  - cbn [binary_to_Z]. ring.
+  - cbn [binary_to_Z].
+    rewrite (IH (S pos)).
+    change (Z.pow_pos 2 (Pos.of_succ_nat pos)) with (2 ^ Z.of_nat (S pos)).
+    rewrite pow2_succ.
+    ring.
 Qed.
 
 (** Binary representation is correct *)
@@ -121,20 +125,21 @@ Proof.
   induction bits as [| k IH]; intros n [Hn0 Hnbound].
   - simpl. simpl in Hnbound. assert (n = 0) by lia. subst. reflexivity.
   - simpl Z_to_binary. simpl binary_to_Z.
-    simpl (2 ^ Z.of_nat (S k)) in Hnbound.
-    assert (Hdiv: n = 2 * (n / 2) + n mod 2) by (apply Z.div_mod; lia).
-    rewrite <- Hdiv at 2.
-    f_equal.
-    + apply Z.mod_pos_bound. lia.
-    + rewrite <- IH.
-      * unfold bin_value.
-        assert (H: binary_to_Z (Z_to_binary (n / 2) k) 1 =
-                   2 * binary_to_Z (Z_to_binary (n / 2) k) 0).
-        { apply binary_to_Z_shift. }
-        rewrite H. f_equal. reflexivity.
-      * split.
-        -- apply Z.div_pos; lia.
-        -- apply Z.div_lt_upper_bound; lia.
+    replace (n mod 2 * 1) with (n mod 2) by lia.
+    assert (Hshift : binary_to_Z (Z_to_binary (n / 2) k) 1 =
+                     2 * binary_to_Z (Z_to_binary (n / 2) k) 0).
+    { apply binary_to_Z_shift. }
+    rewrite Hshift.
+    rewrite IH.
+    + assert (Hdiv: n = 2 * (n / 2) + n mod 2) by (apply Z.div_mod; lia).
+      lia.
+    + split.
+      * apply Z.div_pos; lia.
+      * assert (Hbound' : n < 2 * 2 ^ Z.of_nat k). {
+          rewrite pow2_succ in Hnbound.
+          exact Hnbound.
+        }
+        apply Z.div_lt_upper_bound; lia.
 Qed.
 
 (* ========================================================================= *)

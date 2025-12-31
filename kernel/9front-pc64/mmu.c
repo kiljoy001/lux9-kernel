@@ -166,7 +166,7 @@ static void dump_transition_pte(const char *label, uintptr va) {
 uintptr dbg_getpte(uintptr va) {
   uintptr *pte;
 
-  pte = mmuwalk(m->pml4, va, 0, 0);
+  pte = mmuwalk((uintptr *)m->pml4, va, 0, 0);
   if (pte == nil)
     return 0;
   return *pte;
@@ -793,12 +793,12 @@ static MMU *mmualloc(void) {
   assigns table[index] \from va, level, index;
 
   behavior success:
-    assumes \result != \null;
+    ensures \result != \null;
     ensures \valid((uintptr*)\result + (0..511));
     ensures ((uintptr)\result) % 4096 == 0;  // page-aligned per mmu_model.v
 
   behavior failure:
-    assumes \result == \null;
+    ensures \result == \null;
 
   complete behaviors;
   disjoint behaviors;
@@ -941,9 +941,9 @@ uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
 static uintptr *getpte(uintptr va) {
   uintptr *pte;
 
-  if ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+  if ((pte = mmuwalk((uintptr *)m->pml4, va, 0, 1)) == nil) {
     flushmmu();
-    while ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+    while ((pte = mmuwalk((uintptr *)m->pml4, va, 0, 1)) == nil) {
       int x = spllo();
       resrcwait("out of MMU pages");
       splx(x);
@@ -1088,9 +1088,9 @@ void pmap(uintptr pa, uintptr va, vlong size) {
       flags |= PTESIZE;
     l = (flags & PTESIZE) != 0;
     z = PGLSZ(l);
-    pte = mmuwalk(m->pml4, va, l, 1);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 1);
     if (pte == nil) {
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
       if (pte && (*pte & PTESIZE)) {
         flags |= PTESIZE;
         z = va & (PGLSZ(l) - 1);
@@ -1120,9 +1120,9 @@ void punmap(uintptr va, vlong size) {
     if ((va % PGLSZ(1)) != 0 || size < PGLSZ(1))
       ptesplit(m->pml4, va);
     l = 0;
-    pte = mmuwalk(m->pml4, va, l, 0);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 0);
     if (pte == nil && (va % PGLSZ(1)) == 0 && size >= PGLSZ(1))
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
     if (pte) {
       *pte = 0;
       invlpg(va);
@@ -1257,7 +1257,7 @@ void checkmmu(uintptr va, uintptr pa) {
   int x;
 
   x = splhi();
-  pte = mmuwalk(m->pml4, va, 0, 0);
+  pte = mmuwalk((uintptr *)m->pml4, va, 0, 0);
   if (pte == nil || ((old = *pte) & PTEVALID) == 0 || PPN(old) == pa) {
     splx(x);
     return;
@@ -1351,9 +1351,9 @@ void patwc(void *a, int n) {
   /* set the bits for all pages in range */
   for (va = (uintptr)a; n > 0; n -= z, va += z) {
     l = 0;
-    pte = mmuwalk(m->pml4, va, l, 0);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 0);
     if (pte == nil)
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
     if (pte == nil || (*pte & PTEVALID) == 0)
       panic("patwc: va=%#p", va);
     z = PGLSZ(l);

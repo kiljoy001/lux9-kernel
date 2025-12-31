@@ -19,6 +19,7 @@ Require Import Psatz.
 Import ListNotations.
 
 Require Import mnt.channel_model.
+Require Import mnt.wire_format.
 
 Open Scope Z_scope.
 
@@ -449,5 +450,6 @@ Lemma decode_u32_reconstruct : forall n,
   Z.land (Z.shiftr n 16) 255 * 65536 +
   Z.land (Z.shiftr n 24) 255 * 16777216 = n.
 Proof.
-Admitted.
-
+  intros n Hrange.
+  exact (mnt.wire_format.decode_u32_reconstruct n Hrange).
+Qed.
