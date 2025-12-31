@@ -78,3 +78,12 @@ void lock_init(Lock *l) { memset(l, 0, sizeof(Lock)); }
 int validate_channel_operation_permission(void *chan, int op) {
   return 1; // Allow for now
 }
+
+/* nsec - return nanoseconds since boot */
+vlong nsec(void) { return fastticks2ns(fastticks(nil)); }
+
+/* randombytes - fill buffer with random bytes */
+void randombytes(u8int *buf, usize len) {
+  extern void chacha20_csprng_fill(u8int *, ulong);
+  chacha20_csprng_fill(buf, len);
+}

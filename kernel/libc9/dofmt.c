@@ -13,6 +13,12 @@ int dofmt(Fmt *f, char *fmt) {
   char *t, *s;
   int n, nfmt;
 
+  /* Safety check: prevent crash if f->to is NULL */
+  if (f->to == nil) {
+    print("dofmt: f->to is nil\n");
+    return -1;
+  }
+
   nfmt = f->nfmt;
   for (;;) {
     if (f->runes) {
