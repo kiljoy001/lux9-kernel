@@ -309,6 +309,11 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   uintptr mmuphys;
   Page pg = {0};
 
+  /* Debug: check if this is exchange page mapping */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    print("mapphys: EXCHANGE PAGE addr=%#p pseg->pa=%#p\n", addr, s->pseg->pa);
+  }
+
   addr &= ~(BY2PG - 1);
   pg.ref = 1;
   pg.va = addr;

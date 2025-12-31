@@ -63,12 +63,32 @@ int proc_setup_p9page(Proc *p) {
 
   /* Assign segment to process at P9SEG slot */
   p->seg[P9SEG] = s;
-  print("proc_setup_p9page: pid=%lud seg=%p base=%#p (4KB single-page model)\n",
-        p->pid, s, (void *)s->base);
+  print("proc_setup_p9page: pid=%lud seg=%p base=%#p p9page=%p PADDR=%#p "
+        "pseg->pa=%#p\n",
+        p->pid, s, (void *)s->base, p->p9page, PADDR(p->p9page), s->pseg->pa);
 
-  /* Map single exchange page to userspace */
-  extern void userpmap(uintptr va, uintptr pa, int perms);
-  userpmap(EXCHANGE_PAGE_ADDR, PADDR(p->p9page), PTEVALID | PTEUSER | PTEWRITE);
+  /*
+   * CRITICAL: Invalidate any inherited PTE for this address.
+   * When forking, the child inherits the parent's page table which may
+   * have EXCHANGE_PAGE_ADDR already mapped to the parent's physical page.
+   * We need to zero out that PTE so a page fault occurs and mapphys()
+   * correctly maps the child's new physical page.
+   *
+   * Note: We use mmuwalk to find and zero the PTE in the current process's
+   * page table. This only works correctly when called from the child's
+   * context (after it starts running), but since fork calls this before
+   * the child runs, we set the segment up and the mapping will be fixed
+   * when the child first accesses the page through fixfault/mapphys.
+   */
+  extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+  uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
+  if (pte != nil && *pte != 0) {
+    print("proc_setup_p9page: invalidating inherited PTE at %#p, old=%#llux\n",
+          EXCHANGE_PAGE_ADDR, (uvlong)*pte);
+    *pte = 0;
+    /* Flush TLB for this address */
+    __asm__ volatile("invlpg (%0)" ::"r"(EXCHANGE_PAGE_ADDR) : "memory");
+  }
 
   /* Register exchange page with borrow checker - process initially owns it */
   extern uintptr saved_limine_hhdm_offset;

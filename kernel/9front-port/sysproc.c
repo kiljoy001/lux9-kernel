@@ -299,6 +299,17 @@ uintptr sysrfork(void *list_void) {
     incref(up->egrp);
   }
 
+  /*
+   * CRITICAL: Setup 9P exchange page for child BEFORE procfork.
+   * This ensures:
+   * 1. Child gets its own exchange page segment at P9SEG
+   * 2. Parent's PTE at EXCHANGE_PAGE_ADDR is invalidated
+   * 3. When procfork copies page tables, child inherits clean PTE
+   * 4. Child will fault on first exchange page access and get proper mapping
+   */
+  if (proc_setup_p9page(p) < 0)
+    error(Enovmem);
+
   procfork(p);
 
   poperror(); /* abortion */
@@ -318,9 +329,7 @@ uintptr sysrfork(void *list_void) {
    *  any mmu info about this process is now stale
    *  (i.e. has bad properties) and has to be discarded.
    */
-  /* Phase 6: Setup 9P exchange page for new user process */
-  if (proc_setup_p9page(p) < 0)
-    error(Enovmem);
+  /* proc_setup_p9page moved above procfork */
 
   flushmmu();
 
@@ -542,7 +551,8 @@ uintptr sysexec(void *list_void) {
       /* CLR execution moved to userspace - use userspace runtime */
       cclose(tc);
       poperror();
-      error("CLR execution moved to userspace - recompile for WASM or use userspace CLR");
+      error("CLR execution moved to userspace - recompile for WASM or use "
+            "userspace CLR");
     }
 
     if (n >= sizeof(Exec)) {
@@ -1774,10 +1784,10 @@ uintptr syspebbleblackalloc(void *list_void) {
     error(PEBBLE_E_PERM);
   validaddr((uintptr)userp, sizeof(void *), 1);
   handle = nil;
-  
+
   if (pebble_alloc_with_white(size, &cap, &handle) != 0)
     error(PEBBLE_E_NOMEM);
-    
+
   *userp = handle;
   return (uintptr)handle;
 }
