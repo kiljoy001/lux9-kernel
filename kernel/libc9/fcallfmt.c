@@ -152,7 +152,8 @@ int fcallfmt(Fmt *fmt) {
             f->scount);
     break;
   case Rsyscall:
-    seprint(buf, e, "Rsyscall tag %ud scount %ud", tag, f->scount);
+    seprint(buf, e, "Rsyscall tag %ud retval %llud scount %ud", tag, f->retval,
+            f->scount);
     break;
   default:
     seprint(buf, e, "unknown type %d", type);

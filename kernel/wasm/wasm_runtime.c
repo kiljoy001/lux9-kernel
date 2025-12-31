@@ -64,6 +64,8 @@ typedef struct WasmRuntime {
 /* Global isolated runtime (initialized at boot) */
 static WasmRuntime wasm_runtime;
 static int runtime_initialized = 0;
+static uchar wasm_compile_reply[8];
+static uchar wasm_execute_reply[8];
 
 /* NOTE: WASM instances are now stored in Proc.wasm structure
  * See ADR_WASM_AS_PROCESSES.md for architecture rationale.
@@ -240,9 +242,11 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
   /* Send success reply */
   rx->type = Rsyscall;
   rx->tag = tx->tag;
+  rx->retval = 0;
   rx->scount = 8;
+  rx->sdata = wasm_compile_reply;
   /* Return pid as success confirmation */
-  PBIT64(rx->sdata, up->pid);
+  PBIT64(wasm_compile_reply, up->pid);
   return 0;
 }
 
@@ -330,8 +334,10 @@ int sys_wasm_execute(Fcall *tx, Fcall *rx) {
   /* Send success reply */
   rx->type = Rsyscall;
   rx->tag = tx->tag;
+  rx->retval = 0;
   rx->scount = 8;
-  PBIT64(rx->sdata, retval);
+  rx->sdata = wasm_execute_reply;
+  PBIT64(wasm_execute_reply, retval);
   return 0;
 }
 
@@ -389,8 +395,9 @@ int sys_wasm_destroy(Fcall *tx, Fcall *rx) {
   /* Send success reply */
   rx->type = Rsyscall;
   rx->tag = tx->tag;
-  rx->scount = 8;
-  PBIT64(rx->sdata, 0); /* Success */
+  rx->retval = 0;
+  rx->scount = 0;
+  rx->sdata = nil;
   return 0;
 }
 

@@ -129,8 +129,9 @@ uint sizeS2M(Fcall *f) {
      */
 
   case Rsyscall:
-    n += BIT32SZ;
-    n += f->scount;
+    n += BIT64SZ;         /* retval */
+    n += BIT32SZ;         /* scount */
+    n += f->scount;       /* sdata */
     break;
 
   /* Tsys* - specific syscall message types */
@@ -489,6 +490,8 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
      */
 
   case Rsyscall:
+    PBIT64(p, f->retval);
+    p += BIT64SZ;
     PBIT32(p, f->scount);
     p += BIT32SZ;
     if (f->scount > 0)

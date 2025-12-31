@@ -64,6 +64,7 @@ typedef struct Fcall {
       u32int scallnr; /* Tsyscall */
       uchar *sdata;   /* Tsyscall, Rsyscall */
       u32int scount;  /* Tsyscall, Rsyscall */
+      u64int retval;  /* Rsyscall */
     };
     /* Tsys* message fields */
     struct {

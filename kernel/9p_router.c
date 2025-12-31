@@ -438,6 +438,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
   /* Handle Generic Tsyscall (130) */
   if (t->type == Tsyscall) {
+    Proc *proc = p;
     uchar *p = t->sdata;
     uchar *ep = t->sdata + t->scount;
 
@@ -489,9 +490,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
       r->type = Rsyscall;
       r->tag = t->tag;
-      r->scount = 4;
-      r->sdata = t->sdata;
-      PBIT32(t->sdata, fd);
+      r->retval = fd;
+      r->scount = 0;
+      r->sdata = nil;
 
       return 0;
     }
@@ -522,7 +523,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
       r->type = Rsyscall;
       r->tag = t->tag;
+      r->retval = 0;
       r->scount = 0;
+      r->sdata = nil;
       return 0;
     }
 
@@ -531,12 +534,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       print("p9_dispatch: SYS_NSEC\n");
       uvlong t_now = nsec();
 
-      static uchar nsec_reply[8];
       r->type = Rsyscall;
       r->tag = t->tag;
-      r->scount = 8;
-      r->sdata = nsec_reply;
-      PBIT64(nsec_reply, t_now);
+      r->retval = t_now;
+      r->scount = 0;
+      r->sdata = nil;
       return 0;
     }
 
@@ -581,13 +583,298 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       cclose(c);
       poperror();
 
-      /* Allocate small buffer for 4-byte return value */
-      static uchar reply_data[8]; /* Static buffer for return value */
       r->type = Rsyscall;
       r->tag = t->tag;
-      r->scount = 4;
-      r->sdata = reply_data; /* Use separate buffer instead of request buffer */
-      PBIT32(reply_data, n);
+      r->retval = n;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_PWRITE: {
+      /* Same format as SYS_WRITE */
+      if (p + 4 + 8 + 4 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      int fid = GBIT32(p);
+      p += 4;
+      vlong offset = GBIT64(p);
+      p += 8;
+      int count = GBIT32(p);
+      p += 4;
+      if (p + count > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+
+      print("p9_dispatch: SYS_PWRITE fd=%d count=%d off=%lld\n", fid, count,
+            offset);
+
+      extern Chan *fdtochan(int, int, int, int);
+      Chan *c;
+      long n;
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      c = fdtochan(fid, OWRITE, 1, 1);
+      if (waserror()) {
+        cclose(c);
+        nexterror();
+      }
+      if (c->qid.type & QTDIR)
+        error(Eisdir);
+      n = devtab[c->type]->write(c, p, count, offset);
+      poperror();
+      cclose(c);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = n;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_READ:
+    case SYS_PREAD: {
+      /* Format: [fid 4] [offset 8] [count 4] */
+      if (p + 4 + 8 + 4 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      int fid = GBIT32(p);
+      p += 4;
+      vlong offset = GBIT64(p);
+      p += 8;
+      int count = GBIT32(p);
+      p += 4;
+
+      print("p9_dispatch: %s fd=%d count=%d off=%lld\n",
+            t->scallnr == SYS_READ ? "SYS_READ" : "SYS_PREAD", fid, count,
+            offset);
+
+      extern Chan *fdtochan(int, int, int, int);
+      Chan *c;
+      long n;
+      int rsyscall_hdr = 4 + 1 + 2 + 8 + 4;
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      c = fdtochan(fid, OREAD, 1, 1);
+      if (waserror()) {
+        cclose(c);
+        nexterror();
+      }
+      if (c->qid.type & QTDIR)
+        error(Eisdir);
+
+      if (count > P9_REPLY_SIZE - rsyscall_hdr) {
+        error("read count too large");
+      }
+
+      uchar *data = (uchar *)proc->p9page + P9_MSG_OFFSET + rsyscall_hdr;
+      n = devtab[c->type]->read(c, data, count, offset);
+      poperror();
+      cclose(c);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = n;
+      r->scount = n;
+      r->sdata = data;
+      return 0;
+    }
+
+    case SYS_CREATE: {
+      extern int newfd(Chan *, int);
+      extern int openmode(ulong);
+      /* Format: [fid 4] [path s] [perm 4] [mode 1] */
+      if (p + 4 + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+      int fid = GBIT32(p);
+      p += 4;
+      int len = GBIT16(p);
+      p += 2;
+      if (p + len + 4 + 1 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      char *path = smalloc(len + 1);
+      memmove(path, p, len);
+      path[len] = 0;
+      p += len;
+
+      ulong perm = GBIT32(p);
+      p += 4;
+      int mode = GBIT8(p);
+      p += 1;
+
+      print("p9_dispatch: SYS_CREATE '%s' perm=0%lo mode=%d\n", path, perm,
+            mode);
+
+      int fd;
+      Chan *c = 0;
+      if (waserror()) {
+        if (c)
+          cclose(c);
+        free(path);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      openmode(mode);
+      c = namec(path, Acreate, mode, perm);
+      fd = newfd(c, mode);
+      poperror();
+      free(path);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = fd;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_STAT: {
+      /* Format: [path s] OR [fid 4] */
+      if (p + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      int remaining = ep - p;
+      Chan *c = nil;
+      char *path = nil;
+      long n;
+
+      if (remaining >= 2) {
+        int len = GBIT16(p);
+        if (2 + len == remaining) {
+          p += 2;
+          path = smalloc(len + 1);
+          memmove(path, p, len);
+          path[len] = 0;
+          p += len;
+
+          print("p9_dispatch: SYS_STAT '%s'\n", path);
+
+          if (waserror()) {
+            if (c)
+              cclose(c);
+            free(path);
+            r->type = Rerror;
+            snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+            return -1;
+          }
+          c = namec(path, Aaccess, 0, 0);
+        } else if (remaining == 4) {
+          int fid = GBIT32(p);
+          p += 4;
+
+          print("p9_dispatch: SYS_STAT fd=%d\n", fid);
+
+          if (waserror()) {
+            if (c)
+              cclose(c);
+            r->type = Rerror;
+            snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+            return -1;
+          }
+          c = fdtochan(fid, -1, 0, 1);
+        } else {
+          r->type = Rerror;
+          r->ename = "bad stat msg";
+          return -1;
+        }
+      }
+
+      extern Chan *fdtochan(int, int, int, int);
+      int rsyscall_hdr = 4 + 1 + 2 + 8 + 4;
+      uchar *data = (uchar *)proc->p9page + P9_MSG_OFFSET + rsyscall_hdr;
+      n = devtab[c->type]->stat(c, data, P9_REPLY_SIZE - rsyscall_hdr);
+      if (path)
+        free(path);
+      poperror();
+      cclose(c);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = n;
+      r->scount = n;
+      r->sdata = data;
+      return 0;
+    }
+
+    case SYS_WSTAT: {
+      /* Format: [path s] [nstat 2] [stat bytes] */
+      if (p + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+      int len = GBIT16(p);
+      p += 2;
+      if (p + len + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      char *path = smalloc(len + 1);
+      memmove(path, p, len);
+      path[len] = 0;
+      p += len;
+
+      int nstat = GBIT16(p);
+      p += 2;
+      if (p + nstat > ep) {
+        free(path);
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      print("p9_dispatch: SYS_WSTAT '%s' nstat=%d\n", path, nstat);
+
+      extern void validstat(uchar *s, int n);
+      Chan *c = nil;
+      if (waserror()) {
+        if (c)
+          cclose(c);
+        free(path);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      validstat(p, nstat);
+      c = namec(path, Aaccess, 0, 0);
+      devtab[c->type]->wstat(c, p, nstat);
+      poperror();
+      cclose(c);
+      free(path);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
       return 0;
     }
 
@@ -677,13 +964,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       ret = sysrfork(args);
       poperror();
 
-      /* Return PID (or 0 in child) */
-      static uchar fork_reply[8];
       r->type = Rsyscall;
       r->tag = t->tag;
-      r->scount = 8;
-      r->sdata = fork_reply;
-      PBIT64(fork_reply, ret);
+      r->retval = ret;
+      r->scount = 0;
+      r->sdata = nil;
       return 0;
     }
 
@@ -1000,6 +1285,395 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     print("p9_dispatch: Tsysdup oldfd=%d newfd=%d -> %d\n", t->fid, t->newfid,
           nfd);
+    return 0;
+  }
+
+  if (t->type == Tsysstat) {
+    extern uintptr sysstat(void *list_void);
+    ulong args[3];
+    int rsysstat_hdr = 4 + 1 + 2 + 2;
+    uchar *statbuf = (uchar *)p->p9page + P9_MSG_OFFSET + rsysstat_hdr;
+    long n;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->name;
+    args[1] = (ulong)statbuf;
+    args[2] = P9_REPLY_SIZE - rsysstat_hdr;
+    n = (long)sysstat(args);
+    poperror();
+
+    r->type = Rsysstat;
+    r->tag = t->tag;
+    r->nstat = n;
+    r->stat = statbuf;
+    return 0;
+  }
+
+  if (t->type == Tsysfstat) {
+    extern uintptr sysfstat(void *list_void);
+    ulong args[3];
+    int rsysstat_hdr = 4 + 1 + 2 + 2;
+    uchar *statbuf = (uchar *)p->p9page + P9_MSG_OFFSET + rsysstat_hdr;
+    long n;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->fid;
+    args[1] = (ulong)statbuf;
+    args[2] = P9_REPLY_SIZE - rsysstat_hdr;
+    n = (long)sysfstat(args);
+    poperror();
+
+    r->type = Rsysfstat;
+    r->tag = t->tag;
+    r->nstat = n;
+    r->stat = statbuf;
+    return 0;
+  }
+
+  if (t->type == Tsyswstat) {
+    extern uintptr syswstat(void *list_void);
+    ulong args[3];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->name;
+    args[1] = (ulong)t->stat;
+    args[2] = (ulong)t->nstat;
+    syswstat(args);
+    poperror();
+
+    r->type = Rsyswstat;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysfwstat) {
+    extern uintptr sysfwstat(void *list_void);
+    ulong args[3];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->fid;
+    args[1] = (ulong)t->stat;
+    args[2] = (ulong)t->nstat;
+    sysfwstat(args);
+    poperror();
+
+    r->type = Rsysfwstat;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysfork) {
+    extern uintptr sysrfork(void *list_void);
+    ulong args[1];
+    uintptr ret;
+
+    args[0] = t->flags;
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+    ret = sysrfork(args);
+    poperror();
+
+    r->type = Rsysfork;
+    r->tag = t->tag;
+    r->pid = ret;
+    return 0;
+  }
+
+  if (t->type == Tsysexec) {
+    extern uintptr sysexec(void *list_void);
+    ulong args[2];
+    uintptr argvp;
+    char **argv;
+
+    if (t->argc > 1) {
+      r->type = Rerror;
+      r->ename = "argv not supported in Tsysexec";
+      return -1;
+    }
+
+    argvp = (uintptr)p->p9page + P9_MSG_OFFSET + 256;
+    argvp = (argvp + 7) & ~7ULL;
+    argv = (char **)argvp;
+    argv[0] = t->name;
+    argv[1] = nil;
+
+    args[0] = (ulong)t->name;
+    args[1] = (ulong)argv;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    sysexec(args);
+    poperror();
+
+    r->type = Rerror;
+    r->ename = "exec returned unexpectedly";
+    return -1;
+  }
+
+  if (t->type == Tsyswait) {
+    extern ulong pwait(Waitmsg *w);
+    Waitmsg w;
+    char *msg;
+    int msgmax = P9_REPLY_SIZE - 64;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    r->pid = pwait(&w);
+    poperror();
+
+    msg = (char *)p->p9page + P9_MSG_OFFSET + 64;
+    snprint(msg, msgmax, "%s", w.msg);
+
+    r->type = Rsyswait;
+    r->tag = t->tag;
+    r->ename = msg;
+    return 0;
+  }
+
+  if (t->type == Tsyssleep) {
+    extern uintptr syssleep(void *list_void);
+    ulong args[1];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = t->count;
+    syssleep(args);
+    poperror();
+
+    r->type = Rsyssleep;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysbind) {
+    extern uintptr sysbind(void *list_void);
+    ulong args[3];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->name;
+    args[1] = (ulong)t->oldpath;
+    args[2] = (ulong)t->flags;
+    sysbind(args);
+    poperror();
+
+    r->type = Rsysbind;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysmount) {
+    extern uintptr sysmount(void *list_void);
+    ulong args[5];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->fd;
+    args[1] = (ulong)t->afid;
+    args[2] = (ulong)t->oldpath;
+    args[3] = (ulong)t->flags;
+    args[4] = (ulong)t->aname;
+    sysmount(args);
+    poperror();
+
+    r->type = Rsysmount;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysunmount) {
+    extern uintptr sysunmount(void *list_void);
+    ulong args[2];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->name;
+    args[1] = (ulong)t->oldpath;
+    sysunmount(args);
+    poperror();
+
+    r->type = Rsysunmount;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsyspipe) {
+    extern uintptr syspipe(void *list_void);
+    ulong args[1];
+    int *fd;
+
+    fd = (int *)((uchar *)p->p9page + P9_MSG_OFFSET + 64);
+    fd[0] = fd[1] = -1;
+    args[0] = (ulong)fd;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    syspipe(args);
+    poperror();
+
+    r->type = Rsyspipe;
+    r->tag = t->tag;
+    r->fid0 = fd[0];
+    r->fid1 = fd[1];
+    return 0;
+  }
+
+  if (t->type == Tsysfd2path) {
+    extern uintptr sysfd2path(void *list_void);
+    ulong args[3];
+    char *buf;
+    int buflen = P9_REPLY_SIZE - 64;
+
+    buf = (char *)p->p9page + P9_MSG_OFFSET + 64;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->fid;
+    args[1] = (ulong)buf;
+    args[2] = (ulong)buflen;
+    sysfd2path(args);
+    poperror();
+
+    r->type = Rsysfd2path;
+    r->tag = t->tag;
+    r->name = buf;
+    return 0;
+  }
+
+  if (t->type == Tsysseek) {
+    extern uintptr sysseek(void *list_void);
+    ulong args[4];
+    vlong *out;
+
+    out = (vlong *)((uchar *)p->p9page + P9_MSG_OFFSET + 64);
+    args[0] = (ulong)out;
+    args[1] = (ulong)t->fid;
+    args[2] = (ulong)t->offset;
+    args[3] = (ulong)t->whence;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    sysseek(args);
+    poperror();
+
+    r->type = Rsysseek;
+    r->tag = t->tag;
+    r->offset = *out;
+    return 0;
+  }
+
+  if (t->type == Tsysnotify) {
+    extern uintptr sysnotify(void *list_void);
+    ulong args[1];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = (ulong)t->handler;
+    sysnotify(args);
+    poperror();
+
+    r->type = Rsysnotify;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysalarm) {
+    extern uintptr sysalarm(void *list_void);
+    ulong args[1];
+    uintptr prev;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      poperror();
+      return -1;
+    }
+
+    args[0] = t->count;
+    prev = sysalarm(args);
+    poperror();
+
+    r->type = Rsysalarm;
+    r->tag = t->tag;
+    r->count = prev;
     return 0;
   }
 

@@ -227,6 +227,19 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     p += f->scount;
     break;
 
+  case Rsyscall:
+    if (p + BIT64SZ + BIT32SZ > ep)
+      return 0;
+    f->retval = GBIT64(p);
+    p += BIT64SZ;
+    f->scount = GBIT32(p);
+    p += BIT32SZ;
+    if (p + f->scount > ep)
+      return 0;
+    f->sdata = p;
+    p += f->scount;
+    break;
+
   /* Tsys* - specific syscall message types */
 
   /* I/O Operations */
