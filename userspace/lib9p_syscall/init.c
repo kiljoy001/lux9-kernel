@@ -165,14 +165,19 @@ static void do_exec(const char *path) {
 
   memset(req, 0, 512);
 
-  /* Texec: [size][type=128][tag][pathlen:2][path:n] */
-  uint size = 4 + 1 + 2 + 2 + pathlen;
+  /* Texec format per convM2S: [size 4][type 1][tag 2][count 4][data count]
+   * The 'count' field contains the length of the data that follows (pathlen + 2
+   * for path string) The data is: [pathlen 2][path n] */
+  uint data_size = 2 + pathlen;          /* 2-byte pathlen + path bytes */
+  uint size = 4 + 1 + 2 + 4 + data_size; /* size + type + tag + count + data */
   put_u32(req + pos, size);
   pos += 4;
   req[pos++] = Texec;
   put_u16(req + pos, 1);
   pos += 2;
-  put_u16(req + pos, pathlen);
+  put_u32(req + pos, data_size); /* 4-byte count (size of following data) */
+  pos += 4;
+  put_u16(req + pos, pathlen); /* 2-byte pathlen within data */
   pos += 2;
   memcpy(req + pos, path, pathlen);
 

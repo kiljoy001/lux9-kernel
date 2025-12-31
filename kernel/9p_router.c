@@ -1375,6 +1375,17 @@ int p9_handle_doorbell(Proc *p) {
   /* Parse request from message buffer */
   memset(&t, 0, sizeof(t));
 
+  /* Memory barrier to ensure user writes are visible to kernel.
+   * User writes to EXCHANGE_PAGE_ADDR, kernel reads via HHDM at p->p9page.
+   * The mfence ensures cache coherency between different VA mappings. */
+  __asm__ volatile("mfence" ::: "memory");
+
+  /* Debug: hex dump first 16 bytes of exchange page */
+  print("p9_handle_doorbell: msg_buf=%p first 16 bytes: ", msg_buf);
+  for (int i = 0; i < 16; i++)
+    print("%02x ", msg_buf[i]);
+  print("\n");
+
   /* Get message size from 9P header (first 4 bytes) */
   msg_size = GBIT32(msg_buf);
   if (msg_size < 7 || msg_size > P9_MSG_SIZE) {
