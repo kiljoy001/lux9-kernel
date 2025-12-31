@@ -82,6 +82,13 @@ struct P9Control {
   uint rep_tail;
 };
 
+/* 9P Qid (required for Service struct) */
+typedef struct Qid {
+  uchar type;
+  u32int vers;
+  u64int path;
+} Qid;
+
 /* Service states */
 #define SRV_STOPPED 0
 #define SRV_STARTING 1
@@ -106,7 +113,27 @@ typedef struct {
   u64int last_restart;          /* Timestamp of last restart */
   int auto_restart;             /* Auto-restart on crash */
   int critical;                 /* Critical service flag */
+  Qid qid;                      /* Unique file ID for 9P */
 } Service;
+
+/* Forward Declarations */
+static void print(const char *msg);
+static void print_num(const char *prefix, int num, const char *suffix);
+int srv_create_entry(const char *name, int pid);
+static void restart_service(Service *svc);
+
+/* Locking Primitives */
+static int srv_lock = 0;
+
+static void lock(int *l) {
+  int x = 1;
+  while (x) {
+    /* Simple spinlock using xchg */
+    __asm__ volatile("xchgl %0, %1" : "+r"(x), "+m"(*l));
+  }
+}
+
+static void unlock(int *l) { *l = 0; }
 
 /* Global state */
 static Service services[MAX_SERVICES];
@@ -186,13 +213,6 @@ enum {
   P9_Twstat = 126,
   P9_Rwstat
 };
-
-/* Qid structure */
-typedef struct Qid {
-  uchar type;
-  u32int vers;
-  u64int path;
-} Qid;
 
 #define QTDIR 0x80
 #define QTFILE 0x00
@@ -656,9 +676,26 @@ static u32int srv_handle_create(uchar *req, uchar *resp) {
   if (srv_find_entry(name) >= 0)
     return srv_build_error(resp, tag, "service exists");
 
-  int idx = srv_create_entry(name, 0 /* TODO: get caller PID */);
+  int idx = srv_create_entry(
+      name, 0 /* TODO: get caller PID from req or via separate auth? */);
   if (idx < 0)
     return srv_build_error(resp, tag, "no space for service");
+
+  /* Auto-start policy for now:
+     In Plan 9 /srv, the creator puts a file descriptor there.
+     Here, we just create the entry. The creator might WRITE to it later
+     to set properties or just keeping it open effectively 'registers' it.
+
+     For now, we mark it as SRV_RUNNING immediately on creation to satisfy
+     "announce themselves". Meaning, "I am here".
+  */
+  Service *s = &services[idx];
+  s->state = SRV_RUNNING;
+  s->pid = 0; /* Unknown PID unless we get creds */
+
+  print("RESURRECTION: Dynamic Service Registered: ");
+  print(name);
+  print("\n");
 
   f->type = FID_ENTRY;
   f->srv_idx = idx;
@@ -1446,103 +1483,29 @@ static int do_wait(char *status_buf, int status_len) {
 
 /* ========== Registry Management ========== */
 
-static void sync_services(Service *new_list, int new_count) {
-  /*
-   * Reconciliation Logic:
-   * 1. Check existing services:
-   *    - If not in new_list, STOP it.
-   *    - If in new_list but config changed, RESTART it.
-   *    - If in new_list and same, keep running.
-   * 2. Check new services:
-   *    - If not in existing, START it.
-   */
+/* ========== Registry Management ========== */
 
-  /* Mark all current services as potentially removed */
-  int kept[MAX_SERVICES];
-  memset(kept, 0, sizeof(kept));
-
-  /* Pass 1: Stop removed or changed services */
+/* Allocates a new service entry. Caller must hold lock if needed. */
+int srv_create_entry(const char *name, int pid) {
+  /* Check if exists */
   for (int i = 0; i < num_services; i++) {
-    Service *curr = &services[i];
-    int found = 0;
-
-    for (int j = 0; j < new_count; j++) {
-      Service *new = &new_list[j];
-      if (strcmp(curr->name, new->name) == 0) {
-        found = 1;
-        /* Check if config changed */
-        if (strcmp(curr->exec_path, new->exec_path) != 0 ||
-            curr->critical != new->critical) {
-          print("RESURRECTION: Config changed for ");
-          print(curr->name);
-          print(". Restarting...\n");
-          stop_service(curr);
-          /* Update config */
-          strncpy(curr->exec_path, new->exec_path, MAX_PATH_LEN - 1);
-          curr->critical = new->critical;
-          curr->auto_restart = new->auto_restart;
-          /* Will be started in start_service loop if needed,
-             but simpler to just mark as stopped and let it start below */
-        }
-        kept[i] = 1; /* Keep this slot */
-        break;
-      }
-    }
-
-    if (!found) {
-      print("RESURRECTION: Service removed: ");
-      print(curr->name);
-      print("\n");
-      stop_service(curr);
-      curr->state = SRV_STOPPED; /* effectively free slot */
-      /* We compact list later or just mark as unused?
-         Simple: mark unused by empty name */
-      curr->name[0] = 0;
-    }
+    if (strcmp(services[i].name, name) == 0)
+      return -1; /* Exists */
   }
 
-  /* Compact list */
-  int write_idx = 0;
-  for (int i = 0; i < num_services; i++) {
-    if (services[i].name[0] != 0) {
-      if (write_idx != i) {
-        services[write_idx] = services[i];
-      }
-      write_idx++;
-    }
-  }
-  num_services = write_idx;
+  if (num_services >= MAX_SERVICES)
+    return -1;
 
-  /* Pass 2: Add NEW services */
-  for (int j = 0; j < new_count; j++) {
-    Service *new = &new_list[j];
-    Service *existing = find_service(new->name);
+  int idx = num_services++;
+  Service *s = &services[idx];
+  memset(s, 0, sizeof(Service));
+  strncpy(s->name, name, MAX_NAME_LEN - 1);
+  /* Generate a QID */
+  s->qid.type = 0; /* File */
+  s->qid.vers = 0;
+  s->qid.path = idx + 1; /* Path unique ID */
 
-    if (!existing) {
-      if (num_services >= MAX_SERVICES) {
-        print("RESURRECTION: Max services, cannot add ");
-        print(new->name);
-        print("\n");
-        continue;
-      }
-      Service *s = &services[num_services++];
-      *s = *new; /* struct copy */
-      s->state = SRV_STOPPED;
-      s->pid = 0;
-      s->restarts = 0;
-
-      print("RESURRECTION: New service added: ");
-      print(s->name);
-      print("\n");
-
-      start_service(s);
-    } else {
-      /* ensure generic start if it was stopped */
-      if (existing->state == SRV_STOPPED) {
-        start_service(existing);
-      }
-    }
-  }
+  return idx;
 }
 
 static int parse_line(char *line, Service *svc) {
@@ -1649,57 +1612,64 @@ static void load_registry(void) {
 /* ========== Service Monitoring ========== */
 
 static void monitor_services(void) {
-  print("RESURRECTION: Entering monitoring loop (Hot-Reload Enabled)\n");
+  print("RESURRECTION: Entering dynamic monitoring loop\n");
 
   char status[128];
 
   while (running) {
-    /* 1. Poll Registry for changes */
-    load_registry();
+    /* No static registry polling anymore.
+       We just wait for children to die (if we launched any),
+       or wait for 9P events (which happen in other thread? No, srv_loop is
+       single threaded). Wait, srv_loop calls dispatch... where does
+       monitor_services run?
 
-    /* 2. Wait for child events (NON-BLOCKING check ideally, but we use waitpid
-       with brief polling if supported, OR we rely on cycle with small timeout.
-       Since do_wait is blocking in current impl, we can't 'poll' frequently
-       unless children are dying.
+       Ah, main calls do_rfork.
+       Child -> srv_loop.
+       Parent -> monitor_services.
 
-       For HOT RELOAD demonstration with fakeserver, fakeserver dies frequently,
-       so load_registry() will be called every 5 ticks. This is sufficient.
+       So Parent monitors processes. Child monitors 9P.
+
+       If a service "announces itself" by Tcreate, it happens in Child
+       (srv_loop). Parent needs to access `services` array. We used RFMEM ("int
+       pid = do_rfork(RFPROC | RFMEM);"), so memory is shared. We need locking.
     */
 
+    /* Wait for child events */
     int pid = do_wait(status, sizeof(status));
 
     if (pid < 0) {
-      /* No children died or error. In a real poll loop we'd sleep.
-         If do_wait is true blocking, we rely on children crashing.
-         If do_wait returns error immediately (no children), we sleep. */
-
-      /* Safety sleep to avoid CPU burn if no services running */
+      /* Sleep to avoid busy loop */
       for (volatile int i = 0; i < 5000000; i++)
         ;
       continue;
     }
+
+    lock(&srv_lock);
 
     print_num("RESURRECTION: Child died PID ", pid, " Status: ");
     print(status);
     print("\n");
 
     /* Find which service it was */
-    int found = 0;
     for (int i = 0; i < num_services; i++) {
       Service *svc = &services[i];
       if (svc->pid == pid) {
         svc->state = SRV_CRASHED;
         svc->pid = 0;
-        found = 1;
         if (svc->auto_restart) {
-          restart_service(svc);
+          /* Logic for restart?
+             If it registered itself, we might not know how to restart it
+             unless it wrote its exec_path to the file?
+          */
+          if (svc->exec_path[0]) {
+            restart_service(svc);
+          }
         }
         break;
       }
     }
+    unlock(&srv_lock);
   }
-
-  print("RESURRECTION: Exiting monitoring loop\n");
 }
 
 /* ========== Syscall Definitions ========== */
@@ -1718,19 +1688,6 @@ static void monitor_services(void) {
 #define RFPROC (1 << 4)
 #define RFMEM (1 << 5)
 #define RFNOWAIT (1 << 6)
-
-/* Atomic primitives for locking (needed for RFMEM threads) */
-static void lock(int *l) {
-  int x = 1;
-  while (x) {
-    /* Simple spinlock using xchg */
-    __asm__ volatile("xchgl %0, %1" : "+r"(x), "+m"(*l));
-  }
-}
-
-static void unlock(int *l) { *l = 0; }
-
-static int srv_lock = 0;
 
 /* ... (previous code) ... */
 
