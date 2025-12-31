@@ -310,6 +310,35 @@ uintptr sysrfork(void *list_void) {
   if (proc_setup_p9page(p) < 0)
     error(Enovmem);
 
+  /*
+   * PEBBLE: Transfer tokens from parent to child.
+   * Each process manages its own tokens. The parent must provide tokens
+   * for the child to allocate memory (stack, heap, etc).
+   * We transfer half of parent's tokens to give child a fair share.
+   * This maintains token conservation - no tokens are created or destroyed.
+   */
+  {
+    extern Lock pebble_global_lock;
+    ulong parent_tokens, child_tokens;
+
+    lock(&pebble_global_lock);
+    parent_tokens = up->pebble.colorless_bank;
+    /* Child gets half (rounded down), parent keeps remainder */
+    child_tokens = parent_tokens / 2;
+    if (child_tokens > 0) {
+      up->pebble.colorless_bank -= child_tokens;
+      p->pebble.colorless_bank = child_tokens;
+      print("PEBBLE: fork pid %lud -> %lud: transferred %lud tokens (parent "
+            "keeps %lud)\n",
+            up->pid, p->pid, child_tokens, up->pebble.colorless_bank);
+    } else {
+      print("PEBBLE: fork pid %lud -> %lud: WARNING parent has 0 tokens to "
+            "share\n",
+            up->pid, p->pid);
+    }
+    unlock(&pebble_global_lock);
+  }
+
   procfork(p);
 
   poperror(); /* abortion */

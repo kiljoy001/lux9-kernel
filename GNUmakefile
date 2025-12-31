@@ -138,6 +138,11 @@ kernel/wasm/%.o: kernel/wasm/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
+# Relax warnings for 9p_router.c due to extensive use of mixed integer types
+kernel/9p_router.o: kernel/9p_router.c
+	@echo "CC $< (Relaxed)"
+	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+
 %.o: %.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@

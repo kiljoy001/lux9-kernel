@@ -28,6 +28,13 @@ extern int proc_event(Proc *p, int event);
 extern char *proc_state_names[PS_COUNT];
 
 /* Forward declarations for handlers */
+extern uvlong nsec(void); /* Fix implicit declaration */
+extern void userpmap(uintptr, uintptr, int);
+extern void semacquire(Segment *, long *, int);
+extern void semrelease(Segment *, long *, int);
+extern int fd_9p_handle(Proc *, Fcall *, Fcall *);
+
+extern int irqhandled(Ureg *, int);
 extern int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 extern int dev_9p_handle(Proc *p, Fcall *t, Fcall *r);
 extern int env_9p_handle(Proc *p, Fcall *t, Fcall *r);
@@ -519,6 +526,20 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    case 53: /* SYS_NSEC */ {
+      /* Returns u64int time */
+      print("p9_dispatch: SYS_NSEC\n");
+      uvlong t_now = nsec();
+
+      static uchar nsec_reply[8];
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 8;
+      r->sdata = nsec_reply;
+      PBIT64(nsec_reply, t_now);
+      return 0;
+    }
+
     case SYS_WRITE: {
       /* Format: [fid 4] [offset 8] [count 4] [data...] */
       if (p + 4 + 8 + 4 > ep) {
@@ -764,6 +785,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       error(Eisdir);
 
     /* Allocate buffer for read data - use exchange page data area */
+    /* Rsysread header is 4+1+2+4 = 11 bytes. Data starts at msg_buf+11 */
+    r->data = (char *)p->p9page + P9_MSG_OFFSET + 11;
+
     if (t->count > P9_REPLY_SIZE - 100) {
       error("read count too large");
     }
@@ -777,7 +801,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = (t->type == Tsysread) ? Rsysread : Rsyspread;
     r->tag = t->tag;
     r->count = n;
-    /* r->data already contains the data */
+    /* r->data now contains the data */
 
     print("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
           t->type == Tsysread ? "Tsysread" : "Tsyspread", t->fid, t->count,
@@ -1053,8 +1077,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     /* Build Rbudget response with balance and Merkle root */
     r->type = Rbudget;
     r->tag = t->tag;
-    PBIT64(r->data, local_machine_bank->available[tok_type]);
-    PBIT64(r->data + 8, local_machine_bank->epoch);
+    PBIT64((uchar *)r->data, local_machine_bank->available[tok_type]);
+    PBIT64((uchar *)r->data + 8, local_machine_bank->epoch);
     memmove(r->data + 16, &local_machine_bank->bank_root,
             sizeof(BlindLedgerHash));
     r->count = 16 + sizeof(BlindLedgerHash);
@@ -1602,7 +1626,7 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
     Segment *s = seg(up, (uintptr)addr, 0);
     if (s == nil)
       return -1;
-    semrelease(s, addr, delta);
+    semrelease(s, addr, (int)delta);
     return len;
   }
 
@@ -1634,7 +1658,7 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
       return -1;
     addr = (void *)strtoul(args[1], 0, 0);
     int seg = (int)((n > 2) ? strtoul(args[2], 0, 0) : BSEG);
-    if ((ulong)ibrk(addr, seg) == (ulong)-1) {
+    if ((ulong)ibrk((uintptr)addr, seg) == (ulong)-1) {
       return -1;
     }
     return len;

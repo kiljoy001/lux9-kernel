@@ -52,18 +52,28 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
   p = ap;
   ep = p + nap;
 
-  if (p + BIT32SZ + BIT8SZ + BIT16SZ > ep)
+  if (p + BIT32SZ + BIT8SZ + BIT16SZ > ep) {
+    print("convM2S: header bounds check failed p=%p ep=%p\n", p, ep);
     return 0;
+  }
   size = GBIT32(p);
   p += BIT32SZ;
 
-  if (size < BIT32SZ + BIT8SZ + BIT16SZ)
+  if (size < BIT32SZ + BIT8SZ + BIT16SZ) {
+    print("convM2S: size check failed size=%d min=%d\n", size,
+          BIT32SZ + BIT8SZ + BIT16SZ);
     return 0;
+  }
 
   f->type = GBIT8(p);
   p += BIT8SZ;
   f->tag = GBIT16(p);
   p += BIT16SZ;
+
+  // Debug print for Tsyscall
+  if (f->type == 130) {
+    /* print("convM2S: parsing Tsyscall size=%d tag=%d\n", size, f->tag); */
+  }
 
   switch (f->type) {
   default:
@@ -458,7 +468,7 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     p += BIT32SZ;
     break;
 
-  /* Rsys* - syscall replies */
+    /* Rsys* - syscall replies */
 
   case Rsysopen:
   case Rsyscreate:

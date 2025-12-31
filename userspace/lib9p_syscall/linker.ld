@@ -14,10 +14,6 @@ SECTIONS
     .text : ALIGN(4K)
     {
         *(.text*)
-    }
-
-    .rodata : ALIGN(4K)
-    {
         *(.rodata*)
     }
 

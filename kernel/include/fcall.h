@@ -67,26 +67,26 @@ typedef struct Fcall {
     };
     /* Tsys* message fields */
     struct {
-      u32int flags;   /* Tsysfork (rfork flags), Tsysbind, Tsysmount */
-      u32int pid;     /* Rsysfork, Rsyswait */
+      u32int flags; /* Tsysfork (rfork flags), Tsysbind, Tsysmount */
+      u32int pid;   /* Rsysfork, Rsyswait */
     };
     struct {
-      char **argv;    /* Tsysexec - argument array */
-      u32int argc;    /* Tsysexec - argument count */
+      char **argv; /* Tsysexec - argument array */
+      u32int argc; /* Tsysexec - argument count */
     };
     struct {
-      u64int addr;    /* Tsysbrk, Rsysbrk - memory address */
+      u64int addr; /* Tsysbrk, Rsysbrk - memory address */
     };
     struct {
-      char *oldpath;  /* Tsysbind, Tsysmount, Tsysunmount - old path */
-      u32int fd;      /* Tsysmount - file descriptor */
+      char *oldpath; /* Tsysbind, Tsysmount, Tsysunmount - old path */
+      u32int fd;     /* Tsysmount - file descriptor */
     };
     struct {
-      u32int fid0;    /* Rsyspipe - first pipe fid */
-      u32int fid1;    /* Rsyspipe - second pipe fid */
+      u32int fid0; /* Rsyspipe - first pipe fid */
+      u32int fid1; /* Rsyspipe - second pipe fid */
     };
     struct {
-      int whence;     /* Tsysseek - seek type (SEEK_SET, etc.) */
+      int whence; /* Tsysseek - seek type (SEEK_SET, etc.) */
     };
     struct {
       u64int handler; /* Tsysnotify - notification handler address */
@@ -108,30 +108,30 @@ typedef struct Fcall {
 
 #define PBIT8(p, v)                                                            \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
   } while (0)
 #define PBIT16(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
   } while (0)
 #define PBIT32(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
-    (p)[2] = (v) >> 16;                                                        \
-    (p)[3] = (v) >> 24;                                                        \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
+    ((uchar *)(p))[2] = (uchar)((v) >> 16);                                    \
+    ((uchar *)(p))[3] = (uchar)((v) >> 24);                                    \
   } while (0)
 #define PBIT64(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
-    (p)[2] = (v) >> 16;                                                        \
-    (p)[3] = (v) >> 24;                                                        \
-    (p)[4] = (v) >> 32;                                                        \
-    (p)[5] = (v) >> 40;                                                        \
-    (p)[6] = (v) >> 48;                                                        \
-    (p)[7] = (v) >> 56;                                                        \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
+    ((uchar *)(p))[2] = (uchar)((v) >> 16);                                    \
+    ((uchar *)(p))[3] = (uchar)((v) >> 24);                                    \
+    ((uchar *)(p))[4] = (uchar)((v) >> 32);                                    \
+    ((uchar *)(p))[5] = (uchar)((v) >> 40);                                    \
+    ((uchar *)(p))[6] = (uchar)((v) >> 48);                                    \
+    ((uchar *)(p))[7] = (uchar)((v) >> 56);                                    \
   } while (0)
 
 #define BIT8SZ 1
@@ -186,77 +186,78 @@ enum {
   Rexec,
 
   /* Lux9 syscall message types - for pure 9P message passing */
-  /* Generic Syscall Message: Tsyscall (130) - kept for backwards compatibility */
+  /* Generic Syscall Message: Tsyscall (130) - kept for backwards compatibility
+   */
   Tsyscall = 130,
   Rsyscall,
 
   /* Specific syscall wrappers - provide syscall-like semantics over 9P */
   /* I/O Operations */
-  Tsysopen = 132,      /* open(path, mode) -> fid */
+  Tsysopen = 132, /* open(path, mode) -> fid */
   Rsysopen,
-  Tsyscreate = 134,    /* create(path, perm, mode) -> fid */
+  Tsyscreate = 134, /* create(path, perm, mode) -> fid */
   Rsyscreate,
-  Tsysread = 136,      /* read(fid, offset, count) -> data */
+  Tsysread = 136, /* read(fid, offset, count) -> data */
   Rsysread,
-  Tsyswrite = 138,     /* write(fid, offset, data) -> count */
+  Tsyswrite = 138, /* write(fid, offset, data) -> count */
   Rsyswrite,
-  Tsysclose = 140,     /* close(fid) */
+  Tsysclose = 140, /* close(fid) */
   Rsysclose,
-  Tsyspread = 142,     /* pread(fid, offset, count) -> data */
+  Tsyspread = 142, /* pread(fid, offset, count) -> data */
   Rsyspread,
-  Tsyspwrite = 144,    /* pwrite(fid, offset, data) -> count */
+  Tsyspwrite = 144, /* pwrite(fid, offset, data) -> count */
   Rsyspwrite,
-  Tsysremove = 146,    /* remove(path) */
+  Tsysremove = 146, /* remove(path) */
   Rsysremove,
 
   /* File Info Operations */
-  Tsysstat = 148,      /* stat(path) -> Dir */
+  Tsysstat = 148, /* stat(path) -> Dir */
   Rsysstat,
-  Tsysfstat = 150,     /* fstat(fid) -> Dir */
+  Tsysfstat = 150, /* fstat(fid) -> Dir */
   Rsysfstat,
-  Tsyswstat = 152,     /* wstat(path, Dir) */
+  Tsyswstat = 152, /* wstat(path, Dir) */
   Rsyswstat,
-  Tsysfwstat = 154,    /* fwstat(fid, Dir) */
+  Tsysfwstat = 154, /* fwstat(fid, Dir) */
   Rsysfwstat,
 
   /* Process Control */
-  Tsysfork = 160,      /* rfork(flags) -> pid */
+  Tsysfork = 160, /* rfork(flags) -> pid */
   Rsysfork,
-  Tsysexec = 162,      /* exec(path, argv) */
+  Tsysexec = 162, /* exec(path, argv) */
   Rsysexec,
-  Tsysexit = 164,      /* exits(status) */
+  Tsysexit = 164, /* exits(status) */
   Rsysexit,
-  Tsyswait = 166,      /* wait() -> Waitmsg */
+  Tsyswait = 166, /* wait() -> Waitmsg */
   Rsyswait,
-  Tsysbrk = 168,       /* brk(addr) -> addr */
+  Tsysbrk = 168, /* brk(addr) -> addr */
   Rsysbrk,
-  Tsyssleep = 170,     /* sleep(millisecs) */
+  Tsyssleep = 170, /* sleep(millisecs) */
   Rsyssleep,
 
   /* Namespace Operations */
-  Tsysbind = 180,      /* bind(name, old, flags) */
+  Tsysbind = 180, /* bind(name, old, flags) */
   Rsysbind,
-  Tsysmount = 182,     /* mount(fd, afd, old, flags, aname) */
+  Tsysmount = 182, /* mount(fd, afd, old, flags, aname) */
   Rsysmount,
-  Tsysunmount = 184,   /* unmount(name, old) */
+  Tsysunmount = 184, /* unmount(name, old) */
   Rsysunmount,
-  Tsyschdir = 186,     /* chdir(path) */
+  Tsyschdir = 186, /* chdir(path) */
   Rsyschdir,
 
   /* FD Operations */
-  Tsysdup = 190,       /* dup(oldfd, newfd) -> fid */
+  Tsysdup = 190, /* dup(oldfd, newfd) -> fid */
   Rsysdup,
-  Tsyspipe = 192,      /* pipe(fd[2]) -> fid[2] */
+  Tsyspipe = 192, /* pipe(fd[2]) -> fid[2] */
   Rsyspipe,
-  Tsysfd2path = 194,   /* fd2path(fid) -> path */
+  Tsysfd2path = 194, /* fd2path(fid) -> path */
   Rsysfd2path,
 
   /* Misc Operations */
-  Tsysseek = 200,      /* seek(fid, offset, type) -> offset */
+  Tsysseek = 200, /* seek(fid, offset, type) -> offset */
   Rsysseek,
-  Tsysnotify = 202,    /* notify(handler) */
+  Tsysnotify = 202, /* notify(handler) */
   Rsysnotify,
-  Tsysalarm = 204,     /* alarm(millisecs) -> previous */
+  Tsysalarm = 204, /* alarm(millisecs) -> previous */
   Rsysalarm,
 
   Tsysmax,
