@@ -1175,11 +1175,12 @@ static int do_open(const char *path, int mode) {
   pos += 4; /* sdata size in Tsyscall */
   put_u32(req + pos, 2);
   pos += 4; /* scount */
-  put_u32(req + pos, mode);
-  pos += 4; /* arg 0: mode */
   put_u16(req + pos, pathlen);
-  pos += 2;                         /* arg 1: path len */
-  memcpy(req + pos, path, pathlen); /* arg 1: path */
+  pos += 2;                         /* arg 0: path len */
+  memcpy(req + pos, path, pathlen); /* arg 0: path */
+  pos += pathlen;
+  put_u32(req + pos, mode);
+  pos += 4; /* arg 1: mode */
 
   ctl->doorbell = 1;
   __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
@@ -1192,6 +1193,10 @@ static int do_open(const char *path, int mode) {
   pos += 2; /* tag */
 
   if (reply_type == Rerror) {
+    char *err_str = (char *)(req + pos);
+    print("RESURRECTION: do_open failed: ");
+    print(err_str);
+    print("\n");
     return -1;
   }
 
