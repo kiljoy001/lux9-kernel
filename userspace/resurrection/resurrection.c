@@ -1898,6 +1898,53 @@ static int do_rfork(int flags) {
 
 /* ========== 9P Server Loop ========== */
 
+/* Helper for writing to fd */
+static int do_write(int fd, const void *buf, int count) {
+  uchar *req = (uchar *)exchange_base;
+  uint pos = 0;
+
+  if (count > 4000)
+    count = 4000;
+
+  memset(req, 0, 128 + count);
+
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + 8 + 4 + count;
+  put_u32(req + pos, size);
+  pos += 4;
+  req[pos++] = Tsyscall;
+  put_u16(req + pos, 1);
+  pos += 2;
+  put_u32(req + pos, SYS_WRITE);
+  pos += 4;
+  put_u32(req + pos, 4 + 8 + 4 + count); /* sdata size */
+  pos += 4;
+  put_u32(req + pos, 3); /* scount */
+  pos += 4;
+  put_u32(req + pos, fd);
+  pos += 4; /* arg 0: fd */
+  put_u64(req + pos, 0);
+  pos += 8; /* arg 1: buf (placeholder/offset) */
+  put_u32(req + pos, (uint)count);
+  pos += 4; /* arg 2: count */
+
+  memcpy(req + pos, buf, count);
+
+  ctl->doorbell = 1;
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
+
+  pos = 0;
+  get_u32(req + pos);
+  pos += 4;
+  uchar reply_type = req[pos++];
+
+  if (reply_type == Rerror)
+    return -1;
+
+  uvlong retval = get_u64(req + pos + 2);
+  return (int)retval;
+}
+
 static void srv_loop(int fd) {
   /* Use static buffers for freestanding 9P server thread */
   static uchar rx_data[8192];
@@ -1928,100 +1975,9 @@ static void srv_loop(int fd) {
 
     if (resp_len > 0) {
       /* Write response */
-      /* TODO: Handle partial writes? Tsyscall SYS_WRITE handles it? */
-      /* Note: SYS_WRITE takes fd, buf, count. */
-
-      /* We need to implement do_write. resurrection.c has print() which uses
-         SYS_WRITE(1, msg), but we need generic do_write(fd, buf, len).
-      */
-
-      /* Let's add do_write implementation first or reuse logic */
-      /* Re-implementing simplified write for now */
-      uchar *req = (uchar *)exchange_base;
-      uint pos = 0;
-      memset(req, 0, 128);
-      /* Header: size, type... */
-      /* Note: for large write, we need to handle data copy to exchange page
-         properly. The exchange implementation in do_read/print puts data AFTER
-         header.
-      */
-      /* For 8KB response, we can't fit in one Tsyscall if exchange page is
-         small? Exchange page size: 4KB usually? fakeserver.c says
-         0x7FFFFEEFF000. It's a page (4KB). So we can't do 8KB writes in one
-         syscall if we copy data to it.
-
-         However, SYS_WRITE implementation in kernel usually takes a pointer.
-         If we are in userspace, we pass the pointer address.
-
-         Wait, `print` implementation loops? No.
-          put_u64(req + pos, 0); // arg 1: buf (placeholder/offset?)
-
-         In `do_read` implementation above:
-          put_u64(req + pos, 0); // arg 1: buf (placeholder)
-
-         This implies the kernel might access userspace memory directly?
-         If so, we just pass the pointer.
-
-         But `print` copies the string to `req`.
-          memcpy(req + pos, msg, msg_len);
-
-         This implies specific IPC mechanism where data is inline.
-         This limits us to ~4KB - overhead.
-         MAX_MSG_SIZE 8192 is too big for 4KB exchange page.
-         We should reduce MAX_MSG_SIZE to 2048 or so for safety.
-      */
-
-      /* For now, assume fit. */
-
-      /* Inline do_write logic here to save space/time */
-      /* WRONG: I should implement do_write properly */
+      do_write(fd, tx_data, resp_len);
     }
   }
-}
-
-/* Helper for writing to fd */
-static int do_write(int fd, const void *buf, int count) {
-  /* See do_read/print logic. Copy data to exchange page. */
-  /* Limit count to ~4000 */
-  if (count > 4000)
-    count = 4000;
-
-  uchar *req = (uchar *)exchange_base;
-  uint pos = 0;
-
-  uint size = 4 + 1 + 2 + 4 + 4 + 4 + 8 + 4 + count;
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, SYS_WRITE);
-  pos += 4;
-  put_u32(req + pos, 4 + 8 + 4 + count);
-  pos += 4; /* sdata size */
-  put_u32(req + pos, 3);
-  pos += 4; /* scount */
-
-  put_u32(req + pos, fd);
-  pos += 4;
-  put_u64(req + pos, 0);
-  pos += 8; /* buf ptr placeholder */
-  put_u32(req + pos, count);
-  pos += 4;
-
-  memcpy(req + pos, buf, count); /* Data inline */
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  pos = 0;
-  get_u32(req + pos);
-  pos += 4;
-  if (req[pos] == Rerror)
-    return -1;
-
-  return (int)get_u64(req + pos + 3);
 }
 
 /* ========== Main Entry ========== */

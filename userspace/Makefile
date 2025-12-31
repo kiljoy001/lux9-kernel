@@ -43,6 +43,7 @@ initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_ser
 	@cp $(RESURRECTION_DIR)/resurrection $(INIT_BOOT_DIR)/resurrection
 	@cp $(RUMP_DIR)/rump_server $(INIT_BOOT_DIR)/rump_server
 	@cp $(RESURRECTION_DIR)/services.conf $(INIT_BOOT_DIR)/services.conf
+	@mkdir -p $(INIT_BUILD_DIR)/srv
 	@echo "Creating initrd.tar from $(INIT_BUILD_DIR)..."
 	@cd $(INIT_BUILD_DIR) && tar -cvf ../initrd.tar *
 	@ls -lh $(BUILD_DIR)/initrd.tar
