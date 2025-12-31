@@ -43,6 +43,10 @@
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 #define P9_CONTROL_OFFSET 0xF00
 
+/* Use a static const pointer in .rodata to avoid BSS corruption issues */
+static const unsigned char *const exchange_base =
+    (unsigned char *)EXCHANGE_PAGE_ADDR;
+
 /* 9P Message types */
 #define Tsyscall 130
 #define Rsyscall 131
@@ -261,13 +265,13 @@ extern int cap_token_verify(const CapToken *tok, const u8int *service_hash,
 extern int cap_blind_sign(CapBlindResponse *resp, const CapBlindRequest *req,
                           const u8int *privkey);
 extern u64int cap_current_epoch(int type);
-extern void crypto_eddsa_key_pair(u8int *sk, u8int *pk);
+extern void crypto_eddsa_key_pair(u8int *sk, u8int *pk, u8int *seed);
 
 /* Syscall for time (needed by blind_cap.c) */
 #define SYS_NSEC 53
 
 long long nsec(void) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -286,7 +290,8 @@ long long nsec(void) {
   pos += 4; /* scount */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -935,7 +940,7 @@ uvlong get_u64(const uchar *p) {
 
 static void print(const char *msg) {
   int msg_len = strlen(msg);
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint sdata_size = 4 + 8 + 4 + msg_len;
   uint size = 4 + 1 + 2 + 4 + 4 + sdata_size;
   uint pos = 0;
@@ -959,7 +964,8 @@ static void print(const char *msg) {
   memcpy(req + pos, msg, msg_len);
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 }
 
 static void print_num(const char *prefix, int num, const char *suffix) {
@@ -1052,7 +1058,7 @@ static int register_service(const char *name, const char *exec_path,
  * Returns: child PID on success, -1 on failure
  */
 static int do_fork(void) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 256);
@@ -1072,7 +1078,8 @@ static int do_fork(void) {
   pos += 4; /* flags = RFPROC */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   /* Parse reply */
   pos = 0;
@@ -1095,7 +1102,7 @@ static int do_fork(void) {
  * This is called by the child after fork
  */
 static void do_exec(const char *path) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   int pathlen = strlen(path);
   uint pos = 0;
 
@@ -1113,7 +1120,8 @@ static void do_exec(const char *path) {
   memcpy(req + pos, path, pathlen);
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   /* If we get here, exec failed */
   print("RESURRECTION: exec failed for ");
@@ -1149,7 +1157,7 @@ static void do_kill(u32int pid) {
  * Returns: fd on success, -1 on failure
  */
 static int do_open(const char *path, int mode) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   int pathlen = strlen(path);
   uint pos = 0;
 
@@ -1174,7 +1182,8 @@ static int do_open(const char *path, int mode) {
   memcpy(req + pos, path, pathlen); /* arg 1: path */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -1195,7 +1204,7 @@ static int do_open(const char *path, int mode) {
  * Returns: bytes read, -1 on error
  */
 static int do_read(int fd, char *buf, int count) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1223,7 +1232,8 @@ static int do_read(int fd, char *buf, int count) {
   pos += 4; /* arg 2: count */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -1254,7 +1264,7 @@ static int do_read(int fd, char *buf, int count) {
  * Close a file
  */
 static void do_close(int fd) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1275,7 +1285,8 @@ static void do_close(int fd) {
   pos += 4; /* arg 0: fd */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 }
 
 static void start_service(Service *svc) {
@@ -1381,7 +1392,7 @@ static void restart_service(Service *svc) {
  * Returns: PID of exited child, or -1 on error
  */
 static int do_wait(char *status_buf, int status_len) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 256);
@@ -1397,7 +1408,8 @@ static int do_wait(char *status_buf, int status_len) {
   pos += 4;
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   /* Parse reply */
   pos = 0;
@@ -1722,7 +1734,7 @@ static int srv_lock = 0;
  * Returns: 0 on success, -1 on failure. Fds in fd[2]
  */
 static int do_pipe(int fd[2]) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1743,7 +1755,8 @@ static int do_pipe(int fd[2]) {
   pos += 4; /* arg 0: pipefd array (ignored, returned in sdata) */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -1773,7 +1786,7 @@ static int do_pipe(int fd[2]) {
  */
 static int do_mount(int fd, int afd, const char *old, int flags,
                     const char *aname) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   int oldlen = strlen(old);
   int anamelen = aname ? strlen(aname) : 0;
   uint pos = 0;
@@ -1834,7 +1847,8 @@ static int do_mount(int fd, int afd, const char *old, int flags,
   pos += anamelen;
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -1849,7 +1863,7 @@ static int do_mount(int fd, int afd, const char *old, int flags,
  * Rfork (create new process/thread)
  */
 static int do_rfork(int flags) {
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1870,7 +1884,8 @@ static int do_rfork(int flags) {
   pos += 4;
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -1922,7 +1937,7 @@ static void srv_loop(int fd) {
 
       /* Let's add do_write implementation first or reuse logic */
       /* Re-implementing simplified write for now */
-      uchar *req = (uchar *)exchange;
+      uchar *req = (uchar *)exchange_base;
       uint pos = 0;
       memset(req, 0, 128);
       /* Header: size, type... */
@@ -1971,7 +1986,7 @@ static int do_write(int fd, const void *buf, int count) {
   if (count > 4000)
     count = 4000;
 
-  uchar *req = (uchar *)exchange;
+  uchar *req = (uchar *)exchange_base;
   uint pos = 0;
 
   uint size = 4 + 1 + 2 + 4 + 4 + 4 + 8 + 4 + count;
@@ -1997,7 +2012,8 @@ static int do_write(int fd, const void *buf, int count) {
   memcpy(req + pos, buf, count); /* Data inline */
 
   ctl->doorbell = 1;
-  __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
+                       : "rax", "rcx", "r11", "memory");
 
   pos = 0;
   get_u32(req + pos);
@@ -2022,7 +2038,9 @@ int main(void) {
      For now, generate deterministic keys for testing using a seed?
      Or just random.
   */
-  crypto_eddsa_key_pair(resurrection_privkey, resurrection_pubkey);
+  u8int seed[32];
+  memset(seed, 42, 32);
+  crypto_eddsa_key_pair(resurrection_privkey, resurrection_pubkey, seed);
 
   /* Update epoch */
   /* Need standard time. nsec syscall? */
