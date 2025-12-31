@@ -630,6 +630,42 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    case SYS_FORK: {
+      /* Format: [flags 4] */
+      extern uintptr sysrfork(void *list_void);
+      if (p + 4 > ep) {
+        r->type = Rerror;
+        r->ename = "short fork msg";
+        return -1;
+      }
+      ulong flags = GBIT32(p);
+      p += 4;
+
+      print("p9_dispatch: SYS_FORK flags=0x%lx\n", flags);
+
+      /* sysrfork expects a va_list-like argument array */
+      ulong args[1] = {flags};
+
+      uintptr ret;
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        poperror();
+        return -1;
+      }
+      ret = sysrfork(args);
+      poperror();
+
+      /* Return PID (or 0 in child) */
+      static uchar fork_reply[8];
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 8;
+      r->sdata = fork_reply;
+      PBIT64(fork_reply, ret);
+      return 0;
+    }
+
     default:
       r->type = Rerror;
       snprint(r->ename, sizeof(r->ename), "unknown syscall %d", t->scallnr);

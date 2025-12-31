@@ -136,8 +136,8 @@ static int do_fork(void) {
   pos += 4;
   put_u32(req + pos, 4);
   pos += 4; /* scount */
-  put_u32(req + pos, 0);
-  pos += 4; /* flags = RFPROC */
+  put_u32(req + pos, 16);
+  pos += 4; /* flags = RFPROC (1<<4 = 16) */
 
   ctl->doorbell = 1;
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
