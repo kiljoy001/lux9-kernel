@@ -12,7 +12,7 @@ LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 
 TARGET = resurrection
 SRC = resurrection.c
-OBJ = $(SRC:.c=.o)
+OBJ = $(SRC:.c=.o) blind_cap.o monocypher.o
 
 # Use same start.S as init
 START_OBJ = ../lib9p_syscall/start.o
@@ -27,6 +27,14 @@ $(TARGET): $(START_OBJ) $(OBJ) ../lib9p_syscall/linker.ld
 $(START_OBJ):
 	$(MAKE) -C ../lib9p_syscall start.o
 
+# Update clean rule to include crypto objects? (OBJ handles it)
+
+blind_cap.o: $(KERNEL)/crypto/blind_cap.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+monocypher.o: $(KERNEL)/crypto/monocypher.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -34,4 +42,9 @@ clean:
 	rm -f $(TARGET) $(OBJ)
 	@echo "Cleaned resurrection build"
 
-.PHONY: all clean
+install: $(TARGET)
+	cp $(TARGET) ../../initrd/boot/
+	cp services.conf ../../initrd/boot/
+	@echo "Installed $(TARGET) and services.conf to initrd/boot/"
+
+.PHONY: all clean install

@@ -70,7 +70,7 @@ CAPABILITY_C := kernel/capability/clr_capability.c
 # CLR moved to userspace (old_cil_to_wasm/)
 # Keep only WASM3 runtime and new WASM file servers
 WASM3_C := $(wildcard kernel/wasm/wasm_runtime/wasm3/*.c)
-WASM_FILESERVER_C := kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c
+WASM_FILESERVER_C := kernel/wasm/wasm_runtime.c kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c kernel/wasm/wasi_lux9_shim.c kernel/wasm/wasm_host_lux9.c
 WASM_C := $(WASM3_C) $(WASM_FILESERVER_C)
 
 # QBE compiler removed - WASM3 is now the runtime
