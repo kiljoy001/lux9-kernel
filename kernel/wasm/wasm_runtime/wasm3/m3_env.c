@@ -10,6 +10,7 @@
 
 #include "m3_compile.h"
 #include "m3_env.h"
+#include "../wasm_kernel_alloc.h"
 #include "m3_exception.h"
 #include "m3_info.h"
 
@@ -357,9 +358,19 @@ M3Result ResizeMemory(IM3Runtime io_runtime, u32 i_numPages) {
     if (numPreviousBytes)
       numPreviousBytes += sizeof(M3MemoryHeader);
 
+    u32 oldBytes = memory->numPages * io_runtime->memory.pageSize;
+    if (wasm_linear_charge_reserve((u32)numPageBytes, oldBytes) != 0) {
+      result = m3Err_mallocFailed;
+      goto _catch;
+    }
+
     void *newMem = m3_Realloc("Wasm Linear Memory", memory->mallocated,
                               numBytes, numPreviousBytes);
-    _throwifnull(newMem);
+    if (!newMem) {
+      wasm_linear_charge_rollback(oldBytes);
+      result = m3Err_mallocFailed;
+      goto _catch;
+    }
 
     memory->mallocated = (M3MemoryHeader *)newMem;
 

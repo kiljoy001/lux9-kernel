@@ -62,6 +62,16 @@ typedef struct WasmRuntime {
 #define WASM_LINEAR_SLOT_BYTES (WASM_MAX_LINEAR_BYTES + (4 * BY2PG))
 #define WASM_HEAP_BYTES (8 * 1024 * 1024)
 #define WASM_HEAP_GUARD (2 * BY2PG)
+#define WASM_HEAP_ALIGN 16
+
+typedef struct WasmHeapBlock {
+  u32int size; /* payload size */
+  u8int free;
+  u8int pad[3];
+  struct WasmHeapBlock *next;
+} WasmHeapBlock;
+
+#define WASM_HEAP_HDR_SIZE ROUNDUP(sizeof(WasmHeapBlock), WASM_HEAP_ALIGN)
 
 static uintptr wasm_linear_base(Proc *p, u32int map_bytes) {
   uintptr region_size = WASM_LINEAR_SLOTS * WASM_LINEAR_SLOT_BYTES;
@@ -115,14 +125,17 @@ static int wasm_heap_init(Proc *p) {
   p->wasm.heap_base = (u8int *)heap_base;
   p->wasm.heap_size = WASM_HEAP_BYTES;
   p->wasm.heap_used = 0;
+  p->wasm.heap_head = nil;
+  p->wasm.heap_live = 0;
+  p->wasm.linear_charged = 0;
   return 0;
 }
 
 static void wasm_heap_destroy(Proc *p) {
   if (!p)
     return;
-  if (p->wasm.heap_used > 0)
-    arena_branch_free(&p->wasm.branch, p->wasm.heap_used);
+  if (p->wasm.heap_live > 0)
+    arena_branch_free(&p->wasm.branch, p->wasm.heap_live);
   if (p->seg[SEG4] && (p->seg[SEG4]->type & SG_WASM) != 0) {
     putseg(p->seg[SEG4]);
     p->seg[SEG4] = nil;
@@ -130,6 +143,8 @@ static void wasm_heap_destroy(Proc *p) {
   p->wasm.heap_base = nil;
   p->wasm.heap_size = 0;
   p->wasm.heap_used = 0;
+  p->wasm.heap_head = nil;
+  p->wasm.heap_live = 0;
 }
 
 static int wasm_heap_contains(Proc *p, void *ptr) {
@@ -139,6 +154,53 @@ static int wasm_heap_contains(Proc *p, void *ptr) {
          (u8int *)ptr < p->wasm.heap_base + p->wasm.heap_size;
 }
 
+static int wasm_charge_linear(Proc *p, u32int new_size) {
+  if (!p)
+    return -1;
+
+  u32int old_size = p->wasm.linear_charged;
+  if (new_size == old_size)
+    return 0;
+
+  if (new_size > old_size) {
+    u32int delta = new_size - old_size;
+    if (arena_branch_alloc(&p->wasm.branch, delta) < 0)
+      return -1;
+  } else {
+    u32int delta = old_size - new_size;
+    arena_branch_free(&p->wasm.branch, delta);
+  }
+
+  p->wasm.linear_charged = new_size;
+  return 0;
+}
+
+int wasm_linear_charge_reserve(uint32_t new_size, uint32_t old_size) {
+  Proc *p = up;
+  if (!p || !p->wasm.initialized)
+    return -1;
+  if (wasm_charge_linear(p, new_size) != 0)
+    return -1;
+  p->wasm.memory_size = new_size;
+  p->wasm.memory_pages = new_size / (64 * 1024);
+  return 0;
+}
+
+void wasm_linear_charge_rollback(uint32_t old_size) {
+  Proc *p = up;
+  if (!p || !p->wasm.initialized)
+    return;
+  wasm_charge_linear(p, old_size);
+  p->wasm.memory_size = old_size;
+  p->wasm.memory_pages = old_size / (64 * 1024);
+}
+
+static WasmHeapBlock *wasm_heap_block_from_ptr(Proc *p, void *ptr) {
+  if (!wasm_heap_contains(p, ptr))
+    return nil;
+  return (WasmHeapBlock *)((u8int *)ptr - WASM_HEAP_HDR_SIZE);
+}
+
 void *wasm_heap_alloc(size_t size) {
   Proc *p = up;
   if (p == nil || !p->wasm.initialized)
@@ -146,29 +208,116 @@ void *wasm_heap_alloc(size_t size) {
   if (p->wasm.heap_base == nil)
     return nil;
 
-  size = ROUNDUP(size, 16);
+  size = ROUNDUP(size, WASM_HEAP_ALIGN);
   if (size == 0)
-    size = 16;
-  if (p->wasm.heap_used + size > p->wasm.heap_size)
+    size = WASM_HEAP_ALIGN;
+
+  WasmHeapBlock *prev = nil;
+  WasmHeapBlock *cur = (WasmHeapBlock *)p->wasm.heap_head;
+  while (cur) {
+    if (cur->free && cur->size >= size)
+      break;
+    prev = cur;
+    cur = cur->next;
+  }
+
+  if (cur) {
+    if (arena_branch_alloc(&p->wasm.branch, cur->size) < 0)
+      return nil;
+    cur->free = 0;
+    p->wasm.heap_live += cur->size;
+    void *ptr = (u8int *)cur + WASM_HEAP_HDR_SIZE;
+    memset(ptr, 0, cur->size);
+    return ptr;
+  }
+
+  u32int used = ROUNDUP(p->wasm.heap_used, WASM_HEAP_ALIGN);
+  u32int need = WASM_HEAP_HDR_SIZE + (u32int)size;
+  if (used + need > p->wasm.heap_size)
     return nil;
   if (arena_branch_alloc(&p->wasm.branch, size) < 0)
     return nil;
 
-  void *ptr = p->wasm.heap_base + p->wasm.heap_used;
-  p->wasm.heap_used += (u32int)size;
+  WasmHeapBlock *blk = (WasmHeapBlock *)(p->wasm.heap_base + used);
+  blk->size = (u32int)size;
+  blk->free = 0;
+  blk->next = nil;
+  if (prev)
+    prev->next = blk;
+  else
+    p->wasm.heap_head = blk;
+
+  p->wasm.heap_used = used + need;
+  p->wasm.heap_live += (u32int)size;
+
+  void *ptr = (u8int *)blk + WASM_HEAP_HDR_SIZE;
   memset(ptr, 0, size);
   return ptr;
 }
 
 void wasm_heap_free(void *ptr) {
   Proc *p = up;
-  if (wasm_heap_contains(p, ptr))
+  WasmHeapBlock *blk = wasm_heap_block_from_ptr(p, ptr);
+  if (!blk || blk->free)
     return;
+
+  blk->free = 1;
+  if (p->wasm.heap_live >= blk->size)
+    p->wasm.heap_live -= blk->size;
+  arena_branch_free(&p->wasm.branch, blk->size);
+
+  /* Coalesce with next if adjacent and free */
+  WasmHeapBlock *next = blk->next;
+  if (next && next->free &&
+      (u8int *)blk + WASM_HEAP_HDR_SIZE + blk->size == (u8int *)next) {
+    blk->size += WASM_HEAP_HDR_SIZE + next->size;
+    blk->next = next->next;
+  }
+
+  /* Coalesce with previous if adjacent and free */
+  WasmHeapBlock *prev = nil;
+  WasmHeapBlock *cur = (WasmHeapBlock *)p->wasm.heap_head;
+  while (cur && cur != blk) {
+    prev = cur;
+    cur = cur->next;
+  }
+  if (prev && prev->free &&
+      (u8int *)prev + WASM_HEAP_HDR_SIZE + prev->size == (u8int *)blk) {
+    prev->size += WASM_HEAP_HDR_SIZE + blk->size;
+    prev->next = blk->next;
+  }
 }
 
 void *wasm_heap_realloc(void *ptr, size_t new_size, size_t old_size) {
   if (M3_UNLIKELY(new_size == old_size))
     return ptr;
+
+  Proc *p = up;
+  if (ptr && !wasm_heap_contains(p, ptr))
+    return nil;
+  if (ptr) {
+    WasmHeapBlock *blk = wasm_heap_block_from_ptr(p, ptr);
+    if (blk && new_size <= blk->size)
+      return ptr;
+    if (blk) {
+      u32int needed = (u32int)ROUNDUP(new_size, WASM_HEAP_ALIGN);
+      if (needed > blk->size) {
+        u32int delta = needed - blk->size;
+        u8int *blk_end = (u8int *)blk + WASM_HEAP_HDR_SIZE + blk->size;
+        u8int *heap_end = p->wasm.heap_base + p->wasm.heap_used;
+        if (!blk->free && blk_end == heap_end &&
+            (p->wasm.heap_used + delta) <= p->wasm.heap_size) {
+          if (arena_branch_alloc(&p->wasm.branch, delta) == 0) {
+            blk->size = needed;
+            p->wasm.heap_used += delta;
+            p->wasm.heap_live += delta;
+            memset(blk_end, 0, delta);
+            return ptr;
+          }
+        }
+      }
+    }
+  }
 
   void *new_ptr = wasm_heap_alloc(new_size);
   if (new_ptr == nil)
@@ -293,6 +442,8 @@ static int wasm_refresh_linear_mapping(Proc *p) {
 
   new_mem = m3_GetMemory((IM3Runtime)p->wasm.runtime, &new_size, 0);
   if (new_mem == nil || new_size == 0) {
+    if (p->wasm.linear_charged > 0)
+      wasm_charge_linear(p, 0);
     if (p->wasm.linear_memory != nil)
       wasm_unmap_linear_memory(p);
     p->wasm.linear_memory = nil;
@@ -305,11 +456,31 @@ static int wasm_refresh_linear_mapping(Proc *p) {
     return -1;
 
   if (new_mem != p->wasm.linear_memory || new_size != p->wasm.memory_size) {
+    u32int old_size = p->wasm.memory_size;
+    u32int old_pages = p->wasm.memory_pages;
+    u8int *old_mem = p->wasm.linear_memory;
+    int charged = 0;
+
     p->wasm.linear_memory = new_mem;
     p->wasm.memory_size = new_size;
     p->wasm.memory_pages = new_size / (64 * 1024);
-    if (wasm_map_linear_memory(p) != 0)
+    if (!wasm_heap_contains(p, new_mem) && p->wasm.linear_charged != new_size) {
+      if (wasm_charge_linear(p, new_size) != 0) {
+        p->wasm.linear_memory = old_mem;
+        p->wasm.memory_size = old_size;
+        p->wasm.memory_pages = old_pages;
+        return -1;
+      }
+      charged = 1;
+    }
+    if (wasm_map_linear_memory(p) != 0) {
+      if (charged)
+        wasm_charge_linear(p, old_size);
+      p->wasm.linear_memory = old_mem;
+      p->wasm.memory_size = old_size;
+      p->wasm.memory_pages = old_pages;
       return -1;
+    }
   }
 
   return 0;
@@ -345,6 +516,10 @@ void wasm_runtime_cleanup_process(Proc *p) {
 
   wasm_heap_destroy(p);
   wasm_unmap_linear_memory(p);
+  if (p->wasm.linear_charged > 0) {
+    arena_branch_free(&p->wasm.branch, p->wasm.linear_charged);
+    p->wasm.linear_charged = 0;
+  }
   p->wasm.linear_memory = nil;
   p->wasm.memory_size = 0;
   p->wasm.memory_pages = 0;
@@ -837,9 +1012,23 @@ int sys_wasm_destroy(Fcall *tx, Fcall *rx) {
 /* ========== Runtime Statistics ========== */
 
 void wasm_runtime_stats(void) {
+  extern Proc *proctab(int i);
+  Proc *p;
+
   print("WASM Runtime Statistics (Layer 1):\n");
   print("  Total calls:       %llu\n", wasm_runtime.stats.total_calls);
   print("  Total modules:     %llu\n", wasm_runtime.stats.total_modules);
   print("  Active instances:  %llu\n", wasm_runtime.stats.active_instances);
   print("  Errors:            %llu\n", wasm_runtime.stats.errors);
+
+  print("  Per-process WASM usage:\n");
+  for (int i = 0; (p = proctab(i)) != nil; i++) {
+    if (!p->wasm.initialized)
+      continue;
+    print("    pid=%lud heap_used=%ud heap_live=%ud linear=%ud\n", p->pid,
+          p->wasm.heap_used, p->wasm.heap_live, p->wasm.linear_charged);
+    print("    branch local=%lud borrowed=%lud max=%lud\n",
+          p->wasm.branch.local_colorless, p->wasm.branch.borrowed_from_proc,
+          p->wasm.branch.max_tokens);
+  }
 }

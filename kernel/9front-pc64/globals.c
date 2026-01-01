@@ -151,13 +151,14 @@ extern Dev tpmdevtab;
 extern Dev consensusdevtab;
 extern Dev srvdevtab;
 extern Dev symdevtab;
+extern Dev wasmdevtab;
 
 Dev *devtab[] = {
     &rootdevtab,   &archdevtab, &consdevtab, &envdevtab,       &mntdevtab,
     &procdevtab,   &exchdevtab, &memdevtab,  &ramdevtab,       &sipdevtab,
     &pebbledevtab, &ringdevtab, &irqdevtab,  &dmadevtab,       &pcidevtab,
     &familydevtab, &pipedevtab, &tpmdevtab,  &consensusdevtab, &srvdevtab,
-    &symdevtab,    nil,
+    &symdevtab,    &wasmdevtab, nil,
 };
 
 /* Additional stubs for console/device support */

@@ -888,9 +888,12 @@ struct Proc {
     u8int *linear_memory;  /* WASM linear memory (mapped to seg[LSEG]) */
     u32int memory_size;    /* Size of linear memory in bytes */
     u32int memory_pages;   /* Number of 64KB WASM pages */
+    u32int linear_charged; /* Pebble-charged linear memory bytes */
     u8int *heap_base;      /* WASM runtime heap base (userspace addr) */
     u32int heap_size;      /* WASM runtime heap size in bytes */
     u32int heap_used;      /* WASM runtime heap used bytes */
+    void *heap_head;       /* WASM heap block list head */
+    u32int heap_live;      /* WASM heap live bytes (token-backed) */
     arena_branch_t branch; /* Local Pebble branch bank for this container */
     void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
   } wasm;

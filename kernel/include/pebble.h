@@ -167,6 +167,7 @@ typedef struct arena_branch {
   Lock lock;                /* Per-branch lock (no global contention) */
   ulong local_colorless;    /* Tokens available locally in this branch */
   ulong borrowed_from_proc; /* Tokens borrowed from process bank */
+  ulong max_tokens;         /* Hard cap on branch tokens */
   ulong low_water;          /* Request refill when below this threshold */
   ulong high_water;         /* Return excess when above this threshold */
   ulong total_allocated;    /* Statistics: total bytes allocated from branch */

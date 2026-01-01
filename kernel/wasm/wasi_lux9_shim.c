@@ -355,6 +355,21 @@ static int wasi_is_posix_path(const char *path, uint32_t path_len) {
                 sizeof(wasi_posix_root_path) - 1) == 0;
 }
 
+static int wasi_path_safe(const char *path, uint32_t path_len) {
+  uint32_t i = 0;
+  while (i < path_len) {
+    while (i < path_len && path[i] == '/')
+      i++;
+    uint32_t start = i;
+    while (i < path_len && path[i] != '/')
+      i++;
+    uint32_t seg_len = i - start;
+    if (seg_len == 2 && path[start] == '.' && path[start + 1] == '.')
+      return 0;
+  }
+  return 1;
+}
+
 static void wasi_fill_random(uint8_t *buf, uint32_t len) {
   u64int state = (u64int)fastticks(nil) ^ ((u64int)up->pid << 32) ^ len;
   for (uint32_t i = 0; i < len; i++) {
@@ -394,6 +409,9 @@ static uint32_t wasi_build_path(wasi_context_t *ctx, int dirfd,
 
   if (path_len == 0) {
     return WASI_ERRNO_INVAL;
+  }
+  if (!wasi_path_safe(path, path_len)) {
+    return WASI_ERRNO_NOTCAPABLE;
   }
   if (path[0] == '/' || path[0] == '#') {
     absolute = 1;
@@ -1455,6 +1473,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_readdir) {
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_READDIR);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
+  if (!ctx->fds[fd].is_dir)
+    m3ApiReturn(WASI_ERRNO_NOTDIR);
 
   if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX) {
     if (!ctx->fds[fd].is_dir)

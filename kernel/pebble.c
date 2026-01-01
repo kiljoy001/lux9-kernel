@@ -1462,6 +1462,7 @@ void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
   memset(branch, 0, sizeof(arena_branch_t));
 
   /* Set water marks for auto-refill/drain (default: 25%/75%) */
+  branch->max_tokens = initial_budget;
   branch->low_water = initial_budget / 4;
   branch->high_water = (initial_budget * 3) / 4;
   branch->owner_ps = ps;
@@ -1506,6 +1507,8 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
   if (size < PEBBLE_MIN_ALLOC)
     size = PEBBLE_MIN_ALLOC;
   tokens_needed = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
+  if (branch->max_tokens > 0 && tokens_needed > branch->max_tokens)
+    return -1;
 
   lock(&branch->lock);
 
@@ -1585,9 +1588,12 @@ int arena_branch_refill(arena_branch_t *branch) {
 
   ps = branch->owner_ps;
 
-  /* Refill up to high water mark */
+  /* Refill up to high water mark (clamped by max_tokens) */
   lock(&pebble_global_lock);
   lock(&branch->lock);
+
+  if (branch->max_tokens > 0 && branch->high_water > branch->max_tokens)
+    branch->high_water = branch->max_tokens;
 
   if (branch->local_colorless >= branch->low_water) {
     /* Not actually low */
@@ -1596,7 +1602,18 @@ int arena_branch_refill(arena_branch_t *branch) {
     return 0;
   }
 
+  if (branch->max_tokens > 0 &&
+      branch->local_colorless >= branch->max_tokens) {
+    unlock(&branch->lock);
+    unlock(&pebble_global_lock);
+    return 0;
+  }
+
   refill_amount = branch->high_water - branch->local_colorless;
+  if (branch->max_tokens > 0 &&
+      branch->local_colorless + refill_amount > branch->max_tokens) {
+    refill_amount = branch->max_tokens - branch->local_colorless;
+  }
 
   if (ps->colorless_bank >= refill_amount) {
     ps->colorless_bank -= refill_amount;
