@@ -94,6 +94,9 @@ struct BorrowPool {
   ulong nowners;               /* Total number of owned resources */
   ulong nshared;               /* Resources with shared borrows */
   ulong nmut;                  /* Resources with mutable borrows */
+  u8int *bloom;                /* Counting bloom filter counters */
+  ulong bloom_bits;            /* Number of bloom counters */
+  u32int bloom_hashes;         /* Number of hash functions */
 };
 
 /* Memory coordination states */

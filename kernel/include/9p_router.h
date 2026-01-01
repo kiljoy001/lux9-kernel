@@ -27,6 +27,12 @@
 #define P9_CONTROL_OFFSET 0xF00
 #define P9_CONTROL_SIZE 0x100 /* 256 bytes for control */
 
+/* Exchange page ring layout for small messages */
+#define P9_RING_SLOT_SIZE 256
+#define P9_RING_HEADER_SIZE 8
+#define P9_RING_DATA_SIZE (P9_RING_SLOT_SIZE - P9_RING_HEADER_SIZE)
+#define P9_RING_SLOTS (P9_MSG_SIZE / P9_RING_SLOT_SIZE)
+
 /* Legacy aliases (for transition) */
 #define P9_REQUEST_OFFSET P9_MSG_OFFSET
 #define P9_REQUEST_SIZE P9_MSG_SIZE
@@ -105,6 +111,17 @@ int dev_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int env_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+
+/* /srv registry helpers */
+void srv_init(void);
+int srv_post_fd(Proc *caller, const char *name, int fd);
+int srv_create_entry(Proc *caller, const char *name);
+int srv_remove_entry(Proc *caller, const char *name);
+int srv_get_by_index(int index, char *name, int namelen);
+int srv_index_of(const char *name);
+int srv_get_by_index_for_proc(Proc *caller, int index, char *name, int namelen);
+int srv_index_of_for_proc(Proc *caller, const char *name);
+Chan *srv_clone_chan(const char *name);
 
 /*
  * Async 9P Operations (Phase 3)

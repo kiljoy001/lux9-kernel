@@ -92,7 +92,7 @@ static void ctail(Mntcache *m) {
     @ // property: ctail_preserves_size (cache_state.v)
     @ // property: lru_access_moves_to_tail (cache_safety.v)
     @ ensures cache.tail == m;
-    @*/
+    */
 
   /* Unlink and send to the tail */
   if (m->prev != nil)
@@ -124,7 +124,7 @@ static void ctail(Mntcache *m) {
   @ assigns \nothing;
   @ ensures \result == \null || \valid(\result);
   @ // property: lookup_uses_correct_bucket (cache_state.v)
-  @*/
+  */
 static Mntcache *clookup(Chan *c, int skipvers) {
   Mntcache *m;
 
@@ -191,9 +191,9 @@ int copen(Chan *c) {
   }
 
   lock(&cache);
-  /*@
+  /*
     @ // property: copen_preserves_invariant (cache_state.v)
-    @*/
+    */
   m = clookup(c, 0);
   if (m != nil) {
     ctail(m);

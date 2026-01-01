@@ -25,6 +25,7 @@ void wasm_runtime_init(void);
 int sys_wasm_compile(Fcall *tx, Fcall *rx);
 int sys_wasm_execute(Fcall *tx, Fcall *rx);
 int sys_wasm_destroy(Fcall *tx, Fcall *rx);
+void wasm_runtime_cleanup_process(Proc *p);
 
 /* Statistics */
 void wasm_runtime_stats(void);

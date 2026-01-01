@@ -35,7 +35,7 @@ static ulong ramdisk_size = 64 * 1024 * 1024; /* 64MB default */
  *
  * ACSL Invariants (from Coq proofs in ramdisk_state.v):
  */
-/*@ type invariant lock_encryption_inv(SecureRamdisk rd) =
+/* type invariant lock_encryption_inv(SecureRamdisk rd) =
   @   (rd.locked == 1 && rd.initialized == 1) ==>
   @     (\valid(rd.data) && rd.size >= 24);
   @
@@ -49,7 +49,7 @@ static ulong ramdisk_size = 64 * 1024 * 1024; /* 64MB default */
   @ type invariant nonce_storage_inv(SecureRamdisk rd) =
   @   (rd.locked == 1 && rd.size >= 24 && \valid(rd.data)) ==>
   @     \valid(rd.data + (0..23));
-  @*/
+  */
 /* Process Vault Structure */
 typedef struct ProcessVault {
   struct ProcessVault *next;
@@ -189,7 +189,7 @@ void vault_cleanup_process(int pid) {
   @ ensures (secure_rd.locked == 1 && secure_rd.initialized == 1) ==>
   @   (\valid(secure_rd.data) && secure_rd.size >= 24);
   @ assigns \nothing;
-  @*/
+  */
 static void check_lock_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
@@ -208,7 +208,7 @@ static void check_lock_invariant(ProcessVault *v) {
   @ ensures (secure_rd.initialized == 1) ==>
   @   (\exists integer j; 0 <= j < 32 && secure_rd.master_key[j] != 0);
   @ assigns \nothing;
-  @*/
+  */
 static void check_init_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
@@ -232,7 +232,7 @@ static void check_init_invariant(ProcessVault *v) {
 /*@ requires \valid(&secure_rd);
   @ ensures secure_rd.refcount >= 0;
   @ assigns \nothing;
-  @*/
+  */
 static void check_refcount_invariant(ProcessVault *v) {
   if (!getconf("debug.invariants"))
     return;
@@ -267,7 +267,7 @@ static void check_refcount_invariant(ProcessVault *v) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static void secure_wipe(uchar *data, ulong size) {
   ulong i;
   extern void genrandom(uchar * buf, int nbytes);
@@ -402,7 +402,7 @@ static int derive_key_from_password(const char *password, uchar *salt,
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static void xchacha20_encrypt_with_fresh_nonce(ProcessVault *v, uchar *data,
                                                ulong data_size, uchar *key) {
   extern void genrandom(uchar * buf, int nbytes);
@@ -505,7 +505,7 @@ static int ramstat(Chan *c, uchar *dp, int n) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static Chan *ramopen(Chan *c, int omode) {
   ProcessVault *v;
 
@@ -608,7 +608,7 @@ static Chan *ramopen(Chan *c, int omode) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static void ramclose(Chan *c) {
   ProcessVault *v;
 

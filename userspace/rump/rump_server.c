@@ -133,6 +133,11 @@ typedef struct RumpFid {
   int rfd; /* Rump FD, -1 if closed */
   Qid qid;
   int opened; /* 0=no, 1=yes */
+  int is_virtual;
+  u32int vtype;
+  u32int resp_len;
+  u32int resp_off;
+  uchar resp[8192];
 } RumpFid;
 
 static RumpFid fids[MAX_FIDS];
@@ -216,6 +221,330 @@ static int strcmp(const char *s1, const char *s2) {
   return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
 
+enum {
+  V_NONE = 0,
+  V_POSIX_DIR,
+  V_POSIX_FDSTAT,
+  V_POSIX_PATHSTAT,
+  V_POSIX_PREAD,
+  V_POSIX_PWRITE,
+  V_POSIX_READDIR,
+  V_POSIX_FD_SYNC,
+  V_POSIX_FD_TELL,
+  V_POSIX_FD_SET_SIZE,
+  V_POSIX_FD_SET_TIMES,
+  V_POSIX_PATH_SET_TIMES,
+  V_POSIX_PATH_CREATE_DIR,
+  V_POSIX_PATH_REMOVE_DIR,
+  V_POSIX_PATH_UNLINK,
+  V_POSIX_PATH_RENAME,
+  V_POSIX_PATH_SYMLINK,
+  V_POSIX_PATH_READLINK,
+  V_POSIX_POLL,
+  V_POSIX_SOCK_ACCEPT,
+  V_POSIX_SOCK_RECV,
+  V_POSIX_SOCK_SEND,
+  V_POSIX_SOCK_SHUTDOWN,
+};
+
+enum {
+  POSIX_FDSTAT_GET = 1,
+  POSIX_PATHSTAT_GET = 1,
+  POSIX_PREAD = 1,
+  POSIX_PWRITE = 1,
+  POSIX_READDIR = 1,
+};
+
+#define POSIX_ENOSYS 78
+
+static void fid_set_virtual(RumpFid *f, u32int vtype) {
+  f->is_virtual = 1;
+  f->vtype = vtype;
+  f->rfd = -1;
+  f->opened = 0;
+  f->resp_len = 0;
+  f->resp_off = 0;
+  f->qid.type = (vtype == V_POSIX_DIR) ? QTDIR : QTFILE;
+  f->qid.vers = 0;
+  f->qid.path = 0x50000000 | vtype;
+}
+
+static int virtual_lookup(RumpFid *f, const char *name) {
+  if (f->is_virtual) {
+    if (f->vtype != V_POSIX_DIR)
+      return -1;
+  } else {
+    if (strcmp(f->path, "/") == 0 && strcmp(name, "posix") == 0) {
+      fid_set_virtual(f, V_POSIX_DIR);
+      return 0;
+    }
+    return -1;
+  }
+
+  if (strcmp(name, "fdstat") == 0) {
+    fid_set_virtual(f, V_POSIX_FDSTAT);
+    return 0;
+  }
+  if (strcmp(name, "pathstat") == 0) {
+    fid_set_virtual(f, V_POSIX_PATHSTAT);
+    return 0;
+  }
+  if (strcmp(name, "pread") == 0) {
+    fid_set_virtual(f, V_POSIX_PREAD);
+    return 0;
+  }
+  if (strcmp(name, "pwrite") == 0) {
+    fid_set_virtual(f, V_POSIX_PWRITE);
+    return 0;
+  }
+  if (strcmp(name, "readdir") == 0) {
+    fid_set_virtual(f, V_POSIX_READDIR);
+    return 0;
+  }
+  if (strcmp(name, "fd_sync") == 0) {
+    fid_set_virtual(f, V_POSIX_FD_SYNC);
+    return 0;
+  }
+  if (strcmp(name, "fd_tell") == 0) {
+    fid_set_virtual(f, V_POSIX_FD_TELL);
+    return 0;
+  }
+  if (strcmp(name, "fd_set_size") == 0) {
+    fid_set_virtual(f, V_POSIX_FD_SET_SIZE);
+    return 0;
+  }
+  if (strcmp(name, "fd_set_times") == 0) {
+    fid_set_virtual(f, V_POSIX_FD_SET_TIMES);
+    return 0;
+  }
+  if (strcmp(name, "path_set_times") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_SET_TIMES);
+    return 0;
+  }
+  if (strcmp(name, "path_create_directory") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_CREATE_DIR);
+    return 0;
+  }
+  if (strcmp(name, "path_remove_directory") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_REMOVE_DIR);
+    return 0;
+  }
+  if (strcmp(name, "path_unlink_file") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_UNLINK);
+    return 0;
+  }
+  if (strcmp(name, "path_rename") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_RENAME);
+    return 0;
+  }
+  if (strcmp(name, "path_symlink") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_SYMLINK);
+    return 0;
+  }
+  if (strcmp(name, "path_readlink") == 0) {
+    fid_set_virtual(f, V_POSIX_PATH_READLINK);
+    return 0;
+  }
+  if (strcmp(name, "poll_oneoff") == 0) {
+    fid_set_virtual(f, V_POSIX_POLL);
+    return 0;
+  }
+  if (strcmp(name, "sock_accept") == 0) {
+    fid_set_virtual(f, V_POSIX_SOCK_ACCEPT);
+    return 0;
+  }
+  if (strcmp(name, "sock_recv") == 0) {
+    fid_set_virtual(f, V_POSIX_SOCK_RECV);
+    return 0;
+  }
+  if (strcmp(name, "sock_send") == 0) {
+    fid_set_virtual(f, V_POSIX_SOCK_SEND);
+    return 0;
+  }
+  if (strcmp(name, "sock_shutdown") == 0) {
+    fid_set_virtual(f, V_POSIX_SOCK_SHUTDOWN);
+    return 0;
+  }
+
+  return -1;
+}
+
+static u32int posix_write_fdstat(RumpFid *f, const uchar *data, u32int count) {
+  if (count < 8)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_FDSTAT_GET) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  struct rump_stat st;
+  if (rump_sys_fstat(fd, (struct stat *)&st) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp, 0);
+  memcpy(f->resp + 4, &st, sizeof(st));
+  f->resp_len = 4 + sizeof(st);
+  return f->resp_len;
+}
+
+static u32int posix_write_pathstat(RumpFid *f, const uchar *data,
+                                   u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int path_len = get_u32(data + 4);
+  if (count < 8 + path_len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_PATHSTAT_GET) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  char path[MAX_PATH];
+  if (path_len >= sizeof(path)) {
+    put_u32(f->resp, 36);
+    return f->resp_len;
+  }
+  memcpy(path, data + 8, path_len);
+  path[path_len] = 0;
+
+  struct rump_stat st;
+  if (rump_sys_stat(path, (struct stat *)&st) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp, 0);
+  memcpy(f->resp + 4, &st, sizeof(st));
+  f->resp_len = 4 + sizeof(st);
+  return f->resp_len;
+}
+
+static u32int posix_write_pread(RumpFid *f, const uchar *data, u32int count) {
+  if (count < 20)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u64int offset = get_u64(data + 8);
+  u32int len = get_u32(data + 16);
+  if (len > sizeof(f->resp) - 8)
+    len = sizeof(f->resp) - 8;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  put_u32(f->resp + 4, 0);
+  f->resp_len = 8;
+
+  if (op != POSIX_PREAD) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  rump_sys_lseek(fd, offset, 0);
+  ssize_t n = rump_sys_read(fd, f->resp + 8, len);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+  put_u32(f->resp + 4, (u32int)n);
+  f->resp_len = 8 + (u32int)n;
+  return f->resp_len;
+}
+
+static u32int posix_write_pwrite(RumpFid *f, const uchar *data, u32int count) {
+  if (count < 20)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u64int offset = get_u64(data + 8);
+  u32int len = get_u32(data + 16);
+  if (count < 20 + len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  put_u32(f->resp + 4, 0);
+  f->resp_len = 8;
+
+  if (op != POSIX_PWRITE) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  rump_sys_lseek(fd, offset, 0);
+  ssize_t n = rump_sys_write(fd, data + 20, len);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+  put_u32(f->resp + 4, (u32int)n);
+  f->resp_len = 8;
+  return f->resp_len;
+}
+
+static u32int posix_write_readdir(RumpFid *f, const uchar *data, u32int count) {
+  if (count < 20)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u64int offset = get_u64(data + 8);
+  u32int len = get_u32(data + 16);
+  if (len > sizeof(f->resp) - 8)
+    len = sizeof(f->resp) - 8;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  put_u32(f->resp + 4, 0);
+  f->resp_len = 8;
+
+  if (op != POSIX_READDIR) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  rump_sys_lseek(fd, offset, 0);
+  ssize_t n = rump_sys_getdents(fd, f->resp + 8, len);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+  put_u32(f->resp + 4, (u32int)n);
+  f->resp_len = 8 + (u32int)n;
+  return f->resp_len;
+}
+
+static u32int posix_write_stub(RumpFid *f) {
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, POSIX_ENOSYS);
+  f->resp_len = 4;
+  return f->resp_len;
+}
+
 /* FID Management */
 static RumpFid *alloc_fid(u32int fid) {
   for (int i = 0; i < MAX_FIDS; i++) {
@@ -225,6 +554,10 @@ static RumpFid *alloc_fid(u32int fid) {
       fids[i].rfd = -1;
       fids[i].path[0] = 0;
       fids[i].opened = 0;
+      fids[i].is_virtual = 0;
+      fids[i].vtype = V_NONE;
+      fids[i].resp_len = 0;
+      fids[i].resp_off = 0;
       return &fids[i];
     }
   }
@@ -245,6 +578,10 @@ static void free_fid(RumpFid *f) {
       rump_sys_close(f->rfd);
     f->type = 0;
     f->rfd = -1;
+    f->is_virtual = 0;
+    f->vtype = V_NONE;
+    f->resp_len = 0;
+    f->resp_off = 0;
   }
 }
 
@@ -323,6 +660,8 @@ static u32int handle_walk(uchar *req, uchar *resp) {
   if (newf != oldf) {
     strcpy(newf->path, oldf->path);
     newf->qid = oldf->qid;
+    newf->is_virtual = oldf->is_virtual;
+    newf->vtype = oldf->vtype;
   }
 
   uchar *p = req + 17;
@@ -344,6 +683,22 @@ static u32int handle_walk(uchar *req, uchar *resp) {
     }
 
     if (strcmp(name, "..") == 0) {
+      if (newf->is_virtual) {
+        if (newf->vtype == V_POSIX_DIR) {
+          newf->is_virtual = 0;
+          newf->vtype = V_NONE;
+          strcpy(newf->path, "/");
+          /* Stat root */
+          struct rump_stat st;
+          if (rump_sys_stat(newf->path, (struct stat *)&st) < 0)
+            return mk_error(resp, tag, "not found");
+          newf->qid.type = (st.st_mode & RUMP_S_IFDIR) ? QTDIR : QTFILE;
+          newf->qid.vers = 0;
+          newf->qid.path = st.st_ino;
+        }
+        qids[nwqid++] = newf->qid;
+        continue;
+      }
       /* Handle parent walk */
       int l = strlen(newf->path);
       /* find last slash */
@@ -359,6 +714,10 @@ static u32int handle_walk(uchar *req, uchar *resp) {
         newf->path[l] = 0; /* "/foo/bar" -> "/foo" */
       }
     } else {
+      if (virtual_lookup(newf, name) == 0) {
+        qids[nwqid++] = newf->qid;
+        continue;
+      }
       /* Append component */
       int pl = strlen(newf->path);
       if (pl > 1 && newf->path[pl - 1] != '/')
@@ -407,6 +766,16 @@ static u32int handle_open(uchar *req, uchar *resp) {
   if (!f)
     return mk_error(resp, tag, "unknown fid");
 
+  if (f->is_virtual) {
+    f->opened = 1;
+    put_u32(resp, 4 + 1 + 2 + 13 + 4);
+    resp[4] = P9_Ropen;
+    put_u16(resp + 5, tag);
+    mk_qid(resp + 7, &f->qid);
+    put_u32(resp + 20, 8192);
+    return 4 + 1 + 2 + 13 + 4;
+  }
+
   /* Convert 9P mode to O_ flags */
   int oflags = 0;
   if ((mode & 3) == 0)
@@ -444,6 +813,35 @@ static u32int handle_read(uchar *req, uchar *resp) {
   if (!f || !f->opened)
     return mk_error(resp, tag, "fid not open");
 
+  if (f->is_virtual) {
+    if (f->vtype == V_POSIX_DIR) {
+      put_u32(resp, 4 + 1 + 2 + 4);
+      resp[4] = P9_Rread;
+      put_u16(resp + 5, tag);
+      put_u32(resp + 7, 0);
+      return 4 + 1 + 2 + 4;
+    }
+    if (f->resp_len == 0 || f->resp_off >= f->resp_len) {
+      put_u32(resp, 4 + 1 + 2 + 4);
+      resp[4] = P9_Rread;
+      put_u16(resp + 5, tag);
+      put_u32(resp + 7, 0);
+      return 4 + 1 + 2 + 4;
+    }
+
+    u32int avail = f->resp_len - f->resp_off;
+    if (count < avail)
+      avail = count;
+    memcpy(resp + 11, f->resp + f->resp_off, avail);
+    f->resp_off += avail;
+
+    put_u32(resp, 4 + 1 + 2 + 4 + avail);
+    resp[4] = P9_Rread;
+    put_u16(resp + 5, tag);
+    put_u32(resp + 7, avail);
+    return 4 + 1 + 2 + 4 + avail;
+  }
+
   /* Seek */
   rump_sys_lseek(f->rfd, offset, 0 /* SEEK_SET */);
 
@@ -471,6 +869,59 @@ static u32int handle_write(uchar *req, uchar *resp) {
   RumpFid *f = get_fid(fid);
   if (!f || !f->opened)
     return mk_error(resp, tag, "fid not open");
+
+  if (f->is_virtual) {
+    const uchar *data = req + 23;
+    u32int out_len = 0;
+    switch (f->vtype) {
+    case V_POSIX_FDSTAT:
+      out_len = posix_write_fdstat(f, data, count);
+      break;
+    case V_POSIX_PATHSTAT:
+      out_len = posix_write_pathstat(f, data, count);
+      break;
+    case V_POSIX_PREAD:
+      out_len = posix_write_pread(f, data, count);
+      break;
+    case V_POSIX_PWRITE:
+      out_len = posix_write_pwrite(f, data, count);
+      break;
+    case V_POSIX_READDIR:
+      out_len = posix_write_readdir(f, data, count);
+      break;
+    case V_POSIX_FD_SYNC:
+    case V_POSIX_FD_TELL:
+    case V_POSIX_FD_SET_SIZE:
+    case V_POSIX_FD_SET_TIMES:
+    case V_POSIX_PATH_SET_TIMES:
+    case V_POSIX_PATH_CREATE_DIR:
+    case V_POSIX_PATH_REMOVE_DIR:
+    case V_POSIX_PATH_UNLINK:
+    case V_POSIX_PATH_RENAME:
+    case V_POSIX_PATH_SYMLINK:
+    case V_POSIX_PATH_READLINK:
+    case V_POSIX_POLL:
+    case V_POSIX_SOCK_ACCEPT:
+    case V_POSIX_SOCK_RECV:
+    case V_POSIX_SOCK_SEND:
+    case V_POSIX_SOCK_SHUTDOWN:
+      out_len = posix_write_stub(f);
+      break;
+    default:
+      out_len = 0;
+      break;
+    }
+
+    if (out_len == 0) {
+      return mk_error(resp, tag, "bad request");
+    }
+
+    put_u32(resp, 4 + 1 + 2 + 4);
+    resp[4] = P9_Rwrite;
+    put_u16(resp + 5, tag);
+    put_u32(resp + 7, count);
+    return 4 + 1 + 2 + 4;
+  }
 
   rump_sys_lseek(f->rfd, offset, 0);
 

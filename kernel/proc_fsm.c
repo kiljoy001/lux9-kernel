@@ -39,9 +39,9 @@ char *proc_state_names[PS_COUNT] = {
  */
 
 /* Guard: mach must be nil (not on any CPU) */
-/*@
+/*
   // Implements check_mach_cleared per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_mach_nil(Proc *p, const char **reason) {
   if (p->mach != nil) {
     *reason = "mach must be nil";
@@ -51,9 +51,9 @@ static int guard_mach_nil(Proc *p, const char **reason) {
 }
 
 /* Guard: mach must be set (on a CPU) */
-/*@
+/*
   // Implements check_mach_set per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_mach_set(Proc *p, const char **reason) {
   if (p->mach == nil) {
     *reason = "mach must be set";
@@ -63,9 +63,9 @@ static int guard_mach_set(Proc *p, const char **reason) {
 }
 
 /* Guard: r (rendezvous) must be nil - THE CRITICAL FIX */
-/*@
+/*
   // Implements check_rendezvous_cleared per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_r_nil(Proc *p, const char **reason) {
   if (p->r != nil) {
     *reason = "p->r must be nil before wakeup";
@@ -75,9 +75,9 @@ static int guard_r_nil(Proc *p, const char **reason) {
 }
 
 /* Guard: r (rendezvous) must be set for sleep */
-/*@
+/*
   // Implements check_rendezvous_set per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_r_set(Proc *p, const char **reason) {
   if (p->r == nil) {
     *reason = "p->r must be set for sleep";
@@ -193,9 +193,9 @@ static ProcTransition *fsm_find(int from_state, int event) {
  *
  * Returns new state on success, panics on invalid transition.
  */
-/*@
+/*
   // Enforces valid_transition per proofs/proc/proc_state_dag.v
- @*/
+ */
 int proc_event(Proc *p, int event) {
   int current;
   ProcTransition *t;

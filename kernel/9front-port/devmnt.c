@@ -124,7 +124,7 @@ static void mntreset(void) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 int mntversion(Chan *c, char *version, int msize, int returnlen) {
   Fcall f;
   uchar *msg;
@@ -1336,7 +1336,7 @@ static Mntrpc *mntralloc(Chan *c) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static void mntfree(Mntrpc *r) {
   freeb(r->w);
   freeblist(r->b);
@@ -1380,7 +1380,7 @@ static void mntfree(Mntrpc *r) {
   @
   @ complete behaviors;
   @ disjoint behaviors;
-  @*/
+  */
 static void mntqrm(Mnt *m, Mntrpc *r) {
   Mntrpc **l, *f;
 
@@ -1418,7 +1418,7 @@ static void mntqrm(Mnt *m, Mntrpc *r) {
   @ ensures \result->id > 0;              // Verified: no reserved ID
   @ ensures \result->id < c->dev;         // Verified: mntchk_safety.v
   @ ensures \result == \old(\result);     // Idempotent
-  @*/
+  */
 static Mnt *mntchk(Chan *c) {
   Mnt *m;
 

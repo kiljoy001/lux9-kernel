@@ -282,10 +282,10 @@ int msgord_can_deliver(MsgOrd *dag, OrdMsg *msg) {
   if (msg->gm_color != MSGORD_COLOR_BLUE)
     return 0;
 
-  /*@
+  /*
     // Enforces causal DAG ordering per proofs/msgord/msgord_correctness.v
     // All parents must be in DELIVERED state before this message can be delivered.
-   @*/
+   */
   for (i = 0; i < msg->gm_parent_count; i++) {
     for (gm = dag->gd_head; gm != nil; gm = gm->gm_next) {
       if (gm->gm_id == msg->gm_parents[i]) {
@@ -318,10 +318,10 @@ static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
     return -1;
   }
 
-  /*@
+  /*
     // Establishes total order (timestamp, id) per proofs/msgord/msgord_correctness.v
     // msg->gm_id is monotonic; msg->gm_timestamp is monotonic.
-   @*/
+   */
   msg->gm_payload = payload;
 
   tail = dag->gd_tail;

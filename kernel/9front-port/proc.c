@@ -5,6 +5,7 @@
 #include "fns.h"
 #include "mem.h"
 #include "portlib.h"
+#include "../wasm/wasm_runtime.h"
 #include "proc_packet.h" /* For EV_* events */
 #include "tos.h"
 #include "ureg.h"
@@ -508,7 +509,7 @@ static int queueproc(Schedq *rq, Proc *p) {
   requires p->state == New ==> p->mach == \null;
   assigns p->state, nrdy;
   ensures p->state == Ready || p->state == Waitrelease;
- @*/
+ */
 void ready(Proc *p) {
   int s, pri;
 
@@ -662,7 +663,7 @@ static void rebalance(void) {
   assigns \nothing; // Conceptually selects
   ensures \result == \null || \valid(\result);
   ensures \result != \null ==> \result->state == Ready;
- @*/
+ */
 Proc *runproc(void) {
   Schedq *rq;
   Proc *p;
@@ -1326,6 +1327,8 @@ _Noreturn void pexit(char *exitstr, int freemem) {
       m3_FreeRuntime(up->wasm.runtime);
       up->wasm.runtime = nil;
     }
+
+    wasm_runtime_cleanup_process(up);
 
     /* THEN drain arena branch back to process colorless bank */
     arena_branch_drain(&up->wasm.branch);

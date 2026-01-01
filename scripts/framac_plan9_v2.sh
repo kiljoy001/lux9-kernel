@@ -4,6 +4,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 if [ $# -lt 2 ]; then
     echo "Usage: $0 <input.c> <output.c>"
     exit 1
@@ -16,6 +18,8 @@ echo "📋 Preprocessing $INPUT_FILE for Frama-C..."
 
 # Step 1: Preprocess first without any custom headers to see what Plan 9 provides
 TEMP_OUTPUT="/tmp/framac_temp_$$.c"
+GCC_OUTPUT="/tmp/framac_gcc_$$.c"
+GCC_ERR="/tmp/framac_gcc_$$.err"
 
 # Step 2: Preprocess with GCC, letting Plan 9 headers define everything
 gcc -D__FRAMAC__ \
@@ -25,11 +29,14 @@ gcc -D__FRAMAC__ \
     -I. \
     -E -P -C \
     "$INPUT_FILE" \
-2>&1 | \
+> "$GCC_OUTPUT" 2> "$GCC_ERR" || true
+
+cat "$GCC_OUTPUT" | \
 # Step 3: Filter out Plan 9-specific constructs that Frama-C can't parse
 sed \
     -e 's/µs/us/g' \
     -e '/µs/d' \
+    -e 's/@\*\//\*\//g' \
     -e '/#pragma varargck/d' \
     -e '/#pragma lib/d' \
     -e '/#pragma src/d' \
@@ -38,36 +45,28 @@ sed \
     -e '/#pragma textflag/d' \
     -e '/#pragma profile/d' \
 | \
+# Step 3b: Drop variadic print calls that trigger WP invalid-range errors
+python3 "$SCRIPT_DIR/framac_strip_calls.py" \
+| \
 # Step 4: Remove empty lines for compactness
 sed '/^$/d' \
 > "$TEMP_OUTPUT"
 
 # Step 5: Check what types are actually missing
-HAS_FMT=$(grep -c "struct Fmt {" "$TEMP_OUTPUT" 2>/dev/null || echo 0)
-HAS_QID=$(grep -c "struct Qid {" "$TEMP_OUTPUT" 2>/dev/null || echo 0)
-HAS_DIRTAB=$(grep -c "struct Dirtab {" "$TEMP_OUTPUT" 2>/dev/null || echo 0)
-HAS_WAITMSG=$(grep -c "struct Waitmsg {" "$TEMP_OUTPUT" 2>/dev/null || echo 0)
-HAS_UUID=$(grep -E "typedef.*uuid_t" "$TEMP_OUTPUT" 2>/dev/null | wc -l)
+HAS_FMT=$(grep -c "struct Fmt {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_QID=$(grep -c "struct Qid {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_DIRTAB=$(grep -c "struct Dirtab {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_DIR=$(grep -c "struct Dir {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_WAITMSG=$(grep -c "struct Waitmsg {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_UUID=$(grep -E -c "typedef[[:space:]].*uuid_t|} uuid_t;" "$TEMP_OUTPUT" 2>/dev/null || true)
 
 # Step 6: Build minimal header with ONLY truly missing types
 cat > "$OUTPUT_FILE" << 'HEADER_START'
 /* Frama-C Missing Types - types excluded by #ifndef __FRAMAC__ in Plan 9 headers */
 HEADER_START
 
-# Conditionally add uuid_t if not already defined
-# Note: We check for typedef in preprocessed output and add it at the top
-# to avoid forward reference issues (e.g., when pebble.h uses it before uuid.h defines it)
-if [ "$HAS_UUID" -gt 0 ]; then
-    # uuid_t is defined in the file, add matching struct definition at top to avoid forward refs
-    cat >> "$OUTPUT_FILE" << 'UUID_DEF'
-
-/* UUID type - defined early to avoid forward reference issues */
-typedef struct {
-  unsigned char data[16];
-} uuid_t;
-UUID_DEF
-else
-    # uuid_t not defined anywhere, add array typedef for compatibility
+# Conditionally add uuid_t only if missing.
+if [ "$HAS_UUID" -eq 0 ]; then
     cat >> "$OUTPUT_FILE" << 'UUID_DEF'
 
 /* UUID type - not in Plan 9 headers */
@@ -75,7 +74,8 @@ typedef unsigned char uuid_t[16];
 UUID_DEF
 fi
 
-cat >> "$OUTPUT_FILE" << 'TYPES_DEF'
+if [ "$HAS_FMT" -eq 0 ]; then
+    cat >> "$OUTPUT_FILE" << 'FMT_DEF'
 
 /* Types excluded by #ifndef __FRAMAC__ in portlib.h */
 typedef struct Fmt Fmt;
@@ -88,12 +88,17 @@ struct Fmt {
     int (*flush)(Fmt *);
     void *farg;
     int nfmt;
-    void *args;
+    __builtin_va_list args;
     int r;
     int width;
     int prec;
     unsigned long flags;
 };
+FMT_DEF
+fi
+
+if [ "$HAS_QID" -eq 0 ]; then
+    cat >> "$OUTPUT_FILE" << 'QID_DEF'
 
 typedef struct Qid Qid;
 struct Qid {
@@ -101,6 +106,31 @@ struct Qid {
     unsigned long vers;
     unsigned char type;
 };
+QID_DEF
+fi
+
+if [ "$HAS_DIR" -eq 0 ]; then
+    cat >> "$OUTPUT_FILE" << 'DIR_DEF'
+
+typedef struct Dir Dir;
+struct Dir {
+    unsigned short type;
+    unsigned int dev;
+    Qid qid;
+    unsigned long mode;
+    unsigned long atime;
+    unsigned long mtime;
+    long long length;
+    char *name;
+    char *uid;
+    char *gid;
+    char *muid;
+};
+DIR_DEF
+fi
+
+if [ "$HAS_WAITMSG" -eq 0 ]; then
+    cat >> "$OUTPUT_FILE" << 'WAITMSG_DEF'
 
 typedef struct Waitmsg Waitmsg;
 struct Waitmsg {
@@ -108,35 +138,20 @@ struct Waitmsg {
     unsigned long time[3];
     char msg[128]; /* ERRMAX */
 };
+WAITMSG_DEF
+fi
 
-/* Note: Dirtab is NOT excluded by __FRAMAC__ in Plan 9 headers, so don't redefine it */
-
-TYPES_DEF
+# Note: Dirtab is NOT excluded by __FRAMAC__ in Plan 9 headers, so do not redefine it
 
 # Append the preprocessed Plan 9 code
-# If we added uuid_t at the top, remove it from the middle to avoid redefinition
-if [ "$HAS_UUID" -gt 0 ]; then
-    # Remove the uuid_t typedef from preprocessed output to avoid redefinition
-    # This pattern matches: typedef struct { ... } uuid_t;
-    awk '
-        /^typedef struct \{$/ { in_uuid=1; buffer=$0; next }
-        in_uuid {
-            buffer=buffer "\n" $0
-            if (/^} uuid_t;$/) {
-                in_uuid=0
-                next
-            }
-            next
-        }
-        { print }
-    ' "$TEMP_OUTPUT" >> "$OUTPUT_FILE"
-else
-    cat "$TEMP_OUTPUT" >> "$OUTPUT_FILE"
-fi
-rm -f "$TEMP_OUTPUT"
+cat "$TEMP_OUTPUT" >> "$OUTPUT_FILE"
+
+# Final cleanup: normalize ACSL comment terminators.
+sed -i 's/@\*\//\*\//g' "$OUTPUT_FILE"
+rm -f "$TEMP_OUTPUT" "$GCC_OUTPUT" "$GCC_ERR"
 
 # Step 4: Check for any remaining problematic constructs
-PRAGMA_COUNT=$(grep -c "^#pragma" "$OUTPUT_FILE" 2>/dev/null || echo "0")
+PRAGMA_COUNT=$(grep -c "^#pragma" "$OUTPUT_FILE" 2>/dev/null || true)
 if [ "$PRAGMA_COUNT" -gt 0 ] 2>/dev/null; then
     echo "⚠️  Warning: $PRAGMA_COUNT pragmas remain in output"
     grep "^#pragma" "$OUTPUT_FILE" | head -5

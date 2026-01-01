@@ -15,14 +15,6 @@
 
 extern Mach *m;
 
-/*@
-  predicate Inv_CPU_Conservation(struct PebbleCPUBank *bank) =
-    bank->issued_red + bank->free_float + bank->kernel_tax_pool == bank->total_capacity;
-
-  predicate Inv_Schedulable(struct PebbleCPUBank *bank) =
-    bank->issued_red <= bank->total_capacity;
-@*/
-
 /* 
  * CPU Token Unit: 1 Token = 1 Microsecond of Execution Time 
  */
@@ -38,6 +30,14 @@ struct PebbleCPUBank {
     ulong free_float;        /* Unallocated bandwidth */
     ulong kernel_tax_pool;   /* Sovereign budget for interrupts/kernel overhead */
 };
+
+/*@
+  predicate Inv_CPU_Conservation(struct PebbleCPUBank *bank) =
+    bank->issued_red + bank->free_float + bank->kernel_tax_pool == bank->total_capacity;
+
+  predicate Inv_Schedulable(struct PebbleCPUBank *bank) =
+    bank->issued_red <= bank->total_capacity;
+*/
 
 static struct PebbleCPUBank cpu_bank;
 
@@ -61,7 +61,7 @@ void pebble_cpu_init(void) {
   ensures Inv_CPU_Conservation(&cpu_bank);
   ensures Inv_Schedulable(&cpu_bank);
   // Implementation of edf_utilization_bound theorem
-@*/
+*/
 int pebble_cpu_alloc_red(Proc *p, ulong cost_us, ulong period_us) {
     ulong bandwidth_needed;
     
@@ -155,7 +155,7 @@ void pebble_cpu_tick_mint(void) {
   requires p->edf->S >= time_us;
   ensures p->edf->S == \old(p->edf->S) - time_us;
   // Implementation of budget_enforcement_safety theorem
-@*/
+*/
 void pebble_cpu_burn(Proc *p, ulong time_us) {
     /* 
      * Kernel/Interrupt Accounting:

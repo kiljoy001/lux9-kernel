@@ -395,6 +395,7 @@ enum {
   SG_CACHED = 0400,  /* Normal cached memory */
   SG_DEVICE = 01000, /* Memory mapped device */
   SG_NOEXEC = 02000, /* No execute */
+  SG_WASM = 04000,   /* WASM-isolated segment */
 };
 
 #define PG_ONSWAP 1
@@ -883,9 +884,13 @@ struct Proc {
     int initialized;       /* 1 if this is a WASM process, 0 for native */
     void *runtime;         /* IM3Runtime - wasm3 runtime for this process */
     void *module;          /* IM3Module - loaded WASM module */
+    void *env;             /* IM3Environment - per-process wasm3 environment */
     u8int *linear_memory;  /* WASM linear memory (mapped to seg[LSEG]) */
     u32int memory_size;    /* Size of linear memory in bytes */
     u32int memory_pages;   /* Number of 64KB WASM pages */
+    u8int *heap_base;      /* WASM runtime heap base (userspace addr) */
+    u32int heap_size;      /* WASM runtime heap size in bytes */
+    u32int heap_used;      /* WASM runtime heap used bytes */
     arena_branch_t branch; /* Local Pebble branch bank for this container */
     void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
   } wasm;

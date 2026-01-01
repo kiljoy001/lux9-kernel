@@ -21,7 +21,7 @@ total;
     ps->red_inuse >= 0 &&
     ps->white_pending >= 0 &&
     ps->white_verified >= 0;
-@*/
+*/
 
 Lock pebble_global_lock;
 Lock pebble_bank_lock;
@@ -153,7 +153,7 @@ PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 /*
  * SMT: Validated by proofs/pebble/pebble_security.v
  * Theorem: Inv_Conservation, Inv_NonNegative
@@ -455,7 +455,7 @@ const u8int *pebble_get_vault_secret(void) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 /*
  * SMT: Validated by proofs/pebble/pebble_security.v
  * Theorem: Inv_Conservation
@@ -714,7 +714,7 @@ int pebble_black_free_internal(uintptr pa, ulong len, Proc *owner) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 int pebble_black_free(const UserCapability *cap) {
   PebbleState *ps;
   PebbleBlack *pb, **pp;
@@ -787,7 +787,7 @@ int pebble_black_free(const UserCapability *cap) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap) {
   PebbleState *ps;
   int i;
@@ -872,7 +872,7 @@ static void pebble_free_red(PebbleRed *red) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 PebbleBlue *pebble_blue_alloc(ulong size) {
   PebbleState *ps;
   PebbleBlue *blue;
@@ -944,7 +944,7 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 int pebble_blue_free(PebbleBlue *blue) {
   PebbleState *ps;
   PebbleBlue **bp;
@@ -999,7 +999,7 @@ int pebble_blue_free(PebbleBlue *blue) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 PebbleRed *pebble_red_alloc(ulong size) {
   PebbleState *ps;
   PebbleRed *red;
@@ -1071,7 +1071,7 @@ PebbleRed *pebble_red_alloc(ulong size) {
   requires Inv_NonNegative(pebble_state());
   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
   ensures Inv_NonNegative(pebble_state());
-@*/
+*/
 int pebble_red_free(PebbleRed *red) {
   PebbleState *ps;
   PebbleRed **rp;

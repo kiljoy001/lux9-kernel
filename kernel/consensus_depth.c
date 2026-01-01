@@ -193,9 +193,9 @@ OperationType get_operation_type(Fcall *t, char *path) {
  * Main classification function
  * Determines consensus depth required for operation.
  */
-/*@
+/*
   // Assigns consensus depth per proofs/msgord/msgord_consensus_proofs.v
- @*/
+ */
 ConsensusDepth classify_operation(Fcall *t, char *path) {
   OperationType op_type = get_operation_type(t, path);
 
@@ -266,9 +266,9 @@ static OpRollbackEntry *rollback_alloc(void) {
 /*
  * Register optimistic execution for potential rollback
  */
-/*@
+/*
   // Registers optimistic execution per proofs/msgord/msgord_consensus_proofs.v
- @*/
+ */
 OpRollbackEntry *rollback_register(RollbackRegistry *reg, uint op_id,
                                    ConsensusDepth depth, Proc *caller, Fcall *t,
                                    Fcall *r) {

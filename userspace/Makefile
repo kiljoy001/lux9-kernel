@@ -8,6 +8,7 @@ C_INIT_DIR := lib9p_syscall
 RESURRECTION_DIR := resurrection
 RUMP_DIR := rump
 INIT_DB := ../scripts/init_db.py
+TURBOCID_DIR := turbocid
 
 .PHONY: all clean initrd sign
 
@@ -18,6 +19,7 @@ clean:
 	$(MAKE) -C $(C_INIT_DIR) clean
 	$(MAKE) -C $(RESURRECTION_DIR) clean
 	$(MAKE) -C $(RUMP_DIR) clean
+	$(MAKE) -C $(TURBOCID_DIR) clean
 
 # Build the C init binary
 $(C_INIT_DIR)/init:
@@ -31,13 +33,18 @@ $(RESURRECTION_DIR)/resurrection:
 $(RUMP_DIR)/rump_server:
 	$(MAKE) -C $(RUMP_DIR)
 
+# Build turbocid server
+$(TURBOCID_DIR)/turbocid:
+	$(MAKE) -C $(TURBOCID_DIR)
+
 # Build the initrd tarball
 # Structure:
 #   boot/init         <- Init process (PID 1)
 #   boot/resurrection <- Resurrection server (started by init)
 #   boot/rump_server  <- Rump server (started by resurrection)
+#   boot/turbocid     <- Semantic FS (started by resurrection)
 #   boot/services.conf <- Resurrection config
-initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server
+initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server $(TURBOCID_DIR)/turbocid
 	@mkdir -p $(INIT_BOOT_DIR)
 	@cp $(C_INIT_DIR)/init $(INIT_BOOT_DIR)/init
 	@cp $(RESURRECTION_DIR)/resurrection $(INIT_BOOT_DIR)/resurrection

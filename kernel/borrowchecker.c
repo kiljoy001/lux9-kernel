@@ -29,6 +29,78 @@ struct BorrowPool borrowpool;
 /* SipHash key for DoS-resistant hashing (generated at boot from TPM/RDRAND) */
 static hsiphash_key_t borrow_hash_key;
 
+enum {
+  BORROW_BLOOM_BITS_DEFAULT = 1 << 20,
+  BORROW_BLOOM_BITS_MIN = 1 << 16,
+  BORROW_BLOOM_BITS_MAX = 1 << 22,
+  BORROW_BLOOM_HASHES = 3,
+};
+
+static ulong borrow_bloom_bits_target(void) {
+  if (conf.npage == 0)
+    return BORROW_BLOOM_BITS_DEFAULT;
+
+  ulong target = conf.npage * 2;
+  ulong bits = BORROW_BLOOM_BITS_MIN;
+
+  if (bits == 0)
+    bits = 4;
+
+  while (bits < target && bits < BORROW_BLOOM_BITS_MAX) {
+    bits <<= 1;
+  }
+
+  if (bits < BORROW_BLOOM_BITS_MIN)
+    bits = BORROW_BLOOM_BITS_MIN;
+  if (bits > BORROW_BLOOM_BITS_MAX)
+    bits = BORROW_BLOOM_BITS_MAX;
+
+  return bits;
+}
+
+static void borrow_bloom_add(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return;
+  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] != 0xff)
+      borrowpool.bloom[idx]++;
+  }
+}
+
+static void borrow_bloom_remove(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return;
+  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] > 0)
+      borrowpool.bloom[idx]--;
+  }
+}
+
+static int borrow_bloom_maybe(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return 1;
+  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] == 0)
+      return 0;
+  }
+  return 1;
+}
+
 /* Borrow FSM events: enforce state transitions centrally (hard FSM). */
 static void borrow_check_invariants(struct BorrowOwner *owner,
                                     const char *ctx) {
@@ -190,6 +262,16 @@ void borrowinit(void) {
   borrowpool.nowners = 0;
   borrowpool.nshared = 0;
   borrowpool.nmut = 0;
+  borrowpool.bloom_bits = borrow_bloom_bits_target();
+  borrowpool.bloom_hashes = BORROW_BLOOM_HASHES;
+  borrowpool.bloom = bootstrap_alloc(borrowpool.bloom_bits * sizeof(u8int));
+  if (borrowpool.bloom == nil) {
+    print("borrowinit: bloom alloc failed; continuing without bloom\n");
+    borrowpool.bloom_bits = 0;
+    borrowpool.bloom_hashes = 0;
+  } else {
+    memset(borrowpool.bloom, 0, borrowpool.bloom_bits * sizeof(u8int));
+  }
 
   /* Generate SipHash key from secure RNG (3-tier fallback) */
   extern int tpm_get_random(u8int * buffer, int len);
@@ -223,6 +305,8 @@ ulong borrow_hash(uintptr key) {
 
 /* Find BorrowOwner for a key */
 static struct BorrowOwner *find_owner(uintptr key) {
+  if (!borrow_bloom_maybe(key))
+    return nil;
   ulong hash = borrow_hash(key);
   struct BorrowOwner *owner = borrowpool.owners[hash].head;
 
@@ -286,6 +370,7 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
   owner->next = borrowpool.owners[hash].head;
   borrowpool.owners[hash].head = owner;
+  borrow_bloom_add(key);
 
   borrowpool.nowners++;
   return owner;
@@ -293,11 +378,11 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
 /* Acquire ownership of a resource */
 /* Acquire ownership of a resource */
-/*@
+/*
   // Transition: Free -> Exclusive
   // Corresponds to 'Acquire' in proofs/borrow/borrow_core.v (Implicit in
 ownership model)
-@*/
+*/
 enum BorrowError borrow_acquire(Proc *p, uintptr key) {
   struct BorrowOwner *owner;
   u64int nonce;
@@ -370,7 +455,7 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
 /*@
   // Transition: Exclusive -> Free
   // Corresponds to release logic in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_release(Proc *p, uintptr key) {
   struct BorrowOwner *owner, *prev;
   ulong hash;
@@ -419,6 +504,7 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
       if (owner->alloc_source == ALLOC_XALLOC) {
         xfree(owner);
       }
+      borrow_bloom_remove(key);
       break;
     }
     prev = owner;
@@ -429,10 +515,10 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
 }
 
 /* Transfer ownership from one process to another (Low-level) */
-/*@
+/*
   // Transition: Exclusive -> Exclusive (Transfer)
   // Corresponds to 'Transfer' in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
   struct BorrowOwner *owner;
 
@@ -563,10 +649,10 @@ enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
  * resource.
  * @returns BORROW_ENOMEM if allocation of the shared-borrow record fails.
  */
-/*@
+/*
   // Transition: Exclusive -> SharedOwned OR SharedOwned -> SharedOwned
   // Corresponds to 'BorrowShared' in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
                                       uintptr key) {
   struct BorrowOwner *own;
@@ -640,10 +726,10 @@ enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
 }
 
 /* Borrow resource as mutable */
-/*@
+/*
   // Transition: Exclusive -> MutLent
   // Corresponds to 'BorrowMut' in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 
@@ -700,10 +786,10 @@ enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
  *          BORROW_ENOTFOUND if no owner exists for `key`;
  *          BORROW_ENOTBORROWED if the borrower does not hold a shared borrow.
  */
-/*@
+/*
   // Transition: SharedOwned -> SharedOwned OR SharedOwned -> Exclusive
   // Corresponds to 'ReturnShared' in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
   struct SharedBorrower *sb, *prev;
@@ -760,10 +846,10 @@ enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
 }
 
 /* Return a mutable borrow */
-/*@
+/*
   // Transition: MutLent -> Exclusive
   // Corresponds to 'ReturnMut' in proofs/borrow/borrow_core.v
-@*/
+*/
 enum BorrowError borrow_return_mut(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 
@@ -974,6 +1060,7 @@ void borrow_cleanup_process(Proc *p) {
         if (owner->alloc_source == ALLOC_XALLOC) {
           xfree(owner);
         }
+        borrow_bloom_remove(owner->key);
       } else {
         prev = owner;
       }
@@ -1143,6 +1230,7 @@ enum BorrowError borrow_release_system(uintptr key,
       if (own->alloc_source == ALLOC_XALLOC) {
         xfree(own);
       }
+      borrow_bloom_remove(key);
       break;
     }
     prev = own;

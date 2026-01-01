@@ -37,7 +37,7 @@ static Dirtab pebbledir[] = {
 
 static void pebinit(void) { print("pebble: 9P interface initialized\n"); }
 
-static Chan *pebattach(char *spec) { return devattach('P', spec); }
+static Chan *pebattach(char *spec) { return devattach('B', spec); }
 
 static Walkqid *pebwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, pebbledir, nelem(pebbledir), devgen);
@@ -313,7 +313,7 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
 }
 
 Dev pebbledevtab = {
-    'P',      "pebble",
+    'B',      "pebble",
 
     devreset, pebinit,  devshutdown, pebattach, pebwalk,
     pebstat,  pebopen,  devcreate,   pebclose,  pebread,

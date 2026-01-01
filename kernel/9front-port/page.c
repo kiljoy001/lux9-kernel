@@ -1,6 +1,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
+#include "borrowchecker.h"
 #include "pageown.h"
 #include "pebble.h"
 #include "portlib.h"
@@ -281,7 +282,7 @@ Page *newpage(uintptr va, Segment *seg) {
 
   /* Pebble: Check and consume budget for page allocation (userspace only) */
   /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
-  if (up != nil) {
+  if (up != nil && !(seg && (seg->type & SG_WASM))) {
     ulong tokens_needed = BY2PG / PEBBLE_BYTES_PER_TOKEN;
     lock(&pebble_global_lock);
     if (up->pebble.colorless_bank < tokens_needed) {
@@ -371,8 +372,13 @@ Page *newpage(uintptr va, Segment *seg) {
   if (up != nil && p->pa != 0) {
     extern uintptr saved_limine_hhdm_offset;
     uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
-    if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
-      panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
+    if (seg && (seg->type & SG_WASM)) {
+      if (borrow_acquire_system(hhdm_va, OWNER_KERNEL) != BORROW_OK)
+        panic("newpage: failed to acquire wasm ownership pa=%#p", p->pa);
+    } else {
+      if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
+        panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
+    }
   }
 
   return p;

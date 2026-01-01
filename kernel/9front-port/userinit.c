@@ -47,6 +47,34 @@ static void uartprint_hex(uvlong v) {
   uartputs(hex, 16);
 }
 
+static void mount_wasm_device(char *spec, char *label) {
+  if (waserror()) {
+    print("BOOT[proc0]: WARNING - failed to mount %s on /wasm\n", label);
+    poperror();
+    return;
+  }
+  Chan *wasmpt = namec("/wasm", Amount, 0, 0);
+  if (waserror()) {
+    if (wasmpt)
+      cclose(wasmpt);
+    nexterror();
+  }
+  Chan *dev = namec(spec, Abind, 0, 0);
+  if (waserror()) {
+    if (dev)
+      cclose(dev);
+    if (wasmpt)
+      cclose(wasmpt);
+    nexterror();
+  }
+  cmount(dev, wasmpt, MAFTER, nil);
+  poperror();
+  cclose(dev);
+  poperror();
+  cclose(wasmpt);
+  poperror();
+}
+
 /* Load ELF64 executable into process address space
  * Returns 1 on success, 0 on failure
  * Sets up TSEG with all PT_LOAD segments
@@ -288,6 +316,42 @@ static void proc0(void *arg) {
     }
   }
   print("BOOT[proc0]: root namespace setup complete\n");
+
+  /* Mount /srv registry device */
+  if (waserror()) {
+    print("BOOT[proc0]: WARNING - failed to mount #s on /srv\n");
+    poperror();
+  } else {
+    Chan *srvdev = namec("#s", Abind, 0, 0);
+    if (waserror()) {
+      if (srvdev)
+        cclose(srvdev);
+      nexterror();
+    }
+    Chan *srvpt = namec("/srv", Amount, 0, 0);
+    if (waserror()) {
+      if (srvpt)
+        cclose(srvpt);
+      if (srvdev)
+        cclose(srvdev);
+      nexterror();
+    }
+    cmount(srvdev, srvpt, MREPL, nil);
+    poperror();
+    cclose(srvpt);
+    poperror();
+    cclose(srvdev);
+    poperror();
+  }
+
+  /* Expose sandbox-visible devices under /wasm */
+  mount_wasm_device("#X", "#X");
+  mount_wasm_device("#c", "#c");
+  mount_wasm_device("#s", "#s");
+  mount_wasm_device("#B", "#B");
+  mount_wasm_device("#Y", "#Y");
+  mount_wasm_device("#Z", "#Z");
+
   /* CLR moved to userspace - no kernel initialization needed */
   /* pebble_sip_issue_test(); */
   BOOTPRINT("BOOT[proc0]: setting up segments\n");

@@ -35,10 +35,11 @@ static Dirtab rootdir[Nrootfiles] = {
     "root",    {0, 0, QTDIR},     0, DMDIR | 0555,
     "srv",     {0, 0, QTDIR},     0, DMDIR | 0555,
     "mnt",     {0, 0, QTDIR},     0, DMDIR | 0555,
+    "wasm",    {0, 0, QTDIR},     0, DMDIR | 0555,
     "tmp",     {0, 0, QTDIR},     0, DMDIR | 0777,
 };
 static uchar *rootdata[Nrootfiles];
-static Dirlist rootlist = {0, rootdir, rootdata, 14, Nrootfiles};
+static Dirlist rootlist = {0, rootdir, rootdata, 15, Nrootfiles};
 
 static Dirtab bootdir[Nbootfiles] = {
     "boot",

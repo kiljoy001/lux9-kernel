@@ -74,6 +74,10 @@ int crypto_verify64(const uint8_t a[64], const uint8_t b[64]);
 
 // Erase sensitive data
 // --------------------
+/*@ requires size == 0 || secret != \null;
+    requires size == 0 || \valid(((uint8_t*)secret) + (0 .. (size - 1)));
+    assigns ((uint8_t*)secret)[0 .. (size - 1)];
+*/
 void crypto_wipe(void *secret, size_t size);
 
 
@@ -178,6 +182,13 @@ typedef struct {
 
 extern const crypto_argon2_extras crypto_argon2_no_extras;
 
+/*@ requires hash_size > 0;
+    requires \valid(hash + (0 .. (hash_size - 1)));
+    requires config.nb_blocks > 0;
+    requires \valid(((uint8_t*)work_area) + (0 .. ((size_t)config.nb_blocks * 1024 - 1)));
+    assigns hash[0 .. (hash_size - 1)];
+    assigns ((uint8_t*)work_area)[0 .. ((size_t)config.nb_blocks * 1024 - 1)];
+*/
 void crypto_argon2(uint8_t *hash, uint32_t hash_size, void *work_area,
                    crypto_argon2_config config,
                    crypto_argon2_inputs inputs,
