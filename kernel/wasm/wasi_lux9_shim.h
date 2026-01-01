@@ -29,6 +29,8 @@ typedef struct {
   u32int rights;         /* WASI rights */
   u32int rights_inheriting;
   int is_dir;
+  int backend;           /* WASI backend selector */
+  char *base_path;       /* Preopen/base path for dirfds */
   u64int offset; /* Current offset */
 } wasi_fd_entry_t;
 

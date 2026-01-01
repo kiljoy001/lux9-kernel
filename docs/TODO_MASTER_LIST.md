@@ -31,6 +31,13 @@
   - [ ] **Static reply buffer in SYS_NSEC**: `static uchar nsec_reply[8]` is shared across callers, so concurrent SYS_NSEC replies can race and corrupt output. Use per-request storage or a thread-local buffer. (`kernel/9p_router.c:529`)
 
 - [ ] **Subsystem TODO/FIXME Inventory (code scan)**
+  - [ ] **WASI completeness**: implement missing WASI syscalls (args/env, clocks, random, fd flags/advise, full path ops, fs sync/stat, polling) and normalize errno mappings for common runtimes. (`kernel/wasm/wasi_lux9_shim.c`, `kernel/wasm/wasm_runtime.c`)
+  - [ ] **WASM memory model hardening**: finalize arena-based linear memory, enforce guard pages on grow/shrink, and remove any kernel-heap fallbacks in wasm3 alloc paths. (`kernel/wasm/wasm_runtime.c`, `kernel/wasm/wasm_runtime/wasm3/m3_core.c`)
+  - [ ] **WASM syscall surface**: complete `Tsyscall` coverage for WASI-hosted ops and align ABI/errno conversions. (`kernel/9p_router.c`, `kernel/wasm/wasi_lux9_shim.c`)
+  - [ ] **WASM namespace plumbing**: finalize `/wasm` preopens, fd rights inheritance, and per-process namespace isolation. (`kernel/9front-port/devroot.c`, `kernel/9front-port/userinit.c`, `kernel/wasm/wasi_lux9_shim.c`)
+  - [ ] **WASM pebble accounting**: ensure all linear memory growth and host allocations are charged/returned to pebble. (`kernel/wasm/wasm_runtime.c`, `kernel/9front-port/page.c`)
+  - [ ] **WASM IPC integration**: define ring/exchange IPC interface for WASM and wire to syscall entrypoints. (`kernel/9p_router.c`, `kernel/9front-port/devexchange.c`, `kernel/9front-port/devring.c`)
+  - [ ] **WASM trap/exception handling**: map traps to consistent WASI errno or exit status and avoid kernel panics on malformed modules. (`kernel/wasm/wasm_runtime.c`, `kernel/wasm/wasm_runtime/wasm3`)
   - [ ] **9P WASM routing is stubbed**: implement proper server lookup/init and synchronous/async completion handling. (`kernel/9p_router.c:3639`, `kernel/9p_router.c:3648`, `kernel/9p_router.c:3675`)
   - [ ] **print ticks placeholder**: return actual tick count in `printticks`. (`kernel/9front-port/print.c:132`)
   - [ ] **BlindLedger indexing**: add UUID secondary index for O(log n) lookup. (`kernel/9front-port/blind_ledger.c:380`)
@@ -40,7 +47,7 @@
   - [ ] **WASM capability bindings**: read name strings from WASM linear memory. (`kernel/wasm/wasm_capability_bindings.c:79`, `kernel/wasm/wasm_capability_bindings.c:108`)
   - [ ] **WASM runtime isolation**: allocate isolated segment, map/unmap linear memory, and parse args/return values. (`kernel/wasm/wasm_runtime.c:43`, `kernel/wasm/wasm_runtime.c:91`, `kernel/wasm/wasm_runtime.c:210`, `kernel/wasm/wasm_runtime.c:309`, `kernel/wasm/wasm_runtime.c:323`, `kernel/wasm/wasm_runtime.c:372`)
   - [ ] **WASM fileserver functionality**: load/parse module, prepare exchange pages, and marshal request/response payloads with correct sizes and utilization tracking. (`kernel/wasm/wasm_fileserver.c:67`, `kernel/wasm/wasm_fileserver.c:94`, `kernel/wasm/wasm_fileserver.c:152`, `kernel/wasm/wasm_fileserver.c:228`, `kernel/wasm/wasm_fileserver.c:387`, `kernel/wasm/wasm_fileserver.c:397`, `kernel/wasm/wasm_fileserver.c:412`)
-  - [ ] **WASI shim directory flag**: set `is_dir` correctly. (`kernel/wasm/wasi_lux9_shim.c:235`)
+  - [ ] **WASI/Rump POSIX bridge**: implement remaining `/srv/rump/posix/*` ops (poll, sockets, path ops, fd sync/tell/size/times) and wire WASI calls. (`kernel/wasm/wasi_lux9_shim.c`, `userspace/rump/rump_server.c`)
   - [ ] **9front-pc64 globals routing**: wire to `9p_router`. (`kernel/9front-pc64/globals.c:457`)
   - [ ] **CGA mapping**: handle screen memory not mapped yet. (`kernel/9front-pc64/cga.c:158`)
   - [ ] **Crypto arch detection**: enhance automatic detection coverage (likely upstream). (`kernel/crypto/sph_types.h:997`)

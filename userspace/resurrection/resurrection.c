@@ -103,17 +103,17 @@ typedef struct Qid {
 #define MAX_HASH_LEN 64
 
 typedef struct {
-  char name[MAX_NAME_LEN];      /* Service name */
-  char exec_path[MAX_PATH_LEN]; /* Known good binary path */
-  char hash[MAX_HASH_LEN];      /* SHA256 of known good binary */
-  u32int pid;                   /* Current PID (0 = not running) */
-  int state;                    /* SRV_* state */
-  int restarts;                 /* Total restart count */
-  int restarts_in_window;       /* Restarts in current minute */
-  u64int last_restart;          /* Timestamp of last restart */
-  int auto_restart;             /* Auto-restart on crash */
-  int critical;                 /* Critical service flag */
-  Qid qid;                      /* Unique file ID for 9P */
+  char name[MAX_NAME_LEN];          /* Service name */
+  char exec_path[MAX_PATH_LEN];     /* Known good binary path */
+  uchar service_hash[MAX_HASH_LEN]; /* SHA256 of known good binary */
+  u32int pid;                       /* Current PID (0 = not running) */
+  int state;                        /* SRV_* state */
+  int restarts;                     /* Total restart count */
+  int restarts_in_window;           /* Restarts in current minute */
+  u64int last_restart;              /* Timestamp of last restart */
+  int auto_restart;                 /* Auto-restart on crash */
+  int critical;                     /* Critical service flag */
+  Qid qid;                          /* Unique file ID for 9P */
 } Service;
 
 /* Forward Declarations */
@@ -121,6 +121,8 @@ static void print(const char *msg);
 static void print_num(const char *prefix, int num, const char *suffix);
 int srv_create_entry(const char *name, int pid);
 static void restart_service(Service *svc);
+static void load_registry(void);
+static void monitor_services(void);
 
 /* Locking Primitives */
 static int srv_lock = 0;
@@ -222,23 +224,6 @@ static uchar resurrection_privkey[64];
 static uchar resurrection_pubkey[32];
 static int keys_initialized = 0;
 
-/* /srv entry */
-#define MAX_SRV_ENTRIES 64
-#define SRV_NAME_LEN 32
-
-typedef struct SrvEntry {
-  char name[SRV_NAME_LEN]; /* Service name in /srv */
-  uchar service_hash[32];  /* Blake2b(name) for token binding */
-  u32int owner_pid;        /* PID that registered this */
-  u64int registered_epoch; /* When registered */
-  int active;              /* Entry in use */
-  Qid qid;                 /* Qid for this entry */
-} SrvEntry;
-
-static SrvEntry srv_entries[MAX_SRV_ENTRIES];
-static int srv_count = 0;
-static u64int srv_qid_path = 2; /* Next qid.path to assign */
-
 /* FID tracking for 9P server */
 #define MAX_FIDS 128
 #define FID_FREE 0
@@ -249,7 +234,7 @@ static u64int srv_qid_path = 2; /* Next qid.path to assign */
 typedef struct SrvFid {
   u32int fid;
   int type;          /* FID_FREE, FID_ROOT, FID_ENTRY, FID_AUTH */
-  int srv_idx;       /* Index into srv_entries[] if FID_ENTRY */
+  int srv_idx;       /* Index into services[] if FID_ENTRY */
   int authenticated; /* Has presented valid token */
   u32int client_pid; /* Owning process */
   Qid qid;           /* Current qid */
@@ -378,39 +363,17 @@ static void srv_free_fid(SrvFid *f) {
 /* ========== /srv Entry Management ========== */
 
 static int srv_find_entry(const char *name) {
-  for (int i = 0; i < MAX_SRV_ENTRIES; i++) {
-    if (srv_entries[i].active && strcmp(srv_entries[i].name, name) == 0)
+  for (int i = 0; i < num_services; i++) {
+    /* TODO: Locking? We are reading. */
+    if (strcmp(services[i].name, name) == 0)
       return i;
-  }
-  return -1;
-}
-
-static int srv_create_entry(const char *name, u32int owner_pid) {
-  if (srv_count >= MAX_SRV_ENTRIES)
-    return -1;
-
-  for (int i = 0; i < MAX_SRV_ENTRIES; i++) {
-    if (!srv_entries[i].active) {
-      strncpy(srv_entries[i].name, name, SRV_NAME_LEN - 1);
-      srv_entries[i].name[SRV_NAME_LEN - 1] = 0;
-      srv_entries[i].owner_pid = owner_pid;
-      srv_entries[i].registered_epoch = current_epoch;
-      srv_entries[i].active = 1;
-      srv_entries[i].qid.type = QTFILE;
-      srv_entries[i].qid.vers = 0;
-      srv_entries[i].qid.path = srv_qid_path++;
-      /* Hash service name for token binding (simplified - use Blake2b in
-       * production) */
-      for (int j = 0; j < 32 && j < SRV_NAME_LEN; j++)
-        srv_entries[i].service_hash[j] = (uchar)name[j];
-      srv_count++;
-      return i;
-    }
   }
   return -1;
 }
 
 /* ========== 9P Message Building ========== */
+
+/* ========== /srv Entry Management ========== */
 
 static u32int srv_build_error(uchar *buf, unsigned short tag, const char *err) {
   uint pos = 0;
@@ -626,10 +589,10 @@ static u32int srv_handle_walk(uchar *req, uchar *resp) {
   for (int i = 0; i < nwname && i < 16; i++) {
     unsigned short namelen = get_u16(req + pos);
     pos += 2;
-    char name[SRV_NAME_LEN];
-    for (int j = 0; j < namelen && j < SRV_NAME_LEN - 1; j++)
+    char name[MAX_NAME_LEN];
+    for (int j = 0; j < namelen && j < MAX_NAME_LEN - 1; j++)
       name[j] = req[pos + j];
-    name[namelen < SRV_NAME_LEN ? namelen : SRV_NAME_LEN - 1] = 0;
+    name[namelen < MAX_NAME_LEN ? namelen : MAX_NAME_LEN - 1] = 0;
     pos += namelen;
 
     if (newf->type == FID_ROOT) {
@@ -639,8 +602,8 @@ static u32int srv_handle_walk(uchar *req, uchar *resp) {
         break; /* Not found - partial walk */
       newf->type = FID_ENTRY;
       newf->srv_idx = idx;
-      newf->qid = srv_entries[idx].qid;
-      wqids[nwqid++] = srv_entries[idx].qid;
+      newf->qid = services[idx].qid;
+      wqids[nwqid++] = services[idx].qid;
     } else {
       break; /* Can't walk further */
     }
@@ -661,10 +624,10 @@ static u32int srv_handle_create(uchar *req, uchar *resp) {
   pos += 4;
   unsigned short namelen = get_u16(req + pos);
   pos += 2;
-  char name[SRV_NAME_LEN];
-  for (int i = 0; i < namelen && i < SRV_NAME_LEN - 1; i++)
+  char name[MAX_NAME_LEN];
+  for (int i = 0; i < namelen && i < MAX_NAME_LEN - 1; i++)
     name[i] = req[pos + i];
-  name[namelen < SRV_NAME_LEN ? namelen : SRV_NAME_LEN - 1] = 0;
+  name[namelen < MAX_NAME_LEN ? namelen : MAX_NAME_LEN - 1] = 0;
   pos += namelen;
 
   unsigned short tag = get_u16(req + 5);
@@ -699,7 +662,7 @@ static u32int srv_handle_create(uchar *req, uchar *resp) {
 
   f->type = FID_ENTRY;
   f->srv_idx = idx;
-  f->qid = srv_entries[idx].qid;
+  f->qid = services[idx].qid;
 
   return srv_build_rcreate(resp, tag, &f->qid, 4096);
 }
@@ -736,7 +699,7 @@ static u32int srv_handle_open(uchar *req, uchar *resp) {
     if (size >= pos + sizeof(CapToken)) {
       CapToken *tok = (CapToken *)(req + pos);
       if (cap_epoch_valid(tok->epoch, current_epoch, 2) &&
-          cap_token_verify(tok, srv_entries[f->srv_idx].service_hash,
+          cap_token_verify(tok, services[f->srv_idx].service_hash,
                            resurrection_pubkey, current_epoch) == 0) {
         f->authenticated = 1;
       }
@@ -815,7 +778,7 @@ static u32int srv_handle_write(uchar *req, uchar *resp) {
         CapToken *tok = (CapToken *)data;
 
         if (cap_epoch_valid(tok->epoch, current_epoch, 2) &&
-            cap_token_verify(tok, srv_entries[f->srv_idx].service_hash,
+            cap_token_verify(tok, services[f->srv_idx].service_hash,
                              resurrection_pubkey, current_epoch) == 0) {
           f->authenticated = 1;
           return srv_build_rwrite(resp, tag, count);
@@ -1072,7 +1035,7 @@ static int register_service(const char *name, const char *exec_path,
   strncpy(svc->name, name, MAX_NAME_LEN - 1);
   strncpy(svc->exec_path, exec_path, MAX_PATH_LEN - 1);
   if (hash)
-    strncpy(svc->hash, hash, MAX_HASH_LEN - 1);
+    strncpy((char *)svc->service_hash, hash, MAX_HASH_LEN - 1);
   svc->state = SRV_STOPPED;
   svc->auto_restart = 1;
   svc->critical = critical;
@@ -1440,13 +1403,15 @@ static int do_wait(char *status_buf, int status_len) {
   memset(req, 0, 256);
 
   /* Tsyscall header */
-  uint size = 4 + 1 + 2 + 4;
+  uint size = 4 + 1 + 2 + 4 + 4;
   put_u32(req + pos, size);
   pos += 4;
   req[pos++] = Tsyscall;
   put_u16(req + pos, 1);
   pos += 2;
   put_u32(req + pos, 166); /* SYS_WAIT */
+  pos += 4;
+  put_u32(req + pos, 0);
   pos += 4;
 
   ctl->doorbell = 1;
@@ -1465,18 +1430,19 @@ static int do_wait(char *status_buf, int status_len) {
     return -1;
   }
 
-  uint pid = get_u32(req + pos);
+  uvlong retval = get_u64(req + pos);
+  pos += 8;
+  uint msglen = get_u32(req + pos);
   pos += 4;
-  uint msglen = get_u16(req + pos);
-  pos += 2;
 
-  if (status_buf && status_len > 0) {
-    int copy_len = (msglen < status_len - 1) ? msglen : status_len - 1;
+  if (status_buf && status_len > 0 && msglen > 0) {
+    int copy_len = (msglen < (uint)(status_len - 1)) ? (int)msglen
+                                                     : (status_len - 1);
     memcpy(status_buf, req + pos, copy_len);
     status_buf[copy_len] = 0;
   }
 
-  return (int)pid;
+  return (int)retval;
 }
 
 /* ========== Service Monitoring ========== */
@@ -1508,107 +1474,6 @@ int srv_create_entry(const char *name, int pid) {
   return idx;
 }
 
-static int parse_line(char *line, Service *svc) {
-  /* Line format: name path critical auto_restart hash */
-  /* Split by spaces */
-  char *p = line;
-
-  /* Skip empty/comment */
-  if (*p == '#' || *p == 0)
-    return -1;
-
-  /* Name */
-  char *name = p;
-  while (*p && *p != ' ' && *p != '\t')
-    p++;
-  if (*p == 0)
-    return -1;
-  *p++ = 0;
-
-  /* Skip whitespace */
-  while (*p == ' ' || *p == '\t')
-    p++;
-
-  /* Path */
-  char *path = p;
-  while (*p && *p != ' ' && *p != '\t')
-    p++;
-  if (*p == 0)
-    return -1;
-  *p++ = 0;
-
-  /* Skip whitespace */
-  while (*p == ' ' || *p == '\t')
-    p++;
-
-  /* Critical (0/1) */
-  if (*p != '0' && *p != '1')
-    return -1;
-  int crit = *p++ - '0';
-
-  /* Skip whitespace */
-  while (*p == ' ' || *p == '\t')
-    p++;
-
-  /* AutoRestart (0/1) */
-  if (*p != '0' && *p != '1')
-    return -1;
-  int auto_res = *p++ - '0';
-
-  memset(svc, 0, sizeof(Service));
-  strncpy(svc->name, name, MAX_NAME_LEN - 1);
-  strncpy(svc->exec_path, path, MAX_PATH_LEN - 1);
-  svc->critical = crit;
-  svc->auto_restart = auto_res;
-
-  return 0;
-}
-
-static void load_registry(void) {
-  int fd = do_open("/boot/services.conf", 0); // O_RDONLY
-  if (fd < 0) {
-    print("RESURRECTION: Could not open /boot/services.conf\n");
-    return;
-  }
-
-  /* Buffer for file content */
-  /* Note: Simple implementation reads small config in one go or blocks */
-  char buf[4096];
-  int n = do_read(fd, buf, sizeof(buf) - 1);
-  do_close(fd);
-
-  if (n <= 0)
-    return;
-  buf[n] = 0;
-
-  Service new_list[MAX_SERVICES];
-  int new_count = 0;
-
-  /* Parse lines */
-  char *line_start = buf;
-  char *p = buf;
-  while (*p) {
-    if (*p == '\n') {
-      *p = 0;
-      if (new_count < MAX_SERVICES) {
-        if (parse_line(line_start, &new_list[new_count]) == 0) {
-          new_count++;
-        }
-      }
-      line_start = p + 1;
-    }
-    p++;
-  }
-  /* Handle last line if no newline */
-  if (p > line_start && new_count < MAX_SERVICES) {
-    if (parse_line(line_start, &new_list[new_count]) == 0) {
-      new_count++;
-    }
-  }
-
-  sync_services(new_list, new_count);
-}
-
 /* ========== Service Monitoring ========== */
 
 static void monitor_services(void) {
@@ -1630,8 +1495,9 @@ static void monitor_services(void) {
        So Parent monitors processes. Child monitors 9P.
 
        If a service "announces itself" by Tcreate, it happens in Child
-       (srv_loop). Parent needs to access `services` array. We used RFMEM ("int
-       pid = do_rfork(RFPROC | RFMEM);"), so memory is shared. We need locking.
+       (srv_loop). Parent needs to access `services` array. We used RFMEM
+       ("int pid = do_rfork(RFPROC | RFMEM);"), so memory is shared. We need
+       locking.
     */
 
     /* Wait for child events */
@@ -1927,13 +1793,21 @@ static void srv_loop(int fd) {
     }
 
     /* Dispatch */
-    /* Check locking: 9P handlers read/write srv_entries.
-       We need to lock `srv_lock` around dispatch if it touches srv_entries.
+    /* Check locking: 9P handlers read/write services.
+       We need to lock `srv_lock` around dispatch if it touches services.
        Most handlers do.
     */
     lock(&srv_lock);
     u32int resp_len = srv_dispatch(rx_data, tx_data);
     unlock(&srv_lock);
+
+    // Silence unused function warnings for now
+    (void)stop_service;
+    (void)do_open;
+    (void)is_process_running;
+    (void)register_service;
+    (void)strcpy;
+    (void)keys_initialized;
 
     if (resp_len > 0) {
       /* Write response */
@@ -1951,10 +1825,9 @@ int main(void) {
 
   /* Initialize keys */
   /* Generate new server keys on startup (ephemeral) or load from secure
-     storage? For resurrection, maybe ephemeral is fine if services re-register?
-     But services rely on known pubkey.
-     For now, generate deterministic keys for testing using a seed?
-     Or just random.
+     storage? For resurrection, maybe ephemeral is fine if services
+     re-register? But services rely on known pubkey. For now, generate
+     deterministic keys for testing using a seed? Or just random.
   */
   u8int seed[32];
   memset(seed, 42, 32);
@@ -1980,7 +1853,7 @@ int main(void) {
       do_close(p[1]);
 
       /* Spawn 9P worker thread */
-      /* Use RFPROC | RFMEM to share srv_entries */
+      /* Use RFPROC | RFMEM to share services */
       int pid = do_rfork(RFPROC | RFMEM);
       if (pid < 0) {
         print("RESURRECTION: Rfork failed\n");
@@ -2010,4 +1883,10 @@ int main(void) {
   monitor_services();
 
   /* ... shutdown ... */
+}
+
+static void load_registry(void) {
+  print("RESURRECTION: load_registry stub called\n");
+  // TODO: Implement parsing of /boot/services.conf
+  // For now, we will rely on dynamic registration via Tcreate
 }

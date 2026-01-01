@@ -297,7 +297,12 @@ enum {
   SYS_EXIT,
   SYS_FORK,
   SYS_STAT,
-  SYS_WSTAT
+  SYS_WSTAT,
+  SYS_RFORK = 19,
+  SYS_PIPE = 21,
+  SYS_MOUNT = 46,
+  SYS_NSEC = 53,
+  SYS_WAIT = 166
 };
 
 #endif /* _FCALL_H_ */

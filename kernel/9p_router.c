@@ -44,7 +44,17 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int rpipe_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static void rpipe_clone_notify(void *aux);
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 extern uintptr sysexec(void *list_void); /* System exec call */
+
+static uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
+  if (p + 4 <= ep) {
+    u32int argc = GBIT32(p);
+    if (argc == expected)
+      return p + 4;
+  }
+  return p;
+}
 
 /*
  * Path matching for routing
@@ -447,6 +457,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       extern int newfd(Chan *, int);
       extern int openmode(ulong);
       /* Format: [fid 4] [path s] [mode 1] */
+      p = tsyscall_skip_argc(p, ep, 2);
       if (p + 4 + 2 > ep) {
         r->type = Rerror;
         r->ename = "short msg";
@@ -501,6 +512,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       extern void fdclose(int, int);
       extern Chan *fdtochan(int, int, int, int);
       /* Format: [fid 4] */
+      p = tsyscall_skip_argc(p, ep, 1);
       if (p + 4 > ep) {
         r->type = Rerror;
         return -1;
@@ -529,7 +541,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
-    case 53: /* SYS_NSEC */ {
+    case SYS_NSEC: {
       /* Returns u64int time */
       print("p9_dispatch: SYS_NSEC\n");
       uvlong t_now = nsec();
@@ -544,6 +556,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_WRITE: {
       /* Format: [fid 4] [offset 8] [count 4] [data...] */
+      p = tsyscall_skip_argc(p, ep, 3);
       if (p + 4 + 8 + 4 > ep) {
         r->type = Rerror;
         return -1;
@@ -593,6 +606,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_PWRITE: {
       /* Same format as SYS_WRITE */
+      p = tsyscall_skip_argc(p, ep, 3);
       if (p + 4 + 8 + 4 > ep) {
         r->type = Rerror;
         return -1;
@@ -643,6 +657,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_READ:
     case SYS_PREAD: {
       /* Format: [fid 4] [offset 8] [count 4] */
+      p = tsyscall_skip_argc(p, ep, 3);
       if (p + 4 + 8 + 4 > ep) {
         r->type = Rerror;
         return -1;
@@ -698,6 +713,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       extern int newfd(Chan *, int);
       extern int openmode(ulong);
       /* Format: [fid 4] [path s] [perm 4] [mode 1] */
+      p = tsyscall_skip_argc(p, ep, 3);
       if (p + 4 + 2 > ep) {
         r->type = Rerror;
         r->ename = "short msg";
@@ -752,6 +768,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_STAT: {
       /* Format: [path s] OR [fid 4] */
+      p = tsyscall_skip_argc(p, ep, 1);
       if (p + 2 > ep) {
         r->type = Rerror;
         r->ename = "short msg";
@@ -823,6 +840,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_WSTAT: {
       /* Format: [path s] [nstat 2] [stat bytes] */
+      p = tsyscall_skip_argc(p, ep, 3);
       if (p + 2 > ep) {
         r->type = Rerror;
         r->ename = "short msg";
@@ -941,6 +959,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_FORK: {
       /* Format: [flags 4] */
       extern uintptr sysrfork(void *list_void);
+      p = tsyscall_skip_argc(p, ep, 1);
       if (p + 4 > ep) {
         r->type = Rerror;
         r->ename = "short fork msg";
@@ -969,6 +988,161 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       r->retval = ret;
       r->scount = 0;
       r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_RFORK: {
+      extern uintptr sysrfork(void *list_void);
+      p = tsyscall_skip_argc(p, ep, 1);
+      if (p + 4 > ep) {
+        r->type = Rerror;
+        r->ename = "short rfork msg";
+        return -1;
+      }
+      ulong flags = GBIT32(p);
+      p += 4;
+
+      print("p9_dispatch: SYS_RFORK flags=0x%lx\n", flags);
+
+      ulong args[1] = {flags};
+      uintptr ret;
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        poperror();
+        return -1;
+      }
+      ret = sysrfork(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = ret;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_PIPE: {
+      extern uintptr syspipe(void *list_void);
+      p = tsyscall_skip_argc(p, ep, 1);
+
+      int *fd = (int *)((uchar *)proc->p9page + P9_MSG_OFFSET + 64);
+      fd[0] = -1;
+      fd[1] = -1;
+      ulong args[1] = {(ulong)fd};
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        poperror();
+        return -1;
+      }
+      syspipe(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 8;
+      r->sdata = (uchar *)fd;
+      return 0;
+    }
+
+    case SYS_MOUNT: {
+      extern uintptr sysmount(void *list_void);
+      p = tsyscall_skip_argc(p, ep, 5);
+      if (p + 4 + 4 + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short mount msg";
+        return -1;
+      }
+      ulong fd = GBIT32(p);
+      p += 4;
+      ulong afd = GBIT32(p);
+      p += 4;
+      int oldlen = GBIT16(p);
+      p += 2;
+      if (p + oldlen + 4 + 2 > ep) {
+        r->type = Rerror;
+        r->ename = "short mount msg";
+        return -1;
+      }
+
+      char *old = smalloc(oldlen + 1);
+      memmove(old, p, oldlen);
+      old[oldlen] = 0;
+      p += oldlen;
+
+      ulong flags = GBIT32(p);
+      p += 4;
+
+      int anamelen = GBIT16(p);
+      p += 2;
+      if (p + anamelen > ep) {
+        free(old);
+        r->type = Rerror;
+        r->ename = "short mount msg";
+        return -1;
+      }
+      char *aname = nil;
+      if (anamelen > 0) {
+        aname = smalloc(anamelen + 1);
+        memmove(aname, p, anamelen);
+        aname[anamelen] = 0;
+      }
+
+      ulong args[5];
+      args[0] = fd;
+      args[1] = afd;
+      args[2] = (ulong)old;
+      args[3] = flags;
+      args[4] = (ulong)aname;
+
+      if (waserror()) {
+        if (aname)
+          free(aname);
+        free(old);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      sysmount(args);
+      poperror();
+
+      if (aname)
+        free(aname);
+      free(old);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_WAIT: {
+      extern ulong pwait(Waitmsg *w);
+      Waitmsg w;
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        poperror();
+        return -1;
+      }
+      ulong pid = pwait(&w);
+      poperror();
+
+      char *msg = (char *)proc->p9page + P9_MSG_OFFSET + 64;
+      snprint(msg, P9_REPLY_SIZE - 64, "%s", w.msg);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = pid;
+      r->scount = strlen(msg) + 1;
+      r->sdata = (uchar *)msg;
       return 0;
     }
 
@@ -2070,6 +2244,18 @@ int p9_handle_doorbell(Proc *p) {
   /* Mark as pending */
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
 
+  /* Ring-buffer mode for small messages */
+  if (ctl->req_head != ctl->req_tail) {
+    /* Memory barrier to ensure user writes are visible to kernel */
+    __asm__ volatile("mfence" ::: "memory");
+    result = p9_handle_ring(p, ctl, msg_buf);
+    if (result < 0)
+      atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+    else
+      atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+    goto cleanup_ownership;
+  }
+
   /* Parse request from message buffer */
   memset(&t, 0, sizeof(t));
 
@@ -2729,6 +2915,55 @@ static int handle_device_stat(Fcall *t, Fcall *r, char *name, uchar qid_path,
 }
 
 /*
+ * Ring-buffer mode: process multiple small messages from exchange page.
+ * Layout per slot: [req_size:4][rep_size:4][data...]
+ * req_head/req_tail and rep_head/rep_tail are slot indices.
+ */
+static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
+  u32int head = ctl->req_head;
+  u32int tail = ctl->req_tail;
+  u32int rep_head = ctl->rep_head;
+  u32int rep_tail = ctl->rep_tail;
+
+  if (head >= P9_RING_SLOTS || tail >= P9_RING_SLOTS ||
+      rep_head >= P9_RING_SLOTS || rep_tail >= P9_RING_SLOTS)
+    return -1;
+
+  while (head != tail) {
+    uchar *slot = msg_buf + (head * P9_RING_SLOT_SIZE);
+    u32int req_size = GBIT32(slot);
+    if (req_size == 0 || req_size > P9_RING_DATA_SIZE)
+      return -1;
+
+    Fcall t, r;
+    memset(&t, 0, sizeof(t));
+    if (convM2S(slot + P9_RING_HEADER_SIZE, req_size, &t) == 0)
+      return -1;
+
+    memset(&r, 0, sizeof(r));
+    int disp = p9_dispatch(p, &t, &r);
+    if (disp < 0)
+      r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
+
+    u32int rep_size = convS2M(&r, slot + P9_RING_HEADER_SIZE, P9_RING_DATA_SIZE);
+    if (rep_size == 0)
+      return -1;
+    PBIT32(slot + 4, rep_size);
+
+    u32int next_rep = (rep_tail + 1) % P9_RING_SLOTS;
+    if (next_rep == rep_head)
+      return -1;
+    rep_tail = next_rep;
+    head = (head + 1) % P9_RING_SLOTS;
+    ctl->rep_seq++;
+  }
+
+  ctl->req_head = head;
+  ctl->rep_tail = rep_tail;
+  return 0;
+}
+
+/*
  * Console device handler: /dev/cons
  */
 static int cons_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
@@ -3325,7 +3560,7 @@ int env_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 
 typedef struct SrvEntry {
   char name[SRV_NAME_SIZE];
-  int fd;        /* File descriptor to return on open */
+  Chan *chan;    /* Posted channel */
   int owner_pid; /* PID of process that posted this */
   int active;    /* Entry is in use */
 } SrvEntry;
@@ -3334,7 +3569,18 @@ static SrvEntry srv_registry[SRV_MAX_ENTRIES];
 static Lock srv_lock;
 static int srv_initialized = 0;
 
-static void srv_init(void) {
+static int srv_visible_to(Proc *caller, SrvEntry *e) {
+  if (e == nil || !e->active)
+    return 0;
+  if (caller != nil && caller->wasm.initialized) {
+    if (e->owner_pid == 0)
+      return 1;
+    return (ulong)e->owner_pid == caller->pid;
+  }
+  return 1;
+}
+
+void srv_init(void) {
   if (srv_initialized)
     return;
   memset(srv_registry, 0, sizeof(srv_registry));
@@ -3361,9 +3607,214 @@ static SrvEntry *srv_alloc(void) {
   return nil;
 }
 
+int srv_create_entry(Proc *caller, const char *name) {
+  SrvEntry *e;
+
+  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  e = srv_find((char *)name);
+  if (e == nil) {
+    e = srv_alloc();
+    if (e == nil) {
+      unlock(&srv_lock);
+      return -1;
+    }
+  }
+
+  strcpy(e->name, (char *)name);
+  e->owner_pid = caller ? (int)caller->pid : 0;
+  e->active = 1;
+  if (e->chan != nil) {
+    cclose(e->chan);
+    e->chan = nil;
+  }
+  unlock(&srv_lock);
+  return 0;
+}
+
+int srv_post_fd(Proc *caller, const char *name, int fd) {
+  SrvEntry *e;
+  Chan *c;
+
+  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
+    return -1;
+
+  if (waserror())
+    return -1;
+  c = fdtochan(fd, -1, 0, 1);
+  if (c == nil) {
+    poperror();
+    return -1;
+  }
+
+  if (waserror()) {
+    cclose(c);
+    nexterror();
+  }
+
+  srv_init();
+  lock(&srv_lock);
+  e = srv_find((char *)name);
+  if (e == nil) {
+    e = srv_alloc();
+    if (e == nil) {
+      unlock(&srv_lock);
+      poperror();
+      cclose(c);
+      return -1;
+    }
+  }
+
+  strcpy(e->name, (char *)name);
+  if (e->chan != nil)
+    cclose(e->chan);
+  e->chan = c;
+  e->owner_pid = caller ? (int)caller->pid : 0;
+  e->active = 1;
+  unlock(&srv_lock);
+
+  poperror();
+  poperror();
+  return 0;
+}
+
+Chan *srv_clone_chan(const char *name) {
+  Chan *c = nil;
+  SrvEntry *e;
+
+  if (!name || name[0] == 0)
+    return nil;
+
+  srv_init();
+  lock(&srv_lock);
+  e = srv_find((char *)name);
+  if (e != nil && e->chan != nil)
+    c = cclone(e->chan);
+  unlock(&srv_lock);
+  return c;
+}
+
+int srv_remove_entry(Proc *caller, const char *name) {
+  SrvEntry *e;
+
+  if (!name || name[0] == 0)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  e = srv_find((char *)name);
+  if (e == nil) {
+    unlock(&srv_lock);
+    return -1;
+  }
+  if (caller != nil && (ulong)e->owner_pid != caller->pid && !iseve()) {
+    unlock(&srv_lock);
+    return -1;
+  }
+  if (e->chan != nil) {
+    cclose(e->chan);
+    e->chan = nil;
+  }
+  memset(e, 0, sizeof(SrvEntry));
+  unlock(&srv_lock);
+  return 0;
+}
+
+int srv_get_by_index(int index, char *name, int namelen) {
+  int i;
+  int seen = 0;
+
+  if (index < 0 || namelen <= 0)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  for (i = 0; i < SRV_MAX_ENTRIES; i++) {
+    if (!srv_registry[i].active)
+      continue;
+    if (seen == index) {
+      snprint(name, namelen, "%s", srv_registry[i].name);
+      unlock(&srv_lock);
+      return 0;
+    }
+    seen++;
+  }
+  unlock(&srv_lock);
+  return -1;
+}
+
+int srv_get_by_index_for_proc(Proc *caller, int index, char *name, int namelen) {
+  int i;
+  int seen = 0;
+
+  if (index < 0 || namelen <= 0)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  for (i = 0; i < SRV_MAX_ENTRIES; i++) {
+    if (!srv_visible_to(caller, &srv_registry[i]))
+      continue;
+    if (seen == index) {
+      snprint(name, namelen, "%s", srv_registry[i].name);
+      unlock(&srv_lock);
+      return 0;
+    }
+    seen++;
+  }
+  unlock(&srv_lock);
+  return -1;
+}
+
+int srv_index_of(const char *name) {
+  int i;
+  int seen = 0;
+
+  if (!name || name[0] == 0)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  for (i = 0; i < SRV_MAX_ENTRIES; i++) {
+    if (!srv_registry[i].active)
+      continue;
+    if (strcmp(srv_registry[i].name, (char *)name) == 0) {
+      unlock(&srv_lock);
+      return seen;
+    }
+    seen++;
+  }
+  unlock(&srv_lock);
+  return -1;
+}
+
+int srv_index_of_for_proc(Proc *caller, const char *name) {
+  int i;
+  int seen = 0;
+
+  if (!name || name[0] == 0)
+    return -1;
+
+  srv_init();
+  lock(&srv_lock);
+  for (i = 0; i < SRV_MAX_ENTRIES; i++) {
+    if (!srv_visible_to(caller, &srv_registry[i]))
+      continue;
+    if (strcmp(srv_registry[i].name, (char *)name) == 0) {
+      unlock(&srv_lock);
+      return seen;
+    }
+    seen++;
+  }
+  unlock(&srv_lock);
+  return -1;
+}
+
 int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   char *name;
-  SrvEntry *e;
   static uchar statbuf[512];
 
   r->tag = t->tag;
@@ -3394,26 +3845,15 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
 
-    lock(&srv_lock);
-    e = srv_find(name);
-    if (e == nil) {
-      e = srv_alloc();
-      if (e == nil) {
-        unlock(&srv_lock);
-        r->type = Rerror;
-        r->ename = "srv registry full";
-        return -1;
-      }
+    if (srv_post_fd(caller, name,
+                    (int)((t->count > 0) ? strtoul((char *)t->data, 0, 0)
+                                         : (ulong)-1)) < 0) {
+      r->type = Rerror;
+      r->ename = "srv post failed";
+      return -1;
     }
 
-    /* Store entry */
-    strcpy(e->name, name);
-    e->fd = (int)((t->count > 0) ? strtoul((char *)t->data, 0, 0) : (ulong)-1);
-    e->owner_pid = (int)caller->pid;
-    e->active = 1;
-    unlock(&srv_lock);
-
-    print("srv: posted '%s' with fd %d by pid %ld\n", name, e->fd, caller->pid);
+    print("srv: posted '%s' by pid %ld\n", name, caller->pid);
 
     r->type = Rwrite;
     r->count = t->count;
@@ -3427,14 +3867,12 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       char *p = buf;
       int i, len;
 
-      lock(&srv_lock);
       for (i = 0; i < SRV_MAX_ENTRIES && p < buf + sizeof(buf) - 100; i++) {
-        if (srv_registry[i].active) {
-          p += snprint(p, (int)(buf + sizeof(buf) - p), "%s\n",
-                       srv_registry[i].name);
+        char namebuf[SRV_NAME_SIZE];
+        if (srv_get_by_index(i, namebuf, sizeof(namebuf)) == 0) {
+          p += snprint(p, (int)(buf + sizeof(buf) - p), "%s\n", namebuf);
         }
       }
-      unlock(&srv_lock);
 
       len = (int)(p - buf);
       if (t->offset >= len) {
@@ -3500,26 +3938,13 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     }
     name = t->aname + 5;
 
-    lock(&srv_lock);
-    e = srv_find(name);
-    if (e == nil) {
-      unlock(&srv_lock);
-      r->type = Rerror;
-      r->ename = "service not found";
-      return -1;
-    }
-
-    /* Only owner or privileged process can remove */
-    if ((ulong)e->owner_pid != caller->pid && !iseve()) {
-      unlock(&srv_lock);
+    if (srv_remove_entry(caller, name) < 0) {
       r->type = Rerror;
       r->ename = "permission denied";
       return -1;
     }
 
-    print("srv: removed '%s'\n", e->name);
-    memset(e, 0, sizeof(SrvEntry));
-    unlock(&srv_lock);
+    print("srv: removed '%s'\n", name);
 
     r->type = Rremove;
     return 0;

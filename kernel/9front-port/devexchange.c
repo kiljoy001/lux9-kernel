@@ -6,6 +6,7 @@
  * #X/clone - allocate new channel
  * #X/N/ctl - channel control
  * #X/N/ring - ring buffer control page (mmap)
+ * #X/N/ipcring - IPC ring buffer control page (mmap)
  * #X/N/pool - exchange page pool (read=alloc, write=free)
  * #X/N/stats - channel statistics
  * #X/N/peers - connected peers
@@ -16,6 +17,8 @@
 #include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "fcall.h"
+#include "ipc_ring.h"
 #include "pageown.h"
 #include "exchange.h"
 #include "blind_ledger.h"
@@ -34,6 +37,7 @@ enum {
 	Qchandir	= 3,	/* channel N directory */
 	Qctl		= 4,	/* channel control */
 	Qring		= 5,	/* ring buffer control page */
+	Qipcring	= 11,	/* IPC ring buffer control page */
 	Qpool		= 6,	/* exchange page pool */
 	Qstats		= 7,	/* channel stats */
 	Qpeers		= 8,	/* peer list */
@@ -91,6 +95,8 @@ typedef struct ExchangeChannel {
 	/* Ring Buffer Control Page (mmap'd to userspace) */
 	RingControl *ring_kaddr;	/* Kernel mapping */
 	UserCapability ring_cap;	/* Capability for ring page */
+	IpcChannel *ipc_kaddr;		/* Kernel mapping for IPC ring */
+	UserCapability ipc_cap;		/* Capability for IPC ring page */
 
 	/* Exchange Page Pool */
 	UserCapability *pool_caps;	/* Array of capabilities */
@@ -119,6 +125,7 @@ typedef struct ExchangeChannel {
 	/* TOCTOU Protection */
 	u64int last_seqno;		/* Replay protection */
 	uuid_t session_uuid;		/* Per-channel UUIDv8 session ID */
+	u64int ipc_last_seqno;		/* IPC ring replay protection */
 } ExchangeChannel;
 
 /* Global channel table */
@@ -155,6 +162,7 @@ Dirtab chandir[] = {
 	".",		{Qchandir, 0, QTDIR},	0,		DMDIR|0555,
 	"ctl",		{Qctl, 0},		0,		0666,
 	"ring",		{Qring, 0},		0,		0666,
+	"ipcring",	{Qipcring, 0},		0,		0666,
 	"pool",		{Qpool, 0},		0,		0666,
 	"stats",	{Qstats, 0},		0,		0444,
 	"peers",	{Qpeers, 0},		0,		0444,
@@ -181,6 +189,79 @@ capability_is_zero(const ExchangeHandle *cap)
 	       cap->perms == 0;
 }
 
+static void
+build_error_reply(Fcall *r, ushort tag, char *ename)
+{
+	memset(r, 0, sizeof(*r));
+	r->type = Rerror;
+	r->tag = tag;
+	r->ename = ename;
+}
+
+static int
+p9_build_reply_batch(Proc *caller, BatchHeader *batch,
+	u16int batch_num_messages, u16int batch_used_bytes, u64int batch_seqno)
+{
+	uchar *resp_page;
+	BatchHeader *resp;
+	int read_offset;
+	int write_offset;
+	int i;
+
+	resp_page = smalloc(BY2PG);
+	if(resp_page == nil)
+		return -1;
+	memset(resp_page, 0, BY2PG);
+
+	resp = (BatchHeader*)resp_page;
+	resp->magic = BATCH_PAGE_MAGIC;
+	resp->nonce = batch_seqno;
+	resp->num_messages = 0;
+	resp->used_bytes = BATCH_DATA_START;
+
+	read_offset = BATCH_DATA_START;
+	write_offset = BATCH_DATA_START;
+	for(i = 0; i < batch_num_messages; i++){
+		if(read_offset + BIT16SZ > batch_used_bytes)
+			break;
+
+		u16int msg_len = GBIT16((u8int*)batch + read_offset);
+		read_offset += BIT16SZ;
+		if(msg_len == 0 || msg_len > P9_MSG_SIZE)
+			break;
+		if(read_offset + msg_len > batch_used_bytes)
+			break;
+
+		Fcall t, r;
+		memset(&t, 0, sizeof(t));
+		if(convM2S((u8int*)batch + read_offset, msg_len, &t) == 0){
+			build_error_reply(&r, NOTAG, "bad 9p message");
+		} else {
+			memset(&r, 0, sizeof(r));
+			if(p9_dispatch(caller, &t, &r) < 0 && r.type != Rerror)
+				build_error_reply(&r, t.tag, "dispatch failed");
+		}
+
+		if(write_offset + BIT16SZ >= BY2PG)
+			break;
+		u16int avail = BY2PG - (write_offset + BIT16SZ);
+		u16int rep_size = convS2M(&r, resp_page + write_offset + BIT16SZ, avail);
+		if(rep_size == 0)
+			break;
+
+		PBIT16(resp_page + write_offset, rep_size);
+		write_offset += BIT16SZ + rep_size;
+		resp->num_messages++;
+		resp->used_bytes = write_offset;
+
+		read_offset += msg_len;
+	}
+
+	memmove(batch, resp_page, BY2PG);
+	free(resp_page);
+	return 0;
+}
+
 /* Channel Management Helpers */
 
 static ExchangeChannel*
@@ -201,6 +282,7 @@ channel_alloc(Proc *owner)
 
 	/* Allocate ring buffer control page */
 	void *ring_pa;
+	void *ipc_pa;
 	u8int vault_secret[32];
 	BlindLedgerError err;
 
@@ -229,6 +311,29 @@ channel_alloc(Proc *owner)
 	/* Generate session UUID */
 	uuid_new_v8(&ch->ring_kaddr->session_uuid);
 	uuid_copy(&ch->session_uuid, &ch->ring_kaddr->session_uuid);
+
+	/* Allocate IPC ring buffer control page */
+	ipc_pa = xspanalloc(4096, BY2PG, 0);
+	if(ipc_pa == nil){
+		free(ch);
+		return nil;
+	}
+
+	/* Generate vault secret and mint capability */
+	ledger_generate_secret(vault_secret);
+	err = ledger_mint(&ch->ipc_cap, (uintptr)ipc_pa, 4096, owner,
+		CAP_PERM_READ | CAP_PERM_WRITE, vault_secret);
+	if(err != BLIND_LEDGER_OK){
+		free(ch);
+		return nil;
+	}
+
+	ch->ipc_kaddr = (IpcChannel*)ipc_pa;
+	memset(ch->ipc_kaddr, 0, 4096);
+	ch->ipc_kaddr->magic = 0x52494E47;
+	ch->ipc_kaddr->submission.mask = RING_MASK;
+	ch->ipc_kaddr->completion.mask = RING_MASK;
+	ch->ipc_last_seqno = 0;
 
 	/* Allocate pool capability array */
 	ch->pool_caps = smalloc(ch->pool_size * sizeof(UserCapability));
@@ -391,6 +496,111 @@ pool_return_page(ExchangeChannel *ch, const UserCapability *cap)
 	return 0;
 }
 
+static int
+exchange_ipc_process(ExchangeChannel *ch)
+{
+	struct IpcChannel *chan;
+	u32int head, tail;
+	u64int page_handle;
+	uintptr page_phys, user_vaddr;
+	struct BatchHeader *batch;
+	u64int *pte;
+
+	if(ch == nil || ch->ipc_kaddr == nil)
+		return -1;
+	if(ch->owner != up)
+		return -1;
+
+	chan = ch->ipc_kaddr;
+	head = chan->submission.head;
+	tail = chan->submission.tail;
+
+	while(head != tail){
+		page_handle = chan->submission.pages[head & RING_MASK];
+		user_vaddr = (uintptr)page_handle;
+
+		if((user_vaddr & (BY2PG - 1)) != 0){
+			print("exchange: ipc invalid page alignment: %#p\n", user_vaddr);
+			goto skip_page;
+		}
+
+		if(ch->owner != up){
+			print("exchange: ipc process mismatch: owner %p != up %p\n", ch->owner, up);
+			goto skip_page;
+		}
+
+		pte = mmuwalk(m->pml4, user_vaddr, 0, 0);
+		if(pte == nil || (*pte & PTEVALID) == 0){
+			print("exchange: ipc invalid page mapping: %#p\n", user_vaddr);
+			goto skip_page;
+		}
+
+		page_phys = PADDR(*pte);
+		if(!pageown_is_owned(page_phys)){
+			print("exchange: ipc page not owned: pa=%#p\n", page_phys);
+			goto skip_page;
+		}
+
+		if(pageown_get_owner(page_phys) != ch->owner){
+			print("exchange: ipc page owned by different process: pa=%#p\n", page_phys);
+			goto skip_page;
+		}
+
+		if(!pageown_can_borrow_shared(page_phys)){
+			print("exchange: ipc page has active mutable borrow: pa=%#p\n", page_phys);
+			goto skip_page;
+		}
+
+		u64int saved_pte = *pte;
+		*pte = 0;
+		putcr3(getcr3());
+
+		batch = (struct BatchHeader*)hhdm_virt(page_phys);
+
+		u32int batch_magic = batch->magic;
+		u16int batch_num_messages = batch->num_messages;
+		u16int batch_used_bytes = batch->used_bytes;
+		u64int batch_seqno = batch->nonce;
+
+		if(batch_magic != BATCH_PAGE_MAGIC){
+			print("exchange: ipc invalid batch magic: %#ux\n", batch_magic);
+			goto restore_page;
+		}
+		if(batch_num_messages > 256){
+			print("exchange: ipc too many messages: %ud\n", batch_num_messages);
+			goto restore_page;
+		}
+		if(batch_used_bytes < BATCH_DATA_START || batch_used_bytes > 4096){
+			print("exchange: ipc invalid used_bytes: %ud\n", batch_used_bytes);
+			goto restore_page;
+		}
+		if(batch_seqno <= ch->ipc_last_seqno){
+			print("exchange: ipc replay detected: seqno %llud <= last %llud\n",
+				batch_seqno, ch->ipc_last_seqno);
+			goto restore_page;
+		}
+		ch->ipc_last_seqno = batch_seqno;
+
+		if(p9_build_reply_batch(up, batch, batch_num_messages, batch_used_bytes,
+			batch_seqno) < 0)
+			print("exchange: ipc failed to build reply batch\n");
+
+	restore_page:
+		*pte = saved_pte;
+		putcr3(getcr3());
+
+	skip_page:
+		u32int c_tail = chan->completion.tail;
+		chan->completion.pages[c_tail & RING_MASK] = page_handle;
+		chan->completion.tail++;
+
+		head++;
+	}
+
+	chan->submission.head = head;
+	return 0;
+}
+
 static void
 exchinit(void)
 {
@@ -468,7 +678,7 @@ exchstat(Chan *c, uchar *dp, int n)
 	subfile = SUBFILE(c->qid.path);
 
 	/* Stats for channel files */
-	if(subfile >= Qchandir && subfile <= Qpeers)
+	if((subfile >= Qchandir && subfile <= Qpeers) || subfile == Qipcring)
 		return devstat(c, dp, n, chandir, nelem(chandir), devgen);
 
 	/* Stats for top-level files */
@@ -508,6 +718,9 @@ exchopen(Chan *c, int omode)
 
 	case Qring:
 		/* Ring buffer: will be mmap'd */
+		break;
+	case Qipcring:
+		/* IPC ring buffer: will be mmap'd */
 		break;
 
 	case Qstats:
@@ -671,6 +884,18 @@ exchread(Chan *c, void *buf, long n, vlong off)
 		memmove(buf, &ch->ring_cap, sizeof(UserCapability));
 		channel_put(ch);
 		return sizeof(UserCapability);
+	case Qipcring:
+		/* Return IPC ring capability for mapping */
+		chan_id = CHANID(c->qid.path);
+		ch = channel_get(chan_id);
+		if(ch == nil)
+			error("invalid channel");
+
+		if(n < sizeof(UserCapability))
+			n = sizeof(UserCapability);
+		memmove(buf, &ch->ipc_cap, sizeof(UserCapability));
+		channel_put(ch);
+		return sizeof(UserCapability);
 
 	case Qpeers:
 		/* Return peer list (if any) */
@@ -830,6 +1055,14 @@ exchwrite(Chan *c, void *vp, long n, vlong off)
 			/* Store channel pointer in process for later segattach */
 			/* In full implementation, would use up->exch_channel or similar */
 			/* For now, userspace can use segattach(SG_PHYSICAL, "#X/N/ring", ...) */
+		}
+		else if(strcmp(fields[0], "kickipc") == 0){
+			/* Process IPC ring submissions */
+			if(exchange_ipc_process(ch) < 0){
+				channel_put(ch);
+				free(buf);
+				error("ipc ring processing failed");
+			}
 		}
 		else {
 			channel_put(ch);

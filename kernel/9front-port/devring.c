@@ -4,9 +4,11 @@
 #include "dat.h"
 #include "error.h"
 #include "fns.h"
+#include "fcall.h"
 #include "hhdm.h"
 #include "ipc_ring.h"
 #include "mem.h"
+#include "9p_router.h"
 #include "pageown.h"
 #include "pebble.h"
 
@@ -62,7 +64,21 @@ static long ringread(Chan *c, void *va, long n, vlong offset) {
   return devdirread(c, va, n, ringdir, nelem(ringdir), devgen);
 }
 
-static long ringwrite(Chan *c, void *va, long n, vlong offset) { return n; }
+static long ringwrite(Chan *c, void *va, long n, vlong offset) {
+  struct ChannelState *cs;
+
+  if ((ulong)c->qid.path == Qctl) {
+    cs = channels[0];
+    if (cs == nil)
+      error("ring: no channel");
+    if (cs->owner != up)
+      error("ring: not channel owner");
+    ring_process_batch(cs);
+    return n;
+  }
+
+  return n;
+}
 
 /* mmap: Map the Control Page */
 static void *ringmmap(Chan *c, void *addr, long len, ulong offset) {
@@ -100,15 +116,75 @@ static void *ringmmap(Chan *c, void *addr, long len, ulong offset) {
   return channels[0]->kmap_addr;
 }
 
-/*
- * Process a single 9P message from the batch.
- */
-static void process_message(u8int *data, int len) {
-  /*
-   * Real implementation would dispatch to 9P server logic.
-   * For now, just debug print.
-   */
-  // print("Ring Msg: len=%d\n", len);
+static void build_error_reply(Fcall *r, ushort tag, char *ename) {
+  memset(r, 0, sizeof(*r));
+  r->type = Rerror;
+  r->tag = tag;
+  r->ename = ename;
+}
+
+static int p9_build_reply_batch(Proc *caller, BatchHeader *batch,
+                                u16int batch_num_messages,
+                                u16int batch_used_bytes, u64int batch_seqno) {
+  uchar *resp_page;
+  BatchHeader *resp;
+  int read_offset;
+  int write_offset;
+  int i;
+
+  resp_page = smalloc(BY2PG);
+  if (resp_page == nil)
+    return -1;
+  memset(resp_page, 0, BY2PG);
+
+  resp = (BatchHeader *)resp_page;
+  resp->magic = BATCH_PAGE_MAGIC;
+  resp->nonce = batch_seqno;
+  resp->num_messages = 0;
+  resp->used_bytes = BATCH_DATA_START;
+
+  read_offset = BATCH_DATA_START;
+  write_offset = BATCH_DATA_START;
+  for (i = 0; i < batch_num_messages; i++) {
+    if (read_offset + BIT16SZ > batch_used_bytes)
+      break;
+
+    u16int msg_len = GBIT16((u8int *)batch + read_offset);
+    read_offset += BIT16SZ;
+    if (msg_len == 0 || msg_len > P9_MSG_SIZE)
+      break;
+    if (read_offset + msg_len > batch_used_bytes)
+      break;
+
+    Fcall t, r;
+    memset(&t, 0, sizeof(t));
+    if (convM2S((u8int *)batch + read_offset, msg_len, &t) == 0) {
+      build_error_reply(&r, NOTAG, "bad 9p message");
+    } else {
+      memset(&r, 0, sizeof(r));
+      if (p9_dispatch(caller, &t, &r) < 0 && r.type != Rerror)
+        build_error_reply(&r, t.tag, "dispatch failed");
+    }
+
+    if (write_offset + BIT16SZ >= BY2PG)
+      break;
+    u16int avail = BY2PG - (write_offset + BIT16SZ);
+    u16int rep_size =
+        convS2M(&r, resp_page + write_offset + BIT16SZ, avail);
+    if (rep_size == 0)
+      break;
+
+    PBIT16(resp_page + write_offset, rep_size);
+    write_offset += BIT16SZ + rep_size;
+    resp->num_messages++;
+    resp->used_bytes = write_offset;
+
+    read_offset += msg_len;
+  }
+
+  memmove(batch, resp_page, BY2PG);
+  free(resp_page);
+  return 0;
 }
 
 /*
@@ -124,7 +200,6 @@ static void ring_process_batch(struct ChannelState *cs) {
   u64int page_handle;
   uintptr page_phys, user_vaddr;
   struct BatchHeader *batch;
-  int i, offset;
   u64int *pte;
 
   head = chan->submission.head;
@@ -229,40 +304,9 @@ static void ring_process_batch(struct ChannelState *cs) {
      * ANTI-TOCTOU: Use copied values (batch_num_messages, batch_used_bytes)
      * from stack, not from batch page. User cannot modify them anymore.
      */
-    offset = BATCH_DATA_START;
-    for (i = 0; i < batch_num_messages; i++) {
-      /* Check we can read message length */
-      if (offset + 2 > batch_used_bytes) {
-        print("ring: message header exceeds used_bytes at offset %d\n", offset);
-        break;
-      }
-
-      /* ANTI-TOCTOU: Copy message length to stack before validation
-       * Prevents user from modifying msg_len between check and use
-       */
-      u16int msg_len = *(u16int *)((u8int *)batch + offset);
-      offset += 2;
-
-      /* SECURITY: Validate message length */
-      if (msg_len > 8192) {
-        print("ring: message too large: %ud bytes\n", msg_len);
-        break;
-      }
-
-      /* Check message data fits in batch */
-      if (offset + msg_len > batch_used_bytes) {
-        print("ring: message data exceeds used_bytes\n");
-        break;
-      }
-
-      /* Check no integer overflow */
-      if (offset + msg_len < offset) {
-        print("ring: integer overflow in message bounds\n");
-        break;
-      }
-
-      process_message((u8int *)batch + offset, msg_len);
-      offset += msg_len;
+    if (p9_build_reply_batch(up, batch, batch_num_messages, batch_used_bytes,
+                             batch_seqno) < 0) {
+      print("ring: failed to build reply batch\n");
     }
 
   restore_page:
