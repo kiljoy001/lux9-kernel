@@ -91,6 +91,7 @@ static uintptr wasm_linear_base(Proc *p, u32int map_bytes) {
  * headers */
 #define PERM_WASM_COMPILE (1UL << 16) /* Can compile WASM modules */
 #define PERM_WASM_EXECUTE (1UL << 17) /* Can execute WASM functions */
+#define PERM_WASM_NET (1UL << 18)     /* Allow WASI sockets/poll */
 
 /* Global isolated runtime (initialized at boot) */
 static WasmRuntime wasm_runtime;
@@ -467,6 +468,10 @@ static int wasm_map_linear_memory(Proc *p) {
   ulong guard_pages = WASM_LINEAR_GUARD / BY2PG;
   if (guard_low < UTZERO)
     return -1;
+  if (p->seg[SEG4] && guard_low < p->seg[SEG4]->top)
+    return -1;
+  if (guard_high + WASM_LINEAR_GUARD > USTKTOP)
+    return -1;
   if (wasm_map_guard(p, SEG2, guard_low, guard_pages) < 0) {
     wasm_unmap_linear_memory(p);
     return -1;
@@ -746,7 +751,10 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx);
 
     /* Link WASI functions */
-    M3Result link_res = LinkWasi((IM3Module)up->wasm.module);
+    u32int allow_mask = WASI_ALLOW_DEFAULT;
+    if (up->capabilities & PERM_WASM_NET)
+      allow_mask |= (WASI_ALLOW_SOCK | WASI_ALLOW_POLL);
+    M3Result link_res = LinkWasi((IM3Module)up->wasm.module, allow_mask);
     if (link_res) {
       print("wasm_runtime: WASI link warning: %s\n", link_res);
     }

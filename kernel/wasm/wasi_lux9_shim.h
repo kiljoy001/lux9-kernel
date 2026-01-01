@@ -41,11 +41,26 @@ typedef struct {
   u32int exit_code;
 } wasi_context_t;
 
+/* WASI allowlist flags */
+#define WASI_ALLOW_ARGS 0x00000001u
+#define WASI_ALLOW_CLOCK 0x00000002u
+#define WASI_ALLOW_RANDOM 0x00000004u
+#define WASI_ALLOW_FD 0x00000008u
+#define WASI_ALLOW_PATH 0x00000010u
+#define WASI_ALLOW_DIR 0x00000020u
+#define WASI_ALLOW_PROC 0x00000040u
+#define WASI_ALLOW_POLL 0x00000080u
+#define WASI_ALLOW_SOCK 0x00000100u
+
+#define WASI_ALLOW_DEFAULT                                                     \
+  (WASI_ALLOW_ARGS | WASI_ALLOW_CLOCK | WASI_ALLOW_RANDOM | WASI_ALLOW_FD |    \
+   WASI_ALLOW_PATH | WASI_ALLOW_DIR | WASI_ALLOW_PROC | WASI_ALLOW_POLL)
+
 /* Initialization */
 void wasi_lux9_init_context(wasi_context_t *ctx);
 void wasi_lux9_destroy_context(wasi_context_t *ctx);
 
 /* Link WASI functions to module */
-M3Result LinkWasi(IM3Module module);
+M3Result LinkWasi(IM3Module module, u32int allow_mask);
 
 #endif // WASI_LUX9_SHIM_H

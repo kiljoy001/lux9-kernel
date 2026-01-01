@@ -56,6 +56,19 @@ static uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
   return p;
 }
 
+static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
+  if (!p || !p->p9page || !ptr || len == 0)
+    return 0;
+  uintptr base = (uintptr)p->p9page + P9_REQUEST_OFFSET;
+  uintptr end = base + P9_REQUEST_SIZE;
+  uintptr addr = (uintptr)ptr;
+  if (addr < base)
+    return 0;
+  if (addr + len < addr || addr + len > end)
+    return 0;
+  return 1;
+}
+
 /*
  * Path matching for routing
  */
@@ -341,6 +354,20 @@ static void remove_fid(int fid) { fdclose(fid, 0); }
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
 
+  if (p->wasm.initialized) {
+    if (t->data && t->count > 0 && !p9_exchange_contains(p, t->data, t->count)) {
+      r->type = Rerror;
+      r->ename = "wasm data must use exchange page";
+      return -1;
+    }
+    if (t->sdata && t->scount > 0 &&
+        !p9_exchange_contains(p, t->sdata, t->scount)) {
+      r->type = Rerror;
+      r->ename = "wasm sdata must use exchange page";
+      return -1;
+    }
+  }
+
   /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
     char *path;
@@ -451,6 +478,19 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     Proc *proc = p;
     uchar *p = t->sdata;
     uchar *ep = t->sdata + t->scount;
+
+    if (proc->wasm.initialized) {
+      switch (t->scallnr) {
+      case SYS_WASM_COMPILE:
+      case SYS_WASM_EXECUTE:
+      case SYS_WASM_DESTROY:
+        break;
+      default:
+        r->type = Rerror;
+        r->ename = "wasm tsyscall blocked";
+        return -1;
+      }
+    }
 
     switch (t->scallnr) {
     case SYS_OPEN: {

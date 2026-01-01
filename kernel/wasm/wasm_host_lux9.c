@@ -23,14 +23,22 @@
 #define nil ((void *)0)
 #endif
 
+static int wasm_ptr_in_bounds(IM3Runtime runtime, uint32_t ptr, uint32_t len) {
+  uint32_t memsize = m3_GetMemorySize(runtime);
+  if (ptr > memsize)
+    return 0;
+  if (len > memsize - ptr)
+    return 0;
+  return 1;
+}
+
 /* ========== Host Function Implementations ========== */
 
 /* lux9_print(ptr: i32, len: i32) -> void */
 m3ApiRawFunction(host_lux9_print) {
   m3ApiGetArg(uint32_t, ptr) m3ApiGetArg(uint32_t, len)
 
-      uint32_t memsize = m3_GetMemorySize(runtime);
-  if (ptr + len > memsize) {
+  if (!wasm_ptr_in_bounds(runtime, ptr, len)) {
     m3ApiTrap(m3Err_trapOutOfBoundsMemoryAccess);
   }
 
@@ -76,9 +84,8 @@ m3ApiRawFunction(host_lux9_meminfo) {
 m3ApiRawFunction(host_lux9_panic) {
   m3ApiGetArg(uint32_t, ptr) m3ApiGetArg(uint32_t, len)
 
-      uint32_t memsize = m3_GetMemorySize(runtime);
-  if (ptr + len > memsize) {
-    panic("WASM panic: invalid memory access");
+  if (!wasm_ptr_in_bounds(runtime, ptr, len)) {
+    m3ApiTrap(m3Err_trapOutOfBoundsMemoryAccess);
   }
 
   char *str = (char *)m3ApiOffsetToPtr(ptr);
