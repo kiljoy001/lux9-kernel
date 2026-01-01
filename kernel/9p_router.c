@@ -4739,12 +4739,20 @@ int fd_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 static wasm_fileserver_t *global_wasm_server = nil;
 
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
+  USED(caller);
   r->tag = t->tag;
 
   switch (t->type) {
   case Tattach:
     /* Capability already validated in router - just attach to root */
-    /* TODO: Initialize WASM server if not already loaded */
+    if (!global_wasm_server) {
+      global_wasm_server = wasm_fileserver_load("/boot/server.wasm", 0);
+      if (!global_wasm_server) {
+        r->type = Rerror;
+        r->ename = "failed to load wasm server";
+        return -1;
+      }
+    }
     r->type = Rattach;
     r->qid.type = QTDIR;
     r->qid.path = 0;
@@ -4760,63 +4768,19 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   case Tstat:
   case Twstat:
   case Tremove: {
-    /* Submit to WASM server via msgord + exchange pages */
+    /* Handle synchronously in WASM server */
     if (!global_wasm_server) {
       r->type = Rerror;
       r->ename = "no wasm server loaded";
       return -1;
     }
 
-    /* Submit message to WASM server's msgord queue
-     * This is non-blocking - message will be processed in consensus order
-     * Response will be delivered asynchronously
-     *
-     * TODO: For synchronous 9P, we need to block and wait for response
-     * TODO: Implement async completion callback to return response
-     *
-     * For now, return stub responses
-     */
-
-    char path[256];
-    snprint(path, sizeof(path), "wasm_server");
-
-    uint msg_id = wasm_fs_submit(global_wasm_server, caller, t, path);
-    if (msg_id == 0) {
+    if (wasm_fs_handle_fcall(global_wasm_server, t, r) < 0) {
       r->type = Rerror;
-      r->ename = "message submission failed";
+      r->ename = "wasm handler failed";
       return -1;
     }
-
-    /* Stub responses until async completion is implemented */
-    switch (t->type) {
-    case Twalk:
-      r->type = Rwalk;
-      r->nwqid = 0;
-      break;
-    case Topen:
-      r->type = Ropen;
-      r->qid.type = QTFILE;
-      r->qid.path = 0;
-      r->iounit = 0;
-      break;
-    case Tread:
-      r->type = Rread;
-      r->count = 0;
-      r->data = nil;
-      break;
-    case Twrite:
-      r->type = Rwrite;
-      r->count = t->count;
-      break;
-    case Tstat:
-      r->type = Rerror;
-      r->ename = "stat not implemented";
-      return -1;
-    default:
-      r->type = Rerror;
-      r->ename = "operation not implemented";
-      return -1;
-    }
+    r->tag = t->tag;
     return 0;
   }
 

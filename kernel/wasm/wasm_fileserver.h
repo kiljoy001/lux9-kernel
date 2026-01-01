@@ -72,6 +72,8 @@ typedef struct wasm_fileserver {
   IM3Module module;       /* Loaded WASM module */
   void *memory;           /* Linear memory pointer (maps to exchange pages) */
   u32int memory_size;     /* Memory size in bytes */
+  u8int *module_bytes;    /* Raw module bytes (must outlive module) */
+  u32int module_size;     /* Size of module bytes */
 
   /* Exchange page pool for parallel message submission */
   ExchangeHandle *pages;  /* Pool of exchange pages */
@@ -124,6 +126,10 @@ int wasm_fs_process_next(wasm_fileserver_t *server);
  * Useful for batch processing.
  */
 int wasm_fs_process_all(wasm_fileserver_t *server);
+
+/* Handle a single 9P request synchronously via fs_handle_message */
+int wasm_fs_handle_fcall(wasm_fileserver_t *server, Fcall *request,
+                         Fcall *response);
 
 /* Get an available exchange page from pool
  *

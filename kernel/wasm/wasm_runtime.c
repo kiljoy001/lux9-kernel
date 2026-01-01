@@ -98,6 +98,32 @@ static int runtime_initialized = 0;
 static uchar wasm_compile_reply[8];
 static uchar wasm_execute_reply[8];
 
+static const char *wasm_trap_label(M3Result result) {
+  if (!result)
+    return nil;
+  if (strcmp(result, m3Err_trapOutOfBoundsMemoryAccess) == 0)
+    return "out of bounds memory access";
+  if (strcmp(result, m3Err_trapDivisionByZero) == 0)
+    return "division by zero";
+  if (strcmp(result, m3Err_trapIntegerOverflow) == 0)
+    return "integer overflow";
+  if (strcmp(result, m3Err_trapIntegerConversion) == 0)
+    return "invalid integer conversion";
+  if (strcmp(result, m3Err_trapIndirectCallTypeMismatch) == 0)
+    return "indirect call type mismatch";
+  if (strcmp(result, m3Err_trapTableIndexOutOfRange) == 0)
+    return "table index out of range";
+  if (strcmp(result, m3Err_trapTableElementIsNull) == 0)
+    return "null table element";
+  if (strcmp(result, m3Err_trapUnreachable) == 0)
+    return "unreachable executed";
+  if (strcmp(result, m3Err_trapStackOverflow) == 0)
+    return "stack overflow";
+  if (strcmp(result, m3Err_trapAbort) == 0)
+    return "abort";
+  return nil;
+}
+
 static int wasm_heap_init(Proc *p) {
   if (!p)
     return -1;
@@ -159,6 +185,11 @@ static int wasm_charge_linear(Proc *p, u32int new_size) {
     return -1;
 
   u32int old_size = p->wasm.linear_charged;
+  if (p->wasm.branch.max_tokens > 0) {
+    u64int cap = (u64int)p->wasm.branch.max_tokens;
+    if ((u64int)new_size + (u64int)p->wasm.heap_live > cap)
+      return -1;
+  }
   if (new_size == old_size)
     return 0;
 
@@ -211,6 +242,13 @@ void *wasm_heap_alloc(size_t size) {
   size = ROUNDUP(size, WASM_HEAP_ALIGN);
   if (size == 0)
     size = WASM_HEAP_ALIGN;
+  if (p->wasm.branch.max_tokens > 0) {
+    u64int cap = (u64int)p->wasm.branch.max_tokens;
+    if ((u64int)size + (u64int)p->wasm.heap_live +
+            (u64int)p->wasm.linear_charged >
+        cap)
+      return nil;
+  }
 
   WasmHeapBlock *prev = nil;
   WasmHeapBlock *cur = (WasmHeapBlock *)p->wasm.heap_head;
@@ -307,6 +345,13 @@ void *wasm_heap_realloc(void *ptr, size_t new_size, size_t old_size) {
         u8int *heap_end = p->wasm.heap_base + p->wasm.heap_used;
         if (!blk->free && blk_end == heap_end &&
             (p->wasm.heap_used + delta) <= p->wasm.heap_size) {
+          if (p->wasm.branch.max_tokens > 0) {
+            u64int cap = (u64int)p->wasm.branch.max_tokens;
+            if ((u64int)delta + (u64int)p->wasm.heap_live +
+                    (u64int)p->wasm.linear_charged >
+                cap)
+              return nil;
+          }
           if (arena_branch_alloc(&p->wasm.branch, delta) == 0) {
             blk->size = needed;
             p->wasm.heap_used += delta;
@@ -631,7 +676,14 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     return -1;
   }
 
-  arena_branch_init(&up->wasm.branch, ps, 1024 * 1024);
+  u64int branch_cap = (u64int)WASM_MAX_LINEAR_BYTES + WASM_HEAP_BYTES;
+  if (branch_cap < (1024 * 1024))
+    branch_cap = 1024 * 1024;
+  ulong initial_budget = 1024 * 1024;
+  if ((u64int)initial_budget > branch_cap)
+    initial_budget = (ulong)branch_cap;
+  arena_branch_init(&up->wasm.branch, ps, initial_budget);
+  up->wasm.branch.max_tokens = (ulong)ROUNDUP(branch_cap, PEBBLE_MEM_PER_TOKEN);
   if (wasm_heap_init(up) < 0) {
     snprint(rx->ename, sizeof(rx->ename), "failed to init wasm heap");
     wasm_runtime.stats.errors++;
@@ -883,8 +935,23 @@ int sys_wasm_execute(Fcall *tx, Fcall *rx) {
   result = m3_Call(func, argc, (const void **)arg_ptrs);
 
   if (result) {
+    if (strcmp(result, m3Err_trapExit) == 0) {
+      u32int exit_code = 0;
+      if (up->wasm.wasi_ctx)
+        exit_code = ((wasi_context_t *)up->wasm.wasi_ctx)->exit_code;
+      rx->type = Rsyscall;
+      rx->tag = tx->tag;
+      rx->retval = exit_code;
+      rx->scount = 0;
+      rx->sdata = nil;
+      return 0;
+    }
+    const char *trap = wasm_trap_label(result);
     rx->type = Rerror;
-    snprint(rx->ename, sizeof(rx->ename), "execution failed: %s", result);
+    if (trap)
+      snprint(rx->ename, sizeof(rx->ename), "trap: %s", trap);
+    else
+      snprint(rx->ename, sizeof(rx->ename), "execution failed: %s", result);
     wasm_runtime.stats.errors++;
     return -1;
   }

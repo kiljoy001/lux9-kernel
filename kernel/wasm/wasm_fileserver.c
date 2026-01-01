@@ -4,7 +4,9 @@
  * High-bandwidth, lock-free, totally ordered message processing.
  */
 
+#include "../include/9p_router.h"
 #include "../include/dat.h"
+#include "../include/fcall.h"
 #include "../include/fns.h"
 #include "../include/mem.h"
 #include "../include/portlib.h"
@@ -55,6 +57,7 @@ wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path,
   wasm_fileserver_t *server = malloc(sizeof(wasm_fileserver_t));
   if (!server)
     return nil;
+  memset(server, 0, sizeof(*server));
 
   /* Create WASM3 runtime (64KB stack) */
   server->runtime = m3_NewRuntime(wasm_env, 64 * 1024, nil);
@@ -64,13 +67,77 @@ wasm_fileserver_t *wasm_fileserver_load(const char *wasm_path,
     return nil;
   }
 
-  /* TODO: Load WASM module from file
-   * For now, assume wasm_path points to WASM bytes in memory
-   * In real implementation, use file I/O to load the .wasm file
-   */
+  /* Load WASM module from file */
+  Chan *c = namec(wasm_path, Aopen, OREAD, 0);
+  if (c == nil) {
+    print("wasm_fileserver: failed to open %s\n", wasm_path);
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
 
-  /* TODO: Parse and load module */
-  server->module = nil; /* Will be set when we have actual WASM bytes */
+  if (waserror()) {
+    cclose(c);
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
+
+  Dir d;
+  devtab[c->type]->stat(c, (uchar *)&d, sizeof(Dir));
+  if (d.length <= 0) {
+    print("wasm_fileserver: empty module %s\n", wasm_path);
+    cclose(c);
+    poperror();
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
+
+  server->module_size = (u32int)d.length;
+  server->module_bytes = mallocz(server->module_size, 0);
+  if (!server->module_bytes) {
+    cclose(c);
+    poperror();
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
+
+  long nread =
+      devtab[c->type]->read(c, server->module_bytes, server->module_size, 0);
+  cclose(c);
+  poperror();
+  if (nread != (long)server->module_size) {
+    print("wasm_fileserver: short read %s (%ld/%ud)\n", wasm_path, nread,
+          server->module_size);
+    free(server->module_bytes);
+    server->module_bytes = nil;
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
+
+  result = m3_ParseModule(wasm_env, &server->module, server->module_bytes,
+                          server->module_size);
+  if (result) {
+    print("wasm_fileserver: module parse failed: %s\n", result);
+    free(server->module_bytes);
+    server->module_bytes = nil;
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
+
+  result = m3_LoadModule(server->runtime, server->module);
+  if (result) {
+    print("wasm_fileserver: module load failed: %s\n", result);
+    free(server->module_bytes);
+    server->module_bytes = nil;
+    m3_FreeRuntime(server->runtime);
+    free(server);
+    return nil;
+  }
 
   /* Get linear memory pointer */
   server->memory = m3_GetMemory(server->runtime, &server->memory_size, 0);
@@ -124,6 +191,8 @@ void wasm_fileserver_destroy(wasm_fileserver_t *server) {
   /* Cleanup WASM3 runtime (frees module too) */
   if (server->runtime)
     m3_FreeRuntime(server->runtime);
+  if (server->module_bytes)
+    free(server->module_bytes);
 
   print("wasm_fileserver: destroyed\n");
   free(server);
@@ -362,9 +431,6 @@ int wasm_fs_autoscale_tick(wasm_fileserver_t *server) {
 /* ========== Message Processing ========== */
 
 int wasm_fs_process_next(wasm_fileserver_t *server) {
-  M3Result result;
-  IM3Function func;
-
   if (!server || !server->msgord)
     return -1;
 
@@ -375,44 +441,29 @@ int wasm_fs_process_next(wasm_fileserver_t *server) {
 
   print("wasm_fs: processing msg %u\n", msg->gm_id);
 
-  /* If module is loaded, call WASM function */
-  if (server->module && server->runtime) {
-    /* Find the fs_handle_message export */
-    result = m3_FindFunction(&func, server->runtime, "fs_handle_message");
-    if (result) {
-      print("wasm_fs: fs_handle_message not found: %s\n", result);
-      goto complete;
+  Fcall reply;
+  memset(&reply, 0, sizeof(reply));
+  reply.tag = msg->gm_payload.fcall ? msg->gm_payload.fcall->tag : 0;
+
+  if (server->module && server->runtime && msg->gm_payload.fcall) {
+    if (wasm_fs_handle_fcall(server, msg->gm_payload.fcall, &reply) < 0) {
+      reply.type = Rerror;
+      reply.ename = "wasm fs_handle_message failed";
     }
-
-    /* TODO: Marshal 9P message into WASM linear memory
-     * 1. Write Fcall to linear memory at offset 0
-     * 2. Call fs_handle_message(offset=0, size=msg_size)
-     * 3. Read response from linear memory
-     *
-     * For now, just call with dummy arguments
-     */
-
-    const void *ret_ptr;
-    u32int msg_offset = 0;
-    u32int msg_size = 1024; /* TODO: actual message size */
-
-    result = m3_CallV(func, msg_offset, msg_size);
-    if (result) {
-      print("wasm_fs: WASM call failed: %s\n", result);
-      goto complete;
-    }
-
-    /* Get return value (response size) */
-    uint32_t response_size = 0;
-    result = m3_GetResultsV(func, &response_size);
-    if (!result) {
-      print("wasm_fs: WASM returned response_size=%u\n", response_size);
-    }
-
-    /* TODO: Read response from WASM linear memory */
-    /* TODO: Send response back to caller */
   } else {
-    print("wasm_fs: no WASM module loaded, skipping execution\n");
+    reply.type = Rerror;
+    reply.ename = "wasm server not initialized";
+  }
+
+  if (msg->gm_caller && msg->gm_caller->p9page) {
+    P9Control *ctl =
+        (P9Control *)((uintptr)msg->gm_caller->p9page + P9_CONTROL_OFFSET);
+    uchar *rep_buf = (uchar *)msg->gm_caller->p9page + P9_REPLY_OFFSET;
+    uint rep_size = convS2M(&reply, rep_buf, P9_REPLY_SIZE);
+    ctl->rep_head = 0;
+    ctl->rep_tail = rep_size;
+    ctl->rep_seq++;
+    atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
   }
 
 complete:
@@ -431,4 +482,74 @@ int wasm_fs_process_all(wasm_fileserver_t *server) {
     count++;
 
   return count;
+}
+
+int wasm_fs_handle_fcall(wasm_fileserver_t *server, Fcall *request,
+                         Fcall *response) {
+  if (!server || !server->runtime || !server->module || !request || !response)
+    return -1;
+
+  server->memory = m3_GetMemory(server->runtime, &server->memory_size, 0);
+  if (!server->memory || server->memory_size == 0) {
+    print("wasm_fs: no linear memory\n");
+    return -1;
+  }
+
+  IM3Function func;
+  M3Result result = m3_FindFunction(&func, server->runtime, "fs_handle_message");
+  if (result) {
+    print("wasm_fs: fs_handle_message not found: %s\n", result);
+    return -1;
+  }
+
+  u32int req_size = sizeS2M(request);
+  if (req_size == 0 || req_size > server->memory_size) {
+    print("wasm_fs: invalid request size %ud\n", req_size);
+    return -1;
+  }
+
+  u32int req_off = 0;
+  u32int resp_off = (req_size + 7) & ~7U;
+  if (resp_off >= server->memory_size) {
+    print("wasm_fs: no space for response buffer\n");
+    return -1;
+  }
+
+  u32int resp_cap = server->memory_size - resp_off;
+  if (resp_cap < BIT32SZ + BIT8SZ + BIT16SZ) {
+    print("wasm_fs: response buffer too small\n");
+    return -1;
+  }
+
+  u8int *mem = (u8int *)server->memory;
+  if (convS2M(request, mem + req_off, req_size) == 0) {
+    print("wasm_fs: request marshal failed\n");
+    return -1;
+  }
+
+  result = m3_CallV(func, req_off, req_size, resp_off, resp_cap);
+  if (result) {
+    print("wasm_fs: WASM call failed: %s\n", result);
+    return -1;
+  }
+
+  uint32_t resp_size = 0;
+  result = m3_GetResultsV(func, &resp_size);
+  if (result) {
+    print("wasm_fs: failed to read response size: %s\n", result);
+    return -1;
+  }
+
+  if (resp_size == 0 || resp_size > resp_cap) {
+    print("wasm_fs: invalid response size %u (cap=%ud)\n", resp_size,
+          resp_cap);
+    return -1;
+  }
+
+  if (convM2S(mem + resp_off, resp_size, response) == 0) {
+    print("wasm_fs: response parse failed\n");
+    return -1;
+  }
+
+  return 0;
 }

@@ -348,6 +348,77 @@ static int wasi_fd_backend(wasi_context_t *ctx, int fd) {
   return ctx->fds[fd].backend;
 }
 
+static uint32_t wasi_dirents_from_plan9(Proc *p, int fd, uint8_t *out,
+                                        uint32_t out_len, uint64_t cookie,
+                                        uint32_t *out_used) {
+  uint8_t *raw = malloc(out_len);
+  if (!raw)
+    return WASI_ERRNO_NOMEM;
+
+  if (cookie > 0) {
+    if (kseek(fd, (vlong)cookie, 0) < 0) {
+      free(raw);
+      return WASI_ERRNO_IO;
+    }
+  }
+
+  long n = kread(fd, raw, out_len);
+  if (n < 0) {
+    free(raw);
+    return WASI_ERRNO_IO;
+  }
+
+  uint32_t used = 0;
+  uint32_t off = 0;
+  while (off + 2 <= (uint32_t)n) {
+    uint16_t ent_len = GBIT16(raw + off);
+    if (ent_len < 2 || off + ent_len > (uint32_t)n)
+      break;
+
+    Dir d;
+    char *strs = malloc(ent_len + 1);
+    if (!strs) {
+      free(raw);
+      return WASI_ERRNO_NOMEM;
+    }
+
+    uint32_t conv = convM2D(raw + off, ent_len, &d, strs);
+    if (conv == 0) {
+      free(strs);
+      break;
+    }
+
+    uint32_t name_len = (uint32_t)strlen(d.name);
+    uint32_t need = 24 + name_len;
+    if (used + need > out_len) {
+      free(strs);
+      break;
+    }
+
+    uint64_t next = cookie + off + ent_len;
+    wasi_write_le64(out + used + 0, next);
+    wasi_write_le64(out + used + 8, d.qid.path);
+    wasi_write_le32(out + used + 16, name_len);
+    if (d.mode & DMDIR) {
+      out[used + 20] = WASI_FILETYPE_DIRECTORY;
+    } else {
+      out[used + 20] = WASI_FILETYPE_REGULAR_FILE;
+    }
+    out[used + 21] = 0;
+    out[used + 22] = 0;
+    out[used + 23] = 0;
+    memmove(out + used + 24, d.name, name_len);
+    used += need;
+
+    free(strs);
+    off += ent_len;
+  }
+
+  free(raw);
+  *out_used = used;
+  return WASI_ERRNO_SUCCESS;
+}
+
 static int wasi_is_posix_path(const char *path, uint32_t path_len) {
   if (path_len < sizeof(wasi_posix_root_path) - 1)
     return 0;
@@ -419,6 +490,8 @@ static uint32_t wasi_build_path(wasi_context_t *ctx, int dirfd,
 
   if (absolute) {
     if (path_len < 5 || memcmp(path, "/wasm", 5) != 0)
+      return WASI_ERRNO_NOTCAPABLE;
+    if (wasi_is_posix_path(path, path_len) && !ctx->fds[4].is_open)
       return WASI_ERRNO_NOTCAPABLE;
     total = (size_t)path_len + 1;
     full = malloc(total);
@@ -640,6 +713,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
   m3ApiGetArg(int32_t, rval)
 
       print("Pretend exiting with code %d\n", rval);
+  if (up->wasm.wasi_ctx)
+    ((wasi_context_t *)up->wasm.wasi_ctx)->exit_code = (u32int)rval;
 
   m3ApiTrap(m3Err_trapExit);
 }
@@ -1477,102 +1552,28 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_readdir) {
     m3ApiReturn(WASI_ERRNO_NOTDIR);
 
   if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX) {
-    if (!ctx->fds[fd].is_dir)
-      m3ApiReturn(WASI_ERRNO_NOTDIR);
-
-    if (cookie > 0) {
-      if (kseek(ctx->fds[fd].lux9_fid, (vlong)cookie, 0) < 0)
-        m3ApiReturn(WASI_ERRNO_IO);
-    }
-
-    uint8_t *raw = malloc(buf_len);
-    if (!raw)
-      m3ApiReturn(WASI_ERRNO_NOMEM);
-    long n = kread(ctx->fds[fd].lux9_fid, raw, buf_len);
-    if (n < 0) {
-      free(raw);
-      m3ApiReturn(WASI_ERRNO_IO);
-    }
-
-    uint8_t *out = (uint8_t *)m3ApiOffsetToPtr(buf_ptr);
     uint32_t used = 0;
-    uint32_t off = 0;
-    while (off + 2 <= (uint32_t)n) {
-      uint16_t ent_len = GBIT16(raw + off);
-      if (ent_len < 2 || off + ent_len > (uint32_t)n)
-        break;
-
-      Dir d;
-      char *strs = malloc(ent_len + 1);
-      if (!strs) {
-        free(raw);
-        m3ApiReturn(WASI_ERRNO_NOMEM);
-      }
-
-      uint32_t conv = convM2D(raw + off, ent_len, &d, strs);
-      if (conv == 0) {
-        free(strs);
-        break;
-      }
-
-      uint32_t name_len = (uint32_t)strlen(d.name);
-      uint32_t need = 24 + name_len;
-      if (used + need > buf_len) {
-        free(strs);
-        break;
-      }
-
-      uint64_t next = cookie + off + ent_len;
-      wasi_write_le64(out + used + 0, next);
-      wasi_write_le64(out + used + 8, d.qid.path);
-      wasi_write_le32(out + used + 16, name_len);
-      if (d.mode & DMDIR) {
-        out[used + 20] = WASI_FILETYPE_DIRECTORY;
-      } else {
-        out[used + 20] = WASI_FILETYPE_REGULAR_FILE;
-      }
-      out[used + 21] = 0;
-      out[used + 22] = 0;
-      out[used + 23] = 0;
-      memmove(out + used + 24, d.name, name_len);
-      used += need;
-
-      free(strs);
-      off += ent_len;
-    }
-
-    free(raw);
+    uint32_t err =
+        wasi_dirents_from_plan9(p, ctx->fds[fd].lux9_fid,
+                                (uint8_t *)m3ApiOffsetToPtr(buf_ptr), buf_len,
+                                cookie, &used);
+    if (err != WASI_ERRNO_SUCCESS)
+      m3ApiReturn(err);
     m3ApiWriteMem32(bufused_ptr, used);
     m3ApiReturn(WASI_ERRNO_SUCCESS);
   }
 
-  uint32_t len = buf_len;
-  if (len > WASI_RUMP_IO_MAX)
-    len = WASI_RUMP_IO_MAX;
-
-  uint32_t req[5];
-  uint8_t resp[8 + WASI_RUMP_IO_MAX];
-  req[0] = POSIX_READDIR;
-  req[1] = (uint32_t)fd;
-  req[2] = (uint32_t)(cookie & 0xffffffffu);
-  req[3] = (uint32_t)(cookie >> 32);
-  req[4] = len;
-
-  int r = wasi_rump_rpc_read("/srv/rump/posix/readdir", req, sizeof(req), resp,
-                             8 + len);
-  if (r < 8)
-    m3ApiReturn(WASI_ERRNO_IO);
-
-  uint32_t err = *(uint32_t *)resp;
-  if (err != 0)
-    m3ApiReturn(wasi_errno_from_posix(err));
-
-  uint32_t count = *(uint32_t *)(resp + 4);
-  if (count > len)
-    count = len;
-  memmove(m3ApiOffsetToPtr(buf_ptr), resp + 8, count);
-  m3ApiWriteMem32(bufused_ptr, count);
-  m3ApiReturn(WASI_ERRNO_SUCCESS);
+  {
+    uint32_t used = 0;
+    uint32_t err =
+        wasi_dirents_from_plan9(p, ctx->fds[fd].lux9_fid,
+                                (uint8_t *)m3ApiOffsetToPtr(buf_ptr), buf_len,
+                                cookie, &used);
+    if (err != WASI_ERRNO_SUCCESS)
+      m3ApiReturn(err);
+    m3ApiWriteMem32(bufused_ptr, used);
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  }
 }
 
 /* wasi_fd_sync(fd) */
