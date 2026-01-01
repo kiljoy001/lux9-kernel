@@ -39,6 +39,10 @@ typedef struct {
 typedef struct {
   wasi_fd_entry_t fds[WASI_MAX_FDS];
   u32int exit_code;
+  int argc;
+  char **argv;
+  int envc;
+  char **envv;
 } wasi_context_t;
 
 /* WASI allowlist flags */
@@ -57,7 +61,7 @@ typedef struct {
    WASI_ALLOW_PATH | WASI_ALLOW_DIR | WASI_ALLOW_PROC | WASI_ALLOW_POLL)
 
 /* Initialization */
-void wasi_lux9_init_context(wasi_context_t *ctx);
+void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p);
 void wasi_lux9_destroy_context(wasi_context_t *ctx);
 
 /* Link WASI functions to module */

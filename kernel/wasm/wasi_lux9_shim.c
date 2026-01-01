@@ -10,6 +10,7 @@
 #include "../include/portlib.h"
 #include "../include/u.h"
 #include "../include/fcall.h"
+#include "wasm_runtime.h"
 
 #ifndef nil
 #define nil ((void *)0)
@@ -566,7 +567,125 @@ static int wasi_rump_path_req(const char *endpoint, uint32_t op,
 
 /* ========== Context Management ========== */
 
-void wasi_lux9_init_context(wasi_context_t *ctx) {
+static void wasi_ctx_free_argv(wasi_context_t *ctx) {
+  if (!ctx || !ctx->argv)
+    return;
+  for (int i = 0; i < ctx->argc; i++) {
+    if (ctx->argv[i])
+      free(ctx->argv[i]);
+  }
+  free(ctx->argv);
+  ctx->argv = nil;
+  ctx->argc = 0;
+}
+
+static void wasi_ctx_free_env(wasi_context_t *ctx) {
+  if (!ctx || !ctx->envv)
+    return;
+  for (int i = 0; i < ctx->envc; i++) {
+    if (ctx->envv[i])
+      free(ctx->envv[i]);
+  }
+  free(ctx->envv);
+  ctx->envv = nil;
+  ctx->envc = 0;
+}
+
+static void wasi_build_argv(wasi_context_t *ctx, Proc *p) {
+  if (!ctx || !p)
+    return;
+  if (!p->args || p->nargs <= 0)
+    return;
+
+  int len = p->nargs;
+  char *buf = malloc(len + 1);
+  if (!buf)
+    return;
+  memmove(buf, p->args, len);
+  buf[len] = '\0';
+
+  int cap = 8;
+  ctx->argv = malloc(cap * sizeof(char *));
+  if (!ctx->argv) {
+    free(buf);
+    return;
+  }
+
+  int argc = 0;
+  char *s = buf;
+  while (*s) {
+    while (*s == ' ' || *s == '\t' || *s == '\n')
+      s++;
+    if (!*s)
+      break;
+    char *start = s;
+    while (*s && *s != ' ' && *s != '\t' && *s != '\n')
+      s++;
+    int slen = s - start;
+    if (slen == 0)
+      continue;
+    if (argc >= cap) {
+      cap *= 2;
+      char **newv = realloc(ctx->argv, cap * sizeof(char *));
+      if (!newv)
+        break;
+      ctx->argv = newv;
+    }
+    ctx->argv[argc] = malloc(slen + 1);
+    if (!ctx->argv[argc])
+      break;
+    memmove(ctx->argv[argc], start, slen);
+    ctx->argv[argc][slen] = '\0';
+    argc++;
+  }
+  ctx->argc = argc;
+  free(buf);
+}
+
+static void wasi_build_env(wasi_context_t *ctx, Proc *p) {
+  if (!ctx || !p || !p->egrp)
+    return;
+  Egrp *eg = p->egrp;
+  rlock(&eg->rwlock);
+  int cap = 16;
+  int count = 0;
+  char **envv = malloc(cap * sizeof(char *));
+  if (!envv) {
+    runlock(&eg->rwlock);
+    return;
+  }
+  for (int i = 0; i < ENVHASH; i++) {
+    for (Evalue *e = eg->hash[i]; e != nil; e = e->hash) {
+      if (count >= cap) {
+        cap *= 2;
+        char **newv = realloc(envv, cap * sizeof(char *));
+        if (!newv)
+          goto done;
+        envv = newv;
+      }
+      int name_len = strlen(e->name);
+      int val_len = e->len;
+      if (val_len < 0)
+        val_len = 0;
+      int total = name_len + 1 + val_len;
+      char *entry = malloc(total + 1);
+      if (!entry)
+        goto done;
+      memmove(entry, e->name, name_len);
+      entry[name_len] = '=';
+      if (val_len > 0)
+        memmove(entry + name_len + 1, e->value, val_len);
+      entry[total] = '\0';
+      envv[count++] = entry;
+    }
+  }
+done:
+  runlock(&eg->rwlock);
+  ctx->envv = envv;
+  ctx->envc = count;
+}
+
+void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
   if (!ctx)
     return;
   memset(ctx, 0, sizeof(wasi_context_t));
@@ -608,18 +727,25 @@ void wasi_lux9_init_context(wasi_context_t *ctx) {
     ctx->fds[3].rights_inheriting = WASI_RIGHTS_ALL;
   }
 
-  ctx->fds[4].is_open = 1;
-  ctx->fds[4].lux9_fid = -1;
-  ctx->fds[4].is_dir = 1;
-  ctx->fds[4].backend = WASI_BACKEND_POSIX;
-  ctx->fds[4].base_path = (char *)wasi_posix_root_path;
-  ctx->fds[4].rights = WASI_RIGHTS_ALL;
-  ctx->fds[4].rights_inheriting = WASI_RIGHTS_ALL;
+  if (p && (p->capabilities & PERM_WASM_POSIX)) {
+    ctx->fds[4].is_open = 1;
+    ctx->fds[4].lux9_fid = -1;
+    ctx->fds[4].is_dir = 1;
+    ctx->fds[4].backend = WASI_BACKEND_POSIX;
+    ctx->fds[4].base_path = (char *)wasi_posix_root_path;
+    ctx->fds[4].rights = WASI_RIGHTS_ALL;
+    ctx->fds[4].rights_inheriting = WASI_RIGHTS_ALL;
+  }
+
+  wasi_build_argv(ctx, p);
+  wasi_build_env(ctx, p);
 }
 
 void wasi_lux9_destroy_context(wasi_context_t *ctx) {
   if (!ctx)
     return;
+  wasi_ctx_free_argv(ctx);
+  wasi_ctx_free_env(ctx);
   for (int i = 0; i < WASI_MAX_FDS; i++) {
     if (ctx->fds[i].is_open) {
       /* Use fdclose(fd, 0) to close Lux9 FD */
@@ -722,8 +848,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
 /* wasi_proc_raise(sig) */
 m3ApiRawFunction(wasi_snapshot_preview1_proc_raise) {
   m3ApiGetArg(uint32_t, sig);
-  (void)sig;
-  m3ApiReturn(WASI_ERRNO_NOSYS);
+  char note[64];
+  snprint(note, sizeof(note), "wasm signal %ud", sig);
+  postnote(up, 1, note, NUser);
+  m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
 /* wasi_sched_yield() */
@@ -740,8 +868,17 @@ m3ApiRawFunction(wasi_snapshot_preview1_args_sizes_get) {
           m3ApiCheckMem(argc_ptr, sizeof(uint32_t));
   m3ApiCheckMem(argv_buf_size_ptr, sizeof(uint32_t));
 
-  m3ApiWriteMem32(argc_ptr, 0);
-  m3ApiWriteMem32(argv_buf_size_ptr, 0);
+  Proc *p = up;
+  if (!p->wasm.initialized || !p->wasm.wasi_ctx)
+    m3ApiReturn(WASI_ERRNO_BADF);
+  wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
+  uint32_t total = 0;
+  for (int i = 0; i < ctx->argc; i++) {
+    if (ctx->argv[i])
+      total += (uint32_t)strlen(ctx->argv[i]) + 1;
+  }
+  m3ApiWriteMem32(argc_ptr, (uint32_t)ctx->argc);
+  m3ApiWriteMem32(argv_buf_size_ptr, total);
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
@@ -750,11 +887,26 @@ m3ApiRawFunction(wasi_snapshot_preview1_args_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, argv_ptr)
       m3ApiGetArg(uint32_t, argv_buf_ptr)
 
-          if (argv_ptr) {
-    m3ApiCheckMem(argv_ptr, sizeof(uint32_t));
+  Proc *p = up;
+  if (!p->wasm.initialized || !p->wasm.wasi_ctx)
+    m3ApiReturn(WASI_ERRNO_BADF);
+  wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
+
+  uint32_t total = 0;
+  for (int i = 0; i < ctx->argc; i++) {
+    if (ctx->argv[i])
+      total += (uint32_t)strlen(ctx->argv[i]) + 1;
   }
-  if (argv_buf_ptr) {
-    m3ApiCheckMem(argv_buf_ptr, 0);
+  m3ApiCheckMem(argv_ptr, ctx->argc * sizeof(uint32_t));
+  m3ApiCheckMem(argv_buf_ptr, total);
+
+  uint32_t cur = 0;
+  for (int i = 0; i < ctx->argc; i++) {
+    const char *arg = ctx->argv[i] ? ctx->argv[i] : "";
+    uint32_t len = (uint32_t)strlen(arg) + 1;
+    m3ApiWriteMem32(argv_ptr + (i * 4), argv_buf_ptr + cur);
+    memmove(m3ApiOffsetToPtr(argv_buf_ptr + cur), arg, len);
+    cur += len;
   }
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
@@ -767,8 +919,17 @@ m3ApiRawFunction(wasi_snapshot_preview1_environ_sizes_get) {
           m3ApiCheckMem(env_count_ptr, sizeof(uint32_t));
   m3ApiCheckMem(env_buf_size_ptr, sizeof(uint32_t));
 
-  m3ApiWriteMem32(env_count_ptr, 0);
-  m3ApiWriteMem32(env_buf_size_ptr, 0);
+  Proc *p = up;
+  if (!p->wasm.initialized || !p->wasm.wasi_ctx)
+    m3ApiReturn(WASI_ERRNO_BADF);
+  wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
+  uint32_t total = 0;
+  for (int i = 0; i < ctx->envc; i++) {
+    if (ctx->envv[i])
+      total += (uint32_t)strlen(ctx->envv[i]) + 1;
+  }
+  m3ApiWriteMem32(env_count_ptr, (uint32_t)ctx->envc);
+  m3ApiWriteMem32(env_buf_size_ptr, total);
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
@@ -777,11 +938,26 @@ m3ApiRawFunction(wasi_snapshot_preview1_environ_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, environ_ptr)
       m3ApiGetArg(uint32_t, environ_buf_ptr)
 
-          if (environ_ptr) {
-    m3ApiCheckMem(environ_ptr, sizeof(uint32_t));
+  Proc *p = up;
+  if (!p->wasm.initialized || !p->wasm.wasi_ctx)
+    m3ApiReturn(WASI_ERRNO_BADF);
+  wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
+
+  uint32_t total = 0;
+  for (int i = 0; i < ctx->envc; i++) {
+    if (ctx->envv[i])
+      total += (uint32_t)strlen(ctx->envv[i]) + 1;
   }
-  if (environ_buf_ptr) {
-    m3ApiCheckMem(environ_buf_ptr, 0);
+  m3ApiCheckMem(environ_ptr, ctx->envc * sizeof(uint32_t));
+  m3ApiCheckMem(environ_buf_ptr, total);
+
+  uint32_t cur = 0;
+  for (int i = 0; i < ctx->envc; i++) {
+    const char *env = ctx->envv[i] ? ctx->envv[i] : "";
+    uint32_t len = (uint32_t)strlen(env) + 1;
+    m3ApiWriteMem32(environ_ptr + (i * 4), environ_buf_ptr + cur);
+    memmove(m3ApiOffsetToPtr(environ_buf_ptr + cur), env, len);
+    cur += len;
   }
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
@@ -2286,6 +2462,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_accept) {
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
 
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE)
+    m3ApiReturn(WASI_ERRNO_NOTSUP);
+
   uint32_t req[3];
   uint32_t resp[2];
   req[0] = POSIX_SOCK_ACCEPT;
@@ -2333,6 +2512,32 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
     if (len > WASI_RUMP_IO_MAX - total)
       m3ApiReturn(WASI_ERRNO_INVAL);
     total += len;
+  }
+
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
+    uint32_t remaining = total;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < ri_data_len && remaining > 0; i++) {
+      uint32_t iov_addr = ri_data + (i * 8);
+      uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
+      uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
+      uint32_t want = buf_len;
+      if (want > remaining)
+        want = remaining;
+      if (want == 0)
+        continue;
+      m3ApiCheckMem(buf_ptr, want);
+      long n = kread(ctx->fds[fd].lux9_fid, m3ApiOffsetToPtr(buf_ptr), want);
+      if (n < 0)
+        m3ApiReturn(WASI_ERRNO_IO);
+      count += (uint32_t)n;
+      remaining -= (uint32_t)n;
+      if ((uint32_t)n < want)
+        break;
+    }
+    m3ApiWriteMem32(ro_datalen, count);
+    m3ApiWriteMem32(ro_flags, 0);
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
   }
 
   uint32_t req[4];
@@ -2411,6 +2616,27 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
     total += len;
   }
 
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
+    uint32_t written = 0;
+    for (uint32_t i = 0; i < si_data_len; i++) {
+      uint32_t iov_addr = si_data + (i * 8);
+      uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
+      uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
+      if (buf_len == 0)
+        continue;
+      m3ApiCheckMem(buf_ptr, buf_len);
+      long n = kwrite(ctx->fds[fd].lux9_fid, m3ApiOffsetToPtr(buf_ptr),
+                      buf_len);
+      if (n < 0)
+        m3ApiReturn(WASI_ERRNO_IO);
+      written += (uint32_t)n;
+      if ((uint32_t)n < buf_len)
+        break;
+    }
+    m3ApiWriteMem32(so_datalen, written);
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  }
+
   uint32_t req_size = 16 + total;
   uint8_t *req = malloc(req_size);
   if (!req)
@@ -2460,6 +2686,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_shutdown) {
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_SOCK_SHUTDOWN);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
+
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE)
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
 
   uint32_t req[3];
   uint32_t resp = 0;

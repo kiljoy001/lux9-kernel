@@ -18,6 +18,7 @@
 #include "../include/portlib.h"
 #include "../include/u.h"
 #include "../include/pebble_kernel.h"
+#include "wasm_host_lux9.h"
 
 /* Provide C99 types for wasm3 (kernel uses u8int, u32int, u64int) */
 typedef u8int uint8_t;
@@ -746,7 +747,7 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     print("wasm_runtime: failed to allocate WASI context\n");
     // Cleanup?
   } else {
-    wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx);
+    wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx, up);
 
     /* Link WASI functions */
     u32int allow_mask = WASI_ALLOW_DEFAULT;
@@ -755,6 +756,10 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     M3Result link_res = LinkWasi((IM3Module)up->wasm.module, allow_mask);
     if (link_res) {
       print("wasm_runtime: WASI link warning: %s\n", link_res);
+    }
+    M3Result lux_res = LinkLux9((IM3Module)up->wasm.module);
+    if (lux_res) {
+      print("wasm_runtime: lux9 link warning: %s\n", lux_res);
     }
   }
 
