@@ -17,6 +17,7 @@
 /* Capability permissions for WASM */
 #define PERM_WASM_COMPILE  (1 << 16)  /* Can compile WASM modules */
 #define PERM_WASM_EXECUTE  (1 << 17)  /* Can execute WASM functions */
+#define PERM_WASM_NET      (1 << 18)  /* Allow WASI sockets/poll */
 
 /* Runtime initialization (called at boot) */
 void wasm_runtime_init(void);

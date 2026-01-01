@@ -89,9 +89,7 @@ static uintptr wasm_linear_base(Proc *p, u32int map_bytes) {
 
 /* WASM capability permissions - temporarily defined here until moved to kernel
  * headers */
-#define PERM_WASM_COMPILE (1UL << 16) /* Can compile WASM modules */
-#define PERM_WASM_EXECUTE (1UL << 17) /* Can execute WASM functions */
-#define PERM_WASM_NET (1UL << 18)     /* Allow WASI sockets/poll */
+/* Capability permissions defined in wasm_runtime.h */
 
 /* Global isolated runtime (initialized at boot) */
 static WasmRuntime wasm_runtime;
