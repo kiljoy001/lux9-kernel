@@ -544,19 +544,44 @@ Proof.
 Qed.
 
 (** Theorem: No lost messages - every queued RPC eventually gets reply *)
-Axiom no_lost_messages : forall tag q,
+Theorem no_lost_messages : forall tag q,
+  queue_tags_unique q ->
+  NoDup q ->
   find_rpc_by_tag tag q <> None ->
   exists q',
     MountMuxRoute tag q q' /\
     find_rpc_by_tag tag q' = None.
+Proof.
+  intros tag q Huniq Hnodup Hfound.
+  exists (remove_rpc_by_tag tag q).
+  split.
+  - apply MMR_Found; [exact Hfound | reflexivity].
+  - destruct (find_rpc_by_tag tag (remove_rpc_by_tag tag q)) as [m|] eqn:E.
+    + exfalso.
+      assert (Hin: In m (remove_rpc_by_tag tag q)).
+      { apply (find_In tag m (remove_rpc_by_tag tag q)). exact E. }
+      assert (Htag: qmsg_tag m = tag).
+      { apply (find_has_tag tag m (remove_rpc_by_tag tag q)). exact E. }
+      apply (remove_not_in tag m q); try exact Hnodup; try exact Huniq; try exact Htag.
+      exact Hin.
+    + reflexivity.
+Qed.
 
 (** Theorem: No duplicate deliveries - RPC completed at most once *)
-Axiom no_duplicate_delivery : forall tag q,
+Theorem no_duplicate_delivery : forall tag q,
   find_rpc_by_tag tag q <> None ->
   forall q1 q2,
     MountMuxRoute tag q q1 ->
     MountMuxRoute tag q q2 ->
     q1 = q2.
+Proof.
+  intros tag q Hfound q1 q2 Hm1 Hm2.
+  destruct Hm1 as [Hfind1 Hremove1 | Hnotfind1 Hunchanged1].
+  - destruct Hm2 as [Hfind2 Hremove2 | Hnotfind2 Hunchanged2].
+    + subst. reflexivity.
+    + exfalso. apply Hfound. exact Hnotfind2.
+  - exfalso. apply Hfound. exact Hnotfind1.
+Qed.
 
 Print Assumptions reply_for_is_successor.
 Print Assumptions mountrpc_valid_pairing.
