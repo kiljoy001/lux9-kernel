@@ -518,6 +518,23 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
 /*
   // Transition: Exclusive -> Exclusive (Transfer)
   // Corresponds to 'Transfer' in proofs/borrow/borrow_core.v
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: transfer_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires from != \null && to != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == from && o->state == BORROW_EXCLUSIVE;
+ *   requires o->shared_count == 0 && o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->owner == to && o->state == BORROW_EXCLUSIVE;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->owner, o->key_cap, o->acquired_ns;
 */
 enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
   struct BorrowOwner *owner;
@@ -566,15 +583,30 @@ enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
  * Broker Algorithm Transfer (v2.0)
  * Implements the atomic transition with Two-Factor Authorization.
  *
- * @param sender Sending process (must own the resource)
- * @param receiver Receiving process
- * @param phys_addr Physical address (key) of the page/resource
- * @param cap Capability key provided by sender
- * @returns BORROW_OK on success, error code otherwise.
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @theorem: Transfer_Success (extended with capability authorization)
+ * @lemma: transfer_coherent ensures coherence preservation
+ *
+ * ACSL Contract:
+ *   requires sender != \null && receiver != \null;
+ *   requires \valid(&cap);
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == phys_addr && o->owner == sender && o->state == BORROW_EXCLUSIVE;
+ *   requires o->key_cap.gen == cap.gen && o->key_cap.nonce == cap.nonce;
+ *   requires o->shared_count == 0 && o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == phys_addr && o->owner == receiver && 
+ *       o->state == BORROW_EXCLUSIVE && o->key_cap.gen == \old(o->key_cap.gen) + 1;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->owner, o->key_cap;
+ *   assigns borrowpool.nowners \from borrowpool.nowners;
  */
 enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
-                                        uintptr phys_addr,
-                                        struct IdentKey cap) {
+                                       uintptr phys_addr,
+                                       struct IdentKey cap) {
   struct BorrowOwner *owner;
 
   if (sender == nil || receiver == nil) {
@@ -652,6 +684,24 @@ enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
 /*
   // Transition: Exclusive -> SharedOwned OR SharedOwned -> SharedOwned
   // Corresponds to 'BorrowShared' in proofs/borrow/borrow_core.v
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: borrow_shared_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires owner != \null && borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == owner &&
+ *     (o->state == BORROW_EXCLUSIVE || o->state == BORROW_SHARED_OWNED);
+ *   requires o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->state == BORROW_SHARED_OWNED;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->shared_list, o->shared_count, o->state;
 */
 enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
                                       uintptr key) {
@@ -729,6 +779,24 @@ enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
 /*
   // Transition: Exclusive -> MutLent
   // Corresponds to 'BorrowMut' in proofs/borrow/borrow_core.v
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: borrow_mut_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires owner != \null && borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == owner && o->state == BORROW_EXCLUSIVE;
+ *   requires o->shared_count == 0 && o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->mut_borrower == borrower &&
+ *       o->state == BORROW_MUT_LENT;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->mut_borrower, o->state, borrowpool.nmut;
 */
 enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
@@ -789,6 +857,24 @@ enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
 /*
   // Transition: SharedOwned -> SharedOwned OR SharedOwned -> Exclusive
   // Corresponds to 'ReturnShared' in proofs/borrow/borrow_core.v
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: return_shared_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->state == BORROW_SHARED_OWNED;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key &&
+ *       (o->state == BORROW_SHARED_OWNED ||
+ *        (o->state == BORROW_EXCLUSIVE && o->shared_count == 0));
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->shared_list, o->shared_count, o->state;
 */
 enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
@@ -849,6 +935,24 @@ enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
 /*
   // Transition: MutLent -> Exclusive
   // Corresponds to 'ReturnMut' in proofs/borrow/borrow_core.v
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: return_mut_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->state == BORROW_MUT_LENT &&
+ *     o->mut_borrower == borrower;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->mut_borrower == \null &&
+ *       o->state == BORROW_EXCLUSIVE;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->mut_borrower, o->state, borrowpool.nmut;
 */
 enum BorrowError borrow_return_mut(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
