@@ -16,6 +16,8 @@ Require Import Coq.Lists.List.
 Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Bool.Bool.
 Require Import Lia.
+Require Import Ramdisk.argon2_model.
+Require Import Ramdisk.argon2_security_assumptions.
 
 Import ListNotations.
 
@@ -23,86 +25,7 @@ Import ListNotations.
  * Argon2 Structure
  * ======================================================================== *)
 
-(** Memory block type (1024 bytes) *)
-Parameter Block : Type.
-
-(** Block equality decidability *)
-Parameter block_eq_dec : forall (b1 b2 : Block), {b1 = b2} + {b1 <> b2}.
-
-(** Permutation function P based on 2-round Blake2b
-    (From Section 3.1: G uses P which is based on Blake2b compression) *)
-Parameter P : Block -> Block.
-
-(** Compression function G(X,Y) = P(Z) ⊕ Z where Z = X ⊕ Y  
-    (From Section 3.3) *)
-Parameter block_xor : Block -> Block -> Block.
 Notation "a ⊕ b" := (block_xor a b) (at level 50, left associativity).
-
-Definition G (X Y : Block) : Block :=
-  let Z := X ⊕ Y in
-  (P Z) ⊕ Z.
-
-(** Argon2 configuration *)
-Record Argon2Config : Type := mkArgon2Config {
-  lanes : nat;        (* d lanes for parallelism *)
-  slices : nat;       (* s slices per pass *)
-  passes : nat;       (* t passes over memory *)
-  blocks_per_lane : nat;  (* m blocks per lane *)
-}.
-
-(** Block address in memory: (pass, slice, lane, index) *)
-Record BlockAddr : Type := mkBlockAddr {
-  pass_num : nat;
-  slice_num : nat;
-  lane_num : nat;
-  block_index : nat;
-}.
-
-(** Reference block index computation *)
-Parameter phi : BlockAddr -> nat.
-
-(* ========================================================================
- * Security Assumptions (from Theorem 1)
- * ======================================================================== *)
-
-(**
- * Assumption 1: P(Z) ⊕ Z is collision-resistant
- * 
- * "It is hard to find a, b such that P(a) ⊕ a = P(b) ⊕ b"
- * 
- * This is a standard assumption about Blake2b-based permutations.
- *)
-Axiom assumption_collision_resistance : forall (a b : Block),
-  (P a) ⊕ a = (P b) ⊕ b -> a = b.
-
-(**
- * Assumption 2: 4-generalized-birthday-resistance
- *
- * "It is hard to find distinct a, b, c, d such that
- *  P(a) ⊕ P(b) ⊕ P(c) ⊕ P(d) = a ⊕ b ⊕ c ⊕ d"
- *
- * This prevents XOR-based collisions in the block generation.
- *)
-Axiom assumption_4_generalized_birthday : forall (a b c d : Block),
-  a <> b -> a <> c -> a <> d -> b <> c -> b <> d -> c <> d ->
-  (P a) ⊕ (P b) ⊕ (P c) ⊕ (P d) = a ⊕ b ⊕ c ⊕ d ->
-  False.
-
-(* ========================================================================
- * XOR Properties
- * ======================================================================== *)
-
-(** XOR is commutative *)
-Axiom xor_comm : forall a b, a ⊕ b = b ⊕ a.
-
-(** XOR is associative *)
-Axiom xor_assoc : forall a b c, (a ⊕ b) ⊕ c = a ⊕ (b ⊕ c).
-
-(** XOR with self cancels *)
-Axiom xor_self : forall a, a ⊕ a = a.  (* Placeholder - actual property is a ⊕ a = 0 *)
-
-(** XOR cancellation *)
-Axiom xor_cancel : forall a b c, a ⊕ b = a ⊕ c -> b = c.
 
 (* ========================================================================
  * Theorem 1: Internal Collision Resistance (Section 5.3, page 10)
@@ -175,13 +98,6 @@ Qed.
  *)
 
 Parameter initial_hash : forall (password salt : list nat), Block.
-
-(** Preimage resistance: given output, finding password is hard *)
-Axiom argon2_preimage_resistance :
-  forall (password salt : list nat) (cfg : Argon2Config) (output : Block),
-    (** Computing Argon2(password, salt) requires full evaluation *)
-    (** No shortcut exists to find password from output *)
-    True.  (* Placeholder for computational complexity bound *)
 
 (* ========================================================================
  * Memory-Hardness and Tradeoff Resistance (Section 5.4)

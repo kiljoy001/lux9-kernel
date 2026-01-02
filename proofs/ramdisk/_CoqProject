@@ -1,5 +1,7 @@
 -Q . Ramdisk
 crypto_primitives.v
+argon2_model.v
+argon2_security_assumptions.v
 argon2_proofs.v
 chacha20_proofs.v
 chacha20_impl.v
