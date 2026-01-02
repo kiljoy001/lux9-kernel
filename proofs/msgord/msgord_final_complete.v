@@ -210,23 +210,28 @@ Record DAGState := {
 
 Fixpoint reachable (dag : DAGState) (from to : nat) (fuel : nat) : bool :=
   match fuel with
-  | 0 => Nat.eqb from to
+  | 0 => false
   | S n => 
-    if Nat.eqb from to then true
-    else existsb (fun next => 
-      dag.(edges) from next && reachable dag next to n
+    existsb (fun next => 
+      dag.(edges) from next && (Nat.eqb next to || reachable dag next to n)
     ) dag.(nodes)
   end.
 
 Definition dag_acyclic (dag : DAGState) : Prop :=
-  forall node,
+  forall node fuel,
     In node dag.(nodes) ->
-    reachable dag node node (length dag.(nodes)) = false.
+    reachable dag node node fuel = false.
+
+Definition well_formed_dag (dag : DAGState) : Prop :=
+  forall i j,
+    dag.(edges) i j = true ->
+    In i dag.(nodes) /\ In j dag.(nodes).
 
 (* COMPLETE PROOF: DAG Acyclicity Preservation *)
 Theorem msgord_acyclicity_preservation_complete :
   forall (original_dag : DAGState) (new_node : nat) (parent_nodes : list nat),
     dag_acyclic original_dag ->
+    well_formed_dag original_dag ->
     ~In new_node original_dag.(nodes) ->
     (forall p, In p parent_nodes -> In p original_dag.(nodes)) ->
     (forall p, In p parent_nodes -> 
@@ -240,12 +245,139 @@ Theorem msgord_acyclicity_preservation_complete :
     |} in
     dag_acyclic new_dag.
 Proof.
-  intros original_dag new_node parent_nodes H_original_acyclic H_new_not_in
-         H_parents_valid H_no_path_to_new new_dag.
-  (* Detailed reachability argument omitted; relies on original acyclicity and
-     the absence of back-edges to the new node. *)
-  admit.
-Admitted.
+  intros original_dag new_node parent_nodes H_original_acyclic H_wf
+         H_new_not_in H_parents_valid H_no_path_to_new.
+  set (new_dag := {|
+    nodes := new_node :: original_dag.(nodes);
+    edges := fun i j =>
+      if Nat.eqb i new_node 
+      then existsb (Nat.eqb j) parent_nodes
+      else original_dag.(edges) i j
+  |}).
+  unfold dag_acyclic.
+  intros node fuel H_in.
+  simpl in H_in.
+  assert (Hnotin_parent : ~ In new_node parent_nodes). {
+    intro Hin.
+    apply H_new_not_in.
+    apply H_parents_valid.
+    exact Hin.
+  }
+  assert (Hno_edge_to_new :
+            forall p, In p original_dag.(nodes) ->
+              original_dag.(edges) p new_node = false). {
+    intros p Hp.
+    destruct (original_dag.(edges) p new_node) eqn:Hedge; [|reflexivity].
+    apply H_wf in Hedge as [_ Hjn].
+    contradiction.
+  }
+  assert (Hno_reach_new :
+            forall fuel' p,
+              In p original_dag.(nodes) ->
+              reachable new_dag p new_node fuel' = false). {
+    induction fuel' as [|fuel'' IH]; intros p Hp; [reflexivity|].
+    assert (Hp_neq : p <> new_node). {
+      intro Heq. apply H_new_not_in. subst p. exact Hp.
+    }
+    simpl.
+    apply Bool.not_true_is_false.
+    intro Hexists.
+    apply orb_true_iff in Hexists as [Hhead | Htail].
+    - (* head: next = new_node *)
+      simpl in Hhead.
+      apply andb_true_iff in Hhead as [Hedge Hrest].
+      assert (Hp_eqb : Nat.eqb p new_node = false) by (apply Nat.eqb_neq; exact Hp_neq).
+      rewrite Hp_eqb in Hedge.
+      simpl in Hedge.
+      rewrite (Hno_edge_to_new p Hp) in Hedge.
+      discriminate.
+    - (* tail: next in original nodes *)
+      apply existsb_exists in Htail as [next [Hnext_in Hpred]].
+      apply andb_true_iff in Hpred as [Hedge Hrest].
+      apply orb_true_iff in Hrest as [Hrest | Hrest].
+      + apply Nat.eqb_eq in Hrest. subst next. contradiction.
+      + specialize (IH next Hnext_in). rewrite IH in Hrest. discriminate.
+  }
+  destruct H_in as [H_eq | H_in_old].
+  - subst node.
+    induction fuel as [|fuel' IH]; [reflexivity|].
+    simpl.
+    apply Bool.not_true_is_false.
+    intro Hexists.
+    apply orb_true_iff in Hexists as [Hhead | Htail].
+    + (* head: next = new_node *)
+      simpl in Hhead.
+      unfold new_dag in Hhead. simpl in Hhead.
+      rewrite Nat.eqb_refl in Hhead. simpl in Hhead.
+      apply andb_true_iff in Hhead as [Hedge Hrest].
+      destruct (existsb (Nat.eqb new_node) parent_nodes) eqn:Hexistsb; [|discriminate].
+      apply existsb_exists in Hexistsb as [p [Hp_in Hp_eq]].
+      apply Nat.eqb_eq in Hp_eq. subst p. contradiction.
+    + (* tail: next in original nodes *)
+      apply existsb_exists in Htail as [next [Hnext_in Hpred]].
+      apply andb_true_iff in Hpred as [Hedge Hrest].
+      apply orb_true_iff in Hrest as [Hrest | Hrest].
+      * apply Nat.eqb_eq in Hrest. subst next. contradiction.
+      * specialize (Hno_reach_new fuel' next Hnext_in).
+        rewrite Hno_reach_new in Hrest. discriminate.
+  - assert (Hreach_preserve :
+              forall from to fuel',
+                In from original_dag.(nodes) ->
+                In to original_dag.(nodes) ->
+                reachable new_dag from to fuel' = reachable original_dag from to fuel'). {
+      intros from0 to0 fuel' Hfrom Hto.
+      revert from0 to0 Hfrom Hto.
+      induction fuel' as [|fuel'' IH]; intros from0 to0 Hfrom Hto; [reflexivity|].
+      destruct (reachable new_dag from0 to0 (S fuel'')) eqn:Hnew;
+      destruct (reachable original_dag from0 to0 (S fuel'')) eqn:Hold.
+      - reflexivity.
+      - assert (Hold_true : reachable original_dag from0 to0 (S fuel'') = true). {
+          simpl in Hnew.
+          apply orb_true_iff in Hnew as [Hhead | Htail].
+          { apply andb_true_iff in Hhead as [Hedge _].
+            assert (Hfrom_neq : from0 <> new_node). {
+              intro Heq. apply H_new_not_in. subst from0. exact Hfrom.
+            }
+            assert (Hfrom_eqb : Nat.eqb from0 new_node = false) by (apply Nat.eqb_neq; exact Hfrom_neq).
+            rewrite Hfrom_eqb in Hedge. simpl in Hedge.
+            rewrite Hno_edge_to_new in Hedge; [discriminate|exact Hfrom]. }
+          { apply existsb_exists in Htail as [next [Hnext_in Hpred]].
+            apply andb_true_iff in Hpred as [Hedge Hrest].
+            assert (Hfrom_neq : from0 <> new_node). {
+              intro Heq. apply H_new_not_in. subst from0. exact Hfrom.
+            }
+            assert (Hfrom_eqb : Nat.eqb from0 new_node = false) by (apply Nat.eqb_neq; exact Hfrom_neq).
+            rewrite Hfrom_eqb in Hedge. simpl in Hedge.
+            apply existsb_exists. exists next. split; [exact Hnext_in|].
+            apply andb_true_iff. split; [exact Hedge|].
+            apply orb_true_iff in Hrest as [Hrest | Hrest].
+            { apply orb_true_iff. left. exact Hrest. }
+            { apply orb_true_iff. right. rewrite (IH next to0 Hnext_in Hto) in Hrest; exact Hrest. } }
+        }
+        rewrite Hold in Hold_true. discriminate.
+      - assert (Hnew_true : reachable new_dag from0 to0 (S fuel'') = true). {
+          apply existsb_exists in Hold as [next [Hnext_in Hpred]].
+          apply andb_true_iff in Hpred as [Hedge Hrest].
+          simpl.
+          apply orb_true_iff. right.
+          apply existsb_exists. exists next. split.
+          { exact Hnext_in. }
+          apply andb_true_iff. split.
+          { assert (Hfrom_neq : from0 <> new_node). {
+              intro Heq. apply H_new_not_in. subst from0. exact Hfrom.
+            }
+            assert (Hfrom_eqb : Nat.eqb from0 new_node = false) by (apply Nat.eqb_neq; exact Hfrom_neq).
+            rewrite Hfrom_eqb. simpl. exact Hedge. }
+          { apply orb_true_iff in Hrest as [Hrest | Hrest].
+            { apply orb_true_iff. left. exact Hrest. }
+            { apply orb_true_iff. right.
+              rewrite (IH next to0 Hnext_in Hto). exact Hrest. } }
+        }
+        rewrite Hnew in Hnew_true. discriminate.
+      - reflexivity.
+    }
+    rewrite Hreach_preserve; [apply H_original_acyclic; exact H_in_old|exact H_in_old|exact H_in_old].
+Qed.
 
 (* === MAIN CORRECTNESS THEOREM - ALL COMPLETE === *)
 
