@@ -202,21 +202,66 @@ Qed.
 Lemma process_one_implies_can_deliver :
   forall dag new_dag pid,
   msgord_process_one dag = Processed new_dag pid ->
-  exists msg, In msg dag /\ msg.(gm_id) = pid /\ msg.(gm_state) = Ordered /\ can_deliver dag msg = true.
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    msg.(gm_id) = pid /\
+    msg.(gm_state) = Ordered /\
+    can_deliver (msg :: suffix) msg = true.
 Proof.
-  (* Proof omitted; relies on structured induction over [dag] mirroring the
-     kernel control flow. *)
-  admit.
-Admitted.
+  induction dag as [| m rest IH]; intros new_dag pid Hproc.
+  - simpl in Hproc. discriminate.
+  - simpl in Hproc.
+    destruct (gm_state m) eqn:Hstate.
+    + (* Pending *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+    + (* Ordered *)
+      destruct (can_deliver (m :: rest) m) eqn:Hcan.
+      * inversion Hproc; subst pid new_dag.
+        exists [], m, rest. repeat split; auto.
+      * remember (msgord_process_one rest) as res eqn:E.
+        destruct res as [d| d pid']; [discriminate|].
+        inversion Hproc; subst.
+        destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+        exists (m :: prefix), msg, suffix.
+        repeat split; auto.
+        simpl. rewrite Hdag. reflexivity.
+    + (* Delivered *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+    + (* Complete *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+Qed.
 
 Theorem topological_process_safety :
   forall dag new_dag pid,
   msgord_process_one dag = Processed new_dag pid ->
-  exists msg, In msg dag /\ gm_id msg = pid /\ can_deliver dag msg = true.
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    gm_id msg = pid /\
+    can_deliver (msg :: suffix) msg = true.
 Proof.
   intros dag new_dag pid Hproc.
-  destruct (process_one_implies_can_deliver dag new_dag pid Hproc) as [msg' [Hin' [Hid' [_ Hdel]]]].
-  eexists; repeat (split; eauto).
+  destruct (process_one_implies_can_deliver dag new_dag pid Hproc)
+    as [prefix [msg' [suffix [Hdag [Hid' [_ Hdel]]]]]].
+  exists prefix, msg', suffix.
+  repeat split; assumption.
 Qed.
 
 (* THEOREM 4: SATURATION *)
