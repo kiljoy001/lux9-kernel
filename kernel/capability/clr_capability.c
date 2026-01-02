@@ -65,11 +65,10 @@ capability_manager_t *global_cap_manager = nil;
 /*
  * @coq_proof: proofs/capability/PermsBitmask.v
  * @definition: perms_subset
- *
- * ACSL Contract:
- *   requires \valid(a) && \valid(b);
- *   ensures \result == 1 <==> (a & b) == a;
  */
+/*@
+  @ ensures \result == 1 <==> ((a & b) == a);
+  @*/
 int cap_perms_subset(u32int a, u32int b) { return (a & b) == a; }
 
 void cap_perms_to_string(u32int perms, char *buf, u32int buflen) {
@@ -223,6 +222,14 @@ cap_alloc_slot(capability_manager_t *manager) {
  *           \result->permissions == CAP_PERM_ALL &&
  *           \result->derivation_depth == 0;
  */
+/*@
+  @ requires manager != \null && assembly_name != \null;
+  @ ensures \result != \null ==>
+  @         \result->scope == CAP_SCOPE_MODULE &&
+  @         \result->parent_id == 0 &&
+  @         \result->permissions == CAP_PERM_ALL &&
+  @         \result->derivation_depth == 0;
+  @*/
 clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
                                               const char *assembly_name) {
   print("CAP: create_module ENTER\n");
@@ -282,6 +289,15 @@ clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
  *           \result->derivation_depth == parent->derivation_depth + 1 &&
  *           cap_perms_subset(\result->permissions, parent->permissions);
  */
+/*@
+  @ requires manager != \null && parent != \null && class_name != \null;
+  @ requires cap_perms_subset(permission_mask, parent->permissions);
+  @ ensures \result != \null ==>
+  @         \result->scope == CAP_SCOPE_CLASS &&
+  @         \result->parent_id == parent->cap_id &&
+  @         \result->permissions == permission_mask &&
+  @         \result->derivation_depth == parent->derivation_depth + 1;
+  @*/
 clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
                                              clr_monotonic_capability_t *parent,
                                              const char *class_name,
@@ -358,6 +374,10 @@ clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
  *   2. Permission monotonicity holds at each step
  *   3. No capabilities in chain are revoked
  */
+/*@
+  @ requires manager != \null && child != \null;
+  @ ensures \result == 1 ==> child->is_validated == 1;
+  @*/
 int cap_validate_chain(capability_manager_t *manager,
                        clr_monotonic_capability_t *child) {
   if (!manager || !child)
@@ -416,6 +436,11 @@ int cap_validate_chain(capability_manager_t *manager,
  * @coq_proof: proofs/capability/PermsBitmask.v
  * @definition: has_perm
  */
+/*@
+  @ requires cap == \null || \valid(cap);
+  @ ensures cap == \null ==> \result == 0;
+  @ ensures cap != \null ==> (\result == 1 ==> ((cap->permissions & required) == required));
+  @*/
 int cap_check_permission(clr_monotonic_capability_t *cap, u32int required) {
   if (!cap)
     return 0;

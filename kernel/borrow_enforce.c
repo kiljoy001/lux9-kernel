@@ -34,6 +34,10 @@ int borrow_enforcement_enabled = 0;
  *   3. Memory allocators are fully operational
  */
 void borrow_enforcement_enable(void) {
+  /*@
+    @ ensures borrow_enforcement_enabled == 1;
+    @ assigns borrow_enforcement_enabled;
+    @*/
   print("borrow_enforce: enabling runtime ownership enforcement\n");
   borrow_enforcement_enabled = 1;
 }
@@ -41,7 +45,13 @@ void borrow_enforcement_enable(void) {
 /*
  * Query enforcement state
  */
-int borrow_enforcement_is_enabled(void) { return borrow_enforcement_enabled; }
+int borrow_enforcement_is_enabled(void) {
+  /*@
+    @ ensures \result == borrow_enforcement_enabled;
+    @ assigns \nothing;
+    @*/
+  return borrow_enforcement_enabled;
+}
 
 /*
  * Checked memory operations
@@ -52,6 +62,15 @@ int borrow_enforcement_is_enabled(void) { return borrow_enforcement_enabled; }
  */
 
 void *borrow_checked_memmove(void *dst, const void *src, usize n) {
+  /*@
+    @ requires n == 0 || (\valid((char *)dst + (0..n-1)) &&
+    @                    \valid((char *)src + (0..n-1)));
+    @ requires !borrow_enforcement_enabled ||
+    @          borrow_can_access_range_phys(PADDR(src), n, OWNER_KERNEL);
+    @ requires !borrow_enforcement_enabled ||
+    @          borrow_can_access_range_phys(PADDR(dst), n, OWNER_KERNEL);
+    @ ensures \result == dst;
+    @*/
   if (borrow_enforcement_enabled) {
     /* Verify KERNEL can read source */
     if (!borrow_can_access_range_phys(PADDR(src), n, OWNER_KERNEL)) {
@@ -68,6 +87,15 @@ void *borrow_checked_memmove(void *dst, const void *src, usize n) {
 }
 
 void *borrow_checked_memcpy(void *dst, const void *src, usize n) {
+  /*@
+    @ requires n == 0 || (\valid((char *)dst + (0..n-1)) &&
+    @                    \valid((char *)src + (0..n-1)));
+    @ requires !borrow_enforcement_enabled ||
+    @          borrow_can_access_range_phys(PADDR(src), n, OWNER_KERNEL);
+    @ requires !borrow_enforcement_enabled ||
+    @          borrow_can_access_range_phys(PADDR(dst), n, OWNER_KERNEL);
+    @ ensures \result == dst;
+    @*/
   if (borrow_enforcement_enabled) {
     /* Verify KERNEL can read source */
     if (!borrow_can_access_range_phys(PADDR(src), n, OWNER_KERNEL)) {
@@ -85,6 +113,12 @@ void *borrow_checked_memcpy(void *dst, const void *src, usize n) {
 }
 
 void *borrow_checked_memset(void *dst, int c, usize n) {
+  /*@
+    @ requires n == 0 || \valid((char *)dst + (0..n-1));
+    @ requires !borrow_enforcement_enabled ||
+    @          borrow_can_access_range_phys(PADDR(dst), n, OWNER_KERNEL);
+    @ ensures \result == dst;
+    @*/
   if (borrow_enforcement_enabled) {
     /* Verify KERNEL can write destination */
     if (!borrow_can_access_range_phys(PADDR(dst), n, OWNER_KERNEL)) {

@@ -218,6 +218,12 @@ void blind_ledger_init(void) {
 BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              Proc *owner, u32int permissions,
                              const u8int *vault_secret) {
+  /*@
+    @ requires out_cap == \null || \valid(out_cap);
+    @ requires vault_secret == \null || \valid((u8int *)vault_secret + (0..BLIND_LEDGER_SECRET_SIZE-1));
+    @ ensures (out_cap == \null || vault_secret == \null || len == 0 || pa == 0 ||
+    @          (len % BLIND_LEDGER_TOKEN_UNIT != 0)) ==> \result == BLIND_LEDGER_EINVAL;
+    @*/
   /*
     // Input validation per mint_refinement
     // Rejects invalid lengths as proven in Coq

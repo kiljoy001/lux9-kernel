@@ -107,6 +107,12 @@ static long sipstat(Chan *c, uchar *dp, long n) {
 }
 
 static Chan *sipopen(Chan *c, int omode) {
+  /*@
+    @ requires \valid(c);
+    @ requires !(TYPE(c->qid) == Qctl && PID(c->qid) != 0 &&
+    @            PID(c->qid) != up->pid) ||
+    @          has_capability(up, PEBBLE_CAP_ADMIN);
+    @*/
   /* Universal CBS: Opening process ctl files requires ADMIN for others'
    * processes */
   int pid = PID(c->qid);
@@ -186,6 +192,10 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
 }
 
 static long sipwrite(Chan *c, void *va, long n, vlong off) {
+  /*@
+    @ requires \valid(c);
+    @ requires va == \null || \valid((char *)va + (0..n-1));
+    @*/
   char buf[256];
   char *fields[8];
   int nfields, pid;

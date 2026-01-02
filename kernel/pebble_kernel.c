@@ -100,6 +100,11 @@ static void pebble_kernel_log_msgord_failure(const char *where, void *ptr,
  * Memory is reserved but not yet in active use.
  */
 PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
+  /*@
+    @ requires size >= 0;
+    @ ensures \result != \null ==> \result->ptr != \null;
+    @ ensures \result != \null ==> \result->is_black == 0;
+    @*/
   PebbleKernelAlloc *alloc;
   PebbleState *ps;
   void *buf;
@@ -203,6 +208,10 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
  * Transitions reserved memory to active use.
  */
 void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
+  /*@
+    @ requires \valid(alloc);
+    @ ensures alloc->is_black == 1;
+    @*/
   PebbleOp op;
 
   if (alloc == nil)
@@ -246,6 +255,9 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
  * Burns WHITE token and returns memory to system pool.
  */
 void pebble_kernel_free(PebbleKernelAlloc *alloc) {
+  /*@
+    @ requires alloc == \null || \valid(alloc);
+    @*/
   PebbleOp op;
 
   if (alloc == nil)
@@ -306,6 +318,9 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
  * Single-call allocation for common use case.
  */
 void *pebble_kernel_alloc(ulong size) {
+  /*@
+    @ requires size >= 0;
+    @*/
   PebbleKernelAlloc *alloc;
 
   alloc = pebble_kernel_reserve(size);
@@ -319,6 +334,14 @@ void *pebble_kernel_alloc(ulong size) {
  */
 void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
                          uvlong *white, uvlong *black) {
+  /*@
+    @ requires reserves == \null || \valid(reserves);
+    @ requires activates == \null || \valid(activates);
+    @ requires frees == \null || \valid(frees);
+    @ requires white == \null || \valid(white);
+    @ requires black == \null || \valid(black);
+    @ assigns *reserves, *activates, *frees, *white, *black;
+    @*/
   lock(&kernel_allocs_lock);
   if (reserves)
     *reserves = kernel_pebble_stats.total_reserves;

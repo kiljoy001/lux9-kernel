@@ -19,6 +19,7 @@ typedef struct Waitmsg Waitmsg;
 #include "9p_router.h"
 #include "consensus_depth.h"
 #include "msgord.h"
+#include "pebble.h"
 /* Registry of MsgOrd instances */
 static MsgOrd *msgords[MSGORD_MAX_DAGS];
 static Lock registry_lock;
@@ -228,6 +229,12 @@ static void msgord_dequeue(MsgOrd *dag, OrdMsg *msg) {
  * Compute anticone size
  */
 int msgord_anticone(MsgOrd *dag, OrdMsg *msg) {
+  /*@
+    @ requires dag != \null && msg != \null;
+    @ ensures \result >= 0;
+    @ ensures msg->gm_anticone_size == \result;
+    @ assigns msg->gm_anticone_size;
+    @*/
   OrdMsg *gm;
   int anticone = 0;
   uint i;
@@ -259,6 +266,13 @@ int msgord_anticone(MsgOrd *dag, OrdMsg *msg) {
  * Determine color based on anticone
  */
 int msgord_color(MsgOrd *dag, OrdMsg *msg) {
+  /*@
+    @ requires dag != \null && msg != \null;
+    @ ensures \result == msg->gm_color;
+    @ ensures \result == MSGORD_COLOR_BLUE ==> msg->gm_anticone_size <= dag->gd_k_param;
+    @ ensures \result == MSGORD_COLOR_RED ==> msg->gm_anticone_size > dag->gd_k_param;
+    @ assigns msg->gm_color, msg->gm_anticone_size, dag->gd_blue_msgs, dag->gd_red_msgs;
+    @*/
   int anticone = msgord_anticone(dag, msg);
 
   if (anticone <= (int)dag->gd_k_param) {
@@ -276,6 +290,11 @@ int msgord_color(MsgOrd *dag, OrdMsg *msg) {
  * Check if message can be delivered
  */
 int msgord_can_deliver(MsgOrd *dag, OrdMsg *msg) {
+  /*@
+    @ requires dag != \null && msg != \null;
+    @ ensures \result == 1 ==> msg->gm_color == MSGORD_COLOR_BLUE;
+    @ assigns \nothing;
+    @*/
   OrdMsg *gm;
   uint i;
 
@@ -303,12 +322,42 @@ int msgord_can_deliver(MsgOrd *dag, OrdMsg *msg) {
  * Internal submit logic
  */
 static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
-                          char *path) {
+                          char *path, u64int nonce) {
+  /*@
+    @ requires dag != \null;
+    @ ensures \result == 0 ==> dag->gd_total_msgs >= \old(dag->gd_total_msgs);
+    @ assigns dag->gd_head, dag->gd_tail, dag->gd_count, dag->gd_total_msgs,
+    @         dag->gd_blue_msgs, dag->gd_red_msgs, dag->gd_global_seq, dag->gd_next_id;
+    @*/
   OrdMsg *msg;
   OrdMsg *tail;
 
   if (dag == nil || !dag->gd_initialized)
     return -1;
+
+  /*
+   * Kinetic Defense: Congestion Pricing
+   * Calculate difficulty based on red message ratio.
+   * Only enforce for User Processes (!kp).
+   */
+  if (caller && !caller->kp && dag->gd_total_msgs > 100) {
+    int difficulty = 0;
+    ulong ratio_pct = (dag->gd_red_msgs * 100) / dag->gd_total_msgs;
+
+    if (ratio_pct > 10) { /* >10% red messages implies congestion */
+      /* Base difficulty on ratio. 10% -> 1, 100% -> 19 */
+      difficulty = 1 + ((ratio_pct - 10) / 5);
+
+      /* Verify PoW */
+      /* Context: caller PID binds work to the process */
+      u64int context = (u64int)caller->pid;
+
+      if (!pow_verify(nonce, context, difficulty)) {
+        /* PoW failed or missing */
+        return -1;
+      }
+    }
+  }
 
   lock_dag(dag);
 
@@ -358,20 +407,50 @@ static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
 /*
  * Submit 9P message for MSGORD ordering
  */
-int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path) {
+int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path, u64int nonce) {
+  /*@
+    @ requires t != \null;
+    @ ensures \result == 0 || \result == -1;
+    @*/
   OrdPayload p;
+  uint n;
+  void *buf;
+
+  /* Calculate size required for serialization */
+  n = sizeS2M(t);
+  buf = xalloc(n);
+  if (buf == nil)
+    return -1;
+
+  /* Serialize Fcall into buffer (deep copy) */
+  if (convS2M(t, buf, n) != n) {
+    xfree(buf);
+    return -1;
+  }
+
   p.type = MSGORD_MSG_9P;
-  p.fcall = t;
+  /* Store serialized data in raw part of union */
+  p.raw.data = buf;
+  p.raw.len = n;
+
   /* Backward compatibility for calls passing nil dag */
   if (dag == nil)
     dag = msgord;
-  return _msgord_submit(dag, caller, p, path);
+
+  if (_msgord_submit(dag, caller, p, path, nonce) < 0) {
+    xfree(buf);
+    return -1;
+  }
+  return 0;
 }
 
 /*
  * Submit generic data
  */
-int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len) {
+int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len, u64int nonce) {
+  /*@
+    @ ensures \result == 0 || \result == -1;
+    @*/
   OrdPayload p;
   void *buf;
 
@@ -388,7 +467,7 @@ int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len) {
   p.raw.data = buf;
   p.raw.len = len;
 
-  if (_msgord_submit(dag, caller, p, "raw") < 0) {
+  if (_msgord_submit(dag, caller, p, "raw", nonce) < 0) {
     if (buf)
       xfree(buf);
     return -1;
@@ -404,7 +483,7 @@ uint msgord_add_message(msgord_state_t *state, Proc *p, Fcall *t, char *path) {
   if (state == nil)
     state = msgord;
 
-  if (msgord_submit(state, p, t, path) < 0)
+  if (msgord_submit(state, p, t, path, 0) < 0)
     return 0;
   /* Warning: this reads next_id without lock, but standard pattern in this
    * codebase */
@@ -445,9 +524,10 @@ void msgord_complete(MsgOrd *dag, OrdMsg *msg) {
 
   msg->gm_state = MSGORD_STATE_COMPLETE;
 
-  /* For Fcall, the fcall payload is managed by caller (p9 subsystem) */
-  /* For Raw, we allocated it, so we should free it */
-  if (msg->gm_payload.type == MSGORD_MSG_RAW && msg->gm_payload.raw.data) {
+  /* Free payload (both 9P and RAW now use deep copy) */
+  if ((msg->gm_payload.type == MSGORD_MSG_RAW ||
+       msg->gm_payload.type == MSGORD_MSG_9P) &&
+      msg->gm_payload.raw.data) {
     xfree(msg->gm_payload.raw.data);
   }
 
@@ -512,19 +592,50 @@ void msgord_stats(MsgOrd *dag, uvlong *total, uvlong *blue, uvlong *red) {
  * Submit 9P message with completion callback
  */
 uint msgord_submit_async(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
-                         MsgordCallback cb, void *cb_arg) {
+                         MsgordCallback cb, void *cb_arg, u64int nonce) {
   OrdPayload p;
   OrdMsg *msg;
   OrdMsg *tail;
   uint id;
+  uint n;
+  void *buf;
 
   if (dag == nil)
     dag = msgord;
   if (dag == nil || !dag->gd_initialized)
     return 0;
 
+  /*
+   * Kinetic Defense: Congestion Pricing (Async)
+   */
+  if (caller && !caller->kp && dag->gd_total_msgs > 100) {
+    int difficulty = 0;
+    ulong ratio_pct = (dag->gd_red_msgs * 100) / dag->gd_total_msgs;
+
+    if (ratio_pct > 10) {
+      difficulty = 1 + ((ratio_pct - 10) / 5);
+      u64int context = (u64int)caller->pid;
+
+      if (!pow_verify(nonce, context, difficulty)) {
+        return 0;
+      }
+    }
+  }
+
+  /* Deep copy Fcall */
+  n = sizeS2M(t);
+  buf = xalloc(n);
+  if (buf == nil)
+    return 0;
+
+  if (convS2M(t, buf, n) != n) {
+    xfree(buf);
+    return 0;
+  }
+
   p.type = MSGORD_MSG_9P;
-  p.fcall = t;
+  p.raw.data = buf;
+  p.raw.len = n;
 
   lock_dag(dag);
 
@@ -608,7 +719,7 @@ void msgord_set_callback(OrdMsg *msg, MsgordCallback cb, void *cb_arg) {
 int msgord_fire_completions(MsgOrd *dag) {
   OrdMsg *msg, *next;
   int fired = 0;
-  Fcall reply;
+  Fcall t, reply;
 
   if (dag == nil)
     dag = msgord;
@@ -626,10 +737,13 @@ int msgord_fire_completions(MsgOrd *dag) {
 
     /* Process the message */
     if (msg->gm_payload.type == MSGORD_MSG_9P && msg->gm_caller) {
-      memset(&reply, 0, sizeof(reply));
-      unlock_dag(dag);
-      p9_dispatch(msg->gm_caller, msg->gm_payload.fcall, &reply);
-      lock_dag(dag);
+      if (convM2S(msg->gm_payload.raw.data, msg->gm_payload.raw.len, &t) ==
+          msg->gm_payload.raw.len) {
+        memset(&reply, 0, sizeof(reply));
+        unlock_dag(dag);
+        p9_dispatch(msg->gm_caller, &t, &reply);
+        lock_dag(dag);
+      }
     }
 
     msg->gm_state = MSGORD_STATE_DELIVERED;
@@ -647,8 +761,10 @@ int msgord_fire_completions(MsgOrd *dag) {
     msgord_dequeue(dag, msg);
     msg->gm_state = MSGORD_STATE_COMPLETE;
 
-    /* Free payload if raw */
-    if (msg->gm_payload.type == MSGORD_MSG_RAW && msg->gm_payload.raw.data) {
+    /* Free payload (both 9P and RAW now use deep copy) */
+    if ((msg->gm_payload.type == MSGORD_MSG_RAW ||
+         msg->gm_payload.type == MSGORD_MSG_9P) &&
+        msg->gm_payload.raw.data) {
       xfree(msg->gm_payload.raw.data);
     }
     xfree(msg);
@@ -707,7 +823,7 @@ int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
  * consensus_depth.c) Returns: 0 on success, -1 on error
  */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                              char *path, int depth, uint *msg_id_out) {
+                              char *path, int depth, uint *msg_id_out, u64int nonce) {
   Fcall *fcall_t = (Fcall *)t;
   uint msg_id;
 
@@ -721,7 +837,7 @@ int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
     return -1;
 
   /* Submit via existing async mechanism */
-  msg_id = msgord_submit_async(dag, caller, fcall_t, path, nil, nil);
+  msg_id = msgord_submit_async(dag, caller, fcall_t, path, nil, nil, nonce);
   if (msg_id == 0)
     return -1;
 

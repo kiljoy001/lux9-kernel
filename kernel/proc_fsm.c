@@ -43,6 +43,11 @@ char *proc_state_names[PS_COUNT] = {
   // Implements check_mach_cleared per proofs/proc/proc_state_dag.v
  */
 static int guard_mach_nil(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->mach == \null;
+    @ assigns \nothing;
+    @*/
   if (p->mach != nil) {
     *reason = "mach must be nil";
     return 0;
@@ -55,6 +60,11 @@ static int guard_mach_nil(Proc *p, const char **reason) {
   // Implements check_mach_set per proofs/proc/proc_state_dag.v
  */
 static int guard_mach_set(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->mach != \null;
+    @ assigns \nothing;
+    @*/
   if (p->mach == nil) {
     *reason = "mach must be set";
     return 0;
@@ -67,6 +77,11 @@ static int guard_mach_set(Proc *p, const char **reason) {
   // Implements check_rendezvous_cleared per proofs/proc/proc_state_dag.v
  */
 static int guard_r_nil(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->r == \null;
+    @ assigns \nothing;
+    @*/
   if (p->r != nil) {
     *reason = "p->r must be nil before wakeup";
     return 0;
@@ -79,6 +94,11 @@ static int guard_r_nil(Proc *p, const char **reason) {
   // Implements check_rendezvous_set per proofs/proc/proc_state_dag.v
  */
 static int guard_r_set(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->r != \null;
+    @ assigns \nothing;
+    @*/
   if (p->r == nil) {
     *reason = "p->r must be set for sleep";
     return 0;
@@ -197,6 +217,11 @@ static ProcTransition *fsm_find(int from_state, int event) {
   // Enforces valid_transition per proofs/proc/proc_state_dag.v
  */
 int proc_event(Proc *p, int event) {
+  /*@
+    @ requires \valid(p);
+    @ ensures p->state == \result;
+    @ assigns p->state_trace, p->state, p->hdr_checksum;
+    @*/
   int current;
   ProcTransition *t;
   const char *reason;

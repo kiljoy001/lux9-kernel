@@ -123,6 +123,11 @@ void p9_free_page(Proc *p) {
 }
 
 int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out) {
+  /*@
+    @ requires data == \null || \valid((uchar *)data + (0..len-1));
+    @ requires \valid(out);
+    @ ensures \result == 0 ==> len >= 8 + sizeof(PebbleToken);
+    @*/
   uint magic, version;
 
   if (len < 8 + sizeof(PebbleToken))
@@ -141,6 +146,11 @@ int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out) {
 }
 
 int p9_validate_pebble(PebbleToken *tok, char *path, int access) {
+  /*@
+    @ requires \valid(tok);
+    @ ensures \result == 1 ==> (tok->expires == 0 ||
+    @                            tok->expires >= (uvlong)seconds());
+    @*/
   if (tok->expires != 0 && tok->expires < (uvlong)seconds()) {
     return 0;
   }
@@ -284,6 +294,9 @@ static int check_permission(Proc *p, int required_perm) {
 #define DEV_PIPE 8
 
 static int install_fid_with_subtype(int fid, int type, int subtype) {
+  /*@
+    @ ensures \result == 0 ==> get_fid_type(fid) == type;
+    @*/
   Chan *c;
   Fgrp *f = up->fgrp;
 
@@ -2194,8 +2207,8 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
   ctx->caller = p;
   ctx->reply = r;
 
-  /* Submit for async ordering with callback */
-  msg_id = msgord_submit_async(nil, p, t, path, p9_route_reply_callback, ctx);
+  /* Submit message asynchronously */
+  msg_id = msgord_submit_async(nil, p, t, path, p9_route_reply_callback, ctx, 0);
   if (msg_id == 0) {
     xfree(ctx);
     r->type = Rerror;
@@ -2231,6 +2244,10 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
  * Called by: VectorSYSCALL handler (doorbell-only mode)
  */
 int p9_handle_doorbell(Proc *p) {
+  /*@
+    @ requires \valid(p);
+    @ ensures p->p9page == \null ==> \result == -1;
+    @*/
   P9Control *ctl;
   uchar *msg_buf; /* Single buffer for request AND reply */
   Fcall t, r;
@@ -4201,8 +4218,8 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
     return 0; /* No async tracking needed */
   }
 
-  /* Submit to MSGORD with callback */
-  op_id = msgord_submit_async(msgord, p, t, path, p9_msgord_callback, op);
+  /* Submit to MsgOrd */
+  op_id = msgord_submit_async(msgord, p, t, path, p9_msgord_callback, op, 0);
   if (op_id == 0) {
     xfree(op);
     return 0;
@@ -4222,6 +4239,9 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
  * Handle doorbell asynchronously using consensus depth classification
  */
 int p9_handle_doorbell_async(Proc *p) {
+  /*@
+    @ requires \valid(p);
+    @*/
   P9Control *ctl;
   uchar *reqbuf;
   Fcall t, r;
