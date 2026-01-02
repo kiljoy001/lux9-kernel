@@ -8,6 +8,9 @@ Require Import Coq.ZArith.ZArith.
 Require Import Coq.Bool.Bool.
 Require Import Lia.
 Import ListNotations.
+
+Require Import pow_gate.pow_gate_model.
+
 Open Scope Z_scope.
 
 (* ========================================================================= *)
@@ -71,9 +74,22 @@ Fixpoint msgord_anticone (dag : MsgOrd) (msg : GhostMsg) : Z :=
 Definition determine_color (dag : MsgOrd) (msg : GhostMsg) : Color :=
   if msgord_anticone dag msg <=? K_PARAM then Blue else Red.
 
+(* Contention ratio (0..100) as percent of pending anticone over DAG size *)
+Definition contention_ratio (dag : MsgOrd) (msg : GhostMsg) : Z :=
+  let denom := Z.max 1 (Z.of_nat (length dag)) in
+  (100 * msgord_anticone dag msg) / denom.
+
+(* Adaptive difficulty: green state <=10% has zero cost, otherwise linear *)
+Definition msgord_pow_difficulty (dag : MsgOrd) (msg : GhostMsg) : Z :=
+  let ratio := contention_ratio dag msg in
+  if ratio <=? 10 then 0 else Z.min 32 (ratio - 10).
+
+Definition pow_ok (hash : Z) (is_tcb : bool) (dag : MsgOrd) (msg : GhostMsg) : bool :=
+  if is_tcb then true else pow_verify_spec hash (msgord_pow_difficulty dag msg).
+
 (* _msgord_submit: Add message, determine color, update state *)
 (* Returns the new DAG and the ID of the submitted message *)
-Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) : MsgOrd :=
+Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) (hash : Z) (is_tcb : bool) : MsgOrd :=
   (* 1. Create message (Pending by default) *)
   (* parents[0] = tail (if exists). Pure model: just take last added ID? 
      For 'saturation' proof, parents don't matter much if we assume independence,
@@ -86,17 +102,21 @@ Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) : MsgOrd :=
      Let's model "dag" as the list. order doesn't impact set membership. *)
   let dag_with_msg := raw_msg :: dag in
   
-  (* 3. Color *)
-  let color := determine_color dag_with_msg raw_msg in
+  (* 3. PoW gate (Adaptive Kinetic Defense) *)
+  if pow_ok hash is_tcb dag_with_msg raw_msg then
+    (* 4. Color *)
+    let color := determine_color dag_with_msg raw_msg in
   
-  (* 4. Update State *)
-  match color with
-  | Blue => 
-      let final_msg := mkMsg new_id [] Blue Ordered in
-      final_msg :: dag (* Add to DAG *)
-  | Red => 
-      dag (* FAIL-FAST: Drop Red messages, do not add to DAG *)
-  end.
+    (* 5. Update State *)
+    match color with
+    | Blue => 
+        let final_msg := mkMsg new_id [] Blue Ordered in
+        final_msg :: dag (* Add to DAG *)
+    | Red => 
+        dag (* FAIL-FAST: Drop Red messages, do not add to DAG *)
+    end
+  else
+    dag.
 
 (* msgord_can_deliver: Check if all parents are processed *)
 (* C logic: Iterates DAG. If parent found, must be >= Delivered. If not found, assumed Complete. *)
@@ -159,40 +179,57 @@ Definition Inv_BlueOnly (dag : MsgOrd) : Prop :=
   forall m, In m dag -> m.(gm_color) = Blue.
 
 Theorem no_red_messages_in_dag :
-  forall dag,
+  forall dag hash is_tcb,
   Inv_BlueOnly dag ->
-  let new_dag := msgord_submit dag 100 in
+  let new_dag := msgord_submit dag 100 hash is_tcb in
   Inv_BlueOnly new_dag.
 Proof.
-  intros dag Hinv.
+  intros dag hash is_tcb Hinv.
   unfold Inv_BlueOnly in *.
   unfold msgord_submit.
   simpl.
-  destruct (determine_color (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hcolor.
-  - (* Blue case: new message added *)
-    intros m Hin.
-    destruct Hin as [Heq | Hin_old].
-    + subst. reflexivity.
-    + apply Hinv. exact Hin_old.
-  - (* Red case: DAG unchanged *)
-    exact Hinv.
+  destruct (pow_ok hash is_tcb (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hpow.
+  - destruct (determine_color (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hcolor.
+    + (* Blue case: new message added *)
+      intros m Hin.
+      destruct Hin as [Heq | Hin_old].
+      * subst. reflexivity.
+      * apply Hinv. exact Hin_old.
+    + (* Red case: DAG unchanged *)
+      exact Hinv.
+  - exact Hinv.
 Qed.
 
 (* THEOREM 2: SATURATION RECOVERY *)
 (* If the DAG is empty (processed), we can always accept a Blue message *)
 Theorem empty_dag_accepts_blue :
-  forall new_id,
-  let dag := [] in
-  let new_dag := msgord_submit dag new_id in
+  forall new_id hash is_tcb,
+  let new_dag := msgord_submit [] new_id hash is_tcb in
   exists m, In m new_dag /\ m.(gm_id) = new_id.
 Proof.
-  intros new_id.
-  cbv [msgord_submit determine_color msgord_anticone].
-  rewrite Z.eqb_refl.
-  change (0 <=? K_PARAM)%Z with true.
+  intros new_id hash is_tcb.
+  cbv [msgord_submit].
+  unfold pow_ok, msgord_pow_difficulty, contention_ratio.
   simpl.
-  exists (mkMsg new_id [] Blue Ordered).
-  split; [left; reflexivity|reflexivity].
+  rewrite Z.eqb_refl.
+  simpl.
+  destruct is_tcb; simpl.
+  - cbv [determine_color msgord_anticone].
+    rewrite Z.eqb_refl.
+    change (0 <=? K_PARAM)%Z with true.
+    simpl.
+    exists (mkMsg new_id [] Blue Ordered).
+    split.
+    + cbv [In]. left. reflexivity.
+    + reflexivity.
+  - cbv [determine_color msgord_anticone].
+    rewrite Z.eqb_refl.
+    change (0 <=? K_PARAM)%Z with true.
+    simpl.
+    exists (mkMsg new_id [] Blue Ordered).
+    split.
+    + cbv [In]. left. reflexivity.
+    + reflexivity.
 Qed.
 
 (* THEOREM 3: TOPOLOGICAL ORDERING *)
@@ -270,14 +307,15 @@ Qed.
 Theorem saturation_leads_to_drop :
   forall dag new_id,
   (exists count, count > K_PARAM /\ count = msgord_anticone dag (mkMsg new_id [] Blue Pending)) ->
-  let new_dag := msgord_submit dag new_id in
+  forall hash is_tcb,
+  let new_dag := msgord_submit dag new_id hash is_tcb in
   new_dag = dag. (* Proves it was dropped *)
 Proof.
-  intros dag new_id [count [Hgt Hcount]].
+  intros dag new_id [count [Hgt Hcount]] hash is_tcb.
   unfold msgord_submit.
-  unfold determine_color.
-
-  
+  simpl.
+  destruct (pow_ok hash is_tcb (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hpow.
+  - unfold determine_color.
   assert (Hsame: msgord_anticone (mkMsg new_id [] Blue Pending :: dag) {| gm_id := new_id; gm_parents := []; gm_color := Blue; gm_state := Pending |} = msgord_anticone dag {| gm_id := new_id; gm_parents := []; gm_color := Blue; gm_state := Pending |}).
   {
      simpl. rewrite Z.eqb_refl. reflexivity.
@@ -290,4 +328,5 @@ Proof.
   { apply Z.leb_gt. lia. }
   rewrite Hbool.
   reflexivity.
+  - reflexivity.
 Qed.
