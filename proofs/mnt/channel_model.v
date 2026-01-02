@@ -222,22 +222,36 @@ Proof.
     intro Hcontra.
     (* Z.lor can only make bits 1, never clear them.
        If COPEN was set before (Hopen), it remains set after lor. *)
-    assert (Hlor: Z.land (chan_flag c) COPEN <> 0 ->
-                  Z.land (Z.lor (chan_flag c) flags) COPEN <> 0).
-    { intro Hland.
-      intro Hcontra'.
-      (* COPEN bit is set in chan_flag c *)
-      (* Z.lor preserves set bits, so COPEN remains set *)
-      assert (Hbit: Z.testbit (Z.lor (chan_flag c) flags) 5 = true).
-      { rewrite Z.lor_spec.
-        (* Assuming COPEN = 0x0020 = bit 5 *)
-        admit. (* This requires bit-level reasoning *)
-      }
-      admit.
-    }
-    apply Hlor in Hopen.
-    contradiction.
-Admitted.  (* TODO: Complete bit-level proof or simplify model *)
+    assert (Hcopen : COPEN = 1) by reflexivity.
+    assert (Hland_mod : Z.land (chan_flag c) 1 = (chan_flag c) mod 2).
+    { change 1 with (Z.ones 1).
+      rewrite Z.land_ones by lia.
+      simpl. reflexivity. }
+    assert (Hmod_neq : (chan_flag c) mod 2 <> 0).
+    { rewrite <- Hland_mod. rewrite <- Hcopen. exact Hopen. }
+    assert (Hmod_range : 0 <= (chan_flag c) mod 2 < 2)
+      by (apply Z.mod_pos_bound; lia).
+    assert (Hmod1 : (chan_flag c) mod 2 = 1) by lia.
+    assert (Hodd : Z.Odd (chan_flag c)).
+    { exists (chan_flag c / 2).
+      assert (Hdiv : chan_flag c = 2 * (chan_flag c / 2) + chan_flag c mod 2)
+        by (apply (Z.div_mod (chan_flag c) 2); lia).
+      rewrite Hmod1 in Hdiv.
+      exact Hdiv. }
+    assert (Hbit : Z.testbit (chan_flag c) 0 = true).
+    { rewrite Z.testbit_odd.
+      rewrite Z.shiftr_0_r.
+      apply (proj2 (Z.odd_spec (chan_flag c))). exact Hodd. }
+    assert (Hlorbit : Z.testbit (Z.lor (chan_flag c) flags) 0 = true).
+    { rewrite Z.lor_spec. rewrite Hbit. simpl. reflexivity. }
+    assert (Hlandbit :
+              Z.testbit (Z.land (Z.lor (chan_flag c) flags) 1) 0 = true).
+    { rewrite Z.land_spec. rewrite Hlorbit. simpl. reflexivity. }
+    rewrite Hcopen in Hcontra.
+    rewrite Hcontra in Hlandbit.
+    rewrite Z.testbit_0_l in Hlandbit.
+    discriminate.
+Qed.
 
 (* ========================================================================= *)
 (* INTEGRATION WITH MOUNT PROOFS                                            *)
