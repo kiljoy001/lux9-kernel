@@ -209,6 +209,78 @@ Proof.
   - rewrite firstn_length_le by lia. lia.
 Qed.
 
+Lemma nth_error_set_bit :
+  forall bitmap pos i,
+    pos < length bitmap ->
+    nth_error (set_bit bitmap pos) i =
+    if Nat.eqb i pos then Some true else nth_error bitmap i.
+Proof.
+  intros bitmap pos i Hpos.
+  unfold set_bit.
+  set (l1 := firstn pos bitmap).
+  set (l2 := skipn (pos + 1) bitmap).
+  assert (Hlen1 : length l1 = pos) by (unfold l1; rewrite firstn_length_le; lia).
+  destruct (Nat.lt_trichotomy i pos) as [Hlt | [Heq | Hgt]].
+  - rewrite nth_error_app1 by (rewrite Hlen1; lia).
+    unfold l1.
+    rewrite nth_error_firstn.
+    assert (Hltb : Nat.ltb i pos = true) by (apply Nat.ltb_lt; exact Hlt).
+    rewrite Hltb.
+    assert (Hneq : Nat.eqb i pos = false) by (apply Nat.eqb_neq; lia).
+    rewrite Hneq.
+    reflexivity.
+  - subst i.
+    rewrite Nat.eqb_refl.
+    rewrite nth_error_app2 by (rewrite Hlen1; lia).
+    replace (pos - length l1) with 0 by (rewrite Hlen1; lia).
+    simpl. reflexivity.
+  - assert (Hneq : Nat.eqb i pos = false) by (apply Nat.eqb_neq; lia).
+    rewrite Hneq.
+    rewrite nth_error_app2 by (rewrite Hlen1; lia).
+    replace (i - length l1) with (S (i - pos - 1)) by (rewrite Hlen1; lia).
+    simpl.
+    unfold l2.
+    rewrite nth_error_skipn.
+    replace (pos + 1 + (i - pos - 1)) with i by lia.
+    reflexivity.
+Qed.
+
+Lemma nth_error_clear_bit :
+  forall bitmap pos i,
+    pos < length bitmap ->
+    nth_error (clear_bit bitmap pos) i =
+    if Nat.eqb i pos then Some false else nth_error bitmap i.
+Proof.
+  intros bitmap pos i Hpos.
+  unfold clear_bit.
+  set (l1 := firstn pos bitmap).
+  set (l2 := skipn (pos + 1) bitmap).
+  assert (Hlen1 : length l1 = pos) by (unfold l1; rewrite firstn_length_le; lia).
+  destruct (Nat.lt_trichotomy i pos) as [Hlt | [Heq | Hgt]].
+  - rewrite nth_error_app1 by (rewrite Hlen1; lia).
+    unfold l1.
+    rewrite nth_error_firstn.
+    assert (Hltb : Nat.ltb i pos = true) by (apply Nat.ltb_lt; exact Hlt).
+    rewrite Hltb.
+    assert (Hneq : Nat.eqb i pos = false) by (apply Nat.eqb_neq; lia).
+    rewrite Hneq.
+    reflexivity.
+  - subst i.
+    rewrite Nat.eqb_refl.
+    rewrite nth_error_app2 by (rewrite Hlen1; lia).
+    replace (pos - length l1) with 0 by (rewrite Hlen1; lia).
+    simpl. reflexivity.
+  - assert (Hneq : Nat.eqb i pos = false) by (apply Nat.eqb_neq; lia).
+    rewrite Hneq.
+    rewrite nth_error_app2 by (rewrite Hlen1; lia).
+    replace (i - length l1) with (S (i - pos - 1)) by (rewrite Hlen1; lia).
+    simpl.
+    unfold l2.
+    rewrite nth_error_skipn.
+    replace (pos + 1 + (i - pos - 1)) with i by lia.
+    reflexivity.
+Qed.
+
 (** Set/clear at different positions commute *)
 Lemma set_clear_commute :
   forall bitmap pos1 pos2,
@@ -218,18 +290,42 @@ Lemma set_clear_commute :
     set_bit (clear_bit bitmap pos2) pos1 = clear_bit (set_bit bitmap pos1) pos2.
 Proof.
   intros bitmap pos1 pos2 H1 H2 Hneq.
-  unfold set_bit, clear_bit.
-  (* This requires careful case analysis on pos1 < pos2 vs pos1 > pos2 *)
-  (* Both operations modify different positions, so they commute *)
-  destruct (Nat.lt_ge_cases pos1 pos2).
-  - (* pos1 < pos2: set affects earlier, clear affects later *)
-    (* After clear: firstn pos2 bitmap ++ [false] ++ skipn (pos2+1) *)
-    (* After set: firstn pos1 ++ [true] ++ skipn (pos1+1) of above *)
-    (* The firstn pos1 is entirely within firstn pos2 bitmap *)
-    admit. (* Complex list manipulation - would need extensive list lemmas *)
-  - (* pos1 > pos2: similar reasoning *)
-    admit.
-Admitted. (* This proof is complex but the property is correct *)
+  assert (H2' : pos2 < length (set_bit bitmap pos1)) by
+      (rewrite set_bit_preserves_length by exact H1; exact H2).
+  apply nth_error_ext. intro i.
+  destruct (Nat.eq_dec i pos1) as [Hip1 | Hip1].
+  - subst i.
+    rewrite nth_error_set_bit by (rewrite clear_bit_preserves_length; lia).
+    rewrite Nat.eqb_refl.
+    rewrite nth_error_clear_bit by exact H2'.
+    assert (Hneqb : Nat.eqb pos1 pos2 = false) by (apply Nat.eqb_neq; exact Hneq).
+    rewrite Hneqb.
+    rewrite nth_error_set_bit by exact H1.
+    rewrite Nat.eqb_refl.
+    reflexivity.
+  - destruct (Nat.eq_dec i pos2) as [Hip2 | Hip2].
+    + subst i.
+      rewrite nth_error_set_bit by (rewrite clear_bit_preserves_length; lia).
+      assert (Hneqb : Nat.eqb pos2 pos1 = false) by
+          (apply Nat.eqb_neq; intro H; apply Hneq; symmetry; exact H).
+      rewrite Hneqb.
+      rewrite nth_error_clear_bit by exact H2.
+      rewrite Nat.eqb_refl.
+      rewrite nth_error_clear_bit by exact H2'.
+      rewrite Nat.eqb_refl.
+      reflexivity.
+    + rewrite nth_error_set_bit by (rewrite clear_bit_preserves_length; lia).
+      rewrite (nth_error_clear_bit (set_bit bitmap pos1) pos2 i) by exact H2'.
+      assert (Hip1b : Nat.eqb i pos1 = false) by (apply Nat.eqb_neq; exact Hip1).
+      assert (Hip2b : Nat.eqb i pos2 = false) by (apply Nat.eqb_neq; exact Hip2).
+      rewrite Hip1b.
+      rewrite Hip2b.
+      rewrite (nth_error_clear_bit bitmap pos2 i) by exact H2.
+      rewrite (nth_error_set_bit bitmap pos1 i) by exact H1.
+      rewrite Hip1b.
+      rewrite Hip2b.
+      reflexivity.
+Qed.
 
 (* ========================================================================= *)
 (* RECURSIVE LOCK SAFETY *)
