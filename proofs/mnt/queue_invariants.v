@@ -204,6 +204,72 @@ Fixpoint queue_position (tag : Z) (q : MsgQueue) : option nat :=
            end
   end.
 
+Lemma queue_position_lt_length : forall tag q n,
+  queue_position tag q = Some n ->
+  (n < length q)%nat.
+Proof.
+  induction q as [| m rest IH]; intros n Hpos.
+  - simpl in Hpos. discriminate.
+  - simpl in Hpos.
+    destruct (Z.eqb (qmsg_tag m) tag) eqn:E.
+    + inversion Hpos; subst. simpl. lia.
+    + remember (queue_position tag rest) as qp eqn:Erest.
+      destruct qp as [n'|].
+      * inversion Hpos; subst.
+        assert (Hlen : (n' < length rest)%nat).
+        { apply IH. rewrite Erest. reflexivity. }
+        simpl. lia.
+      * discriminate.
+Qed.
+
+Lemma queue_position_append_single : forall tag q r,
+  queue_position tag (q ++ [r]) =
+    match queue_position tag q with
+    | Some n => Some n
+    | None =>
+        if Z.eqb (qmsg_tag r) tag
+        then Some (length q)
+        else None
+    end.
+Proof.
+  induction q as [| m rest IH]; intros r.
+  - simpl. destruct (Z.eqb (qmsg_tag r) tag); reflexivity.
+  - simpl.
+    destruct (Z.eqb (qmsg_tag m) tag) eqn:E; [reflexivity|].
+    rewrite IH.
+    destruct (queue_position tag rest) as [n'|] eqn:Erest.
+    + reflexivity.
+    + destruct (Z.eqb (qmsg_tag r) tag); reflexivity.
+Qed.
+
+Lemma queue_position_exists : forall tag q,
+  In tag (map qmsg_tag q) ->
+  exists n, queue_position tag q = Some n.
+Proof.
+  induction q as [| m rest IH]; intros Hin.
+  - simpl in Hin. contradiction.
+  - simpl in Hin. destruct Hin as [Hin | Hin].
+    + subst. exists 0%nat. simpl. rewrite Z.eqb_refl. reflexivity.
+    + destruct (Z.eqb (qmsg_tag m) tag) eqn:E.
+      * exists 0%nat. simpl. rewrite E. reflexivity.
+      * destruct (IH Hin) as [n Hn].
+        exists (S n). simpl. rewrite E. rewrite Hn. reflexivity.
+Qed.
+
+Lemma queue_position_none_if_tag_not_in : forall tag q,
+  ~ In tag (map qmsg_tag q) ->
+  queue_position tag q = None.
+Proof.
+  induction q as [| m rest IH]; intros Hnotin.
+  - reflexivity.
+  - apply not_in_cons in Hnotin.
+    destruct Hnotin as [Hneq Hnotin'].
+    simpl.
+    destruct (Z.eqb (qmsg_tag m) tag) eqn:E.
+    + apply Z.eqb_eq in E. exfalso. apply Hneq. symmetry. exact E.
+    + rewrite (IH Hnotin'). reflexivity.
+Qed.
+
 (** Enqueued-before relation *)
 Definition enqueued_before (tag1 tag2 : Z) (q : MsgQueue) : Prop :=
   exists n1 n2,
@@ -211,15 +277,26 @@ Definition enqueued_before (tag1 tag2 : Z) (q : MsgQueue) : Prop :=
     queue_position tag2 q = Some n2 /\
     (n1 < n2)%nat.
 
-(** Axiom: Enqueue places RPC at tail
-    * Would require inductive proofs about queue_position and list operations.
-    * Property is intuitive from enqueue definition (q ++ [r]).
-    *)
-Axiom enqueue_at_tail : forall r q,
-  q <> [] ->
-  forall tag,
-    In tag (map qmsg_tag q) ->
-    enqueued_before tag (qmsg_tag r) (enqueue r q).
+(** Enqueue places RPC at tail when tag is fresh *)
+Lemma enqueue_at_tail : forall r q tag,
+  ~ In (qmsg_tag r) (map qmsg_tag q) ->
+  In tag (map qmsg_tag q) ->
+  enqueued_before tag (qmsg_tag r) (enqueue r q).
+Proof.
+  intros r q tag Hfresh Hin.
+  unfold enqueued_before, enqueue.
+  destruct (queue_position_exists tag q Hin) as [n Hn].
+  exists n, (length q).
+  split; [| split].
+  - rewrite queue_position_append_single. rewrite Hn. reflexivity.
+  - assert (Hnotin : queue_position (qmsg_tag r) q = None).
+    { apply queue_position_none_if_tag_not_in. exact Hfresh. }
+    rewrite queue_position_append_single.
+    rewrite Hnotin.
+    rewrite Z.eqb_refl.
+    reflexivity.
+  - apply queue_position_lt_length in Hn. exact Hn.
+Qed.
 
 (* ========================================================================= *)
 (* QUEUE CONSISTENCY PROPERTIES                                              *)
@@ -245,14 +322,22 @@ Proof.
   - exfalso. apply Hinflight. reflexivity.
 Qed.
 
-(** Axiom: Tag allocated implies RPC in queue
-    * This requires a system-level invariant linking tagmask to queue.
-    * Would need to prove from mntalloc/mntfree implementation.
-    *)
-Axiom allocated_implies_inflight : forall m tag,
+(** Tag in queue implies RPC inflight *)
+Lemma allocated_implies_inflight : forall m tag,
   MntWellFormed m ->
-  tag_allocated (mnt_tagmask m) tag ->
+  In tag (map qmsg_tag (mnt_queue m)) ->
   rpc_inflight tag m.
+Proof.
+  intros m tag Hwf Hin.
+  destruct Hwf as [Huniq _].
+  unfold rpc_inflight.
+  apply in_map_iff in Hin.
+  destruct Hin as [msg [Htag Hin]].
+  assert (Hfind : find_rpc_by_tag tag (mnt_queue m) = Some msg).
+  { apply mountmux_finds_tag; try exact Huniq; try exact Hin.
+    exact Htag. }
+  rewrite Hfind. discriminate.
+Qed.
 
 (** No tag reuse while RPC inflight *)
 Theorem no_tag_reuse_while_inflight : forall m tag,
