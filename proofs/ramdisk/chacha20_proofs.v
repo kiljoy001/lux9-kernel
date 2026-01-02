@@ -201,9 +201,12 @@ Theorem xchacha20_birthday_bound_improvement :
   (birthday_bound chacha20_nonce_bits) ^ 2.
 Proof.
   unfold birthday_bound, xchacha20_nonce_bits, chacha20_nonce_bits.
-  (* 2^96 = (2^48)^2 by exponent rules *)
-  (* Proof requires exponent arithmetic library *)
-Admitted.
+  change (192 / 2) with 96.
+  change (96 / 2) with 48.
+  replace 96 with (48 * 2) by reflexivity.
+  rewrite Nat.pow_mul_r.
+  reflexivity.
+Qed.
 
 (* ========================================================================
  * ChaCha20 Round Function Properties
