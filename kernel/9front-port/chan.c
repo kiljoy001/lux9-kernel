@@ -179,8 +179,14 @@ void chandevreset(void) {
   pci_framework_enumerate();
 
   todinit(); /* avoid later reentry causing infinite recursion */
-  for (i = 0; devtab[i] != nil; i++)
+  for (i = 0; devtab[i] != nil; i++) {
+    if (devtab[i]->reset == nil) {
+      print("chandevreset: WARNING: device %s (#%c) has nil reset function!\n",
+            devtab[i]->name, devtab[i]->dc);
+      continue;
+    }
     devtab[i]->reset();
+  }
 }
 
 static void closeproc(void *);

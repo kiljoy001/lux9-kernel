@@ -1,3 +1,4 @@
+#include "9p_router.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
@@ -5,7 +6,6 @@
 #include "portlib.h"
 #include "tos.h"
 #include "u.h"
-#include "9p_router.h"
 #include <a.out.h>
 #include <elf.h>
 #include <error.h>
@@ -85,7 +85,8 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   int i;
 
   /* Read ELF header */
-  if (devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0) != sizeof(ehdr)) {
+  if (devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0) !=
+      sizeof(ehdr)) {
     print("ELF: Failed to read ELF header\n");
     return 0;
   }
@@ -113,7 +114,8 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   }
 
   print("ELF: Valid ELF64 x86-64 executable, entry=0x%llx\n", ehdr.e_entry);
-  print("ELF: %d program headers at offset 0x%llx\n", ehdr.e_phnum, ehdr.e_phoff);
+  print("ELF: %d program headers at offset 0x%llx\n", ehdr.e_phnum,
+        ehdr.e_phoff);
 
   /* Allocate space for program headers */
   phdrs = malloc(ehdr.e_phnum * sizeof(Elf64_Phdr));
@@ -123,8 +125,9 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   }
 
   /* Read program headers */
-  if (devtab[c->type]->read(c, (uchar *)phdrs, ehdr.e_phnum * sizeof(Elf64_Phdr),
-                            ehdr.e_phoff) != ehdr.e_phnum * sizeof(Elf64_Phdr)) {
+  if (devtab[c->type]->read(c, (uchar *)phdrs,
+                            ehdr.e_phnum * sizeof(Elf64_Phdr), ehdr.e_phoff) !=
+      ehdr.e_phnum * sizeof(Elf64_Phdr)) {
     print("ELF: Failed to read program headers\n");
     free(phdrs);
     return 0;
@@ -344,6 +347,11 @@ static void proc0(void *arg) {
     poperror();
   }
 
+  /* TODO: Re-enable when lib9p provides proper /wasm server
+   * These mounts fail because /wasm directory doesn't exist yet.
+   * See: implementation_plan.md for lib9p fileserver library.
+   */
+#if 0
   /* Expose sandbox-visible devices under /wasm */
   mount_wasm_device("#X", "#X");
   mount_wasm_device("#c", "#c");
@@ -351,6 +359,7 @@ static void proc0(void *arg) {
   mount_wasm_device("#B", "#B");
   mount_wasm_device("#Y", "#Y");
   mount_wasm_device("#Z", "#Z");
+#endif
 
   /* CLR moved to userspace - no kernel initialization needed */
   /* pebble_sip_issue_test(); */
@@ -429,13 +438,15 @@ static void proc0(void *arg) {
   if (bc != nil) {
     Exec exec;
     if (!waserror()) {
-      print("BOOT[proc0]: Found /boot/init or /boot/boot, checking header...\n");
+      print(
+          "BOOT[proc0]: Found /boot/init or /boot/boot, checking header...\n");
 
       /* Try ELF first */
       if (load_elf64(bc, &elf_entry)) {
         loaded = 1;
         up->entry_point = elf_entry;
-        print("BOOT[proc0]: ELF binary loaded successfully, entry=0x%lx\n", elf_entry);
+        print("BOOT[proc0]: ELF binary loaded successfully, entry=0x%lx\n",
+              elf_entry);
       } else {
         /* Try Plan 9 a.out format */
         print("BOOT[proc0]: Not ELF, trying Plan 9 a.out...\n");
@@ -484,7 +495,9 @@ static void proc0(void *arg) {
             }
             loaded = 1;
             up->entry_point = UTZERO;
-            print("BOOT[proc0]: a.out binary loaded successfully, entry=0x%lx\n", UTZERO);
+            print(
+                "BOOT[proc0]: a.out binary loaded successfully, entry=0x%lx\n",
+                UTZERO);
           } else {
             print("BOOT[proc0]: Bad a.out magic 0x%x (expected 0x%x)\n",
                   exec.magic, S_MAGIC);

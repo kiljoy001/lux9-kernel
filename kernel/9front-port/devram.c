@@ -472,9 +472,7 @@ static void ramreset(void) {
     print("ramdisk: %lud MB allocated\n", ramdisk_size / (1024 * 1024));
 
   /* 2. Init Vault List Lock */
-  secure_wipe((uchar *)&vault_list_lock,
-              sizeof(vault_list_lock)); /* Just clean memory, really */
-  /* qlock init called on use or via memset usually, but let's be safe */
+  memset(&vault_list_lock, 0, sizeof(vault_list_lock));
 }
 
 static void raminit(void) { /* Nothing to do */ }
@@ -527,7 +525,8 @@ static Chan *ramopen(Chan *c, int omode) {
     v->size += 24;
 
     /* Mint capability and allocate memory */
-    if (pebble_alloc_with_white(v->size, &v->capability, (void**)&v->data) < 0) {
+    if (pebble_alloc_with_white(v->size, &v->capability, (void **)&v->data) <
+        0) {
       free(v);
       error(Enomem);
     }

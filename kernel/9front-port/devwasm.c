@@ -1,8 +1,10 @@
-#include "u.h"
 #include "dat.h"
-#include "fns.h"
 #include "error.h"
-#include "../wasm/wasm_runtime.h"
+#include "fns.h"
+#include "u.h"
+
+/* Forward declaration - avoid complex wasm_runtime.h dependencies */
+extern void wasm_runtime_stats(void);
 
 enum { Qdir, Qctl };
 
@@ -57,6 +59,9 @@ static long wasmwrite(Chan *c, void *va, long n, vlong) {
 Dev wasmdevtab = {
     .dc = 'W',
     .name = "wasm",
+    .reset = devreset,
+    .init = devinit,
+    .shutdown = devshutdown,
     .attach = wasmattach,
     .walk = wasmwalk,
     .stat = wasmstat,
