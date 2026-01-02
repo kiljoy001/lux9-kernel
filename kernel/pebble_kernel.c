@@ -12,6 +12,7 @@
  *   - RED/BLUE consensus orthogonal to WHITE/BLACK state
  */
 
+#include "csprng_fallback.h"
 #include "dat.h"
 #include "error.h"
 #include "fns.h"
@@ -163,7 +164,8 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
     op.size = size;
     op.timestamp = fastticks(nil);
 
-    msg_id = msgord_submit_raw(msgord, up, &op, sizeof(op));
+    msg_id =
+        msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64());
     if (msg_id < 0) {
       /* MSGORD submission failed, continue anyway */
       pebble_kernel_log_msgord_failure("reserve", buf, size);
@@ -232,7 +234,8 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
     op.size = alloc->size;
     op.timestamp = fastticks(nil);
 
-    if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64()) <
+        0)
       pebble_kernel_log_msgord_failure("activate", alloc->ptr, alloc->size);
   }
 }
@@ -277,7 +280,8 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
     op.size = alloc->size;
     op.timestamp = fastticks(nil);
 
-    if (msgord_submit_raw(msgord, up, &op, sizeof(op)) < 0)
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64()) <
+        0)
       pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
   }
 

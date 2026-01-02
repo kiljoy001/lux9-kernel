@@ -1,7 +1,7 @@
+#include "borrowchecker.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
-#include "borrowchecker.h"
 #include "pageown.h"
 #include "pebble.h"
 #include "portlib.h"
@@ -159,9 +159,32 @@ void freepages(Page *head, Page *tail, ulong np) {
   while (p != nil) {
     if (up != nil && p->pa != 0) {
       /* Try to release, but don't banic if not owned (might be early boot) */
+      /* Try to release, but don't panic if not owned (might be early boot) */
       if (pageown_is_owned(p->pa)) {
-        if (pageown_release(up, p->pa) != POWN_OK)
-          panic("freepages: failed to release page ownership pa=%#p", p->pa);
+        Proc *owner = pageown_get_owner(p->pa);
+        if (owner != nil) {
+          if (pageown_release(up, p->pa) != POWN_OK) {
+            panic("freepages: release failed pa=%#p (kaddr=%#p). OwnerPID: %d, "
+                  "CurrentPID: %d.",
+                  p->pa, hhdm_virt(p->pa), owner->pid, up ? up->pid : -2);
+          }
+        } else if (borrow_is_owned_by_system(hhdm_virt(p->pa), OWNER_KERNEL)) {
+          /* System-owned (WASM) page - release using system API */
+          if (borrow_release_system(hhdm_virt(p->pa), OWNER_KERNEL) !=
+              BORROW_OK) {
+            pageown_dump_page(p->pa);
+            panic("freepages: system release failed pa=%#p (kaddr=%#p). "
+                  "CurrentPID: %d.",
+                  p->pa, hhdm_virt(p->pa), up ? up->pid : -2);
+          }
+        } else {
+          /* Owned but no owner and not OWNER_KERNEL? Phantom state. */
+          uintptr hhdm_va = hhdm_virt(p->pa);
+          pageown_dump_page(p->pa);
+          panic("freepages: phantom ownership pa=%#p (kaddr=%#p). OwnerPID: "
+                "-1, CurrentPID: %d.",
+                p->pa, hhdm_va, up ? up->pid : -2);
+        }
       }
     }
     if (p == tail)

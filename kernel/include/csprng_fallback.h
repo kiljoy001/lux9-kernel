@@ -10,11 +10,13 @@
 
 #pragma once
 
+#include "u.h"
+
 /* Generate 64-bit random value using ChaCha20 CSPRNG */
 u64int chacha20_csprng_u64(void);
 
 /* Fill buffer with random bytes */
-void chacha20_csprng_fill(u8 *buf, ulong len);
+void chacha20_csprng_fill(u8int *buf, ulong len);
 
 /* Get CSPRNG statistics (for debugging) */
 void csprng_stats(void);

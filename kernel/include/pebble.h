@@ -219,6 +219,7 @@ void pebble_auto_verify(Proc *p, Ureg *ureg);
 void pebble_red_blue_exit(void);
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white);
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size);
+void pebble_return_white(PebbleState *ps, PebbleWhite *white);
 PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle);
 int pebble_blue_exists(PebbleState *ps, PebbleBlue *blue);
 int pebble_has_matching_red(PebbleState *ps, PebbleBlue *blue);
@@ -259,6 +260,7 @@ void pebble_meta_free(void *v);
 #define POW_OP_NET_BIND 3
 #define POW_OP_REALTIME 4
 #define POW_OP_STACK_ALLOC 5 /* CIL localloc - cheaper than heap */
+#define POW_OP_MSGORD 6      /* MsgOrd consensus admission */
 
 int pow_calculate_difficulty(int op_class, ulong magnitude);
 int pow_verify(u64int nonce, u64int context, int required_diff);
