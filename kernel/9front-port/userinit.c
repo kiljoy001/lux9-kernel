@@ -85,8 +85,11 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   int i;
 
   /* Read ELF header */
-  if (devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0) !=
-      sizeof(ehdr)) {
+  print("ELF: Reading header from chan type=%d qid=%llx\n", c->type,
+        c->qid.path);
+  long nread = devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0);
+  print("ELF: Read %ld bytes (expected %lud)\n", nread, sizeof(ehdr));
+  if (nread != sizeof(ehdr)) {
     print("ELF: Failed to read ELF header\n");
     return 0;
   }
@@ -428,9 +431,19 @@ static void proc0(void *arg) {
     print("BOOT[proc0]: stack pte missing\n");
 
   /* Try to load /boot/init first, then /boot/boot */
-  Chan *bc = namec("/boot/init", Aopen, OREAD, 0);
-  if (bc == nil)
-    bc = namec("/boot/boot", Aopen, OREAD, 0);
+  /* Use #/boot/init to access directly via root device, not namespace */
+  print("BOOT[proc0]: attempting to open #/boot/init...\n");
+  Chan *bc = nil;
+  if (!waserror()) {
+    bc = namec("#/boot/init", Aopen, OREAD, 0);
+    poperror();
+  } else {
+    print("BOOT[proc0]: namec #/boot/init failed, trying #/boot/boot...\n");
+  }
+  if (bc == nil && !waserror()) {
+    bc = namec("#/boot/boot", Aopen, OREAD, 0);
+    poperror();
+  }
 
   int loaded = 0;
   uintptr elf_entry = 0;

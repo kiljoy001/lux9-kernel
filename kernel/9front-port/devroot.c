@@ -87,7 +87,10 @@ static void addlist(Dirlist *l, char *name, uchar *contents, ulong len,
  *  add a root file
  */
 void addbootfile(char *name, uchar *contents, ulong len) {
+  print("addbootfile: adding '%s' len=%lud to bootlist (ndir=%d)\n", name, len,
+        bootlist.ndir);
   addlist(&bootlist, name, contents, len, 0555);
+  print("addbootfile: after add, bootlist.ndir=%d\n", bootlist.ndir);
 }
 
 /*
@@ -164,7 +167,7 @@ static int rootstat(Chan *c, uchar *dp, int n) {
 }
 
 static Chan *rootopen(Chan *c, int omode) {
-  return devopen(c, omode, nil, 0, devgen);
+  return devopen(c, omode, nil, 0, rootgen);
 }
 
 /*
