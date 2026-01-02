@@ -106,16 +106,6 @@ Proof.
   apply (parent_in_namespace pg c_parent c); assumption.
 Qed.
 
-(** Axiom: Child channel from walk stays in namespace
-    * Requires full 9P walk RPC model.
-    *)
-Axiom walk_child_in_namespace : forall pg c c_child,
-  PgrpWellFormed pg ->
-  InNamespace pg c ->
-  ChanWellFormed c_child ->
-  (* Simplified: c_child obtained from 9P walk on c *)
-  InNamespace pg c_child.
-
 (** Theorem: Walk preserves namespace membership *)
 Theorem walk_namespace_containment : forall pg c path result,
   PgrpWellFormed pg ->
@@ -140,6 +130,17 @@ Proof.
     apply IHHwalk; try assumption.
   - (* Walk_Error: trivially true *)
     exact I.
+Qed.
+
+Lemma walk_child_in_namespace : forall pg c comp path c_child,
+  PgrpWellFormed pg ->
+  InNamespace pg c ->
+  Walk pg c (comp :: path) (WalkSuccess c_child) ->
+  InNamespace pg c_child.
+Proof.
+  intros pg c comp path c_child Hwf Hin Hwalk.
+  apply (walk_namespace_containment pg c (comp :: path) (WalkSuccess c_child));
+    assumption.
 Qed.
 
 (** Lemma: Walking on single-element DOTDOT path *)
@@ -384,16 +385,22 @@ Proof.
   - exact Hin.
 Qed.
 
-(** Axiom: Walk on well-formed channel produces well-formed result
-    * Full proof requires modeling the 9P walk RPC and reply handling.
-    *)
-Axiom walk_preserves_wellformed : forall pg c path result,
-  ChanWellFormed c ->
+Theorem walk_preserves_wellformed : forall pg c path result,
+  PgrpWellFormed pg ->
+  InNamespace pg c ->
+  (forall c', InNamespace pg c' -> ChanWellFormed c') ->
   Walk pg c path result ->
   match result with
   | WalkSuccess c' => ChanWellFormed c'
   | WalkError _ => True
   end.
+Proof.
+  intros pg c path result Hwf Hin Hns Hwalk.
+  destruct result as [c'|err].
+  - apply Hns.
+    apply (walk_namespace_containment pg c path (WalkSuccess c')); assumption.
+  - exact I.
+Qed.
 
 Print Assumptions walk_namespace_containment.
 Print Assumptions dotdot_bounded.
