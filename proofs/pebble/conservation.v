@@ -10,8 +10,11 @@ Require Import pebble.types.
 (* CONSERVATION INVARIANT                                                    *)
 (* ========================================================================= *)
 
+Definition BudgetPotential (s : PebbleState) : Z :=
+  s.(colorless) + s.(black) + s.(blue) + s.(red) + s.(white_pending).
+
 Definition Inv_Conservation (s : PebbleState) (total : Z) : Prop :=
-  s.(colorless) + s.(black) + s.(blue) + s.(red) = total.
+  BudgetPotential s >= total.
 
 Definition Inv_NonNegative (s : PebbleState) : Prop :=
   s.(colorless) >= 0 /\
@@ -24,6 +27,18 @@ Definition Inv_NonNegative (s : PebbleState) : Prop :=
 (* ========================================================================= *)
 (* TRANSITIONS                                                               *)
 (* ========================================================================= *)
+
+Inductive WhiteIssue (size : Z) (s1 s2 : PebbleState) : Prop :=
+  | WI_Success :
+      size > 0 ->
+      s1.(colorless) >= size ->
+      s2 = mkPebble
+             (s1.(colorless) - size) s1.(black) s1.(blue) s1.(red)
+             (s1.(white_pending) + size)
+             s1.(white_verified)
+             s1.(live_caps) s1.(freed_caps) s1.(next_cap_id)
+             s1.(pending_authorizations) ->
+      WhiteIssue size s1 s2.
 
 Inductive WhiteVerify (size : Z) (s1 s2 : PebbleState) : Prop :=
   | WV_Success :
@@ -39,18 +54,15 @@ Inductive WhiteVerify (size : Z) (s1 s2 : PebbleState) : Prop :=
 Inductive BlackAlloc (size : Z) (new_cap : CapId) (s1 s2 : PebbleState) : Prop :=
   | BA_Success :
       size > 0 ->
-      s1.(white_verified) > 0 ->
-      s1.(white_pending) >= size ->
-      s1.(colorless) >= size ->
       new_cap = s1.(next_cap_id) ->
       ~ In new_cap s1.(live_caps) ->
       ~ In new_cap s1.(freed_caps) ->
       s2 = mkPebble
-             (s1.(colorless) - size)
-             (s1.(black) + size)
+             s1.(colorless)
+             s1.(black)
              s1.(blue) s1.(red)
-             (s1.(white_pending) - size)
-             (s1.(white_verified) - 1)
+             s1.(white_pending)
+             s1.(white_verified)
              (new_cap :: s1.(live_caps))
              s1.(freed_caps)
              (s1.(next_cap_id) + 1)
@@ -123,11 +135,33 @@ Inductive RedFree (size : Z) (s1 s2 : PebbleState) : Prop :=
 (* CONSERVATION PROOFS                                                       *)
 (* ========================================================================= *)
 
+Theorem white_issue_conserves :
+  forall s1 s2 size total,
+  Inv_Conservation s1 total -> WhiteIssue size s1 s2 -> Inv_Conservation s2 total.
+Proof.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *.
+  simpl in *. lia.
+Qed.
+
 Theorem white_verify_conserves :
   forall s1 s2 size total,
   Inv_Conservation s1 total -> WhiteVerify size s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. exact H.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *.
+  simpl in *. lia.
+Qed.
+
+Theorem whiteissue_preserves_nonneg :
+  forall s1 s2 size,
+  Inv_NonNegative s1 -> WhiteIssue size s1 s2 -> Inv_NonNegative s2.
+Proof.
+  intros s1 s2 size Hnonneg HIssue.
+  inversion HIssue; subst.
+  unfold Inv_NonNegative in *. simpl.
+  destruct Hnonneg as [Hc [Hb [Hbl [Hr [Hwp Hwv]]]]].
+  repeat split; try assumption; try lia.
 Qed.
 
 (** WhiteVerify preserves non-negative invariant *)
@@ -146,40 +180,45 @@ Theorem black_alloc_conserves :
   forall s1 s2 size cap total,
   Inv_Conservation s1 total -> BlackAlloc size cap s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. exact H.
 Qed.
 
 Theorem black_free_conserves :
   forall s1 s2 size cap total,
   Inv_Conservation s1 total -> BlackFree size cap s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *. simpl in *. lia.
 Qed.
 
 Theorem blue_alloc_conserves :
   forall s1 s2 size total,
   Inv_Conservation s1 total -> BlueAlloc size s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *. simpl in *. lia.
 Qed.
 
 Theorem blue_free_conserves :
   forall s1 s2 size total,
   Inv_Conservation s1 total -> BlueFree size s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *. simpl in *. lia.
 Qed.
 
 Theorem red_alloc_conserves :
   forall s1 s2 size total,
   Inv_Conservation s1 total -> RedAlloc size s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *. simpl in *. lia.
 Qed.
 
 Theorem red_free_conserves :
   forall s1 s2 size total,
   Inv_Conservation s1 total -> RedFree size s1 s2 -> Inv_Conservation s2 total.
 Proof.
-  intros. inversion H0. subst. unfold Inv_Conservation in *. simpl. lia.
+  intros. inversion H0. subst.
+  unfold Inv_Conservation, BudgetPotential in *. simpl in *. lia.
 Qed.

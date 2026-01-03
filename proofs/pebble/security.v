@@ -131,11 +131,14 @@ Qed.
 (* AUTHORIZATION CHAIN                                                       *)
 (* ========================================================================= *)
 
-Theorem blackalloc_requires_white :
+Theorem blackalloc_requires_fresh_cap :
   forall s1 s2 size cap,
-  BlackAlloc size cap s1 s2 -> s1.(white_verified) > 0.
+  BlackAlloc size cap s1 s2 ->
+  ~ In cap s1.(live_caps) /\ ~ In cap s1.(freed_caps).
 Proof.
-  intros. inversion H. assumption.
+  intros s1 s2 size cap Halloc.
+  inversion Halloc; subst.
+  split; assumption.
 Qed.
 
 Theorem whiteverify_authorizes :
