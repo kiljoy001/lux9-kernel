@@ -497,7 +497,7 @@ found:
   lock(i);
   if (i->c == nil) {
     i->c = c;
-    incref(c);
+    incref((Ref *)&c->ref);
   }
   return i;
 }

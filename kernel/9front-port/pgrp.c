@@ -205,7 +205,7 @@ dupfgrp(Fgrp *f)
 		if((c = f->fd[i]) != nil){
 			new->fd[i] = c;
 			new->flag[i] = f->flag[i];
-			incref(c);
+			incref((Ref *)&c->ref);
 		}
 	}
 	unlock(&f->lock);

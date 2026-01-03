@@ -177,7 +177,7 @@ Chan *fdtochan(int fd, int mode, int chkmnt, int iref) {
     error(Ebadfd);
   }
   if (iref)
-    incref(c);
+    incref((Ref *)&c->ref);
   unlock(&f->lock);
 
   if (chkmnt && (c->flag & CMSG)) {

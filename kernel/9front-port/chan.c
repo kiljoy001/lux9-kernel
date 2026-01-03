@@ -980,7 +980,7 @@ int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   Walkqid *wq;
 
   c = *cp;
-  incref(c); /* Checks c!=nil implicitly effectively - namec handles passed nil?
+  incref((Ref *)&c->ref); /* Checks c!=nil implicitly effectively - namec handles passed nil?
                 No walk guarantees c valid from namec */
   /* if (c==nil) panic("walk: c is nil"); - handled by caller or incref */
 
@@ -1367,7 +1367,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     c = up->slash;
     if (c == nil)
       panic("namec: up->slash is nil for %s", name);
-    incref(c);
+    incref((Ref *)&c->ref);
     break;
 
   case '#':
@@ -1402,7 +1402,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     c = up->dot;
     if (c == nil)
       panic("namec: up->dot is nil for %s", name);
-    incref(c);
+    incref((Ref *)&c->ref);
     break;
   }
 
