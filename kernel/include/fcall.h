@@ -300,6 +300,7 @@ enum {
   SYS_WSTAT,
   SYS_RFORK = 19,
   SYS_PIPE = 21,
+  SYS_SEEK = 39,
   SYS_MOUNT = 46,
   SYS_NSEC = 53,
   SYS_WAIT = 166

@@ -368,7 +368,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
 
   if (p->wasm.initialized) {
-    if (t->data && t->count > 0 && !p9_exchange_contains(p, t->data, t->count)) {
+    if (t->data && t->count > 0 &&
+        !p9_exchange_contains(p, t->data, t->count)) {
       r->type = Rerror;
       r->ename = "wasm data must use exchange page";
       return -1;
@@ -589,6 +590,46 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       r->type = Rsyscall;
       r->tag = t->tag;
       r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_SEEK: {
+      /* Seek syscall - Format: [fd 4] [offset 8] [whence 4]
+       * whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
+       * Returns new position as retval
+       */
+      extern vlong sseek(int, vlong, int);
+
+      p = tsyscall_skip_argc(p, ep, 3);
+      if (p + 4 + 8 + 4 > ep) {
+        r->type = Rerror;
+        r->ename = "short seek msg";
+        return -1;
+      }
+      int fd = GBIT32(p);
+      p += 4;
+      vlong offset = GBIT64(p);
+      p += 8;
+      int whence = GBIT32(p);
+      p += 4;
+
+      print("p9_dispatch: SYS_SEEK fd=%d offset=%lld whence=%d\n", fd, offset,
+            whence);
+
+      vlong newpos;
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      newpos = sseek(fd, offset, whence);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = newpos;
       r->scount = 0;
       r->sdata = nil;
       return 0;
@@ -923,7 +964,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
       print("p9_dispatch: SYS_WSTAT '%s' nstat=%d\n", path, nstat);
 
-      extern void validstat(uchar *s, int n);
+      extern void validstat(uchar * s, int n);
       Chan *c = nil;
       if (waserror()) {
         if (c)
@@ -1176,7 +1217,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
 
     case SYS_WAIT: {
-      extern ulong pwait(Waitmsg *w);
+      extern ulong pwait(Waitmsg * w);
       Waitmsg w;
 
       if (waserror()) {
@@ -1671,7 +1712,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   }
 
   if (t->type == Tsyswait) {
-    extern ulong pwait(Waitmsg *w);
+    extern ulong pwait(Waitmsg * w);
     Waitmsg w;
     char *msg;
     int msgmax = P9_REPLY_SIZE - 64;
@@ -2208,7 +2249,8 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
   ctx->reply = r;
 
   /* Submit message asynchronously */
-  msg_id = msgord_submit_async(nil, p, t, path, p9_route_reply_callback, ctx, 0);
+  msg_id =
+      msgord_submit_async(nil, p, t, path, p9_route_reply_callback, ctx, 0);
   if (msg_id == 0) {
     xfree(ctx);
     r->type = Rerror;
@@ -3002,7 +3044,8 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
     if (disp < 0)
       r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
 
-    u32int rep_size = convS2M(&r, slot + P9_RING_HEADER_SIZE, P9_RING_DATA_SIZE);
+    u32int rep_size =
+        convS2M(&r, slot + P9_RING_HEADER_SIZE, P9_RING_DATA_SIZE);
     if (rep_size == 0)
       return -1;
     PBIT32(slot + 4, rep_size);
@@ -3803,7 +3846,8 @@ int srv_get_by_index(int index, char *name, int namelen) {
   return -1;
 }
 
-int srv_get_by_index_for_proc(Proc *caller, int index, char *name, int namelen) {
+int srv_get_by_index_for_proc(Proc *caller, int index, char *name,
+                              int namelen) {
   int i;
   int seen = 0;
 

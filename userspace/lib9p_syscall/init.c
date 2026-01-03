@@ -206,8 +206,8 @@ void main(void) {
   }
 
   if (pid == 0) {
-    /* Child - exec resurrection server */
-    do_exec("/boot/resurrection");
+    /* Child - exec extensive WASM test */
+    do_exec("#/./boot/wasm_test");
     /* If exec fails, hang */
     for (;;)
       ;

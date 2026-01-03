@@ -582,6 +582,12 @@ void userpmap(uintptr va, uintptr pa, int perms) {
     panic("userpmap: out of memory for page tables");
   }
   *pte = pa | perms;
+
+  /* Invalidate TLB for this VA to ensure mapping takes effect immediately.
+   * This is critical when userpmap() is called after mmuswitch(), as the
+   * CPU may have cached a "not present" TLB entry for this address. */
+  __asm__ volatile("invlpg (%0)" ::"r"(va) : "memory");
+
   print("userpmap: va=%#p pa=%#p perms=%#ux pte=%#llux\n", va, pa, perms,
         (uvlong)*pte);
   splx(x);

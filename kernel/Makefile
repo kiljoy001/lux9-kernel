@@ -318,7 +318,7 @@ iso: $(KERNEL_BINARY)
 	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
 	@cp ../limine.conf $(ISO_DIR)/limine.conf
 	@cp ../limine.conf $(ISO_DIR)/boot/limine/limine.cfg
-	@cp ../initrd.tar.gz $(ISO_DIR)/boot/initrd.tar
+	@cp ../initrd.tar $(ISO_DIR)/boot/initrd.tar
 	@cp ../boot/limine/bin/limine-bios.sys $(ISO_DIR)/boot/limine/
 	@cp ../boot/limine/bin/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
 	@cp ../boot/limine/bin/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/

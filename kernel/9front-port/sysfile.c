@@ -831,7 +831,7 @@ uintptr syspwrite(void *list_void) {
   }
 }
 
-static vlong sseek(int fd, vlong o, int type) {
+vlong sseek(int fd, vlong o, int type) {
   Dir *d;
   Chan *c;
   vlong off;
