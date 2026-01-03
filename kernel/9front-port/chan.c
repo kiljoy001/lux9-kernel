@@ -418,7 +418,7 @@ static Path *addelem(Path *p, char *s, Chan *from) {
     }
     p->mtpt[p->mlen++] = from;
     if (from != nil)
-      incref(from);
+      incref((Ref *)&from->ref);
   }
   return p;
 }
@@ -632,7 +632,7 @@ Mhead *newmhead(Chan *from) {
   memset(mh, 0, sizeof(*mh)); /* Zero all fields including lock */
   mh->ref = 1;
   mh->from = from;
-  incref(from);
+  incref((Ref *)&from->ref);
   setmalloctag(mh, getcallerpc(&from));
   return mh;
 }
@@ -886,10 +886,10 @@ int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
   for (m = MOUNTH(pg, qid); m != nil; m = m->hash) {
     if (eqchantdqid(m->from, type, dev, qid, 1)) {
       if (mp != nil)
-        incref(m);
+        incref((Ref *)&m->ref);
       rlock(&m->lock);
       to = m->mount->to;
-      incref(to);
+      incref((Ref *)&to->ref);
       runlock(&m->lock);
       runlock(&pg->ns);
       if (mp != nil) {
@@ -923,7 +923,7 @@ static int domount(Chan **cp, Mhead **mp, Path **path) {
       print("domount: path %s has mlen==%d\n", p->s, p->mlen);
     else {
       from = (*mp)->from;
-      incref(from);
+      incref((Ref *)&from->ref);
       lc = &p->mtpt[p->mlen - 1];
       if (*lc != nil)
         cclose(*lc);
@@ -1581,7 +1581,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
      * for the create path below. */
     {
       Chan *parent = c;
-      incref(parent);
+      incref((Ref *)&parent->ref);
       if (walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0) {
         /* File exists - try to open with truncation */
         cclose(parent);
@@ -1648,7 +1648,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
                 current_boot_state);
           panic("namec Acreate: c is nil when trying to incref for create");
         }
-        incref(cnew);
+        incref((Ref *)&cnew->ref);
       }
 
       /*

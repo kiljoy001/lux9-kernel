@@ -140,7 +140,7 @@ pgrpcpy(Pgrp *to, Pgrp *from)
 				n->mountid = m->mountid;
 				n->mflag = m->mflag;
 				n->to = m->to;
-				incref(n->to);
+				incref((Ref *)&n->to->ref);
 				strcpy(n->spec, m->spec);
 				pgrpinsert(&order, n);
 				*link = n;
@@ -281,7 +281,7 @@ newmount(Chan *to, int flag, char *spec)
 	if(m == nil)
 		error(Enomem);
 	m->to = to;
-	incref(to);
+	incref((Ref *)&to->ref);
 	m->mountid = nextmount();
 	m->mflag = flag;
 	strcpy(m->spec, spec);

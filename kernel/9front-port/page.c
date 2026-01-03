@@ -512,7 +512,7 @@ Page *lookpage(Image *i, uintptr daddr) {
       *l = p->next;
       p->next = *h;
       *h = p;
-      incref(p);
+      incref((Ref *)&p->ref);
       unlock(i);
       return p;
     }
@@ -548,9 +548,9 @@ void zeroprivatepages(void) {
   pe = palloc.pages + palloc.user;
   for (p = palloc.pages; p != pe; p++) {
     if (p->modref & PG_PRIV) {
-      incref(p);
+      incref((Ref *)&p->ref);
       fillpage(p, 0);
-      decref(p);
+      decref((Ref *)&p->ref);
     }
   }
   unlock(&palloc);

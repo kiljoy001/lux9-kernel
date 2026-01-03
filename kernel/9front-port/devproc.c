@@ -1343,7 +1343,7 @@ proctext(Chan *c, Proc *p)
 		unlock(i);
 		error(Enonexist);
 	}
-	incref(tc);
+	incref((Ref *)&tc->ref);
 	unlock(i);
 	qunlock(&p->seglock);
 	poperror();

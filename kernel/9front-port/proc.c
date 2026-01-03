@@ -1223,7 +1223,7 @@ void postnotepg(ulong noteid, char *msg, int flag) {
       continue;
     qlock(&p->debug);
     if (p->noteid == noteid && !p->kp) {
-      incref(n);
+      incref((Ref *)&n->ref);
       pushnote(p, n);
     }
     qunlock(&p->debug);

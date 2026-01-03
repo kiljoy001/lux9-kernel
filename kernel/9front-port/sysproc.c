@@ -189,7 +189,7 @@ uintptr sysrfork(void *list_void) {
   p->s = up->s;
   p->slash = up->slash;
   p->dot = up->dot;
-  incref(p->dot);
+  incref((Ref *)&p->dot->ref);
 
   p->nnote = 0;
   p->notify = up->notify;
@@ -278,7 +278,7 @@ uintptr sysrfork(void *list_void) {
             sizeof p->pgrp->notallowed);
   } else {
     p->pgrp = up->pgrp;
-    incref(up->pgrp);
+    incref((Ref *)&up->pgrp->ref);
   }
 
   /* Rendezvous group */
@@ -286,7 +286,7 @@ uintptr sysrfork(void *list_void) {
     p->rgrp = newrgrp();
   else {
     p->rgrp = up->rgrp;
-    incref(up->rgrp);
+    incref((Ref *)&up->rgrp->ref);
   }
 
   /* Environment group */
@@ -296,7 +296,7 @@ uintptr sysrfork(void *list_void) {
       envcpy(p->egrp, up->egrp);
   } else {
     p->egrp = up->egrp;
-    incref(up->egrp);
+    incref(&up->egrp->ref);
   }
 
   /*
@@ -573,6 +573,40 @@ uintptr sysexec(void *list_void) {
               "DEBUG: sysexec detected ELF binary\n");
       uartputs(debug_buf, strlen(debug_buf));
       is_elf = 1;
+    }
+
+    /* Check for WASM magic: 0x00 0x61 0x73 0x6D = "\0asm" */
+    if (n >= 4 && u.buf[0] == 0x00 && u.buf[1] == 0x61 && u.buf[2] == 0x73 &&
+        u.buf[3] == 0x6d) {
+      extern int wasm_exec_compile(Chan * tc, void **out_start);
+      extern void wasm_exec_run(void *start_func);
+      void *start_func = nil;
+
+      snprint(debug_buf, sizeof(debug_buf),
+              "DEBUG: sysexec detected WASM binary\n");
+      uartputs(debug_buf, strlen(debug_buf));
+      print("EXEC: detected WASM binary '%s'\n", file);
+
+      /* Compile WASM module into current process */
+      if (wasm_exec_compile(tc, &start_func) < 0) {
+        cclose(tc);
+        poperror(); /* tc error handler */
+        error("WASM compile failed");
+      }
+
+      /* Close the file channel */
+      cclose(tc);
+      poperror(); /* tc error handler */
+
+      /* Clean up exec state */
+      free(file0);
+      free(elem);
+      poperror(); /* outer error handler */
+
+      /* Execute WASM - this does NOT return */
+      wasm_exec_run(start_func);
+      /* NOTREACHED */
+      return 0;
     }
 
     /* Check for .NET/CLR PE/COFF signature ("MZ") */

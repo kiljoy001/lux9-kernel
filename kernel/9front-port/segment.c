@@ -285,7 +285,7 @@ static Pte *ptecpy(Pte *new, Pte *old) {
     if (onswap(entry))
       dupswap(entry);
     else
-      incref(entry);
+      incref((Ref *)&entry->ref);
     new->last = dst;
     *dst = entry;
   }
@@ -335,7 +335,8 @@ Segment *dupseg(Segment **seg, int segno, int share) {
     n->image = s->image;
     n->fstart = s->fstart;
     n->flen = s->flen;
-    incref((Ref *)&s->image->ref);
+    if (s->image != nil)
+      incref((Ref *)&s->image->ref);
     break;
   }
   for (i = 0; i < s->mapsize; i++) {
