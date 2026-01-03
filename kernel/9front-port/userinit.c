@@ -154,15 +154,59 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
     return 0;
   }
 
-  /* Calculate pages needed */
-  ulong total_len = max_addr - min_addr;
-  ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
-  print("ELF: Memory range 0x%llx-0x%llx (%ld pages)\n", min_addr, max_addr,
-        total_pages);
+/* Add guard pages: 4 pages (16KB) before and after for safety */
+#define GUARD_PAGES 4
+  uintptr guard_min = (min_addr & ~(BY2PG - 1)) - (GUARD_PAGES * BY2PG);
+  uintptr guard_max =
+      ((max_addr + BY2PG - 1) & ~(BY2PG - 1)) + (GUARD_PAGES * BY2PG);
 
-  /* Create TSEG */
-  up->seg[TSEG] = newseg(SG_TEXT, min_addr, total_pages);
+  /* Calculate pages needed including guards */
+  ulong total_len = guard_max - guard_min;
+  ulong total_pages = total_len / BY2PG;
+  print("ELF: Memory range 0x%llx-0x%llx (%ld pages, with %d guard pages each "
+        "side)\n",
+        guard_min, guard_max, total_pages, GUARD_PAGES);
+
+  /* Create TSEG with guard pages */
+  up->seg[TSEG] = newseg(SG_TEXT, guard_min, total_pages);
   up->seg[TSEG]->flushme = 1;
+
+  /* Allocate guard pages only - PT_LOAD segments will allocate their own pages
+   */
+  /* NOTE: Guard pages are attributed to process Pebble budget as "system tax"
+   */
+  /* System tax = overhead pages required by the system (guards before/after
+   * program) */
+  print("ELF: Pre-allocating guard pages (system tax)\n");
+  ulong guard_pages_allocated = 0;
+
+  /* Page-align min and max addresses for guard allocation */
+  uintptr aligned_min = min_addr & ~(BY2PG - 1);
+  uintptr aligned_max = (max_addr + BY2PG - 1) & ~(BY2PG - 1);
+
+  /* Allocate guard pages BEFORE program */
+  for (uintptr addr = guard_min; addr < aligned_min; addr += BY2PG) {
+    Page *p =
+        newpage(addr, nil); /* Charges process Pebble budget as system tax */
+    KMap *k = kmap(p);
+    memset((uchar *)VA(k), 0, BY2PG); /* Zero-fill guard page */
+    kunmap(k);
+    segpage(up->seg[TSEG], p);
+    guard_pages_allocated++;
+  }
+
+  /* Allocate guard pages AFTER program */
+  for (uintptr addr = aligned_max; addr < guard_max; addr += BY2PG) {
+    Page *p =
+        newpage(addr, nil); /* Charges process Pebble budget as system tax */
+    KMap *k = kmap(p);
+    memset((uchar *)VA(k), 0, BY2PG); /* Zero-fill guard page */
+    kunmap(k);
+    segpage(up->seg[TSEG], p);
+    guard_pages_allocated++;
+  }
+  print("ELF: Allocated %ld guard pages (system tax: %ldKB overhead)\n",
+        guard_pages_allocated, (guard_pages_allocated * BY2PG) / 1024);
 
   /* Load each PT_LOAD segment */
   for (i = 0; i < ehdr.e_phnum; i++) {
@@ -221,6 +265,31 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   free(phdrs);
   *out_entry = ehdr.e_entry;
   print("ELF: Loaded successfully, entry point at 0x%llx\n", *out_entry);
+
+/* Map the exchange page for 9P syscalls at fixed address 0x7FFFFEEFF000 */
+/* Exchange page is system tax - required for 9P syscall interface */
+/* Create a dedicated segment for the exchange page (2 pages for request +
+ * reply) */
+#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
+#define ESEG                                                                   \
+  4 /* Exchange segment slot - using slot 4 (between SSEG=3 and TSEG=1) */
+  print("ELF: Mapping exchange page at 0x%llx (system tax)\n",
+        EXCHANGE_PAGE_ADDR);
+
+  /* Create segment for exchange pages (2 pages: request + reply) */
+  up->seg[ESEG] = newseg(SG_DATA, EXCHANGE_PAGE_ADDR, 2);
+  up->seg[ESEG]->flushme = 1;
+
+  /* Allocate and map the exchange pages */
+  Page *exchange_page =
+      newpage(EXCHANGE_PAGE_ADDR,
+              nil); /* Charges process Pebble budget as system tax */
+  KMap *exchange_k = kmap(exchange_page);
+  memset((uchar *)VA(exchange_k), 0, BY2PG); /* Zero the exchange page */
+  kunmap(exchange_k);
+  segpage(up->seg[ESEG], exchange_page);
+  print("ELF: Exchange page mapped and ready\n");
+
   return 1;
 }
 
@@ -431,17 +500,18 @@ static void proc0(void *arg) {
     print("BOOT[proc0]: stack pte missing\n");
 
   /* Try to load /boot/init first, then /boot/boot */
-  /* Use #/boot/init to access directly via root device, not namespace */
-  print("BOOT[proc0]: attempting to open #/boot/init...\n");
+  /* Use #/./boot/init to access directly via root device, avoiding spec
+   * confusion */
+  print("BOOT[proc0]: attempting to open #/./boot/init...\n");
   Chan *bc = nil;
   if (!waserror()) {
-    bc = namec("#/boot/init", Aopen, OREAD, 0);
+    bc = namec("#/./boot/init", Aopen, OREAD, 0);
     poperror();
   } else {
-    print("BOOT[proc0]: namec #/boot/init failed, trying #/boot/boot...\n");
+    print("BOOT[proc0]: namec #/./boot/init failed, trying #/./boot/boot...\n");
   }
   if (bc == nil && !waserror()) {
-    bc = namec("#/boot/boot", Aopen, OREAD, 0);
+    bc = namec("#/./boot/boot", Aopen, OREAD, 0);
     poperror();
   }
 
@@ -461,62 +531,102 @@ static void proc0(void *arg) {
         print("BOOT[proc0]: ELF binary loaded successfully, entry=0x%lx\n",
               elf_entry);
       } else {
-        /* Try Plan 9 a.out format */
-        print("BOOT[proc0]: Not ELF, trying Plan 9 a.out...\n");
+        /* Try WASM */
+        extern int wasm_exec_compile(Chan * tc, void **out_start);
+        void *start_func = nil;
+        /* Peek at magic for WASM check */
+        uchar magic[4];
+        if (devtab[bc->type]->read(bc, magic, 4, 0) == 4 && magic[0] == 0x00 &&
+            magic[1] == 0x61 && magic[2] == 0x73 && magic[3] == 0x6d) {
 
-        if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
-            sizeof(Exec)) {
-          /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
-          if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
-            print("BOOT[proc0]: Loading a.out binary (text=%d data=%d)\n",
-                  exec.text, exec.data);
-
-            ulong total_len = exec.text + exec.data + exec.bss;
-            ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
-
-            print("BOOT[proc0]: Creating TSEG size=%ld pages\n", total_pages);
-            up->seg[TSEG] = newseg(SG_TEXT, UTZERO, total_pages);
-            up->seg[TSEG]->flushme = 1;
-
-            ulong file_off = sizeof(Exec); /* Skip 32-byte header */
-            ulong virt_addr = UTZERO;
-            ulong remaining = exec.text + exec.data;
-
-            for (int i = 0; i < total_pages; i++) {
-              Page *p = newpage(virt_addr, nil);
-              KMap *k = kmap(p);
-
-              long to_read = BY2PG;
-              if (remaining < BY2PG)
-                to_read = remaining;
-
-              if (to_read > 0) {
-                if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
-                                           file_off) != to_read)
-                  print("BOOT: Short read on /boot/init\n");
-                file_off += to_read;
-                remaining -= to_read;
-              }
-
-              /* Zero out BSS or partial page */
-              if (to_read < BY2PG)
-                memset((uchar *)VA(k) + to_read, 0, BY2PG - to_read);
-
-              kunmap(k);
-              segpage(up->seg[TSEG], p);
-              virt_addr += BY2PG;
-            }
+          print("BOOT[proc0]: Detected WASM binary\n");
+          if (wasm_exec_compile(bc, &start_func) == 0) {
             loaded = 1;
-            up->entry_point = UTZERO;
-            print(
-                "BOOT[proc0]: a.out binary loaded successfully, entry=0x%lx\n",
-                UTZERO);
+            /* Store start_func in entry_point for init0 to find */
+            up->entry_point = (uintptr)start_func;
+            /* Mark as WASM process for init0 */
+            /* We need a flag, but up->wasm.initialized is redundant since
+             * compile sets it */
+            print("BOOT[proc0]: WASM init loaded successfully\n");
+
+            /* WASM needs Stack and Exchange segments too */
+/* Stack is already setup (SSEG) */
+
+/* Map the exchange page for 9P syscalls */
+#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
+#define ESEG 4
+            up->seg[ESEG] = newseg(SG_DATA, EXCHANGE_PAGE_ADDR, 2);
+            up->seg[ESEG]->flushme = 1;
+            Page *xp = newpage(EXCHANGE_PAGE_ADDR, nil);
+            KMap *xk = kmap(xp);
+            memset((uchar *)VA(xk), 0, BY2PG);
+            kunmap(xk);
+            segpage(up->seg[ESEG], xp);
           } else {
-            print("BOOT[proc0]: Bad a.out magic 0x%x (expected 0x%x)\n",
-                  exec.magic, S_MAGIC);
+            print("BOOT[proc0]: WASM compile failed\n");
           }
         } else {
-          print("BOOT[proc0]: Failed to read a.out header\n");
+          /* Try Plan 9 a.out format */
+          print("BOOT[proc0]: Not ELF or WASM, trying Plan 9 a.out...\n");
+
+          /* Reset seek to 0 (read read checks from 0 but careful) */
+          /* Actually we read magic separately, need to be careful.
+           * But devtab read uses offset param, so just reuse 0 offset. */
+
+          if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
+              sizeof(Exec)) {
+            /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
+            if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
+              print("BOOT[proc0]: Loading a.out binary (text=%d data=%d)\n",
+                    exec.text, exec.data);
+
+              ulong total_len = exec.text + exec.data + exec.bss;
+              ulong total_pages = (total_len + BY2PG - 1) / BY2PG;
+
+              print("BOOT[proc0]: Creating TSEG size=%ld pages\n", total_pages);
+              up->seg[TSEG] = newseg(SG_TEXT, UTZERO, total_pages);
+              up->seg[TSEG]->flushme = 1;
+
+              ulong file_off = sizeof(Exec); /* Skip 32-byte header */
+              ulong virt_addr = UTZERO;
+              ulong remaining = exec.text + exec.data;
+
+              for (int i = 0; i < total_pages; i++) {
+                Page *p = newpage(virt_addr, nil);
+                KMap *k = kmap(p);
+
+                long to_read = BY2PG;
+                if (remaining < BY2PG)
+                  to_read = remaining;
+
+                if (to_read > 0) {
+                  if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
+                                             file_off) != to_read)
+                    print("BOOT: Short read on /boot/init\n");
+                  file_off += to_read;
+                  remaining -= to_read;
+                }
+
+                /* Zero out BSS or partial page */
+                if (to_read < BY2PG)
+                  memset((uchar *)VA(k) + to_read, 0, BY2PG - to_read);
+
+                kunmap(k);
+                segpage(up->seg[TSEG], p);
+                virt_addr += BY2PG;
+              }
+              loaded = 1;
+              up->entry_point = UTZERO;
+              print("BOOT[proc0]: a.out binary loaded successfully, "
+                    "entry=0x%lx\n",
+                    UTZERO);
+            } else {
+              print("BOOT[proc0]: Bad a.out magic 0x%x (expected 0x%x)\n",
+                    exec.magic, S_MAGIC);
+            }
+          } else {
+            print("BOOT[proc0]: Failed to read a.out header\n");
+          }
         }
       }
       poperror();

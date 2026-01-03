@@ -413,40 +413,31 @@ static int sys_read(int fd, void *buf, int count, u64int offset) {
   ctl->doorbell = 1;
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
-  sys_print("sys_read: syscall returned\n");
-
+  // CRITICAL: Parse reply and save data to local vars BEFORE any sys_print calls
+  // because sys_print reuses the exchange buffer!
   pos = 0;
   get_u32(req + pos);
   pos += 4;
-  if (req[pos++] == Rerror) {
-    sys_print("sys_read: got Rerror\n");
+  uchar reply_type = req[pos++];
+  if (reply_type == Rerror) {
     return -1;
   }
-  sys_print("sys_read: no error\n");
   pos += 2; // tag
 
   // Rsyscall: retval[8] scount[4] sdata...
   u64int retval = get_u64(req + pos);
-  sys_print("sys_read: retval=");
-  print_u64(retval);
-  sys_print("\n");
   pos += 8;
   uint r_scount = get_u32(req + pos);
-  sys_print("sys_read: r_scount=");
-  print_u32(r_scount);
-  sys_print("\n");
   pos += 4;
 
+  // Copy data to destination buffer before exchange buffer gets overwritten
   if (r_scount > 0) {
     if (r_scount > count)
       r_scount = count;
-    sys_print("sys_read: copying data\n");
     memcpy(buf, (void *)(req + pos), r_scount);
   }
 
-  sys_print("sys_read: done, returning ");
-  print_u32((uint)retval);
-  sys_print("\n");
+  // Now it's safe to print debug messages
   return (int)retval;
 }
 
