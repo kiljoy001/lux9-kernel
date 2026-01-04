@@ -44,7 +44,6 @@ clean:
 
 install: $(TARGET)
 	cp $(TARGET) ../../initrd/boot/
-	cp services.conf ../../initrd/boot/
-	@echo "Installed $(TARGET) and services.conf to initrd/boot/"
+	@echo "Installed $(TARGET) to initrd/boot/"
 
 .PHONY: all clean install

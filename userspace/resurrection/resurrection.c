@@ -52,17 +52,30 @@ static const unsigned char *const exchange_base =
 #define Rsyscall 131
 #define Rerror 107
 
-/* Syscall numbers */
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
-#define SYS_READ 3
-#define SYS_WRITE 4
+/* Syscall numbers (Matches kernel/include/sys.h) */
+#define SYS_OPEN 14
+#define SYS_CLOSE 4
+#define SYS_READ 15
+#define SYS_WRITE 20
+#define SYS_REMOVE 25
 #define SYS_EXIT 8
-#define SYS_FORK 9
-#define SYS_WAIT 166
-#define SYS_WASM_COMPILE 100
-#define SYS_WASM_EXECUTE 101
-#define SYS_WASM_DESTROY 102
+#define SYS_RFORK 19
+#define SYS_WAIT 36
+#define SYS_MOUNT 46
+#define SYS_PIPE 21
+#define SYS_PIPE 21
+#define SYS_CREATE 22
+
+/* Mount flags */
+#define MREPL 0x0000
+#define MBEFORE 0x0001
+#define MAFTER 0x0002
+#define MCREATE 0x0004
+
+/* Rfork flags */
+#define RFPROC (1 << 4)
+#define RFMEM (1 << 5)
+#define RFNOWAIT (1 << 6)
 
 /* Basic types */
 typedef unsigned int uint;
@@ -120,8 +133,8 @@ typedef struct {
 static void print(const char *msg);
 static void print_num(const char *prefix, int num, const char *suffix);
 int srv_create_entry(const char *name, int pid);
+static void start_service(Service *svc);
 static void restart_service(Service *svc);
-static void load_registry(void);
 static void monitor_services(void);
 
 /* Locking Primitives */
@@ -644,19 +657,14 @@ static u32int srv_handle_create(uchar *req, uchar *resp) {
   if (idx < 0)
     return srv_build_error(resp, tag, "no space for service");
 
-  /* Auto-start policy for now:
-     In Plan 9 /srv, the creator puts a file descriptor there.
-     Here, we just create the entry. The creator might WRITE to it later
-     to set properties or just keeping it open effectively 'registers' it.
-
-     For now, we mark it as SRV_RUNNING immediately on creation to satisfy
-     "announce themselves". Meaning, "I am here".
-  */
+  /* New service created via file system - starts as STOPPED
+     waiting for configuration via WRITE */
   Service *s = &services[idx];
-  s->state = SRV_RUNNING;
-  s->pid = 0; /* Unknown PID unless we get creds */
+  s->state = SRV_STOPPED;
+  s->pid = 0;
 
   print("RESURRECTION: Dynamic Service Registered: ");
+
   print(name);
   print("\n");
 
@@ -772,19 +780,52 @@ static u32int srv_handle_write(uchar *req, uchar *resp) {
     return srv_build_error(resp, tag, "unknown fid");
 
   if (f->type == FID_ENTRY) {
-    if (!f->authenticated) {
-      /* Expect CapToken */
-      if (count == sizeof(CapToken)) {
-        CapToken *tok = (CapToken *)data;
+    /* Allow configuration if not authenticated (registration phase)
+       OR if authenticated (control phase) */
 
-        if (cap_epoch_valid(tok->epoch, current_epoch, 2) &&
-            cap_token_verify(tok, services[f->srv_idx].service_hash,
-                             resurrection_pubkey, current_epoch) == 0) {
-          f->authenticated = 1;
-          return srv_build_rwrite(resp, tag, count);
-        }
-        return srv_build_error(resp, tag, "invalid token or expired");
+    /* Check for authentication token first */
+    if (count == sizeof(CapToken)) {
+      CapToken *tok = (CapToken *)data;
+      if (cap_epoch_valid(tok->epoch, current_epoch, 2) &&
+          cap_token_verify(tok, services[f->srv_idx].service_hash,
+                           resurrection_pubkey, current_epoch) == 0) {
+        f->authenticated = 1;
+        return srv_build_rwrite(resp, tag, count);
       }
+      /* Fallthrough: might be config data */
+    }
+
+    /* If matches "exec=" pattern, treat as configuration */
+    if (count > 5 && memcmp(data, "exec=", 5) == 0) {
+      Service *s = &services[f->srv_idx];
+
+      /* Simple parsing: remainder is path */
+      int pathlen = count - 5;
+      if (pathlen >= MAX_PATH_LEN)
+        pathlen = MAX_PATH_LEN - 1;
+
+      memcpy(s->exec_path, data + 5, pathlen);
+      s->exec_path[pathlen] = 0;
+
+      /* Strip newline if present */
+      if (pathlen > 0 && s->exec_path[pathlen - 1] == '\n')
+        s->exec_path[pathlen - 1] = 0;
+
+      print("RESURRECTION: Configured exec path for ");
+      print(s->name);
+      print(": ");
+      print(s->exec_path);
+      print("\n");
+
+      /* Auto-start if configured */
+      if (s->state == SRV_STOPPED) {
+        start_service(s);
+      }
+
+      return srv_build_rwrite(resp, tag, count);
+    }
+
+    if (!f->authenticated) {
       return srv_build_error(resp, tag, "authentication required");
     }
 
@@ -1070,12 +1111,11 @@ static int do_fork(void) {
   req[pos++] = Tsyscall;
   put_u16(req + pos, 1);
   pos += 2;
-  put_u32(req + pos, SYS_FORK);
+  put_u32(req + pos, SYS_RFORK);
   pos += 4;
   put_u32(req + pos, 4);
-  pos += 4; /* scount */
-  put_u32(req + pos, 0);
-  pos += 4; /* flags = RFPROC */
+  pos += 4;                   /* scount */
+  put_u32(req + pos, RFPROC); /* flags = RFPROC */
 
   ctl->doorbell = 1;
   __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
@@ -1436,8 +1476,8 @@ static int do_wait(char *status_buf, int status_len) {
   pos += 4;
 
   if (status_buf && status_len > 0 && msglen > 0) {
-    int copy_len = (msglen < (uint)(status_len - 1)) ? (int)msglen
-                                                     : (status_len - 1);
+    int copy_len =
+        (msglen < (uint)(status_len - 1)) ? (int)msglen : (status_len - 1);
     memcpy(status_buf, req + pos, copy_len);
     status_buf[copy_len] = 0;
   }
@@ -1538,22 +1578,8 @@ static void monitor_services(void) {
   }
 }
 
-/* ========== Syscall Definitions ========== */
-
-#define SYS_MOUNT 46
-#define SYS_RFORK 19
-#define SYS_PIPE 21
-
 /* Mount flags */
-#define MREPL 0x0000
-#define MBEFORE 0x0001
-#define MAFTER 0x0002
-#define MCREATE 0x0004
-
-/* Rfork flags */
-#define RFPROC (1 << 4)
-#define RFMEM (1 << 5)
-#define RFNOWAIT (1 << 6)
+/* Mount flags and Rfork flags moved to top */
 
 /* ... (previous code) ... */
 
@@ -1871,22 +1897,8 @@ int main(void) {
     }
   }
 
-  /* Register known good services */
-  print("RESURRECTION: Loading registry from /boot/services.conf...\n");
-
-  /* Initial load */
-  lock(&srv_lock);
-  load_registry();
-  unlock(&srv_lock);
-
-  /* Enter service monitoring loop (will reload on events) */
+  /* Enter service monitoring loop */
   monitor_services();
 
   /* ... shutdown ... */
-}
-
-static void load_registry(void) {
-  print("RESURRECTION: load_registry stub called\n");
-  // TODO: Implement parsing of /boot/services.conf
-  // For now, we will rely on dynamic registration via Tcreate
 }
