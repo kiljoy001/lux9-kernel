@@ -95,6 +95,19 @@ struct P9Control {
   uint rep_tail;
 };
 
+/* Syscall declarations from liblux */
+extern int sys_open(char *path, int mode);
+extern int sys_close(int fd);
+extern long sys_read(int fd, void *buf, long n);
+extern long sys_write(int fd, void *buf, long n);
+extern void sys_exit(char *msg);
+extern int sys_create(char *path, int mode, uint perm);
+extern int sys_rfork(int flags);
+extern void sys_exec(char *path);
+extern int sys_pipe(int *fds);
+extern int sys_wait(void);
+extern int sys_mount(int fd, int afd, char *old, int flags, char *aname);
+
 /* 9P Qid (required for Service struct) */
 typedef struct Qid {
   uchar type;
@@ -130,7 +143,8 @@ typedef struct {
 } Service;
 
 /* Forward Declarations */
-static void print(const char *msg);
+/* Print function - also used by liblux for debugging */
+int print(char *fmt, ...);
 static void print_num(const char *prefix, int num, const char *suffix);
 int srv_create_entry(const char *name, int pid);
 static void start_service(Service *svc);
@@ -260,18 +274,18 @@ static SrvFid srv_fids[MAX_FIDS];
 static u64int current_epoch = 0;
 
 /* Forward declarations for helper functions used by 9P handlers */
-int strcmp(const char *s1, const char *s2);
-int strlen(const char *s);
-void strncpy(char *dst, const char *src, int n);
-void put_u32(uchar *p, uint val);
-void put_u16(uchar *p, unsigned short val);
-void put_u64(uchar *p, uvlong val);
-unsigned short get_u16(const uchar *p);
-uint get_u32(const uchar *p);
-uvlong get_u64(const uchar *p);
-void *memset(void *dst, int c, unsigned long n);
-void *memcpy(void *dst, const void *src, unsigned long n);
-int memcmp(const void *s1, const void *s2, unsigned long n);
+static int strcmp(const char *s1, const char *s2);
+static int strlen(const char *s);
+static void strncpy(char *dst, const char *src, int n);
+static void put_u32(uchar *p, uint val);
+static void put_u16(uchar *p, unsigned short val);
+static void put_u64(uchar *p, uvlong val);
+static unsigned short get_u16(const uchar *p);
+static uint get_u32(const uchar *p);
+static uvlong get_u64(const uchar *p);
+static void *memset(void *dst, int c, unsigned long n);
+void *memcpy(void *dst, const void *src, unsigned long n);  /* non-static for blind_cap.o */
+int memcmp(const void *s1, const void *s2, unsigned long n); /* non-static for blind_cap.o */
 
 /* Type definitions for crypto */
 typedef uchar u8int;
@@ -890,8 +904,8 @@ void *memcpy(void *dst, const void *src, unsigned long n) {
   return dst;
 }
 
-void *memset(void *dst, int c, unsigned long n) __attribute__((used));
-void *memset(void *dst, int c, unsigned long n) {
+static void *memset(void *dst, int c, unsigned long n) __attribute__((used));
+static void *memset(void *dst, int c, unsigned long n) {
   uchar *d = dst;
   while (n--)
     *d++ = (uchar)c;
@@ -906,8 +920,8 @@ int strcmp(const char *s1, const char *s2) {
   return (uchar)*s1 - (uchar)*s2;
 }
 
-int strlen(const char *s) __attribute__((used));
-int strlen(const char *s) {
+static int strlen(const char *s) __attribute__((used));
+static int strlen(const char *s) {
   int len = 0;
   while (*s++)
     len++;
@@ -979,7 +993,9 @@ uvlong get_u64(const uchar *p) {
 
 /* ========== Console Output ========== */
 
-static void print(const char *msg) {
+/* Simple print - ignores format args for now */
+int print(char *fmt, ...) {
+  const char *msg = fmt;
   int msg_len = strlen(msg);
   uchar *req = (uchar *)exchange_base;
   uint sdata_size = 4 + 8 + 4 + msg_len;
@@ -1007,6 +1023,7 @@ static void print(const char *msg) {
   ctl->doorbell = 1;
   __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
                        : "rax", "rcx", "r11", "memory");
+  return msg_len;
 }
 
 static void print_num(const char *prefix, int num, const char *suffix) {
@@ -1349,7 +1366,7 @@ static void start_service(Service *svc) {
   svc->state = SRV_STARTING;
 
   /* Fork new process */
-  int pid = do_fork();
+  int pid = sys_rfork(RFPROC);
 
   if (pid < 0) {
     print("RESURRECTION: Fork failed for ");
@@ -1373,7 +1390,7 @@ static void start_service(Service *svc) {
      * - Register fake services
      * - Restart itself with different arguments
      */
-    do_exec(svc->exec_path);
+    sys_exec(svc->exec_path);
     /* If we get here, exec failed - exit */
     /* do_exit(1); */
     for (;;)
@@ -1541,7 +1558,7 @@ static void monitor_services(void) {
     */
 
     /* Wait for child events */
-    int pid = do_wait(status, sizeof(status));
+    int pid = sys_wait();  /* Note: status buffer not supported yet */
 
     if (pid < 0) {
       /* Sleep to avoid busy loop */
@@ -1808,7 +1825,7 @@ static void srv_loop(int fd) {
 
   while (1) {
     /* Read message from kernel */
-    int n = do_read(fd, (char *)rx_data, 8192);
+    int n = sys_read(fd, (char *)rx_data, 8192);
     if (n < 0) {
       print("RESURRECTION: 9P Read Error\n");
       break;
@@ -1829,7 +1846,6 @@ static void srv_loop(int fd) {
 
     // Silence unused function warnings for now
     (void)stop_service;
-    (void)do_open;
     (void)is_process_running;
     (void)register_service;
     (void)strcpy;
@@ -1837,7 +1853,7 @@ static void srv_loop(int fd) {
 
     if (resp_len > 0) {
       /* Write response */
-      do_write(fd, tx_data, resp_len);
+      sys_write(fd, tx_data, resp_len);
     }
   }
 }
@@ -1868,31 +1884,31 @@ int main(void) {
 
   /* Setup /srv 9P server */
   int p[2];
-  if (do_pipe(p) < 0) {
+  if (sys_pipe(p) < 0) {
     print("RESURRECTION: Pipe failed\n");
   } else {
     /* Mount p[1] to /srv */
     /* Flags: MREPL (0) | MCREATE (4) = 4 */
-    if (do_mount(p[1], -1, "/srv", MREPL | MCREATE, "") < 0) {
+    if (sys_mount(p[1], -1, "/srv", MREPL | MCREATE, "") < 0) {
       print("RESURRECTION: Mount failed\n");
     } else {
-      do_close(p[1]);
+      sys_close(p[1]);
 
       /* Spawn 9P worker thread */
       /* Use RFPROC | RFMEM to share services */
-      int pid = do_rfork(RFPROC | RFMEM);
+      int pid = sys_rfork(RFPROC | RFMEM);
       if (pid < 0) {
         print("RESURRECTION: Rfork failed\n");
       } else if (pid == 0) {
         /* Child: 9P Server Loop */
         srv_loop(p[0]);
         /* Should not return */
-        do_close(p[0]);
+        sys_close(p[0]);
         return 0;
       } else {
         /* Parent: Continue to monitor services */
         print("RESURRECTION: 9P Server started\n");
-        do_close(p[0]);
+        sys_close(p[0]);
       }
     }
   }

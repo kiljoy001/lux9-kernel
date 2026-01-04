@@ -1,10 +1,7 @@
-#include "../include/u.h"
-
-#define _BREAK_SORT_1 1
-#include <libc.h>
-
-#define _BREAK_SORT_2 1
+/* Userspace version of convM2S */
+#include "../inc/libc.h"
 #include <fcall.h>
+#include <u.h>
 
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
   uint n;

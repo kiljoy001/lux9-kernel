@@ -3,246 +3,438 @@
 extern uint convS2M(Fcall *f, uchar *ap, uint n);
 extern uint convM2S(uchar *ap, uint n, Fcall *f);
 extern void *memmove(void *dst, const void *src, ulong n);
+extern void *memset(void *dst, int c, ulong n);
+/* SECURITY: No malloc/free - all allocations via pebble system */
+extern int pebble_alloc(ulong size, void **addr);
+extern int pebble_free(void *addr);
+
+/* Packing Helpers */
+static void pack8(uchar *p, int v) { p[0] = v; }
+static void pack16(uchar *p, int v) {
+  p[0] = v;
+  p[1] = v >> 8;
+}
+static void pack32(uchar *p, int v) {
+  p[0] = v;
+  p[1] = v >> 8;
+  p[2] = v >> 16;
+  p[3] = v >> 24;
+}
+static void pack64(uchar *p, uvlong v) {
+  p[0] = v;
+  p[1] = v >> 8;
+  p[2] = v >> 16;
+  p[3] = v >> 24;
+  p[4] = v >> 32;
+  p[5] = v >> 40;
+  p[6] = v >> 48;
+  p[7] = v >> 56;
+}
+static int packstr(uchar *p, char *s) {
+  int n = 0;
+  while (s[n])
+    n++;
+  pack16(p, n);
+  memmove(p + 2, s, n);
+  return 2 + n;
+}
 
 int lux_call(Fcall *tx, Fcall *rx) {
-    uchar *page = (uchar*)EXCHANGE_PAGE_ADDR;
-    
-    /* 1. Marshal Request */
-    int n = convS2M(tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
-    if (n <= 0) return -1;
-    
-    /* 2. Ring Doorbell */
-    _syscall();
-    
-    /* 3. Unmarshal Reply */
-    if (convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, rx) <= 0) return -1;
-    
-    if (rx->type == Rerror) return -1;
-    return 0;
+  uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
+
+  /* 1. Marshal Request */
+  int n = convS2M(tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
+  if (n <= 0)
+    return -1;
+
+  /* 2. Ring Doorbell */
+  _syscall();
+
+  /* 3. Unmarshal Reply */
+  memset(rx, 0, sizeof(Fcall)); /* Zero-initialize before unmarshalling */
+  if (convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, rx) <= 0)
+    return -1;
+
+  if (rx->type == Rerror)
+    return -1;
+  return 0;
+}
+
+/* Generic syscall wrapper with sdata buffer management */
+static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = scallnr;
+  tx.sflags = 0;
+  tx.sdata = sdata;
+  tx.scount = scount;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+
+  if (retval)
+    *retval = rx.retval;
+  return 0;
 }
 
 int sys_open(char *path, int mode) {
-    Fcall tx, rx;
-    tx.type = Tsysopen;
-    tx.tag = 1;
-    tx.fid = 0;
-    tx.name = path;
-    tx.mode = mode;
-    
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return rx.fid;
+  uchar buf[1024];
+  uchar *p = buf;
+
+  // [path s] [mode 1]
+  p += packstr(p, path);
+  pack8(p, mode);
+  p += 1;
+
+  u64int ret;
+  if (do_syscall(SYS_OPEN, buf, p - buf, &ret) < 0)
+    return -1;
+  return (int)ret;
 }
 
 int sys_close(int fd) {
-    Fcall tx, rx;
-    tx.type = Tsysclose;
-    tx.tag = 1;
-    tx.fid = fd;
-    
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return 0;
+  uchar buf[16];
+  uchar *p = buf;
+
+  // [fd 4]
+  pack32(p, fd);
+  p += 4;
+
+  return do_syscall(SYS_CLOSE, buf, p - buf, nil);
 }
 
 long sys_read(int fd, void *buf, long n) {
-    Fcall tx, rx;
-    tx.type = Tsysread;
-    tx.tag = 1;
-    tx.fid = fd;
-    tx.offset = 0; 
-    tx.count = n;
-    
-    if (lux_call(&tx, &rx) < 0) return -1;
-    
-    if (rx.count > n) rx.count = n;
-    memmove(buf, rx.data, rx.count);
-    return rx.count;
+  uchar sbuf[32];
+  uchar *p = sbuf;
+  Fcall tx, rx;
+
+  // [fd 4] [offset 8] [count 4]
+  pack32(p, fd);
+  p += 4;
+  pack64(p, 0);
+  p += 8;
+  pack32(p, n);
+  p += 4;
+
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_READ;
+  tx.sdata = sbuf;
+  tx.scount = p - sbuf;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+
+  // Copy data from reply
+  if (rx.count > n)
+    rx.count = n;
+  if (rx.count > 0 && rx.sdata) {
+    memmove(buf, rx.sdata, rx.count);
+  }
+  return rx.count;
 }
 
 long sys_write(int fd, void *buf, long n) {
-    Fcall tx, rx;
-    tx.type = Tsyswrite;
-    tx.tag = 1;
-    tx.fid = fd;
-    tx.offset = 0;
-    tx.count = n;
-    tx.data = buf;
-    
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return rx.count;
+  uchar sbuf[1024];
+  uchar *p, *allocbuf = nil;
+  uchar *data_start;
+
+  int hdr_len = 4 + 8 + 4; // fid+off+cnt
+  if (hdr_len + n <= sizeof(sbuf)) {
+    p = sbuf;
+  } else {
+    if (pebble_alloc(hdr_len + n, (void **)&allocbuf) < 0)
+      return -1;
+    p = allocbuf;
+  }
+
+  data_start = p;
+  // [fd 4] [offset 8] [count 4] [data]
+  pack32(p, fd);
+  p += 4;
+  pack64(p, 0);
+  p += 8;
+  pack32(p, n);
+  p += 4;
+  memmove(p, buf, n);
+  p += n;
+
+  u64int ret;
+  int res = do_syscall(SYS_WRITE, data_start, p - data_start, &ret);
+
+  if (allocbuf)
+    pebble_free(allocbuf);
+
+  if (res < 0)
+    return -1;
+  return (long)ret;
 }
 
 long sys_pwrite(int fd, void *buf, long n, long offset) {
-    Fcall tx, rx;
-    tx.type = Tsyspwrite;
-    tx.tag = 1;
-    tx.fid = fd;
-    tx.offset = offset;
-    tx.count = n;
-    tx.data = buf;
-    
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return rx.count;
+  uchar sbuf[1024];
+  uchar *p, *allocbuf = nil;
+  uchar *data_start;
+
+  int hdr_len = 4 + 8 + 4; // fid+off+cnt
+  if (hdr_len + n <= sizeof(sbuf)) {
+    p = sbuf;
+  } else {
+    if (pebble_alloc(hdr_len + n, (void **)&allocbuf) < 0)
+      return -1;
+    p = allocbuf;
+  }
+
+  data_start = p;
+  // [fd 4] [offset 8] [count 4] [data]
+  pack32(p, fd);
+  p += 4;
+  pack64(p, offset);
+  p += 8;
+  pack32(p, n);
+  p += 4;
+  memmove(p, buf, n);
+  p += n;
+
+  u64int ret;
+  int res = do_syscall(SYS_PWRITE, data_start, p - data_start, &ret);
+
+  if (allocbuf)
+    pebble_free(allocbuf);
+
+  if (res < 0)
+    return -1;
+  return (long)ret;
 }
 
 void sys_exit(char *msg) {
-    Fcall tx, rx;
-    tx.type = Tsysexit;
-    tx.tag = 1;
-    tx.ename = msg;
+  uchar buf[256];
+  uchar *p = buf;
 
-    lux_call(&tx, &rx);
-    while(1);
+  // [msg s]
+  p += packstr(p, msg ? msg : "");
+
+  do_syscall(SYS_EXIT, buf, p - buf, nil);
+  while (1)
+    ;
 }
 
 int sys_create(char *path, int mode, uint perm) {
-    Fcall tx, rx;
-    tx.type = Tsyscreate;
-    tx.tag = 1;
-    tx.name = path;
-    tx.mode = mode;
-    tx.perm = perm;
+  uchar buf[1024];
+  uchar *p = buf;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return rx.fid;
+  // [path s] [mode 4] [perm 4]
+  p += packstr(p, path);
+  pack32(p, mode);
+  p += 4;
+  pack32(p, perm);
+  p += 4;
+
+  u64int ret;
+  if (do_syscall(SYS_CREATE, buf, p - buf, &ret) < 0)
+    return -1;
+  return (int)ret;
 }
 
 int sys_rfork(int flags) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 19; /* SYS_RFORK */
-    tx.scount = 8;  /* argc (4 bytes) + flags (4 bytes) */
-    uchar buf[8];
-    *(uint*)buf = 1; /* argc */
-    *(uint*)(buf+4) = flags;
-    tx.sdata = buf;
+  uchar buf[16];
+  uchar *p = buf;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return (int)rx.retval;
+  // [flags 4]
+  pack32(p, flags);
+  p += 4;
+
+  u64int ret;
+  if (do_syscall(SYS_RFORK, buf, p - buf, &ret) < 0)
+    return -1;
+  return (int)ret;
 }
 
 void sys_exec(char *path) {
-    Fcall tx, rx;
-    tx.type = Texec;
-    tx.tag = 1;
-    tx.count = 0;
-    tx.name = path;
+  /* Keep using Texec for now as logic in kernel is specialized */
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Texec;
+  tx.tag = 1;
+  tx.count = 0;
+  tx.name = path;
 
-    lux_call(&tx, &rx);
-    /* If we return, exec failed */
+  lux_call(&tx, &rx);
+  /* If we return, exec failed */
 }
 
 int sys_pipe(int *fds) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 21; /* SYS_PIPE */
-    tx.scount = 0;
-    tx.sdata = 0;
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    if (rx.scount >= 8) {
-        fds[0] = *(int*)rx.sdata;
-        fds[1] = *(int*)(rx.sdata + 4);
-    }
-    return 0;
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_PIPE;
+  tx.sflags = 0;
+  tx.sdata = 0;
+  tx.scount = 0;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+
+  // Response contains 8 bytes: [fd0:4][fd1:4]
+  if (rx.scount >= 8 && rx.sdata) {
+    uchar *p = rx.sdata;
+    fds[0] = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+    p += 4;
+    fds[1] = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+  } else {
+    return -1;
+  }
+  return 0;
 }
 
 long sys_seek(int fd, long offset, int whence) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 39; /* SYS_SEEK */
-    tx.scount = 20;  /* argc:4 + fd:4 + offset:8 + whence:4 */
-    uchar buf[20];
-    *(uint*)buf = 3; /* argc */
-    *(int*)(buf+4) = fd;
-    *(vlong*)(buf+8) = offset;
-    *(int*)(buf+16) = whence;
-    tx.sdata = buf;
+  uchar buf[32];
+  uchar *p = buf;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return (long)rx.retval;
+  // [fd 4] [offset 8] [whence 4]
+  pack32(p, fd);
+  p += 4;
+  pack64(p, offset);
+  p += 8;
+  pack32(p, whence);
+  p += 4;
+
+  u64int ret;
+  if (do_syscall(SYS_SEEK, buf, p - buf, &ret) < 0)
+    return -1;
+  return (long)ret;
 }
 
 int sys_wait(void) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 36; /* SYS_WAIT */
-    tx.scount = 0;
-    tx.sdata = 0;
-
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return (int)rx.retval;
+  u64int ret;
+  if (do_syscall(SYS_WAIT, 0, 0, &ret) < 0)
+    return -1;
+  return (int)ret;
 }
 
 long sys_pread(int fd, void *buf, long n, long offset) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 50; /* SYS_PREAD */
-    tx.scount = 20;  /* argc:4 + fd:4 + offset:8 + n:4 */
-    uchar cbuf[20];
-    *(uint*)cbuf = 3; /* argc */
-    *(int*)(cbuf+4) = fd;
-    *(vlong*)(cbuf+8) = offset;
-    *(uint*)(cbuf+16) = n;
-    tx.sdata = cbuf;
+  uchar sbuf[32];
+  uchar *p = sbuf;
+  Fcall tx, rx;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    if (rx.scount > n) rx.scount = n;
-    if (rx.scount > 0)
-        memmove(buf, rx.sdata, rx.scount);
-    return rx.scount;
+  // [fd 4] [offset 8] [count 4]
+  pack32(p, fd);
+  p += 4;
+  pack64(p, offset);
+  p += 8;
+  pack32(p, n);
+  p += 4;
+
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_PREAD;
+  tx.sdata = sbuf; // Just header
+  tx.scount = p - sbuf;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+
+  if (rx.count > n)
+    rx.count = n;
+  if (rx.count > 0 && rx.sdata) {
+    memmove(buf, rx.sdata, rx.count);
+  }
+  return rx.count;
 }
 
 uvlong sys_nsec(void) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 53; /* SYS_NSEC */
-    tx.scount = 0;
-    tx.sdata = 0;
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_NSEC;
+  tx.scount = 0;
+  tx.sdata = 0;
 
-    if (lux_call(&tx, &rx) < 0) return 0;
-    return rx.retval;
+  if (lux_call(&tx, &rx) < 0)
+    return 0;
+  return rx.retval;
 }
 
 int sys_stat(char *path, uchar *buf, int nbuf) {
-    Fcall tx, rx;
-    tx.type = Tsysstat;
-    tx.tag = 1;
-    tx.name = path;
+  uchar sbuf[1024];
+  uchar *p = sbuf;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    /* rx should contain stat data in rx.stat */
-    /* For now, just return success indicator */
-    return 0;
+  // [path s]
+  p += packstr(p, path);
+
+  u64int ret;
+  if (do_syscall(SYS_STAT, sbuf, p - sbuf, &ret) < 0)
+    return -1;
+  // TODO: Copy stat data from response if needed
+  return 0;
 }
 
 int sys_wstat(char *path, uchar *buf, int nbuf) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 44; /* SYS_WSTAT */
-    /* TODO: Implement proper stat buffer handling */
-    tx.scount = 0;
-    tx.sdata = 0;
+  uchar sbuf[1024];
+  uchar *p, *allocbuf = nil;
+  uchar *data_start;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return 0;
+  int pathlen = 0;
+  while (path[pathlen])
+    pathlen++;
+
+  int hdr_len = 2 + pathlen + 2; // pathlen+path+nstat
+  if (hdr_len + nbuf <= sizeof(sbuf)) {
+    p = sbuf;
+  } else {
+    if (pebble_alloc(hdr_len + nbuf, (void **)&allocbuf) < 0)
+      return -1;
+    p = allocbuf;
+  }
+
+  data_start = p;
+  // [path s] [nstat 2] [stat bytes]
+  p += packstr(p, path);
+  pack16(p, nbuf);
+  p += 2;
+  memmove(p, buf, nbuf);
+  p += nbuf;
+
+  u64int ret;
+  int res = do_syscall(SYS_WSTAT, data_start, p - data_start, &ret);
+
+  if (allocbuf)
+    pebble_free(allocbuf);
+
+  if (res < 0)
+    return -1;
+  return 0;
 }
 
 int sys_mount(int fd, int afd, char *old, int flags, char *aname) {
-    Fcall tx, rx;
-    tx.type = Tsyscall;
-    tx.tag = 1;
-    tx.scallnr = 46; /* SYS_MOUNT */
-    /* TODO: Implement proper mount argument encoding */
-    tx.scount = 0;
-    tx.sdata = 0;
+  uchar buf[1024];
+  uchar *p = buf;
 
-    if (lux_call(&tx, &rx) < 0) return -1;
-    return 0;
+  // [fd 4] [afd 4] [old s] [flags 4] [aname s]
+  pack32(p, fd);
+  p += 4;
+  pack32(p, afd);
+  p += 4;
+  p += packstr(p, old);
+  pack32(p, flags);
+  p += 4;
+  p += packstr(p, aname);
+
+  u64int ret;
+  if (do_syscall(SYS_MOUNT, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
 }

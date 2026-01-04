@@ -5,7 +5,7 @@ CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
          -I./inc -I../../../kernel/include -I../../../kernel/port
 
 C_SRCS = src/syscalls.c src/msgord.c src/pebble.c src/string.c \
-         ../../../kernel/libc9/convM2S.c ../../../kernel/libc9/convS2M.c
+         src/convM2S.c src/convS2M.c
 ASM_SRCS = src/syscall_asm.S
 
 OBJS = $(C_SRCS:.c=.o) $(ASM_SRCS:.S=.o)

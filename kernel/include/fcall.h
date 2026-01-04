@@ -62,6 +62,7 @@ typedef struct Fcall {
     };
     struct {
       u32int scallnr; /* Tsyscall */
+      u32int sflags;  /* Tsyscall flags/category */
       uchar *sdata;   /* Tsyscall, Rsyscall */
       u32int scount;  /* Tsyscall, Rsyscall */
       u64int retval;  /* Rsyscall */
@@ -303,6 +304,7 @@ enum {
   SYS_SEEK = 39,
   SYS_MOUNT = 46,
   SYS_NSEC = 53,
+  SYS_BRK = 55,
   SYS_WAIT = 166
 };
 
