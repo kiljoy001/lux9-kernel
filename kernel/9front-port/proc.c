@@ -1,10 +1,11 @@
 #include "../include/u.h"
-#include "9p_router.h" /* For P9Control structure */
-#include "dat.h"
-#include "edf.h"
-#include "fns.h"
-#include "mem.h"
+#include "../include/u.h"
 #include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "edf.h"
+#include "9p_router.h" /* For P9Control structure */
 #include "../wasm/wasm_runtime.h"
 #include "proc_packet.h" /* For EV_* events */
 #include "tos.h"
@@ -1339,6 +1340,23 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   pebble_cleanup(up);
   vault_cleanup_process(up->pid);
 
+  /* Decrement namespace spawn count */
+  if (up->pgrp != nil) {
+    lock(&up->pgrp->spawn_lock);
+    if (up->pgrp->spawn_count > 0)
+      up->pgrp->spawn_count--;
+    unlock(&up->pgrp->spawn_lock);
+  }
+
+  /* Decrement parent's spawn_children counter (fork bomb tracking) */
+  if (up->parent != nil) {
+    /* Only decrement if parent is tracking this child (RFNOWAIT not used) */
+    lock(&up->parent->exl);
+    if (up->parent->spawn_children > 0)
+      up->parent->spawn_children--;
+    unlock(&up->parent->exl);
+  }
+
   /* nil out all the resources under lock (free later) */
   qlock(&up->debug);
   fgrp = up->fgrp;
@@ -2120,4 +2138,31 @@ static void pidfree(Proc *p) {
     piddel(pidlookup(p->parentpid));
 
   p->pid = p->noteid = p->parentpid = 0;
+}
+
+/* Validate token conservation invariant across all processes (debug only) */
+void pebble_validate_conservation(void) {
+  if (!pebble_debug)
+    return;
+
+  ulong total_allocated = 0;
+
+  /* Sum all process token holdings */
+  for (int i = 0; i < conf.nproc; i++) {
+    Proc *p = procalloc.tab[i];
+    if (p == nil || p->state == Dead)
+      continue;
+    ulong proc_total = p->pebble.colorless_bank +
+                       p->pebble.black_inuse +
+                       p->pebble.red_inuse +
+                       p->pebble.blue_inuse;
+    total_allocated += proc_total;
+  }
+
+  total_allocated += pebble_global_colorless_bank;
+
+  if (total_allocated != pebble_total_system_tokens) {
+    panic("pebble conservation violation: total=%lu expected=%lu",
+          total_allocated, pebble_total_system_tokens);
+  }
 }

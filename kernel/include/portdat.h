@@ -2,6 +2,7 @@
 #define _PORTDAT_H_
 
 #include "types_fwd.h"
+#include "uuid.h"
 
 typedef struct Alarms Alarms;
 typedef struct Block Block;
@@ -38,6 +39,11 @@ typedef struct Pte Pte;
 typedef struct PMach PMach;
 typedef struct QLock QLock;
 typedef struct Queue Queue;
+#ifdef __FRAMAC__
+struct Queue {
+  int _frama_dummy;
+};
+#endif
 typedef struct Ref Ref;
 typedef struct Rendezq Rendezq;
 typedef struct Rgrp Rgrp;
@@ -332,14 +338,15 @@ enum {
 
 struct Page {
   long ref;
-  Page *next;    /* Free list or Hash chains */
-  uintptr pa;    /* Physical address in memory */
-  uintptr va;    /* Virtual address for user */
-  uintptr daddr; /* Disc address on swap */
-  Image *image;  /* Associated text or swap image */
-  ushort refage; /* Swap reference age */
-  char modref;   /* Simulated modify/reference bits */
-  char color;    /* Cache coloring */
+  Page *next;       /* Free list or Hash chains */
+  uintptr pa;       /* Physical address in memory */
+  uintptr va;       /* Virtual address for user */
+  uintptr daddr;    /* Disc address on swap */
+  Image *image;     /* Associated text or swap image */
+  ushort refage;    /* Swap reference age */
+  char modref;      /* Simulated modify/reference bits */
+  char color;       /* Cache coloring */
+  char token_color; /* Pebble token color (enum PebbleColor) */
 
 #ifndef inittxtflush
   /* Flush icache bitmap for putmmu() */
@@ -506,6 +513,12 @@ struct Pgrp {
   RWLock ns;            /* Namespace n read/one write lock */
   u64int notallowed[4]; /* Room for 256 devices */
   Mhead *mnthash[MNTHASH];
+
+  /* Namespace spawn limits - cryptographically bound via identity_hash */
+  u8int identity_hash[16]; /* Blake2b hash of Pgrp for spawn cap binding */
+  Lock spawn_lock;         /* Protect spawn counts */
+  u32int spawn_limit;      /* Max procs allowed in this namespace */
+  u32int spawn_count;      /* Current proc count in namespace */
 };
 
 struct Rgrp {
@@ -524,7 +537,7 @@ struct Evalue {
 };
 
 struct Egrp {
-  long ref;
+  Ref ref;
   RWLock rwlock;
   Evalue **ent;
   int nent;              /* numer of slots in ent[] */
@@ -896,7 +909,20 @@ struct Proc {
     u32int heap_live;      /* WASM heap live bytes (token-backed) */
     arena_branch_t branch; /* Local Pebble branch bank for this container */
     void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
+    void *module_bytes;    /* Persistent WASM module bytecode */
+    u32int module_bytes_len;
   } wasm;
+
+  /* Spawn Capability - UUIDv8-based process creation control.
+   * Uses CAP_TYPE_SPAWN capability token with child limit. */
+  uuid_t spawn_cap; /* UUIDv8 spawn capability (null = no spawn rights) */
+  u32int spawn_max_children; /* Maximum children this process can spawn */
+  u32int spawn_children;     /* Current number of children spawned */
+
+  /* Init Hardening: Binary binding for spawn.
+   * If non-zero, this process can ONLY exec binaries matching this hash.
+   * Used to ensure init can only spawn resurrection server. */
+  u8int spawn_bound_binary[64]; /* Blake2b-512 of allowed binary (0 = any) */
 } __attribute__((aligned(64)));
 
 enum {

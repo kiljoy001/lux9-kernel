@@ -276,6 +276,15 @@ int fixfault(Segment *s, uintptr addr, int read) {
       copypage(old, new);
       settxtflush(new, s->flushme);
       *pg = new;
+
+      /* Update counters: old RED page losing last reference goes to freepages
+       */
+      /* Note: newpage() already set new page to BLACK and updated counters */
+      if (old->token_color == PEBBLE_COLOR_RED && old->ref == 2) {
+        /* We're about to putpage which will decref to 1.
+         * When ref reaches 0, freepages will handle counter updates. */
+      }
+
       /* s->used count unchanged */
       putpage(old);
     }
@@ -344,6 +353,15 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   qunlock(&s->qlock);
 
   putmmu(addr, mmuphys, &pg);
+
+  /* Verify data at exchange page after mapping */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    uchar *data = (uchar *)kaddr(pg.pa);
+    print("mapphys: VERIFY after putmmu, reading PA=0x%p first 16: ", pg.pa);
+    for (int i = 0; i < 16; i++)
+      print("%02x ", data[i]);
+    print("\n");
+  }
 }
 
 int fault(uintptr addr, uintptr pc, int read) {

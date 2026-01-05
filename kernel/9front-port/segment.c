@@ -284,8 +284,24 @@ static Pte *ptecpy(Pte *new, Pte *old) {
       continue;
     if (onswap(entry))
       dupswap(entry);
-    else
+    else {
       incref((Ref *)&entry->ref);
+
+      /* Transition BLACK → RED when page becomes shared */
+      if (entry->token_color == PEBBLE_COLOR_BLACK) {
+        entry->token_color = PEBBLE_COLOR_RED;
+        if (up != nil) {
+          lock(&pebble_global_lock);
+          up->pebble.black_inuse -= BY2PG;
+          up->pebble.red_inuse += BY2PG;
+          unlock(&pebble_global_lock);
+        }
+      }
+
+      /* TODO: Borrowchecker integration - need to find correct API */
+      /* Borrowchecker state should transition EXCLUSIVE → SHARED_OWNED */
+      /* This requires exposing the right interfaces from borrowchecker.c */
+    }
     new->last = dst;
     *dst = entry;
   }
@@ -355,8 +371,12 @@ Segment *dupseg(Segment **seg, int segno, int share) {
   n->used = s->used;
   n->swapped = s->swapped;
   n->flushme = s->flushme;
-  if (s->ref > 1)
-    procflushseg(s);
+  /* DISABLED: procflushseg() destroys parent's entire page table via mmuzap(),
+   * breaking exchange page and code segment. COW should be handled via
+   * flushme flag and page fault mechanism, not TLB destruction.
+   * if (s->ref > 1)
+   *   procflushseg(s);
+   */
   qunlock(&s->qlock);
   poperror();
   return n;
@@ -633,7 +653,7 @@ ulong imagereclaim(ulong pages) {
 
 uintptr ibrk(uintptr addr, int seg) {
   Segment *s, *ns;
-  uintptr newtop;
+  uintptr newtop, oldtop;
   ulong newsize;
   int i, mapsize;
   Pte **map;
@@ -657,6 +677,7 @@ uintptr ibrk(uintptr addr, int seg) {
   }
 
   newtop = PGROUND(addr);
+  oldtop = s->top;
   newsize = (newtop - s->base) / BY2PG;
   if (newtop < s->top) {
     /*
@@ -674,6 +695,25 @@ uintptr ibrk(uintptr addr, int seg) {
     qunlock(&s->qlock);
     flushmmu();
     return 0;
+  }
+
+  /*
+   * Pebble: Check budget for segment growth BEFORE growing (userspace only).
+   * TCB processes (kp == 1) are exempt to prevent circular dependencies.
+   * Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes.
+   */
+  if (up != nil && up->kp == 0 && newtop > oldtop) {
+    ulong growth_bytes = newtop - oldtop;
+    ulong tokens_needed =
+        (growth_bytes + PEBBLE_BYTES_PER_TOKEN - 1) / PEBBLE_BYTES_PER_TOKEN;
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < tokens_needed) {
+      unlock(&pebble_global_lock);
+      qunlock(&s->qlock);
+      error(Enovmem);
+    }
+    up->pebble.colorless_bank -= tokens_needed;
+    unlock(&pebble_global_lock);
   }
 
   for (i = 0; i < NSEG; i++) {
@@ -705,21 +745,6 @@ uintptr ibrk(uintptr addr, int seg) {
   }
   s->top = newtop;
   s->size = newsize;
-
-  /* Pebble: Consume budget for segment growth (userspace only) */
-  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
-  if (up != nil && newtop > s->base) {
-    ulong growth_bytes = newtop - s->base;
-    ulong tokens_needed = growth_bytes / PEBBLE_BYTES_PER_TOKEN;
-    lock(&pebble_global_lock);
-    if (up->pebble.colorless_bank < tokens_needed) {
-      unlock(&pebble_global_lock);
-      qunlock(&s->qlock);
-      error(Enovmem);
-    }
-    up->pebble.colorless_bank -= tokens_needed;
-    unlock(&pebble_global_lock);
-  }
 
   qunlock(&s->qlock);
   return 0;
@@ -968,10 +993,11 @@ uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
   /* Copy in defaults */
   attr |= ps->attr;
 
-  /* Pebble: Consume budget for segment attachment (userspace only) */
-  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
-  if (up != nil) {
-    ulong tokens_needed = len / PEBBLE_BYTES_PER_TOKEN;
+  /* Pebble: Consume budget for segment attachment (userspace only).
+   * TCB processes (kp == 1) are exempt to prevent circular dependencies. */
+  if (up != nil && up->kp == 0) {
+    ulong tokens_needed =
+        (len + PEBBLE_BYTES_PER_TOKEN - 1) / PEBBLE_BYTES_PER_TOKEN;
     lock(&pebble_global_lock);
     if (up->pebble.colorless_bank < tokens_needed) {
       unlock(&pebble_global_lock);

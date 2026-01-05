@@ -17,10 +17,32 @@
 #define PEBBLE_INIT_BUDGET                                                     \
   (16 * 1024 * 1024) /* 16 MiB for init/proc0 bootstrap */
 #define PEBBLE_MAX_TOKENS 4096
-#define PEBBLE_DEBUG 1  /* Enable debug output for arena testing */
+#define PEBBLE_DEBUG 1 /* Enable debug output for arena testing */
 
 /* Token economics: 1 token = 8 bytes of memory authorization */
 #define PEBBLE_BYTES_PER_TOKEN 8
+
+/*
+ * Pebble Token Color States (5 mutually exclusive)
+ * Used for page-level tracking in fork/COW mechanism.
+ * Maps to borrowchecker states: BLACK=EXCLUSIVE, RED=SHARED_OWNED
+ */
+enum PebbleColor {
+  PEBBLE_COLOR_COLORLESS = 0, /* Free pool, not in use */
+  PEBBLE_COLOR_WHITE = 1,     /* Unverified/uninitialized (future) */
+  PEBBLE_COLOR_BLACK = 2,     /* Exclusive access (one writer) */
+  PEBBLE_COLOR_RED = 3,       /* Shared/read-only (multiple readers) */
+  PEBBLE_COLOR_BLUE = 4,      /* I/O buffer (future) */
+};
+
+/* Syscall costs (in tokens) - Security enforcement */
+#define PEBBLE_PROC_COST                                                       \
+  (1024 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 1MB for fork */
+#define PEBBLE_PIPE_COST                                                       \
+  (64 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 64KB for pipe */
+#define PEBBLE_MOUNT_COST                                                      \
+  (4 * 1024 / PEBBLE_BYTES_PER_TOKEN)                      /* 4KB for mount */
+#define PEBBLE_FD_COST (1 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 1KB per FD */
 
 /*
  * Pebble runtime toggles.
@@ -195,6 +217,8 @@ void *pebble_get_black_addr(const UserCapability *cap);
 int pebble_black_free(const UserCapability *cap);
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap);
 int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid);
+int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
+                            void **out_addr);
 
 /* Blue/Red API - Independent colored tokens for block I/O transactions */
 PebbleBlue *pebble_blue_alloc(ulong size); /* COLORLESS → BLUE */

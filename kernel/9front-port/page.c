@@ -15,6 +15,32 @@ static inline uintptr hhdm_virt(uintptr pa) {
   return pa + saved_limine_hhdm_offset;
 }
 
+/* Validate token color matches borrowchecker state (debug only) */
+static void validate_page_token_state(Page *p) {
+  if (!pebble_debug || p->pa == 0)
+    return;
+
+  enum BorrowState bstate = borrow_get_state(p->pa);
+
+  switch (p->token_color) {
+    case PEBBLE_COLOR_BLACK:
+      if (bstate != BORROW_EXCLUSIVE) {
+        panic("page token mismatch: BLACK but not EXCLUSIVE (pa=%#p)", p->pa);
+      }
+      break;
+    case PEBBLE_COLOR_RED:
+      if (bstate != BORROW_SHARED_OWNED) {
+        panic("page token mismatch: RED but not SHARED_OWNED (pa=%#p)", p->pa);
+      }
+      break;
+    case PEBBLE_COLOR_COLORLESS:
+      if (borrow_is_owned(p->pa)) {
+        panic("page token mismatch: COLORLESS but still owned (pa=%#p)", p->pa);
+      }
+      break;
+  }
+}
+
 Palloc palloc;
 static Page *palloc_end;
 
@@ -99,6 +125,7 @@ void pageinit(void) {
         continue;
       }
       p->color = color;
+      p->token_color = PEBBLE_COLOR_COLORLESS; /* All pages start COLORLESS */
       color = (color + 1) % NCOLOR;
       /* Note: Physical page memory will be zeroed by fillpage() in newpage()
        * when actually allocated. Don't zero here as HHDM may not cover all
@@ -158,6 +185,22 @@ void freepages(Page *head, Page *tail, ulong np) {
   Page *p = head;
   while (p != nil) {
     if (up != nil && p->pa != 0) {
+      /* Update per-process color counters before freeing */
+      lock(&pebble_global_lock);
+      switch (p->token_color) {
+      case PEBBLE_COLOR_BLACK:
+        up->pebble.black_inuse -= BY2PG;
+        break;
+      case PEBBLE_COLOR_RED:
+        up->pebble.red_inuse -= BY2PG;
+        break;
+      case PEBBLE_COLOR_BLUE:
+        up->pebble.blue_inuse -= BY2PG;
+        break;
+      }
+      p->token_color = PEBBLE_COLOR_COLORLESS;
+      unlock(&pebble_global_lock);
+
       /* Try to release, but don't banic if not owned (might be early boot) */
       /* Try to release, but don't panic if not owned (might be early boot) */
       if (pageown_is_owned(p->pa)) {
@@ -219,6 +262,33 @@ void freepages(Page *head, Page *tail, ulong np) {
   palloc.freecount += np;
   pagechaindone();
   unlock(&palloc);
+
+  /* Update per-process color counters before freeing */
+  {
+    Page *p = head;
+    while (p != nil) {
+      if (up != nil) {
+        lock(&pebble_global_lock);
+        switch (p->token_color) {
+          case PEBBLE_COLOR_BLACK:
+            up->pebble.black_inuse -= BY2PG;
+            break;
+          case PEBBLE_COLOR_RED:
+            up->pebble.red_inuse -= BY2PG;
+            break;
+          case PEBBLE_COLOR_BLUE:
+            up->pebble.blue_inuse -= BY2PG;
+            break;
+        }
+        p->token_color = PEBBLE_COLOR_COLORLESS;
+        unlock(&pebble_global_lock);
+      }
+
+      if (p == tail)
+        break;
+      p = p->next;
+    }
+  }
 
   /* Return tokens to global pool for freed pages */
   /* Each page = BY2PG / PEBBLE_BYTES_PER_TOKEN tokens */
@@ -402,6 +472,12 @@ Page *newpage(uintptr va, Segment *seg) {
       if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
         panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
     }
+
+    /* Set token color to BLACK (exclusive ownership) */
+    p->token_color = PEBBLE_COLOR_BLACK;
+    lock(&pebble_global_lock);
+    up->pebble.black_inuse += BY2PG;
+    unlock(&pebble_global_lock);
   }
 
   return p;
@@ -418,6 +494,11 @@ Page *deadpage(Page *p) {
   }
   if (decref(p) != 0)
     return nil;
+
+  /* Transition any color → COLORLESS when ref reaches 0 */
+  p->token_color = PEBBLE_COLOR_COLORLESS;
+  /* freepages() will update per-process counters and return tokens */
+
   return p;
 }
 
