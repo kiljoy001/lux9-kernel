@@ -127,6 +127,7 @@ typedef struct Qid {
 #define MAX_NAME_LEN 64
 #define MAX_PATH_LEN 256
 #define MAX_HASH_LEN 64
+#define RESTART_WINDOW_NS (60ULL * 1000000000ULL) // 60 seconds in nanoseconds
 
 typedef struct {
   char name[MAX_NAME_LEN];          /* Service name */
@@ -284,8 +285,10 @@ static unsigned short get_u16(const uchar *p);
 static uint get_u32(const uchar *p);
 static uvlong get_u64(const uchar *p);
 static void *memset(void *dst, int c, unsigned long n);
-void *memcpy(void *dst, const void *src, unsigned long n);  /* non-static for blind_cap.o */
-int memcmp(const void *s1, const void *s2, unsigned long n); /* non-static for blind_cap.o */
+void *memcpy(void *dst, const void *src,
+             unsigned long n); /* non-static for blind_cap.o */
+int memcmp(const void *s1, const void *s2,
+           unsigned long n); /* non-static for blind_cap.o */
 
 /* Type definitions for crypto */
 typedef uchar u8int;
@@ -298,6 +301,22 @@ extern int cap_blind_sign(CapBlindResponse *resp, const CapBlindRequest *req,
                           const u8int *privkey);
 extern u64int cap_current_epoch(int type);
 extern void crypto_eddsa_key_pair(u8int *sk, u8int *pk, u8int *seed);
+extern void crypto_blake2b_init(void *ctx, unsigned long long outlen);
+extern void crypto_blake2b_update(void *ctx, const u8int *in,
+                                  unsigned long long inlen);
+extern void crypto_blake2b_final(void *ctx, u8int *out);
+
+/* Monocypher context type - 256 bytes should be sufficient for blake2b context
+ */
+typedef struct {
+  uchar data[256];
+} crypto_blake2b_ctx;
+
+/* Forward declarations for internal helper functions */
+static int do_open(const char *path, int mode);
+static int do_read(int fd, char *buf, int count);
+static void do_close(int fd);
+static int do_write(int fd, const void *buf, int count);
 
 /* Syscall for time (needed by blind_cap.c) */
 #define SYS_NSEC 53
@@ -390,11 +409,14 @@ static void srv_free_fid(SrvFid *f) {
 /* ========== /srv Entry Management ========== */
 
 static int srv_find_entry(const char *name) {
+  lock(&srv_lock);
   for (int i = 0; i < num_services; i++) {
-    /* TODO: Locking? We are reading. */
-    if (strcmp(services[i].name, name) == 0)
+    if (strcmp(services[i].name, name) == 0) {
+      unlock(&srv_lock);
       return i;
+    }
   }
+  unlock(&srv_lock);
   return -1;
 }
 
@@ -666,8 +688,12 @@ static u32int srv_handle_create(uchar *req, uchar *resp) {
   if (srv_find_entry(name) >= 0)
     return srv_build_error(resp, tag, "service exists");
 
+  // TODO: Obtaining the *actual* caller PID (the process making the 9P request)
+  // would require kernel-level modifications to the 9P protocol or a custom
+  // mechanism to pass it. For now, we pass 0, implying the service is 'owned'
+  // by the resurrection server from its own perspective.
   int idx = srv_create_entry(
-      name, 0 /* TODO: get caller PID from req or via separate auth? */);
+      name, 0 /* PID of resurrection server or 0 if unknown */);
   if (idx < 0)
     return srv_build_error(resp, tag, "no space for service");
 
@@ -1063,6 +1089,45 @@ static void print_num(const char *prefix, int num, const char *suffix) {
   print(buf);
 }
 
+/* ========== Utility Functions ========== */
+
+/*
+ * Compute Blake2b hash of a file
+ * Returns 0 on success, -1 on failure
+ */
+static int do_compute_file_hash(const char *path, uchar *output_hash) {
+  crypto_blake2b_ctx ctx;
+  uchar read_buf[256]; // Read in 256-byte chunks
+  int fd;
+  long n;
+
+  fd = do_open(path, 0 /* OREAD */);
+  if (fd < 0) {
+    print("RESURRECTION: do_compute_file_hash: Failed to open ");
+    print(path);
+    print("\n");
+    return -1;
+  }
+
+  crypto_blake2b_init(&ctx, MAX_HASH_LEN); // Hash length matches service_hash
+
+  while ((n = do_read(fd, (char *)read_buf, sizeof(read_buf))) > 0) {
+    crypto_blake2b_update(&ctx, read_buf, n);
+  }
+
+  do_close(fd);
+
+  if (n < 0) {
+    print("RESURRECTION: do_compute_file_hash: Read error from ");
+    print(path);
+    print("\n");
+    return -1;
+  }
+
+  crypto_blake2b_final(&ctx, output_hash);
+  return 0;
+}
+
 /* ========== Service Registry ========== */
 
 static Service *find_service(const char *name) {
@@ -1076,15 +1141,18 @@ static Service *find_service(const char *name) {
 
 static int register_service(const char *name, const char *exec_path,
                             const char *hash, int critical) {
+  lock(&srv_lock);
   if (num_services >= MAX_SERVICES) {
     print("RESURRECTION: Max services reached\n");
+    unlock(&srv_lock);
     return -1;
   }
 
-  if (find_service(name)) {
+  if (find_service(name)) { // find_service already locks/unlocks
     print("RESURRECTION: Service already registered: ");
     print(name);
     print("\n");
+    unlock(&srv_lock);
     return -1;
   }
 
@@ -1106,6 +1174,7 @@ static int register_service(const char *name, const char *exec_path,
     print(" [CRITICAL]");
   print("\n");
 
+  unlock(&srv_lock);
   return 0;
 }
 
@@ -1192,21 +1261,87 @@ static void do_exec(const char *path) {
  * Returns: 1 if running, 0 if exited/crashed
  */
 static int is_process_running(u32int pid) {
-  /* For now, simple implementation - would need to open /proc/PID/status */
-  /* TODO: Implement proper process status check */
-  (void)pid;
-  return 1;
+  char path[MAX_PATH_LEN];
+  int fd;
+
+  /* Construct /proc/PID/status path */
+  // It will look like /proc/123/status
+  char pid_str[16]; // Max 10 digits for u32int + null terminator
+  int i = 0;
+  if (pid == 0) {
+    pid_str[i++] = '0';
+  } else {
+    u32int temp_pid = pid;
+    while (temp_pid > 0) {
+      pid_str[i++] = '0' + (temp_pid % 10);
+      temp_pid /= 10;
+    }
+    // Reverse the string
+    for (int j = 0; j < i / 2; j++) {
+      char temp = pid_str[j];
+      pid_str[j] = pid_str[i - 1 - j];
+      pid_str[i - 1 - j] = temp;
+    }
+  }
+  pid_str[i] = '\0';
+
+  strncpy(path, "/proc/", MAX_PATH_LEN - 1);
+  strncpy(path + strlen(path), pid_str, MAX_PATH_LEN - strlen(path) - 1);
+  strncpy(path + strlen(path), "/status", MAX_PATH_LEN - strlen(path) - 1);
+  path[MAX_PATH_LEN - 1] = '\0'; // Ensure null termination
+
+  fd = do_open(path, 0 /* OREAD */);
+  if (fd >= 0) {
+    do_close(fd);
+    return 1; // Process status file opened, so it's running
+  }
+  return 0; // Failed to open, likely not running
 }
 
 /*
  * Kill a process by writing to /proc/PID/ctl
  */
 static void do_kill(u32int pid) {
+  char path[MAX_PATH_LEN];
+  int fd;
+  const char *kill_cmd = "kill";
+
   print_num("RESURRECTION: Killing PID ", pid, "\n");
 
-  /* TODO: Open /proc/PID/ctl and write "kill" */
-  /* For now, just mark as stopped */
-  (void)pid;
+  /* Construct /proc/PID/ctl path */
+  char pid_str[16];
+  int i = 0;
+  if (pid == 0) {
+    pid_str[i++] = '0';
+  } else {
+    u32int temp_pid = pid;
+    while (temp_pid > 0) {
+      pid_str[i++] = '0' + (temp_pid % 10);
+      temp_pid /= 10;
+    }
+    for (int j = 0; j < i / 2; j++) {
+      char temp = pid_str[j];
+      pid_str[j] = pid_str[i - 1 - j];
+      pid_str[i - 1 - j] = temp;
+    }
+  }
+  pid_str[i] = '\0';
+
+  strncpy(path, "/proc/", MAX_PATH_LEN - 1);
+  strncpy(path + strlen(path), pid_str, MAX_PATH_LEN - strlen(path) - 1);
+  strncpy(path + strlen(path), "/ctl", MAX_PATH_LEN - strlen(path) - 1);
+  path[MAX_PATH_LEN - 1] = '\0';
+
+  fd = do_open(path, 1 /* OWRITE */);
+  if (fd >= 0) {
+    do_write(fd, kill_cmd, strlen(kill_cmd));
+    do_close(fd);
+  } else {
+    print("RESURRECTION: Failed to open ");
+    print(path);
+    print(" for killing PID ");
+    print_num("", pid, "\n");
+  }
 }
 
 /*
@@ -1363,6 +1498,38 @@ static void start_service(Service *svc) {
   print(svc->name);
   print("...\n");
 
+  /* BINARY HASH VERIFICATION */
+  // Check if a service_hash is configured (not all zeros)
+  int hash_configured = 0;
+  for (int i = 0; i < MAX_HASH_LEN; i++) {
+    if (svc->service_hash[i] != 0) {
+      hash_configured = 1;
+      break;
+    }
+  }
+
+  if (hash_configured) {
+    uchar computed_hash[MAX_HASH_LEN];
+    if (do_compute_file_hash(svc->exec_path, computed_hash) != 0) {
+      print("RESURRECTION: Failed to compute hash for ");
+      print(svc->exec_path);
+      print("\n");
+      svc->state = SRV_FAILED;
+      return;
+    }
+
+    if (memcmp(computed_hash, svc->service_hash, MAX_HASH_LEN) != 0) {
+      print("RESURRECTION: Binary hash mismatch for ");
+      print(svc->exec_path);
+      print(" - ABORTING START\n");
+      svc->state = SRV_FAILED;
+      return;
+    }
+    print("RESURRECTION: Binary hash verified for ");
+    print(svc->exec_path);
+    print("\n");
+  }
+
   svc->state = SRV_STARTING;
 
   /* Fork new process */
@@ -1428,8 +1595,14 @@ static void stop_service(Service *svc) {
 
 static void restart_service(Service *svc) {
   /* Rate limiting */
-  /* TODO: Implement proper time tracking */
+  u64int current_time = nsec();
+
+  if (current_time - svc->last_restart > RESTART_WINDOW_NS) {
+    svc->restarts_in_window = 0; // Reset count if outside window
+  }
+
   svc->restarts_in_window++;
+  svc->last_restart = current_time; // Update last restart time
 
   if (svc->restarts_in_window > 5) {
     print("RESURRECTION: ");
@@ -1558,7 +1731,7 @@ static void monitor_services(void) {
     */
 
     /* Wait for child events */
-    int pid = sys_wait();  /* Note: status buffer not supported yet */
+    int pid = sys_wait(); /* Note: status buffer not supported yet */
 
     if (pid < 0) {
       /* Sleep to avoid busy loop */
