@@ -3,6 +3,15 @@
 #include <fcall.h>
 #include <u.h>
 
+#define GBIT8(p) ((p)[0])
+#define GBIT16(p) ((p)[0] | ((p)[1] << 8))
+#define GBIT32(p) ((p)[0] | ((p)[1] << 8) | ((p)[2] << 16) | ((p)[3] << 24))
+#define GBIT64(p)                                                              \
+  ((u64int)((p)[0]) | ((u64int)((p)[1]) << 8) | ((u64int)((p)[2]) << 16) |     \
+   ((u64int)((p)[3]) << 24) | ((u64int)((p)[4]) << 32) |                       \
+   ((u64int)((p)[5]) << 40) | ((u64int)((p)[6]) << 48) |                       \
+   ((u64int)((p)[7]) << 56))
+
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
   uint n;
 
@@ -49,32 +58,22 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
   p = ap;
   ep = p + nap;
 
-  if (p + BIT32SZ + BIT8SZ + BIT16SZ > ep) {
-    print("convM2S: header bounds check failed p=%p ep=%p\n", p, ep);
-    return 0;
-  }
+  if (p + BIT32SZ + BIT8SZ + BIT16SZ > ep)
+    return (uint)-2;
   size = GBIT32(p);
   p += BIT32SZ;
 
-  if (size < BIT32SZ + BIT8SZ + BIT16SZ) {
-    print("convM2S: size check failed size=%d min=%d\n", size,
-          BIT32SZ + BIT8SZ + BIT16SZ);
-    return 0;
-  }
+  if (size < BIT32SZ + BIT8SZ + BIT16SZ)
+    return (uint)-3;
 
   f->type = GBIT8(p);
   p += BIT8SZ;
   f->tag = GBIT16(p);
   p += BIT16SZ;
 
-  // Debug print for Tsyscall
-  if (f->type == 130) {
-    /* print("convM2S: parsing Tsyscall size=%d tag=%d\n", size, f->tag); */
-  }
-
   switch (f->type) {
   default:
-    return 0;
+    return (uint)-4;
 
   case Tversion:
     if (p + BIT32SZ > ep)
@@ -715,8 +714,8 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
   }
 
   if (p == nil || p > ep)
-    return 0;
+    return (uint)-5;
   if (ap + size == p)
     return size;
-  return 0;
+  return (uint)-6;
 }

@@ -1,12 +1,11 @@
 #include "../include/u.h"
-#include "../include/u.h"
-#include "portlib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
-#include "edf.h"
-#include "9p_router.h" /* For P9Control structure */
 #include "../wasm/wasm_runtime.h"
+#include "9p_router.h" /* For P9Control structure */
+#include "dat.h"
+#include "edf.h"
+#include "fns.h"
+#include "mem.h"
+#include "portlib.h"
 #include "proc_packet.h" /* For EV_* events */
 #include "tos.h"
 #include "ureg.h"
@@ -803,6 +802,37 @@ Proc *newproc(void) {
   procpriority(p, PriNormal, 0);
   p->cpu = 0;
   p->lastupdate = MACHP(0)->ticks * Scaling;
+
+  /* Lux9 Secure PID2 Generation */
+  {
+    uuid_t *parent_p = nil;
+    u8int *ns_cid = nil;
+    u8int code_hash[32]; /* Placeholder for code hash (32 bytes) */
+
+    /* 1. Ancestry: Use parent's PID2 if available */
+    if (up != nil) {
+      parent_p = &up->pid2;
+    }
+
+    /* 2. Namespace: Use Pgrp's Namespace Hash */
+    /* Note: p->pgrp is not set yet! newproc is minimal init.
+       The caller (sysfork/rfork) usually sets pgrp.
+       However, we need a PID2 *now*.
+       For now, we inherit PARENT's namespace CID if available.
+       If up is nil (kernel init), we use nil.
+    */
+    if (up != nil && up->pgrp != nil) {
+      ns_cid = up->pgrp->namespace_cid;
+    }
+
+    /* 3. Code Integrity: Inherit parent's hash for fork() */
+    if (up != nil)
+      memmove(code_hash, up->text_hash, sizeof(code_hash));
+    else
+      memset(code_hash, 0, sizeof(code_hash));
+
+    uuid_pack_pid_lux9(&p->pid2, parent_p, ns_cid, code_hash);
+  }
   p->edf = nil;
 
   pebbleprocinit(p);
@@ -1337,6 +1367,12 @@ _Noreturn void pexit(char *exitstr, int freemem) {
     up->wasm.initialized = 0;
   }
 
+  /*
+   * Clean up Pebble tokens.
+   * This is the "bankruptcy" handler for the Capitalist memory model.
+   * Whether the process exited normally (exits) or crashed (sysfatal/error),
+   * all its tokens (assets) must be liquidated and returned to the global pool.
+   */
   pebble_cleanup(up);
   vault_cleanup_process(up->pid);
 
@@ -2152,10 +2188,8 @@ void pebble_validate_conservation(void) {
     Proc *p = procalloc.tab[i];
     if (p == nil || p->state == Dead)
       continue;
-    ulong proc_total = p->pebble.colorless_bank +
-                       p->pebble.black_inuse +
-                       p->pebble.red_inuse +
-                       p->pebble.blue_inuse;
+    ulong proc_total = p->pebble.colorless_bank + p->pebble.black_inuse +
+                       p->pebble.red_inuse + p->pebble.blue_inuse;
     total_allocated += proc_total;
   }
 

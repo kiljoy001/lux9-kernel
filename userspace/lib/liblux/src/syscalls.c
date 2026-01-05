@@ -51,9 +51,18 @@ int lux_call(Fcall *tx, Fcall *rx) {
   _syscall();
 
   /* 3. Unmarshal Reply */
-  memset(rx, 0, sizeof(Fcall)); /* Zero-initialize before unmarshalling */
-  if (convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, rx) <= 0)
-    return -1;
+  // Debug check: verify rx is a valid user pointer
+  if ((u64int)rx > 0x7FFFFFFFFFFF) {
+    return -2; // Return special error for bad pointer to avoid crash
+  }
+
+  memset(rx, 0, sizeof(Fcall));
+  // The original convM2S call is below, using page + P9_MSG_OFFSET and
+  // P9_MSG_SIZE
+  uint ret = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, rx);
+
+  if ((int)ret <= 0)
+    return (int)ret;
 
   if (rx->type == Rerror)
     return -1;
@@ -63,8 +72,10 @@ int lux_call(Fcall *tx, Fcall *rx) {
 /* Generic syscall wrapper with sdata buffer management */
 static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   Fcall tx, rx;
+
+  /* Clear structures to avoid any stack garbage */
   memset(&tx, 0, sizeof(Fcall));
-  memset(&rx, 0, sizeof(Fcall));
+  // memset(&rx, 0, sizeof(Fcall)); // lux_call clears this
 
   tx.type = Tsyscall;
   tx.tag = 1;
@@ -73,8 +84,9 @@ static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   tx.sdata = sdata;
   tx.scount = scount;
 
-  if (lux_call(&tx, &rx) < 0)
-    return -1;
+  int err = lux_call(&tx, &rx);
+  if (err < 0)
+    return err;
 
   if (retval)
     *retval = rx.retval;
@@ -246,12 +258,14 @@ int sys_rfork(int flags) {
   uchar *p = buf;
 
   // [flags 4]
+  // [flags 4] - Kernel sysrfork expects u32int
   pack32(p, flags);
   p += 4;
 
   u64int ret;
-  if (do_syscall(SYS_RFORK, buf, p - buf, &ret) < 0)
-    return -1;
+  int err = do_syscall(SYS_RFORK, buf, p - buf, &ret);
+  if (err < 0)
+    return (int)((*(u32int *)EXCHANGE_PAGE_ADDR));
   return (int)ret;
 }
 

@@ -5,6 +5,7 @@
 #include "pci.h"
 #include "pciframework.h"
 #include "portlib.h"
+#include "uuid.h"
 #include "u.h"
 #include <error.h>
 
@@ -779,6 +780,13 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
     m->mount = nm;
   }
   wunlock(&m->lock);
+  namespace_cid_update_locked(pg);
+  if (up != nil && up->pgrp == pg) {
+    uuid_t *parent_p = nil;
+    if (up->parent)
+      parent_p = &up->parent->pid2;
+    uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid, up->text_hash);
+  }
   wunlock(&pg->ns);
   poperror();
 
@@ -825,6 +833,14 @@ void cunmount(Chan *mnt, Chan *mounted) {
     *l = m->hash;
     m->mount = nil;
     wunlock(&m->lock);
+    namespace_cid_update_locked(pg);
+    if (up != nil && up->pgrp == pg) {
+      uuid_t *parent_p = nil;
+      if (up->parent)
+        parent_p = &up->parent->pid2;
+      uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
+                         up->text_hash);
+    }
     wunlock(&pg->ns);
     mountfree(f);
     putmhead(m);
@@ -838,12 +854,28 @@ void cunmount(Chan *mnt, Chan *mounted) {
       if (m->mount == nil) {
         *l = m->hash;
         wunlock(&m->lock);
+        namespace_cid_update_locked(pg);
+        if (up != nil && up->pgrp == pg) {
+          uuid_t *parent_p = nil;
+          if (up->parent)
+            parent_p = &up->parent->pid2;
+          uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
+                             up->text_hash);
+        }
         wunlock(&pg->ns);
         mountfree(f);
         putmhead(m);
         return;
       }
       wunlock(&m->lock);
+      namespace_cid_update_locked(pg);
+      if (up != nil && up->pgrp == pg) {
+        uuid_t *parent_p = nil;
+        if (up->parent)
+          parent_p = &up->parent->pid2;
+        uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
+                           up->text_hash);
+      }
       wunlock(&pg->ns);
       mountfree(f);
       return;

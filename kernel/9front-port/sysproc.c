@@ -37,6 +37,7 @@ typedef ulong *syscall_va_list;
 #include "monocypher.h"
 #include "pebble.h"
 #include "tos.h"
+#include "uuid.h"
 /* clang-format on */
 
 #include <a.out.h>
@@ -62,6 +63,38 @@ static void hash_binary(Chan *tc) {
     off += n;
   }
   crypto_blake2b_final(&ctx, up->text_hash);
+
+  /* Init Hardening: If this process is bound to a specific binary hash
+   * (via spawn_bound_binary), verify it now. */
+  int i;
+  int bound = 0;
+  for (i = 0; i < 64; i++) {
+    if (up->spawn_bound_binary[i] != 0) {
+      bound = 1;
+      break;
+    }
+  }
+
+  if (bound) {
+    if (memcmp(up->text_hash, up->spawn_bound_binary, 64) != 0) {
+      print("EXEC SECURITY: blocked execution of non-bound binary\n");
+      error("exec: binary hash does not match bound restriction");
+    }
+  }
+}
+
+static void update_pid2_after_exec(void) {
+  uuid_t *parent_p = nil;
+  u8int *ns_cid = nil;
+
+  if (up == nil)
+    return;
+  if (up->parent)
+    parent_p = &up->parent->pid2;
+  if (up->pgrp)
+    ns_cid = up->pgrp->namespace_cid;
+
+  uuid_pack_pid_lux9(&up->pid2, parent_p, ns_cid, up->text_hash);
 }
 
 uintptr sysr1(void *list_void) {
@@ -213,6 +246,12 @@ uintptr sysrfork(void *list_void) {
     p->procctl = Proc_tracesyscall;
   p->kp = 0;
 
+  /* Inherit spawn capability and limits from parent */
+  memmove(&p->spawn_cap, &up->spawn_cap, sizeof(uuid_t));
+  p->spawn_max_children =
+      up->spawn_max_children; /* Child inherits parent's limit */
+  p->spawn_children = 0;      /* Child starts with no children of its own */
+
   /*
    * Craft a return frame which will cause the child to pop out of
    * the scheduler in user mode with the return register zero
@@ -257,6 +296,14 @@ uintptr sysrfork(void *list_void) {
   qunlock(&p->seglock);
   poperror();
 
+  /* DEBUG: Verify Child Segments */
+  for (i = 0; i < NSEG; i++) {
+    if (p->seg[i] != nil) {
+      print("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
+            (void *)p->seg[i]->base, (void *)p->seg[i]->top, p->seg[i]->type);
+    }
+  }
+
   /* File descriptors */
   if (flag & (RFFDG | RFCFDG)) {
     if (flag & RFFDG)
@@ -287,6 +334,13 @@ uintptr sysrfork(void *list_void) {
   else {
     p->rgrp = up->rgrp;
     incref((Ref *)&up->rgrp->ref);
+  }
+
+  /* Increment namespace spawn count */
+  if (p->pgrp != nil) {
+    lock(&p->pgrp->spawn_lock);
+    p->pgrp->spawn_count++;
+    unlock(&p->pgrp->spawn_lock);
   }
 
   /* Environment group */
@@ -350,6 +404,8 @@ uintptr sysrfork(void *list_void) {
     p->parent = up;
     lock(&up->exl);
     up->nchild++;
+    /* Increment process spawn limit */
+    up->spawn_children++;
     unlock(&up->exl);
   }
 
@@ -357,10 +413,16 @@ uintptr sysrfork(void *list_void) {
    *  since the bss/data segments are now shareable,
    *  any mmu info about this process is now stale
    *  (i.e. has bad properties) and has to be discarded.
+   *
+   *  CRITICAL FIX: Do NOT call flushmmu() here!
+   *  At this point 'up' is the PARENT, and calling flushmmu() destroys
+   *  the parent's user PTEs including the exchange page at 0x7FFFFEEFF000.
+   *  This causes the parent to fault when reading the syscall reply.
+   *  The child will get its TLB flushed automatically when scheduled.
    */
   /* proc_setup_p9page moved above procfork */
 
-  flushmmu();
+  /* REMOVED: flushmmu(); -- This was destroying parent's exchange page PTE! */
 
   procpriority(p, up->basepri, up->fixedpri);
   if (up->wired)
@@ -578,8 +640,6 @@ uintptr sysexec(void *list_void) {
     /* Check for WASM magic: 0x00 0x61 0x73 0x6D = "\0asm" */
     if (n >= 4 && u.buf[0] == 0x00 && u.buf[1] == 0x61 && u.buf[2] == 0x73 &&
         u.buf[3] == 0x6d) {
-      extern int wasm_exec_compile(Chan * tc, void **out_start);
-      extern void wasm_exec_run(void *start_func);
       void *start_func = nil;
 
       snprint(debug_buf, sizeof(debug_buf),
@@ -665,6 +725,7 @@ uintptr sysexec(void *list_void) {
           break;
         }
         hash_binary(tc);
+        update_pid2_after_exec();
         break; /* for binary */
       }
 
@@ -767,6 +828,7 @@ uintptr sysexec(void *list_void) {
         is_elf = 1;
         file_offset = elf_file_offset;
         hash_binary(tc);
+        update_pid2_after_exec();
         break; /* for binary */
       }
     }
@@ -1171,6 +1233,11 @@ uintptr sys_wait(void *list_void) {
   OWaitmsg *ow;
 
   ow = SYSCALL_ARG(list, OWaitmsg *);
+  if (waserror()) {
+    /* If pwait is interrupted or errors */
+    return -1;
+  }
+
   if (ow == nil)
     pid = pwait(nil);
   else {
@@ -1178,6 +1245,7 @@ uintptr sys_wait(void *list_void) {
     evenaddr((uintptr)ow);
     pid = pwait(&w);
   }
+  poperror();
   if (ow != nil) {
     readnum(0, ow->pid, NUMSIZE, w.pid, NUMSIZE);
     readnum(0, ow->time + TUser * NUMSIZE, NUMSIZE, w.time[TUser], NUMSIZE);

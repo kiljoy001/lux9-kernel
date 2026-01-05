@@ -67,14 +67,31 @@ long decref(Ref *);
 int decrypt(void *, void *, int);
 void delay(int);
 Proc *dequeueproc(Schedq *, Proc *);
-Chan *devattach(int, char *);
+/*@ requires spec == \null || \valid(spec);
+  @ assigns \result \from \nothing;
+  @ terminates \true;
+  */
+Chan *devattach(int, char *spec);
 Block *devbread(Chan *, long, ulong);
 long devbwrite(Chan *, Block *, ulong);
 Chan *devclone(Chan *);
 int devconfig(int, char *, DevConf *);
 Chan *devcreate(Chan *, char *, int, ulong);
-void devdir(Chan *, Qid, char *, vlong, char *, long, Dir *);
-long devdirread(Chan *, char *, long, Dirtab *, int, Devgen *);
+/*@ requires c != \null;
+  @ requires name == \null || \valid(name);
+  @ requires user == \null || \valid(user);
+  @ requires dp != \null;
+  @ assigns *dp;
+  @ terminates \true;
+  */
+void devdir(Chan *c, Qid qid, char *name, vlong length, char *user, long perm,
+            Dir *dp);
+/*@ requires c != \null;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+long devdirread(Chan *c, char *va, long n, Dirtab *tab, int ntab,
+                Devgen *gen);
 Devgen devgen;
 void devinit(void);
 int devno(int, int);
@@ -84,8 +101,17 @@ void devpower(int);
 void devremove(Chan *);
 void devreset(void);
 void devshutdown(void);
-int devstat(Chan *, uchar *, int, Dirtab *, int, Devgen *);
-Walkqid *devwalk(Chan *, Chan *, char **, int, Dirtab *, int, Devgen *);
+/*@ requires c != \null;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+int devstat(Chan *c, uchar *dp, int n, Dirtab *tab, int ntab, Devgen *gen);
+/*@ requires c != \null;
+  @ assigns \result \from \nothing;
+  @ terminates \true;
+  */
+Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
+                 int ntab, Devgen *gen);
 int devwstat(Chan *, uchar *, int);
 Dir *dirchanstat(Chan *);
 int donotify(Ureg *);
@@ -111,7 +137,12 @@ void envcpy(Egrp *, Egrp *);
 int eqchan(Chan *, Chan *, int);
 int eqchantdqid(Chan *, int, int, Qid, int);
 int eqqid(Qid, Qid);
-_Noreturn void error(char *);
+/*@ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @ ensures \false;
+  @ terminates \true;
+  */
+_Noreturn void error(char *e);
 void eqlock(QLock *);
 uintptr execregs(uintptr, ulong, ulong);
 void exhausted(char *);
@@ -131,7 +162,10 @@ void forkchild(Proc *, Ureg *);
 void forkret(void);
 void fpunotify(Proc *);
 void fpunoted(Proc *);
-void free(void *);
+/*@ assigns \nothing;
+  @ terminates \true;
+  */
+void free(void *p);
 void freeb(Block *);
 void freeblist(Block *);
 int freebroken(void);
@@ -197,7 +231,10 @@ Page *lookpage(Image *, uintptr);
 #define MS2NS(n) (((vlong)(n)) * 1000000LL)
 void machinit(void);
 void *mallocz(ulong, int);
-void *malloc(ulong);
+/*@ assigns \result \from \nothing;
+  @ terminates \true;
+  */
+void *malloc(ulong size);
 void *mallocalign(ulong, ulong, long, ulong);
 void mallocsummary(void);
 void memmapdump(void);
@@ -251,12 +288,19 @@ Block *packblock(Block *);
 Block *padblock(Block *, int);
 void pageinit(void);
 ulong pagereclaim(Image *);
-_Noreturn void panic(char *, ...);
+/*@ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @ ensures \false;
+  @ terminates \true;
+  */
+_Noreturn void panic(char *fmt, ...);
 Cmdbuf *parsecmd(char *a, int n);
 void pathclose(Path *);
 ulong perfticks(void);
 _Noreturn void pexit(char *, int);
 void pgrpcpy(Pgrp *, Pgrp *);
+void namespace_cid_update(Pgrp *);
+void namespace_cid_update_locked(Pgrp *);
 ulong pidalloc(Proc *);
 #define waserror() setlabel(&up->errlab[up->nerrlab++])
 #define poperror() up->nerrlab--
@@ -310,30 +354,64 @@ Block *qbread(Queue *, int);
 long qbwrite(Queue *, Block *);
 Queue *qbypass(void (*)(void *, Block *), void *);
 int qcanread(Queue *);
-void qclose(Queue *);
+/*@ requires q != \null;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+void qclose(Queue *q);
 int qconsume(Queue *, void *, int);
 Block *qcopy(Queue *, int, ulong);
 int qdiscard(Queue *, int);
 void qflush(Queue *);
-void qfree(Queue *);
+/*@ requires q != \null;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+void qfree(Queue *q);
 int qfull(Queue *);
 Block *qget(Queue *);
 void qhangup(Queue *, char *);
 int qisclosed(Queue *);
 int qiwrite(Queue *, void *, int);
-int qlen(Queue *);
-void qlock(QLock *);
+/*@ requires q != \null;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+int qlen(Queue *q);
+/*@ requires l != \null;
+  @ assigns *l;
+  @ terminates \true;
+  */
+void qlock(QLock *l);
+/*@ assigns \result \from \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @ terminates \true;
+  */
 Queue *qopen(int, int, void (*)(void *), void *);
 int qpass(Queue *, Block *);
 int qpassnolim(Queue *, Block *);
 int qproduce(Queue *, void *, int);
 void qputback(Queue *, Block *);
-long qread(Queue *, void *, int);
+/*@ requires q != \null;
+  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
+  @ assigns ((char *)buf)[0..n-1];
+  @ terminates \true;
+  */
+long qread(Queue *q, void *buf, int n);
 Block *qremove(Queue *);
 void qreopen(Queue *);
 void qsetlimit(Queue *, int);
-void qunlock(QLock *);
-int qwrite(Queue *, void *, int);
+/*@ requires l != \null;
+  @ assigns *l;
+  @ terminates \true;
+  */
+void qunlock(QLock *l);
+/*@ requires q != \null;
+  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+int qwrite(Queue *q, void *buf, int n);
 void qnoblock(Queue *, int);
 void qsetnoblock_early(Queue *, int);
 void randominit(void);
@@ -434,21 +512,29 @@ void wunlock(RWLock *);
 /*@ allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
+    terminates \true;
 */
 void *xalloc(ulong size);
 /*@ allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
+    terminates \true;
 */
 void *xalloc_raw(ulong size);
 /*@ allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
+    terminates \true;
 */
 void *xallocz(ulong size, int zero);
+/*@ allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+    terminates \true;
+*/
 void *xallocz_raw(ulong size, int zero);
-/*@ frees p;
-    assigns \nothing;
+/*@ assigns \nothing;
+  @ terminates \true;
 */
 void xfree(void *p);
 void xhole(uintptr, uintptr);
@@ -597,3 +683,10 @@ vlong kseek(int, vlong, int);
 /* WASM runtime functions */
 void wasm_runtime_init(void);
 void wasm_arena_test(void);
+struct Chan; /* Forward declaration */
+struct M3Function; /* Forward declaration for WASM3 */
+int wasm_exec_compile(struct Chan *, struct M3Function **);
+void wasm_exec_run(struct M3Function *);
+void wasm_runtime_cleanup_process(Proc *);
+
+extern int boot_verbose;

@@ -2,6 +2,7 @@
 #include "fns.h"
 #include "mem.h"
 #include "portlib.h"
+#include "uuid.h"
 #include "u.h"
 #include <error.h>
 
@@ -52,6 +53,14 @@ void devmask(Pgrp *pgrp, int invert, char *devs) {
   wlock(&pgrp->ns);
   for (i = 0; i < nelem(pgrp->notallowed); i++)
     pgrp->notallowed[i] |= mask[i];
+  namespace_cid_update_locked(pgrp);
+  if (up != nil && up->pgrp == pgrp) {
+    uuid_t *parent_p = nil;
+    u8int *ns_cid = pgrp->namespace_cid;
+    if (up->parent)
+      parent_p = &up->parent->pid2;
+    uuid_pack_pid_lux9(&up->pid2, parent_p, ns_cid, up->text_hash);
+  }
   wunlock(&pgrp->ns);
 }
 

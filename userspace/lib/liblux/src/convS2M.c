@@ -201,6 +201,11 @@ uint sizeS2M(Fcall *f) {
     n += BIT32SZ; /* argc */
     break;
 
+  case Texec:
+    n += stringsz(f->name);
+    n += BIT32SZ; /* count */
+    break;
+
   case Tsysexit:
     n += stringsz(f->ename);
     break;
@@ -596,6 +601,15 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
     PBIT32(p, f->argc);
     p += BIT32SZ;
     break;
+
+  case Texec: {
+    /* Texec: count[4] + pstring(path) */
+    uint datalen = BIT16SZ + (f->name ? strlen(f->name) : 0);
+    PBIT32(p, datalen);
+    p += BIT32SZ;
+    p = pstring(p, f->name);
+    break;
+  }
 
   case Tsysexit:
     p = pstring(p, f->ename);
