@@ -393,6 +393,16 @@ uintptr sysrfork(void *list_void) {
     unlock(&pebble_global_lock);
   }
 
+  /*
+   * CRITICAL: Invalidate the MMU mapping for the exchange page in the PARENT
+   * before we fork the page tables. This ensures the child does NOT inherit
+   * the parent's physical address for this page.
+   * Both Parent and Child will Page Fault on next access and load their
+   * respective correct physical pages from their segments.
+   */
+  extern void putmmu(uintptr, uintptr, Page *);
+  putmmu(0x7FFFFEEFF000ULL, 0, nil);
+
   procfork(p);
 
   poperror(); /* abortion */
@@ -1980,6 +1990,20 @@ uintptr syspebblebluediscard(void *list_void) {
     error(PEBBLE_E_PERM);
   blue = SYSCALL_ARG(list, PebbleBlue *);
   pebble_blue_discard(blue);
+  return 0;
+}
+
+uintptr sys_getpid2(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
+  void *out;
+  ulong len;
+
+  out = SYSCALL_ARG(list, void *);
+  len = SYSCALL_ARG(list, ulong);
+  if (len < sizeof(up->pid2.data))
+    error(Eshort);
+  validaddr((uintptr)out, sizeof(up->pid2.data), 1);
+  memmove(out, up->pid2.data, sizeof(up->pid2.data));
   return 0;
 }
 
