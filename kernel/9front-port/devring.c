@@ -35,6 +35,7 @@ struct ChannelState {
 };
 
 static struct ChannelState *channels[1];
+static void ring_process_batch(struct ChannelState *cs);
 
 static void ringinit(void) { channels[0] = nil; }
 

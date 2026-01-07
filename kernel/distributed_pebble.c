@@ -439,8 +439,9 @@ int branch_elligator_encode(ArenaBranch *branch) {
   memmove(data, branch->tokens, 32);
   memmove(data + 32, branch->borrowed, 32);
 
-  u8int nonce[8] = {0}; /* Ephemeral key (random R) implies unique key, so zero nonce is safe */
-  crypto_chacha20_encrypt(data, data, 64, key, nonce, 0);
+  u8int nonce[8] = {0}; /* Ephemeral key (random R) implies unique key, so zero
+                           nonce is safe */
+  crypto_chacha20_djb(data, data, 64, key, nonce, 0);
 
   /* 4. Overwrite valid data with "noise" (ciphertext) */
   memmove(branch->tokens, data, 32);
@@ -461,7 +462,8 @@ int branch_elligator_decode(ArenaBranch *branch, const u8int *elligator_key) {
     return -1;
 
   /* 1. Read Representative R from encoded state */
-  /* We ignore elligator_key arg as the key is embedded in the lock (steganography) */
+  /* We ignore elligator_key arg as the key is embedded in the lock
+   * (steganography) */
   u8int rep[32];
   memmove(rep, branch->encoded_state, 32);
 
@@ -475,7 +477,7 @@ int branch_elligator_decode(ArenaBranch *branch, const u8int *elligator_key) {
   memmove(data + 32, branch->borrowed, 32);
 
   u8int nonce[8] = {0};
-  crypto_chacha20_encrypt(data, data, 64, key, nonce, 0);
+  crypto_chacha20_djb(data, data, 64, key, nonce, 0);
 
   /* 4. Restore Plaintext */
   memmove(branch->tokens, data, 32);

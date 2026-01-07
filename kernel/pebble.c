@@ -544,10 +544,10 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
 
   /* 4. Track metadata */
 
-  ilock(&pebble_global_lock);
+  lock(&pebble_global_lock);
   pb = pebble_meta_alloc(sizeof(PebbleBlack));
   if (pb == nil) {
-    iunlock(&pebble_global_lock);
+    unlock(&pebble_global_lock);
     borrow_release(up, (uintptr)buf);
     xfree(buf);
     return -1;
@@ -568,7 +568,7 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
    */
   white->token = 0;
 
-  iunlock(&pebble_global_lock);
+  unlock(&pebble_global_lock);
 
   return 0;
 }

@@ -516,6 +516,8 @@ struct Pgrp {
 
   /* Namespace spawn limits - cryptographically bound via identity_hash */
   u8int identity_hash[16]; /* Blake2b hash of Pgrp for spawn cap binding */
+  u8int namespace_cid[32]; /* Full BLAKE2b hash of Namespace Config
+                              (Mounts+Caps) */
   Lock spawn_lock;         /* Protect spawn counts */
   u32int spawn_limit;      /* Max procs allowed in this namespace */
   u32int spawn_count;      /* Current proc count in namespace */
@@ -737,6 +739,7 @@ struct Proc {
   vlong fid_offsets[256]; /* Offset per FID for read/write/seek tracking */
 
   ulong pid;
+  uuid_t pid2;  /* Lux9 Secure ID */
   ulong noteid; /* Equivalent of note group */
   ulong parentpid;
   ulong index;

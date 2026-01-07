@@ -23,12 +23,12 @@ extern void longjmp(jmp_buf, int);
 /*
  * mem routines
  */
-extern void *memccpy(void *, void *, int, usize);
+extern void *memccpy(void *, const void *, int, usize);
 extern void *memset(void *, int, usize);
-extern int memcmp(void *, void *, usize);
-extern void *memcpy(void *, void *, usize);
-extern void *memmove(void *, void *, usize);
-extern void *memchr(void *, int, usize);
+extern int memcmp(const void *, const void *, usize);
+extern void *memcpy(void *, const void *, usize);
+extern void *memmove(void *, const void *, usize);
+extern void *memchr(const void *, int, usize);
 
 /*
  * string routines

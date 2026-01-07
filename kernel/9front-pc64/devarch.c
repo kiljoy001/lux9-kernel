@@ -1,63 +1,62 @@
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
 #include "io.h"
-#include "vmdetect.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 #include "ureg.h"
+#include "vmdetect.h"
 #include <error.h>
 
 /* Helper for formatted UART output (used before print buffer is ready) */
-void
-uartprintf(char *fmt, ...)
-{
-	char buf[256];
-	va_list arg;
-	int n;
+void uartprintf(char *fmt, ...) {
+  char buf[256];
+  va_list arg;
+  int n;
 
-	va_start(arg, fmt);
-	n = vsnprint(buf, sizeof(buf), fmt, arg);
-	va_end(arg);
-	uartputs(buf, n);
+  if (!boot_verbose)
+    return;
+
+  va_start(arg, fmt);
+  n = vsnprint(buf, sizeof(buf), fmt, arg);
+  va_end(arg);
+  uartputs(buf, n);
 }
 
 enum {
-	Qdir = 0,
-	Qiob,
-	Qiow,
-	Qiol,
-	Qmsr,
-	Qbase,
+  Qdir = 0,
+  Qiob,
+  Qiow,
+  Qiol,
+  Qmsr,
+  Qbase,
 
-	Qmax = 32,
+  Qmax = 32,
 };
 
-enum {				/* cpuid standard function codes */
-	Highstdfunc = 0,	/* also returns vendor string */
-	Procsig,
-	Proctlbcache,
-	Procserial,
-	
-	Highextfunc = 0x80000000,
-	Procextfeat,
+enum {                  /* cpuid standard function codes */
+       Highstdfunc = 0, /* also returns vendor string */
+       Procsig,
+       Proctlbcache,
+       Procserial,
+
+       Highextfunc = 0x80000000,
+       Procextfeat,
 };
 
-typedef long Rdwrfn(Chan*, void*, long, vlong);
+typedef long Rdwrfn(Chan *, void *, long, vlong);
 
 static Rdwrfn *readfn[Qmax];
 static Rdwrfn *writefn[Qmax];
 
 static Dirtab archdir[Qmax] = {
-	".",		{ Qdir, 0, QTDIR },	0,	0555,
-	"iob",		{ Qiob, 0 },		0,	0660,
-	"iow",		{ Qiow, 0 },		0,	0660,
-	"iol",		{ Qiol, 0 },		0,	0660,
-	"msr",		{ Qmsr, 0 },		0,	0660,
+    ".",   {Qdir, 0, QTDIR}, 0, 0555, "iob", {Qiob, 0}, 0, 0660,
+    "iow", {Qiow, 0},        0, 0660, "iol", {Qiol, 0}, 0, 0660,
+    "msr", {Qmsr, 0},        0, 0660,
 };
-Lock archwlock;	/* the lock is only for changing archdir */
+Lock archwlock; /* the lock is only for changing archdir */
 int narchdir = Qbase;
-int (*_pcmspecial)(char*, ISAConf*);
+int (*_pcmspecial)(char *, ISAConf *);
 void (*_pcmspecialclose)(int);
 
 extern int cpuserver;
@@ -66,11 +65,11 @@ extern PCArch archmp;
 extern PCArch archacpi;
 
 PCArch *arch = &archgeneric;
-static PCArch* knownarch[] = {
-	&archacpi,
-	&archmp,
-	&archgeneric,
-	nil,
+static PCArch *knownarch[] = {
+    &archacpi,
+    &archmp,
+    &archgeneric,
+    nil,
 };
 
 /*
@@ -79,254 +78,218 @@ static PCArch* knownarch[] = {
  * and you get a pointer to the Dirtab entry so you can do things
  * * like change the Qid version.  Changing the Qid path is disallowed.
  */
-Dirtab*
-addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn)
-{
-	int i;
-	Dirtab d;
-	Dirtab *dp;
+Dirtab *addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn) {
+  int i;
+  Dirtab d;
+  Dirtab *dp;
 
-	memset(&d, 0, sizeof d);
-	strcpy(d.name, name);
-	d.perm = perm;
+  memset(&d, 0, sizeof d);
+  strcpy(d.name, name);
+  d.perm = perm;
 
-	lock(&archwlock);
-	if(narchdir >= Qmax){
-		unlock(&archwlock);
-		print("addarchfile: out of entries for %s\n", name);
-		return nil;
-	}
+  lock(&archwlock);
+  if (narchdir >= Qmax) {
+    unlock(&archwlock);
+    print("addarchfile: out of entries for %s\n", name);
+    return nil;
+  }
 
-	for(i=0; i<narchdir; i++)
-		if(strcmp(archdir[i].name, name) == 0){
-			unlock(&archwlock);
-			return nil;
-		}
+  for (i = 0; i < narchdir; i++)
+    if (strcmp(archdir[i].name, name) == 0) {
+      unlock(&archwlock);
+      return nil;
+    }
 
-	d.qid.path = narchdir;
-	archdir[narchdir] = d;
-	readfn[narchdir] = rdfn;
-	writefn[narchdir] = wrfn;
-	dp = &archdir[narchdir++];
-	unlock(&archwlock);
+  d.qid.path = narchdir;
+  archdir[narchdir] = d;
+  readfn[narchdir] = rdfn;
+  writefn[narchdir] = wrfn;
+  dp = &archdir[narchdir++];
+  unlock(&archwlock);
 
-	return dp;
+  return dp;
 }
 
-void
-ioinit(void)
-{
-	char *excluded;
+void ioinit(void) {
+  char *excluded;
 
-	iomapinit(0xffff);
+  iomapinit(0xffff);
 
-	/*
-	 * This is necessary to make the IBM X20 boot.
-	 * Have not tracked down the reason.
-	 * i82557 is at 0x1000, the dummy entry is needed for swappable devs.
-	 */
-	ioalloc(0x0fff, 1, 0, "dummy");
+  /*
+   * This is necessary to make the IBM X20 boot.
+   * Have not tracked down the reason.
+   * i82557 is at 0x1000, the dummy entry is needed for swappable devs.
+   */
+  ioalloc(0x0fff, 1, 0, "dummy");
 
-	if ((excluded = getconf("ioexclude")) != nil) {
-		char *s;
+  if ((excluded = getconf("ioexclude")) != nil) {
+    char *s;
 
-		s = excluded;
-		while (s && *s != '\0' && *s != '\n') {
-			char *ends;
-			int io_s, io_e;
+    s = excluded;
+    while (s && *s != '\0' && *s != '\n') {
+      char *ends;
+      int io_s, io_e;
 
-			io_s = (int)strtol(s, &ends, 0);
-			if (ends == nil || ends == s || *ends != '-') {
-				print("ioinit: cannot parse option string\n");
-				break;
-			}
-			s = ++ends;
+      io_s = (int)strtol(s, &ends, 0);
+      if (ends == nil || ends == s || *ends != '-') {
+        print("ioinit: cannot parse option string\n");
+        break;
+      }
+      s = ++ends;
 
-			io_e = (int)strtol(s, &ends, 0);
-			if (ends && *ends == ',')
-				*ends++ = '\0';
-			s = ends;
+      io_e = (int)strtol(s, &ends, 0);
+      if (ends && *ends == ',')
+        *ends++ = '\0';
+      s = ends;
 
-			ioalloc(io_s, io_e - io_s + 1, 0, "pre-allocated");
-		}
-	}
+      ioalloc(io_s, io_e - io_s + 1, 0, "pre-allocated");
+    }
+  }
 }
 
-static void
-checkport(ulong start, ulong end)
-{
-	if(end < start || end > 0x10000)
-		error(Ebadarg);
+static void checkport(ulong start, ulong end) {
+  if (end < start || end > 0x10000)
+    error(Ebadarg);
 
-	/* standard vga regs are OK */
-	if(start >= 0x2b0 && end <= 0x2df+1)
-		return;
-	if(start >= 0x3c0 && end <= 0x3da+1)
-		return;
+  /* standard vga regs are OK */
+  if (start >= 0x2b0 && end <= 0x2df + 1)
+    return;
+  if (start >= 0x3c0 && end <= 0x3da + 1)
+    return;
 
-	if(iounused(start, end))
-		return;
-	error(Eperm);
+  if (iounused(start, end))
+    return;
+  error(Eperm);
 }
 
-static Chan*
-archattach(char* spec)
-{
-	return devattach('P', spec);
+static Chan *archattach(char *spec) { return devattach('P', spec); }
+
+Walkqid *archwalk(Chan *c, Chan *nc, char **name, int nname) {
+  return devwalk(c, nc, name, nname, archdir, narchdir, devgen);
 }
 
-Walkqid*
-archwalk(Chan* c, Chan *nc, char** name, int nname)
-{
-	return devwalk(c, nc, name, nname, archdir, narchdir, devgen);
+static int archstat(Chan *c, uchar *dp, int n) {
+  return devstat(c, dp, n, archdir, narchdir, devgen);
 }
 
-static int
-archstat(Chan* c, uchar* dp, int n)
-{
-	return devstat(c, dp, n, archdir, narchdir, devgen);
+static Chan *archopen(Chan *c, int omode) {
+  return devopen(c, omode, archdir, narchdir, devgen);
 }
 
-static Chan*
-archopen(Chan* c, int omode)
-{
-	return devopen(c, omode, archdir, narchdir, devgen);
+static void archclose(Chan *) {}
+
+static long archread(Chan *c, void *a, long n, vlong offset) {
+  ulong port, end;
+  uchar *cp;
+  ushort *sp;
+  ulong *lp;
+  vlong *vp;
+  Rdwrfn *fn;
+
+  port = offset;
+  end = port + n;
+  switch ((ulong)c->qid.path) {
+  case Qdir:
+    return devdirread(c, a, n, archdir, narchdir, devgen);
+
+  case Qiob:
+    checkport(port, end);
+    for (cp = a; port < end; port++)
+      *cp++ = inb(port);
+    return n;
+
+  case Qiow:
+    if (n & 1)
+      error(Ebadarg);
+    checkport(port, end);
+    for (sp = a; port < end; port += 2)
+      *sp++ = ins(port);
+    return n;
+
+  case Qiol:
+    if (n & 3)
+      error(Ebadarg);
+    checkport(port, end);
+    for (lp = a; port < end; port += 4)
+      *lp++ = inl(port);
+    return n;
+
+  case Qmsr:
+    if (n & 7)
+      error(Ebadarg);
+    if ((ulong)n / 8 > -port)
+      error(Ebadarg);
+    end = port + (n / 8);
+    for (vp = a; port != end; port++)
+      if (rdmsr(port, vp++) < 0)
+        error(Ebadarg);
+    return n;
+
+  default:
+    if (c->qid.path < narchdir && (fn = readfn[c->qid.path]))
+      return fn(c, a, n, offset);
+    error(Eperm);
+  }
 }
 
-static void
-archclose(Chan*)
-{
-}
+static long archwrite(Chan *c, void *a, long n, vlong offset) {
+  ulong port, end;
+  uchar *cp;
+  ushort *sp;
+  ulong *lp;
+  vlong *vp;
+  Rdwrfn *fn;
 
-static long
-archread(Chan *c, void *a, long n, vlong offset)
-{
-	ulong port, end;
-	uchar *cp;
-	ushort *sp;
-	ulong *lp;
-	vlong *vp;
-	Rdwrfn *fn;
+  port = offset;
+  end = port + n;
+  switch ((ulong)c->qid.path) {
+  case Qiob:
+    checkport(port, end);
+    for (cp = a; port < end; port++)
+      outb(port, *cp++);
+    return n;
 
-	port = offset;
-	end = port+n;
-	switch((ulong)c->qid.path){
-	case Qdir:
-		return devdirread(c, a, n, archdir, narchdir, devgen);
+  case Qiow:
+    if (n & 1)
+      error(Ebadarg);
+    checkport(port, end);
+    for (sp = a; port < end; port += 2)
+      outs(port, *sp++);
+    return n;
 
-	case Qiob:
-		checkport(port, end);
-		for(cp = a; port < end; port++)
-			*cp++ = inb(port);
-		return n;
+  case Qiol:
+    if (n & 3)
+      error(Ebadarg);
+    checkport(port, end);
+    for (lp = a; port < end; port += 4)
+      outl(port, *lp++);
+    return n;
 
-	case Qiow:
-		if(n & 1)
-			error(Ebadarg);
-		checkport(port, end);
-		for(sp = a; port < end; port += 2)
-			*sp++ = ins(port);
-		return n;
+  case Qmsr:
+    if (n & 7)
+      error(Ebadarg);
+    if ((ulong)n / 8 > -port)
+      error(Ebadarg);
+    end = port + (n / 8);
+    for (vp = a; port != end; port++)
+      if (wrmsr(port, *vp++) < 0)
+        error(Ebadarg);
+    return n;
 
-	case Qiol:
-		if(n & 3)
-			error(Ebadarg);
-		checkport(port, end);
-		for(lp = a; port < end; port += 4)
-			*lp++ = inl(port);
-		return n;
-
-	case Qmsr:
-		if(n & 7)
-			error(Ebadarg);
-		if((ulong)n/8 > -port)
-			error(Ebadarg);
-		end = port+(n/8);
-		for(vp = a; port != end; port++)
-			if(rdmsr(port, vp++) < 0)
-				error(Ebadarg);
-		return n;
-
-	default:
-		if(c->qid.path < narchdir && (fn = readfn[c->qid.path]))
-			return fn(c, a, n, offset);
-		error(Eperm);
-	}
-}
-
-static long
-archwrite(Chan *c, void *a, long n, vlong offset)
-{
-	ulong port, end;
-	uchar *cp;
-	ushort *sp;
-	ulong *lp;
-	vlong *vp;
-	Rdwrfn *fn;
-
-	port = offset;
-	end = port+n;
-	switch((ulong)c->qid.path){
-	case Qiob:
-		checkport(port, end);
-		for(cp = a; port < end; port++)
-			outb(port, *cp++);
-		return n;
-
-	case Qiow:
-		if(n & 1)
-			error(Ebadarg);
-		checkport(port, end);
-		for(sp = a; port < end; port += 2)
-			outs(port, *sp++);
-		return n;
-
-	case Qiol:
-		if(n & 3)
-			error(Ebadarg);
-		checkport(port, end);
-		for(lp = a; port < end; port += 4)
-			outl(port, *lp++);
-		return n;
-
-	case Qmsr:
-		if(n & 7)
-			error(Ebadarg);
-		if((ulong)n/8 > -port)
-			error(Ebadarg);
-		end = port+(n/8);
-		for(vp = a; port != end; port++)
-			if(wrmsr(port, *vp++) < 0)
-				error(Ebadarg);
-		return n;
-
-	default:
-		if(c->qid.path < narchdir && (fn = writefn[c->qid.path]) != nil)
-			return fn(c, a, n, offset);
-		error(Eperm);
-		break;
-	}
+  default:
+    if (c->qid.path < narchdir && (fn = writefn[c->qid.path]) != nil)
+      return fn(c, a, n, offset);
+    error(Eperm);
+    break;
+  }
 }
 
 Dev archdevtab = {
-	'P',
-	"arch",
+    'P',      "arch",
 
-	devreset,
-	devinit,
-	devshutdown,
-	archattach,
-	archwalk,
-	archstat,
-	archopen,
-	devcreate,
-	archclose,
-	archread,
-	devbread,
-	archwrite,
-	devbwrite,
-	devremove,
-	devwstat,
+    devreset, devinit,   devshutdown, archattach, archwalk,
+    archstat, archopen,  devcreate,   archclose,  archread,
+    devbread, archwrite, devbwrite,   devremove,  devwstat,
 };
 
 /*
@@ -334,31 +297,22 @@ Dev archdevtab = {
  *  architecture specific stuff
  */
 
-static int
-unimplemented(int)
-{
-	return 0;
-}
+static int unimplemented(int) { return 0; }
 
-static void
-nop(void)
-{
-}
+static void nop(void) {}
 
 /*
  * 386 has no compare-and-swap instruction.
  * Run it with interrupts turned off instead.
  */
-static int
-cmpswap386(long *addr, long old, long new)
-{
-	int r, s;
+static int cmpswap386(long *addr, long old, long new) {
+  int r, s;
 
-	s = splhi();
-	if(r = (*addr == old))
-		*addr = new;
-	splx(s);
-	return r;
+  s = splhi();
+  if (r = (*addr == old))
+    *addr = new;
+  splx(s);
+  return r;
 }
 
 /*
@@ -371,57 +325,241 @@ cmpswap386(long *addr, long old, long new)
  */
 extern void (*coherence)(void);
 
-int (*cmpswap)(long*, long, long) = cmpswap386;
+int (*cmpswap)(long *, long, long) = cmpswap386;
 
 typedef struct X86type X86type;
 struct X86type {
-	int	family;
-	int	model;
-	int	aalcycles;
-	char*	name;
+  int family;
+  int model;
+  int aalcycles;
+  char *name;
 };
 
-static X86type x86intel[] =
-{
-	{ 4,	0,	22,	"486DX", },	/* known chips */
-	{ 4,	1,	22,	"486DX50", },
-	{ 4,	2,	22,	"486SX", },
-	{ 4,	3,	22,	"486DX2", },
-	{ 4,	4,	22,	"486SL", },
-	{ 4,	5,	22,	"486SX2", },
-	{ 4,	7,	22,	"DX2WB", },	/* P24D */
-	{ 4,	8,	22,	"DX4", },	/* P24C */
-	{ 4,	9,	22,	"DX4WB", },	/* P24CT */
-	{ 5,	0,	23,	"P5", },
-	{ 5,	1,	23,	"P5", },
-	{ 5,	2,	23,	"P54C", },
-	{ 5,	3,	23,	"P24T", },
-	{ 5,	4,	23,	"P55C MMX", },
-	{ 5,	7,	23,	"P54C VRT", },
-	{ 6,	1,	16,	"PentiumPro", },/* trial and error */
-	{ 6,	3,	16,	"PentiumII", },
-	{ 6,	5,	16,	"PentiumII/Xeon", },
-	{ 6,	6,	16,	"Celeron", },
-	{ 6,	7,	16,	"PentiumIII/Xeon", },
-	{ 6,	8,	16,	"PentiumIII/Xeon", },
-	{ 6,	0xB,	16,	"PentiumIII/Xeon", },
-	{ 6,	0xF,	16,	"Xeon5000-series", },
-	{ 6,	0x16,	16,	"Celeron", },
-	{ 6,	0x17,	16,	"Core 2/Xeon", },
-	{ 6,	0x1A,	16,	"Core i7/Xeon", },
-	{ 6,	0x1C,	16,	"Atom", },
-	{ 6,	0x1D,	16,	"Xeon MP", },
-	{ 0xF,	1,	16,	"P4", },	/* P4 */
-	{ 0xF,	2,	16,	"PentiumIV/Xeon", },
-	{ 0xF,	6,	16,	"PentiumIV/Xeon", },
+static X86type x86intel[] = {
+    {
+        4,
+        0,
+        22,
+        "486DX",
+    }, /* known chips */
+    {
+        4,
+        1,
+        22,
+        "486DX50",
+    },
+    {
+        4,
+        2,
+        22,
+        "486SX",
+    },
+    {
+        4,
+        3,
+        22,
+        "486DX2",
+    },
+    {
+        4,
+        4,
+        22,
+        "486SL",
+    },
+    {
+        4,
+        5,
+        22,
+        "486SX2",
+    },
+    {
+        4,
+        7,
+        22,
+        "DX2WB",
+    }, /* P24D */
+    {
+        4,
+        8,
+        22,
+        "DX4",
+    }, /* P24C */
+    {
+        4,
+        9,
+        22,
+        "DX4WB",
+    }, /* P24CT */
+    {
+        5,
+        0,
+        23,
+        "P5",
+    },
+    {
+        5,
+        1,
+        23,
+        "P5",
+    },
+    {
+        5,
+        2,
+        23,
+        "P54C",
+    },
+    {
+        5,
+        3,
+        23,
+        "P24T",
+    },
+    {
+        5,
+        4,
+        23,
+        "P55C MMX",
+    },
+    {
+        5,
+        7,
+        23,
+        "P54C VRT",
+    },
+    {
+        6,
+        1,
+        16,
+        "PentiumPro",
+    }, /* trial and error */
+    {
+        6,
+        3,
+        16,
+        "PentiumII",
+    },
+    {
+        6,
+        5,
+        16,
+        "PentiumII/Xeon",
+    },
+    {
+        6,
+        6,
+        16,
+        "Celeron",
+    },
+    {
+        6,
+        7,
+        16,
+        "PentiumIII/Xeon",
+    },
+    {
+        6,
+        8,
+        16,
+        "PentiumIII/Xeon",
+    },
+    {
+        6,
+        0xB,
+        16,
+        "PentiumIII/Xeon",
+    },
+    {
+        6,
+        0xF,
+        16,
+        "Xeon5000-series",
+    },
+    {
+        6,
+        0x16,
+        16,
+        "Celeron",
+    },
+    {
+        6,
+        0x17,
+        16,
+        "Core 2/Xeon",
+    },
+    {
+        6,
+        0x1A,
+        16,
+        "Core i7/Xeon",
+    },
+    {
+        6,
+        0x1C,
+        16,
+        "Atom",
+    },
+    {
+        6,
+        0x1D,
+        16,
+        "Xeon MP",
+    },
+    {
+        0xF,
+        1,
+        16,
+        "P4",
+    }, /* P4 */
+    {
+        0xF,
+        2,
+        16,
+        "PentiumIV/Xeon",
+    },
+    {
+        0xF,
+        6,
+        16,
+        "PentiumIV/Xeon",
+    },
 
-	{ 3,	-1,	32,	"386", },	/* family defaults */
-	{ 4,	-1,	22,	"486", },
-	{ 5,	-1,	23,	"P5", },
-	{ 6,	-1,	16,	"P6", },
-	{ 0xF,	-1,	16,	"P4", },	/* P4 */
+    {
+        3,
+        -1,
+        32,
+        "386",
+    }, /* family defaults */
+    {
+        4,
+        -1,
+        22,
+        "486",
+    },
+    {
+        5,
+        -1,
+        23,
+        "P5",
+    },
+    {
+        6,
+        -1,
+        16,
+        "P6",
+    },
+    {
+        0xF,
+        -1,
+        16,
+        "P4",
+    }, /* P4 */
 
-	{ -1,	-1,	16,	"unknown", },	/* total default */
+    {
+        -1,
+        -1,
+        16,
+        "unknown",
+    }, /* total default */
 };
 
 /*
@@ -434,75 +572,216 @@ static X86type x86intel[] =
  *	K6 3D	"AMD-K6(tm) 3D processor"
  *	K6 3D+	?
  */
-static X86type x86amd[] =
-{
-	{ 5,	0,	23,	"AMD-K5", },	/* guesswork */
-	{ 5,	1,	23,	"AMD-K5", },	/* guesswork */
-	{ 5,	2,	23,	"AMD-K5", },	/* guesswork */
-	{ 5,	3,	23,	"AMD-K5", },	/* guesswork */
-	{ 5,	4,	23,	"AMD Geode GX1", },	/* guesswork */
-	{ 5,	5,	23,	"AMD Geode GX2", },	/* guesswork */
-	{ 5,	6,	11,	"AMD-K6", },	/* trial and error */
-	{ 5,	7,	11,	"AMD-K6", },	/* trial and error */
-	{ 5,	8,	11,	"AMD-K6-2", },	/* trial and error */
-	{ 5,	9,	11,	"AMD-K6-III", },/* trial and error */
-	{ 5,	0xa,	23,	"AMD Geode LX", },	/* guesswork */
+static X86type x86amd[] = {
+    {
+        5,
+        0,
+        23,
+        "AMD-K5",
+    }, /* guesswork */
+    {
+        5,
+        1,
+        23,
+        "AMD-K5",
+    }, /* guesswork */
+    {
+        5,
+        2,
+        23,
+        "AMD-K5",
+    }, /* guesswork */
+    {
+        5,
+        3,
+        23,
+        "AMD-K5",
+    }, /* guesswork */
+    {
+        5,
+        4,
+        23,
+        "AMD Geode GX1",
+    }, /* guesswork */
+    {
+        5,
+        5,
+        23,
+        "AMD Geode GX2",
+    }, /* guesswork */
+    {
+        5,
+        6,
+        11,
+        "AMD-K6",
+    }, /* trial and error */
+    {
+        5,
+        7,
+        11,
+        "AMD-K6",
+    }, /* trial and error */
+    {
+        5,
+        8,
+        11,
+        "AMD-K6-2",
+    }, /* trial and error */
+    {
+        5,
+        9,
+        11,
+        "AMD-K6-III",
+    }, /* trial and error */
+    {
+        5,
+        0xa,
+        23,
+        "AMD Geode LX",
+    }, /* guesswork */
 
-	{ 6,	1,	11,	"AMD-Athlon", },/* trial and error */
-	{ 6,	2,	11,	"AMD-Athlon", },/* trial and error */
+    {
+        6,
+        1,
+        11,
+        "AMD-Athlon",
+    }, /* trial and error */
+    {
+        6,
+        2,
+        11,
+        "AMD-Athlon",
+    }, /* trial and error */
 
-	{ 0x1F,	9,	11,	"AMD-K10 Opteron G34", },/* guesswork */
+    {
+        0x1F,
+        9,
+        11,
+        "AMD-K10 Opteron G34",
+    }, /* guesswork */
 
-	{ 4,	-1,	22,	"Am486", },	/* guesswork */
-	{ 5,	-1,	23,	"AMD-K5/K6", },	/* guesswork */
-	{ 6,	-1,	11,	"AMD-Athlon", },/* guesswork */
-	{ 0xF,	-1,	11,	"AMD-K8", },	/* guesswork */
-	{ 0x1F,	-1,	11,	"AMD-K10", },	/* guesswork */
-	{ 22,	0,	11,	"AMD Jaguar", },
-	{ 22,	3,	11,	"AMD Puma", },
-	{ 23,	1,	13,	"AMD Ryzen" },
+    {
+        4,
+        -1,
+        22,
+        "Am486",
+    }, /* guesswork */
+    {
+        5,
+        -1,
+        23,
+        "AMD-K5/K6",
+    }, /* guesswork */
+    {
+        6,
+        -1,
+        11,
+        "AMD-Athlon",
+    }, /* guesswork */
+    {
+        0xF,
+        -1,
+        11,
+        "AMD-K8",
+    }, /* guesswork */
+    {
+        0x1F,
+        -1,
+        11,
+        "AMD-K10",
+    }, /* guesswork */
+    {
+        22,
+        0,
+        11,
+        "AMD Jaguar",
+    },
+    {
+        22,
+        3,
+        11,
+        "AMD Puma",
+    },
+    {23, 1, 13, "AMD Ryzen"},
 
-	{ -1,	-1,	11,	"unknown", },	/* total default */
+    {
+        -1,
+        -1,
+        11,
+        "unknown",
+    }, /* total default */
 };
 
 /*
  * WinChip 240MHz
  */
-static X86type x86winchip[] =
-{
-	{5,	4,	23,	"Winchip",},	/* guesswork */
-	{6,	7,	23,	"Via C3 Samuel 2 or Ezra",},
-	{6,	8,	23,	"Via C3 Ezra-T",},
-	{6,	9,	23,	"Via C3 Eden-N",},
-	{6,	0xd,	23,	"Via C7 Eden",},
-	{ -1,	-1,	23,	"unknown", },	/* total default */
+static X86type x86winchip[] = {
+    {
+        5,
+        4,
+        23,
+        "Winchip",
+    }, /* guesswork */
+    {
+        6,
+        7,
+        23,
+        "Via C3 Samuel 2 or Ezra",
+    },
+    {
+        6,
+        8,
+        23,
+        "Via C3 Ezra-T",
+    },
+    {
+        6,
+        9,
+        23,
+        "Via C3 Eden-N",
+    },
+    {
+        6,
+        0xd,
+        23,
+        "Via C7 Eden",
+    },
+    {
+        -1,
+        -1,
+        23,
+        "unknown",
+    }, /* total default */
 };
 
 /*
  * SiS 55x
  */
-static X86type x86sis[] =
-{
-	{5,	0,	23,	"SiS 55x",},	/* guesswork */
-	{ -1,	-1,	23,	"unknown", },	/* total default */
+static X86type x86sis[] = {
+    {
+        5,
+        0,
+        23,
+        "SiS 55x",
+    }, /* guesswork */
+    {
+        -1,
+        -1,
+        23,
+        "unknown",
+    }, /* total default */
 };
 
-static void	simplecycles(uvlong*);
-void	(*cycles)(uvlong*) = simplecycles;
-void	_cycles(uvlong*);	/* in l.s */
+static void simplecycles(uvlong *);
+void (*cycles)(uvlong *) = simplecycles;
+void _cycles(uvlong *); /* in l.s */
 
-static void
-simplecycles(uvlong*x)
-{
-	*x = m->ticks;
-}
+static void simplecycles(uvlong *x) { *x = m->ticks; }
 
-void
-cpuidprint(void)
-{
-	print("cpu%d: %dMHz %s %s (AX %8.8uX CX %8.8uX DX %8.8uX)\n",
-		m->machno, m->cpumhz, m->cpuidid, m->cpuidtype,
-		m->cpuidax, m->cpuidcx, m->cpuiddx);
+void cpuidprint(void) {
+  print("cpu%d: %dMHz %s %s (AX %8.8uX CX %8.8uX DX %8.8uX)\n", m->machno,
+        m->cpumhz, m->cpuidid, m->cpuidtype, m->cpuidax, m->cpuidcx,
+        m->cpuiddx);
 }
 
 int cpuidentify_done;
@@ -523,592 +802,581 @@ int cpuidentify_done;
  *	- detect watchpoint support
  *	- detect FPU features and enable the FPU
  */
-int
-cpuidentify(void)
-{
-	int family, model, i;
-	X86type *t, *tab;
-	u32int regs[4];  /* CRITICAL: Must be u32int to match cpuid() assembly */
-	uintptr cr4;
+int cpuidentify(void) {
+  int family, model, i;
+  X86type *t, *tab;
+  u32int regs[4]; /* CRITICAL: Must be u32int to match cpuid() assembly */
+  uintptr cr4;
 
-	uartprintf("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
-	/* Zero regs array to ensure clean state */
-	regs[0] = regs[1] = regs[2] = regs[3] = 0;
-	cpuid(Highstdfunc, 0, regs);
-	uartprintf("cpuidentify: after highstdfunc\n");
-	/* CPUID result order: EAX, EBX, ECX, EDX */
-	/* Vendor string order: EBX, EDX, ECX */
-	for(i = 0; i < 4; i++)
-		m->cpuidid[i] = (regs[1] >> (i*8)) & 0xFF;
-	for(i = 0; i < 4; i++)
-		m->cpuidid[4+i] = (regs[3] >> (i*8)) & 0xFF;
-	for(i = 0; i < 4; i++)
-		m->cpuidid[8+i] = (regs[2] >> (i*8)) & 0xFF;
-	m->cpuidid[12] = '\0';
+  uartprintf("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
+  /* Zero regs array to ensure clean state */
+  regs[0] = regs[1] = regs[2] = regs[3] = 0;
+  cpuid(Highstdfunc, 0, regs);
+  uartprintf("cpuidentify: after highstdfunc\n");
+  /* CPUID result order: EAX, EBX, ECX, EDX */
+  /* Vendor string order: EBX, EDX, ECX */
+  for (i = 0; i < 4; i++)
+    m->cpuidid[i] = (regs[1] >> (i * 8)) & 0xFF;
+  for (i = 0; i < 4; i++)
+    m->cpuidid[4 + i] = (regs[3] >> (i * 8)) & 0xFF;
+  for (i = 0; i < 4; i++)
+    m->cpuidid[8 + i] = (regs[2] >> (i * 8)) & 0xFF;
+  m->cpuidid[12] = '\0';
 
-	uartprintf("cpuidentify: calling cpuid(Procsig=%d, 0, regs)\n", Procsig);
-	/* Zero regs before CPUID */
-	regs[0] = regs[1] = regs[2] = regs[3] = 0;
-	cpuid(Procsig, 0, regs);
-	uartprintf("cpuidentify: cpuid returned: EAX=%#lx EBX=%#lx ECX=%#lx EDX=%#lx\n",
-		(unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2], (unsigned long)regs[3]);
-	uartprintf("cpuidentify: addresses: &m->cpuidax=%p &m->cpuidcx=%p &m->cpuiddx=%p\n",
-		&m->cpuidax, &m->cpuidcx, &m->cpuiddx);
-	m->cpuidax = regs[0];
-	m->cpuidcx = regs[2];
-	m->cpuiddx = regs[3];
-	uartprintf("cpuidentify: stored cpuidax=%#lx cpuidcx=%#lx cpuiddx=%#lx\n",
-		(unsigned long)m->cpuidax, (unsigned long)m->cpuidcx, (unsigned long)m->cpuiddx);
+  uartprintf("cpuidentify: calling cpuid(Procsig=%d, 0, regs)\n", Procsig);
+  /* Zero regs before CPUID */
+  regs[0] = regs[1] = regs[2] = regs[3] = 0;
+  cpuid(Procsig, 0, regs);
+  uartprintf(
+      "cpuidentify: cpuid returned: EAX=%#lx EBX=%#lx ECX=%#lx EDX=%#lx\n",
+      (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2],
+      (unsigned long)regs[3]);
+  uartprintf(
+      "cpuidentify: addresses: &m->cpuidax=%p &m->cpuidcx=%p &m->cpuiddx=%p\n",
+      &m->cpuidax, &m->cpuidcx, &m->cpuiddx);
+  m->cpuidax = regs[0];
+  m->cpuidcx = regs[2];
+  m->cpuiddx = regs[3];
+  uartprintf("cpuidentify: stored cpuidax=%#lx cpuidcx=%#lx cpuiddx=%#lx\n",
+             (unsigned long)m->cpuidax, (unsigned long)m->cpuidcx,
+             (unsigned long)m->cpuiddx);
 
-	/* WORKAROUND: x86-64 mandates TSC, but QEMU+KVM may not report it in CPUID.
-	 * If we're running in 64-bit mode and TSC isn't reported, force it. */
-	if(sizeof(uintptr) == 8 && !(m->cpuiddx & Tsc)){
-		uartprintf("WORKAROUND: CPUID didn't report TSC (EDX=%#lx), forcing it (x86-64 requirement)\n",
-			(unsigned long)m->cpuiddx);
-		m->cpuiddx |= Tsc | Cpumsr;  /* Force TSC and MSR support */
-		uartprintf("WORKAROUND: Corrected cpuiddx=%#lx\n", (unsigned long)m->cpuiddx);
-	}
+  /* WORKAROUND: x86-64 mandates TSC, but QEMU+KVM may not report it in CPUID.
+   * If we're running in 64-bit mode and TSC isn't reported, force it. */
+  if (sizeof(uintptr) == 8 && !(m->cpuiddx & Tsc)) {
+    uartprintf("WORKAROUND: CPUID didn't report TSC (EDX=%#lx), forcing it "
+               "(x86-64 requirement)\n",
+               (unsigned long)m->cpuiddx);
+    m->cpuiddx |= Tsc | Cpumsr; /* Force TSC and MSR support */
+    uartprintf("WORKAROUND: Corrected cpuiddx=%#lx\n",
+               (unsigned long)m->cpuiddx);
+  }
 
-	m->cpuidfamily = m->cpuidax >> 8 & 0xf;
-	m->cpuidmodel = m->cpuidax >> 4 & 0xf;
-	m->cpuidstepping = m->cpuidax & 0xf;
-	switch(m->cpuidfamily){
-	case 15:
-		m->cpuidfamily += m->cpuidax >> 20 & 0xff;
-		m->cpuidmodel += m->cpuidax >> 16 & 0xf;
-		break;
-	case 6:
-		m->cpuidmodel += m->cpuidax >> 16 & 0xf;
-		break;
-	}
+  m->cpuidfamily = m->cpuidax >> 8 & 0xf;
+  m->cpuidmodel = m->cpuidax >> 4 & 0xf;
+  m->cpuidstepping = m->cpuidax & 0xf;
+  switch (m->cpuidfamily) {
+  case 15:
+    m->cpuidfamily += m->cpuidax >> 20 & 0xff;
+    m->cpuidmodel += m->cpuidax >> 16 & 0xf;
+    break;
+  case 6:
+    m->cpuidmodel += m->cpuidax >> 16 & 0xf;
+    break;
+  }
 
-	if(strncmp(m->cpuidid, "AuthenticAMD", 12) == 0 ||
-	   strncmp(m->cpuidid, "Geode by NSC", 12) == 0)
-		tab = x86amd;
-	else if(strncmp(m->cpuidid, "CentaurHauls", 12) == 0)
-		tab = x86winchip;
-	else if(strncmp(m->cpuidid, "SiS SiS SiS ", 12) == 0)
-		tab = x86sis;
-	else
-		tab = x86intel;
+  if (strncmp(m->cpuidid, "AuthenticAMD", 12) == 0 ||
+      strncmp(m->cpuidid, "Geode by NSC", 12) == 0)
+    tab = x86amd;
+  else if (strncmp(m->cpuidid, "CentaurHauls", 12) == 0)
+    tab = x86winchip;
+  else if (strncmp(m->cpuidid, "SiS SiS SiS ", 12) == 0)
+    tab = x86sis;
+  else
+    tab = x86intel;
 
-	family = m->cpuidfamily;
-	model = m->cpuidmodel;
-	for(t=tab; t->name; t++)
-		if((t->family == family && t->model == model)
-		|| (t->family == family && t->model == -1)
-		|| (t->family == -1))
-			break;
+  family = m->cpuidfamily;
+  model = m->cpuidmodel;
+  for (t = tab; t->name; t++)
+    if ((t->family == family && t->model == model) ||
+        (t->family == family && t->model == -1) || (t->family == -1))
+      break;
 
-	/*
-	 * This is only meaningfull for old archs on 386 kernel
-	 * where we use LOOP+AAM instruction in delayloop()
-	 * which has documented cycle times.
-	 *
-	 * On AMD64, we use a chain of IDIVQ instructions but
-	 * hopefully, we have the TSC instruction available
-	 * to actually measure the delay.
-	 */
-	m->delaylcycles = t->aalcycles;
-	m->cpuidtype = t->name;
+  /*
+   * This is only meaningfull for old archs on 386 kernel
+   * where we use LOOP+AAM instruction in delayloop()
+   * which has documented cycle times.
+   *
+   * On AMD64, we use a chain of IDIVQ instructions but
+   * hopefully, we have the TSC instruction available
+   * to actually measure the delay.
+   */
+  m->delaylcycles = t->aalcycles;
+  m->cpuidtype = t->name;
 
-	/*
-	 *  if there is one, set tsc to a known value
-	 */
-	uartprintf("cpuidentify: checking TSC\n");
-	uartprintf("cpuidentify: m->cpuiddx = %#x, Tsc bit = %#x\n", m->cpuiddx, Tsc);
-	uartprintf("cpuidentify: m->cpuiddx & Tsc = %#x (should be non-zero if TSC present)\n", m->cpuiddx & Tsc);
-	if(m->cpuiddx & Tsc){
-		m->havetsc = 1;
-		cycles = _cycles;
-		uartprintf("cpuidentify: TSC found, checking MSR\n");
-		if(m->cpuiddx & Cpumsr){
-			uartprintf("cpuidentify: writing MSR 0x10\n");
-			wrmsr(0x10, 0);
-			uartprintf("cpuidentify: MSR 0x10 written\n");
-		}
+  /*
+   *  if there is one, set tsc to a known value
+   */
+  uartprintf("cpuidentify: checking TSC\n");
+  uartprintf("cpuidentify: m->cpuiddx = %#x, Tsc bit = %#x\n", m->cpuiddx, Tsc);
+  uartprintf("cpuidentify: m->cpuiddx & Tsc = %#x (should be non-zero if TSC "
+             "present)\n",
+             m->cpuiddx & Tsc);
+  if (m->cpuiddx & Tsc) {
+    m->havetsc = 1;
+    cycles = _cycles;
+    uartprintf("cpuidentify: TSC found, checking MSR\n");
+    if (m->cpuiddx & Cpumsr) {
+      uartprintf("cpuidentify: writing MSR 0x10\n");
+      wrmsr(0x10, 0);
+      uartprintf("cpuidentify: MSR 0x10 written\n");
+    }
 
-			/*
-			 * Try to establish a sane cpuhz before PIT/HPET calibration:
-			 *  - CPUID.15H (TSC/crystal ratio) if available
-			 *  - CPUID.16H nominal MHz
-			 *  - fallback to 2GHz default
-			 */
-			if(m->cpuhz == 0){
-				u32int regs15[4] = {0};
-				cpuid(0x15, 0, regs15);
-				if(regs15[0] != 0 && regs15[1] != 0 && regs15[2] != 0){
-					uvlong crystal = regs15[2];
-					uvlong num = regs15[1];
-					uvlong den = regs15[0];
-					uvlong tsc_hz = (crystal * num) / den;
-					if(tsc_hz != 0){
-						m->cpuhz = tsc_hz;
-						m->cpumhz = tsc_hz / 1000000ULL;
-						uartprintf("cpuidentify: CPUID 0x15 reports %llud Hz\n", tsc_hz);
-					}
-				}
-			}
-			if(m->cpuhz == 0){
-				u32int regs16[4] = {0};
-				cpuid(0x16, 0, regs16);
-				if(regs16[0] != 0){			/* EAX: core clock in MHz */
-					uvlong mhz = regs16[0];
-					m->cpumhz = mhz;
-					m->cpuhz = mhz * 1000000ULL;
-					uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
-				}
-			}
-			if(m->cpuhz == 0){
-				uartprintf("WORKAROUND: cpuidentify could not determine cpuhz, forcing 2GHz default\n");
-				m->cpumhz = 2000;
-				m->cpuhz = 2000000000ULL;
-			}
-	}
+    /*
+     * Try to establish a sane cpuhz before PIT/HPET calibration:
+     *  - CPUID.15H (TSC/crystal ratio) if available
+     *  - CPUID.16H nominal MHz
+     *  - fallback to 2GHz default
+     */
+    if (m->cpuhz == 0) {
+      u32int regs15[4] = {0};
+      cpuid(0x15, 0, regs15);
+      if (regs15[0] != 0 && regs15[1] != 0 && regs15[2] != 0) {
+        uvlong crystal = regs15[2];
+        uvlong num = regs15[1];
+        uvlong den = regs15[0];
+        uvlong tsc_hz = (crystal * num) / den;
+        if (tsc_hz != 0) {
+          m->cpuhz = tsc_hz;
+          m->cpumhz = tsc_hz / 1000000ULL;
+          uartprintf("cpuidentify: CPUID 0x15 reports %llud Hz\n", tsc_hz);
+        }
+      }
+    }
+    if (m->cpuhz == 0) {
+      u32int regs16[4] = {0};
+      cpuid(0x16, 0, regs16);
+      if (regs16[0] != 0) { /* EAX: core clock in MHz */
+        uvlong mhz = regs16[0];
+        m->cpumhz = mhz;
+        m->cpuhz = mhz * 1000000ULL;
+        uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
+      }
+    }
+    if (m->cpuhz == 0) {
+      uartprintf("WORKAROUND: cpuidentify could not determine cpuhz, forcing "
+                 "2GHz default\n");
+      m->cpumhz = 2000;
+      m->cpuhz = 2000000000ULL;
+    }
+  }
 
-	/*
-	 * KVM Workaround: MCE/MCA MSR writes can cause GPF on some configurations.
-	 * If running under KVM, disable MCE support to be safe.
-	 */
-	if (vm_info.type == VM_KVM || vm_info.skip_msr_writes) {
-		uartprintf("cpuidentify: KVM/VM detected, skipping MCE/MCA init to prevent GPF\n");
-		m->cpuiddx &= ~Mce;
-		m->cpuiddx &= ~Mca;
-	}
+  /*
+   * KVM Workaround: MCE/MCA MSR writes can cause GPF on some configurations.
+   * If running under KVM, disable MCE support to be safe.
+   */
+  if (vm_info.type == VM_KVM || vm_info.skip_msr_writes) {
+    uartprintf(
+        "cpuidentify: KVM/VM detected, skipping MCE/MCA init to prevent GPF\n");
+    m->cpuiddx &= ~Mce;
+    m->cpuiddx &= ~Mca;
+  }
 
-	/*
-	 * If machine check exception, page size extensions or page global bit
-	 * are supported enable them in CR4 and clear any other set extensions.
-	 */
-	uartprintf("cpuidentify: checking CR4 features\n");
-	if(m->cpuiddx & (Pge|Mce|Pse)){
-		vlong mca, mct;
+  /*
+   * If machine check exception, page size extensions or page global bit
+   * are supported enable them in CR4 and clear any other set extensions.
+   */
+  uartprintf("cpuidentify: checking CR4 features\n");
+  if (m->cpuiddx & (Pge | Mce | Pse)) {
+    vlong mca, mct;
 
-		uartprintf("cpuidentify: getting CR4\n");
-		cr4 = getcr4();
-		uartprintf("cpuidentify: CR4 = %#p\n", cr4);
+    uartprintf("cpuidentify: getting CR4\n");
+    cr4 = getcr4();
+    uartprintf("cpuidentify: CR4 = %#p\n", cr4);
 
-		uartprintf("cpuidentify: checking PSE (cpuiddx & Pse = %d)\n", !!(m->cpuiddx & Pse));
-		if(m->cpuiddx & Pse)
-			cr4 |= 0x10;		/* page size extensions */
+    uartprintf("cpuidentify: checking PSE (cpuiddx & Pse = %d)\n",
+               !!(m->cpuiddx & Pse));
+    if (m->cpuiddx & Pse)
+      cr4 |= 0x10; /* page size extensions */
 
-		uartprintf("cpuidentify: checking MCE (cpuiddx & Mce = %d)\n", !!(m->cpuiddx & Mce));
-		uartprintf("cpuidentify: calling getconf(*nomce)\n");
-		char *nomce = getconf("*nomce");
-		uartprintf("cpuidentify: getconf returned %p\n", nomce);
-		if((m->cpuiddx & Mce) != 0 && nomce == nil){
-			uartprintf("cpuidentify: MCE enabled, checking MCA\n");
-			uartprintf("cpuidentify: cpuiddx & Mca = %d\n", !!(m->cpuiddx & Mca));
-			if((m->cpuiddx & Mca) != 0){
-				vlong cap;
-				int bank;
+    uartprintf("cpuidentify: checking MCE (cpuiddx & Mce = %d)\n",
+               !!(m->cpuiddx & Mce));
+    uartprintf("cpuidentify: calling getconf(*nomce)\n");
+    char *nomce = getconf("*nomce");
+    uartprintf("cpuidentify: getconf returned %p\n", nomce);
+    if ((m->cpuiddx & Mce) != 0 && nomce == nil) {
+      uartprintf("cpuidentify: MCE enabled, checking MCA\n");
+      uartprintf("cpuidentify: cpuiddx & Mca = %d\n", !!(m->cpuiddx & Mca));
+      if ((m->cpuiddx & Mca) != 0) {
+        vlong cap;
+        int bank;
 
-				uartprintf("cpuidentify: MCA supported, reading MSR 0x179\n");
-				cap = 0;
-				rdmsr(0x179, &cap);
-				uartprintf("cpuidentify: MSR 0x179 = %#llx, banks = %d\n", cap, (int)(cap & 0xFF));
+        uartprintf("cpuidentify: MCA supported, reading MSR 0x179\n");
+        cap = 0;
+        rdmsr(0x179, &cap);
+        uartprintf("cpuidentify: MSR 0x179 = %#llx, banks = %d\n", cap,
+                   (int)(cap & 0xFF));
 
-				if(cap & 0x100)
-					wrmsr(0x17B, ~0ULL);	/* enable all mca features */
+        if (cap & 0x100)
+          wrmsr(0x17B, ~0ULL); /* enable all mca features */
 
-				bank = cap & 0xFF;
-				if(bank > 64)
-					bank = 64;
+        bank = cap & 0xFF;
+        if (bank > 64)
+          bank = 64;
 
-				/* init MCi .. MC1 (except MC0) */
-				while(--bank > 0){
-					wrmsr(0x400 + bank*4, ~0ULL);
-					wrmsr(0x401 + bank*4, 0);
-				}
+        /* init MCi .. MC1 (except MC0) */
+        while (--bank > 0) {
+          wrmsr(0x400 + bank * 4, ~0ULL);
+          wrmsr(0x401 + bank * 4, 0);
+        }
 
-				if(family != 6 || model >= 0x1A)
-					wrmsr(0x400, ~0ULL);
+        if (family != 6 || model >= 0x1A)
+          wrmsr(0x400, ~0ULL);
 
-				wrmsr(0x401, 0);
-			}
-			else if(family == 5){
-				uartprintf("cpuidentify: family 5, reading legacy MCE MSRs\n");
-				rdmsr(0x00, &mca);
-				rdmsr(0x01, &mct);
-			}
-			else {
-				uartprintf("cpuidentify: MCE but no MCA, family = %d\n", family);
-			}
-			uartprintf("cpuidentify: enabling CR4.MCE\n");
-			cr4 |= 0x40;		/* machine check enable */
-			uartprintf("cpuidentify: CR4.MCE enabled\n");
-		}
+        wrmsr(0x401, 0);
+      } else if (family == 5) {
+        uartprintf("cpuidentify: family 5, reading legacy MCE MSRs\n");
+        rdmsr(0x00, &mca);
+        rdmsr(0x01, &mct);
+      } else {
+        uartprintf("cpuidentify: MCE but no MCA, family = %d\n", family);
+      }
+      uartprintf("cpuidentify: enabling CR4.MCE\n");
+      cr4 |= 0x40; /* machine check enable */
+      uartprintf("cpuidentify: CR4.MCE enabled\n");
+    }
 
-		/*
-		 * Detect whether the chip supports the global bit
-		 * in page directory and page table entries.  When set
-		 * in a particular entry, it means ``don't bother removing
-		 * this from the TLB when CR3 changes.''
-		 *
-		 * We flag all kernel pages with this bit.  Doing so lessens the
-		 * overhead of switching processes on bare hardware,
-		 * even more so on VMware.  See mmu.c:/^memglobal.
-		 *
-		 * For future reference, should we ever need to do a
-		 * full TLB flush, it can be accomplished by clearing
-		 * the PGE bit in CR4, writing to CR3, and then
-		 * restoring the PGE bit.
-		 */
-		uartprintf("cpuidentify: checking PGE\n");
-		if(m->cpuiddx & Pge){
-			uartprintf("cpuidentify: PGE supported, enabling\n");
-			cr4 |= 0x80;		/* page global enable bit */
-			m->havepge = 1;
-		}
-		uartprintf("cpuidentify: writing CR4 = %#p\n", cr4);
-		putcr4(cr4);
-		uartprintf("cpuidentify: CR4 written successfully\n");
+    /*
+     * Detect whether the chip supports the global bit
+     * in page directory and page table entries.  When set
+     * in a particular entry, it means ``don't bother removing
+     * this from the TLB when CR3 changes.''
+     *
+     * We flag all kernel pages with this bit.  Doing so lessens the
+     * overhead of switching processes on bare hardware,
+     * even more so on VMware.  See mmu.c:/^memglobal.
+     *
+     * For future reference, should we ever need to do a
+     * full TLB flush, it can be accomplished by clearing
+     * the PGE bit in CR4, writing to CR3, and then
+     * restoring the PGE bit.
+     */
+    uartprintf("cpuidentify: checking PGE\n");
+    if (m->cpuiddx & Pge) {
+      uartprintf("cpuidentify: PGE supported, enabling\n");
+      cr4 |= 0x80; /* page global enable bit */
+      m->havepge = 1;
+    }
+    uartprintf("cpuidentify: writing CR4 = %#p\n", cr4);
+    putcr4(cr4);
+    uartprintf("cpuidentify: CR4 written successfully\n");
 
-		uartprintf("cpuidentify: checking for legacy MCE\n");
-		if((m->cpuiddx & (Mca|Mce)) == Mce){
-			uartprintf("cpuidentify: reading legacy MSR 0x01\n");
-			rdmsr(0x01, &mct);
-			uartprintf("cpuidentify: legacy MSR read complete\n");
-		}
-	}
+    uartprintf("cpuidentify: checking for legacy MCE\n");
+    if ((m->cpuiddx & (Mca | Mce)) == Mce) {
+      uartprintf("cpuidentify: reading legacy MSR 0x01\n");
+      rdmsr(0x01, &mct);
+      uartprintf("cpuidentify: legacy MSR read complete\n");
+    }
+  }
 
-	uartprintf("cpuidentify: done with CR4 setup\n");
+  uartprintf("cpuidentify: done with CR4 setup\n");
 
 #ifdef PATWC
-	/* IA32_PAT write combining */
-	uartprintf("cpuidentify: checking PAT\n");
-	if((m->cpuiddx & Pat) != 0){
-		vlong pat;
+  /* IA32_PAT write combining */
+  uartprintf("cpuidentify: checking PAT\n");
+  if ((m->cpuiddx & Pat) != 0) {
+    vlong pat;
 
-		uartprintf("cpuidentify: PAT supported, configuring WC\n");
-		uartprintf("cpuidentify: reading PAT MSR 0x277\n");
-		if(rdmsr(0x277, &pat) != -1){
-			uartprintf("cpuidentify: PAT MSR read successful, value = %#llx\n", pat);
-			vlong newpat = pat;
-			newpat &= ~(255LL<<(PATWC*8));
-			newpat |= 1LL<<(PATWC*8);	/* WC */
-			uartprintf("cpuidentify: old PAT = %#llx, new PAT = %#llx\n", pat, newpat);
-			uartprintf("cpuidentify: writing PAT MSR (skipping for now due to KVM issues)\n");
-			// TEMPORARY: Skip PAT write on KVM as it causes triple fault
-			// wrmsr(0x277, newpat);
-			uartprintf("cpuidentify: PAT configuration skipped\n");
-		} else {
-			uartprintf("cpuidentify: PAT MSR read failed\n");
-		}
-	}
+    uartprintf("cpuidentify: PAT supported, configuring WC\n");
+    uartprintf("cpuidentify: reading PAT MSR 0x277\n");
+    if (rdmsr(0x277, &pat) != -1) {
+      uartprintf("cpuidentify: PAT MSR read successful, value = %#llx\n", pat);
+      vlong newpat = pat;
+      newpat &= ~(255LL << (PATWC * 8));
+      newpat |= 1LL << (PATWC * 8); /* WC */
+      uartprintf("cpuidentify: old PAT = %#llx, new PAT = %#llx\n", pat,
+                 newpat);
+      uartprintf("cpuidentify: writing PAT MSR (skipping for now due to KVM "
+                 "issues)\n");
+      // TEMPORARY: Skip PAT write on KVM as it causes triple fault
+      // wrmsr(0x277, newpat);
+      uartprintf("cpuidentify: PAT configuration skipped\n");
+    } else {
+      uartprintf("cpuidentify: PAT MSR read failed\n");
+    }
+  }
 #endif
 
-	uartprintf("cpuidentify: checking MTRR\n");
-	uartprintf("cpuidentify: cpuiddx & Mtrr = %d\n", !!(m->cpuiddx & Mtrr));
-	if((m->cpuiddx & Mtrr) != 0){
-		uartprintf("cpuidentify: checking getconf(*nomtrr)\n");
-		char *nomtrr = getconf("*nomtrr");
-		uartprintf("cpuidentify: getconf(*nomtrr) = %p\n", nomtrr);
-		if(nomtrr == nil){
-			uartprintf("cpuidentify: calling mtrrsync\n");
-			mtrrsync();
-			uartprintf("cpuidentify: mtrrsync done\n");
-		}
-	}
+  uartprintf("cpuidentify: checking MTRR\n");
+  uartprintf("cpuidentify: cpuiddx & Mtrr = %d\n", !!(m->cpuiddx & Mtrr));
+  if ((m->cpuiddx & Mtrr) != 0) {
+    uartprintf("cpuidentify: checking getconf(*nomtrr)\n");
+    char *nomtrr = getconf("*nomtrr");
+    uartprintf("cpuidentify: getconf(*nomtrr) = %p\n", nomtrr);
+    if (nomtrr == nil) {
+      uartprintf("cpuidentify: calling mtrrsync\n");
+      mtrrsync();
+      uartprintf("cpuidentify: mtrrsync done\n");
+    }
+  }
 
-	if(strcmp(m->cpuidid, "GenuineIntel") == 0 && (m->cpuidcx & Rdrnd) != 0)
-		hwrandbuf = rdrandbuf;
-	else
-		hwrandbuf = nil;
+  if (strcmp(m->cpuidid, "GenuineIntel") == 0 && (m->cpuidcx & Rdrnd) != 0)
+    hwrandbuf = rdrandbuf;
+  else
+    hwrandbuf = nil;
 
-	/* Detect crypto hardware acceleration */
-	uartprintf("cpuidentify: checking crypto acceleration\n");
-	m->haveaes = 0;
-	m->havesha = 0;
-	m->havepclmul = 0;
-	m->haverdrand = 0;
+  /* Detect crypto hardware acceleration */
+  uartprintf("cpuidentify: checking crypto acceleration\n");
+  m->haveaes = 0;
+  m->havesha = 0;
+  m->havepclmul = 0;
+  m->haverdrand = 0;
 
-	if(m->cpuidcx & Aes){
-		m->haveaes = 1;
-		uartprintf("cpuidentify: AES-NI detected\n");
-	}
+  if (m->cpuidcx & Aes) {
+    m->haveaes = 1;
+    uartprintf("cpuidentify: AES-NI detected\n");
+  }
 
-	if(m->cpuidcx & Pclmulqdq){
-		m->havepclmul = 1;
-		uartprintf("cpuidentify: PCLMULQDQ detected\n");
-	}
+  if (m->cpuidcx & Pclmulqdq) {
+    m->havepclmul = 1;
+    uartprintf("cpuidentify: PCLMULQDQ detected\n");
+  }
 
-	if(m->cpuidcx & Rdrnd){
-		m->haverdrand = 1;
-		uartprintf("cpuidentify: RDRAND detected\n");
-	}
+  if (m->cpuidcx & Rdrnd) {
+    m->haverdrand = 1;
+    uartprintf("cpuidentify: RDRAND detected\n");
+  }
 
-	/* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
-	cpuid(0, 0, regs);  /* Get max standard level */
-	if(regs[0] >= 7){
-		cpuid(7, 0, regs);  /* Extended features */
-		if(regs[1] & (1<<29)){  /* EBX bit 29 */
-			m->havesha = 1;
-			uartprintf("cpuidentify: SHA extensions detected\n");
-		}
-	}
-	
-		if(sizeof(uintptr) == 8) {
-			/* 8-byte watchpoints are supported in Long Mode */
-			m->havewatchpt8 = 1;
+  /* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
+  cpuid(0, 0, regs); /* Get max standard level */
+  if (regs[0] >= 7) {
+    cpuid(7, 0, regs);         /* Extended features */
+    if (regs[1] & (1 << 29)) { /* EBX bit 29 */
+      m->havesha = 1;
+      uartprintf("cpuidentify: SHA extensions detected\n");
+    }
+  }
 
-			/* check and enable NX bit */
-			cpuid(Highextfunc, 0, regs);
-			if(regs[0] >= Procextfeat){
-				cpuid(Procextfeat, 0, regs);
-				if((regs[3] & (1<<20)) != 0){
-					vlong efer;
+  if (sizeof(uintptr) == 8) {
+    /* 8-byte watchpoints are supported in Long Mode */
+    m->havewatchpt8 = 1;
 
-					/*
-					 * NX supported. If the VM layer asked us to skip
-					 * MSR writes, assume the bootloader already enabled
-					 * NXE and just record support to avoid a trap here.
-					 */
-					m->havenx = 1;
-					if(vm_info.skip_msr_writes){
-						uartprintf("cpuidentify: NX supported; skipping EFER.NXE write (vm_type=%d skip=%d)\n",
-							vm_info.type, vm_info.skip_msr_writes);
-					}else if(rdmsr(Efer, &efer) != -1){
-						if(efer & (1ull<<11)){
-							m->havenx = 1;
-						}else{
-							efer |= 1ull<<11;
-							if(wrmsr(Efer, efer) != -1){
-								m->havenx = 1;
-								uartprintf("cpuidentify: NXE set successfully\n");
-							}else{
-								uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
-							}
-						}
-					}else{
-						uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
-					}
-				}
-			}
-		} else if(strcmp(m->cpuidid, "GenuineIntel") == 0){
-		/* some random CPUs that support 8-byte watchpoints */
-		if(family == 15 && (model == 3 || model == 4 || model == 6)
-		|| family == 6 && (model == 15 || model == 23 || model == 28))
-			m->havewatchpt8 = 1;
-		/* Intel SDM claims amd64 support implies 8-byte watchpoint support */
-		cpuid(Highextfunc, 0, regs);
-		if(regs[0] >= Procextfeat){
-			cpuid(Procextfeat, 0, regs);
-			if((regs[3] & 1<<29) != 0)
-				m->havewatchpt8 = 1;
-		}
-	}
+    /* check and enable NX bit */
+    cpuid(Highextfunc, 0, regs);
+    if (regs[0] >= Procextfeat) {
+      cpuid(Procextfeat, 0, regs);
+      if ((regs[3] & (1 << 20)) != 0) {
+        vlong efer;
 
-	/* FPU initialization moved to main_after_cr3() - must happen after xinit() */
+        /*
+         * NX supported. If the VM layer asked us to skip
+         * MSR writes, assume the bootloader already enabled
+         * NXE and just record support to avoid a trap here.
+         */
+        m->havenx = 1;
+        if (vm_info.skip_msr_writes) {
+          uartprintf("cpuidentify: NX supported; skipping EFER.NXE write "
+                     "(vm_type=%d skip=%d)\n",
+                     vm_info.type, vm_info.skip_msr_writes);
+        } else if (rdmsr(Efer, &efer) != -1) {
+          if (efer & (1ull << 11)) {
+            m->havenx = 1;
+          } else {
+            efer |= 1ull << 11;
+            if (wrmsr(Efer, efer) != -1) {
+              m->havenx = 1;
+              uartprintf("cpuidentify: NXE set successfully\n");
+            } else {
+              uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
+            }
+          }
+        } else {
+          uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
+        }
+      }
+    }
+  } else if (strcmp(m->cpuidid, "GenuineIntel") == 0) {
+    /* some random CPUs that support 8-byte watchpoints */
+    if (family == 15 && (model == 3 || model == 4 || model == 6) ||
+        family == 6 && (model == 15 || model == 23 || model == 28))
+      m->havewatchpt8 = 1;
+    /* Intel SDM claims amd64 support implies 8-byte watchpoint support */
+    cpuid(Highextfunc, 0, regs);
+    if (regs[0] >= Procextfeat) {
+      cpuid(Procextfeat, 0, regs);
+      if ((regs[3] & 1 << 29) != 0)
+        m->havewatchpt8 = 1;
+    }
+  }
 
-	cpuidentify_done = 1;
-	return t->family;
+  /* FPU initialization moved to main_after_cr3() - must happen after xinit() */
+
+  cpuidentify_done = 1;
+  return t->family;
 }
 
-static long
-cputyperead(Chan*, void *a, long n, vlong offset)
-{
-	char str[32];
+static long cputyperead(Chan *, void *a, long n, vlong offset) {
+  char str[32];
 
-	snprint(str, sizeof(str), "%s %d\n", m->cpuidtype, m->cpumhz);
-	return readstr(offset, a, n, str);
+  snprint(str, sizeof(str), "%s %d\n", m->cpuidtype, m->cpumhz);
+  return readstr(offset, a, n, str);
 }
 
-static long
-archctlread(Chan*, void *a, long nn, vlong offset)
-{
-	int n;
-	char *buf, *p, *ep;
+static long archctlread(Chan *, void *a, long nn, vlong offset) {
+  int n;
+  char *buf, *p, *ep;
 
-	p = buf = smalloc(READSTR);
-	ep = p + READSTR;
-	p = seprint(p, ep, "cpu %s %d%s\n",
-		m->cpuidtype, m->cpumhz, m->havepge ? " pge" : "");
-	p = seprint(p, ep, "pge %s\n", getcr4()&0x80 ? "on" : "off");
-	p = seprint(p, ep, "coherence ");
-	if(coherence == mb386)
-		p = seprint(p, ep, "mb386\n");
-	else if(coherence == mb586)
-		p = seprint(p, ep, "mb586\n");
-	else if(coherence == mfence)
-		p = seprint(p, ep, "mfence\n");
-	else if(coherence == nop)
-		p = seprint(p, ep, "nop\n");
-	else
-		p = seprint(p, ep, "0x%p\n", coherence);
-	p = seprint(p, ep, "cmpswap ");
-	if(cmpswap == cmpswap386)
-		p = seprint(p, ep, "cmpswap386\n");
-	else if(cmpswap == cmpswap486)
-		p = seprint(p, ep, "cmpswap486\n");
-	else
-		p = seprint(p, ep, "0x%p\n", cmpswap);
-	p = seprint(p, ep, "arch %s\n", arch->id);
-	n = p - buf;
-	n += mtrrprint(p, ep - p);
-	buf[n] = '\0';
+  p = buf = smalloc(READSTR);
+  ep = p + READSTR;
+  p = seprint(p, ep, "cpu %s %d%s\n", m->cpuidtype, m->cpumhz,
+              m->havepge ? " pge" : "");
+  p = seprint(p, ep, "pge %s\n", getcr4() & 0x80 ? "on" : "off");
+  p = seprint(p, ep, "coherence ");
+  if (coherence == mb386)
+    p = seprint(p, ep, "mb386\n");
+  else if (coherence == mb586)
+    p = seprint(p, ep, "mb586\n");
+  else if (coherence == mfence)
+    p = seprint(p, ep, "mfence\n");
+  else if (coherence == nop)
+    p = seprint(p, ep, "nop\n");
+  else
+    p = seprint(p, ep, "0x%p\n", coherence);
+  p = seprint(p, ep, "cmpswap ");
+  if (cmpswap == cmpswap386)
+    p = seprint(p, ep, "cmpswap386\n");
+  else if (cmpswap == cmpswap486)
+    p = seprint(p, ep, "cmpswap486\n");
+  else
+    p = seprint(p, ep, "0x%p\n", cmpswap);
+  p = seprint(p, ep, "arch %s\n", arch->id);
+  n = p - buf;
+  n += mtrrprint(p, ep - p);
+  buf[n] = '\0';
 
-	n = readstr(offset, a, nn, buf);
-	free(buf);
-	return n;
+  n = readstr(offset, a, nn, buf);
+  free(buf);
+  return n;
 }
 
-enum
-{
-	CMpge,
-	CMcoherence,
-	CMcache,
+enum {
+  CMpge,
+  CMcoherence,
+  CMcache,
 };
 
-static Cmdtab archctlmsg[] =
-{
-	CMpge,		"pge",		2,
-	CMcoherence,	"coherence",	2,
-	CMcache,	"cache",	4,
+static Cmdtab archctlmsg[] = {
+    CMpge, "pge", 2, CMcoherence, "coherence", 2, CMcache, "cache", 4,
 };
 
-static long
-archctlwrite(Chan*, void *a, long n, vlong)
-{
-	uvlong base, size;
-	Cmdbuf *cb;
-	Cmdtab *ct;
-	char *ep;
+static long archctlwrite(Chan *, void *a, long n, vlong) {
+  uvlong base, size;
+  Cmdbuf *cb;
+  Cmdtab *ct;
+  char *ep;
 
-	cb = parsecmd(a, n);
-	if(waserror()){
-		free(cb);
-		nexterror();
-	}
-	ct = lookupcmd(cb, archctlmsg, nelem(archctlmsg));
-	switch(ct->index){
-	case CMpge:
-		if(!m->havepge)
-			error("processor does not support pge");
-		if(strcmp(cb->f[1], "on") == 0)
-			putcr4(getcr4() | 0x80);
-		else if(strcmp(cb->f[1], "off") == 0)
-			putcr4(getcr4() & ~0x80);
-		else
-			cmderror(cb, "invalid pge ctl");
-		break;
-	case CMcoherence:
-		if(strcmp(cb->f[1], "mb386") == 0)
-			coherence = mb386;
-		else if(strcmp(cb->f[1], "mb586") == 0){
-			if(m->cpuidfamily < 5)
-				error("invalid coherence ctl on this cpu family");
-			coherence = mb586;
-		}else if(strcmp(cb->f[1], "mfence") == 0){
-			if((m->cpuiddx & Sse2) == 0)
-				error("invalid coherence ctl on this cpu family");
-			coherence = mfence;
-		}else if(strcmp(cb->f[1], "nop") == 0){
-			/* only safe on vmware */
-			if(conf.nmach > 1)
-				error("cannot disable coherence on a multiprocessor");
-			coherence = nop;
-		}else
-			cmderror(cb, "invalid coherence ctl");
-		break;
-	case CMcache:
-		base = strtoull(cb->f[1], &ep, 0);
-		if(*ep)
-			error("cache: parse error: base not a number?");
-		size = strtoull(cb->f[2], &ep, 0);
-		if(*ep)
-			error("cache: parse error: size not a number?");
-		ep = mtrr(base, size, cb->f[3]);
-		if(ep != nil)
-			error(ep);
-		break;
-	}
-	free(cb);
-	poperror();
-	return n;
+  cb = parsecmd(a, n);
+  if (waserror()) {
+    free(cb);
+    nexterror();
+  }
+  ct = lookupcmd(cb, archctlmsg, nelem(archctlmsg));
+  switch (ct->index) {
+  case CMpge:
+    if (!m->havepge)
+      error("processor does not support pge");
+    if (strcmp(cb->f[1], "on") == 0)
+      putcr4(getcr4() | 0x80);
+    else if (strcmp(cb->f[1], "off") == 0)
+      putcr4(getcr4() & ~0x80);
+    else
+      cmderror(cb, "invalid pge ctl");
+    break;
+  case CMcoherence:
+    if (strcmp(cb->f[1], "mb386") == 0)
+      coherence = mb386;
+    else if (strcmp(cb->f[1], "mb586") == 0) {
+      if (m->cpuidfamily < 5)
+        error("invalid coherence ctl on this cpu family");
+      coherence = mb586;
+    } else if (strcmp(cb->f[1], "mfence") == 0) {
+      if ((m->cpuiddx & Sse2) == 0)
+        error("invalid coherence ctl on this cpu family");
+      coherence = mfence;
+    } else if (strcmp(cb->f[1], "nop") == 0) {
+      /* only safe on vmware */
+      if (conf.nmach > 1)
+        error("cannot disable coherence on a multiprocessor");
+      coherence = nop;
+    } else
+      cmderror(cb, "invalid coherence ctl");
+    break;
+  case CMcache:
+    base = strtoull(cb->f[1], &ep, 0);
+    if (*ep)
+      error("cache: parse error: base not a number?");
+    size = strtoull(cb->f[2], &ep, 0);
+    if (*ep)
+      error("cache: parse error: size not a number?");
+    ep = mtrr(base, size, cb->f[3]);
+    if (ep != nil)
+      error(ep);
+    break;
+  }
+  free(cb);
+  poperror();
+  return n;
 }
 
-static long
-rmemrw(int isr, void *a, long n, vlong off)
-{
-	uintptr addr = off;
+static long rmemrw(int isr, void *a, long n, vlong off) {
+  uintptr addr = off;
 
-	if(off < 0 || n < 0)
-		error("bad offset/count");
-	if(isr){
-		if(addr >= MB)
-			return 0;
-		if(addr+n > MB)
-			n = MB - addr;
-		memmove(a, KADDR(addr), n);
-	}else{
-		/* allow vga framebuf's write access */
-		if(addr >= MB || addr+n > MB ||
-		    (addr < 0xA0000 || addr+n > 0xB0000+0x10000))
-			error("bad offset/count in write");
-		memmove(KADDR(addr), a, n);
-	}
-	return n;
+  if (off < 0 || n < 0)
+    error("bad offset/count");
+  if (isr) {
+    if (addr >= MB)
+      return 0;
+    if (addr + n > MB)
+      n = MB - addr;
+    memmove(a, KADDR(addr), n);
+  } else {
+    /* allow vga framebuf's write access */
+    if (addr >= MB || addr + n > MB ||
+        (addr < 0xA0000 || addr + n > 0xB0000 + 0x10000))
+      error("bad offset/count in write");
+    memmove(KADDR(addr), a, n);
+  }
+  return n;
 }
 
-static long
-rmemread(Chan*, void *a, long n, vlong off)
-{
-	return rmemrw(1, a, n, off);
+static long rmemread(Chan *, void *a, long n, vlong off) {
+  return rmemrw(1, a, n, off);
 }
 
-static long
-rmemwrite(Chan*, void *a, long n, vlong off)
-{
-	return rmemrw(0, a, n, off);
+static long rmemwrite(Chan *, void *a, long n, vlong off) {
+  return rmemrw(0, a, n, off);
 }
 
-void
-archinit(void)
-{
-	PCArch **p;
-	int found = 0;
+void archinit(void) {
+  PCArch **p;
+  int found = 0;
 
-	// FORCE GENERIC ARCH TO BYPASS ACPI/APIC issues in QEMU TCG
-	print("archinit: FORCING GENERIC ARCH for QEMU TCG compatibility\n");
-	arch = &archgeneric;
-	return; // Skip complex ACPI/MP detection for now
+  // FORCE GENERIC ARCH TO BYPASS ACPI/APIC issues in QEMU TCG
+  print("archinit: FORCING GENERIC ARCH for QEMU TCG compatibility\n");
+  arch = &archgeneric;
+  return; // Skip complex ACPI/MP detection for now
 }
 
 /*
  *  call either the pcmcia or pccard device setup
  */
-int
-pcmspecial(char *idstr, ISAConf *isa)
-{
-	return (_pcmspecial != nil)? _pcmspecial(idstr, isa): -1;
+int pcmspecial(char *idstr, ISAConf *isa) {
+  return (_pcmspecial != nil) ? _pcmspecial(idstr, isa) : -1;
 }
 
 /*
  *  call either the pcmcia or pccard device teardown
  */
-void
-pcmspecialclose(int a)
-{
-	if (_pcmspecialclose != nil)
-		_pcmspecialclose(a);
+void pcmspecialclose(int a) {
+  if (_pcmspecialclose != nil)
+    _pcmspecialclose(a);
 }
 
 /*
  *  set next timer interrupt
  */
-void
-timerset(Tval x)
-{
-	/* Debug prints disabled - can cause QEMU iothread issues from interrupt context */
-	/* print("timerset: ENTRY (x=%lld), arch=%#p, arch->timerset=%#p\n", x, arch, arch->timerset); */
-	if(arch->timerset == nil) {
-		/* print("timerset: ERROR - arch->timerset is nil!\n"); */
-		return;
-	}
-	/* print("timerset: calling arch->timerset\n"); */
-	(*arch->timerset)(x);
-	/* print("timerset: arch->timerset returned\n"); */
+void timerset(Tval x) {
+  /* Debug prints disabled - can cause QEMU iothread issues from interrupt
+   * context */
+  /* print("timerset: ENTRY (x=%lld), arch=%#p, arch->timerset=%#p\n", x, arch,
+   * arch->timerset); */
+  if (arch->timerset == nil) {
+    /* print("timerset: ERROR - arch->timerset is nil!\n"); */
+    return;
+  }
+  /* print("timerset: calling arch->timerset\n"); */
+  (*arch->timerset)(x);
+  /* print("timerset: arch->timerset returned\n"); */
 }
 
 /*
@@ -1124,175 +1392,182 @@ timerset(Tval x)
  *  and it reduces lock contention (thus system time and real time)
  *  on many-core systems with large values of NPROC.
  */
-void
-idlehands(void)
-{
-	extern int nrdy, idle_spin;
+void idlehands(void) {
+  extern int nrdy, idle_spin;
 
-	if(conf.nmach == 1)
-		halt();
-	else if(m->cpuidcx & Monitor)
-		mwait(&nrdy);
-	else if(idle_spin == 0)
-		halt();
+  if (conf.nmach == 1)
+    halt();
+  else if (m->cpuidcx & Monitor)
+    mwait(&nrdy);
+  else if (idle_spin == 0)
+    halt();
 }
 
-int
-isaconfig(char *class, int ctlrno, ISAConf *isa)
-{
-	char cc[32], *p, *x;
-	int i;
+int isaconfig(char *class, int ctlrno, ISAConf *isa) {
+  char cc[32], *p, *x;
+  int i;
 
-	snprint(cc, sizeof cc, "%s%d", class, ctlrno);
-	p = getconf(cc);
-	if(p == nil)
-		return 0;
+  snprint(cc, sizeof cc, "%s%d", class, ctlrno);
+  p = getconf(cc);
+  if (p == nil)
+    return 0;
 
-	x = nil;
-	kstrdup(&x, p);
-	p = x;
+  x = nil;
+  kstrdup(&x, p);
+  p = x;
 
-	isa->type = "";
-	isa->nopt = tokenize(p, isa->opt, NISAOPT);
-	for(i = 0; i < isa->nopt; i++){
-		p = isa->opt[i];
-		if(cistrncmp(p, "type=", 5) == 0)
-			isa->type = p + 5;
-		else if(cistrncmp(p, "port=", 5) == 0)
-			isa->port = strtoull(p+5, &p, 0);
-		else if(cistrncmp(p, "irq=", 4) == 0)
-			isa->irq = strtoul(p+4, &p, 0);
-		else if(cistrncmp(p, "dma=", 4) == 0)
-			isa->dma = strtoul(p+4, &p, 0);
-		else if(cistrncmp(p, "mem=", 4) == 0)
-			isa->mem = strtoul(p+4, &p, 0);
-		else if(cistrncmp(p, "size=", 5) == 0)
-			isa->size = strtoul(p+5, &p, 0);
-		else if(cistrncmp(p, "freq=", 5) == 0)
-			isa->freq = strtoul(p+5, &p, 0);
-	}
-	return 1;
+  isa->type = "";
+  isa->nopt = tokenize(p, isa->opt, NISAOPT);
+  for (i = 0; i < isa->nopt; i++) {
+    p = isa->opt[i];
+    if (cistrncmp(p, "type=", 5) == 0)
+      isa->type = p + 5;
+    else if (cistrncmp(p, "port=", 5) == 0)
+      isa->port = strtoull(p + 5, &p, 0);
+    else if (cistrncmp(p, "irq=", 4) == 0)
+      isa->irq = strtoul(p + 4, &p, 0);
+    else if (cistrncmp(p, "dma=", 4) == 0)
+      isa->dma = strtoul(p + 4, &p, 0);
+    else if (cistrncmp(p, "mem=", 4) == 0)
+      isa->mem = strtoul(p + 4, &p, 0);
+    else if (cistrncmp(p, "size=", 5) == 0)
+      isa->size = strtoul(p + 5, &p, 0);
+    else if (cistrncmp(p, "freq=", 5) == 0)
+      isa->freq = strtoul(p + 5, &p, 0);
+  }
+  return 1;
 }
 
-void
-dumpmcregs(void)
-{
-	vlong v, w;
-	int bank;
+void dumpmcregs(void) {
+  vlong v, w;
+  int bank;
 
-	if((m->cpuiddx & (Mce|Cpumsr)) != (Mce|Cpumsr))
-		return;
-	if((m->cpuiddx & Mca) == 0){
-		rdmsr(0x00, &v);
-		rdmsr(0x01, &w);
-		iprint("MCA %8.8llux MCT %8.8llux\n", v, w);
-		return;
-	}
-	rdmsr(0x179, &v);
-	rdmsr(0x17A, &w);
-	iprint("MCG CAP %.16llux STATUS %.16llux\n", v, w);
+  if ((m->cpuiddx & (Mce | Cpumsr)) != (Mce | Cpumsr))
+    return;
+  if ((m->cpuiddx & Mca) == 0) {
+    rdmsr(0x00, &v);
+    rdmsr(0x01, &w);
+    iprint("MCA %8.8llux MCT %8.8llux\n", v, w);
+    return;
+  }
+  rdmsr(0x179, &v);
+  rdmsr(0x17A, &w);
+  iprint("MCG CAP %.16llux STATUS %.16llux\n", v, w);
 
-	bank = v & 0xFF;
-	if(bank > 64)
-		bank = 64;
-	while(--bank >= 0){
-		rdmsr(0x401 + bank*4, &v);
-		if((v & (1ull << 63)) == 0)
-			continue;
-		iprint("MC%d STATUS %.16llux", bank, v);
-		if(v & (1ull << 58)){
-			rdmsr(0x402 + bank*4, &w);
-			iprint(" ADDR %.16llux", w);
-		}
-		if(v & (1ull << 59)){
-			rdmsr(0x403 + bank*4, &w);
-			iprint(" MISC %.16llux", w);
-		}
-		iprint("\n");
-	}
+  bank = v & 0xFF;
+  if (bank > 64)
+    bank = 64;
+  while (--bank >= 0) {
+    rdmsr(0x401 + bank * 4, &v);
+    if ((v & (1ull << 63)) == 0)
+      continue;
+    iprint("MC%d STATUS %.16llux", bank, v);
+    if (v & (1ull << 58)) {
+      rdmsr(0x402 + bank * 4, &w);
+      iprint(" ADDR %.16llux", w);
+    }
+    if (v & (1ull << 59)) {
+      rdmsr(0x403 + bank * 4, &w);
+      iprint(" MISC %.16llux", w);
+    }
+    iprint("\n");
+  }
 }
 
-static void
-nmihandler(Ureg *ureg, void*)
-{
-	iprint("cpu%d: nmi PC %#p, status %ux\n",
-		m->machno, ureg->pc, inb(0x61));
-	while(m->machno != 0)
-		;
+static void nmihandler(Ureg *ureg, void *) {
+  iprint("cpu%d: nmi PC %#p, status %ux\n", m->machno, ureg->pc, inb(0x61));
+  while (m->machno != 0)
+    ;
 }
 
-void
-nmienable(void)
-{
-	int x;
+void nmienable(void) {
+  int x;
 
-	trapenable(VectorNMI, nmihandler, nil, "nmi");
+  trapenable(VectorNMI, nmihandler, nil, "nmi");
 
-	/*
-	 * Hack: should be locked with NVRAM access.
-	 */
-	outb(0x70, 0x80);		/* NMI latch clear */
-	outb(0x70, 0);
+  /*
+   * Hack: should be locked with NVRAM access.
+   */
+  outb(0x70, 0x80); /* NMI latch clear */
+  outb(0x70, 0);
 
-	x = inb(0x61) & 0x07;		/* Enable NMI */
-	outb(0x61, 0x0C|x);
-	outb(0x61, x);
+  x = inb(0x61) & 0x07; /* Enable NMI */
+  outb(0x61, 0x0C | x);
+  outb(0x61, x);
 }
 
-void
-setupwatchpts(Proc *pr, Watchpt *wp, int nwp)
-{
-	int i;
-	u8int cfg;
-	Watchpt *p;
+void setupwatchpts(Proc *pr, Watchpt *wp, int nwp) {
+  int i;
+  u8int cfg;
+  Watchpt *p;
 
-	if(nwp > 4)
-		error("there are four watchpoints.");
-	if(nwp == 0){
-		memset(pr->dr, 0, sizeof(pr->dr));
-		return;
-	}
-	for(p = wp; p < wp + nwp; p++){
-		switch(p->type){
-		case WATCHRD|WATCHWR: case WATCHWR:
-			break;
-		case WATCHEX:
-			if(p->len != 1)
-				error("length must be 1 on breakpoints");
-			break;
-		default:
-			error("type must be rw-, -w- or --x");
-		}
-		switch(p->len){
-		case 1: case 2: case 4:
-			break;
-		case 8:
-			if(m->havewatchpt8) break;
-		default:
-			error(m->havewatchpt8 ? "length must be 1,2,4,8" : "length must be 1,2,4");
-		}
-		if((p->addr & (p->len - 1)) != 0)
-			error("address must be aligned according to length");
-	}
-	
-	memset(pr->dr, 0, sizeof(pr->dr));
-	pr->dr[6] = 0xffff8ff0;
-	for(i = 0; i < nwp; i++){
-		pr->dr[i] = wp[i].addr;
-		switch(wp[i].type){
-			case WATCHRD|WATCHWR: cfg = 3; break;
-			case WATCHWR: cfg = 1; break;
-			case WATCHEX: cfg = 0; break;
-			default: continue;
-		}
-		switch(wp[i].len){
-			case 1: break;
-			case 2: cfg |= 4; break;
-			case 4: cfg |= 12; break;
-			case 8: cfg |= 8; break;
-			default: continue;
-		}
-		pr->dr[7] |= cfg << (16 + 4 * i);
-		pr->dr[7] |= 1 << (2 * i + 1);
-	}
+  if (nwp > 4)
+    error("there are four watchpoints.");
+  if (nwp == 0) {
+    memset(pr->dr, 0, sizeof(pr->dr));
+    return;
+  }
+  for (p = wp; p < wp + nwp; p++) {
+    switch (p->type) {
+    case WATCHRD | WATCHWR:
+    case WATCHWR:
+      break;
+    case WATCHEX:
+      if (p->len != 1)
+        error("length must be 1 on breakpoints");
+      break;
+    default:
+      error("type must be rw-, -w- or --x");
+    }
+    switch (p->len) {
+    case 1:
+    case 2:
+    case 4:
+      break;
+    case 8:
+      if (m->havewatchpt8)
+        break;
+    default:
+      error(m->havewatchpt8 ? "length must be 1,2,4,8"
+                            : "length must be 1,2,4");
+    }
+    if ((p->addr & (p->len - 1)) != 0)
+      error("address must be aligned according to length");
+  }
+
+  memset(pr->dr, 0, sizeof(pr->dr));
+  pr->dr[6] = 0xffff8ff0;
+  for (i = 0; i < nwp; i++) {
+    pr->dr[i] = wp[i].addr;
+    switch (wp[i].type) {
+    case WATCHRD | WATCHWR:
+      cfg = 3;
+      break;
+    case WATCHWR:
+      cfg = 1;
+      break;
+    case WATCHEX:
+      cfg = 0;
+      break;
+    default:
+      continue;
+    }
+    switch (wp[i].len) {
+    case 1:
+      break;
+    case 2:
+      cfg |= 4;
+      break;
+    case 4:
+      cfg |= 12;
+      break;
+    case 8:
+      cfg |= 8;
+      break;
+    default:
+      continue;
+    }
+    pr->dr[7] |= cfg << (16 + 4 * i);
+    pr->dr[7] |= 1 << (2 * i + 1);
+  }
 }

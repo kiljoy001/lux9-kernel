@@ -178,6 +178,10 @@ Definition msg_in_dag (d : MsgOrd) (id : MsgId) : Prop :=
 Definition Inv_BlueOnly (dag : MsgOrd) : Prop :=
   forall m, In m dag -> m.(gm_color) = Blue.
 
+(* Invariant: DAG only contains Ordered messages (Pending/Delivered not visible) *)
+Definition Inv_OrderedOnly (dag : MsgOrd) : Prop :=
+  forall m, In m dag -> m.(gm_state) = Ordered.
+
 Theorem no_red_messages_in_dag :
   forall dag hash is_tcb,
   Inv_BlueOnly dag ->
@@ -197,6 +201,25 @@ Proof.
       * apply Hinv. exact Hin_old.
     + (* Red case: DAG unchanged *)
       exact Hinv.
+  - exact Hinv.
+Qed.
+
+Theorem msgord_submit_preserves_ordered :
+  forall dag new_id hash is_tcb,
+  Inv_OrderedOnly dag ->
+  Inv_OrderedOnly (msgord_submit dag new_id hash is_tcb).
+Proof.
+  intros dag new_id hash is_tcb Hinv.
+  unfold Inv_OrderedOnly in *.
+  unfold msgord_submit.
+  simpl.
+  destruct (pow_ok hash is_tcb (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hpow.
+  - destruct (determine_color (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hcolor.
+    + intros m Hin.
+      destruct Hin as [Heq | Hin_old].
+      * subst. reflexivity.
+      * apply Hinv. exact Hin_old.
+    + exact Hinv.
   - exact Hinv.
 Qed.
 
@@ -286,6 +309,25 @@ Proof.
       simpl. rewrite Hdag. reflexivity.
 Qed.
 
+Lemma can_deliver_parents_not_in_dag :
+  forall dag msg,
+  Inv_OrderedOnly dag ->
+  can_deliver dag msg = true ->
+  forall pid, In pid msg.(gm_parents) ->
+    find (fun m => Z.eqb m.(gm_id) pid) dag = None.
+Proof.
+  intros dag msg Hordered Hcan pid Hpid.
+  unfold can_deliver in Hcan.
+  apply forallb_forall with (x := pid) in Hcan; try assumption.
+  unfold check_parent_safe in Hcan.
+  destruct (find (fun m : GhostMsg => Z.eqb (gm_id m) pid) dag) eqn:Hfind.
+  - pose proof (find_some _ _ Hfind) as [Hin _].
+    specialize (Hordered _ Hin).
+    rewrite Hordered in Hcan.
+    discriminate.
+  - reflexivity.
+Qed.
+
 Theorem topological_process_safety :
   forall dag new_dag pid,
   msgord_process_one dag = Processed new_dag pid ->
@@ -299,6 +341,32 @@ Proof.
     as [prefix [msg' [suffix [Hdag [Hid' [_ Hdel]]]]]].
   exists prefix, msg', suffix.
   repeat split; assumption.
+Qed.
+
+Theorem process_one_parents_absent :
+  forall dag new_dag pid,
+  Inv_OrderedOnly dag ->
+  msgord_process_one dag = Processed new_dag pid ->
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    gm_id msg = pid /\
+    (forall parent, In parent (gm_parents msg) ->
+      find (fun m => Z.eqb (gm_id m) parent) (msg :: suffix) = None).
+Proof.
+  intros dag new_dag pid Hordered Hproc.
+  destruct (process_one_implies_can_deliver dag new_dag pid Hproc)
+    as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+  exists prefix, msg, suffix.
+  split; [exact Hdag |].
+  split; [exact Hid |].
+  intros parent Hparent.
+  apply (can_deliver_parents_not_in_dag (msg :: suffix) msg); try assumption.
+  unfold Inv_OrderedOnly.
+  intros m Hin.
+  apply Hordered.
+  rewrite Hdag.
+  apply in_app_iff.
+  right; exact Hin.
 Qed.
 
 (* THEOREM 4: SATURATION *)

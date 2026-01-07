@@ -20,6 +20,14 @@
 
 #define PIPESIZE (4096)
 
+/*@ assigns \result \from \nothing;
+  */
+extern void *malloc(ulong size);
+
+/*@ assigns \nothing;
+  */
+extern void free(void *p);
+
 typedef struct Pipe Pipe;
 struct Pipe {
   QLock l;
@@ -133,7 +141,9 @@ static int pipegen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
     requires ((Pipe*)c->aux)->ref > 0;
     ensures \result != \null && \result->clone != c ==>
             ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) + 1;
-    assigns ((Pipe*)c->aux)->ref, ((Pipe*)c->aux)->qref[0..1];
+    assigns ((Pipe*)c->aux)->ref,
+            ((Pipe*)c->aux)->qref[0],
+            ((Pipe*)c->aux)->qref[1];
     // COQ_PROOF_REF: proofs/pipe/conservation.v:walk_clone_increments_ref
     // COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
 */
@@ -198,6 +208,9 @@ static Chan *pipeopen(Chan *c, int omode) {
 
 /*@ requires c != \null && c->aux != \null;
     requires ((Pipe*)c->aux)->ref > 0;
+    assigns ((Pipe*)c->aux)->ref,
+            ((Pipe*)c->aux)->q[0],
+            ((Pipe*)c->aux)->q[1];
     behavior last_ref:
       assumes ((Pipe*)c->aux)->ref == 1;
       ensures \freed((Pipe*)c->aux);
@@ -206,7 +219,6 @@ static Chan *pipeopen(Chan *c, int omode) {
       ensures ((Pipe*)c->aux)->ref == \old(((Pipe*)c->aux)->ref) - 1;
     complete behaviors;
     disjoint behaviors;
-    assigns ((Pipe*)c->aux)->ref, ((Pipe*)c->aux)->q[0..1];
     // COQ_PROOF_REF: proofs/pipe/conservation.v:close_decrements_ref
     // COQ_PROOF_REF: proofs/pipe/conservation.v:balanced_clone_close
     // COQ_PROOF_REF: proofs/pipe/conservation.v:close_inverse_of_clone
@@ -323,7 +335,8 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
 /*@ requires c != \null && c->aux != \null;
     requires 0 <= c->qid.path - 1 <= 1;
     ensures \result == n || \result < 0;
-    assigns ((Pipe*)c->aux)->q[0..1];
+    assigns ((Pipe*)c->aux)->q[0],
+            ((Pipe*)c->aux)->q[1];
     // Write to q[id], closed queue rejects
     // COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
     // COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref

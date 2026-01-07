@@ -1089,6 +1089,8 @@ void segclock(uintptr pc) {
 Segment *txt2data(Segment *s) {
   Segment *ps;
 
+  print("txt2data: called by pid %d on seg %p image %p\n", up ? up->pid : -1, s,
+        s->image);
   ps = newseg(SG_DATA, s->base, s->size);
   ps->image = s->image;
   ps->fstart = s->fstart;

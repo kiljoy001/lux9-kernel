@@ -1,19 +1,34 @@
-CC = gcc
-AR = ar
-CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
-         -mno-red-zone -mcmodel=small -fPIC -O2 -Wall \
-         -I./inc -I../../../kernel/include -I../../../kernel/port
+# LibLux Makefile
 
-C_SRCS = src/syscalls.c src/msgord.c src/pebble.c src/string.c \
-         src/convM2S.c src/convS2M.c
-ASM_SRCS = src/syscall_asm.S
+# Compiler settings
+CC=gcc
+CFLAGS=-I../inc -I../../../include -fPIC -Wall -Wextra -nostdlib -ffreestanding
+AR=ar
 
-OBJS = $(C_SRCS:.c=.o) $(ASM_SRCS:.S=.o)
+# Source files
+SRC = src/syscalls.c \
+      src/string.c \
+      src/pebble.c \
+      src/msgord.c \
+      src/convM2S.c \
+      src/convS2M.c \
+      src/server9p.c
 
-all: liblux.a
+# Object files
+OBJ = $(SRC:.c=.o)
 
-liblux.a: $(OBJS)
-	$(AR) rcs $@ $(OBJS)
+# Assembly files
+ASM_SRC = src/syscall_asm.S
+ASM_OBJ = $(ASM_SRC:.S=.o)
+
+# Output library
+TARGET = liblux.a
+
+# Rules
+all: $(TARGET)
+
+$(TARGET): $(OBJ) $(ASM_OBJ)
+	$(AR) rcs $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -22,4 +37,6 @@ liblux.a: $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) liblux.a
+	rm -f $(OBJ) $(ASM_OBJ) $(TARGET)
+
+.PHONY: all clean

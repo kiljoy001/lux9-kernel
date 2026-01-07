@@ -24,6 +24,12 @@ extern void *memccpy(void *, void *, int, usize);
     assigns ((char*)s)[0..n-1] \from c;
     ensures \result == s;
 */
+/*@ requires s == \null || (n >= 0 && \valid(((char *)s) + (0..n-1)));
+  @ assigns ((char *)s)[0..n-1];
+  @ assigns \result \from s;
+  @ ensures \result == s;
+  @ terminates \true;
+  */
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(void *, void *, usize);
 /*@ requires \valid((char*)dest + (0..n-1));
@@ -31,6 +37,13 @@ extern int memcmp(void *, void *, usize);
     assigns ((char*)dest)[0..n-1] \from ((char*)src)[0..n-1];
     ensures \result == dest;
 */
+/*@ requires dest == \null || (n >= 0 && \valid(((char *)dest) + (0..n-1)));
+  @ requires src == \null || (n >= 0 && \valid_read(((char *)src) + (0..n-1)));
+  @ assigns ((char *)dest)[0..n-1];
+  @ assigns \result \from dest;
+  @ ensures \result == dest;
+  @ terminates \true;
+  */
 extern void *memmove(void *dest, void *src, usize n);
 extern void *memchr(void *, int, usize);
 
@@ -40,13 +53,23 @@ extern void *memchr(void *, int, usize);
 extern char *strcat(char *, char *);
 extern char *strchr(char *, int);
 extern char *strrchr(char *, int);
-extern int strcmp(char *, char *);
+/*@ requires s1 == \null || \valid(s1);
+  @ requires s2 == \null || \valid(s2);
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+extern int strcmp(char *s1, char *s2);
 extern char *strcpy(char *, char *);
 extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
 /*@ assigns \result \from s[..]; */
+/*@ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @ terminates \true;
+  */
 extern long strlen(char *s);
 extern char *strstr(char *, char *);
 extern int atoi(char *);

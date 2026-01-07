@@ -1,0 +1,25 @@
+#include "../include/u.h"
+#include "portlib.h"
+#include "mem.h"
+#include "dat.h"
+#include "fns.h"
+#include "edf.h"
+#include "proc_packet.h" /* For EV_* events */
+#include "tos.h"
+#include "ureg.h"
+#include <error.h>
+#include <trace.h>
+#include "9p_router.h" /* For P9Control structure */
+#include "../wasm/wasm_runtime.h"
+
+/* FSM Integration */
+extern int proc_event(Proc *p, int event);
+extern void vault_cleanup_process(int pid);
+
+enum {
+  Scaling = 2,
+};
+
+int schedgain = 30; /* units in seconds */
+int nrdy;
+

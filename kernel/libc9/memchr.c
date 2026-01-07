@@ -1,17 +1,15 @@
-#include	<u.h>
-#include	<libc.h>
+#include <libc.h>
+#include <u.h>
 
-void*
-memchr(void *ap, int c, usize n)
-{
-	uchar *sp;
+void *memchr(const void *ap, int c, usize n) {
+  const uchar *sp;
 
-	sp = ap;
-	c &= 0xFF;
-	while(n > 0) {
-		if(*sp++ == c)
-			return sp-1;
-		n--;
-	}
-	return 0;
+  sp = ap;
+  c &= 0xFF;
+  while (n > 0) {
+    if (*sp++ == c)
+      return (void *)(sp - 1);
+    n--;
+  }
+  return 0;
 }

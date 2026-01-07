@@ -71,7 +71,26 @@ static int cap_hash_cmp(const u8int *a, const u8int *b) {
 }
 static void ledger_augment_rotate(struct rb_node *rb, void *data);
 static void ledger_propagate_updates(struct rb_node *node);
+// Explicit forward declarations with ACSL to ensure Frama-C sees them
+
+/*@ assigns out[0..31]; */
+extern int crypto_sha256(u8int *out, const u8int *data, usize len);
+
+// Forward declarations for static functions
+/*@ assigns \nothing; */
+static u32int hash_physical_address(uintptr pa);
+
+/*@ assigns \nothing; */
+static LedgerEntryNode *ledger_tree_search(const u8int *hash);
+/*@ assigns ledger_tree, *new_node; */
+static int ledger_tree_insert(LedgerEntryNode *new_node);
+/*@ assigns merkle_root[0..31]; */
 static void ledger_update_root_hash(void);
+/*@ assigns out_sig[0..31]; */
+static void compute_derivation_sig(const u8int *parent_hash, u32int constraints,
+                                   const u8int *child_hash, u8int *out_sig);
+/*@ assigns \nothing; */
+static int is_root_capability(const BlindLedgerEntry *entry);
 
 // SipHash-based hash function for physical addresses
 static u32int hash_physical_address(uintptr pa) {
@@ -220,9 +239,12 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              const u8int *vault_secret) {
   /*@
     @ requires out_cap == \null || \valid(out_cap);
-    @ requires vault_secret == \null || \valid((u8int *)vault_secret + (0..BLIND_LEDGER_SECRET_SIZE-1));
-    @ ensures (out_cap == \null || vault_secret == \null || len == 0 || pa == 0 ||
-    @          (len % BLIND_LEDGER_TOKEN_UNIT != 0)) ==> \result == BLIND_LEDGER_EINVAL;
+    @ requires vault_secret == \null || \valid((u8int *)vault_secret +
+    (0..BLIND_LEDGER_SECRET_SIZE-1));
+    @ ensures (out_cap == \null || vault_secret == \null || len == 0 || pa == 0
+    ||
+    @          (len % BLIND_LEDGER_TOKEN_UNIT != 0)) ==> \result ==
+    BLIND_LEDGER_EINVAL;
     @*/
   /*
     // Input validation per mint_refinement
@@ -264,8 +286,9 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
 
   // 4a. Generate UUIDv8 from capability hash
   // Pack: PA hash (94 bits) + Type (8 bits) + Perms (4 bits) + Epoch (16 bits)
-  uuid_pack_capability(&out_cap->uuid, out_cap->hash, (unsigned short)global_epoch,
-                       (unsigned char)CAP_TYPE_MEMORY, (unsigned char)permissions);
+  uuid_pack_capability(
+      &out_cap->uuid, out_cap->hash, (unsigned short)global_epoch,
+      (unsigned char)CAP_TYPE_MEMORY, (unsigned char)permissions);
 
   // 5. Populate entry fields
   memmove(&new_entry.capability, out_cap, sizeof(UserCapability));
@@ -361,7 +384,7 @@ BlindLedgerError ledger_verify(const UserCapability *cap,
  * For now we use the PA secondary index to narrow down candidates.
  */
 BlindLedgerError ledger_verify_by_uuid(const uuid_t *uuid,
-                                        BlindLedgerEntry *out_entry) {
+                                       BlindLedgerEntry *out_entry) {
   if (uuid == nil || out_entry == nil) {
     return BLIND_LEDGER_EINVAL;
   }
@@ -414,7 +437,8 @@ BlindLedgerError ledger_verify_by_uuid(const uuid_t *uuid,
           BLIND_LEDGER_CAP_SIZE);
   crypto_sha256(computed_hash, cap_hash_input, sizeof(cap_hash_input));
 
-  if (memcmp(computed_hash, found->entry.capability.hash, BLIND_LEDGER_CAP_SIZE) != 0) {
+  if (memcmp(computed_hash, found->entry.capability.hash,
+             BLIND_LEDGER_CAP_SIZE) != 0) {
     unlock(&ledger_lock);
     return BLIND_LEDGER_EPERM; /* Hash mismatch - potential forgery */
   }

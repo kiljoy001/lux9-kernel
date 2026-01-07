@@ -21,6 +21,31 @@ typedef unsigned long u_long;
 #include <rump/rump_syscalls.h>
 #include <rump/rumpdefs.h>
 
+#define POSIX_FDSTAT_GET 1
+#define POSIX_PATHSTAT_GET 1
+#define POSIX_PREAD 1
+#define POSIX_PWRITE 1
+#define POSIX_READDIR 1
+#define POSIX_SOCK_RECV 1
+#define POSIX_SOCK_SEND 1
+#define POSIX_POLL_ONEOFF 1
+#define POSIX_SOCK_ACCEPT 1
+#define POSIX_SOCK_SHUTDOWN 1
+#define POSIX_PATH_CREATE_DIR 1
+#define POSIX_PATH_REMOVE_DIR 1
+#define POSIX_PATH_UNLINK 1
+#define POSIX_PATH_RENAME 1
+#define POSIX_PATH_SYMLINK 1
+#define POSIX_PATH_READLINK 1
+#define POSIX_PATH_SET_TIMES 1
+#define POSIX_PATH_SET_SIZE 1
+#define POSIX_PATH_LINK 1
+#define POSIX_FD_SET_SIZE 2
+#define POSIX_FD_SET_TIMES 3
+#define POSIX_FD_SYNC 4
+#define POSIX_FD_DATASYNC 5
+#define POSIX_FD_TELL 6
+
 /* Rump definitions */
 struct rump_timespec {
   int64_t tv_sec;
@@ -245,14 +270,6 @@ enum {
   V_POSIX_SOCK_RECV,
   V_POSIX_SOCK_SEND,
   V_POSIX_SOCK_SHUTDOWN,
-};
-
-enum {
-  POSIX_FDSTAT_GET = 1,
-  POSIX_PATHSTAT_GET = 1,
-  POSIX_PREAD = 1,
-  POSIX_PWRITE = 1,
-  POSIX_READDIR = 1,
 };
 
 #define POSIX_ENOSYS 78
@@ -504,6 +521,373 @@ static u32int posix_write_pwrite(RumpFid *f, const uchar *data, u32int count) {
   return f->resp_len;
 }
 
+static u32int posix_write_path_simple_op(RumpFid *f, const uchar *data,
+                                         u32int count, int op_code) {
+  if (count < 8)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int path_len = get_u32(data + 4);
+  if (count < 8 + path_len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != (u32int)op_code) {
+    put_u32(f->resp, 38); /* ENOSYS */
+    return f->resp_len;
+  }
+
+  char path[MAX_PATH];
+  if (path_len >= sizeof(path)) {
+    put_u32(f->resp, 36); /* ENAMETOOLONG */
+    return f->resp_len;
+  }
+  memcpy(path, data + 8, path_len);
+  path[path_len] = 0;
+
+  int ret = -1;
+  if (op_code == POSIX_PATH_CREATE_DIR) {
+    ret = rump_sys_mkdir(path, 0777);
+  } else if (op_code == POSIX_PATH_REMOVE_DIR) {
+    ret = rump_sys_rmdir(path);
+  } else if (op_code == POSIX_PATH_UNLINK) {
+    ret = rump_sys_unlink(path);
+  }
+
+  if (ret < 0) {
+    /* TODO: Get actual errno from rump */
+    put_u32(f->resp, 5); /* EIO */
+    return f->resp_len;
+  }
+
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+  return f->resp_len;
+}
+
+static u32int posix_write_path_rename(RumpFid *f, const uchar *data,
+                                      u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int old_len = get_u32(data + 4);
+  if (count < 8 + old_len + 4)
+    return 0;
+
+  u32int new_len = get_u32(data + 8 + old_len);
+  if (count < 12 + old_len + new_len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_PATH_RENAME) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  char old_path[MAX_PATH];
+  char new_path[MAX_PATH];
+
+  if (old_len >= sizeof(old_path) || new_len >= sizeof(new_path)) {
+    put_u32(f->resp, 36);
+    return f->resp_len;
+  }
+
+  memcpy(old_path, data + 8, old_len);
+  old_path[old_len] = 0;
+
+  memcpy(new_path, data + 12 + old_len, new_len);
+  new_path[new_len] = 0;
+
+  if (rump_sys_rename(old_path, new_path) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+  return f->resp_len;
+}
+
+static u32int posix_write_sock_accept(RumpFid *f, const uchar *data,
+                                      u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  /* u32int flags = get_u32(data+8); // unused for now */
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  put_u32(f->resp + 4, 0);
+  f->resp_len = 8;
+
+  if (op != POSIX_SOCK_ACCEPT) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  int newfd = rump_sys_accept(fd, NULL, NULL);
+  if (newfd < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp + 4, (u32int)newfd);
+  return f->resp_len;
+}
+
+static u32int posix_write_sock_recv(RumpFid *f, const uchar *data,
+                                    u32int count) {
+  if (count < 16)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u32int flags = get_u32(data + 8);
+  u32int len = get_u32(data + 12);
+
+  if (len > sizeof(f->resp) - 12)
+    len = sizeof(f->resp) - 12;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0); /* err */
+  put_u32(f->resp + 4, 0); /* ro_flags */
+  put_u32(f->resp + 8, 0); /* count */
+  f->resp_len = 12;
+
+  if (op != POSIX_SOCK_RECV) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  ssize_t n = rump_sys_recvfrom(fd, f->resp + 12, len, (int)flags, NULL, NULL);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp + 8, (u32int)n);
+  f->resp_len = 12 + (u32int)n;
+  return f->resp_len;
+}
+
+static u32int posix_write_sock_send(RumpFid *f, const uchar *data,
+                                    u32int count) {
+  if (count < 16)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u32int flags = get_u32(data + 8);
+  u32int len = get_u32(data + 12);
+
+  if (count < 16 + len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  put_u32(f->resp + 4, 0);
+  f->resp_len = 8;
+
+  if (op != POSIX_SOCK_SEND) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  ssize_t n = rump_sys_sendto(fd, data + 16, len, (int)flags, NULL, 0);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp + 4, (u32int)n);
+  return f->resp_len;
+}
+
+static u32int posix_write_sock_shutdown(RumpFid *f, const uchar *data,
+                                        u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u32int how = get_u32(data + 8);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_SOCK_SHUTDOWN) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  if (rump_sys_shutdown(fd, (int)how) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  return f->resp_len;
+}
+
+static u32int posix_write_path_symlink(RumpFid *f, const uchar *data,
+                                       u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int old_len = get_u32(data + 4);
+  if (count < 8 + old_len + 4)
+    return 0;
+
+  u32int new_len = get_u32(data + 8 + old_len);
+  if (count < 12 + old_len + new_len)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_PATH_SYMLINK) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  char old_path[MAX_PATH];
+  char new_path[MAX_PATH];
+
+  if (old_len >= sizeof(old_path) || new_len >= sizeof(new_path)) {
+    put_u32(f->resp, 36);
+    return f->resp_len;
+  }
+
+  memcpy(old_path, data + 8, old_len);
+  old_path[old_len] = 0;
+
+  memcpy(new_path, data + 12 + old_len, new_len);
+  new_path[new_len] = 0;
+
+  if (rump_sys_symlink(old_path, new_path) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+  return f->resp_len;
+}
+
+static u32int posix_write_path_readlink(RumpFid *f, const uchar *data,
+                                        u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int path_len = get_u32(data + 4);
+  if (count < 8 + path_len + 4)
+    return 0;
+
+  /* extra param in shim is buffer size */
+  u32int buf_len = get_u32(data + 8 + path_len);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0); /* err */
+  put_u32(f->resp + 4, 0); /* count */
+  f->resp_len = 8;
+
+  if (op != POSIX_PATH_READLINK) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  char path[MAX_PATH];
+  if (path_len >= sizeof(path)) {
+    put_u32(f->resp, 36);
+    return f->resp_len;
+  }
+  memcpy(path, data + 8, path_len);
+  path[path_len] = 0;
+
+  if (buf_len > sizeof(f->resp) - 8)
+    buf_len = sizeof(f->resp) - 8;
+
+  ssize_t n = rump_sys_readlink(path, (char *)(f->resp + 8), buf_len);
+  if (n < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  put_u32(f->resp + 4, (u32int)n);
+  f->resp_len = 8 + (u32int)n;
+  return f->resp_len;
+}
+
+static u32int posix_write_fd_sync(RumpFid *f, const uchar *data, u32int count) {
+  if (count < 8)
+    return 0;
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_FD_SYNC) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  if (rump_sys_fsync(fd) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  return f->resp_len;
+}
+
+static u32int posix_write_fd_set_size(RumpFid *f, const uchar *data,
+                                      u32int count) {
+  if (count < 16)
+    return 0;
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u64int size = get_u64(data + 8);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_FD_SET_SIZE) {
+    put_u32(f->resp, 38);
+    return f->resp_len;
+  }
+
+  if (rump_sys_ftruncate(fd, (off_t)size) < 0) {
+    put_u32(f->resp, 5);
+    return f->resp_len;
+  }
+
+  return f->resp_len;
+}
+
 static u32int posix_write_readdir(RumpFid *f, const uchar *data, u32int count) {
   if (count < 20)
     return 0;
@@ -527,7 +911,7 @@ static u32int posix_write_readdir(RumpFid *f, const uchar *data, u32int count) {
   }
 
   rump_sys_lseek(fd, offset, 0);
-  ssize_t n = rump_sys_getdents(fd, f->resp + 8, len);
+  ssize_t n = rump_sys_getdents(fd, (char *)(f->resp + 8), len);
   if (n < 0) {
     put_u32(f->resp, 5);
     return f->resp_len;
@@ -860,6 +1244,31 @@ static u32int handle_read(uchar *req, uchar *resp) {
   return 4 + 1 + 2 + 4 + n;
 }
 
+#define POSIX_FDSTAT_GET 1
+#define POSIX_PATHSTAT_GET 1
+#define POSIX_PREAD 1
+#define POSIX_PWRITE 1
+#define POSIX_READDIR 1
+#define POSIX_SOCK_RECV 1
+#define POSIX_SOCK_SEND 1
+#define POSIX_POLL_ONEOFF 1
+#define POSIX_SOCK_ACCEPT 1
+#define POSIX_SOCK_SHUTDOWN 1
+#define POSIX_PATH_CREATE_DIR 1
+#define POSIX_PATH_REMOVE_DIR 1
+#define POSIX_PATH_UNLINK 1
+#define POSIX_PATH_RENAME 1
+#define POSIX_PATH_SYMLINK 1
+#define POSIX_PATH_READLINK 1
+#define POSIX_PATH_SET_TIMES 1
+#define POSIX_PATH_SET_SIZE 1
+#define POSIX_PATH_LINK 1
+#define POSIX_FD_SET_SIZE 2
+#define POSIX_FD_SET_TIMES 3
+#define POSIX_FD_SYNC 4
+#define POSIX_FD_DATASYNC 5
+#define POSIX_FD_TELL 6
+
 static u32int handle_write(uchar *req, uchar *resp) {
   u16int tag = get_u16(req + 5);
   u32int fid = get_u32(req + 7);
@@ -889,22 +1298,46 @@ static u32int handle_write(uchar *req, uchar *resp) {
     case V_POSIX_READDIR:
       out_len = posix_write_readdir(f, data, count);
       break;
+    case V_POSIX_PATH_CREATE_DIR:
+      out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_CREATE_DIR);
+      break;
+    case V_POSIX_PATH_REMOVE_DIR:
+      out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_REMOVE_DIR);
+      break;
+    case V_POSIX_PATH_UNLINK:
+      out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_UNLINK);
+      break;
+    case V_POSIX_PATH_RENAME:
+      out_len = posix_write_path_rename(f, data, count);
+      break;
+    case V_POSIX_SOCK_ACCEPT:
+      out_len = posix_write_sock_accept(f, data, count);
+      break;
+    case V_POSIX_SOCK_RECV:
+      out_len = posix_write_sock_recv(f, data, count);
+      break;
+    case V_POSIX_SOCK_SEND:
+      out_len = posix_write_sock_send(f, data, count);
+      break;
+    case V_POSIX_SOCK_SHUTDOWN:
+      out_len = posix_write_sock_shutdown(f, data, count);
+      break;
+    case V_POSIX_PATH_SYMLINK:
+      out_len = posix_write_path_symlink(f, data, count);
+      break;
+    case V_POSIX_PATH_READLINK:
+      out_len = posix_write_path_readlink(f, data, count);
+      break;
     case V_POSIX_FD_SYNC:
-    case V_POSIX_FD_TELL:
+      out_len = posix_write_fd_sync(f, data, count);
+      break;
     case V_POSIX_FD_SET_SIZE:
+      out_len = posix_write_fd_set_size(f, data, count);
+      break;
+    case V_POSIX_FD_TELL:
     case V_POSIX_FD_SET_TIMES:
     case V_POSIX_PATH_SET_TIMES:
-    case V_POSIX_PATH_CREATE_DIR:
-    case V_POSIX_PATH_REMOVE_DIR:
-    case V_POSIX_PATH_UNLINK:
-    case V_POSIX_PATH_RENAME:
-    case V_POSIX_PATH_SYMLINK:
-    case V_POSIX_PATH_READLINK:
     case V_POSIX_POLL:
-    case V_POSIX_SOCK_ACCEPT:
-    case V_POSIX_SOCK_RECV:
-    case V_POSIX_SOCK_SEND:
-    case V_POSIX_SOCK_SHUTDOWN:
       out_len = posix_write_stub(f);
       break;
     default:
@@ -949,6 +1382,7 @@ static u32int handle_clunk(uchar *req, uchar *resp) {
   put_u16(resp + 5, tag);
   return 4 + 1 + 2;
 }
+
 
 static void srv_loop(void) {
   exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;

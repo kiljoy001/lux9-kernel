@@ -1,0 +1,83 @@
+--- a/sys/src/cmd/vmx/vmx.c
++++ b/sys/src/cmd/vmx/vmx.c
+@@ -567,10 +567,11 @@ usage(void)
+ 	
+ 	blanks = strdup(argv0);
+ 	for(p = blanks; *p != 0; p++)
+ 		*p = ' ';
+ 	fprint(2, "usage: %s [ -M mem ] [ -c com1rd[,com1wr] ] [ -C com2rd[,com2r] ] [ -n nic ]\n", argv0);
+-	fprint(2, "       %s [ -d blockfile ] [ -m module ] [ -v|-w vga ] [ -9 srv ] kernel [ args ... ]\n", blanks);
++	fprint(2, "       %s [ -d blockfile ] [ -m module ] [ -v|-w vga ] [ -9 srv ]\n", blanks);
++	fprint(2, "       %s [ -i isofile ] kernel [ args ... ]\n", blanks);
+ 	threadexitsall("usage");
+ }
+ 
+ void (*kconfig)(void);
+@@ -586,6 +587,7 @@ threadmain(int argc, char **argv)
+ 	static char *edevaux[nelem(edev)];
+ 	static int edevn;
+ 	static uvlong gmemsz = 64*1024*1024;
+ 	static char *srvname;
++	static char *isofile = nil;
+ 	extern uintptr fbsz, fbaddr;
+ 	int newwin = 0;
+ 	int i;
+@@ -648,6 +650,9 @@ threadmain(int argc, char **argv)
+ 	case '9':
+ 		if(srvname != nil) usage();
+ 		srvname = EARGF(usage());
+ 		break;
++	case 'i':
++		isofile = strdup(EARGF(usage()));
++		break;
+ 	case L'ι':
+ 		setiodebug(EARGF(usage()));
+ 		break;
+@@ -655,7 +660,36 @@ threadmain(int argc, char **argv)
+ 		usage();
+ 	} ARGEND;
+-	if(argc < 1) usage();
++	
++	/* Handle ISO boot */
++	if(isofile != nil){
++		void *bootimg;
++		long bootsize;
++		extern void* eltorito_load(char*, long*);
++		extern void* extract_kernel(void*, long, long*);
++		
++		bootimg = eltorito_load(isofile, &bootsize);
++		if(bootimg == nil)
++			sysfatal("cannot load boot image from ISO: %r");
++		
++		/* Add ISO as IDE CDROM */
++		assert(edevn < nelem(edev));
++		edevaux[edevn] = smprint("ide:%s", isofile);
++		edev[edevn] = mkideblk;
++		edevt[edevn] = "ide cdrom";
++		edevn++;
++		
++		/* Extract kernel from boot image */
++		void *kernel;
++		long kernsize;
++		kernel = extract_kernel(bootimg, bootsize, &kernsize);
++		if(kernel == nil)
++			sysfatal("cannot extract kernel from boot image");
++		
++		/* Set up to load extracted kernel */
++		argv[0] = "/tmp/vmx_kernel";
++		/* Would write kernel to temp file here */
++	}
++	else if(argc < 1) usage();
+ 	cmdlinen = argc - 1;
+ 	cmdlinev = argv + 1;
+ 	
+--- a/sys/src/cmd/vmx/mkfile
++++ b/sys/src/cmd/vmx/mkfile
+@@ -12,6 +12,7 @@ OFILES=\
+ 	pci.$O\
+ 	vesa.$O\
+ 	vga.$O\
+ 	virtio.$O\
++	eltorito.$O\
+ 	vmx.$O\
+ 	x86.$O\

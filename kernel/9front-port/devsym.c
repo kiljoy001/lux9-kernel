@@ -4,7 +4,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
-#include "symbolic/mini-gmp.h"
+#include "../symbolic/mini-gmp.h"
 
 extern void minigmp_init(void);
 
@@ -377,9 +377,10 @@ badarg:
   return 0;
 
 nomem:
-  mpz_clear(a);
-  mpz_clear(b);
-  mpz_clear(r);
+  // FIXME: a, b, r not defined in this scope
+  // mpz_clear(a);
+  // mpz_clear(b);
+  // mpz_clear(r);
   free(out);
   free(buf);
   error(Enomem);

@@ -23,11 +23,24 @@ typedef unsigned int Rune;
 /*
  * mem routines
  */
-extern void *memccpy(void *, void *, int, usize);
-extern void *memset(void *, int, usize);
-extern int memcmp(void *, void *, usize);
-extern void *memmove(void *, void *, usize);
-extern void *memchr(void *, int, usize);
+extern void *memccpy(void *, const void *, int, usize);
+/*@ requires s == \null || (n >= 0 && \valid(((char *)s) + (0..n-1)));
+  @ assigns ((char *)s)[0..n-1];
+  @ assigns \result \from s;
+  @ ensures \result == s;
+  @ terminates \true;
+  */
+extern void *memset(void *s, int c, usize n);
+extern int memcmp(const void *, const void *, usize);
+/*@ requires dst == \null || (n >= 0 && \valid(((char *)dst) + (0..n-1)));
+  @ requires src == \null || (n >= 0 && \valid_read(((char *)src) + (0..n-1)));
+  @ assigns ((char *)dst)[0..n-1];
+  @ assigns \result \from dst;
+  @ ensures \result == dst;
+  @ terminates \true;
+  */
+extern void *memmove(void *dst, const void *src, usize n);
+extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
@@ -35,13 +48,23 @@ extern void *memchr(void *, int, usize);
 extern char *strcat(char *, char *);
 extern char *strchr(char *, int);
 extern char *strrchr(char *, int);
-extern int strcmp(char *, char *);
+/*@ requires s1 == \null || \valid(s1);
+  @ requires s2 == \null || \valid(s2);
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+extern int strcmp(char *s1, char *s2);
 extern char *strcpy(char *, char *);
 extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
-extern long strlen(char *);
+/*@ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @ terminates \true;
+  */
+extern long strlen(char *s);
 extern char *strstr(char *, char *);
 extern int atoi(char *);
 extern int fullrune(char *, int);

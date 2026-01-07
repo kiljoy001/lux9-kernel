@@ -194,7 +194,7 @@ void trap(Ureg *ureg) {
 
   /* DEBUG: Show first few traps during boot */
   trap_count++;
-  if (trap_count <= 10 || vno < 32) {
+  if ((trap_count <= 10 || vno < 32) && boot_verbose) {
     uintptr pc = ureg->pc;
     print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
           ureg->sp, userureg(ureg));
@@ -436,7 +436,7 @@ static void faultamd64(Ureg *ureg, void *) {
 
   /* Enhanced debug - show detailed fault info */
   fault_count++;
-  if (fault_count <= 20 || fault_count % 100 == 0) {
+  if ((fault_count <= 20 || fault_count % 100 == 0) && boot_verbose) {
     print("\n=== PAGE FAULT #%d ===\n", fault_count);
     print("  Address:    %#p\n", addr);
     print("  PC:         %#p\n", ureg->pc);
@@ -580,7 +580,7 @@ void syscall(Ureg *ureg) {
     scname = syscallnames[scallnr];
 
   /* Print syscall entry for first few and every 100th */
-  if (syscall_count <= 50 || syscall_count % 100 == 0)
+  if ((syscall_count <= 50 || syscall_count % 100 == 0) && boot_verbose)
     print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p cx=%#p\n", syscall_count,
           scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
 
@@ -589,7 +589,8 @@ void syscall(Ureg *ureg) {
    * All operations come from 9P messages in the exchange page.
    * No legacy syscall ABI - rbp is not used.
    */
-  int result = p9_handle_doorbell(up);
+  int result = p9_handle_doorbell(up, ureg);
+  print("!!!___DEBUG_RESULT___!!!: %d\n", result);
   if (result < 0) {
     /* No valid message in exchange page - this is an error in pure 9P mode.
      * The userspace must write a valid 9P message before issuing syscall.

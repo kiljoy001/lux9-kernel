@@ -118,17 +118,42 @@ void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
 
 #else
 
-#include "pebble_kernel.h"
 #include "../wasm_kernel_alloc.h"
+#include "pebble_kernel.h"
 
 void *m3_Malloc_Impl(size_t i_size) {
-  return wasm_heap_alloc(i_size);
+  extern void *malloc(unsigned long);
+  return malloc(i_size);
 }
 
-void m3_Free_Impl(void *io_ptr) { wasm_heap_free(io_ptr); }
+void m3_Free_Impl(void *io_ptr) {
+  extern void free(void *);
+  if (io_ptr)
+    free(io_ptr);
+}
 
 void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
-  return wasm_heap_realloc(i_ptr, i_newSize, i_oldSize);
+  extern void *malloc(unsigned long);
+  extern void free(void *);
+  /* Explicitly declare memcpy to avoid implicit declaration warnings */
+  extern void *memcpy(void *, const void *, unsigned long);
+
+  if (i_newSize == 0) {
+    if (i_ptr)
+      free(i_ptr);
+    return ((void *)0);
+  }
+
+  void *new_ptr = malloc(i_newSize);
+  if (!new_ptr)
+    return ((void *)0);
+
+  if (i_ptr) {
+    size_t copy_size = (i_oldSize < i_newSize) ? i_oldSize : i_newSize;
+    memcpy(new_ptr, i_ptr, copy_size);
+    free(i_ptr);
+  }
+  return new_ptr;
 }
 
 #endif

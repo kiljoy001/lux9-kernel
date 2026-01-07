@@ -182,7 +182,7 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   alloc->msgord_id = (uint)msg_id;
 
   /* Add to global tracking list */
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
   alloc->next = kernel_allocs_head;
   alloc->prev = nil;
   if (kernel_allocs_head)
@@ -197,7 +197,7 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   if (kernel_pebble_stats.current_white > kernel_pebble_stats.peak_white)
     kernel_pebble_stats.peak_white = kernel_pebble_stats.current_white;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
   return alloc;
 }
@@ -217,10 +217,10 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
   if (alloc == nil)
     error(PEBBLE_E_BADARG);
 
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
 
   if (alloc->is_black) {
-    unlock(&kernel_allocs_lock);
+    iunlock(&kernel_allocs_lock);
     return; /* Already BLACK, idempotent */
   }
 
@@ -234,7 +234,7 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
   if (kernel_pebble_stats.current_black > kernel_pebble_stats.peak_black)
     kernel_pebble_stats.peak_black = kernel_pebble_stats.current_black;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
   /* Track transition in MSGORD - SKIP during boot */
   if (up != nil && msgord != nil) {
@@ -263,7 +263,7 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
   if (alloc == nil)
     return;
 
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
 
   /* Remove from tracking list */
   if (alloc->prev)
@@ -283,7 +283,7 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
   else
     kernel_pebble_stats.current_white--;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
   /* Track free in MSGORD - SKIP during boot */
   if (up != nil && msgord != nil) {
@@ -342,7 +342,7 @@ void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
     @ requires black == \null || \valid(black);
     @ assigns *reserves, *activates, *frees, *white, *black;
     @*/
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
   if (reserves)
     *reserves = kernel_pebble_stats.total_reserves;
   if (activates)
@@ -353,7 +353,7 @@ void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
     *white = kernel_pebble_stats.current_white;
   if (black)
     *black = kernel_pebble_stats.current_black;
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 }
 
 /*
@@ -372,7 +372,7 @@ void pebble_kernel_free_ptr(void *ptr) {
   if (ptr == nil)
     return;
 
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
   curr = kernel_allocs_head;
   while (curr) {
     if (curr->ptr == ptr) {
@@ -386,7 +386,7 @@ void pebble_kernel_free_ptr(void *ptr) {
     }
     curr = curr->next;
   }
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
   if (curr) {
     pebble_kernel_free(curr);

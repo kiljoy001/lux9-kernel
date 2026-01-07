@@ -1,9 +1,7 @@
 #ifndef _UUID_H_
 #define _UUID_H_
 
-typedef struct {
-  unsigned char data[16];
-} uuid_t;
+#include "u.h"
 
 /* UUID Manipulation Functions */
 void uuid_clear(uuid_t *u);
@@ -47,9 +45,17 @@ void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
                           unsigned char perms);
 
 int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
-                            unsigned char *type, unsigned char *perms);
+                           unsigned char *type, unsigned char *perms);
 
 /* Extract PA hash bits from capability UUID (94 bits total) */
 void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out);
+
+/* Lux9 Secure PID2 Packing */
+void uuid_pack_pid_lux9(uuid_t *u, const uuid_t *parent_uuid,
+                        const u8int *namespace_cid, const u8int *code_hash);
+
+/* Helper to verify PID2 components */
+int uuid_verify_pid_lux9(const uuid_t *pid2, const uuid_t *parent_uuid,
+                         const u8int *namespace_cid, const u8int *code_hash);
 
 #endif /* _UUID_H_ */

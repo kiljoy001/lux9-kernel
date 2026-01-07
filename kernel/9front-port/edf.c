@@ -468,16 +468,16 @@ void edfyield(void) {
   up->tf = releaseintr;
   up->ta = up;
   up->trend = &up->sleep;
-  timeradd(up);
+  timeradd(&up->timer);
   edfunlock();
   if (waserror()) {
     up->trend = nil;
-    timerdel(up);
+    timerdel(&up->timer);
     nexterror();
   }
   sleep(&up->sleep, yfn, nil);
   up->trend = nil;
-  timerdel(up);
+  timerdel(&up->timer);
   poperror();
 }
 

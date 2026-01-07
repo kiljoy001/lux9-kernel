@@ -4,9 +4,20 @@
 #include "monocypher.h"
 #include "pebble.h"
 #include "portlib.h"
+#include "libsec.h"
 #include "u.h"
 #include <error.h>
 
+/*@ requires buf != \null;
+  @ requires nbytes >= 0;
+  @ assigns \nothing;
+  @ terminates \true;
+  */
+extern void genrandom(uchar *buf, int nbytes);
+
+/*@ assigns \result \from s;
+  @ terminates \true;
+  */
 extern char *getconf(char *);
 extern int tpm2_seal_to_srk(const u8int *data, u16int data_len,
                             const u8int *auth, u16int auth_len, u8int *blob_out,
@@ -185,9 +196,10 @@ void vault_cleanup_process(int pid) {
 /* INVARIANT: Locked implies data is encrypted
  * Corresponds to lock_encryption_invariant in ramdisk_state.v
  */
-/*@ requires \valid(&secure_rd);
-  @ ensures (secure_rd.locked == 1 && secure_rd.initialized == 1) ==>
-  @   (\valid(secure_rd.data) && secure_rd.size >= 24);
+/*@ requires v != \null;
+  @ requires \valid(v);
+  @ ensures (v->locked == 1 && v->initialized == 1) ==>
+  @   (\valid(v->data) && v->size >= 24);
   @ assigns \nothing;
   */
 static void check_lock_invariant(ProcessVault *v) {
@@ -203,10 +215,11 @@ static void check_lock_invariant(ProcessVault *v) {
 /* INVARIANT: Initialized implies master key is set
  * Corresponds to init_key_invariant in ramdisk_state.v
  */
-/*@ requires \valid(&secure_rd);
-  @ requires \valid(secure_rd.master_key + (0..31));
-  @ ensures (secure_rd.initialized == 1) ==>
-  @   (\exists integer j; 0 <= j < 32 && secure_rd.master_key[j] != 0);
+/*@ requires v != \null;
+  @ requires \valid(v);
+  @ requires \valid(v->master_key + (0..31));
+  @ ensures (v->initialized == 1) ==>
+  @   (\exists integer j; 0 <= j < 32 && v->master_key[j] != 0);
   @ assigns \nothing;
   */
 static void check_init_invariant(ProcessVault *v) {
@@ -229,8 +242,9 @@ static void check_init_invariant(ProcessVault *v) {
 /* INVARIANT: Refcount matches number of open channels
  * Corresponds to refcount_invariant in ramdisk_state.v
  */
-/*@ requires \valid(&secure_rd);
-  @ ensures secure_rd.refcount >= 0;
+/*@ requires v != \null;
+  @ requires \valid(v);
+  @ ensures v->refcount >= 0;
   @ assigns \nothing;
   */
 static void check_refcount_invariant(ProcessVault *v) {
@@ -257,7 +271,6 @@ static void check_refcount_invariant(ProcessVault *v) {
   @
   @ behavior null_or_zero:
   @   assumes data == \null || size == 0;
-  @   ensures \result == \nothing;
   @   assigns \nothing;
   @
   @ behavior valid_wipe:
@@ -270,11 +283,14 @@ static void check_refcount_invariant(ProcessVault *v) {
   */
 static void secure_wipe(uchar *data, ulong size) {
   ulong i;
-  extern void genrandom(uchar * buf, int nbytes);
   extern void (*coherence)(void);
 
   if (data == nil || size == 0)
     return;
+
+  /*@ assert data != \null; */
+  /*@ assert size > 0; */
+  /*@ assert \valid(data + (0..size-1)); */
 
   if (!getconf("quiet"))
     print("ramdisk: wiping vault (7-pass)...\n");
@@ -288,8 +304,15 @@ static void secure_wipe(uchar *data, ulong size) {
   coherence();
 
   /* Pass 3: Write random */
+  /*@ loop invariant 0 <= i <= size;
+    @ loop invariant size > 0;
+    @ loop assigns i, data[0..size-1];
+    @ loop variant size - i;
+    */
   for (i = 0; i < size; i += 256) {
-    ulong chunk = (size - i) > 256 ? 256 : (size - i);
+    int chunk = (size - i) > 256 ? 256 : (int)(size - i);
+    /*@ assert 0 < chunk <= 256; */
+    /*@ assert i + (ulong)chunk <= size; */
     genrandom(data + i, chunk);
   }
   coherence();
@@ -303,8 +326,15 @@ static void secure_wipe(uchar *data, ulong size) {
   coherence();
 
   /* Pass 6: Write random */
+  /*@ loop invariant 0 <= i <= size;
+    @ loop invariant size > 0;
+    @ loop assigns i, data[0..size-1];
+    @ loop variant size - i;
+    */
   for (i = 0; i < size; i += 256) {
-    ulong chunk = (size - i) > 256 ? 256 : (size - i);
+    int chunk = (size - i) > 256 ? 256 : (int)(size - i);
+    /*@ assert 0 < chunk <= 256; */
+    /*@ assert i + (ulong)chunk <= size; */
     genrandom(data + i, chunk);
   }
   coherence();
@@ -384,7 +414,9 @@ static int derive_key_from_password(const char *password, uchar *salt,
  * security. Verified against nonce_freshness_invariant in ramdisk_state.v
  */
 
-/*@ requires data == \null || \valid(data + (0..data_size-1));
+/*@ requires v != \null;
+  @ requires \valid(v);
+  @ requires data == \null || \valid(data + (0..data_size-1));
   @ requires key == \null || \valid(key + (0..31));
   @ requires data_size >= 24;
   @
@@ -398,14 +430,13 @@ static int derive_key_from_password(const char *password, uchar *salt,
   @     data[i] == \old(data[i]) || data[i] != \old(data[i]);
   @   ensures \forall integer i; 24 <= i < data_size ==>
   @     data[i] != \old(data[i]);
-  @   assigns data[0..data_size-1], secure_rd.current_nonce[0..23];
+  @   assigns data[0..data_size-1], v->current_nonce[0..23];
   @
   @ complete behaviors;
   @ disjoint behaviors;
   */
 static void xchacha20_encrypt_with_fresh_nonce(ProcessVault *v, uchar *data,
                                                ulong data_size, uchar *key) {
-  extern void genrandom(uchar * buf, int nbytes);
   uchar fresh_nonce[24];
   uint64_t ctr = 0;
 
@@ -488,21 +519,9 @@ static int ramstat(Chan *c, uchar *dp, int n) {
 }
 
 /*@ requires \valid(c);
-  @ requires secure_rd.refcount >= 0;
-  @
-  @ behavior secureram_open:
-  @   assumes (ulong)c->qid.path == Qsecureram;
-  @   ensures secure_rd.refcount == \old(secure_rd.refcount) + 1;
-  @   ensures secure_rd.refcount > 0;
-  @   assigns secure_rd.refcount, c->offset, c->aux;
-  @
-  @ behavior other_open:
-  @   assumes (ulong)c->qid.path != Qsecureram;
-  @   ensures secure_rd.refcount == \old(secure_rd.refcount);
-  @   assigns c->offset, c->aux;
-  @
-  @ complete behaviors;
-  @ disjoint behaviors;
+  @ assigns c->offset, c->aux, c->qid, c->mode, vault_list, next_vault_id;
+  @ ensures c->aux == \null || \valid((ProcessVault *)c->aux);
+  @ ensures c->aux != \null ==> ((ProcessVault *)c->aux)->refcount > 0;
   */
 static Chan *ramopen(Chan *c, int omode) {
   ProcessVault *v;
@@ -590,21 +609,15 @@ static Chan *ramopen(Chan *c, int omode) {
 }
 
 /*@ requires \valid(c);
-  @ requires secure_rd.refcount >= 0;
-  @
-  @ behavior secureram_close:
-  @   assumes (ulong)c->qid.path == Qsecureram && secure_rd.refcount > 0;
-  @   ensures secure_rd.refcount == \old(secure_rd.refcount) - 1;
-  @   ensures (secure_rd.refcount == 0 && secure_rd.locked == 1 &&
-  \valid(secure_rd.data)) ==>
-  @     (\forall integer i; 0 <= i < secure_rd.size ==> secure_rd.data[i] == 0);
-  @   assigns secure_rd.refcount, secure_rd.data[0..secure_rd.size-1];
-  @
+  @ behavior vault_close:
+  @   assumes c->aux != \null;
+  @   assigns ((ProcessVault *)c->aux)->refcount,
+  @           ((ProcessVault *)c->aux)->data[0..((ProcessVault *)c->aux)->size-1],
+  @           ((ProcessVault *)c->aux)->master_key[0..31];
   @ behavior other_close:
-  @   assumes (ulong)c->qid.path != Qsecureram || secure_rd.refcount == 0;
-  @   ensures secure_rd.refcount == \old(secure_rd.refcount);
+  @   assumes c->aux == \null;
   @   assigns \nothing;
-  @
+  @ ensures c->aux == \null || \valid((ProcessVault *)c->aux);
   @ complete behaviors;
   @ disjoint behaviors;
   */

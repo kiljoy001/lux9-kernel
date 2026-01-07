@@ -1,0 +1,113 @@
+--- a/sys/src/cmd/vmx/vmx.c
++++ b/sys/src/cmd/vmx/vmx.c
+@@ -6,6 +6,10 @@
+ #include "dat.h"
+ #include "fns.h"
+ 
++/* SeaBIOS El Torito boot support */
++extern int seabios_cdrom_boot(char*, void*, void**, long*);
++extern int seabios_is_bootable(char*);
++
+ char *segname;
+ int segrclose;
+ Region *mmap;
+@@ -574,6 +578,7 @@ usage(void)
+ 	fprint(2, "usage: %s [ -M mem ] [ -c com1rd[,com1wr] ] [ -C com2rd[,com2r] ] [ -n nic ]\n", argv0);
+ 	fprint(2, "       %s [ -d blockfile ] [ -m module ] [ -v|-w vga ] [ -9 srv ] kernel [ args ... ]\n", blanks);
++	fprint(2, "       %s -i isofile (boots directly from ISO using SeaBIOS code)\n", blanks);
+ 	threadexitsall("usage");
+ }
+ 
+@@ -588,6 +593,7 @@ threadmain(int argc, char **argv)
+ 	static int edevn;
+ 	static uvlong gmemsz = 64*1024*1024;
+ 	static char *srvname;
++	static char *isofile = nil;
+ 	extern uintptr fbsz, fbaddr;
+ 	int newwin = 0;
+ 	int i;
+@@ -632,6 +638,18 @@ threadmain(int argc, char **argv)
+ 		}
+ 		edevn++;
+ 		break;
++	case 'i':
++		/* ISO boot using SeaBIOS El Torito code */
++		isofile = strdup(EARGF(usage()));
++		/* Add ISO as IDE CDROM for guest access */
++		assert(edevn < nelem(edev));
++		edevaux[edevn] = smprint("ide:%s", isofile);
++		edev[edevn] = mkideblk;
++		edevt[edevn] = "ide cdrom";
++		edevn++;
++		/* Don't require kernel argument */
++		argc = 1;
++		break;
+ 	case 'D':
+ 		debug++;
+ 		break;
+@@ -655,7 +673,50 @@ threadmain(int argc, char **argv)
+ 	default:
+ 		usage();
+ 	} ARGEND;
+-	if(argc < 1) usage();
++	
++	/* Handle ISO boot with SeaBIOS code */
++	if(isofile != nil){
++		struct {
++			u8int media;
++			u8int emulated_drive;
++			u32int ilba;
++			u16int sector_count;
++			u16int load_segment;
++			u16int buffer_segment;
++			struct {
++				u16int sptcyl;
++				u16int cyllow;
++				u8int heads;
++			} chs;
++			u8int controller_index;
++			u8int device_spec;
++			u32int size;
++		} CDEmu;
++		void *bootimg;
++		long bootsize;
++		int ret;
++		
++		/* Check if ISO is bootable */
++		if(!seabios_is_bootable(isofile))
++			sysfatal("%s: not a bootable El Torito ISO", isofile);
++		
++		/* Boot using SeaBIOS code */
++		ret = seabios_cdrom_boot(isofile, &CDEmu, &bootimg, &bootsize);
++		if(ret != 0)
++			sysfatal("SeaBIOS cdrom_boot failed: error %d", ret);
++		
++		print("ISO boot: loaded %ld bytes from LBA %ud\n", bootsize, CDEmu.ilba);
++		
++		/* Write boot image to temp file for VMX to load */
++		char tmpfile[256];
++		snprint(tmpfile, sizeof(tmpfile), "/tmp/vmx_boot.%d", getpid());
++		int fd = create(tmpfile, OWRITE|ORCLOSE, 0600);
++		if(fd < 0 || write(fd, bootimg, bootsize) != bootsize)
++			sysfatal("cannot write boot image: %r");
++		close(fd);
++		free(bootimg);
++		
++		/* VMX will load this as kernel */
++		argv[0] = tmpfile;
++		cmdlinen = 0;
++	} else if(argc < 1)
++		usage();
+ 	cmdlinev = argv + 1;
+ 	
+ 	if(gmemsz < 1<<20) sysfatal("640 KB of RAM is not enough for everyone");
+--- a/sys/src/cmd/vmx/mkfile
++++ b/sys/src/cmd/vmx/mkfile
+@@ -14,6 +14,7 @@ OFILES=\
+ 	vga.$O\
+ 	virtio.$O\
+ 	vmx.$O\
++	seabios_eltorito.$O\
+ 	x86.$O\
+ 
+ </sys/src/hdr

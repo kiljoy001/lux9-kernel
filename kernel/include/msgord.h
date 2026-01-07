@@ -146,10 +146,10 @@ void msgord_destroy_instance(MsgOrd *dag);
 MsgOrd *msgord_get(int id);
 
 /* Submit 9P message for ordering - REPLACES p9_route() */
-int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path);
+int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path, u64int nonce);
 
 /* Submit raw data for ordering */
-int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len);
+int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len, u64int nonce);
 
 /* Get next ordered message ready for delivery */
 OrdMsg *msgord_next(MsgOrd *dag);
@@ -207,7 +207,7 @@ typedef void (*MsgordCallback)(OrdMsg *msg, int status, void *arg);
 
 /* Submit 9P message with completion callback */
 uint msgord_submit_async(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
-                         MsgordCallback cb, void *cb_arg);
+                         MsgordCallback cb, void *cb_arg, u64int nonce);
 
 /* Find message by ID */
 OrdMsg *msgord_find_by_id(MsgOrd *dag, uint id);
@@ -240,7 +240,7 @@ int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
  * consensus_depth.c)
  * t and r are Fcall* but declared as void* for header independence */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                              char *path, int depth, uint *msg_id_out);
+                              char *path, int depth, uint *msg_id_out, u64int nonce);
 
 /* Macro alias for backwards compatibility */
 #define msgord_submit_async_ex msgord_submit_async_depth

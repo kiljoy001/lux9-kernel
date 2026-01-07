@@ -216,7 +216,8 @@ void *xspanalloc(ulong size, int align, ulong span) {
 
 /*@
   requires size < 0x80000000; // Reasonable size limit
-  ensures \result != \null ==> \valid((char*)\result + (0..size-1));
+  ensures \result != \null && size > 0 ==> \valid((char*)\result + (0..size-1));
+  ensures \result != \null && size == 0 ==> \valid((char*)\result);
   ensures \result != \null ==> ((uintptr)\result % 8) == 0; // Alignment
   assigns \result \from size, xlists;
   // property: preserves valid_holes invariant per
@@ -230,7 +231,7 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
   uintptr addr_check;
 
   /* DEBUG removed - causes recursion */
-  if (size >= 4096)
+  if (0 && size >= 4096 && boot_verbose)
     xtrace("xallocz start size=%lud zero=%d caller=%#p\n", size, zero,
            getcallerpc(&size));
 
@@ -246,7 +247,8 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
 
   /* Additional check for unreasonably large allocations */
   if (size > 128 * 1024 * 1024) { /* More than 128MB */
-    /* print("xallocz: unreasonably large allocation request: %lud bytes\n", size); */
+    /* print("xallocz: unreasonably large allocation request: %lud bytes\n",
+     * size); */
     panic("xallocz: unreasonably large allocation request (size=%lud)", size);
   }
 
@@ -256,12 +258,13 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
 
   /* Only print for large allocations to reduce verbose output */
   if (size >= 4096) {
-    xtrace("xallocz: adjusted size %lud bytes\n", size);
+    // print("xallocz: adjusted size %lud bytes\n", size);
   }
 
   /* DEBUG: Print before lock attempt */
+  // print("xallocz: locked size=%lud\n", size);
   ilock(&xlists.lk);
-  if (size >= 4096)
+  if (size >= 4096 && boot_verbose)
     xtrace("xallocz: locked size=%lud\n", size);
 
   l = &xlists.table;
@@ -320,11 +323,13 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
 
       /* TEST 2A: Track allocation success */
       xalloc_successes++;
-      if (size >= 4096)
+      if (size >= 4096 && boot_verbose)
         xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
-      xtrace("xallocz: about to return p->data=%p\n", p->data);
+      if (boot_verbose)
+        xtrace("xallocz: about to return p->data=%p\n", p->data);
 
-      /* Borrow Checker: Acquire kernel ownership of allocated memory (unless RAW) */
+      /* Borrow Checker: Acquire kernel ownership of allocated memory (unless
+       * RAW) */
       if (!raw) {
         BORROW_ACQUIRE_ALLOC(p->data, size - overhead);
       }
@@ -335,7 +340,7 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
     l = &h->link;
   }
   iunlock(&xlists.lk);
-  if (size >= 4096)
+  if (size >= 4096 && boot_verbose)
     xtrace("xallocz failure size=%lud\n", size);
 
   /* TEST 2A: Track allocation failure */
@@ -346,21 +351,15 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
   return nil;
 }
 
-void *xallocz(ulong size, int zero) {
-  return xalloc_internal(size, zero, 0);
-}
+void *xallocz(ulong size, int zero) { return xalloc_internal(size, zero, 0); }
 
 void *xallocz_raw(ulong size, int zero) {
   return xalloc_internal(size, zero, 1);
 }
 
-void *xalloc(ulong size) {
-  return xalloc_internal(size, 1, 0);
-}
+void *xalloc(ulong size) { return xalloc_internal(size, 1, 0); }
 
-void *xalloc_raw(ulong size) {
-  return xalloc_internal(size, 1, 1);
-}
+void *xalloc_raw(ulong size) { return xalloc_internal(size, 1, 1); }
 
 /*@
   // Header is valid implied by pointer being allocated

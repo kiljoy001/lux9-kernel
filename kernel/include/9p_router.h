@@ -36,8 +36,9 @@
 /* Legacy aliases (for transition) */
 #define P9_REQUEST_OFFSET P9_MSG_OFFSET
 #define P9_REQUEST_SIZE P9_MSG_SIZE
-#define P9_REPLY_OFFSET P9_MSG_OFFSET /* Same location - ownership-flip model  \
-                                       */
+#define P9_REPLY_OFFSET                                                        \
+  P9_MSG_OFFSET /* Same location - ownership-flip model                        \
+                 */
 #define P9_REPLY_SIZE P9_MSG_SIZE
 
 /* Fixed user virtual address for the Exchange Page (below stack at
@@ -97,7 +98,7 @@ typedef struct PebbleToken {
 void p9_router_init(void);
 int p9_alloc_page(Proc *p);
 void p9_free_page(Proc *p);
-int p9_handle_doorbell(Proc *p);
+int p9_handle_doorbell(Proc *p, Ureg *ureg);
 int p9_route(Proc *p, Fcall *t, Fcall *r);
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r);
 

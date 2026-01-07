@@ -127,18 +127,21 @@ void main(void) {
   int pid;
 
   init_print("=== Lux9 Init Starting ===\n");
+  init_print("init: I AM NEW! Build ID: 1\n");
   init_print("init: Starting resurrection server...\n");
 
   /* Fork resurrection server */
-  /* Use RFMEM to share memory and avoid COW on exchange page */
-  pid = sys_rfork(RFPROC | RFMEM);
+  /* Use RFPROC (COW) to ensure separate exchange pages to prevent race
+   * conditions */
+  pid = sys_rfork(RFPROC);
 
   if (pid == 0) {
     /* Child - exec resurrection */
-    sys_exec("#/./boot/resurrection");
-    init_print("init: exec resurrection failed\n");
-    for (;;)
-      ;
+    init_print("init: Child starting, calling exec /boot/resurrection\n");
+    sys_exec("/boot/resurrection");
+    /* Should not return */
+    init_print("init: Failed to exec resurrection server\n");
+    sys_exit("exec failed");
   }
 
   if (pid < 0) {
@@ -150,6 +153,10 @@ void main(void) {
   init_print("init: Resurrection server started (PID ");
   /* TODO: print pid number */
   init_print(")\n");
+
+  /* LUX_FIX: Wait for resurrection server to mount /srv (simple delay) */
+  /* Sleep removed due to hang - relying on scheduler */
+  // sys_sleep(500);
 
   init_print("init: Registering services...\n");
   register_service("rump_server", "/boot/rump_server");

@@ -132,8 +132,8 @@ void confinit(void) {
     conf.nproc *= 3;
   if (conf.nproc > 4000)
     conf.nproc = 4000;
-  /* Temporary: limit to 100 procs for early boot debugging */
-  if (conf.nproc > 100)
+  /* Set minimum of 100 procs */
+  if (conf.nproc < 100)
     conf.nproc = 100;
   conf.nimage = 200;
   conf.nswap = conf.nproc * 80;
@@ -322,7 +322,8 @@ void main_after_cr3(void) {
 
     /* 2. Set critical kernel variables using kconf_set (safe for early boot) */
     /* Note: setconfenv() is NOT called here - it uses ksetenv() which requires
-     * channels/processes. We'll call it later in init0() after proc0 is ready. */
+     * channels/processes. We'll call it later in init0() after proc0 is ready.
+     */
     kconf_set("cputype", "amd64");
     kconf_set("service", cpuserver ? "cpu" : "terminal");
 
@@ -550,9 +551,8 @@ void init0(void) {
   /* Check if this is a WASM process */
   if (up->wasm.initialized) {
     print("BOOT[init0]: Executing WASM process (pid=%lu)\n", up->pid);
-    extern void wasm_exec_run(void *start_func);
     /* Entry point holds the start_func pointer for WASM */
-    wasm_exec_run((void *)up->entry_point);
+    wasm_exec_run((struct M3Function *)up->entry_point);
     /* NOTREACHED */
   }
 

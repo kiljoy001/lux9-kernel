@@ -1,0 +1,5 @@
+#!/bin/rc
+# Build VMX with ISO support
+cd /sys/src/cmd/vmx
+mk clean
+mk

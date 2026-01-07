@@ -369,6 +369,9 @@ int fault(uintptr addr, uintptr pc, int read) {
   char *sps;
   int pnd, ins, attr;
 
+  print("fault: ENTRY addr=%#llx pc=%#llx pid=%ld\n", (unsigned long long)addr,
+        (unsigned long long)pc, up ? up->pid : -1);
+
   if (up == nil)
     panic("fault: no user process pc=%#p addr=%#p", pc, addr);
 
@@ -387,12 +390,18 @@ int fault(uintptr addr, uintptr pc, int read) {
   m->pfault++;
 
   for (;;) {
-    /* Re-enable interrupts before potentially blocking seg() lookup */
-    if (up && m && up->nlocks == 0)
-      spllo();
+    /* NOTE: spllo() removed here. Previously it re-enabled interrupts
+     * which could trigger a timer interrupt -> sched() -> reschedule.
+     * For newly forked children, this caused them to be rescheduled
+     * mid-fault, never completing their TEXT page fix.
+     * Fault handling must run to completion before allowing reschedule. */
+    print("fault: calling seg(%p, %#llx, 1)\n", up, (unsigned long long)addr);
 
     s = seg(up, addr, 1); /* leaves s locked if seg != nil */
+    print("fault: seg() returned %p\n", s);
     if (s == nil) {
+      print("fault: seg lookup FAILED addr=%#llx pid=%ld\n",
+            (unsigned long long)addr, up->pid);
       up->psstate = sps;
       up->insyscall = ins;
       return -1;
@@ -446,6 +455,13 @@ int fault(uintptr addr, uintptr pc, int read) {
   up->insyscall = ins;
   up->notepending |= pnd;
 
+  /* Re-enable interrupts after fault is fully resolved.
+   * This allows timer interrupts for scheduler preemption. */
+  if (up && m && up->nlocks == 0)
+    spllo();
+
+  print("fault: DONE pid=%ld addr=%#llx returning 0\n", up->pid,
+        (unsigned long long)addr);
   return 0;
 }
 

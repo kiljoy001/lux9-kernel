@@ -1,0 +1,13 @@
+#!/bin/rc
+# Restart cmdexec cleanly
+
+echo 'Stopping cmdexec...'
+ps | grep cmdexec | awk '{print $2}' | while(pid) kill $pid
+sleep 2
+
+echo 'Removing lock...'
+rm -f /n/interop/cmdexec.lock
+
+echo 'Starting new cmdexec...'
+./cmdexec -d &
+echo 'cmdexec started'

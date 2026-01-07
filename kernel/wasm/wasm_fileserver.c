@@ -225,7 +225,7 @@ uint wasm_fs_submit(wasm_fileserver_t *server, Proc *caller, Fcall *request,
    * For now, just submit directly to msgord without exchange page
    */
 
-  uint msg_id = msgord_submit(server->msgord, caller, request, path);
+  uint msg_id = msgord_submit(server->msgord, caller, request, path, chacha20_csprng_u64());
   if (msg_id == 0) {
     print("wasm_fs: msgord_submit failed\n");
     return 0;

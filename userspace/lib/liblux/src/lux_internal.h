@@ -10,6 +10,6 @@
 #define P9_CONTROL_OFFSET 0xF00
 
 /* Assembly doorbell trigger */
-void _syscall(void);
+long _syscall(void);
 
 #endif

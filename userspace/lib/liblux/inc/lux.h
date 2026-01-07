@@ -25,6 +25,9 @@ uvlong sys_nsec(void);
 int sys_stat(char *path, uchar *buf, int nbuf);
 int sys_wstat(char *path, uchar *buf, int nbuf);
 int sys_mount(int fd, int afd, char *old, int flags, char *aname);
+int sys_sleep(long ms);
+int sys_getpid2(void *out, ulong len);
+int sys_bind(char *old, char *new, int flags);
 
 /* RFORK flags */
 #define RFPROC (1 << 4)

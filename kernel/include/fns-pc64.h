@@ -47,7 +47,11 @@ u64int	getcr3(void);
 u64int	getcr4(void);
 u64int	getxcr0(void);
 u64int	getdr6(void);
-char*	getconf(char*);
+/*@ requires s == \null || \valid(s);
+  @ assigns \result \from s;
+  @ terminates \true;
+  */
+char*	getconf(char* s);
 void	halt(void);
 void	mwait(void*);
 int	i8042auxcmd(int);

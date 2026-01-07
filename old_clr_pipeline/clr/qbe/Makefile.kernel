@@ -1,0 +1,56 @@
+# Makefile.kernel - Build QBE as kernel library
+#
+# Builds qbe.a for linking into Lux9 kernel
+
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -std=c99
+CFLAGS += -fno-builtin
+CFLAGS += -fno-stack-protector
+CFLAGS += -D_KERNEL_QBE
+CFLAGS += -DUSE_PEBBLE_ALLOC  # Enable Pebble Black token allocator
+CFLAGS += -I../../include      # Access to pebble.h
+
+# QBE core sources
+QBE_SRCS = \
+	alias.c \
+	cfg.c \
+	copy.c \
+	fold.c \
+	gas.c \
+	live.c \
+	load.c \
+	mem.c \
+	ssa.c \
+	parse.c \
+	rega.c \
+	spill.c \
+	util.c
+
+# AMD64 backend
+AMD64_SRCS = \
+	amd64/isel.c \
+	amd64/emit.c \
+	amd64/sysv.c
+
+# Use kernel-compatible util - kernel_util.c removed (functions already in kernel)
+# exchange_io.c is built by main kernel Makefile
+UTIL_SRCS = qbe_kernel_wrapper.c
+
+ALL_SRCS = $(QBE_SRCS) $(AMD64_SRCS) $(UTIL_SRCS)
+OBJECTS = $(ALL_SRCS:.c=.o)
+
+TARGET = qbe.a
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	ar rcs $@ $(OBJECTS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+	rm -f amd64/*.o
+
+.PHONY: all clean

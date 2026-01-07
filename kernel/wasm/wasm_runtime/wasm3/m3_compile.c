@@ -2927,7 +2927,7 @@ M3Result CompileFunction(IM3Function io_function) {
     u16 maxSlot = GetMaxUsedSlotPlusOne(o);
 
     o->function->numLocalBytes =
-        (maxSlot - o->slotFirstLocalIndex) * sizeof(m3slot_t);
+        (u16)((maxSlot - o->slotFirstLocalIndex) * sizeof(m3slot_t));
 
     o->slotFirstConstIndex = o->slotMaxConstIndex = maxSlot;
 

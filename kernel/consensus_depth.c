@@ -573,7 +573,7 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
     reg = global_rollback_registry;
 
   /* Submit to MSGORD with optimistic execution */
-  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id);
+  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id, chacha20_csprng_u64());
   if (result < 0)
     return result;
 

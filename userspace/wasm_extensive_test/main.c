@@ -11,21 +11,16 @@
 #define Rsyscall 131
 #define Rerror 107
 
-#define SYS_WRITE 4
-#define SYS_READ 3
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
+#define SYS_WRITE 20
+#define SYS_READ 15
+#define SYS_OPEN 14
+#define SYS_CLOSE 4
 #define SYS_SEEK 39
 #define SYS_WASM_COMPILE 100
-
-// ...
-
-// Forward declarations
-static u64int sys_seek(int fd, u64int offset, int whence);
-static int read_file(const char *path, uchar *buf, int max_len);
-
 #define SYS_WASM_EXECUTE 101
 #define SYS_WASM_DESTROY 102
+
+// ...
 
 // 9P Open modes
 #define OREAD 0
@@ -36,6 +31,10 @@ typedef unsigned long long uvlong;
 typedef unsigned long long u64int;
 typedef unsigned int u32int;
 typedef unsigned char u8int;
+
+// Forward declarations
+static u64int sys_seek(int fd, u64int offset, int whence);
+static int read_file(const char *path, uchar *buf, int max_len);
 
 /* P9 Control structure */
 struct P9Control {
@@ -205,37 +204,14 @@ static void free(void *ptr) {
 
 /* WASM Syscalls */
 
-static int wasm_compile(uchar *wasm_bytes, uint wasm_len) {
+static int wasm_compile(int fd) {
   uchar *req = (uchar *)exchange;
   uint pos = 0;
-  // sdata for SYS_WASM_COMPILE: ARGC[4] WASM_LEN[4] WASM_BYTES[WASM_LEN]
-  uint sdata_len = 4 + 4 + wasm_len;
+  // sdata for SYS_WASM_COMPILE: FD[4]
+  uint sdata_len = 4;
   uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
 
-  memset(req, 0, sizeof(heap)); // Clear request buffer (using heap size as safe
-                                // max, but req is page sized)
-  // Actually exchange is 4KB? Let's check init.c. "C init (4KB exchange)"
-  // If wasm module > 4KB, we can't send it in one Tsyscall on the exchange
-  // page? Wait, SYS_WASM_COMPILE in kernel takes pointer to buffer? No, it
-  // takes [size][bytes]. If submodule is large, we might have an issue with 4KB
-  // exchange page limit. However, the test init.c uses exchange for Tsyscall.
-  // The provided init.c uses:
-  // "C init (4KB exchange)"
-
-  // BUT the extensive test WAT might compile to small binary.
-  // Let's assume it fits for now. If not, we'd need a different mechanism (e.g.
-  // read file in kernel). Actually wasm_arena_test.c in kernel reads file
-  // content then constructs Fcall. Userspace syscalls are limited by exchange
-  // page size for arguments? In lux9 userspace, syscall arguments (sdata) are
-  // written to exchange page.
-
-  // WORKAROUND: If module is too big, this simple syscall wrapper fails.
-  // But extensive_test.wat is small.
-
-  if (size > P9_PAGE_SIZE) { // Check against actual page size
-    sys_print("Error: WASM module too large for exchange page syscall\n");
-    return -1;
-  }
+  memset(req, 0, 256);
 
   put_u32(req + pos, size);
   pos += 4;
@@ -247,13 +223,9 @@ static int wasm_compile(uchar *wasm_bytes, uint wasm_len) {
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
 
-  // sdata: [ARGC:4][wasm_len:4][wasm_bytes...]
-  put_u32(req + pos, 2); // ARGC=2 (wasm_len, wasm_bytes)
+  // sdata: FD[4]
+  put_u32(req + pos, (uint)fd);
   pos += 4;
-  put_u32(req + pos, wasm_len);
-  pos += 4;
-  memcpy(req + pos, wasm_bytes, wasm_len);
-  pos += wasm_len;
 
   ctl->doorbell = 1;
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
@@ -268,13 +240,9 @@ static int wasm_compile(uchar *wasm_bytes, uint wasm_len) {
     return -1;
   }
 
-  // Determine PID from reply? sdata usually contains return value.
-  // Rsyscall sdata for wasm_compile sends back PID (u64).
   // Rsyscall: retval[8] scount[4] sdata...
   // For compile, retval is PID (u64).
   u64int retval = get_u64(req + pos);
-  // pos += 8;
-  // scount...
   return (int)retval;
 }
 
@@ -413,8 +381,8 @@ static int sys_read(int fd, void *buf, int count, u64int offset) {
   ctl->doorbell = 1;
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
-  // CRITICAL: Parse reply and save data to local vars BEFORE any sys_print calls
-  // because sys_print reuses the exchange buffer!
+  // CRITICAL: Parse reply and save data to local vars BEFORE any sys_print
+  // calls because sys_print reuses the exchange buffer!
   pos = 0;
   get_u32(req + pos);
   pos += 4;
@@ -470,16 +438,19 @@ int main() {
   sys_print("=== Extensive WASM Userspace Test ===\n");
 
   // 1. Read WASM file
-  sys_print("Loading #/./boot/extensive_test.wasm...\n");
-  int wasm_len = read_file("#/./boot/extensive_test.wasm", heap, 64 * 1024);
-  if (wasm_len <= 0) {
-    sys_print("Failed to load WASM file\n");
+  // sys_print("Loading #/./boot/extensive_test.wasm...\n");
+  // int wasm_len = read_file("#/./boot/extensive_test.wasm", heap, 64 * 1024);
+
+  sys_print("Opening #/./boot/extensive_test.wasm...\n");
+  int fd = sys_open("#/./boot/extensive_test.wasm", OREAD);
+  if (fd < 0) {
+    sys_print("Failed to open WASM file\n");
     return 1;
   }
 
   // 2. Compile
   sys_print("Compiling WASM...\n");
-  if (wasm_compile(heap, wasm_len) < 0) {
+  if (wasm_compile(fd) < 0) {
     sys_print("Compilation failed!\n");
     return 1;
   }

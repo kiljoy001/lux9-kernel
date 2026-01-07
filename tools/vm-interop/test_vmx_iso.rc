@@ -1,0 +1,4 @@
+#!/bin/rc
+# Test VMX ISO boot with Alpine Linux
+echo 'Testing VMX ISO boot with Alpine Linux 3.19.0'
+vmx -M 512 -i /n/interop/alpine-virt-3.19.0-x86_64.iso

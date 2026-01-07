@@ -107,8 +107,10 @@ static long srvwrite(Chan *c, void *va, long n, vlong) {
   buf[n] = 0;
   fd = (int)strtoul(buf, 0, 0);
 
-  if (srv_post_fd(up, c->name->s, fd) < 0)
-    error(Eio);
+  // FIXME: Chan doesn't have name field
+  // if (srv_post_fd(up, c->name->s, fd) < 0)
+  //   error(Eio);
+  error("srv: post_fd not implemented");
   return n;
 }
 
@@ -124,8 +126,10 @@ static Chan *srvcreate(Chan *c, char *name, int omode, ulong perm) {
 static void srvremove(Chan *c) {
   if (c->qid.path == Qdir)
     error(Eperm);
-  if (srv_remove_entry(up, c->name->s) < 0)
-    error(Eperm);
+  // FIXME: Chan doesn't have name field
+  // if (srv_remove_entry(up, c->name->s) < 0)
+  //   error(Eperm);
+  error("srv: remove not implemented");
 }
 
 Dev srvdevtab = {

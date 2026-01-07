@@ -62,4 +62,5 @@
 #define PEBBLE_RED_COPY 63
 #define PEBBLE_BLUE_DISCARD 64
 #define CLR_COMPILE 65
+#define GETPID2 66
 #define CLRDEV 'x' // Placeholder for CLR Device

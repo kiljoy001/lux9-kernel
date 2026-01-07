@@ -43,10 +43,11 @@
  * - hash: Full 32-byte BLAKE2b hash for cryptographic verification
  */
 typedef struct UserCapability {
-  uuid_t uuid;                       /* 16-byte UUIDv8 public identifier */
-  u8int hash[BLIND_LEDGER_CAP_SIZE]; /* 32-byte BLAKE2b hash (security anchor) */
-  u64int size;                       /* Size of the object (Span) in bytes */
-  u32int type;                       /* Resource Type (Memory, Channel, PCI) */
+  uuid_t uuid; /* 16-byte UUIDv8 public identifier */
+  u8int
+      hash[BLIND_LEDGER_CAP_SIZE]; /* 32-byte BLAKE2b hash (security anchor) */
+  u64int size;                     /* Size of the object (Span) in bytes */
+  u32int type;                     /* Resource Type (Memory, Channel, PCI) */
   u32int perms; /* Permissions (Read, Write, Execute, Transfer) */
 } UserCapability;
 
@@ -56,6 +57,7 @@ enum {
   CAP_TYPE_CHANNEL = 2,
   CAP_TYPE_DEVICE = 3,
   CAP_TYPE_IPC = 4,
+  CAP_TYPE_SPAWN = 5,
 };
 
 /* Capability Permissions */
@@ -124,7 +126,7 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
 BlindLedgerError ledger_verify(const UserCapability *cap,
                                BlindLedgerEntry *out_entry);
 BlindLedgerError ledger_verify_by_uuid(const uuid_t *uuid,
-                                        BlindLedgerEntry *out_entry);
+                                       BlindLedgerEntry *out_entry);
 BlindLedgerError ledger_transfer(const UserCapability *cap, Proc *from_owner,
                                  Proc *to_owner);
 BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner);

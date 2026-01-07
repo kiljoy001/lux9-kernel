@@ -45,7 +45,7 @@ int lux_call(Fcall *tx, Fcall *rx) {
   /* 1. Marshal Request */
   int n = convS2M(tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
   if (n <= 0)
-    return -1;
+    return -100; /* convS2M failed */
 
   /* 2. Ring Doorbell */
   _syscall();
@@ -62,7 +62,7 @@ int lux_call(Fcall *tx, Fcall *rx) {
   uint ret = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, rx);
 
   if ((int)ret <= 0)
-    return (int)ret;
+    return -200; /* convM2S failed */
 
   if (rx->type == Rerror)
     return -1;
@@ -92,6 +92,8 @@ static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
     *retval = rx.retval;
   return 0;
 }
+
+#define SYS_BIND_RAW 2
 
 int sys_open(char *path, int mode) {
   uchar buf[1024];
@@ -253,31 +255,111 @@ int sys_create(char *path, int mode, uint perm) {
   return (int)ret;
 }
 
+extern long _syscall(void);
+
 int sys_rfork(int flags) {
+  /* Special handling for rfork:
+     Parent receives Reply Message.
+     Child receives 0 in RAX and NO Message (empty exchange page).
+  */
   uchar buf[16];
+  Fcall tx, rx;
   uchar *p = buf;
 
-  // [flags 4]
-  // [flags 4] - Kernel sysrfork expects u32int
+  memset(&tx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_RFORK;
+
+  pack32(p, flags);
+  tx.sdata = buf;
+  tx.scount = 4;
+
+  uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
+
+  /* 1. Marshal Request */
+  int n = convS2M(&tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
+  if (n <= 0)
+    return -100;
+
+  /* 2. Syscall */
+  long reg_ret = _syscall();
+
+  sys_write(1, "DEBUG: _syscall returned\n", 25);
+
+  /* 3. Handle Child */
+  if (reg_ret == 0) {
+    /* Child */
+    return 0;
+  }
+
+  /* Parent */
+  char buf[32];
+  int i = 0;
+  long n = reg_ret;
+  if (n == 0)
+    buf[i++] = '0';
+  while (n > 0) {
+    buf[i++] = (n % 10) + '0';
+    n /= 10;
+  }
+  buf[i] = '\n';
+  sys_write(1, "rfork_ret: ", 11);
+  sys_write(1, buf, i);
+
+  /* Parent reads reply from Exchange Page ... or just returns AX value? */
+  /* We fixed kernel to set AX, so we can just return reg_ret */
+  return (int)reg_ret;
+
+  /* 4. Handle Parent - Read Reply */
+  if ((u64int)&rx > 0x7FFFFFFFFFFF)
+    return -2;
+  memset(&rx, 0, sizeof(Fcall));
+
+  uint ret = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, &rx);
+  if ((int)ret <= 0)
+    return -200;
+
+  if (rx.type == Rerror)
+    return -1;
+
+  /* For Parent, kernel returns PID in retval */
+  return (int)rx.retval;
+}
+
+int sys_bind(char *old, char *new, int flags) {
+  uchar buf[1024];
+  uchar *p = buf;
+
+  p += packstr(p, old);
+  p += packstr(p, new);
   pack32(p, flags);
   p += 4;
 
-  u64int ret;
-  int err = do_syscall(SYS_RFORK, buf, p - buf, &ret);
-  if (err < 0)
-    return (int)((*(u32int *)EXCHANGE_PAGE_ADDR));
-  return (int)ret;
+  return do_syscall(SYS_BIND_RAW, buf, p - buf, nil);
+}
+
+int sys_getpid2(void *out, ulong len) {
+  uchar buf[32];
+  uchar *p = buf;
+
+  pack64(p, (uvlong)out);
+  p += 8;
+  pack64(p, (uvlong)len);
+  p += 8;
+
+  return do_syscall(SYS_GETPID2, buf, p - buf, nil);
 }
 
 void sys_exec(char *path) {
-  /* Keep using Texec for now as logic in kernel is specialized */
+  /* Use Tsysexec (162) which is cleaner and verified in kernel */
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
-  tx.type = Texec;
+  tx.type = Tsysexec;
   tx.tag = 1;
-  tx.count = 0;
   tx.name = path;
+  tx.argc = 0; /* No additional args for now */
 
   lux_call(&tx, &rx);
   /* If we return, exec failed */
@@ -449,6 +531,19 @@ int sys_mount(int fd, int afd, char *old, int flags, char *aname) {
 
   u64int ret;
   if (do_syscall(SYS_MOUNT, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_sleep(long ms) {
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyssleep;
+  tx.tag = 1;
+  tx.count = (u32int)ms;
+
+  if (lux_call(&tx, &rx) < 0)
     return -1;
   return 0;
 }

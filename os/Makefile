@@ -2,7 +2,7 @@
 # Combines kernel and userspace into complete OS
 
 # Configuration
-KERNEL_BINARY := ../lux9.elf
+KERNEL_BINARY := ../kernel/lux9.elf
 USERSPACE_INITRD := ../userspace/build/initrd.tar
 BUILD_DIR := build
 ISO_DIR := $(BUILD_DIR)/iso
@@ -12,7 +12,7 @@ LIMINE_DIR := ../boot/limine
 LIMINE_BIOS := $(LIMINE_DIR)/bin/limine-bios.sys
 LIMINE_BIOS_CD := $(LIMINE_DIR)/bin/limine-bios-cd.bin
 LIMINE_UEFI_CD := $(LIMINE_DIR)/bin/limine-uefi-cd.bin
-BOOTX64_EFI := $(LIMINE_DIR)/bin/BOOTX64.EFI
+# BOOTX64_EFI := $(LIMINE_DIR)/bin/BOOTX64.EFI
 
 # ISO tools
 XORRISO := xorriso
@@ -25,7 +25,7 @@ GENISOIMAGE := genisoimage
 all: lux9.iso
 
 # Create bootable ISO
-lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_CD) $(BOOTX64_EFI)
+lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_CD)
 	@echo "Creating bootable ISO: $@"
 	@echo "Creating ISO directory structure..."
 	@rm -rf $(ISO_DIR)
@@ -42,7 +42,7 @@ lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_C
 	@cp $(LIMINE_BIOS) $(ISO_DIR)/boot/limine/
 	@cp $(LIMINE_BIOS_CD) $(ISO_DIR)/boot/limine/
 	@cp $(LIMINE_UEFI_CD) $(ISO_DIR)/boot/limine/
-	@cp $(BOOTX64_EFI) $(ISO_DIR)/EFI/BOOT/
+	# @cp $(BOOTX64_EFI) $(ISO_DIR)/EFI/BOOT/
 	
 	# Copy limine configuration
 	@cp ../limine.conf $(ISO_DIR)/boot/limine/

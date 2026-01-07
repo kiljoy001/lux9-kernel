@@ -19,6 +19,7 @@ FAIL_LOG = os.path.join(REPO_ROOT, "verification_failures.log")
 # without inline ACSL markers.
 STATIC_ACSL_TARGETS = [
     ("kernel/9front-pc64/mmu.c", "acsl-mmu"),
+    ("kernel/9front-port/blind_ledger.c", "acsl"),
 ]
 
 # Ensure datetime values are adapted to ISO strings for sqlite3 >= 3.12.

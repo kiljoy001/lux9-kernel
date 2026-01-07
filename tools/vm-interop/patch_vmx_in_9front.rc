@@ -1,0 +1,118 @@
+#!/bin/rc
+# Script to apply VMX ISO boot patches inside 9front
+
+# Add SeaBIOS function declarations to vmx.c
+ed /sys/src/cmd/vmx/vmx.c <<'EOF'
+6a
+/* SeaBIOS El Torito boot support */
+extern int seabios_cdrom_boot(char*, void*, void**, long*);
+extern int seabios_is_bootable(char*);
+
+.
+w
+q
+EOF
+
+# Add ISO boot usage line
+ed /sys/src/cmd/vmx/vmx.c <<'EOF'
+/[ -d blockfile ]/a
+	fprint(2, "       %s -i isofile (boots directly from ISO using SeaBIOS code)\n", blanks);
+.
+w
+q
+EOF
+
+# Add isofile variable
+ed /sys/src/cmd/vmx/vmx.c <<'EOF'
+/static char \*srvname;/a
+	static char *isofile = nil;
+.
+w
+q
+EOF
+
+# Add -i option parsing
+ed /sys/src/cmd/vmx/vmx.c <<'EOF'
+/case '9':/;/break;/a
+	case 'i':
+		/* ISO boot using SeaBIOS El Torito code */
+		isofile = strdup(EARGF(usage()));
+		/* Add ISO as IDE CDROM for guest access */
+		assert(edevn < nelem(edev));
+		edevaux[edevn] = smprint("ide:%s", isofile);
+		edev[edevn] = mkideblk;
+		edevt[edevn] = "ide cdrom";
+		edevn++;
+		/* Don't require kernel argument */
+		argc = 1;
+		break;
+.
+w
+q
+EOF
+
+# Add ISO boot handling logic
+ed /sys/src/cmd/vmx/vmx.c <<'EOF'
+/} ARGEND;/a
+	
+	/* Handle ISO boot with SeaBIOS code */
+	if(isofile != nil){
+		struct {
+			u8int media;
+			u8int emulated_drive;
+			u32int ilba;
+			u16int sector_count;
+			u16int load_segment;
+			u16int buffer_segment;
+			struct {
+				u16int sptcyl;
+				u16int cyllow;
+				u8int heads;
+			} chs;
+			u8int controller_index;
+			u8int device_spec;
+			u32int size;
+		} CDEmu;
+		void *bootimg;
+		long bootsize;
+		int ret;
+		
+		/* Check if ISO is bootable */
+		if(!seabios_is_bootable(isofile))
+			sysfatal("%s: not a bootable El Torito ISO", isofile);
+		
+		/* Boot using SeaBIOS code */
+		ret = seabios_cdrom_boot(isofile, &CDEmu, &bootimg, &bootsize);
+		if(ret != 0)
+			sysfatal("SeaBIOS cdrom_boot failed: error %d", ret);
+		
+		print("ISO boot: loaded %ld bytes from LBA %ud\n", bootsize, CDEmu.ilba);
+		
+		/* Write boot image to temp file for VMX to load */
+		char tmpfile[256];
+		snprint(tmpfile, sizeof(tmpfile), "/tmp/vmx_boot.%d", getpid());
+		int fd = create(tmpfile, OWRITE|ORCLOSE, 0600);
+		if(fd < 0 || write(fd, bootimg, bootsize) != bootsize)
+			sysfatal("cannot write boot image: %r");
+		close(fd);
+		free(bootimg);
+		
+		/* VMX will load this as kernel */
+		argv[0] = tmpfile;
+		cmdlinen = 0;
+	} else
+.
+w
+q
+EOF
+
+# Update mkfile to include seabios_eltorito.c
+ed /sys/src/cmd/vmx/mkfile <<'EOF'
+/nanosec\.\$O/a
+	seabios_eltorito.$O \
+.
+w
+q
+EOF
+
+echo 'VMX patches applied successfully'

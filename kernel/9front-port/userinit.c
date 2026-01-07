@@ -29,6 +29,7 @@ extern void *initrd_base;
 extern usize initrd_size;
 extern void initrd_init(void *, usize);
 extern void initrd_register(void);
+extern void pid2_selftest(void);
 
 uintptr dbg_getpte(uintptr);
 
@@ -266,29 +267,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   *out_entry = ehdr.e_entry;
   print("ELF: Loaded successfully, entry point at 0x%llx\n", *out_entry);
 
-/* Map the exchange page for 9P syscalls at fixed address 0x7FFFFEEFF000 */
-/* Exchange page is system tax - required for 9P syscall interface */
-/* Create a dedicated segment for the exchange page (2 pages for request +
- * reply) */
-#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
-#define ESEG                                                                   \
-  4 /* Exchange segment slot - using slot 4 (between SSEG=3 and TSEG=1) */
-  print("ELF: Mapping exchange page at 0x%llx (system tax)\n",
-        EXCHANGE_PAGE_ADDR);
-
-  /* Create segment for exchange pages (2 pages: request + reply) */
-  up->seg[ESEG] = newseg(SG_DATA, EXCHANGE_PAGE_ADDR, 2);
-  up->seg[ESEG]->flushme = 1;
-
-  /* Allocate and map the exchange pages */
-  Page *exchange_page =
-      newpage(EXCHANGE_PAGE_ADDR,
-              nil); /* Charges process Pebble budget as system tax */
-  KMap *exchange_k = kmap(exchange_page);
-  memset((uchar *)VA(exchange_k), 0, BY2PG); /* Zero the exchange page */
-  kunmap(exchange_k);
-  segpage(up->seg[ESEG], exchange_page);
-  print("ELF: Exchange page mapped and ready\n");
+  /* Exchange page is now handled by kernel_setup_init_exchange() in
+   * devexchange.c */
+  /* Do NOT create ESEG here - it conflicts with P9SEG and causes segment
+   * shadowing */
 
   return 1;
 }
@@ -340,9 +322,24 @@ static void proc0(void *arg) {
   up->egrp = newegrp(); /* Use newegrp() to properly initialize all fields */
   up->fgrp = dupfgrp(nil);
   up->rgrp = newrgrp();
+
+  /* Set init namespace to allow 1024 total system processes */
+  up->pgrp->spawn_limit = 1024;
+  up->pgrp->spawn_count =
+      0; /* Start at 0 (init itself will be counted on first fork) */
+
+  /* Grant init spawn capability bound to its Pgrp */
+  up->spawn_max_children = 128; /* Init can spawn 128 direct children */
+  up->spawn_children = 0;
+  uuid_pack_capability(&up->spawn_cap, up->pgrp->identity_hash, 0,
+                       CAP_TYPE_SPAWN, 0xFF);
+  print("BOOT[proc0]: granted CAP_TYPE_SPAWN (max_children=%d)\n",
+        up->spawn_max_children);
+
   BOOTPRINT("BOOT[proc0]: process groups ready\n");
 
   pebble_selftest();
+  pid2_selftest();
 
   /*
    * These are o.k. because rootinit is null.
@@ -532,8 +529,7 @@ static void proc0(void *arg) {
               elf_entry);
       } else {
         /* Try WASM */
-        extern int wasm_exec_compile(Chan * tc, void **out_start);
-        void *start_func = nil;
+        struct M3Function *start_func = nil;
         /* Peek at magic for WASM check */
         uchar magic[4];
         if (devtab[bc->type]->read(bc, magic, 4, 0) == 4 && magic[0] == 0x00 &&
@@ -549,19 +545,8 @@ static void proc0(void *arg) {
              * compile sets it */
             print("BOOT[proc0]: WASM init loaded successfully\n");
 
-            /* WASM needs Stack and Exchange segments too */
-/* Stack is already setup (SSEG) */
-
-/* Map the exchange page for 9P syscalls */
-#define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
-#define ESEG 4
-            up->seg[ESEG] = newseg(SG_DATA, EXCHANGE_PAGE_ADDR, 2);
-            up->seg[ESEG]->flushme = 1;
-            Page *xp = newpage(EXCHANGE_PAGE_ADDR, nil);
-            KMap *xk = kmap(xp);
-            memset((uchar *)VA(xk), 0, BY2PG);
-            kunmap(xk);
-            segpage(up->seg[ESEG], xp);
+            /* Exchange page is now handled by kernel_setup_init_exchange() */
+            /* Do NOT create ESEG here - conflicts with P9SEG */
           } else {
             print("BOOT[proc0]: WASM compile failed\n");
           }

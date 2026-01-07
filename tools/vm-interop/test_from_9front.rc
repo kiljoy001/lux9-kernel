@@ -1,0 +1,12 @@
+#!/bin/rc
+# Test script for 9front
+
+timestamp=`{date}
+hostname=`{cat /dev/sysname}
+
+echo 'Testing VM Interop from' $hostname 'at' $timestamp >/n/interop/test_from_^$hostname^.txt
+echo 'Hello from 9front!' >/n/interop/from_9front.txt
+
+echo 'Created test files from 9front'
+echo 'Files in interop directory:'
+ls -l /n/interop

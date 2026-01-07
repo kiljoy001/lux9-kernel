@@ -7,8 +7,8 @@
 
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* SHA256 output size */
 #define CRYPTO_SHA256_BYTES 32
@@ -27,6 +27,7 @@
  *
  * Returns: 0 on success, -1 on error
  */
+/*@ assigns out[0..31]; */
 int crypto_sha256(uint8_t *out, const uint8_t *data, size_t len);
 
 /*
@@ -42,6 +43,7 @@ int crypto_sha256(uint8_t *out, const uint8_t *data, size_t len);
  *
  * Returns: 0 on success, -1 on error
  */
+/*@ assigns out[0..31]; */
 int crypto_hmac_sha256(uint8_t *out, const uint8_t *key, size_t keylen,
                        const uint8_t *data, size_t len);
 
@@ -61,6 +63,7 @@ int crypto_tpm_get_hmac_key(uint8_t *key_out, size_t *keylen);
 int crypto_tpm_rotate_hmac_key(void);
 
 /* TPM-backed HMAC using sealed key */
+/*@ assigns out[0..31]; */
 int crypto_tpm_hmac_sha256(uint8_t *out, const uint8_t *data, size_t len);
 
 /*
@@ -77,4 +80,5 @@ int crypto_hw_sha_available(void);
 int crypto_hw_aes_available(void);
 
 /* Hardware-accelerated SHA256 transform (internal use) */
-void sha256_transform_hw(uint32_t state[8], const uint8_t block[64], uint32_t nblocks);
+void sha256_transform_hw(uint32_t state[8], const uint8_t block[64],
+                         uint32_t nblocks);

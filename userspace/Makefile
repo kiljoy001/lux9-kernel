@@ -10,6 +10,7 @@ RUMP_DIR := rump
 INIT_DB := ../scripts/init_db.py
 TURBOCID_DIR := turbocid
 WASM_EXTENSIVE_DIR := wasm_extensive_test
+SRVCTL_DIR := srvctl
 
 .PHONY: all clean initrd sign
 
@@ -22,6 +23,7 @@ clean:
 	$(MAKE) -C $(RUMP_DIR) clean
 	$(MAKE) -C $(TURBOCID_DIR) clean
 	$(MAKE) -C $(WASM_EXTENSIVE_DIR) clean
+	$(MAKE) -C $(SRVCTL_DIR) clean
 
 # Build the C init binary
 $(C_INIT_DIR)/init:
@@ -43,6 +45,10 @@ $(TURBOCID_DIR)/turbocid:
 $(WASM_EXTENSIVE_DIR)/wasm_test:
 	$(MAKE) -C $(WASM_EXTENSIVE_DIR)
 
+# Build srvctl helper
+$(SRVCTL_DIR)/srvctl:
+	$(MAKE) -C $(SRVCTL_DIR)
+
 # Build the initrd tarball
 # Structure:
 #   boot/init         <- Init process (PID 1)
@@ -52,12 +58,12 @@ $(WASM_EXTENSIVE_DIR)/wasm_test:
 #   boot/services.conf <- Resurrection config
 #   boot/wasm_test     <- Extensive WASM test runner
 #   boot/extensive_test.wasm <- Test module
-initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server $(TURBOCID_DIR)/turbocid $(WASM_EXTENSIVE_DIR)/wasm_test
+initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server $(TURBOCID_DIR)/turbocid $(WASM_EXTENSIVE_DIR)/wasm_test $(SRVCTL_DIR)/srvctl
 	@mkdir -p $(INIT_BOOT_DIR)
 	@cp $(C_INIT_DIR)/init $(INIT_BOOT_DIR)/init
 	@cp $(RESURRECTION_DIR)/resurrection $(INIT_BOOT_DIR)/resurrection
 	@cp $(RUMP_DIR)/rump_server $(INIT_BOOT_DIR)/rump_server
-	@cp $(RUMP_DIR)/rump_server $(INIT_BOOT_DIR)/rump_server
+	@cp $(SRVCTL_DIR)/srvctl $(INIT_BOOT_DIR)/srvctl
 	@cp $(WASM_EXTENSIVE_DIR)/wasm_test $(INIT_BOOT_DIR)/wasm_test
 	@cp $(WASM_EXTENSIVE_DIR)/extensive_test.wasm $(INIT_BOOT_DIR)/extensive_test.wasm
 	@mkdir -p $(INIT_BUILD_DIR)/srv

@@ -1,0 +1,25 @@
+--- vmx.c.orig	2025-01-09
++++ vmx.c	2025-01-09
+@@ -586,6 +586,7 @@
+ 	static char *edevaux[nelem(edev)];
+ 	static int edevn;
+ 	static uvlong gmemsz = 64*1024*1024;
++	static char *isofile = nil;
+ 	static char *srvname;
+ 	extern uintptr fbsz, fbaddr;
+ 	int newwin = 0;
+@@ -635,6 +636,14 @@
+ 		edevt[edevn] = "virtio block";
+ 		edevaux[edevn++] = edevaux[edevn-1];
+ 		break;
++	case 'I':  /* Capital I for ISO */
++		assert(edevn < nelem(edev));
++		isofile = strdup(EARGF(usage()));
++		edev[edevn] = mkide;  /* Use existing mkide function */
++		edevt[edevn] = "ide cdrom";
++		edevaux[edevn] = isofile;
++		edevn++;
++		break;
+ 	case 'M':
+ 		gmemsz = siparse(EARGF(usage()));
+ 		if(gmemsz != (uintptr) gmemsz) sysfatal("too much memory for address space");

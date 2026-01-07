@@ -305,7 +305,8 @@ enum {
   SYS_MOUNT = 46,
   SYS_NSEC = 53,
   SYS_BRK = 55,
-  SYS_WAIT = 166
+  SYS_WAIT = 166,
+  SYS_GETPID2 = 66
 };
 
 #endif /* _FCALL_H_ */

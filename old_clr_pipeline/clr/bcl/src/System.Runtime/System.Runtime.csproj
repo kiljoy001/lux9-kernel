@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <AssemblyName>System.Runtime</AssemblyName>
+    <RootNamespace>System</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../System.Collections/**/*.cs" />
+    <Compile Include="../System.Numerics/Math.cs" />
+    <Compile Include="../System.Threading/Threading.cs" />
+    <Compile Include="../System.Reflection/Reflection.cs" />
+    <Compile Include="../System.Text/StringBuilder.cs" />
+  </ItemGroup>
+</Project>

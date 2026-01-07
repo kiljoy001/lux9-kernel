@@ -1,0 +1,826 @@
+#include "all.h"
+#include <stdarg.h>
+
+#ifdef _KERNEL_QBE
+/* Use Pebble Black tokens for QBE memory - isolated from mainmem pool */
+#include "../../include/pebble.h"
+#endif
+
+typedef struct Bitset Bitset;
+typedef struct Vec Vec;
+typedef struct Bucket Bucket;
+
+struct Vec {
+  ulong mag;
+  Pool pool;
+  size_t esz;
+  ulong cap;
+  union {
+    long long ll;
+    long double ld;
+    void *ptr;
+  } align[];
+};
+
+struct Bucket {
+  uint nstr;
+  char **str;
+};
+
+enum {
+  VMin = 2,
+  VMag = 0xcabba9e,
+  NPtr = 256,
+  IBits = 12,
+  IMask = (1 << IBits) - 1,
+};
+
+Typ *typ;
+Ins insb[NIns], *curi;
+
+#ifdef USE_PEBBLE_ALLOC
+/* Pebble-based allocation tracking - Black tokens for QBE memory */
+typedef struct QbeMemHeader {
+  struct QbeMemHeader *next;
+  struct QbeMemHeader *prev;
+  struct QbeMemHeader **list_head; /* Pointer to the head of the list */
+  UserCapability cap;
+  size_t size;
+  /* Ensure 16-byte alignment */
+  char padding[16 - ((sizeof(struct QbeMemHeader *) * 3 +
+                      sizeof(UserCapability) + sizeof(size_t)) %
+                     16)];
+} QbeMemHeader;
+
+static QbeMemHeader *qbe_heap_head = NULL; /* Heap allocations (emalloc) */
+static QbeMemHeader *qbe_pool_head = NULL; /* Pool allocations (alloc) */
+static int qbe_alloc_count = 0;
+
+/* File-scope statics for alloc's pool logic */
+static char *qbe_alloc_pool_ptr = NULL;
+static size_t qbe_alloc_pool_rem = 0;
+
+void qbe_reset_pool_statics(void) {
+  qbe_alloc_pool_ptr = NULL;
+  qbe_alloc_pool_rem = 0;
+}
+
+/* Helper for allocation with list tracking */
+static void *qbe_tracked_alloc(size_t n, QbeMemHeader **list) {
+  UserCapability cap;
+  size_t hdr_sz = sizeof(QbeMemHeader);
+
+  if (pebble_black_alloc(n + hdr_sz, &cap) != 0) {
+    die("qbe_tracked_alloc: pebble_black_alloc failed");
+  }
+
+  QbeMemHeader *hdr = (QbeMemHeader *)pebble_get_black_addr(&cap);
+  if (!hdr) {
+    die("qbe_tracked_alloc: pebble_get_black_addr failed");
+  }
+
+  hdr->cap = cap;
+  hdr->size = n;
+  hdr->list_head = list;
+  hdr->next = *list;
+  hdr->prev = NULL;
+
+  if (*list)
+    (*list)->prev = hdr;
+
+  *list = hdr;
+  qbe_alloc_count++;
+
+  void *p = (char *)hdr + hdr_sz;
+  memset(p, 0, n);
+  return p;
+}
+
+void qbe_free(void *p) {
+  if (!p)
+    return;
+
+  size_t hdr_sz = sizeof(QbeMemHeader);
+  QbeMemHeader *hdr = (QbeMemHeader *)((char *)p - hdr_sz);
+
+  if (hdr->next)
+    hdr->next->prev = hdr->prev;
+
+  if (hdr->prev)
+    hdr->prev->next = hdr->next;
+  else if (hdr->list_head && *(hdr->list_head) == hdr)
+    *(hdr->list_head) = hdr->next;
+
+  pebble_black_free(&hdr->cap);
+  qbe_alloc_count--;
+}
+
+void *qbe_calloc(size_t nmemb, size_t size) {
+  size_t total = nmemb * size;
+  /* emalloc already zeros memory and uses Pebble */
+  return emalloc(total);
+}
+
+void *qbe_realloc(void *ptr, size_t size) {
+  if (!ptr)
+    return emalloc(size);
+  if (size == 0) {
+    qbe_free(ptr);
+    return NULL;
+  }
+
+  /* Get header of current block */
+  QbeMemHeader *hdr = (QbeMemHeader *)((char *)ptr - sizeof(QbeMemHeader));
+  size_t old_size = hdr->size;
+
+  if (size <= old_size) {
+    /* Shrinking or same size: verify alignment/constraints?
+       For now, just return existing ptr. Pebble caps are fixed size anyway.
+       We effectively waste the tail.
+       Ideally we'd re-mint, but that's expensive for simple shrinking.
+    */
+    return ptr;
+  }
+
+  /* Growing: Must allocate new and copy */
+  void *new_ptr = emalloc(size);
+  if (!new_ptr)
+    return NULL;
+
+  memcpy(new_ptr, ptr, old_size);
+  qbe_free(ptr);
+
+  return new_ptr;
+}
+
+#else
+/* Original pool-based allocation tracking */
+static void *ptr[NPtr];
+static void **pool = ptr;
+static int nptr = 1;
+#endif
+
+static Bucket itbl[IMask + 1]; /* string interning table */
+
+uint32_t hash(char *s) {
+  uint32_t h;
+
+  for (h = 0; *s; ++s)
+    h = *s + 17 * h;
+  return h;
+}
+
+#ifndef _KERNEL_QBE
+/* Userspace version - kernel provides its own die_ in qbe_kernel_wrapper.c */
+void die_(char *file, char *s, ...) {
+  va_list ap;
+
+  fprintf(stderr, "%s: dying: ", file);
+  va_start(ap, s);
+  vfprintf(stderr, s, ap);
+  va_end(ap);
+  fputc('\n', stderr);
+  abort();
+}
+#endif
+
+void *emalloc(size_t n) {
+  void *p;
+
+#ifdef USE_PEBBLE_ALLOC
+  /* Use Pebble Black token - Heap allocation */
+  p = qbe_tracked_alloc(n, &qbe_heap_head);
+#else
+  if ((long)n <= 0)
+    die("emalloc: bad size");
+
+  p = calloc(1, n); // Original userspace used calloc, not mallocz
+  if (!p)
+    die("emalloc: out of memory");
+#endif
+
+#ifdef _KERNEL_QBE
+  /* KERNEL TRACE: Trace larger allocations to check for misuse */
+  if (n > 4096) {
+    extern void uartputs(char *, int);
+    char buf[128];
+    snprint(buf, sizeof(buf), "debug: qbe emalloc %d bytes -> %p\n", (int)n, p);
+    uartputs(buf, strlen(buf));
+  }
+#endif
+
+  return p;
+}
+
+void *alloc(size_t n) {
+  void **pp;
+
+#ifdef _KERNEL_QBE
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+#ifdef USE_PEBBLE_ALLOC
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: alloc n=%d pool=%p rem=%ld\n",
+          (int)n, qbe_alloc_pool_ptr, (long)qbe_alloc_pool_rem);
+#else
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: alloc n=%d nptr=%d pool=%p\n",
+          (int)n, nptr, pool);
+#endif
+  uartputs(debug_buf, strlen(debug_buf));
+#endif
+
+  if (n == 0)
+    return 0;
+  /*
+   * Alignment Logic:
+   * QBE requires pointers to be aligned.
+   * Round up 'n' to nearest 8 bytes (sizeof(void*)).
+   */
+  n = (n + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+#ifdef USE_PEBBLE_ALLOC
+  /* Large request? Direct pool alloc */
+  if (n >= 4096)
+    return qbe_tracked_alloc(n, &qbe_pool_head);
+
+  /* Sub-allocate from pool block */
+  if (n > qbe_alloc_pool_rem) {
+    size_t blk_sz = 68 * 1024;
+    qbe_alloc_pool_ptr = qbe_tracked_alloc(blk_sz, &qbe_pool_head);
+    qbe_alloc_pool_rem = blk_sz;
+  }
+
+  void *ret = qbe_alloc_pool_ptr;
+  qbe_alloc_pool_ptr += n;
+  qbe_alloc_pool_rem -= n;
+
+  return ret;
+#else
+  /* Non-Pebble Userspace - Restore original logic if needed or leave simplified
+   */
+  /* For now, just use emalloc for everything in userspace to be safe/simple?
+   * Or restore the original? The original was:
+   */
+  if (n >= 4096)
+    return emalloc(n);
+  if (nptr >= NPtr) {
+    pp = emalloc(NPtr * sizeof(void *));
+    pp[0] = pool;
+    pool = pp;
+    nptr = 1;
+  }
+  return pool[nptr++] = emalloc(n);
+#endif
+}
+
+void qbe_reset_pool() {
+#ifdef USE_PEBBLE_ALLOC
+  freeall();
+#elif defined(_KERNEL_QBE)
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+
+  snprint(debug_buf, sizeof(debug_buf),
+          "DEBUG: qbe_reset_pool nptr=%d pool=%p\n", nptr, pool);
+  uartputs(debug_buf, strlen(debug_buf));
+
+  /* Reset pool to initial state */
+  pool = ptr;
+  nptr = 1;
+  ptr[0] = 0; /* Clear the linked list head */
+
+  uartputs("DEBUG: qbe_reset_pool done\n", 27);
+#else
+  // For userspace non-Pebble, freeall handles reset.
+  freeall();
+#endif
+}
+
+void freeall() {
+#ifdef USE_PEBBLE_ALLOC
+  /* Walk the list of Pool tokens and free them.
+     Heap allocations (qbe_heap_head) are PRESERVED.
+  */
+  QbeMemHeader *curr = qbe_pool_head;
+  QbeMemHeader *next;
+
+  qbe_pool_head = NULL;
+
+  while (curr) {
+    next = curr->next;
+    pebble_black_free(&curr->cap); /* Frees the underlying memory */
+    qbe_alloc_count--;
+    curr = next;
+  }
+
+  /* Reset pool statics */
+  qbe_reset_pool_statics();
+
+#else
+  void **pp;
+
+  for (;;) {
+    for (pp = &pool[1]; pp < &pool[nptr]; pp++)
+#ifdef _KERNEL_QBE
+      xfree(*pp);
+#else
+      free(*pp);
+#endif
+    pp = pool[0];
+    if (!pp)
+      break;
+#ifdef _KERNEL_QBE
+    xfree(pool);
+#else
+    free(pool);
+#endif
+    pool = pp;
+    nptr = NPtr;
+  }
+  nptr = 1;
+#endif
+}
+
+void *vnew(ulong len, size_t esz, Pool p) {
+  void *(*f)(size_t);
+  ulong cap;
+  Vec *v;
+
+  for (cap = VMin; cap < len; cap *= 2)
+    ;
+  f = p == Pheap ? emalloc : alloc;
+  v = f(cap * esz + sizeof(Vec));
+  v->mag = VMag;
+  v->cap = cap;
+  v->esz = esz;
+  v->pool = p;
+  return v + 1;
+}
+
+void vfree(void *p) {
+  Vec *v;
+
+  v = (Vec *)p - 1;
+  assert(v->mag == VMag);
+  if (v->pool == Pheap) {
+    v->mag = 0;
+#ifdef _KERNEL_QBE
+/* If using Pebble Alloc, we MUST use qbe_free to handle headers! */
+#ifdef USE_PEBBLE_ALLOC
+    qbe_free(v);
+#else
+    xfree(v);
+#endif
+#else
+    free(v);
+#endif
+  }
+}
+
+void vgrow(void *vp, ulong len) {
+  Vec *v;
+  void *v1;
+
+  v = *(Vec **)vp - 1;
+  assert(v + 1 && v->mag == VMag);
+  if (v->cap >= len)
+    return;
+  v1 = vnew(len, v->esz, v->pool);
+  memcpy(v1, v + 1, v->cap * v->esz);
+  vfree(v + 1);
+  *(Vec **)vp = v1;
+}
+
+uint32_t intern(char *s) {
+  Bucket *b;
+  uint32_t h;
+  uint i, n;
+
+  h = hash(s) & IMask;
+  b = &itbl[h];
+  n = b->nstr;
+
+  for (i = 0; i < n; i++)
+    if (strcmp(s, b->str[i]) == 0)
+      return h + (i << IBits);
+
+  if (n == 1 << (32 - IBits))
+    die("interning table overflow");
+  if (n == 0)
+    b->str = vnew(1, sizeof b->str[0], Pheap);
+  else if ((n & (n - 1)) == 0)
+    vgrow(&b->str, n + n);
+
+  b->str[n] = emalloc(strlen(s) + 1);
+  b->nstr = n + 1;
+  strcpy(b->str[n], s);
+  return h + (n << IBits);
+}
+
+char *str(uint32_t id) {
+  assert(id >> IBits < itbl[id & IMask].nstr);
+  return itbl[id & IMask].str[id >> IBits];
+}
+
+int isreg(Ref r) { return rtype(r) == RTmp && r.val < Tmp0; }
+
+int iscmp(int op, int *pk, int *pc) {
+  if (Ocmpw <= op && op <= Ocmpw1) {
+    *pc = op - Ocmpw;
+    *pk = Kw;
+  } else if (Ocmpl <= op && op <= Ocmpl1) {
+    *pc = op - Ocmpl;
+    *pk = Kl;
+  } else if (Ocmps <= op && op <= Ocmps1) {
+    *pc = NCmpI + op - Ocmps;
+    *pk = Ks;
+  } else if (Ocmpd <= op && op <= Ocmpd1) {
+    *pc = NCmpI + op - Ocmpd;
+    *pk = Kd;
+  } else
+    return 0;
+  return 1;
+}
+
+int argcls(Ins *i, int n) { return optab[i->op].argcls[n][i->cls]; }
+
+void emit(int op, int k, Ref to, Ref arg0, Ref arg1) {
+  if (curi == insb)
+    die("emit, too many instructions");
+  *--curi = (Ins){.op = op, .cls = k, .to = to, .arg = {arg0, arg1}};
+}
+
+void emiti(Ins i) { emit(i.op, i.cls, i.to, i.arg[0], i.arg[1]); }
+
+void idup(Ins **pd, Ins *s, ulong n) {
+  *pd = alloc(n * sizeof(Ins));
+  if (n)
+    memcpy(*pd, s, n * sizeof(Ins));
+}
+
+Ins *icpy(Ins *d, Ins *s, ulong n) {
+  if (n)
+    memcpy(d, s, n * sizeof(Ins));
+  return d + n;
+}
+
+static int cmptab[][2] = {
+    /* negation    swap */
+    [Ciule] = {Ciugt, Ciuge},
+    [Ciult] = {Ciuge, Ciugt},
+    [Ciugt] = {Ciule, Ciult},
+    [Ciuge] = {Ciult, Ciule},
+    [Cisle] = {Cisgt, Cisge},
+    [Cislt] = {Cisge, Cisgt},
+    [Cisgt] = {Cisle, Cislt},
+    [Cisge] = {Cislt, Cisle},
+    [Cieq] = {Cine, Cieq},
+    [Cine] = {Cieq, Cine},
+    [NCmpI + Cfle] = {NCmpI + Cfgt, NCmpI + Cfge},
+    [NCmpI + Cflt] = {NCmpI + Cfge, NCmpI + Cfgt},
+    [NCmpI + Cfgt] = {NCmpI + Cfle, NCmpI + Cflt},
+    [NCmpI + Cfge] = {NCmpI + Cflt, NCmpI + Cfle},
+    [NCmpI + Cfeq] = {NCmpI + Cfne, NCmpI + Cfeq},
+    [NCmpI + Cfne] = {NCmpI + Cfeq, NCmpI + Cfne},
+    [NCmpI + Cfo] = {NCmpI + Cfuo, NCmpI + Cfo},
+    [NCmpI + Cfuo] = {NCmpI + Cfo, NCmpI + Cfuo},
+};
+
+int cmpneg(int c) {
+  assert(0 <= c && c < NCmp);
+  return cmptab[c][0];
+}
+
+int cmpop(int c) {
+  assert(0 <= c && c < NCmp);
+  return cmptab[c][1];
+}
+
+int clsmerge(short *pk, short k) {
+  short k1;
+
+  k1 = *pk;
+  if (k1 == Kx) {
+    *pk = k;
+    return 0;
+  }
+  if ((k1 == Kw && k == Kl) || (k1 == Kl && k == Kw)) {
+    *pk = Kw;
+    return 0;
+  }
+  return k1 != k;
+}
+
+int phicls(int t, Tmp *tmp) {
+  int t1;
+
+  t1 = tmp[t].phi;
+  if (!t1)
+    return t;
+  t1 = phicls(t1, tmp);
+  tmp[t].phi = t1;
+  return t1;
+}
+
+Ref newtmp(char *prfx, int k, Fn *fn) {
+  static int n;
+  int t;
+
+  t = fn->ntmp++;
+  vgrow(&fn->tmp, fn->ntmp);
+  memset(&fn->tmp[t], 0, sizeof(Tmp));
+  if (prfx)
+    sprintf(fn->tmp[t].name, "%s.%d", prfx, ++n);
+  fn->tmp[t].cls = k;
+  fn->tmp[t].slot = -1;
+  fn->tmp[t].nuse = +1;
+  fn->tmp[t].ndef = +1;
+  return TMP(t);
+}
+
+void chuse(Ref r, int du, Fn *fn) {
+  if (rtype(r) == RTmp)
+    fn->tmp[r.val].nuse += du;
+}
+
+Ref getcon(int64_t val, Fn *fn) {
+  int c;
+
+  for (c = 0; c < fn->ncon; c++)
+    if (fn->con[c].type == CBits && fn->con[c].bits.i == val)
+      return CON(c);
+  vgrow(&fn->con, ++fn->ncon);
+  fn->con[c] = (Con){.type = CBits, .bits.i = val};
+  return CON(c);
+}
+
+int addcon(Con *c0, Con *c1) {
+  if (c0->type == CUndef)
+    *c0 = *c1;
+  else {
+    if (c1->type == CAddr) {
+      if (c0->type == CAddr)
+        return 0;
+      c0->type = CAddr;
+      c0->label = c1->label;
+    }
+    c0->bits.i += c1->bits.i;
+  }
+  return 1;
+}
+
+void blit(Ref rdst, uint doff, Ref rsrc, uint sz, Fn *fn) {
+  struct {
+    int st, ld, cls, size;
+  } *p, tbl[] = {{Ostorel, Oload, Kl, 8},
+                 {Ostorew, Oload, Kw, 4},
+                 {Ostoreh, Oloaduh, Kw, 2},
+                 {Ostoreb, Oloadub, Kw, 1}};
+  Ref r, r1;
+  uint boff, s;
+
+  for (boff = 0, p = tbl; sz; p++)
+    for (s = p->size; sz >= s; sz -= s, doff += s, boff += s) {
+      r = newtmp("blt", Kl, fn);
+      r1 = newtmp("blt", Kl, fn);
+      emit(p->st, 0, R, r, r1);
+      emit(Oadd, Kl, r1, rdst, getcon(doff, fn));
+      r1 = newtmp("blt", Kl, fn);
+      emit(p->ld, p->cls, r, r1, R);
+      emit(Oadd, Kl, r1, rsrc, getcon(boff, fn));
+    }
+}
+
+void bsinit(BSet *bs, uint n) {
+#ifdef _KERNEL_QBE
+  extern void uartputs(char *, int);
+  char debug_buf[128];
+  snprint(debug_buf, sizeof(debug_buf), "DEBUG: bsinit n=%u (NBit=%lu)\n", n,
+          NBit);
+  uartputs(debug_buf, strlen(debug_buf));
+#endif
+  n = (n + NBit - 1) / NBit;
+  bs->nt = n;
+  bs->t = alloc(n * sizeof bs->t[0]);
+
+#ifdef _KERNEL_QBE
+  /* VERIFY ALIGNMENT */
+  if ((uintptr_t)bs->t & 7) {
+    extern void uartputs(char *, int);
+    // char debug_buf[128];
+    uartputs("[BITSET] CRITICAL: Misaligned allocation!\n", 38);
+    // snprint(debug_buf, sizeof(debug_buf), "  Address: %p\n", bs->t);
+    // uartputs(debug_buf, strlen(debug_buf));
+    panic("bsinit: misaligned bits array");
+  }
+  memset(bs->t, 0, n * sizeof bs->t[0]);
+#endif
+}
+
+MAKESURE(NBit_is_64, NBit == 64);
+inline static uint popcnt(bits b) {
+  b = (b & 0x5555555555555555) + ((b >> 1) & 0x5555555555555555);
+  b = (b & 0x3333333333333333) + ((b >> 2) & 0x3333333333333333);
+  b = (b & 0x0f0f0f0f0f0f0f0f) + ((b >> 4) & 0x0f0f0f0f0f0f0f0f);
+  b += (b >> 8);
+  b += (b >> 16);
+  b += (b >> 32);
+  return b & 0xff;
+}
+
+inline static int firstbit(bits b) {
+  int n;
+
+  n = 0;
+  if (!(b & 0xffffffff)) {
+    n += 32;
+    b >>= 32;
+  }
+  if (!(b & 0xffff)) {
+    n += 16;
+    b >>= 16;
+  }
+  if (!(b & 0xff)) {
+    n += 8;
+    b >>= 8;
+  }
+  if (!(b & 0xf)) {
+    n += 4;
+    b >>= 4;
+  }
+  n += (char[16]){4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0}[b & 0xf];
+  return n;
+}
+
+uint bscount(BSet *bs) {
+  uint i, n;
+
+  n = 0;
+  for (i = 0; i < bs->nt; i++)
+    n += popcnt(bs->t[i]);
+  return n;
+}
+
+static inline uint bsmax(BSet *bs) { return bs->nt * NBit; }
+
+void bsset(BSet *bs, uint elt) {
+  if (elt >= bsmax(bs)) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsset FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
+            bsmax(bs));
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(elt < bsmax(bs));
+  }
+  bs->t[elt / NBit] |= BIT(elt % NBit);
+}
+
+void bsclr(BSet *bs, uint elt) {
+  if (elt >= bsmax(bs)) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsclr FAIL elt=%u bs->nt=%u bsmax=%u\n", elt, bs->nt,
+            bsmax(bs));
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(elt < bsmax(bs));
+  }
+  bs->t[elt / NBit] &= ~BIT(elt % NBit);
+}
+
+#define BSOP(f, op)                                                            \
+  void f(BSet *a, BSet *b) {                                                   \
+    uint i;                                                                    \
+                                                                               \
+    assert(a->nt == b->nt);                                                    \
+    for (i = 0; i < a->nt; i++)                                                \
+      a->t[i] op b->t[i];                                                      \
+  }
+
+void bscopy(BSet *a, BSet *b) {
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bscopy FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(a->nt == b->nt);
+  }
+  memcpy(a->t, b->t, a->nt * sizeof a->t[0]);
+}
+
+void bsunion(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsunion FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] |= b->t[i];
+}
+
+void bsinter(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsinter FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] &= b->t[i];
+}
+
+void bsdiff(BSet *a, BSet *b) {
+  int i;
+
+  if (a->nt != b->nt) {
+#ifdef _KERNEL_QBE
+    /*
+    extern void uartputs(char *, int);
+    char debug_buf[128];
+    snprint(debug_buf, sizeof(debug_buf),
+            "DEBUG: bsdiff FAIL a->nt=%u b->nt=%u\n", a->nt, b->nt);
+    uartputs(debug_buf, strlen(debug_buf));
+    */
+#endif
+    assert(a->nt == b->nt);
+  }
+  for (i = 0; i < a->nt; i++)
+    a->t[i] &= ~b->t[i];
+}
+
+int bsequal(BSet *a, BSet *b) {
+  uint i;
+
+  assert(a->nt == b->nt);
+  for (i = 0; i < a->nt; i++)
+    if (a->t[i] != b->t[i])
+      return 0;
+  return 1;
+}
+
+void bszero(BSet *bs) { memset(bs->t, 0, bs->nt * sizeof bs->t[0]); }
+
+/* iterates on a bitset, use as follows
+ *
+ * 	for (i=0; bsiter(set, &i); i++)
+ * 		use(i);
+ *
+ */
+int bsiter(BSet *bs, int *elt) {
+  bits b;
+  uint t, i;
+
+  i = *elt;
+  t = i / NBit;
+  if (t >= bs->nt)
+    return 0;
+  b = bs->t[t];
+  b &= ~(BIT(i % NBit) - 1);
+  while (!b) {
+    ++t;
+    if (t >= bs->nt)
+      return 0;
+    b = bs->t[t];
+  }
+  *elt = NBit * t + firstbit(b);
+  return 1;
+}
+
+void dumpts(BSet *bs, Tmp *tmp, FILE *f) {
+  int t;
+
+  fprintf(f, "[");
+  for (t = Tmp0; bsiter(bs, &t); t++)
+    fprintf(f, " %s", tmp[t].name);
+  fprintf(f, " ]\n");
+}

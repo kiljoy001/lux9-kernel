@@ -322,7 +322,7 @@ void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
 }
 
 int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
-                            unsigned char *type, unsigned char *perms) {
+                           unsigned char *type, unsigned char *perms) {
   if (!u)
     return -1;
 
@@ -395,8 +395,176 @@ void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
     pa_low >>= 8;
   }
 
-  /* Zero out remaining bytes (94 bits = 11.75 bytes, so bytes 12-31 are zero) */
+  /* Zero out remaining bytes (94 bits = 11.75 bytes, so bytes 12-31 are zero)
+   */
   for (int i = 12; i < 32; i++) {
     pa_hash_out[i] = 0;
   }
+}
+
+/*
+ * Lux9 Secure PID2 Implementation
+ * Pattern: Cryptographic Passport
+ *
+ * Layout (122 bits payload):
+ * - data_a (48 bits): Ancestry (Timestamp high + Parent Hash high)
+ * - data_b (32 bits): Namespace CID (Hash of mount/cap config)
+ * - data_c (42 bits): Code Integrity (Hash of .text segment)
+ */
+
+/* Helper: extract high 64-bits of a hash array */
+static u64int hash_extract_u64(const u8int *hash) {
+  u64int v = 0;
+  if (!hash)
+    return 0;
+  /* Big-endian extraction for stability */
+  v |= (u64int)hash[0] << 56;
+  v |= (u64int)hash[1] << 48;
+  v |= (u64int)hash[2] << 40;
+  v |= (u64int)hash[3] << 32;
+  v |= (u64int)hash[4] << 24;
+  v |= (u64int)hash[5] << 16;
+  v |= (u64int)hash[6] << 8;
+  v |= (u64int)hash[7];
+  return v;
+}
+
+void uuid_pack_pid_lux9(uuid_t *u, const uuid_t *parent_uuid,
+                        const u8int *namespace_cid, const u8int *code_hash) {
+  if (!u)
+    return;
+
+  /* data_a (48 bits): Ancestry
+   * Composition:
+   * - Top 32 bits: Monotonic Timestamp (fastticks) for uniqueness
+   * - Bottom 16 bits: Top 16 bits of Parent UUID Hash (Provenance)
+   */
+  extern uvlong fastticks(uvlong * hz); // From kernel
+  uvlong now = fastticks(nil);
+  u64int parent_sig = 0;
+
+  if (parent_uuid) {
+    /* Use the parent's UUID bytes directly as a "hash" since it's already
+     * random */
+    parent_sig = ((u64int)parent_uuid->data[0] << 8) | parent_uuid->data[1];
+  }
+
+  u64int data_a = ((now & 0xFFFFFFFF) << 16) | (parent_sig & 0xFFFF);
+
+  /* data_b (32 bits): Namespace CID
+   * Full 32 bits of the Namespace BLAKE2b/SHA256 hash.
+   * This is the "Container ID".
+   */
+  u64int data_b_val = 0;
+  if (namespace_cid) {
+    /* Take first 4 bytes of CID */
+    data_b_val = ((u64int)namespace_cid[0] << 24) |
+                 ((u64int)namespace_cid[1] << 16) |
+                 ((u64int)namespace_cid[2] << 8) | (u64int)namespace_cid[3];
+  }
+  unsigned short data_b_parts =
+      (unsigned short)(data_b_val >>
+                       16); /* High 16? No data_b is 12 bits in std v8?
+                               Wait, standard v8 is 12 bits data_b.
+                               We are OVERLOADING layout.
+                               uuid_pack_v8 takes:
+                                 data_a (48)
+                                 data_b (12)
+                                 data_c (62)
+                               Total 122 bits.
+                               Our Plan:
+                                 data_a: 48 (Ancestry)
+                                 data_b: 32 (Namespace) -> Doesn't fit in 12!
+                                 data_c: 42 (Code)
+
+                               Adjustment:
+                               We must manually map our 32+42 bits into the
+                               12+62 slots. Total available: 74 bits (12+62).
+                               Proposed: 32 (NS) + 42 (Code) = 74. PERFECT FIT.
+                             */
+
+  /*
+   * Mapping Strategy:
+   * UUID Field "data_b" (12 bits) <- Top 12 bits of Namespace CID
+   * UUID Field "data_c" (62 bits) <- Bottom 20 bits of Namespace CID | 42 bits
+   * of Code Hash
+   */
+
+  u32int ns_val = (u32int)data_b_val; // 32 bits
+
+  // 1. Fill data_b (12 bits) with top 12 bits of NS
+  unsigned short data_b_pack = (ns_val >> 20) & 0xFFF;
+
+  // 2. Prepare data_c (62 bits)
+  // Top 20 bits = Bottom 20 bits of NS
+  // Bottom 42 bits = Top 42 bits of Code Hash
+  u64int ns_rem = ns_val & 0xFFFFF; // 20 bits
+
+  u64int code_val = hash_extract_u64(code_hash); // 64 bits
+  u64int code_42 = (code_val >> (64 - 42));      // Top 42 bits
+
+  u64int data_c_pack = (ns_rem << 42) | code_42;
+
+  uuid_pack_v8(u, data_a, data_b_pack, data_c_pack);
+}
+
+int uuid_verify_pid_lux9(const uuid_t *pid2, const uuid_t *parent_uuid,
+                         const u8int *namespace_cid, const u8int *code_hash) {
+  /* Requires unpacking logic - for now, we leave as a stub or implement
+   * unpacker first. To verify, we would regenerate the expected UUID (ignoring
+   * timestamp) and compare components. But wait, timestamp is in data_a. We
+   * can't verify data_a equality. We verify data_b and data_c components.
+   *
+   * Reconstruct expected data_b and data_c from inputs, then compare against
+   * UUID fields.
+   */
+  if (!pid2 || !namespace_cid || !code_hash)
+    return 0;
+
+  // 1. Extract raw fields from UUID
+  // Reverse of uuid_pack_v8 logic
+  const u8int *d = pid2->data;
+  u16int data_b_pack = ((d[6] & 0x0F) << 8) | d[7];
+  u64int data_c_pack = (u64int)(d[8] & 0x3F);
+  for (int i = 9; i < 16; i++)
+    data_c_pack = (data_c_pack << 8) | d[i];
+
+  // 2. Reconstruct expected values
+  // Namespace CID (32 bits)
+  u64int data_b_val =
+      ((u64int)namespace_cid[0] << 24) | ((u64int)namespace_cid[1] << 16) |
+      ((u64int)namespace_cid[2] << 8) | (u64int)namespace_cid[3];
+  u32int ns_val = (u32int)data_b_val;
+
+  // Code Hash (42 bits)
+  u64int code_val = hash_extract_u64(code_hash);
+  u64int code_42 = (code_val >> (64 - 42));
+
+  // 3. Compare data_b (Top 12 bits of NS)
+  u16int expected_b = (ns_val >> 20) & 0xFFF;
+  if (data_b_pack != expected_b)
+    return 0; // Namespace (Top) mismatch
+
+  // 4. Compare data_c (Bottom 20 bits of NS | Code 42)
+  u64int ns_rem = ns_val & 0xFFFFF;
+  u64int expected_c = (ns_rem << 42) | code_42;
+  if (data_c_pack != expected_c)
+    return 0; // Namespace (Bottom) or Code mismatch
+
+  // 5. Compare Ancestry (Optional / Best Effort)
+  // data_a[16..0] should match parent_uuid[0..1]
+  if (parent_uuid) {
+    u64int data_a = 0;
+    for (int i = 0; i < 6; i++)
+      data_a = (data_a << 8) | d[i];
+
+    u16int stored_parent_sig = data_a & 0xFFFF;
+    u16int actual_parent_sig =
+        ((u16int)parent_uuid->data[0] << 8) | parent_uuid->data[1];
+
+    if (stored_parent_sig != actual_parent_sig)
+      return 0; // Parent mismatch
+  }
+
+  return 1;
 }

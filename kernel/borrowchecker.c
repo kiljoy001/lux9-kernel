@@ -452,7 +452,7 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
  * @returns BORROW_EBORROWED if there are active shared or mutable borrows that
  * prevent release.
  */
-/*@
+/*
   // Transition: Exclusive -> Free
   // Corresponds to release logic in proofs/borrow/borrow_core.v
 */

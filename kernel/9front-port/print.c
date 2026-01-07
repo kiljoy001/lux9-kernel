@@ -77,6 +77,9 @@ panic(char *fmt, ...)
 	char buf[1024];
 	int n;
 
+    splhi();
+    panicking = 1;
+
     uartputs("PANIC: ", 7);
 	va_start(arg, fmt);
 	n = vseprint(buf, buf+sizeof(buf), fmt, arg) - buf;

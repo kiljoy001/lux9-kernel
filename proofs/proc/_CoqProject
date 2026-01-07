@@ -1,2 +1,3 @@
 -R . proc
 proc_state_dag.v
+proc_wasm.v

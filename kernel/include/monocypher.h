@@ -77,6 +77,7 @@ int crypto_verify64(const uint8_t a[64], const uint8_t b[64]);
 /*@ requires size == 0 || secret != \null;
     requires size == 0 || \valid(((uint8_t*)secret) + (0 .. (size - 1)));
     assigns ((uint8_t*)secret)[0 .. (size - 1)];
+    terminates \true;
 */
 void crypto_wipe(void *secret, size_t size);
 
@@ -188,6 +189,7 @@ extern const crypto_argon2_extras crypto_argon2_no_extras;
     requires \valid(((uint8_t*)work_area) + (0 .. ((size_t)config.nb_blocks * 1024 - 1)));
     assigns hash[0 .. (hash_size - 1)];
     assigns ((uint8_t*)work_area)[0 .. ((size_t)config.nb_blocks * 1024 - 1)];
+    terminates \true;
 */
 void crypto_argon2(uint8_t *hash, uint32_t hash_size, void *work_area,
                    crypto_argon2_config config,
@@ -276,6 +278,15 @@ uint32_t crypto_chacha20_ietf(uint8_t       *cipher_text,
                               const uint8_t  key[32],
                               const uint8_t  nonce[12],
                               uint32_t       ctr);
+/*@ requires cipher_text == \null || text_size == 0 ||
+             \valid(cipher_text + (0..text_size - 1));
+  @ requires plain_text == \null || text_size == 0 ||
+             \valid_read(plain_text + (0..text_size - 1));
+  @ requires key == \null || \valid_read(key + (0..31));
+  @ requires nonce == \null || \valid_read(nonce + (0..23));
+  @ assigns cipher_text[0..text_size - 1];
+  @ terminates \true;
+  */
 uint64_t crypto_chacha20_x(uint8_t       *cipher_text,
                            const uint8_t *plain_text,
                            size_t         text_size,

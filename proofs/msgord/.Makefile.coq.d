@@ -1,5 +1,5 @@
-model.vo model.glob model.v.beautified model.required_vo: model.v 
-model.vos model.vok model.required_vos: model.v 
+model.vo model.glob model.v.beautified model.required_vo: model.v ../pow_gate/pow_gate_model.vo
+model.vos model.vok model.required_vos: model.v ../pow_gate/pow_gate_model.vos
 msgord_correctness.vo msgord_correctness.glob msgord_correctness.v.beautified msgord_correctness.required_vo: msgord_correctness.v 
 msgord_correctness.vos msgord_correctness.vok msgord_correctness.required_vos: msgord_correctness.v 
 msgord_verified_simple.vo msgord_verified_simple.glob msgord_verified_simple.v.beautified msgord_verified_simple.required_vo: msgord_verified_simple.v 

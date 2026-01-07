@@ -109,7 +109,7 @@ static Pool pmainmem = {
     .maxsize = 4 * 1024 * 1024,
     .minarena = 128 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = POOL_TOLERANCE,
 
@@ -127,7 +127,7 @@ static Pool pimagmem = {
     .maxsize = 16 * 1024 * 1024,
     .minarena = 2 * 1024 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = 0,
 
@@ -145,7 +145,7 @@ static Pool psecrmem = {
     .maxsize = 16 * 1024 * 1024,
     .minarena = 64 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = POOL_ANTAGONISM,
 

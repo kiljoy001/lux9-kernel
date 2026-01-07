@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan 9 Semantic Code Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .search-box {
+            background: white;
+            border-radius: 50px;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+
+        .search-input {
+            flex: 1;
+            border: none;
+            padding: 15px;
+            font-size: 1.1rem;
+            outline: none;
+        }
+
+        .search-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .search-btn:hover {
+            background: #5a67d8;
+            transform: scale(1.05);
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .filter-chip {
+            background: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .filter-chip:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .filter-chip.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .results {
+            display: grid;
+            gap: 20px;
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .file-path {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 1.1rem;
+        }
+
+        .file-type {
+            background: #edf2f7;
+            color: #4a5568;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+
+        .snippet {
+            color: #4a5568;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            background: #f7fafc;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .snippet mark {
+            background: #ffd700;
+            padding: 2px;
+        }
+
+        .result-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .similarity-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            color: #718096;
+        }
+
+        .similarity-score {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-weight: 600;
+        }
+
+        .similar-btn {
+            background: transparent;
+            border: 2px solid #667eea;
+            color: #667eea;
+            padding: 6px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .similar-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            margin: 40px 0;
+        }
+
+        .stats {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .loading-dots {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Plan 9 Semantic Code Search</h1>
+            <p>AI-powered search through Plan 9 source code and documentation</p>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="totalDocs">0</div>
+                <div class="stat-label">Documents Indexed</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="fileTypes">0</div>
+                <div class="stat-label">File Types</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="chapters">0</div>
+                <div class="stat-label">Chapters</div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" class="search-input" id="searchInput"
+                   placeholder="Search for code, functions, or concepts..."
+                   autocomplete="off">
+            <button class="search-btn" onclick="performSearch()">Search</button>
+        </div>
+
+        <div class="filters" id="filters">
+            <div class="filter-chip" data-type="all">All Files</div>
+            <div class="filter-chip" data-type="c_source">C Source</div>
+            <div class="filter-chip" data-type="header">Headers</div>
+            <div class="filter-chip" data-type="manual">Manuals</div>
+            <div class="filter-chip" data-type="mk">Makefiles</div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <span class="loading-dots">Searching semantically...</span>
+        </div>
+
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let currentFilter = 'all';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            setupFilters();
+            setupEnterKey();
+        });
+
+        function setupEnterKey() {
+            document.getElementById('searchInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    performSearch();
+                }
+            });
+        }
+
+        function setupFilters() {
+            document.querySelectorAll('.filter-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+                    e.target.classList.add('active');
+                    currentFilter = e.target.dataset.type;
+                });
+            });
+            document.querySelector('.filter-chip[data-type="all"]').classList.add('active');
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/stats`);
+                const data = await response.json();
+
+                document.getElementById('totalDocs').textContent = data.total_documents.toLocaleString();
+                document.getElementById('fileTypes').textContent = Object.keys(data.file_types).length;
+                document.getElementById('chapters').textContent = Object.keys(data.chapters).length;
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        async function performSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            try {
+                const payload = {
+                    query: query,
+                    limit: 20,
+                    filters: currentFilter !== 'all' ? { file_type: currentFilter } : {}
+                };
+
+                const response = await fetch(`${API_BASE}/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                displayResults(data.results);
+            } catch (error) {
+                console.error('Search failed:', error);
+                results.innerHTML = '<div style="color: white; text-align: center;">Search failed. Please try again.</div>';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('results');
+
+            if (!results || results.length === 0) {
+                container.innerHTML = '<div style="color: white; text-align: center;">No results found. Try different keywords.</div>';
+                return;
+            }
+
+            container.innerHTML = results.map(result => `
+                <div class="result-card" onclick="viewDocument('${result.id}')">
+                    <div class="result-header">
+                        <div class="file-path">${result.file_path}</div>
+                        <div class="file-type">${result.file_type}</div>
+                    </div>
+                    <div class="snippet">${highlightSnippet(result.snippet)}</div>
+                    <div class="result-footer">
+                        <div class="similarity-badge">
+                            Similarity:
+                            <span class="similarity-score">${(result.similarity_score * 100).toFixed(1)}%</span>
+                        </div>
+                        <button class="similar-btn" onclick="findSimilar(event, '${result.id}')">
+                            Find Similar
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function highlightSnippet(snippet) {
+            // Simple highlight - in production, use proper highlighting from backend
+            const query = document.getElementById('searchInput').value;
+            const words = query.split(' ');
+            let highlighted = snippet;
+
+            words.forEach(word => {
+                if (word.length > 2) {
+                    const regex = new RegExp(`(${word})`, 'gi');
+                    highlighted = highlighted.replace(regex, '<mark>$1</mark>');
+                }
+            });
+
+            return highlighted;
+        }
+
+        async function findSimilar(event, docId) {
+            event.stopPropagation();
+
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            loading.style.display = 'block';
+            results.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/similar/${docId}`);
+                const data = await response.json();
+                displayResults(data.similar_docs);
+            } catch (error) {
+                console.error('Failed to find similar:', error);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        async function viewDocument(docId) {
+            try {
+                const response = await fetch(`${API_BASE}/document/${docId}`);
+                const doc = await response.json();
+                console.log('Document details:', doc);
+                // In production, show in modal or redirect to viewer
+            } catch (error) {
+                console.error('Failed to load document:', error);
+            }
+        }
+    </script>
+</body>
+</html>

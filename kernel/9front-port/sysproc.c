@@ -438,6 +438,10 @@ uintptr sysrfork(void *list_void) {
   if (up->wired)
     procwired(p, up->affinity);
 
+  /* CRITICAL: Child starts with empty mmuhead. Force fault-based MMU rebuild.
+   */
+  p->newtlb = 1;
+
   ready(p);
   sched();
   return pid;

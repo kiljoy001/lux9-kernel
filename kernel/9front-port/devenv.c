@@ -134,7 +134,7 @@ static Chan *envattach(char *spec) {
   return c;
 }
 
-/*@ ensures confegrp.ref == 1;
+/*@ ensures confegrp.ref.ref == 1;
     ensures confegrp.nent == 0;
     ensures confegrp.alloc == 0;
     assigns confegrp;
@@ -143,14 +143,14 @@ static Chan *envattach(char *spec) {
 void envinit(void) {
   // Initialize global configuration environment group
   memset(&confegrp, 0, sizeof(confegrp));
-  confegrp.ref = 1;   // Reference count
-  confegrp.nent = 0;  // No entries yet
-  confegrp.ent = nil; // No entries allocated
-  confegrp.low = 0;   // No free slots used
-  confegrp.alloc = 0; // No bytes allocated
-  confegrp.path = 0;  // No QIDs generated yet
-  confegrp.vers = 0;  // Version 0
-                      // Hash table already zeroed by memset
+  confegrp.ref.ref = 1; // Reference count
+  confegrp.nent = 0;    // No entries yet
+  confegrp.ent = nil;   // No entries allocated
+  confegrp.low = 0;     // No free slots used
+  confegrp.alloc = 0;   // No bytes allocated
+  confegrp.path = 0;    // No QIDs generated yet
+  confegrp.vers = 0;    // Version 0
+                        // Hash table already zeroed by memset
 }
 
 /**
@@ -227,7 +227,7 @@ static Chan *envopen(Chan *c, int omode) {
       runlock(&eg->rwlock);
   }
   c->mode = openmode(omode);
-  incref(eg);
+  incref(&eg->ref);
   c->aux = eg;
   c->offset = 0;
   c->flag |= COPEN;
@@ -294,7 +294,7 @@ static Chan *envcreate(Chan *c, char *name, int omode, ulong) {
   mkqid(&c->qid, e->path, e->vers, QTFILE);
   wunlock(&eg->rwlock);
   poperror();
-  incref(eg);
+  incref(&eg->ref);
   c->aux = eg;
   c->offset = 0;
   c->mode = omode;
@@ -421,7 +421,7 @@ Dev envdevtab = {
     devbread, envwrite, devbwrite,   envremove, devwstat,
 };
 
-/*@ ensures \result != \null ==> \result->ref == 1;
+/*@ ensures \result != \null ==> \result->ref.ref == 1;
     assigns \nothing;
     // COQ_PROOF_REF: proofs/env/conservation.v:newegrp_creates_ref
     // COQ_PROOF_REF: proofs/env/conservation.v:newegrp_wellformed
@@ -433,7 +433,7 @@ Egrp *newegrp(void) {
   if (eg == nil)
     error(Enomem);
   memset(eg, 0, sizeof(*eg)); /* Zero all fields including rwlock */
-  eg->ref = 1;
+  eg->ref.ref = 1;
   return eg;
 }
 
@@ -475,11 +475,11 @@ void envcpy(Egrp *to, Egrp *from) {
 
 /*@ requires eg != \null;
     behavior last_ref:
-      assumes eg->ref == 1 && eg != &confegrp;
+      assumes eg->ref.ref == 1 && eg != &confegrp;
       ensures \freed(eg);
     behavior more_refs:
-      assumes eg->ref > 1;
-      ensures eg->ref == \old(eg->ref) - 1;
+      assumes eg->ref.ref > 1;
+      ensures eg->ref.ref == \old(eg->ref.ref) - 1;
     behavior confegrp:
       assumes eg == &confegrp;
       assigns \nothing;
@@ -490,7 +490,7 @@ void closeegrp(Egrp *eg) {
   Evalue *e;
   int i;
 
-  if (decref(eg) || eg == &confegrp)
+  if (decref(&eg->ref) || eg == &confegrp)
     return;
   for (i = 0; i < eg->nent; i++) {
     e = eg->ent[i];
@@ -580,4 +580,64 @@ char *getconfenv(void) {
   runlock(&eg->rwlock);
 
   return p;
+}
+/*
+ * Set configuration environment variable directly.
+ * Safe to call during boot after xinit() but before process 0.
+ * Does NOT use channels or file descriptors.
+ */
+void kconf_set(char *name, char *val) {
+  Egrp *eg = &confegrp;
+  Evalue *e, **h;
+  int n, diff;
+
+  if (boot_verbose)
+    print("kconf_set: %s=%s\n", name, val);
+
+  wlock(&eg->rwlock);
+
+  h = envhash(eg, name);
+  e = lookupname(*h, name);
+
+  /* If not found, create it */
+  if (e == nil) {
+    /* Ensure space in pointer array */
+    int i;
+    for (i = eg->low; i < eg->nent; i++)
+      if (eg->ent[i] == nil)
+        break;
+
+    if (i >= eg->nent) {
+      if ((eg->nent % DELTAENV) == 0)
+        eg->ent =
+            envrealloc(eg, eg->ent, (eg->nent + DELTAENV) * sizeof(Evalue *));
+      i = eg->nent++;
+      eg->ent[i] = nil;
+      eg->low = i;
+    }
+
+    n = strlen(name) + 1;
+    e = envrealloc(eg, nil, sizeof(Evalue) + n);
+    memmove(e->name, name, n);
+    e->value = nil;
+    e->len = 0;
+    e->vers = 0;
+    e->path = PATH(++eg->path, i);
+    e->hash = *h, *h = e;
+    eg->ent[i] = e;
+    eg->low = i + 1; // Hint for next slot
+  }
+
+  /* Update value */
+  n = strlen(val);
+  diff = n - e->len;
+  if (diff != 0)
+    e->value = envrealloc(eg, e->value, n);
+
+  memmove(e->value, val, n);
+  e->len = n;
+  e->vers++;
+  eg->vers++;
+
+  wunlock(&eg->rwlock);
 }

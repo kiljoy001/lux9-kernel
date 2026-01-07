@@ -38,12 +38,12 @@ static Lock dag_locks[MSGORD_MAX_DAGS];
  */
 static void lock_dag(MsgOrd *dag) {
   if (dag && dag->gd_id >= 0 && dag->gd_id < MSGORD_MAX_DAGS)
-    lock(&dag_locks[dag->gd_id]);
+    ilock(&dag_locks[dag->gd_id]);
 }
 
 static void unlock_dag(MsgOrd *dag) {
   if (dag && dag->gd_id >= 0 && dag->gd_id < MSGORD_MAX_DAGS)
-    unlock(&dag_locks[dag->gd_id]);
+    iunlock(&dag_locks[dag->gd_id]);
 }
 
 /*
@@ -73,7 +73,7 @@ MsgOrd *msgord_create_instance(uint k_param) {
   int id = -1;
   int i;
 
-  lock(&registry_lock);
+  ilock(&registry_lock);
   for (i = 0; i < MSGORD_MAX_DAGS; i++) {
     if (msgords[i] == nil) {
       id = i;
@@ -82,13 +82,13 @@ MsgOrd *msgord_create_instance(uint k_param) {
   }
 
   if (id == -1) {
-    unlock(&registry_lock);
+    iunlock(&registry_lock);
     return nil;
   }
 
   dag = xalloc(sizeof(MsgOrd));
   if (dag == nil) {
-    unlock(&registry_lock);
+    iunlock(&registry_lock);
     return nil;
   }
 
@@ -103,7 +103,7 @@ MsgOrd *msgord_create_instance(uint k_param) {
   /* Initialize synchronization */
 
   msgords[id] = dag;
-  unlock(&registry_lock);
+  iunlock(&registry_lock);
 
   return dag;
 }
@@ -119,9 +119,9 @@ void msgord_destroy_instance(MsgOrd *dag) {
     return;
   id = dag->gd_id;
 
-  lock(&registry_lock);
+  ilock(&registry_lock);
   if (msgords[id] != dag) {
-    unlock(&registry_lock);
+    iunlock(&registry_lock);
     return; /* Sanity check failed */
   }
 
@@ -131,7 +131,7 @@ void msgord_destroy_instance(MsgOrd *dag) {
   }
 
   msgords[id] = nil;
-  unlock(&registry_lock);
+  iunlock(&registry_lock);
 
   /* Free all messages */
   lock_dag(dag);

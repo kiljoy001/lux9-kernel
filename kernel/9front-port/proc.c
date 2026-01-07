@@ -962,8 +962,8 @@ void sleep(Rendez *r, int (*f)(void *), void *arg) {
     if (pt != nil)
       pt(up, SSleep, 0);
     /* up->state = Wakeme; -- REPLACED BY FSM */
-    proc_event(up, EV_SLEEP);
     up->r = r;
+    proc_event(up, EV_SLEEP);
     unlock(&up->rlock);
     unlock(r);
     procswitch();
@@ -996,13 +996,15 @@ void twakeup(Ureg *, Timer *t) {
   }
 }
 
-static int tfn(void *arg) { return up->trend == nil || up->tfn(arg); }
+static int tfn(void *arg) {
+  return up->trend == nil || (up->tfn && up->tfn(arg));
+}
 
 void tsleep(Rendez *r, int (*fn)(void *), void *arg, ulong ms) {
   if (up->tt != nil) {
     print("%s %lud: tsleep timer active: mode %d, tf %#p, pc %#p\n", up->text,
           up->pid, up->tmode, up->tf, getcallerpc(&r));
-    timerdel(up);
+    timerdel(&up->timer);
   }
   up->tns = MS2NS(ms);
   up->tmode = Trelative;
@@ -1010,16 +1012,16 @@ void tsleep(Rendez *r, int (*fn)(void *), void *arg, ulong ms) {
   up->ta = up;
   up->trend = r;
   up->tfn = fn;
-  timeradd(up);
+  timeradd(&up->timer);
 
   if (waserror()) {
     up->trend = nil;
-    timerdel(up);
+    timerdel(&up->timer);
     nexterror();
   }
   sleep(r, tfn, arg);
   up->trend = nil;
-  timerdel(up);
+  timerdel(&up->timer);
   poperror();
 }
 
@@ -1341,7 +1343,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   int i;
 
   up->alarm = 0;
-  timerdel(up);
+  timerdel(&up->timer);
   pt = proctrace;
   if (pt != nil)
     pt(up, SDead, 0);
@@ -1813,7 +1815,16 @@ _Noreturn void error(char *err) {
 }
 
 _Noreturn void nexterror(void) {
-  assert(up->nerrlab > 0);
+  if (up == nil)
+    panic("nexterror with no user process (caller=%#p)", getcallerpc(&up));
+  if (up->nerrlab <= 0) {
+    print("errstack underflow: pid=%lud scallnr=%d insyscall=%d psstate=%s "
+          "errstr=%s syserrstr=%s nerrlab=%d\n",
+          up->pid, up->scallnr, up->insyscall,
+          up->psstate ? up->psstate : "nil", up->errstr ? up->errstr : "nil",
+          up->syserrstr ? up->syserrstr : "nil", up->nerrlab);
+    panic("errstack underflow");
+  }
   gotolabel(&up->errlab[--up->nerrlab]);
 }
 

@@ -1,0 +1,4 @@
+#!/bin/bash
+cp "$1" /home/scott/Repo/VM-Interop/debug.elf
+dotnet /home/scott/Repo/lux9-kernel/tools/elf2plan9-cs/bin/elf2plan9-cs.dll "$@"
+
