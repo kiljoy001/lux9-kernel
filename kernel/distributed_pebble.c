@@ -401,7 +401,7 @@ void branch_destroy(ArenaBranch *branch) {
 /*@
   requires \valid(rep + (0 .. 31));
   requires \valid(key_out + (0 .. 31));
-  assigns *(key_out + (0 .. 31));
+  assigns key_out[0 .. 31];
 */
 static void derive_key_from_rep(const u8int *rep, u8int *key_out) {
   u8int curve_point[32];
@@ -414,6 +414,9 @@ static void derive_key_from_rep(const u8int *rep, u8int *key_out) {
 /*@
   requires branch != \null;
   requires \valid(branch);
+  requires \valid(branch->encoded_state + (0 .. 31));
+  requires \valid((u8int *)branch->tokens + (0 .. 31));
+  requires \valid((u8int *)branch->borrowed + (0 .. 31));
   assigns branch->encoded_state[0 .. 31];
   assigns branch->tokens[0 .. 3];
   assigns branch->borrowed[0 .. 3];
@@ -453,6 +456,9 @@ int branch_elligator_encode(ArenaBranch *branch) {
 /*@
   requires branch != \null;
   requires \valid(branch);
+  requires \valid(branch->encoded_state + (0 .. 31));
+  requires \valid((u8int *)branch->tokens + (0 .. 31));
+  requires \valid((u8int *)branch->borrowed + (0 .. 31));
   assigns branch->tokens[0 .. 3];
   assigns branch->borrowed[0 .. 3];
   ensures \result == 0 || \result == -1;

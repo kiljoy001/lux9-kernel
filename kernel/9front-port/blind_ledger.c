@@ -116,6 +116,16 @@ static LedgerEntryNode *ledger_tree_search(const u8int *hash) {
 }
 
 // RB-tree insert for new entry (Incremental Merkle)
+/*@ requires new_node != \null;
+  @ requires \valid(new_node);
+  @ requires \valid(new_node->entry.capability.hash +
+  @                (0 .. BLIND_LEDGER_CAP_SIZE - 1));
+  @ requires \valid(new_node->subtree_hash +
+  @                (0 .. BLIND_LEDGER_CAP_SIZE - 1));
+  @ assigns new_node->subtree_hash[0 .. BLIND_LEDGER_CAP_SIZE - 1],
+  @         ledger_tree;
+  @ ensures \result == 0 || \result == -1;
+  */
 static int ledger_tree_insert(LedgerEntryNode *new_node) {
   struct rb_node **link = &ledger_tree.rb_node;
   struct rb_node *parent = nil;

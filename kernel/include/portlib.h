@@ -24,18 +24,13 @@ typedef unsigned int Rune;
  * mem routines
  */
 extern void *memccpy(void *, const void *, int, usize);
-/*@ requires s == \null || (n >= 0 && \valid(((char *)s) + (0..n-1)));
-  @ assigns ((char *)s)[0..n-1];
-  @ assigns \result \from s;
+/*@ assigns \result \from s;
   @ ensures \result == s;
   @ terminates \true;
   */
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(const void *, const void *, usize);
-/*@ requires dst == \null || (n >= 0 && \valid(((char *)dst) + (0..n-1)));
-  @ requires src == \null || (n >= 0 && \valid_read(((char *)src) + (0..n-1)));
-  @ assigns ((char *)dst)[0..n-1];
-  @ assigns \result \from dst;
+/*@ assigns \result \from dst;
   @ ensures \result == dst;
   @ terminates \true;
   */

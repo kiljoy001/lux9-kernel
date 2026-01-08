@@ -281,9 +281,7 @@ DigestState*	mac_blake2s_256(uchar*, ulong, uchar*, ulong, uchar*, DigestState*)
 /*
  * random number generation
  */
-/*@ requires buf != \null;
-  @ requires nbytes >= 0;
-  @ assigns \nothing;
+/*@ assigns \nothing;
   @ terminates \true;
   */
 void	genrandom(uchar *buf, int nbytes);

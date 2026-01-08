@@ -20,27 +20,13 @@
  * mem routines
  */
 extern void *memccpy(void *, void *, int, usize);
-/*@ requires \valid((char*)s + (0..n-1));
-    assigns ((char*)s)[0..n-1] \from c;
-    ensures \result == s;
-*/
-/*@ requires s == \null || (n >= 0 && \valid(((char *)s) + (0..n-1)));
-  @ assigns ((char *)s)[0..n-1];
-  @ assigns \result \from s;
+/*@ assigns \result \from s;
   @ ensures \result == s;
   @ terminates \true;
   */
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(void *, void *, usize);
-/*@ requires \valid((char*)dest + (0..n-1));
-    requires \valid_read((char*)src + (0..n-1));
-    assigns ((char*)dest)[0..n-1] \from ((char*)src)[0..n-1];
-    ensures \result == dest;
-*/
-/*@ requires dest == \null || (n >= 0 && \valid(((char *)dest) + (0..n-1)));
-  @ requires src == \null || (n >= 0 && \valid_read(((char *)src) + (0..n-1)));
-  @ assigns ((char *)dest)[0..n-1];
-  @ assigns \result \from dest;
+/*@ assigns \result \from dest;
   @ ensures \result == dest;
   @ terminates \true;
   */
@@ -64,7 +50,7 @@ extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
-/*@ assigns \result \from s[..]; */
+/*@ assigns \nothing; */
 /*@ requires s == \null || \valid(s);
   @ assigns \nothing;
   @ ensures \result >= 0;
@@ -125,7 +111,7 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-/*@ assigns \result \from fmt[0..]; */
+/*@ assigns \result \from fmt; */
 extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);

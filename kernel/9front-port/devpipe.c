@@ -20,7 +20,17 @@
 
 #define PIPESIZE (4096)
 
-/*@ assigns \result \from \nothing;
+/*@ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ terminates \true;
   */
 extern void *malloc(ulong size);
 
@@ -61,8 +71,7 @@ void pipe_clone_notify(void *aux) {
   qunlock(&p->l);
 }
 
-/*@ requires \true;
-    ensures \result != \null ==> ((Pipe*)\result->aux)->ref == 1;
+/*@ ensures \result != \null ==> ((Pipe*)\result->aux)->ref == 1;
     ensures \result != \null ==> ((Pipe*)\result->aux)->qref[0] == 0;
     ensures \result != \null ==> ((Pipe*)\result->aux)->qref[1] == 0;
     assigns \nothing;

@@ -107,9 +107,15 @@ static void mntreset(void) {
  *   Sequential: mntalloc.lock then m->lock (never nested)
  */
 /*@ requires \valid(c);
-  @ requires \valid_read(version + (0 .. returnlen-1));
   @ requires msize >= 0 && msize <= 1048576;  // Max 1MB
   @ requires returnlen >= 0 && returnlen < 8192;
+  @
+  @ behavior null_or_zero:
+  @   assumes version == \null || returnlen == 0;
+  @   assigns \nothing;
+  @ behavior with_buffer:
+  @   assumes version != \null && returnlen > 0;
+  @   requires \valid_read(version + (0 .. returnlen - 1));
   @
   @ behavior success:
   @   assumes version_negotiation_succeeds();

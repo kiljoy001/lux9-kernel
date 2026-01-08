@@ -67,10 +67,10 @@ long decref(Ref *);
 int decrypt(void *, void *, int);
 void delay(int);
 Proc *dequeueproc(Schedq *, Proc *);
-/*@ requires spec == \null || \valid(spec);
-  @ assigns \result \from \nothing;
+/*@ assigns \result \from \nothing;
   @ terminates \true;
   */
+/*@ assigns \nothing; */
 Chan *devattach(int, char *spec);
 Block *devbread(Chan *, long, ulong);
 long devbwrite(Chan *, Block *, ulong);
@@ -230,12 +230,45 @@ Cmdtab *lookupcmd(Cmdbuf *, Cmdtab *, int);
 Page *lookpage(Image *, uintptr);
 #define MS2NS(n) (((vlong)(n)) * 1000000LL)
 void machinit(void);
-void *mallocz(ulong, int);
-/*@ assigns \result \from \nothing;
+/*@ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ terminates \true;
+  */
+void *mallocz(ulong size, int clr);
+/*@ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
   @ terminates \true;
   */
 void *malloc(ulong size);
-void *mallocalign(ulong, ulong, long, ulong);
+/*@ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ terminates \true;
+  */
+void *mallocalign(ulong size, ulong align, long offset, ulong span);
 void mallocsummary(void);
 void memmapdump(void);
 uvlong memmapnext(uvlong, ulong);

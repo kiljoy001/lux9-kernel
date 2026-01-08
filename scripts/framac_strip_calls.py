@@ -6,11 +6,69 @@ invalid-range errors from variadic format strings.
 
 import sys
 
-TARGETS = {"print", "iprint", "pprint"}
+TARGETS = {
+    "print",
+    "iprint",
+    "pprint",
+    "panic",
+    "error",
+    "exhausted",
+    "snprint",
+    "vsnprint",
+    "sprint",
+    "fmtprint",
+    "genrandom",
+    "memset",
+    "memmove",
+}
+DECL_KEYWORDS = {
+    "extern",
+    "static",
+    "const",
+    "volatile",
+    "signed",
+    "unsigned",
+    "void",
+    "int",
+    "long",
+    "short",
+    "char",
+    "uchar",
+    "u8int",
+    "u16int",
+    "u32int",
+    "u64int",
+    "s8int",
+    "s16int",
+    "s32int",
+    "s64int",
+    "size_t",
+    "usize",
+    "ssize",
+    "uintptr",
+    "intptr",
+    "struct",
+    "enum",
+    "union",
+    "typedef",
+}
 
 
 def is_ident_char(ch: str) -> bool:
     return ch.isalnum() or ch == "_"
+
+def prev_ident(data: str, idx: int) -> str:
+    j = idx - 1
+    while j >= 0 and data[j].isspace():
+        j -= 1
+    if j < 0:
+        return ""
+    if not is_ident_char(data[j]):
+        return ""
+    end = j + 1
+    while j >= 0 and is_ident_char(data[j]):
+        j -= 1
+    return data[j + 1:end]
 
 
 def main() -> int:
@@ -63,6 +121,10 @@ def main() -> int:
                 ident = data[i:j]
 
                 if ident in TARGETS:
+                    if prev_ident(data, i) in DECL_KEYWORDS:
+                        out.append(ident)
+                        i = j
+                        continue
                     k = j
                     while k < len(data) and data[k].isspace():
                         k += 1

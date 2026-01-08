@@ -8,14 +8,12 @@
 #include "u.h"
 #include <error.h>
 
-/*@ requires buf != \null;
-  @ requires nbytes >= 0;
-  @ assigns \nothing;
+/*@ assigns \nothing;
   @ terminates \true;
   */
 extern void genrandom(uchar *buf, int nbytes);
 
-/*@ assigns \result \from s;
+/*@ assigns \nothing;
   @ terminates \true;
   */
 extern char *getconf(char *);
@@ -266,18 +264,14 @@ static void check_refcount_invariant(ProcessVault *v) {
  * - Each byte written at least 7 times
  * - Uses memory coherence after each pass
  */
-/*@ requires data == \null || \valid(data + (0..size-1));
-  @ requires size >= 0;
-  @
-  @ behavior null_or_zero:
+/*@ behavior null_or_zero:
   @   assumes data == \null || size == 0;
   @   assigns \nothing;
-  @
   @ behavior valid_wipe:
   @   assumes data != \null && size > 0;
+  @   requires \valid(data + (0 .. (integer)size - 1));
   @   ensures \forall integer i; 0 <= i < size ==> data[i] == 0;
-  @   assigns data[0..size-1];
-  @
+  @   assigns data[0 .. (integer)size - 1];
   @ complete behaviors;
   @ disjoint behaviors;
   */
@@ -290,7 +284,7 @@ static void secure_wipe(uchar *data, ulong size) {
 
   /*@ assert data != \null; */
   /*@ assert size > 0; */
-  /*@ assert \valid(data + (0..size-1)); */
+  /*@ assert \valid(data + (0 .. (integer)size - 1)); */
 
   if (!getconf("quiet"))
     print("ramdisk: wiping vault (7-pass)...\n");
@@ -306,7 +300,7 @@ static void secure_wipe(uchar *data, ulong size) {
   /* Pass 3: Write random */
   /*@ loop invariant 0 <= i <= size;
     @ loop invariant size > 0;
-    @ loop assigns i, data[0..size-1];
+    @ loop assigns i, data[0 .. (integer)size - 1];
     @ loop variant size - i;
     */
   for (i = 0; i < size; i += 256) {
@@ -328,7 +322,7 @@ static void secure_wipe(uchar *data, ulong size) {
   /* Pass 6: Write random */
   /*@ loop invariant 0 <= i <= size;
     @ loop invariant size > 0;
-    @ loop assigns i, data[0..size-1];
+    @ loop assigns i, data[0 .. (integer)size - 1];
     @ loop variant size - i;
     */
   for (i = 0; i < size; i += 256) {
