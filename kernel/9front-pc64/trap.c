@@ -194,7 +194,7 @@ void trap(Ureg *ureg) {
 
   /* DEBUG: Show first few traps during boot */
   trap_count++;
-  if ((trap_count <= 10 || vno < 32) && boot_verbose) {
+  if ((trap_count <= 50 || vno < 32 || trap_count % 100 == 0) && boot_verbose) {
     uintptr pc = ureg->pc;
     print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
           ureg->sp, userureg(ureg));
@@ -540,6 +540,9 @@ static void faultamd64(Ureg *ureg, void *) {
     faultnote("fault", read ? "read" : "write", addr);
   }
 
+  print("faultamd64: DONE pid=%ld addr=%#llx user=%d\n", up ? up->pid : -1,
+        (unsigned long long)addr, user);
+
   if (!user)
     poperror();
 }
@@ -608,8 +611,13 @@ void syscall(Ureg *ureg) {
   /* Debug: after 9P dispatch */
   /* DEBUG: Disabled verbose syscall return tracing */
   if (syscall_count <= 50 || syscall_count % 100 == 0)
-    print("syscall: 9P dispatch returned ret=%ld delaysched=%d\n", ureg->ax,
-          up->delaysched);
+    print("syscall: 9P dispatch returned ret=%ld delaysched=%d islo=%d\n",
+          ureg->ax, up->delaysched, islo());
+
+  /* FORCE INTERRUPTS ENABLED ON RETURN */
+  /* Ensure R11 (for sysret) and Flags (for iret) have IF=1 */
+  ureg->r11 |= 0x200;
+  ureg->flags |= 0x200;
 
   /* if we delayed sched because we held a lock, sched now */
   if (up->delaysched) {

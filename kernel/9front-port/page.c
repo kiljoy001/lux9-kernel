@@ -171,6 +171,10 @@ static void pagechaindone(void) {
     wakeup(&palloc.pwait[1]);
 }
 
+/*@ requires head == \null || \valid(head);
+  @ requires tail == \null || \valid(tail);
+  @ assigns \everything;
+  @*/
 void freepages(Page *head, Page *tail, ulong np) {
   if (head == nil)
     return;
@@ -300,6 +304,8 @@ void freepages(Page *head, Page *tail, ulong np) {
   }
 }
 
+/*@ assigns \everything;
+  @*/
 ulong pagereclaim(Image *i) {
   Page **h, **e, **l, **x, *p;
   Page *fh, *ft;
@@ -358,6 +364,9 @@ static int ispages(void *) {
          up->noswap && palloc.freecount > 0;
 }
 
+/*@ assigns \everything;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 Page *newpage(uintptr va, Segment *seg) {
   Page *p, **l;
   int color;
@@ -487,6 +496,9 @@ Page *newpage(uintptr va, Segment *seg) {
  *  deadpage() decrements the page refcount
  *  and returns the page when it becomes freeable.
  */
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 Page *deadpage(Page *p) {
   if (p->image != nil) {
     decref(p);
@@ -502,6 +514,9 @@ Page *deadpage(Page *p) {
   return p;
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void putpage(Page *p) {
   /* Release ownership before freeing */
   /* TEMPORARILY DISABLED - pageown lock is broken */
@@ -514,6 +529,10 @@ void putpage(Page *p) {
     freepages(p, p, 1);
 }
 
+/*@ requires f == \null || \valid(f);
+  @ requires t == \null || \valid(t);
+  @ assigns \everything;
+  @*/
 void copypage(Page *f, Page *t) {
   KMap *ks, *kd;
 
@@ -524,6 +543,10 @@ void copypage(Page *f, Page *t) {
   kunmap(kd);
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @ ensures \result == p;
+  @*/
 Page *fillpage(Page *p, int c) {
   KMap *k;
 
@@ -535,6 +558,9 @@ Page *fillpage(Page *p, int c) {
   return p;
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void cachepage(Page *p, Image *i) {
   Page *x, **h;
   uintptr daddr;
@@ -556,6 +582,9 @@ done:
   unlock(i);
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void uncachepage(Page *p) {
   Page **l, *x;
   Image *i;
@@ -583,6 +612,9 @@ done:
   unlock(i);
 }
 
+/*@ assigns \everything;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 Page *lookpage(Image *i, uintptr daddr) {
   Page *p, **h, **l;
 
@@ -604,6 +636,8 @@ Page *lookpage(Image *i, uintptr daddr) {
   return nil;
 }
 
+/*@ assigns \everything;
+  @*/
 void cachedel(Image *i, uintptr daddr) {
   Page *p;
 
@@ -613,6 +647,8 @@ void cachedel(Image *i, uintptr daddr) {
   }
 }
 
+/*@ assigns \everything;
+  @*/
 void zeroprivatepages(void) {
   Page *p, *pe;
 
@@ -642,6 +678,8 @@ void zeroprivatepages(void) {
  * This function creates the necessary page table entries
  * and links them into the current process's mmuhead.
  */
+/*@ assigns \everything;
+  @*/
 void userpmap(uintptr va, uintptr pa, int perms) {
   uintptr *pte;
   int x;

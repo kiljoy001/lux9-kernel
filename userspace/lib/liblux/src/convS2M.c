@@ -197,7 +197,7 @@ uint sizeS2M(Fcall *f) {
     break;
 
   case Tsysexec:
-    n += stringsz(f->name);
+    n += stringsz(f->path);
     n += BIT32SZ; /* argc */
     break;
 
@@ -597,7 +597,7 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
     break;
 
   case Tsysexec:
-    p = pstring(p, f->name);
+    p = pstring(p, f->path);
     PBIT32(p, f->argc);
     p += BIT32SZ;
     break;

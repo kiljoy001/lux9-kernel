@@ -63,6 +63,7 @@ MSGORD_C := kernel/msgord.c
 CONSENSUS_DEPTH_C := kernel/consensus_depth.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
 PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c kernel/distributed_pebble.c
+EXCHANGE_POOL_C := kernel/exchange_pool.c kernel/exchange_pool_ipc.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
 CAPABILITY_C := kernel/capability/clr_capability.c
@@ -98,6 +99,7 @@ CONSENSUS_DEPTH_O := $(CONSENSUS_DEPTH_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
 UUID_O := kernel/lib/uuid.o
 PEBBLE_O := $(PEBBLE_C:.c=.o)
+EXCHANGE_POOL_O := $(EXCHANGE_POOL_C:.c=.o)
 POW_GATE_O := $(POW_GATE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 CAPABILITY_O := $(CAPABILITY_C:.c=.o)
@@ -110,7 +112,7 @@ SYMBOLIC_O := $(SYMBOLIC_C:.c=.o)
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(UUID_O)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(UUID_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help

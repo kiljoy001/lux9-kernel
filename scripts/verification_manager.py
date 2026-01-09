@@ -168,7 +168,7 @@ def verify_acsl_file(file_info):
         cmd.insert(-1, "-wp-skip-fct")
         cmd.insert(-1, "runproc,rebalance")
     env = os.environ.copy()
-    env.setdefault("WHY3CONFIG", "/tmp/why3.conf")
+    env.setdefault("WHY3CONFIG", os.path.join(REPO_ROOT, "why3.conf"))
 
     # Special handling for mmu.c: use our preprocessing shim and x86_64 machdep.
     if file_type == "acsl-mmu":
@@ -184,7 +184,7 @@ def verify_acsl_file(file_info):
             full_path,
         ]
         env.setdefault("FRAMAC_SHARE", os.path.join(REPO_ROOT, "proofs/mmu"))
-        env.setdefault("WHY3CONFIG", "/tmp/why3.conf")
+        env.setdefault("WHY3CONFIG", os.path.join(REPO_ROOT, "why3.conf"))
     
     status = "UNKNOWN"
     output = ""

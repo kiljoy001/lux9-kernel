@@ -67,9 +67,6 @@ long decref(Ref *);
 int decrypt(void *, void *, int);
 void delay(int);
 Proc *dequeueproc(Schedq *, Proc *);
-/*@ assigns \result \from \nothing;
-  @ terminates \true;
-  */
 /*@ assigns \nothing; */
 Chan *devattach(int, char *spec);
 Block *devbread(Chan *, long, ulong);

@@ -2,7 +2,7 @@
 
 # Compiler settings
 CC=gcc
-CFLAGS=-I../inc -I../../../include -fPIC -Wall -Wextra -nostdlib -ffreestanding
+CFLAGS=-Iinc -I../../../kernel/include -I../../../include -D_LOCK_H_ -fPIC -Wall -Wextra -nostdlib -ffreestanding
 AR=ar
 
 # Source files

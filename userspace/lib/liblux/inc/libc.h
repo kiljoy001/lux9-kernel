@@ -5,6 +5,10 @@
 
 #define MAXWELEM 16
 
+typedef struct Lock {
+  int val;
+} Lock;
+
 typedef struct Qid Qid;
 typedef struct Dir Dir;
 

@@ -1,6 +1,7 @@
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
+#include "pageown.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -324,6 +325,35 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   }
 
   addr &= ~(BY2PG - 1);
+
+  /*
+   * LAZY ALLOCATION: If pseg->pa is 0, this is a demand-paged exchange page.
+   * Allocate a fresh physical page now.
+   */
+  if (s->pseg->pa == 0) {
+    void *kva = mallocalign(BY2PG, BY2PG, 0, 0);
+    if (kva == nil) {
+      print("mapphys: mallocalign failed for demand-paged exchange page\n");
+      qunlock(&s->qlock);
+      error(Enovmem);
+    }
+    memset(kva, 0, BY2PG);
+
+    /* Store physical address in pseg */
+    s->pseg->pa = PADDR(kva);
+
+    print("mapphys: LAZY ALLOC exchange page pid=%lud kva=%p pa=%#p\n", up->pid,
+          kva, s->pseg->pa);
+
+    /* Register with borrow checker - process initially owns it */
+    extern uintptr saved_limine_hhdm_offset;
+    uintptr hhdm_va = s->pseg->pa + saved_limine_hhdm_offset;
+
+    if (pageown_acquire(up, s->pseg->pa, hhdm_va) != POWN_OK) {
+      print("mapphys: failed to acquire ownership of exchange page\n");
+    }
+  }
+
   pg.ref = 1;
   pg.va = addr;
   pg.pa = s->pseg->pa + (addr - s->base);
@@ -460,8 +490,6 @@ int fault(uintptr addr, uintptr pc, int read) {
   if (up && m && up->nlocks == 0)
     spllo();
 
-  print("fault: DONE pid=%ld addr=%#llx returning 0\n", up->pid,
-        (unsigned long long)addr);
   return 0;
 }
 

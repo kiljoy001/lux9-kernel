@@ -285,46 +285,32 @@ int sys_rfork(int flags) {
   /* 2. Syscall */
   long reg_ret = _syscall();
 
-  sys_write(1, "DEBUG: _syscall returned\n", 25);
-
   /* 3. Handle Child */
   if (reg_ret == 0) {
-    /* Child */
+    /* Child - return 0 directly */
     return 0;
   }
 
-  /* Parent */
-  char buf[32];
-  int i = 0;
-  long n = reg_ret;
-  if (n == 0)
-    buf[i++] = '0';
-  while (n > 0) {
-    buf[i++] = (n % 10) + '0';
-    n /= 10;
-  }
-  buf[i] = '\n';
-  sys_write(1, "rfork_ret: ", 11);
-  sys_write(1, buf, i);
+  /* Parent - parse reply */
+  /* Do NOT shadow buf */
+  /* Wait: Parent expects reply in exchange page?
+     rfork reply is just PID in RAX (reg_ret) from kernel.
+     But convM2S is needed if kernel wrote a reply message?
+     Kernel: sysrfork returns PID. p9_dispatch returns 0 tag=...
+     Wait, kernel p9_dispatch writes Rsyscall reply to exchange page?
+     Yes: r->retval = ret; convS2M...
+     So Parent MUST parse the reply to follow 9P protocol state?
+     Or just return reg_ret?
+     Usually 'retval' in Rsyscall matches RAX.
+     So parsing is good for consistency but reg_ret is sufficient.
+     Let's verify what happens.
+  */
 
-  /* Parent reads reply from Exchange Page ... or just returns AX value? */
-  /* We fixed kernel to set AX, so we can just return reg_ret */
+  /* We should parse Rsyscall to ensure exchange page is consumed/valid? */
+  /* Or just return reg_ret. */
+  /* For now, trust reg_ret but check if we need to clean up anything. */
+
   return (int)reg_ret;
-
-  /* 4. Handle Parent - Read Reply */
-  if ((u64int)&rx > 0x7FFFFFFFFFFF)
-    return -2;
-  memset(&rx, 0, sizeof(Fcall));
-
-  uint ret = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, &rx);
-  if ((int)ret <= 0)
-    return -200;
-
-  if (rx.type == Rerror)
-    return -1;
-
-  /* For Parent, kernel returns PID in retval */
-  return (int)rx.retval;
 }
 
 int sys_bind(char *old, char *new, int flags) {
@@ -347,7 +333,6 @@ int sys_getpid2(void *out, ulong len) {
   p += 8;
   pack64(p, (uvlong)len);
   p += 8;
-
   return do_syscall(SYS_GETPID2, buf, p - buf, nil);
 }
 
@@ -358,10 +343,10 @@ void sys_exec(char *path) {
   memset(&rx, 0, sizeof(Fcall));
   tx.type = Tsysexec;
   tx.tag = 1;
-  tx.name = path;
+  tx.path = path;
   tx.argc = 0; /* No additional args for now */
 
-  lux_call(&tx, &rx);
+  int ret = lux_call(&tx, &rx);
   /* If we return, exec failed */
 }
 

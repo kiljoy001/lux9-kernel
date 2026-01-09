@@ -2,3 +2,7 @@ xalloc_model.vo xalloc_model.glob xalloc_model.v.beautified xalloc_model.require
 xalloc_model.vos xalloc_model.vok xalloc_model.required_vos: xalloc_model.v 
 page_allocator_model.vo page_allocator_model.glob page_allocator_model.v.beautified page_allocator_model.required_vo: page_allocator_model.v 
 page_allocator_model.vos page_allocator_model.vok page_allocator_model.required_vos: page_allocator_model.v 
+page_allocator_security.vo page_allocator_security.glob page_allocator_security.v.beautified page_allocator_security.required_vo: page_allocator_security.v 
+page_allocator_security.vos page_allocator_security.vok page_allocator_security.required_vos: page_allocator_security.v 
+page_allocator_refinement.vo page_allocator_refinement.glob page_allocator_refinement.v.beautified page_allocator_refinement.required_vo: page_allocator_refinement.v 
+page_allocator_refinement.vos page_allocator_refinement.vok page_allocator_refinement.required_vos: page_allocator_refinement.v 

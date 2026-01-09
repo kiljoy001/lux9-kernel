@@ -73,6 +73,7 @@ typedef struct Fcall {
       u32int pid;   /* Rsysfork, Rsyswait */
     };
     struct {
+      char *path;  /* Tsysexec - executable path */
       char **argv; /* Tsysexec - argument array */
       u32int argc; /* Tsysexec - argument count */
     };
@@ -305,8 +306,15 @@ enum {
   SYS_MOUNT = 46,
   SYS_NSEC = 53,
   SYS_BRK = 55,
-  SYS_WAIT = 166,
-  SYS_GETPID2 = 66
+  SYS_GETPID2 = 66,
+  SYS_EXCHANGE_ALLOC = 67,
+  SYS_EXCHANGE_FREE = 68,
+  SYS_EXCHANGE_PUBLISH = 69,
+  SYS_EXCHANGE_SUBSCRIBE = 70,
+  SYS_EXCHANGE_UNSUBSCRIBE = 71,
+  SYS_EXCHANGE_RECEIVE = 72,
+  SYS_WAIT = 166
+
 };
 
 #endif /* _FCALL_H_ */

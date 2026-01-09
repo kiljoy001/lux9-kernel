@@ -1236,14 +1236,20 @@ void mmurelease(Proc *proc) {
   taskswitch((uintptr)m + MACHSIZE);
 }
 
-void putmmu(uintptr va, uintptr pa, Page *) {
+void putmmu(uintptr va, uintptr pa, Page *pg) {
   uintptr *pte, old;
   int x;
 
   x = splhi();
   pte = getpte(va);
   old = *pte;
-  *pte = pa | PTEACCESSED | PTEDIRTY | PTEUSER | PTEWRITE | PTEVALID;
+  if (pg == nil) {
+    /* Invalidate PTE */
+    *pte = 0;
+  } else {
+    /* Map with flags - strict hierarchy: PA=0 is invalid unless specified */
+    *pte = pa | PTEACCESSED | PTEDIRTY | PTEUSER | PTEWRITE | PTEVALID;
+  }
   splx(x);
   invlpg(va);
 }

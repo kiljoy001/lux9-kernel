@@ -183,6 +183,61 @@ static void store_session_pebble(Proc *p, PebbleToken *tok) {
   /* Store expires in next 8 bytes */
   PBIT64(ctl->session_pebble + 25, tok->expires);
 }
+
+static void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
+                                P9Control *saved_ctl, u32int rep_head,
+                                u32int rep_tail, int ring_mode) {
+  P9Control *ctl;
+  uchar *msg_buf;
+  uchar reply_copy[P9_MSG_SIZE];
+
+  if (p == nil || p->p9page == nil)
+    return;
+
+  memset(reply_copy, 0, sizeof(reply_copy));
+  if (reply != nil && reply_size > 0 && reply_size <= P9_MSG_SIZE)
+    memmove(reply_copy, reply, reply_size);
+
+  memset(p->p9page, 0, P9_PAGE_SIZE);
+
+  ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+  msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
+
+  if (saved_ctl != nil) {
+    memmove(ctl->session_pebble, saved_ctl->session_pebble,
+            sizeof(ctl->session_pebble));
+    ctl->req_seq = saved_ctl->req_seq;
+    ctl->rep_seq = saved_ctl->rep_seq;
+  }
+
+  if (ring_mode) {
+    u32int idx = rep_head;
+    while (idx != rep_tail) {
+      uchar *src = reply_copy + (idx * P9_RING_SLOT_SIZE);
+      uchar *dst = msg_buf + (idx * P9_RING_SLOT_SIZE);
+      memmove(dst, src, P9_RING_SLOT_SIZE);
+      idx = (idx + 1) % P9_RING_SLOTS;
+    }
+    ctl->rep_head = rep_head;
+    ctl->rep_tail = rep_tail;
+  } else if (reply_size > 0) {
+    memmove(msg_buf, reply_copy, reply_size);
+    ctl->rep_head = 0;
+    ctl->rep_tail = reply_size;
+  }
+}
+
+static void dump_bytes(const char *label, const uchar *buf, uint n) {
+  uint i;
+
+  if (buf == nil || n == 0)
+    return;
+
+  print("%s", label);
+  for (i = 0; i < n; i++)
+    print(" %02x", buf[i]);
+  print("\n");
+}
 /* Forward declaration of generic device handler */
 
 /*
@@ -1212,9 +1267,10 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       p = tsyscall_skip_argc(p, ep, 1);
 
       int *fd = (int *)((uchar *)proc->p9page + P9_MSG_OFFSET + 64);
+      int *ufd = (int *)(EXCHANGE_PAGE_ADDR + P9_MSG_OFFSET + 64);
       fd[0] = -1;
       fd[1] = -1;
-      ulong args[1] = {(ulong)fd};
+      ulong args[1] = {(ulong)ufd};
 
       if (waserror()) {
         r->type = Rerror;
@@ -1268,10 +1324,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
 
-      char *old = smalloc(oldlen + 1);
-      memmove(old, p, oldlen);
-      old[oldlen] = 0;
+      uchar *oldp = p;
       p += oldlen;
+      if (oldp + oldlen > ep) {
+        r->type = Rerror;
+        r->ename = "short mount msg";
+        return -1;
+      }
 
       ulong flags = GBIT32(p);
       p += 4;
@@ -1279,39 +1338,53 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int anamelen = GBIT16(p);
       p += 2;
       if (p + anamelen > ep) {
-        free(old);
         r->type = Rerror;
         r->ename = "short mount msg";
         return -1;
       }
-      char *aname = nil;
-      if (anamelen > 0) {
-        aname = smalloc(anamelen + 1);
-        memmove(aname, p, anamelen);
-        aname[anamelen] = 0;
-      }
+      uchar *anamep = p;
 
       ulong args[5];
+      uchar *msg_end = (uchar *)proc->p9page + P9_MSG_OFFSET + P9_MSG_SIZE;
+      ulong scratch_needed = oldlen + 1 + anamelen + 1;
+      if (ep + scratch_needed > msg_end) {
+        r->type = Rerror;
+        r->ename = "mount scratch overflow";
+        return -1;
+      }
+
+      uchar *scratch = ep;
+      uchar *oldk = scratch;
+      memmove(oldk, oldp, oldlen);
+      oldk[oldlen] = 0;
+      scratch += oldlen + 1;
+
+      uchar *anamek = scratch;
+      if (anamelen > 0) {
+        memmove(anamek, anamep, anamelen);
+        anamek[anamelen] = 0;
+        scratch += anamelen + 1;
+      } else {
+        anamek[0] = 0;
+      }
+
+      uintptr kpage = (uintptr)proc->p9page;
+      uintptr uold = EXCHANGE_PAGE_ADDR + ((uintptr)oldk - kpage);
+      uintptr uaname = EXCHANGE_PAGE_ADDR + ((uintptr)anamek - kpage);
+
       args[0] = fd;
       args[1] = afd;
-      args[2] = (ulong)old;
+      args[2] = (ulong)uold;
       args[3] = flags;
-      args[4] = (ulong)aname;
+      args[4] = (ulong)uaname;
 
       if (waserror()) {
-        if (aname)
-          free(aname);
-        free(old);
         r->type = Rerror;
         snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
         return -1;
       }
       sysmount(args);
       poperror();
-
-      if (aname)
-        free(aname);
-      free(old);
 
       r->type = Rsyscall;
       r->tag = t->tag;
@@ -1341,6 +1414,175 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       r->retval = pid;
       r->scount = strlen(msg) + 1;
       r->sdata = (uchar *)msg;
+      return 0;
+    }
+
+    /* Exchange Pool IPC Syscalls */
+    case SYS_EXCHANGE_ALLOC: {
+      extern uintptr sys_exchange_alloc(void *);
+      print("p9_dispatch: SYS_EXCHANGE_ALLOC\n");
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      uintptr cap = sys_exchange_alloc(nil);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = (u64int)cap;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_FREE: {
+      extern uintptr sys_exchange_free(void *);
+      print("p9_dispatch: SYS_EXCHANGE_FREE\n");
+
+      /* Format: [cap_ptr 8] */
+      p = tsyscall_skip_argc(p, ep, 1);
+      if (p + 8 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+      uintptr cap_ptr = (uintptr)GBIT64(p);
+
+      ulong args[1] = {cap_ptr};
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+      sys_exchange_free(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_PUBLISH: {
+      extern uintptr sys_exchange_publish(void *);
+      print("p9_dispatch: SYS_EXCHANGE_PUBLISH\n");
+
+      /* Format: [topic_name s] [data_ptr 8] [len 8] */
+      /* But sdata already contains the packed data from userspace */
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      /* Parse topic from sdata - it's a null-terminated string */
+      char *topic = (char *)t->sdata;
+      int topic_len = 0;
+      while (topic_len < t->scount && topic[topic_len] != '\0')
+        topic_len++;
+
+      /* After topic comes data pointer and length */
+      uchar *rest = t->sdata + topic_len + 1;
+      if (rest + 12 > t->sdata + t->scount) {
+        poperror();
+        r->type = Rerror;
+        r->ename = "exchange_publish: incomplete message";
+        return -1;
+      }
+
+      uintptr data_ptr = (uintptr)GBIT32(rest);
+      if (sizeof(uintptr) > 4) {
+        data_ptr |= ((uintptr)GBIT32(rest + 4) << 32);
+        rest += 8;
+      } else {
+        rest += 4;
+      }
+      ulong len = GBIT32(rest);
+
+      /* Build args for sys_exchange_publish: [topic, data, len] */
+      ulong args[3] = {(ulong)topic, (ulong)data_ptr, len};
+      uintptr cap = sys_exchange_publish(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = (u64int)cap;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_SUBSCRIBE: {
+      extern uintptr sys_exchange_subscribe(void *);
+      print("p9_dispatch: SYS_EXCHANGE_SUBSCRIBE\n");
+
+      /* sdata contains topic name as null-terminated string */
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      char *topic = (char *)t->sdata;
+      ulong args[1] = {(ulong)topic};
+      uintptr ret = sys_exchange_subscribe(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = ret;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_UNSUBSCRIBE: {
+      extern uintptr sys_exchange_unsubscribe(void *);
+      print("p9_dispatch: SYS_EXCHANGE_UNSUBSCRIBE\n");
+
+      /* sdata contains topic name as null-terminated string */
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      char *topic = (char *)t->sdata;
+      ulong args[1] = {(ulong)topic};
+      uintptr ret = sys_exchange_unsubscribe(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = ret;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_RECEIVE: {
+      extern uintptr sys_exchange_receive(void *);
+      print("p9_dispatch: SYS_EXCHANGE_RECEIVE\n");
+
+      if (waserror()) {
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      uintptr notif = sys_exchange_receive(nil);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = (u64int)notif;
+      r->scount = 0;
+      r->sdata = nil;
       return 0;
     }
 
@@ -1773,9 +2015,10 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     uintptr kpage, kpath, path_offset, upath, argv_offset, uargv;
 
     print("p9_dispatch: Tsysexec received name='%s' argc=%d\n",
-          t->name ? t->name : "nil", t->argc);
+          t->path ? t->path : "nil", t->argc);
 
     if (t->argc > 1) {
+      print("p9_dispatch: Tsysexec error: argc > 1\n");
       r->type = Rerror;
       r->ename = "argv not supported in Tsysexec";
       return -1;
@@ -1783,10 +2026,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Calculate User Address of the path string */
     kpage = (uintptr)p->p9page;
-    kpath = (uintptr)t->name;
+    kpath = (uintptr)t->path;
 
     /* Ensure kpath is within the page */
     if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
+      print("p9_dispatch: Tsysexec error: path outside page (kpath=%p "
+            "kpage=%p)\n",
+            (void *)kpath, (void *)kpage);
       r->type = Rerror;
       r->ename = "Tsysexec: path outside exchange page";
       return -1;
@@ -1809,6 +2055,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Check bounds for argv */
     if (argvp + 2 * sizeof(char *) >= kpage + P9_PAGE_SIZE) {
+      print("p9_dispatch: Tsysexec error: no room for argv\n");
       r->type = Rerror;
       r->ename = "Tsysexec: no room for argv";
       return -1;
@@ -1825,6 +2072,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     args[1] = (ulong)uargv;
 
     if (waserror()) {
+      print("p9_dispatch: Tsysexec error: waserror trip: %s\n", up->errstr);
       r->type = Rerror;
       r->ename = up->errstr;
       return -1;
@@ -1833,8 +2081,15 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     sysexec(args);
     poperror();
 
+    if (up->dbgreg != nil && ((void **)up->dbgreg)[-1] == noteret) {
+      r->type = Rsysexec;
+      r->tag = t->tag;
+      return 0;
+    }
+
     r->type = Rerror;
     r->ename = "exec returned unexpectedly";
+    print("p9_dispatch: Tsysexec error: exec returned unexpectedly\n");
     return -1;
   }
 
@@ -1949,10 +2204,12 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     extern uintptr syspipe(void *list_void);
     ulong args[1];
     int *fd;
+    int *ufd;
 
     fd = (int *)((uchar *)p->p9page + P9_MSG_OFFSET + 64);
+    ufd = (int *)(EXCHANGE_PAGE_ADDR + P9_MSG_OFFSET + 64);
     fd[0] = fd[1] = -1;
-    args[0] = (ulong)fd;
+    args[0] = (ulong)ufd;
 
     if (waserror()) {
       r->type = Rerror;
@@ -1969,7 +2226,6 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->fid1 = fd[1];
     return 0;
   }
-
   if (t->type == Tsysfd2path) {
     extern uintptr sysfd2path(void *list_void);
     ulong args[3];
@@ -2305,10 +2561,17 @@ static void p9_route_reply_callback(OrdMsg *msg, int status, void *arg) {
   if (ctx->caller->p9page != nil) {
     P9Control *ctl =
         (P9Control *)((uintptr)ctx->caller->p9page + P9_CONTROL_OFFSET);
-    uchar *rep_buf = (uchar *)ctx->caller->p9page + P9_REPLY_OFFSET;
-    uint rep_size = convS2M(&reply, rep_buf, P9_PAGE_SIZE);
-    ctl->rep_head = 0;
-    ctl->rep_tail = rep_size;
+    uchar rep_copy[P9_MSG_SIZE];
+    P9Control ctl_saved;
+    uint rep_size = convS2M(&reply, rep_copy, P9_MSG_SIZE);
+    if (rep_size == 0) {
+      atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+      xfree(ctx);
+      return;
+    }
+    memmove(&ctl_saved, ctl, sizeof(ctl_saved));
+    scrub_exchange_page(ctx->caller, rep_copy, rep_size, &ctl_saved, 0, 0, 0);
+    ctl = (P9Control *)((uintptr)ctx->caller->p9page + P9_CONTROL_OFFSET);
     ctl->rep_seq++;
     atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
   }
@@ -2414,15 +2677,24 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   int result;
   uintptr page_pa;
   enum BorrowError berr;
+  P9Control ctl_saved;
 
-  /* Validate exchange page exists */
+  /* Validate exchange page exists and is coherent with P9SEG */
+  if (p->seg[P9SEG] != nil && p->seg[P9SEG]->pseg != nil &&
+      p->seg[P9SEG]->pseg->pa != 0) {
+    p->p9page = (void *)kaddr(p->seg[P9SEG]->pseg->pa);
+  }
   if (p->p9page == nil) {
     print("p9_handle_doorbell: no exchange page for pid %lud\n", p->pid);
     return -1;
   }
 
   /* Get physical address of the single exchange page */
-  page_pa = PADDR(p->p9page);
+  if (p->seg[P9SEG] != nil && p->seg[P9SEG]->pseg != nil &&
+      p->seg[P9SEG]->pseg->pa != 0)
+    page_pa = p->seg[P9SEG]->pseg->pa;
+  else
+    page_pa = PADDR(p->p9page);
 
   /* Ensure exchange page is mapped into userspace */
   uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
@@ -2437,6 +2709,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
    * Process has finished writing request and issued syscall.
    * Transfer ownership so kernel has exclusive access.
    */
+  int s = splhi(); /* Block interrupts during critical ownership transfer */
   berr = borrow_transfer(p, up, page_pa);
   if (berr != BORROW_OK) {
     /* First syscall after boot - process may not have formal ownership yet */
@@ -2447,6 +2720,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     if (berr != BORROW_OK && berr != BORROW_EALREADY) {
       print("p9_handle_doorbell: FATAL - kernel can't acquire page (berr=%d)\n",
             berr);
+      splx(s);
       return -1;
     }
   }
@@ -2456,6 +2730,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   /* Get control block and message buffer */
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
+  memmove(&ctl_saved, ctl, sizeof(ctl_saved));
 
   /* Mark as pending */
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
@@ -2465,10 +2740,23 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     /* Memory barrier to ensure user writes are visible to kernel */
     __asm__ volatile("mfence" ::: "memory");
     result = p9_handle_ring(p, ctl, msg_buf);
+    memmove(&ctl_saved, ctl, sizeof(ctl_saved));
+    u32int rep_head = ctl->rep_head;
+    u32int rep_tail = ctl->rep_tail;
+    u32int req_head = ctl->req_head;
+    u32int req_tail = ctl->req_tail;
+    scrub_exchange_page(p, msg_buf, P9_MSG_SIZE, &ctl_saved, rep_head, rep_tail,
+                        1);
+    ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+    ctl->req_head = req_head;
+    ctl->req_tail = req_tail;
+    ctl->rep_head = rep_head;
+    ctl->rep_tail = rep_tail;
     if (result < 0)
       atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     else
       atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+    splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
 
@@ -2480,35 +2768,39 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
    * The mfence ensures cache coherency between different VA mappings. */
   __asm__ volatile("mfence" ::: "memory");
 
-  /* Debug: hex dump first 16 bytes of exchange page */
-  print("p9_handle_doorbell: msg_buf=%p first 16 bytes: ", msg_buf);
-  for (int i = 0; i < 16; i++)
-    print("%02x ", msg_buf[i]);
-  print("\n");
-
   /* Get message size from 9P header (first 4 bytes) */
   msg_size = GBIT32(msg_buf);
   if (msg_size < 7 || msg_size > P9_MSG_SIZE) {
     print("p9_handle_doorbell: invalid message size %ud\n", msg_size);
+    print("p9_handle_doorbell: ctl req_head=%ud req_tail=%ud rep_head=%ud "
+          "rep_tail=%ud\n",
+          ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
+    dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     result = -1;
+    splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
 
   if (convM2S(msg_buf, msg_size, &t) == 0) {
     print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
           msg_buf[0]);
-    atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-    result = -1;
+    print("p9_handle_doorbell: msg_size=%ud ctl req_head=%ud req_tail=%ud "
+          "rep_head=%ud rep_tail=%ud\n",
+          msg_size, ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
+    dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
+    splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
+  splx(s); /* Restore interrupts before long processing. */
 
   /* Dispatch through 9P router */
   memset(&r, 0, sizeof(r));
   result = p9_dispatch(p, &t, &r);
 
   /* Write reply to SAME buffer location (ownership-flip model) */
-  uint rep_size = convS2M(&r, msg_buf, P9_MSG_SIZE);
+  uchar reply_copy[P9_MSG_SIZE];
+  uint rep_size = convS2M(&r, reply_copy, P9_MSG_SIZE);
   if (rep_size == 0) {
     print("p9_handle_doorbell: failed to serialize reply (r.type=%d)\n",
           r.type);
@@ -2516,19 +2808,14 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     result = -1;
     goto cleanup_ownership;
   }
+  memmove(&ctl_saved, ctl, sizeof(ctl_saved));
+  scrub_exchange_page(p, reply_copy, rep_size, &ctl_saved, 0, 0, 0);
+  ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+  msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
 
-  /* Debug: show reply bytes for Rsyscall */
-  if (r.type == Rsyscall) {
-    print("p9_handle_doorbell: reply size=%d type=0x%02x first 16: ", rep_size,
-          msg_buf[4]);
-    for (int i = 0; i < 16 && i < rep_size; i++)
-      print("%02x ", msg_buf[i]);
-    print("\n");
-
-    /* Set RAX to return value for ABI compatibility and efficient checking */
-    if (ureg != nil) {
-      ureg->ax = (ulong)r.retval;
-    }
+  /* Set RAX to return value for ABI compatibility and efficient checking */
+  if (ureg != nil) {
+    ureg->ax = (ulong)r.retval;
   }
 
   /* Success! Reply written to buffer.
@@ -4471,7 +4758,18 @@ int p9_handle_doorbell_async(Proc *p) {
     p9_dispatch(p, &t, &r);
 
     /* Write reply to exchange page */
-    convS2M(&r, (uchar *)p->p9page + P9_REPLY_OFFSET, P9_REPLY_SIZE);
+    {
+      P9Control ctl_saved;
+      P9Control *ctl2 = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+      uchar rep_copy[P9_MSG_SIZE];
+      uint rep_size = convS2M(&r, rep_copy, P9_REPLY_SIZE);
+      if (rep_size == 0) {
+        atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+        return 1;
+      }
+      memmove(&ctl_saved, ctl2, sizeof(ctl_saved));
+      scrub_exchange_page(p, rep_copy, rep_size, &ctl_saved, 0, 0, 0);
+    }
 
     /* Release semantics for completion */
     atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);

@@ -362,7 +362,7 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     break;
 
   case Tsysexec:
-    p = gstring(p, ep, &f->name);
+    p = gstring(p, ep, &f->path);
     if (p == nil)
       break;
     if (p + BIT32SZ > ep)
