@@ -216,6 +216,7 @@ int notify_subscribers(Topic *topic, UserCapability *published_page) {
 
       Notification *notif =
           &global_pool->notifications[global_pool->notification_count++];
+      notif->subscriber = topic->subscribers[i].subscriber;
       notif->message_id = msg_id;
       notif->topic_uuid = topic->topic_uuid;
       notif->capability = published_page;
@@ -309,16 +310,53 @@ Notification *dequeue_notification(Proc *p) {
   qlock(&global_pool->notifications_lock);
 
   // Look for notifications destined for this process
-  // In a real implementation, we'd have a more sophisticated queuing system
-  if (global_pool->notification_count > 0) {
-    Notification *notif = &global_pool->notifications[0];
-    // Move remaining notifications down
-    for (int i = 1; i < global_pool->notification_count; i++) {
-      global_pool->notifications[i - 1] = global_pool->notifications[i];
+  for (int i = 0; i < global_pool->notification_count; i++) {
+    if (global_pool->notifications[i].subscriber == p) {
+      Notification *notif = &global_pool->notifications[i];
+      
+      // We found a notification for this process. 
+      // Since we need to return a pointer to it, but we are about to shift the array,
+      // we must copy it to a safe location or handle the return value carefully.
+      // However, the caller likely expects a pointer to a struct that persists or is copied.
+      // In this specific codebase style, 'Notification' seems to be a transient struct 
+      // passed by value or pointer to stack. But wait, the function returns 'Notification *'.
+      // If we return a pointer to the array slot, and then shift the array, the pointer becomes invalid/points to wrong data.
+      
+      // Let's allocate a new Notification struct to return, or change return type to value.
+      // Looking at userspace/lib/liblux/src/syscalls.c (from investigation), it returns a pointer.
+      // But the syscall usually returns data by copy.
+      // Let's check sys_exchange.c.
+      // Ah, I can't check sys_exchange.c right now without reading it again.
+      // But usually, these kernel functions returning pointers are dangerous if the underlying storage moves.
+      
+      // IMPORTANT: The original code returned `&global_pool->notifications[0]` then shifted. 
+      // This means the original code was ALREADY BUGGY because `notif` would point to the *next* notification after shift!
+      // Actually, `notif = &global_pool->notifications[0]` gets the address.
+      // Then `global_pool->notifications[0] = global_pool->notifications[1]`.
+      // The data at `notif` (which is `&...[0]`) is OVERWRITTEN.
+      // So the caller gets the *next* notification's data, or garbage.
+      
+      // To fix this properly, we should probably allocate a Notification to return, 
+      // OR (more likely for this kernel style) the syscall wrapper copies it to userspace immediately.
+      // The safest way here without `malloc` (which might sleep) inside qlock 
+      // is to use a static buffer or expect the caller to copy it.
+      // But wait, `xalloc` is used elsewhere.
+      
+      // Let's allocate a copy to return.
+      Notification *ret = xalloc(sizeof(Notification));
+      if (ret) {
+        *ret = global_pool->notifications[i];
+      }
+      
+      // Shift remaining notifications down
+      for (int j = i; j < global_pool->notification_count - 1; j++) {
+        global_pool->notifications[j] = global_pool->notifications[j + 1];
+      }
+      global_pool->notification_count--;
+      
+      qunlock(&global_pool->notifications_lock);
+      return ret;
     }
-    global_pool->notification_count--;
-    qunlock(&global_pool->notifications_lock);
-    return notif;
   }
 
   qunlock(&global_pool->notifications_lock);

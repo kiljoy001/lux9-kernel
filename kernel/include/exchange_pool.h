@@ -51,6 +51,7 @@ typedef struct Notification {
   UserCapability *capability; /* Published page capability */
   int delivered_count;        /* How many subscribers received it */
   int ack_count;              /* How many acknowledged receipt */
+  struct Proc *subscriber;    /* The target subscriber process (Kernel only) */
 } Notification;
 
 /* Per-process allocation tracking */

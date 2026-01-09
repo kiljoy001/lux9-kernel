@@ -20,6 +20,11 @@ static void pack32(uchar *p, int v) {
   p[2] = v >> 16;
   p[3] = v >> 24;
 }
+
+/* Exchange Pool Syscalls */
+#define SYS_EXCHANGE_ALLOC 67
+#define SYS_EXCHANGE_FREE 68
+
 static void pack64(uchar *p, uvlong v) {
   p[0] = v;
   p[1] = v >> 8;
@@ -531,4 +536,170 @@ int sys_sleep(long ms) {
   if (lux_call(&tx, &rx) < 0)
     return -1;
   return 0;
+}
+
+/* Exchange Pool Syscalls */
+
+ExchangeCapability* sys_exchange_alloc(void) {
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_ALLOC;  // Should be 67
+  tx.scount = 0;
+  tx.sdata = 0;
+
+  if (lux_call(&tx, &rx) < 0)
+    return nil;
+    
+  if (rx.retval == 0)
+    return nil;
+    
+  return (ExchangeCapability*)rx.retval;
+}
+
+int sys_exchange_free(ExchangeCapability *cap) {
+  uchar buf[sizeof(uintptr)];
+  uchar *p = buf;
+  
+  // Pack the capability pointer
+  uintptr cap_addr = (uintptr)cap;
+  pack32(p, (uint)(cap_addr & 0xFFFFFFFF));
+  if (sizeof(uintptr) > 4) {
+    pack32(p + 4, (uint)(cap_addr >> 32));
+  }
+  
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_FREE;  // Should be 68
+  tx.sdata = buf;
+  tx.scount = sizeof(uintptr);
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  return 0;
+}
+
+/* Exchange Pool IPC Syscalls */
+
+#define SYS_EXCHANGE_PUBLISH 69
+#define SYS_EXCHANGE_SUBSCRIBE 70
+#define SYS_EXCHANGE_UNSUBSCRIBE 71
+#define SYS_EXCHANGE_RECEIVE 72
+
+ExchangeCapability* sys_exchange_publish(char *topic, void *data, ulong len) {
+  uchar buf[1024]; // Buffer for packed arguments
+  uchar *p = buf;
+  
+  // Pack arguments: topic (string), data (pointer), len (ulong)
+  int topic_len = 0;
+  char *t = topic;
+  while (*t++) topic_len++;
+  
+  if (topic_len >= sizeof(buf) - sizeof(ulong) - 8)
+    return nil; // Topic too long
+    
+  // Copy topic string
+  memmove(p, topic, topic_len + 1); // Include null terminator
+  p += topic_len + 1;
+  
+  // Pack data pointer and length
+  pack32(p, (uint)(uintptr)data);
+  p += 4;
+  if (sizeof(uintptr) > 4) {
+    pack32(p, (uint)((uintptr)data >> 32));
+    p += 4;
+  }
+  pack32(p, (uint)len);
+  p += 4;
+  
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_PUBLISH;
+  tx.sdata = buf;
+  tx.scount = p - buf;
+
+  if (lux_call(&tx, &rx) < 0)
+    return nil;
+    
+  if (rx.retval == 0)
+    return nil;
+    
+  return (ExchangeCapability*)rx.retval;
+}
+
+int sys_exchange_subscribe(char *topic) {
+  uchar buf[256]; // Buffer for topic string
+  int topic_len = 0;
+  char *t = topic;
+  while (*t++) topic_len++;
+  
+  if (topic_len >= sizeof(buf))
+    return -1; // Topic too long
+    
+  memmove(buf, topic, topic_len + 1); // Include null terminator
+  
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_SUBSCRIBE;
+  tx.sdata = buf;
+  tx.scount = topic_len + 1;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  return (int)rx.retval;
+}
+
+int sys_exchange_unsubscribe(char *topic) {
+  uchar buf[256]; // Buffer for topic string
+  int topic_len = 0;
+  char *t = topic;
+  while (*t++) topic_len++;
+  
+  if (topic_len >= sizeof(buf))
+    return -1; // Topic too long
+    
+  memmove(buf, topic, topic_len + 1); // Include null terminator
+  
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_UNSUBSCRIBE;
+  tx.sdata = buf;
+  tx.scount = topic_len + 1;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  return (int)rx.retval;
+}
+
+Notification* sys_exchange_receive(void) {
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = SYS_EXCHANGE_RECEIVE;
+  tx.scount = 0;
+  tx.sdata = 0;
+
+  if (lux_call(&tx, &rx) < 0)
+    return nil;
+    
+  if (rx.retval == 0)
+    return nil;
+    
+  return (Notification*)rx.retval;
 }
