@@ -13,7 +13,7 @@ all: wasm_test extensive_test.wasm
 wasm_test: main.c
 	$(CC) $(CFLAGS) -c -o main.o main.c
 	$(AS) -o start.o ../lib9p_syscall/start.S
-	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld start.o main.o -o wasm_test
+	$(LD) $(LDFLAGS) -T linker.ld start.o main.o -o wasm_test
 
 extensive_test.wasm: extensive_test.wat
 	wat2wasm extensive_test.wat -o extensive_test.wasm

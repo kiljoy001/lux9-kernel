@@ -1,19 +1,11 @@
 /* clang-format off */
-#include "u.h"
+/* u.h is included via command line -include */
 
 /* Local Plan 9 Syscall ABI fix */
-#include <u.h>
 typedef ulong *syscall_va_list;
 #define SYSCALL_ARG(list, type) (*(type*)((list)++))
-/* va_list macro removed to prevent stdarg.h conflict */
-#define va_start(list, start) ((void)0)
-#define va_end(list) ((void)0)
-
 
 #define syscall_vainit(list, start) ((list) = (syscall_va_list)(start))
-
-
-#define SYSCALL_ARG(list, type) (*(type*)((list)++))
 
 #include "portlib.h"
 #include "mem.h"
@@ -22,6 +14,9 @@ typedef ulong *syscall_va_list;
 #include <error.h>
 #include "exchange.h"
 #include "exchange_pool.h"
+
+/* STUB FUNCTIONS - Enabled */
+
 
 /*
  * sys_exchange_prepare - Prepare a page for exchange
@@ -36,12 +31,12 @@ uintptr sys_exchange_prepare(void *list_void) {
   uintptr vaddr;
   UserCapability cap;
   BlindLedgerError err;
-  
+
   vaddr = SYSCALL_ARG(list, uintptr);
-  
+
   /* Call kernel exchange_prepare function */
   err = exchange_prepare(vaddr, &cap);
-  
+
   /* Convert BlindLedgerError to syscall return code */
   switch(err) {
   case BLIND_LEDGER_OK:
@@ -403,3 +398,5 @@ uintptr sysexchangeunsubscribe(void *a) {
 uintptr sysexchangereceive(void *a) {
   return sys_exchange_receive(a);
 }
+
+/* End of syscall wrappers */

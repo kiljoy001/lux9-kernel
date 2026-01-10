@@ -39,10 +39,10 @@ int		exchange_is_valid(const ExchangeHandle *handle);
 Proc*		exchange_get_owner(const ExchangeHandle *handle);
 
 /* Syscall interface */
-long	sys_exchange_prepare(va_list list);
-long	sys_exchange_prepare_range(va_list list);
-long	sys_exchange_accept(va_list list);
-long	sys_exchange_cancel(va_list list);
+uintptr	sys_exchange_prepare(void *list);
+uintptr	sys_exchange_prepare_range(void *list);
+uintptr	sys_exchange_accept(void *list);
+uintptr	sys_exchange_cancel(void *list);
 
 /* Phase 3: Capability-Based Mapping */
 uintptr	exchange_map_by_cap(const UserCapability *cap);
