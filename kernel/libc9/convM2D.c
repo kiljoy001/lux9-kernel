@@ -6,6 +6,19 @@
 #define _BREAK_SORT_2 1
 #include <fcall.h>
 
+/*@
+  @ requires nbuf > 0 ==> \valid_read(buf + (0 .. nbuf-1));
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == -1;
+  @ behavior valid:
+  @   assumes nbuf >= STATFIXLEN;
+  @   ensures \result == 0 || \result == -1;
+  @ behavior too_small:
+  @   assumes nbuf < STATFIXLEN;
+  @   ensures \result == -1;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 int statcheck(uchar *buf, uint nbuf) {
   uchar *ebuf;
   int i;
@@ -31,6 +44,13 @@ int statcheck(uchar *buf, uint nbuf) {
 
 static char nullstring[] = "";
 
+/*@
+  @ requires nbuf > 0 ==> \valid_read(buf + (0 .. nbuf-1));
+  @ requires \valid(d);
+  @ requires strs != \null ==> \valid(strs + (0 .. nbuf));
+  @ assigns *d, strs[0 .. nbuf];
+  @ ensures \result <= nbuf;
+  @*/
 uint convM2D(uchar *buf, uint nbuf, Dir *d, char *strs) {
   uchar *p, *ebuf;
   char *sv[4];

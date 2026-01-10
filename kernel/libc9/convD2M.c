@@ -6,6 +6,15 @@
 #define _BREAK_SORT_2 1
 #include <fcall.h>
 
+/*@
+  @ requires \valid_read(d);
+  @ requires d->name == \null || \valid_read(d->name + (0..));
+  @ requires d->uid == \null || \valid_read(d->uid + (0..));
+  @ requires d->gid == \null || \valid_read(d->gid + (0..));
+  @ requires d->muid == \null || \valid_read(d->muid + (0..));
+  @ assigns \nothing;
+  @ ensures \result >= STATFIXLEN;
+  @*/
 uint sizeD2M(Dir *d) {
   char *sv[4];
   int i, ns;
@@ -23,6 +32,17 @@ uint sizeD2M(Dir *d) {
   return STATFIXLEN + ns;
 }
 
+/*@
+  @ requires \valid_read(d);
+  @ requires nbuf > 0 ==> \valid(buf + (0 .. nbuf-1));
+  @ requires d->name == \null || \valid_read(d->name + (0..));
+  @ requires d->uid == \null || \valid_read(d->uid + (0..));
+  @ requires d->gid == \null || \valid_read(d->gid + (0..));
+  @ requires d->muid == \null || \valid_read(d->muid + (0..));
+  @ assigns buf[0 .. nbuf-1];
+  @ ensures \result <= nbuf;
+  @ ensures \result == 0 || \result >= BIT16SZ;
+  @*/
 uint convD2M(Dir *d, uchar *buf, uint nbuf) {
   uchar *p, *ebuf;
   char *sv[4];

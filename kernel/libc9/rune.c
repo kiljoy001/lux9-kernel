@@ -28,6 +28,22 @@ enum
 	Bad	= Runeerror,
 };
 
+/*@
+  @ requires \valid(rune);
+  @ requires \valid_read((uchar *)str + (0 .. UTFmax-1));
+  @ assigns *rune;
+  @ ensures 1 <= \result <= UTFmax;
+  @ ensures \result == 1 || \result == 2 || \result == 3 || \result == 4;
+  @ behavior ascii:
+  @   assumes (uchar)str[0] < 0x80;
+  @   ensures \result == 1;
+  @   ensures *rune == (uchar)str[0];
+  @ behavior multi_byte:
+  @   assumes (uchar)str[0] >= 0x80;
+  @   ensures 1 <= \result <= 4;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 int
 chartorune(Rune *rune, char *str)
 {
@@ -103,6 +119,26 @@ bad:
 	return 1;
 }
 
+/*@
+  @ requires \valid(str + (0 .. UTFmax-1));
+  @ requires \valid_read(rune);
+  @ assigns str[0 .. UTFmax-1];
+  @ ensures 1 <= \result <= 4;
+  @ behavior ascii:
+  @   assumes *rune <= 0x7F;
+  @   ensures \result == 1;
+  @   ensures str[0] == (char)*rune;
+  @ behavior two_byte:
+  @   assumes 0x80 <= *rune <= 0x7FF;
+  @   ensures \result == 2;
+  @ behavior three_byte:
+  @   assumes 0x800 <= *rune <= 0xFFFF;
+  @   ensures \result == 3;
+  @ behavior four_byte:
+  @   assumes 0x10000 <= *rune && *rune <= Runemax;
+  @   ensures \result == 4;
+  @ complete behaviors;
+  @*/
 int
 runetochar(char *str, Rune *rune)
 {
@@ -153,6 +189,10 @@ runetochar(char *str, Rune *rune)
 	return 4;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures 1 <= \result <= 4;
+  @*/
 int
 runelen(long c)
 {
@@ -163,12 +203,26 @@ runelen(long c)
 	return runetochar(str, &rune);
 }
 
+/*@
+  @ requires nrune >= 0;
+  @ requires nrune > 0 ==> \valid_read(r + (0 .. nrune-1));
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @ ensures \result <= nrune * 4;
+  @*/
 int
 runenlen(Rune *r, int nrune)
 {
 	int nb, c;
 
 	nb = 0;
+	/*@
+	  @ loop invariant 0 <= nb;
+	  @ loop invariant nrune >= -\at(nrune, Pre);
+	  @ loop invariant r == \at(r, Pre) + (\at(nrune, Pre) - nrune);
+	  @ loop assigns nb, nrune, c, r;
+	  @ loop variant nrune;
+	  @*/
 	while(nrune--) {
 		c = *r++;
 		if(c <= Rune1)
@@ -185,6 +239,24 @@ runenlen(Rune *r, int nrune)
 	return nb;
 }
 
+/*@
+  @ requires n > 0 ==> \valid_read((uchar *)str + (0 .. n-1));
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @ behavior empty:
+  @   assumes n <= 0;
+  @   ensures \result == 0;
+  @ behavior ascii:
+  @   assumes n > 0 && (uchar)str[0] < 0x80;
+  @   ensures \result == 1;
+  @ behavior two_byte:
+  @   assumes n > 0 && 0x80 <= (uchar)str[0] < 0xE0;
+  @   ensures \result == (n >= 2 ? 1 : 0);
+  @ behavior multi_byte:
+  @   assumes n > 0 && (uchar)str[0] >= 0xE0;
+  @   ensures \result == 0 || \result == 1;
+  @ complete behaviors;
+  @*/
 int
 fullrune(char *str, int n)
 {

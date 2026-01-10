@@ -48,6 +48,11 @@ extern void uartputs(char *, int);
 #define POOLALLOC_TRACE_THRESHOLD (4 * 1024)
 #define POOLTRACE_THRESHOLD (16 * 1024)
 
+/*@
+  @ requires \valid_read(fmt + (0..));
+  @ requires \exists integer k; k >= 0 && fmt[k] == '\0';
+  @ assigns \nothing;
+  @*/
 static void pooltrace(const char *fmt, ...) {
   char buf[128];
   va_list v;
