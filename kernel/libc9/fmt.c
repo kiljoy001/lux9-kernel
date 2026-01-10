@@ -57,6 +57,13 @@ int	(*doquote)(int);
 /*
  * _fmtlock() must be set
  */
+/*@
+  @ requires c > 0 && c <= Runemax;
+  @ requires fmtalloc.nfmt >= 0 && fmtalloc.nfmt <= Maxfmt;
+  @ assigns fmtalloc.fmt[0 .. Maxfmt-1], fmtalloc.nfmt;
+  @ ensures \result == 0 || \result == -1;
+  @ ensures \result == 0 ==> fmtalloc.nfmt <= Maxfmt;
+  @*/
 static int
 _fmtinstall(int c, Fmts f)
 {
@@ -84,6 +91,11 @@ _fmtinstall(int c, Fmts f)
 	return 0;
 }
 
+/*@
+  @ requires c > 0 && c <= Runemax;
+  @ assigns fmtalloc.fmt[0 .. Maxfmt-1], fmtalloc.nfmt;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int
 fmtinstall(int c, Fmts f)
 {
@@ -95,6 +107,11 @@ fmtinstall(int c, Fmts f)
 	return ret;
 }
 
+/*@
+  @ requires fmtalloc.nfmt >= 0 && fmtalloc.nfmt <= Maxfmt;
+  @ assigns fmtalloc.fmt[0 .. Maxfmt-1], fmtalloc.nfmt;
+  @ ensures \result != \null;
+  @*/
 static Fmts
 fmtfmt(int c)
 {
@@ -121,6 +138,13 @@ fmtfmt(int c)
 	return _badfmt;
 }
 
+/*@
+  @ requires \valid(f);
+  @ requires fmt != \null;
+  @ requires isrunes == 0 || isrunes == 1;
+  @ assigns *f;
+  @ ensures \result == \null || \result == fmt;
+  @*/
 void*
 _fmtdispatch(Fmt *f, void *fmt, int isrunes)
 {

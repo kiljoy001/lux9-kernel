@@ -1,6 +1,14 @@
 #include <u.h>
 #include <libc.h>
 
+/*@
+  @ requires \valid(buf + (0 .. 65535));
+  @ requires \valid_read(fmt + (0..));
+  @ requires \exists integer k; k >= 0 && fmt[k] == '\0';
+  @ assigns buf[0 .. 65535];
+  @ ensures 0 <= \result <= 65536;
+  @ ensures \result < 65536 ==> buf[\result] == '\0';
+  @*/
 int
 sprint(char *buf, char *fmt, ...)
 {

@@ -2,6 +2,19 @@
 #include <libc.h>
 #include "fmtdef.h"
 
+/*@
+  @ requires \valid(f);
+  @ assigns *f;
+  @ ensures \result == 0 || \result == 1;
+  @ behavior null_start:
+  @   assumes f->start == \null;
+  @   ensures \result == 0;
+  @ behavior valid_start:
+  @   assumes f->start != \null;
+  @   ensures \result == 0 || \result == 1;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 static int
 fmtStrFlush(Fmt *f)
 {
@@ -27,6 +40,13 @@ fmtStrFlush(Fmt *f)
 	return 1;
 }
 
+/*@
+  @ requires \valid(f);
+  @ assigns *f;
+  @ ensures \result == 0 || \result == -1;
+  @ ensures \result == 0 ==> f->start != \null;
+  @ ensures \result == -1 ==> f->start == \null;
+  @*/
 int
 fmtstrinit(Fmt *f)
 {
@@ -49,6 +69,13 @@ fmtstrinit(Fmt *f)
 /*
  * print into an allocated string buffer
  */
+/*@
+  @ requires \valid_read(fmt + (0..));
+  @ requires \exists integer n; n >= 0 && fmt[n] == '\0';
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @ ensures \result != \null ==> \exists integer k; k >= 0 && \result[k] == '\0';
+  @*/
 char*
 vsmprint(char *fmt, va_list args)
 {

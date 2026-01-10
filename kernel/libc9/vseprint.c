@@ -1,6 +1,15 @@
 #include <u.h>
 #include <libc.h>
 
+/*@
+  @ requires \valid(buf + (0 .. (e - buf - 1))) || e <= buf;
+  @ requires \valid_read(fmt + (0..));
+  @ requires \exists integer n; n >= 0 && fmt[n] == '\0';
+  @ assigns buf[0 .. (e - buf - 1)];
+  @ ensures e <= buf ==> \result == \null;
+  @ ensures e > buf ==> \result >= buf && \result < e;
+  @ ensures e > buf ==> *\result == '\0';
+  @*/
 char*
 vseprint(char *buf, char *e, char *fmt, va_list args)
 {

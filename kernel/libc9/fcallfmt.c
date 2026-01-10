@@ -12,6 +12,11 @@ static char *qidtype(char *, uchar);
 
 #define QIDFMT "(%.16llux %lud %s)"
 
+/*@
+  @ requires \valid(fmt);
+  @ assigns *fmt;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int fcallfmt(Fmt *fmt) {
   Fcall *f;
   int fid, type, tag, i;

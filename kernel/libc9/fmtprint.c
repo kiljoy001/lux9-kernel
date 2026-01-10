@@ -8,6 +8,13 @@
  * designed for formats which themselves call fmt,
  * but ignore any width flags
  */
+/*@
+  @ requires \valid(f);
+  @ requires \valid_read(fmt + (0..));
+  @ requires \exists integer n; n >= 0 && fmt[n] == '\0';
+  @ assigns *f;
+  @ ensures \result == 0 || \result < 0;
+  @*/
 int
 fmtprint(Fmt *f, char *fmt, ...)
 {

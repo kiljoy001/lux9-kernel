@@ -15,6 +15,16 @@
  * *ninp is set to number of input bytes accepted.
  * nin may be <0 initially, to avoid checking input by count.
  */
+/*@
+  @ requires \valid(q);
+  @ requires s != \null ==> \valid_read(s + (0..));
+  @ requires r != \null ==> \valid_read(r + (0..));
+  @ assigns *q;
+  @ ensures q->nbytesout >= 0;
+  @ ensures q->nrunesout >= 0;
+  @ ensures q->nbytesin >= 0;
+  @ ensures q->nrunesin >= 0;
+  @*/
 void
 _quotesetup(char *s, Rune *r, int nin, int nout, Quoteinfo *q, int sharp, int runesout)
 {
@@ -91,6 +101,18 @@ _quotesetup(char *s, Rune *r, int nin, int nout, Quoteinfo *q, int sharp, int ru
 	}
 }
 
+/*@
+  @ requires \\valid_read(q);
+  @ requires \\valid(f);
+  @ requires sin != \\null ==> \\valid_read(sin + (0 .. q->nbytesin-1));
+  @ requires rin != \\null ==> \\valid_read(rin + (0 .. q->nrunesin-1));
+  @ requires q->nbytesin >= 0;
+  @ requires q->nrunesin >= 0;
+  @ requires q->nbytesout >= 0;
+  @ requires q->nrunesout >= 0;
+  @ assigns *f;
+  @ ensures \\result == 0 || \\result == -1;
+  @*/
 static int
 qstrfmt(char *sin, Rune *rin, Quoteinfo *q, Fmt *f)
 {
@@ -165,6 +187,12 @@ qstrfmt(char *sin, Rune *rin, Quoteinfo *q, Fmt *f)
 	return 0;
 }
 
+/*@
+  @ requires \\valid(f);
+  @ requires f->runes == 0 || f->runes == 1;
+  @ assigns *f;
+  @ ensures \\result == 0 || \\result == -1;
+  @*/
 int
 _quotestrfmt(int runesin, Fmt *f)
 {
@@ -207,18 +235,31 @@ _quotestrfmt(int runesin, Fmt *f)
 	return qstrfmt(s, nil, &q, f);
 }
 
+/*@
+  @ requires \\valid(f);
+  @ assigns *f;
+  @ ensures \\result == 0 || \\result == -1;
+  @*/
 int
 quotestrfmt(Fmt *f)
 {
 	return _quotestrfmt(0, f);
 }
 
+/*@
+  @ requires \\valid(f);
+  @ assigns *f;
+  @ ensures \\result == 0 || \\result == -1;
+  @*/
 int
 quoterunestrfmt(Fmt *f)
 {
 	return _quotestrfmt(1, f);
 }
 
+/*@
+  @ assigns \\nothing;
+  @*/
 void
 quotefmtinstall(void)
 {
@@ -226,6 +267,14 @@ quotefmtinstall(void)
 	fmtinstall('Q', quoterunestrfmt);
 }
 
+/*@
+  @ requires \\valid_read(s + (0..));
+  @ requires \\valid(quotelenp);
+  @ requires \\exists integer n; n >= 0 && s[n] == '\\0';
+  @ assigns *quotelenp;
+  @ ensures \\result == 0 || \\result == 1;
+  @ ensures *quotelenp >= 0;
+  @*/
 int
 _needsquotes(char *s, int *quotelenp)
 {
@@ -237,6 +286,14 @@ _needsquotes(char *s, int *quotelenp)
 	return q.quoted;
 }
 
+/*@
+  @ requires \\valid_read(r + (0..));
+  @ requires \\valid(quotelenp);
+  @ requires \\exists integer n; n >= 0 && r[n] == 0;
+  @ assigns *quotelenp;
+  @ ensures \\result == 0 || \\result == 1;
+  @ ensures *quotelenp >= 0;
+  @*/
 int
 _runeneedsquotes(Rune *r, int *quotelenp)
 {
