@@ -23,6 +23,12 @@ int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
 }
 
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
+  /*@
+    @ requires \valid(p);
+    @ requires \valid(t);
+    @ requires \valid(r);
+    @ ensures \result == 0 || \result == -1;
+    @*/
   if (p->wasm.initialized) {
     if (t->data && t->count > 0 &&
         !p9_exchange_contains(p, t->data, t->count)) {
@@ -82,6 +88,10 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Misc */
     case SYS_NSEC:
+      /* Moved to router_dispatch_fs or handle here? 
+         Original 9p_router.c handled it inline. 
+         Let's put it in fs.c or separate misc? 
+         For now, let's keep it here but fix the implicit decl. */
       print("p9_dispatch: SYS_NSEC\n");
       r->type = Rsyscall;
       r->tag = t->tag;
@@ -101,10 +111,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
   }
 
-  /* Handle Texec (128) - Direct execution message */
+    /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
     return router_dispatch_proc(p, t, r);
   }
+
 
   /* Handle Tsys* - Specific syscall message types (132-205) */
   if (t->type >= Tsysopen && t->type <= Tsysremove) {

@@ -56,7 +56,7 @@ BORROW_C := kernel/borrowchecker.c kernel/borrow_enforce.c
 LOCKDAG_C := kernel/lock_dag.c
 PROCSTATEDAG_C := kernel/proc_state_dag.c
 PROCFSM_C := kernel/proc_fsm.c
-P9ROUTER_C := kernel/9p_router.c
+P9ROUTER_C := kernel/router/core.c kernel/router/fs.c kernel/router/proc.c kernel/router/ipc.c kernel/router/wasm.c kernel/router/doorbell.c kernel/router/srv.c
 # SYSCALL9P_C removed - Phase 6: TRUE syscall elimination via exchange page doorbell
 # GHOSTDAG renamed to msgord - see MSGORD_C below
 MSGORD_C := kernel/msgord.c

@@ -4,6 +4,27 @@
 #define LONG_MAX	2147483647L
 #define LONG_MIN	-2147483648L
 
+/*@
+  @ requires \valid_read(nptr + (0..));
+  @ requires \exists integer k; k >= 0 && nptr[k] == '\0';
+  @ requires endptr == \null || \valid(endptr);
+  @ requires -36 <= base <= 36;
+  @ assigns endptr == \null ? \nothing : *endptr;
+  @ ensures LONG_MIN <= \result <= LONG_MAX;
+  @ ensures endptr == \null || \valid_read(*endptr);
+  @ ensures endptr == \null || *endptr >= nptr;
+  @ behavior invalid_base:
+  @   assumes base < 0 || base > 36 || base == 1;
+  @   ensures endptr != \null ==> *endptr == nptr;
+  @ behavior valid_base:
+  @   assumes (base == 0 || (2 <= base <= 36)) && base != 1;
+  @   ensures endptr != \null ==> *endptr >= nptr;
+  @ behavior overflow_pos:
+  @   ensures \result == LONG_MAX;
+  @ behavior overflow_neg:
+  @   ensures \result == LONG_MIN;
+  @ complete behaviors;
+  @*/
 long
 strtol(char *nptr, char **endptr, int base)
 {
@@ -20,6 +41,11 @@ strtol(char *nptr, char **endptr, int base)
 	/*
 	 * White space
 	 */
+	/*@
+	  @ loop invariant p >= nptr;
+	  @ loop invariant \valid_read(p);
+	  @ loop assigns p;
+	  @*/
 	for(;; p++) {
 		switch(*p) {
 		case ' ':
@@ -64,6 +90,14 @@ strtol(char *nptr, char **endptr, int base)
 	 * Non-empty sequence of digits
 	 */
 	m = LONG_MAX/base;
+	/*@
+	  @ loop invariant p >= nptr;
+	  @ loop invariant \valid_read(p);
+	  @ loop invariant ndig >= 0;
+	  @ loop invariant n >= 0;
+	  @ loop invariant ovfl == 0 || ovfl == 1;
+	  @ loop assigns p, ndig, c, v, ovfl, n, nn;
+	  @*/
 	for(;; p++,ndig++){
 		c = *p;
 		v = base;

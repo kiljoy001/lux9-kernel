@@ -3,6 +3,25 @@
 
 #define ULONG_MAX	4294967295UL
 
+/*@
+  @ requires \valid_read(nptr + (0..));
+  @ requires \exists integer k; k >= 0 && nptr[k] == '\0';
+  @ requires endptr == \null || \valid(endptr);
+  @ requires -36 <= base <= 36;
+  @ assigns endptr == \null ? \nothing : *endptr;
+  @ ensures 0 <= \result <= ULONG_MAX;
+  @ ensures endptr == \null || \valid_read(*endptr);
+  @ ensures endptr == \null || *endptr >= nptr;
+  @ behavior invalid_base:
+  @   assumes base < 2 || base > 36;
+  @   ensures endptr != \null ==> *endptr == nptr;
+  @ behavior valid_base:
+  @   assumes base == 0 || (2 <= base <= 36);
+  @   ensures endptr != \null ==> *endptr >= nptr;
+  @ behavior overflow:
+  @   ensures \result == ULONG_MAX;
+  @ complete behaviors;
+  @*/
 ulong
 strtoul(char *nptr, char **endptr, int base)
 {
@@ -19,6 +38,11 @@ strtoul(char *nptr, char **endptr, int base)
 	/*
 	 * White space
 	 */
+	/*@
+	  @ loop invariant p >= nptr;
+	  @ loop invariant \valid_read(p);
+	  @ loop assigns p;
+	  @*/
 	for(;;p++){
 		switch(*p){
 		case ' ':
@@ -65,6 +89,13 @@ strtoul(char *nptr, char **endptr, int base)
 	 */
 	n = 0;
 	m = ULONG_MAX/base;
+	/*@
+	  @ loop invariant p >= nptr;
+	  @ loop invariant \valid_read(p);
+	  @ loop invariant ndig >= 0;
+	  @ loop invariant ovfl == 0 || ovfl == 1;
+	  @ loop assigns p, ndig, c, v, ovfl, n, nn;
+	  @*/
 	for(;; p++,ndig++){
 		c = *p;
 		v = base;

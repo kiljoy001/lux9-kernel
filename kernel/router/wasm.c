@@ -2,6 +2,12 @@
 #include "../wasm/wasm_runtime.h"
 
 int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
+  /*@
+    @ requires \valid(p);
+    @ requires \valid(t);
+    @ requires \valid(r);
+    @ ensures \result == 0 || \result == -1;
+    @*/
   print("router_wasm: dispatching scallnr=%d\n", t->scallnr);
 
   switch (t->scallnr) {
