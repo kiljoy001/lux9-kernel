@@ -1,23 +1,21 @@
 /*
- * Setup 9P exchange page for a user process - LAZY ALLOCATION MODEL.
+ * Setup 9P exchange page for a user process - POOL-BASED ALLOCATION.
  *
- * DEMAND-PAGED EXCHANGE PAGE:
- * ===========================
- * Instead of pre-allocating a physical page, we create only the segment
- * descriptor. The physical page is allocated on first access (page fault).
+ * EXCHANGE POOL MODEL:
+ * ====================
+ * Each process gets its own physical page allocated from the global
+ * exchange pool. This provides:
+ * 1. Complete parent/child isolation - no shared pages after fork
+ * 2. Capability-based access control via BlindLedger
+ * 3. Proper resource tracking and cleanup on process exit
  *
- * Benefits:
- * 1. Fork isolation: Child never inherits parent's PTE - gets fresh page on
- * fault
- * 2. No MMU aliasing: Each process faults and allocates independently
- * 3. No PTE surgery: Standard fault-based allocation like heap/stack
- * 4. Reuses pool infrastructure: Can leverage devexchange.c allocators
- *
- * The segment is marked SG_PHYSICAL with no physical backing initially.
- * fault.c's fixfault() handles the first access and allocates a fresh page.
+ * The page is mapped at the fixed virtual address EXCHANGE_PAGE_ADDR
+ * for userspace compatibility, but backed by a unique physical page
+ * from the pool.
  */
 #include "9p_router.h"
 #include "dat.h"
+#include "exchange_pool.h"
 #include "fns.h"
 #include "mem.h"
 #include "pageown.h"
@@ -39,19 +37,66 @@ int proc_setup_p9page(Proc *p) {
     return 0; /* Already set up */
 
   /*
-   * Create a DEMAND-PAGED segment for the exchange page.
-   * Physical page will be allocated on first fault.
-   * This avoids fork/COW aliasing issues entirely.
+   * POOL-BASED ALLOCATION:
+   * Allocate a physical page from the global exchange pool.
+   * This ensures each process has its own isolated page.
+   */
+  UserCapability cap;
+  BlindLedgerEntry entry;
+  uintptr pa = 0;
+
+  if (global_pool != nil) {
+    PoolError perr = global_pool_alloc_page(p, &cap);
+    if (perr == POOL_OK) {
+      /* Verify capability and get physical address */
+      if (ledger_verify(&cap, &entry) == BLIND_LEDGER_OK) {
+        pa = entry.physical_address;
+        print("proc_setup_p9page: pid=%lud allocated pool page pa=%#p\n",
+              p->pid, (void *)pa);
+      } else {
+        print("proc_setup_p9page: pid=%lud cap verify failed, fallback\n",
+              p->pid);
+        pa = 0;
+      }
+    } else {
+      print("proc_setup_p9page: pid=%lud pool alloc failed (%d), fallback\n",
+            p->pid, perr);
+    }
+  } else {
+    print("proc_setup_p9page: global_pool not initialized, using fallback\n");
+  }
+
+  /*
+   * FALLBACK: If pool allocation fails, allocate a raw page.
+   * This shouldn't happen in normal operation but prevents boot failure.
+   */
+  if (pa == 0) {
+    void *page = xspanalloc(BY2PG, BY2PG, 0);
+    if (page == nil) {
+      print("proc_setup_p9page: fallback xspanalloc failed\n");
+      return -1;
+    }
+    pa = PADDR(page);
+    print("proc_setup_p9page: pid=%lud fallback page pa=%#p\n", p->pid,
+          (void *)pa);
+  }
+
+  /* Zero the page to prevent information leakage */
+  memset(KADDR(pa), 0, BY2PG);
+
+  /*
+   * Create segment for the exchange page at fixed virtual address.
+   * Physical page is already allocated (from pool or fallback).
    */
   Segment *s = newseg(SG_PHYSICAL, EXCHANGE_PAGE_ADDR, 1);
   if (s == nil) {
     print("proc_setup_p9page: newseg failed\n");
+    /* TODO: Return page to pool on failure */
     return -1;
   }
 
   /*
-   * CRITICAL: Allocate Physseg tracker but with NO physical address yet.
-   * This tells fixfault() that physical allocation is needed.
+   * Allocate Physseg and configure with our pool-allocated physical page.
    */
   s->pseg = malloc(sizeof(Physseg));
   if (s->pseg == nil) {
@@ -60,10 +105,10 @@ int proc_setup_p9page(Proc *p) {
     return -1;
   }
 
-  /* Configure physical segment as demand-paged (pa=0 signals not allocated) */
+  /* Configure physical segment with real physical address */
   s->pseg->attr = SG_PHYSICAL | SG_CACHED;
   s->pseg->name = "9pexchange";
-  s->pseg->pa = 0; /* NO physical address - allocate on fault */
+  s->pseg->pa = pa; /* Physical address from pool */
   s->pseg->size = BY2PG;
   s->pseg->next = nil;
   s->pseg->prev = nil;
@@ -88,10 +133,11 @@ int proc_setup_p9page(Proc *p) {
   p->seg[P9SEG] = s;
   print("DEBUG:proc_setup_p9page post-assignment p->pid=%lud\n", p->pid);
 
-  print("proc_setup_p9page: pid=%lud seg=%p base=%#p (DEMAND-PAGED - no "
-        "physical page yet)\n",
-        p->pid, s, (void *)s->base);
+  /* Store kernel virtual address for p9_handle_doorbell */
+  p->p9page = KADDR(pa);
 
-  /* NO physical allocation, NO pageown_acquire - happens on fault */
+  print("proc_setup_p9page: pid=%lud seg=%p base=%#p pa=%#p kva=%p\n", p->pid,
+        s, (void *)s->base, (void *)pa, p->p9page);
+
   return 0;
 }

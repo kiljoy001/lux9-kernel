@@ -279,6 +279,11 @@ void main_after_cr3(void) {
   boot_log("main_after_cr3: calling exchangeinit\n");
   exchangeinit();
 
+  /* Initialize global exchange pool for child process isolation */
+  extern void exchange_pool_init(uint pool_size);
+  boot_log("main_after_cr3: calling exchange_pool_init\n");
+  exchange_pool_init(64); /* 64 pages for exchange pool */
+
   boot_log("DEBUG: pre-pebble-selftest [SKIPPED]\n");
   /* Run Pebble Self-Test (xalloc works now) */
   /* extern void pebble_selftest(void); */

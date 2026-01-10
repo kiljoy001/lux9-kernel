@@ -136,11 +136,13 @@ void main(void) {
   pid = sys_rfork(RFPROC);
 
   if (pid == 0) {
-    /* Child - exec resurrection */
-    init_print("init: Child starting, calling exec /boot/resurrection\n");
-    sys_exec("/boot/resurrection");
+    /* Child - exec wasm_test (use #/./boot/ prefix for direct device access) */
+    /* Note: /boot namespace isn't bound for userspace processes, must use #/.
+     */
+    init_print("init: Child starting, calling exec #/./boot/wasm_test\n");
+    sys_exec("#/./boot/wasm_test");
     /* Should not return */
-    init_print("init: Failed to exec resurrection server\n");
+    init_print("init: Failed to exec wasm_test\n");
     sys_exit("exec failed");
   }
 

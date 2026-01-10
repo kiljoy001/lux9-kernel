@@ -587,6 +587,10 @@ void syscall(Ureg *ureg) {
     print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p cx=%#p\n", syscall_count,
           scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
 
+  /* DEBUG: Always print PID for Tsysexec to debug process context */
+  print("SYSCALL[%d]: pid=%ld scallnr=%ld\n", syscall_count, up ? up->pid : -1,
+        scallnr);
+
   /* Phase 6: Pure 9P - TRUE syscall elimination
    * The syscall instruction is ONLY a doorbell trigger.
    * All operations come from 9P messages in the exchange page.

@@ -264,21 +264,23 @@ extern long _syscall(void);
 
 int sys_rfork(int flags) {
   /* Special handling for rfork:
-     Parent receives Reply Message.
-     Child receives 0 in RAX and NO Message (empty exchange page).
+     Parent receives Rsysfork reply with child PID in r->pid.
+     Child gets a fresh exchange page (P9SEG is nil on fork, demand-paged).
+
+     Detection strategy:
+     1. Issue syscall
+     2. Try to parse reply from exchange page
+     3. If parse fails or reply is wrong type -> we are child (return 0)
+     4. If parse succeeds with Rsysfork -> we are parent (return r->pid)
   */
   uchar buf[16];
   Fcall tx, rx;
   uchar *p = buf;
 
   memset(&tx, 0, sizeof(Fcall));
-  tx.type = Tsyscall;
+  tx.type = Tsysfork;
   tx.tag = 1;
-  tx.scallnr = SYS_RFORK;
-
-  pack32(p, flags);
-  tx.sdata = buf;
-  tx.scount = 4;
+  tx.flags = flags;
 
   uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
 
@@ -288,34 +290,24 @@ int sys_rfork(int flags) {
     return -100;
 
   /* 2. Syscall */
-  long reg_ret = _syscall();
+  _syscall();
 
-  /* 3. Handle Child */
-  if (reg_ret == 0) {
-    /* Child - return 0 directly */
+  /* 3. Parse reply to distinguish parent from child */
+  memset(&rx, 0, sizeof(Fcall));
+  uint parsed = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, &rx);
+
+  /* Child detection:
+   * - Child's exchange page is fresh/empty (P9SEG newly allocated on fault)
+   * - Parse will fail OR return wrong message type
+   * - Parent's page has valid Rsysfork reply
+   */
+  if (parsed == 0 || rx.type != Rsysfork) {
+    /* We are the child - return 0 */
     return 0;
   }
 
-  /* Parent - parse reply */
-  /* Do NOT shadow buf */
-  /* Wait: Parent expects reply in exchange page?
-     rfork reply is just PID in RAX (reg_ret) from kernel.
-     But convM2S is needed if kernel wrote a reply message?
-     Kernel: sysrfork returns PID. p9_dispatch returns 0 tag=...
-     Wait, kernel p9_dispatch writes Rsyscall reply to exchange page?
-     Yes: r->retval = ret; convS2M...
-     So Parent MUST parse the reply to follow 9P protocol state?
-     Or just return reg_ret?
-     Usually 'retval' in Rsyscall matches RAX.
-     So parsing is good for consistency but reg_ret is sufficient.
-     Let's verify what happens.
-  */
-
-  /* We should parse Rsyscall to ensure exchange page is consumed/valid? */
-  /* Or just return reg_ret. */
-  /* For now, trust reg_ret but check if we need to clean up anything. */
-
-  return (int)reg_ret;
+  /* We are the parent - return child PID from reply */
+  return (int)rx.pid;
 }
 
 int sys_bind(char *old, char *new, int flags) {
@@ -540,42 +532,42 @@ int sys_sleep(long ms) {
 
 /* Exchange Pool Syscalls */
 
-ExchangeCapability* sys_exchange_alloc(void) {
+ExchangeCapability *sys_exchange_alloc(void) {
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
   tx.type = Tsyscall;
   tx.tag = 1;
-  tx.scallnr = SYS_EXCHANGE_ALLOC;  // Should be 67
+  tx.scallnr = SYS_EXCHANGE_ALLOC; // Should be 67
   tx.scount = 0;
   tx.sdata = 0;
 
   if (lux_call(&tx, &rx) < 0)
     return nil;
-    
+
   if (rx.retval == 0)
     return nil;
-    
-  return (ExchangeCapability*)rx.retval;
+
+  return (ExchangeCapability *)rx.retval;
 }
 
 int sys_exchange_free(ExchangeCapability *cap) {
   uchar buf[sizeof(uintptr)];
   uchar *p = buf;
-  
+
   // Pack the capability pointer
   uintptr cap_addr = (uintptr)cap;
   pack32(p, (uint)(cap_addr & 0xFFFFFFFF));
   if (sizeof(uintptr) > 4) {
     pack32(p + 4, (uint)(cap_addr >> 32));
   }
-  
+
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
   tx.type = Tsyscall;
   tx.tag = 1;
-  tx.scallnr = SYS_EXCHANGE_FREE;  // Should be 68
+  tx.scallnr = SYS_EXCHANGE_FREE; // Should be 68
   tx.sdata = buf;
   tx.scount = sizeof(uintptr);
 
@@ -591,22 +583,23 @@ int sys_exchange_free(ExchangeCapability *cap) {
 #define SYS_EXCHANGE_UNSUBSCRIBE 71
 #define SYS_EXCHANGE_RECEIVE 72
 
-ExchangeCapability* sys_exchange_publish(char *topic, void *data, ulong len) {
+ExchangeCapability *sys_exchange_publish(char *topic, void *data, ulong len) {
   uchar buf[1024]; // Buffer for packed arguments
   uchar *p = buf;
-  
+
   // Pack arguments: topic (string), data (pointer), len (ulong)
   int topic_len = 0;
   char *t = topic;
-  while (*t++) topic_len++;
-  
+  while (*t++)
+    topic_len++;
+
   if (topic_len >= sizeof(buf) - sizeof(ulong) - 8)
     return nil; // Topic too long
-    
+
   // Copy topic string
   memmove(p, topic, topic_len + 1); // Include null terminator
   p += topic_len + 1;
-  
+
   // Pack data pointer and length
   pack32(p, (uint)(uintptr)data);
   p += 4;
@@ -616,7 +609,7 @@ ExchangeCapability* sys_exchange_publish(char *topic, void *data, ulong len) {
   }
   pack32(p, (uint)len);
   p += 4;
-  
+
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
@@ -628,24 +621,25 @@ ExchangeCapability* sys_exchange_publish(char *topic, void *data, ulong len) {
 
   if (lux_call(&tx, &rx) < 0)
     return nil;
-    
+
   if (rx.retval == 0)
     return nil;
-    
-  return (ExchangeCapability*)rx.retval;
+
+  return (ExchangeCapability *)rx.retval;
 }
 
 int sys_exchange_subscribe(char *topic) {
   uchar buf[256]; // Buffer for topic string
   int topic_len = 0;
   char *t = topic;
-  while (*t++) topic_len++;
-  
+  while (*t++)
+    topic_len++;
+
   if (topic_len >= sizeof(buf))
     return -1; // Topic too long
-    
+
   memmove(buf, topic, topic_len + 1); // Include null terminator
-  
+
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
@@ -664,13 +658,14 @@ int sys_exchange_unsubscribe(char *topic) {
   uchar buf[256]; // Buffer for topic string
   int topic_len = 0;
   char *t = topic;
-  while (*t++) topic_len++;
-  
+  while (*t++)
+    topic_len++;
+
   if (topic_len >= sizeof(buf))
     return -1; // Topic too long
-    
+
   memmove(buf, topic, topic_len + 1); // Include null terminator
-  
+
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
@@ -685,7 +680,7 @@ int sys_exchange_unsubscribe(char *topic) {
   return (int)rx.retval;
 }
 
-Notification* sys_exchange_receive(void) {
+Notification *sys_exchange_receive(void) {
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
   memset(&rx, 0, sizeof(Fcall));
@@ -697,9 +692,9 @@ Notification* sys_exchange_receive(void) {
 
   if (lux_call(&tx, &rx) < 0)
     return nil;
-    
+
   if (rx.retval == 0)
     return nil;
-    
-  return (Notification*)rx.retval;
+
+  return (Notification *)rx.retval;
 }
