@@ -21,8 +21,8 @@ START_OBJ = ../lib9p_syscall/start.o
 
 all: $(START_OBJ) $(TARGET)
 
-$(TARGET): $(START_OBJ) $(OBJ) $(LIBLUX)/liblux.a ../lib9p_syscall/linker.ld
-	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld $(START_OBJ) $(OBJ) $(LIBLUX)/liblux.a -o $@
+$(TARGET): $(START_OBJ) $(OBJ) $(LIBLUX)/liblux.a linker.ld
+	$(LD) $(LDFLAGS) -T linker.ld $(START_OBJ) $(OBJ) $(LIBLUX)/liblux.a -o $@
 	@echo "Built resurrection server: $@"
 	@ls -lh $@
 
