@@ -145,7 +145,7 @@ typedef struct {
 
 /* Forward Declarations */
 /* Print function - also used by liblux for debugging */
-int print(char *fmt, ...);
+int print(const char *fmt, ...);
 static void print_num(const char *prefix, int num, const char *suffix);
 int srv_create_entry(const char *name, int pid);
 static void start_service(Service *svc);
@@ -1020,7 +1020,7 @@ uvlong get_u64(const uchar *p) {
 /* ========== Console Output ========== */
 
 /* Simple print - ignores format args for now */
-int print(char *fmt, ...) {
+int print(const char *fmt, ...) {
   const char *msg = fmt;
   int msg_len = strlen(msg);
   uchar *req = (uchar *)exchange_base;
@@ -1181,80 +1181,9 @@ static int register_service(const char *name, const char *exec_path,
 /* ========== Process Control via 9P ========== */
 
 /*
- * Fork a new process
- * Returns: child PID on success, -1 on failure
- */
-static int do_fork(void) {
-  uchar *req = (uchar *)exchange_base;
-  uint pos = 0;
-
-  memset(req, 0, 256);
-
-  /* Tsyscall header */
-  uint size = 4 + 1 + 2 + 4 + 4 + 4; /* header + flags */
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, SYS_RFORK);
-  pos += 4;
-  put_u32(req + pos, 4);
-  pos += 4;                   /* scount */
-  put_u32(req + pos, RFPROC); /* flags = RFPROC */
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  /* Parse reply */
-  pos = 0;
-  /* uint reply_size = */ get_u32(req + pos);
-  pos += 4;
-  uchar reply_type = req[pos++];
-  /* tag */ pos += 2;
-
-  if (reply_type == Rerror) {
-    print("RESURRECTION: fork failed\n");
-    return -1;
-  }
-
-  uvlong retval = get_u64(req + pos);
-  return (int)retval; /* PID of child */
-}
-
-/*
  * Execute a program (replaces current process image)
  * This is called by the child after fork
  */
-static void do_exec(const char *path) {
-  uchar *req = (uchar *)exchange_base;
-  int pathlen = strlen(path);
-  uint pos = 0;
-
-  memset(req, 0, 512);
-
-  /* Build Texec message: [size][type=128][tag][pathlen:2][path:n] */
-  uint size = 4 + 1 + 2 + 2 + pathlen;
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = 128; /* Texec */
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u16(req + pos, pathlen);
-  pos += 2;
-  memcpy(req + pos, path, pathlen);
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  /* If we get here, exec failed */
-  print("RESURRECTION: exec failed for ");
-  print(path);
-  print("\n");
-}
-
 /*
  * Check if a process is still running
  * Opens /proc/PID/status and reads it
@@ -1622,59 +1551,6 @@ static void restart_service(Service *svc) {
   start_service(svc);
 }
 
-/*
- * Wait for any child process to exit (BLOCKING)
- * Returns: PID of exited child, or -1 on error
- */
-static int do_wait(char *status_buf, int status_len) {
-  uchar *req = (uchar *)exchange_base;
-  uint pos = 0;
-
-  memset(req, 0, 256);
-
-  /* Tsyscall header */
-  uint size = 4 + 1 + 2 + 4 + 4;
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, 166); /* SYS_WAIT */
-  pos += 4;
-  put_u32(req + pos, 0);
-  pos += 4;
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  /* Parse reply */
-  pos = 0;
-  /* uint reply_size = */ get_u32(req + pos);
-  pos += 4;
-  uchar reply_type = req[pos++];
-  /* tag */ pos += 2;
-
-  if (reply_type == Rerror) {
-    /* No children or error */
-    return -1;
-  }
-
-  uvlong retval = get_u64(req + pos);
-  pos += 8;
-  uint msglen = get_u32(req + pos);
-  pos += 4;
-
-  if (status_buf && status_len > 0 && msglen > 0) {
-    int copy_len =
-        (msglen < (uint)(status_len - 1)) ? (int)msglen : (status_len - 1);
-    memcpy(status_buf, req + pos, copy_len);
-    status_buf[copy_len] = 0;
-  }
-
-  return (int)retval;
-}
-
 /* ========== Service Monitoring ========== */
 
 /* ========== Registry Management ========== */
@@ -1772,173 +1648,6 @@ static void monitor_services(void) {
 /* Mount flags and Rfork flags moved to top */
 
 /* ... (previous code) ... */
-
-/*
- * Create a pipe
- * Returns: 0 on success, -1 on failure. Fds in fd[2]
- */
-static int do_pipe(int fd[2]) {
-  uchar *req = (uchar *)exchange_base;
-  uint pos = 0;
-
-  memset(req, 0, 128);
-
-  uint size = 4 + 1 + 2 + 4 + 4 + 8;
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, SYS_PIPE);
-  pos += 4;
-  put_u32(req + pos, 8);
-  pos += 4; /* sdata size */
-  put_u32(req + pos, 1);
-  pos += 4; /* scount */
-  put_u32(req + pos, 0);
-  pos += 4; /* arg 0: pipefd array (ignored, returned in sdata) */
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  pos = 0;
-  get_u32(req + pos);
-  pos += 4;
-  uchar reply_type = req[pos++];
-  pos += 2;
-
-  if (reply_type == Rerror)
-    return -1;
-
-  /* Pipe returns 2 fds in sdata (8 bytes) */
-  int retval = (int)get_u64(req + pos);
-  pos += 8;
-  (void)retval;
-  /* uint sdata_len = */ get_u32(req + pos);
-  pos += 4;
-
-  fd[0] = (int)get_u32(req + pos);
-  pos += 4;
-  fd[1] = (int)get_u32(req + pos);
-
-  return 0;
-}
-
-/*
- * Mount a file descriptor
- */
-static int do_mount(int fd, int afd, const char *old, int flags,
-                    const char *aname) {
-  uchar *req = (uchar *)exchange_base;
-  int oldlen = strlen(old);
-  int anamelen = aname ? strlen(aname) : 0;
-  uint pos = 0;
-
-  memset(req, 0, 512);
-
-  /* Tsyscall: SYS_MOUNT(fd, afd, old, flags, aname) */
-  /* Args: fd, afd, old(ptr), flags, aname(ptr) */
-  /* But string pointers are passed as length+data in our Tsyscall convention?
-   */
-  /* Re-checking do_open: it passes pathlen then path. */
-  /* Let's assume standard Tsyscall packing:
-     arg0: fd
-     arg1: afd
-     arg2: old (len, data)
-     arg3: flags
-     arg4: aname (len, data)
-  */
-
-  uint size =
-      4 + 1 + 2 + 4 + 4 + 4 + 4 + (2 + oldlen) + 4 + (2 + anamelen); // approx
-
-  /* Calculate exact size */
-  /* header(11) + syscall(4) + sdata_sz(4) + scount(4) + args */
-  /* args: 4, 4, (2+oldlen), 4, (2+anamelen) */
-  uint args_size = 4 + 4 + (2 + oldlen) + 4 + (2 + anamelen);
-  size = 11 + 4 + 4 + 4 + args_size;
-
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, SYS_MOUNT);
-  pos += 4;
-  put_u32(req + pos, args_size);
-  pos += 4;
-  put_u32(req + pos, 5);
-  pos += 4; /* scount */
-
-  put_u32(req + pos, fd);
-  pos += 4;
-  put_u32(req + pos, afd);
-  pos += 4;
-
-  put_u16(req + pos, oldlen);
-  pos += 2;
-  memcpy(req + pos, old, oldlen);
-  pos += oldlen;
-
-  put_u32(req + pos, flags);
-  pos += 4;
-
-  put_u16(req + pos, anamelen);
-  pos += 2;
-  if (anamelen)
-    memcpy(req + pos, aname, anamelen);
-  pos += anamelen;
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  pos = 0;
-  get_u32(req + pos);
-  pos += 4;
-  if (req[pos] == Rerror)
-    return -1;
-
-  return 0;
-}
-
-/*
- * Rfork (create new process/thread)
- */
-static int do_rfork(int flags) {
-  uchar *req = (uchar *)exchange_base;
-  uint pos = 0;
-
-  memset(req, 0, 128);
-
-  uint size = 4 + 1 + 2 + 4 + 4 + 4;
-  put_u32(req + pos, size);
-  pos += 4;
-  req[pos++] = Tsyscall;
-  put_u16(req + pos, 1);
-  pos += 2;
-  put_u32(req + pos, SYS_RFORK);
-  pos += 4;
-  put_u32(req + pos, 4);
-  pos += 4; /* sdata size */
-  put_u32(req + pos, 1);
-  pos += 4; /* scount */
-  put_u32(req + pos, flags);
-  pos += 4;
-
-  ctl->doorbell = 1;
-  __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
-                       : "rax", "rcx", "r11", "memory");
-
-  pos = 0;
-  get_u32(req + pos);
-  pos += 4;
-  if (req[pos] == Rerror)
-    return -1;
-
-  return (int)get_u64(req + pos + 3);
-}
 
 /* ========== 9P Server Loop ========== */
 
