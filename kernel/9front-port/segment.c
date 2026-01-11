@@ -285,7 +285,15 @@ static Pte *ptecpy(Pte *new, Pte *old) {
     if (onswap(entry))
       dupswap(entry);
     else {
+      /* Borrow Checker Integration for Shared Pages (SG_TEXT) */
+      /* Child borrows the page as SHARED & IMMUTABLE */
+      /* Parent retains ownership but cannot write while borrowed */
+      entry->token_color = PEBBLE_COLOR_RED; /* Mark shared */
       incref((Ref *)&entry->ref);
+
+      /* Enforce READ-ONLY for shared borrow */
+      /* Note: We don't have direct PTE bits here, but we pass entry.
+         The caller (dupseg) ensures types are correct. */
 
       /* Transition BLACK → RED when page becomes shared */
       if (entry->token_color == PEBBLE_COLOR_BLACK) {
@@ -308,6 +316,9 @@ static Pte *ptecpy(Pte *new, Pte *old) {
   return new;
 }
 
+/* Deep copy a PTE - used for fork to enforce private memory (since COW is
+ * broken) */
+
 Segment *dupseg(Segment **seg, int segno, int share) {
   int i;
   Pte *pte;
@@ -329,6 +340,9 @@ Segment *dupseg(Segment **seg, int segno, int share) {
     goto sameseg;
 
   case SG_STACK:
+    /* Explicitly check share flag for stack/data/bss */
+    if (share)
+      goto sameseg;
     n = newseg(s->type, s->base, s->size);
     break;
 
@@ -364,8 +378,24 @@ Segment *dupseg(Segment **seg, int segno, int share) {
         putseg(n);
         error(Enomem);
       }
-      n->map[i] = ptecpy(pte, s->map[i]);
-      print("dupseg assign: src=%p dst=%p idx=%d pte=%p\n", s, n, i, n->map[i]);
+      /* STRICT ISOLATION:
+       * Only SG_TEXT (Code) allows shared borrowing.
+       * SG_STACK, SG_DATA, SG_BSS must NOT be copied or shared.
+       * Child gets FRESH (empty) segments for these to ensure isolation.
+       */
+      if (s->type == SG_TEXT) {
+        /* Shared Code Pattern: Borrow Checker allows sharing immutable code */
+        /* Use Copy-on-Write (Reference Copy) semantics */
+        n->map[i] = ptecpy(pte, s->map[i]);
+      } else {
+        /* Mutable Data Pattern: NO COPYING allowed.
+         * Child starts with FRESH, ZEROED state.
+         * Do not copy PTEs. Child will fault and alloc new pages on demand.
+         */
+        /* n->map[i] = ptecpy(pte, s->map[i]); - DISABLED */
+        free(pte); /* Free the unused PTE table allocated above */
+        n->map[i] = nil;
+      }
     }
   }
   n->used = s->used;

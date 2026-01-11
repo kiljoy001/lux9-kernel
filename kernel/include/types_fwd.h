@@ -20,6 +20,12 @@ typedef struct Proc Proc;
 typedef struct Mach Mach;
 #endif
 
+/* Label type (context switch state) */
+#ifndef _LABEL_DEFINED
+#define _LABEL_DEFINED
+typedef struct Label Label;
+#endif
+
 /* Lock type */
 #ifndef _LOCK_DEFINED
 #define _LOCK_DEFINED

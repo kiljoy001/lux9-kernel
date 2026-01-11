@@ -1,3 +1,4 @@
+#include "9p_router.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
@@ -251,6 +252,7 @@ int fixfault(Segment *s, uintptr addr, int read) {
       s->used++;
     }
     /* wet floor */
+    /* fallthrough */
   case SG_DATA: /* Demand load/pagein/copy on write */
     if (pagedout(*pg)) {
       if (pio(s, addr, soff, pg) < 0)
@@ -271,25 +273,20 @@ int fixfault(Segment *s, uintptr addr, int read) {
         (old->ref + swapcount(old->daddr)) == 1)
       uncachepage(old);
     if (old->ref > 1 || old->image != nil) {
-      new = newpage(addr, s);
-      if (new == nil)
-        return -1;
-      copypage(old, new);
-      settxtflush(new, s->flushme);
-      *pg = new;
-
-      /* Update counters: old RED page losing last reference goes to freepages
+      /* ZERO-COPY ENFORCEMENT:
+       * We cannot copy pages. If a page is shared (ref > 1) and a write occurs,
+       * it implies a violation of the pure Exchange/Borrow model unless it's
+       * SG_SHARED intent. But SG_DATA implies private data. If we are here, it
+       * means we have a write fault on a shared page. Previously we would copy.
+       * Now we must forbid it.
        */
-      /* Note: newpage() already set new page to BLACK and updated counters */
-      if (old->token_color == PEBBLE_COLOR_RED && old->ref == 2) {
-        /* We're about to putpage which will decref to 1.
-         * When ref reaches 0, freepages will handle counter updates. */
-      }
-
-      /* s->used count unchanged */
-      putpage(old);
+      print("fixfault: COW attempt blocked on addr=%#p type=%d ref=%ld\n", addr,
+            s->type, old->ref);
+      panic("fixfault: Strict No-Copy Violation - Write to shared page");
+      /* copyptr(old, new); -- REMOVED */
     }
     /* wet floor */
+    /* fallthrough */
   case SG_STICKY: /* Never paged out */
     mmuphys = PPN((*pg)->pa) | PTEWRITE | PTECACHED | PTEVALID;
     (*pg)->modref |=
@@ -315,6 +312,18 @@ int fixfault(Segment *s, uintptr addr, int read) {
   qunlock(&s->qlock);
 
   putmmu(addr, mmuphys, *pg);
+
+  /* CRITICAL: Update kernel mapping for exchange page if we just allocated it.
+   * KADDR translates physical address to kernel virtual address (HHDM).
+   * This ensures syscallentry reads arguments from the CORRECT page (child's),
+   * not the stale parent page.
+   */
+  if (addr == EXCHANGE_PAGE_ADDR && up != nil) {
+    up->p9page = (uchar *)KADDR((*pg)->pa);
+    up->p9page_phys = (*pg)->pa;
+    /* print("fixfault: updated p->p9page for pid %lud to pa %#llx\n", up->pid,
+     * (unsigned long long)up->p9page_phys); */
+  }
 
   return 0;
 }
@@ -363,7 +372,7 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   pg.pa = s->pseg->pa + (addr - s->base);
   settxtflush(&pg, s->flushme);
 
-  mmuphys = PPN(pg.pa) | PTEVALID;
+  mmuphys = (pg.pa & ~(1ull << 63 | (BY2PG - 1))) | PTEVALID;
   if (addr < USTKTOP)
     mmuphys |= PTEUSER;
   if ((attr & SG_RONLY) == 0)
@@ -414,7 +423,7 @@ int fault(uintptr addr, uintptr pc, int read) {
   int pnd, ins, attr;
 
   print("fault: ENTRY addr=%#llx pc=%#llx pid=%ld\n", (unsigned long long)addr,
-        (unsigned long long)pc, up ? up->pid : -1);
+        (unsigned long long)pc, up ? up->pid : 0);
 
   if (up == nil)
     panic("fault: no user process pc=%#p addr=%#p", pc, addr);
@@ -575,20 +584,20 @@ void validaddr(uintptr addr, ulong len, int write) {
  */
 void *vmemchr(void *s, int c, ulong n) {
   uintptr a;
-  ulong m;
+  ulong sz;
   void *t;
 
   a = (uintptr)s;
   for (;;) {
-    m = BY2PG - (a & (BY2PG - 1));
-    if (n <= m)
+    sz = BY2PG - (a & (BY2PG - 1));
+    if (n <= sz)
       break;
     /* spans pages; handle this page */
-    t = memchr((void *)a, c, m);
+    t = memchr((void *)a, c, sz);
     if (t != nil)
       return t;
-    a += m;
-    n -= m;
+    a += sz;
+    n -= sz;
     if (a < KZERO)
       validaddr(a, 1, 0);
   }

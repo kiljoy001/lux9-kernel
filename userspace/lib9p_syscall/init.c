@@ -127,19 +127,60 @@ static void register_service(const char *name, const char *exec_path) {
 
 void main(void) {
   init_print("=== Lux9 Init Starting ===\n");
-  init_print("init: I AM NEW! Build ID: 1\n");
-  int pid = sys_rfork(RFPROC | RFFDG);
+  init_print("init: I AM NEW! Build ID: 3\n");
+  /* ZERO-COPY FORK: Must use RFMEM to share stack (vfork style) because we
+   * cannot copy pages. Child shares parent's stack until sys_exec replaces the
+   * image. */
+  int pid = sys_rfork(RFPROC | RFFDG | RFMEM);
   if (pid < 0) {
     init_print("init: rfork failed\n");
   } else if (pid == 0) {
-    init_print("init: child running... execing wasm_test\n");
+    init_print("init: CHILD running... checking for #/./boot/wasm_test\n");
+    int fd = sys_open("#/./boot/wasm_test", 0);
+    if (fd < 0) {
+      init_print("init: FAILED to open #/./boot/wasm_test - file missing?\n");
+    } else {
+      init_print(
+          "init: SUCCESS opened #/./boot/wasm_test, closing and execing\n");
+      sys_close(fd);
+    }
+
+    init_print("init: CHILD calling sys_exec\n");
     char *args[] = {"wasm_test", 0};
-    /* Use direct device path to bypass potential namespace issues */
+    /* Use device path to access root device directly */
     int ret = sys_exec("#/./boot/wasm_test", args);
     init_print("init: exec returned (FAILED)\n");
     sys_exit("exec failed");
   } else {
-    init_print("init: parent created child\n");
+    /* Atomic print to avoid interleaving with doorbell dumps */
+    char buf[64];
+    int n = 0;
+    const char *prefix = "init: PARENT created child, pid=";
+    while (prefix[n]) {
+      buf[n] = prefix[n];
+      n++;
+    }
+
+    int start = n;
+    int temp = pid;
+    if (temp == 0)
+      buf[n++] = '0';
+    while (temp > 0 && n < 60) {
+      buf[n++] = (char)('0' + (temp % 10));
+      temp /= 10;
+    }
+    buf[n] = '\0';
+
+    /* Reverse the integer part */
+    for (int i = 0; i < (n - start) / 2; i++) {
+      char t = buf[start + i];
+      buf[start + i] = buf[n - 1 - i];
+      buf[n - 1 - i] = t;
+    }
+    buf[n++] = '\n';
+    buf[n] = '\0';
+
+    init_print(buf);
     for (;;)
       ;
   }

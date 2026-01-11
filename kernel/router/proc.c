@@ -1,3 +1,4 @@
+#include "../include/proc_packet.h"
 #include "router.h"
 
 /*
@@ -405,9 +406,62 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     /* Build Rsysfork response */
     r->type = Rsysfork;
     r->tag = t->tag;
-    r->pid = (u32int)ret; /* PID */
+    r->pid = (u32int)ret;    /* PID in message */
+    r->retval = (u64int)ret; /* PID in RAX */
 
-    print("router_proc: Tsysfork flags=0x%x -> pid=%d\n", t->flags, (int)ret);
+    print("router_proc: Tsysfork flags=0x%x -> pid=%d retval=%lld\n", t->flags,
+          (int)ret, (long long)r->retval);
+
+    /* vfork synchronization: Block parent if sharing stack (RFMEM) */
+    if (t->flags & RFMEM) {
+      Proc *child = nil;
+      /* Find the child process to set up vforkp */
+      /* Note: sysrfork already returned the pid. We need to find the Proc* */
+      extern Proc *proctab(int);
+      /* extern void procswitch(void); -- Inlined below */
+      for (int i = 0; i < conf.nproc; i++) {
+        Proc *tmp = proctab(i);
+        if (tmp && tmp->pid == (ulong)ret) {
+          child = tmp;
+          break;
+        }
+      }
+      if (child != nil) {
+        child->vforkp = p;
+        proc_event(p, EV_VFORK);
+        print("VFORK[Tsys]: Blocking parent pid %lud until child pid %lud "
+              "execs/exits\n",
+              p->pid, child->pid);
+        int s = splhi();
+
+        /* Inline procswitch logic to avoid FSM panic from sched() and linker
+         * errors */
+        {
+          uvlong timestamp;
+          m->cs++;
+          cycles(&timestamp);
+          up->kentry -= timestamp;
+          up->pcycles += timestamp;
+          procsave(up);
+          if (!setlabel(&up->sched)) {
+            /* CRITICAL: Clear m->proc so scheduler doesn't see us as
+             * running/yielding. This prevents sched() from generating spurious
+             * EV_YIELD. schedinit() usually does this, but might skip it if
+             * restored up/r14 is nil.
+             */
+            m->proc = nil;
+            up = nil;
+            gotolabel(&m->sched);
+          }
+          procrestore(up);
+          cycles(&timestamp);
+          up->kentry += timestamp;
+          up->pcycles -= timestamp;
+        }
+        splx(s);
+      }
+    }
+
     return 0;
   }
 
@@ -415,7 +469,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     /* Exec logic for Tsysexec message */
     ulong args[2];
     uintptr kpage = (uintptr)p->p9page;
-    uintptr kpath = (uintptr)t->name;
+    uintptr kpath = (uintptr)t->path;
 
     /* Calculate User Address of the path string */
     if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
@@ -426,20 +480,51 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     uintptr path_offset = kpath - kpage;
     uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
 
+    /* 3. Construct argv array in the Exchange Page */
+    /* We need space for 2 pointers: [upath, 0] */
+    /* Use the space immediately following the path string.
+     * t->path points into kpage. */
+    uintptr kargv_start = kpath + strlen((char *)kpath) + 1;
+    /* Align to 8 bytes */
+    kargv_start = (kargv_start + 7) & ~7ULL;
+
+    if (kargv_start + 2 * sizeof(ulong) > kpage + P9_PAGE_SIZE) {
+      r->type = Rerror;
+      r->ename = "Tsysexec: message too large for argv";
+      return -1;
+    }
+
+    ulong *argv_ptr = (ulong *)kargv_start;
+    argv_ptr[0] = (ulong)upath;
+    argv_ptr[1] = 0;
+    uintptr uargv = EXCHANGE_PAGE_ADDR + (kargv_start - kpage);
+
     /* Prepare arguments for sysexec: [path, argv] */
     args[0] = (ulong)upath;
-    args[1] = 0; /* argv - userspace argv not yet marshaled */
+    args[1] = (ulong)uargv;
 
-    print("router_proc: Tsysexec calling sysexec('%s')\n",
-          t->name ? t->name : "nil");
+    print("router_proc: Tsysexec calling sysexec('%s', argv=%#p)\n",
+          (char *)kpath, (void *)uargv);
 
     if (waserror()) {
+      print("router_proc: Tsysexec ERROR: %s\n", up->errstr);
       r->type = Rerror;
       r->ename = up->errstr;
       return -1;
     }
     sysexec(args);
     poperror();
+
+    /* vfork synchronization: Unblock parent after successful exec */
+    if (p->vforkp != nil) {
+      print("VFORK[Tsys]: Unblocking parent pid %lud after child pid %lud "
+            "execs\n",
+            p->vforkp->pid, p->pid);
+      proc_event(p->vforkp, EV_VFORK_DONE);
+      ready(p->vforkp);
+      p->vforkp = nil;
+    }
+
     return 0;
   }
 

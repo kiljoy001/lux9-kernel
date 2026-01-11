@@ -58,6 +58,7 @@ static void pidfree(Proc *);
 _Noreturn void schedinit(void) {
   Edf *e;
 
+  up = nil;
   setlabel(&m->sched);
   if (up != nil) {
     if ((e = up->edf) != nil && (e->flags & Admitted))
@@ -181,6 +182,11 @@ static void procswitch(void) {
 void sched(void) {
   int s;
 
+  /* Force clear up if we are yielding from vfork wait or broken state */
+  if (up && (up->state == PS_Waitrelease || up->state == PS_Broken)) {
+    up = nil;
+  }
+
   if (m->ilockdepth)
     panic("cpu%d: ilockdepth %d, last lock %#p at %#p", m->machno,
           m->ilockdepth, up != nil ? up->lastilock : nil,
@@ -210,10 +216,23 @@ void sched(void) {
     }
     s = splhi();
     up->delaysched = 0;
-    /* Set state to Ready and re-queue before switching */
-    /* up->state = Scheding; -- REPLACED BY FSM */
-    proc_event(up, EV_YIELD); /* Transitions to Scheding */
-    ready(up);
+
+    /* If process is exiting (Moribund), do NOT re-queue it.
+     * Just switch away to the scheduler.
+     */
+    if (up->state != Moribund) {
+      /* Set state to Ready and re-queue before switching */
+      /* up->state = Scheding; -- REPLACED BY FSM */
+      proc_event(up, EV_YIELD); /* Transitions to Scheding */
+      ready(up);
+    } else {
+      /* CRITICAL: For Moribund processes, we MUST clear mach
+       * because the Moribund->Dead transition (EV_REAP) requires it.
+       * Normally ready() does this, but we're skipping ready().
+       */
+      up->mach = nil;
+    }
+
     procswitch();
     splx(s);
     return;
@@ -1367,6 +1386,13 @@ _Noreturn void pexit(char *exitstr, int freemem) {
     arena_branch_drain(&up->wasm.branch);
 
     up->wasm.initialized = 0;
+
+    /* Verify all WASM resources freed */
+    assert(up->wasm.runtime == nil);
+    assert(up->wasm.env == nil);
+    assert(up->wasm.module == nil);
+    assert(up->wasm.wasi_ctx == nil);
+    assert(up->wasm.linear_memory == nil || up->wasm.linear_charged == 0);
   }
 
   /*
@@ -1529,7 +1555,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   /* up->state = Moribund; -- REPLACED BY FSM */
   proc_event(up, EV_EXIT);
   sched();
-  panic("pexit");
+  panic("pexit: check sched logic"); /* Should never return */
 }
 
 static int haswaitq(void *x) { return ((Proc *)x)->waitq != nil; }

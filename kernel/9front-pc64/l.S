@@ -502,6 +502,7 @@ _debug_rflags_msg:
 _debug_syscallentry_msg:
     .string "syscallentry: up=%#p ureg=%#p rsp=%#p\n"
 
+.text
 .global syscallentry
 syscallentry:
     swapgs

@@ -457,18 +457,39 @@ static void faultamd64(Ureg *ureg, void *) {
     print("\n");
 
     /* Check borrow checker ownership */
-    if (borrow_is_owned(addr & ~0xFFF)) {
-      Proc *owner = borrow_get_owner(addr & ~0xFFF);
+    uintptr pa = 0;
+    if (user) {
+      /* Walk user page table to get PA */
+      extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+      uintptr *pte = mmuwalk(m->pml4, addr, 0, 0);
+      if (pte && (*pte & PTEVALID))
+        pa = PPN(*pte);
+    } else {
+      /* Kernel address - check range before calling PADDR */
+      if (addr >= KZERO) {
+        pa = PADDR(addr); /* Simple approximation for direct map */
+      } else {
+        /* Kernel accessed user address (fault) - walk PT */
+        extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+        uintptr *pte = mmuwalk(m->pml4, addr, 0, 0);
+        if (pte && (*pte & PTEVALID))
+          pa = PPN(*pte);
+      }
+    }
+
+    if (pa != 0 && borrow_is_owned(pa)) {
+      Proc *owner = borrow_get_owner(pa);
       if (owner)
-        print("  Borrow:     Page owned by proc '%s' (pid=%d)\n",
+        print("  Borrow:     Page owned by proc '%s' (pid=%lu)\n",
               owner->text ? owner->text : "???", owner->pid);
       else
-        print("  Borrow:     Page tracked but no owner\n");
+        print("  Borrow:     Page tracked by system/unknown\n");
     } else {
       if (up == nil)
         print("  Borrow:     Page not tracked (up==nil, early boot)\n");
       else
-        print("  Borrow:     Page not tracked (not yet allocated)\n");
+        print("  Borrow:     Page not tracked (not yet allocated or map "
+              "failed)\n");
     }
 
     print("========================\n\n");
@@ -609,7 +630,16 @@ void syscall(Ureg *ureg) {
      * Userspace will read the result from exchange page.
      */
     print("SYSCALL: 9P message processed successfully\n");
-    ureg->ax = 0;
+    /* RAX is already set by p9_handle_doorbell using r.retval */
+
+    /* CRITICAL CHECK: Detect PC corruption before return */
+    if (ureg->pc == 0x7FFFFEEFF000ULL) {
+      print(
+          "PANIC: syscall[pid=%ld] returning to EXCHANGE PAGE! pc=%#p sp=%#p\n",
+          up->pid, ureg->pc, ureg->sp);
+      /* Force it back to a safe crash if needed, or panic */
+      panic("PC CORRUPTION");
+    }
   }
 
   /* Debug: after 9P dispatch */
@@ -786,6 +816,7 @@ void forkchild(Proc *p, Ureg *ureg) {
   memmove(cureg, ureg, sizeof(Ureg));
 
   cureg->ax = 0;
+  cureg->r14 = (uintptr)p;
 }
 
 /* Give enough context in the ureg to produce a kernel stack for

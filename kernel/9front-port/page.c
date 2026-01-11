@@ -23,21 +23,21 @@ static void validate_page_token_state(Page *p) {
   enum BorrowState bstate = borrow_get_state(p->pa);
 
   switch (p->token_color) {
-    case PEBBLE_COLOR_BLACK:
-      if (bstate != BORROW_EXCLUSIVE) {
-        panic("page token mismatch: BLACK but not EXCLUSIVE (pa=%#p)", p->pa);
-      }
-      break;
-    case PEBBLE_COLOR_RED:
-      if (bstate != BORROW_SHARED_OWNED) {
-        panic("page token mismatch: RED but not SHARED_OWNED (pa=%#p)", p->pa);
-      }
-      break;
-    case PEBBLE_COLOR_COLORLESS:
-      if (borrow_is_owned(p->pa)) {
-        panic("page token mismatch: COLORLESS but still owned (pa=%#p)", p->pa);
-      }
-      break;
+  case PEBBLE_COLOR_BLACK:
+    if (bstate != BORROW_EXCLUSIVE) {
+      panic("page token mismatch: BLACK but not EXCLUSIVE (pa=%#p)", p->pa);
+    }
+    break;
+  case PEBBLE_COLOR_RED:
+    if (bstate != BORROW_SHARED_OWNED) {
+      panic("page token mismatch: RED but not SHARED_OWNED (pa=%#p)", p->pa);
+    }
+    break;
+  case PEBBLE_COLOR_COLORLESS:
+    if (borrow_is_owned(p->pa)) {
+      panic("page token mismatch: COLORLESS but still owned (pa=%#p)", p->pa);
+    }
+    break;
   }
 }
 
@@ -274,15 +274,15 @@ void freepages(Page *head, Page *tail, ulong np) {
       if (up != nil) {
         lock(&pebble_global_lock);
         switch (p->token_color) {
-          case PEBBLE_COLOR_BLACK:
-            up->pebble.black_inuse -= BY2PG;
-            break;
-          case PEBBLE_COLOR_RED:
-            up->pebble.red_inuse -= BY2PG;
-            break;
-          case PEBBLE_COLOR_BLUE:
-            up->pebble.blue_inuse -= BY2PG;
-            break;
+        case PEBBLE_COLOR_BLACK:
+          up->pebble.black_inuse -= BY2PG;
+          break;
+        case PEBBLE_COLOR_RED:
+          up->pebble.red_inuse -= BY2PG;
+          break;
+        case PEBBLE_COLOR_BLUE:
+          up->pebble.blue_inuse -= BY2PG;
+          break;
         }
         p->token_color = PEBBLE_COLOR_COLORLESS;
         unlock(&pebble_global_lock);
@@ -533,6 +533,7 @@ void putpage(Page *p) {
   @ requires t == \null || \valid(t);
   @ assigns \everything;
   @*/
+/*
 void copypage(Page *f, Page *t) {
   KMap *ks, *kd;
 
@@ -542,6 +543,7 @@ void copypage(Page *f, Page *t) {
   kunmap(ks);
   kunmap(kd);
 }
+*/
 
 /*@ requires p == \null || \valid(p);
   @ assigns \everything;
