@@ -27,14 +27,14 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   /* Retrieve file type from FID (stored in Qid.vers during Walk) */
   if (t->type != Tattach) {
     /* Need helper to get subtype */
-    // type = get_fid_subtype((int)t->fid); // Not available here yet, need to export or reimplement
-    // For now stub
-    type = PROC_ROOT; 
+    // type = get_fid_subtype((int)t->fid); // Not available here yet, need to
+    // export or reimplement For now stub
+    type = PROC_ROOT;
   }
 
   /* Stub implementation for verification purposes */
   /* Real implementation needs Fgrp access which is in core/doorbell context */
-  
+
   switch (t->type) {
   case Tattach:
     r->type = Rattach;
@@ -42,7 +42,7 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     r->qid.path = PROC_ROOT;
     r->qid.vers = PROC_ROOT;
     return 0;
-    
+
   default:
     r->type = Rerror;
     r->ename = "not implemented";
@@ -156,17 +156,18 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     sysexec(args);
     /* Not reached on success */
     poperror();
-    
-    extern void noteret(void);  /* Assembly label for exec return path */
+
+    extern void noteret(void); /* Assembly label for exec return path */
     if (up->dbgreg != nil && ((void **)up->dbgreg)[-1] == noteret) {
-        r->type = Rsysexec;
-        r->tag = t->tag;
-        /* exec succeeded, we are in new process image, but 9p transaction completes? 
-           Usually exec doesn't return. If we are here, something is special about how sysexec returns 
-           or we are in the parent context? No, sysexec replaces current proc image.
-           The logic in original 9p_router.c handles noteret check.
-        */
-        return 0;
+      r->type = Rsysexec;
+      r->tag = t->tag;
+      /* exec succeeded, we are in new process image, but 9p transaction
+         completes? Usually exec doesn't return. If we are here, something is
+         special about how sysexec returns or we are in the parent context? No,
+         sysexec replaces current proc image. The logic in original 9p_router.c
+         handles noteret check.
+      */
+      return 0;
     }
 
     /* If we get here, exec failed somehow or logic flow is different */
@@ -303,7 +304,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     case SYS_EXIT: {
       extern void pexit(char *, int);
       /* Format: [status s] ? Or [status 4]?
-       * sys_exit(char *msg). So treat as string. 
+       * sys_exit(char *msg). So treat as string.
        */
       ptr = tsyscall_skip_argc(ptr, ep, 1);
       char *ename = nil;
@@ -343,8 +344,8 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       r->sdata = (uchar *)msg;
       return 0;
     }
-    
-default:
+
+    default:
       r->type = Rerror;
       r->ename = "Proc syscall not found";
       return -1;
@@ -404,9 +405,41 @@ default:
     /* Build Rsysfork response */
     r->type = Rsysfork;
     r->tag = t->tag;
-    r->retval = (u32int)ret; /* PID */
+    r->pid = (u32int)ret; /* PID */
 
     print("router_proc: Tsysfork flags=0x%x -> pid=%d\n", t->flags, (int)ret);
+    return 0;
+  }
+
+  if (t->type == Tsysexec) {
+    /* Exec logic for Tsysexec message */
+    ulong args[2];
+    uintptr kpage = (uintptr)p->p9page;
+    uintptr kpath = (uintptr)t->name;
+
+    /* Calculate User Address of the path string */
+    if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
+      r->type = Rerror;
+      r->ename = "Tsysexec: path outside buffer";
+      return -1;
+    }
+    uintptr path_offset = kpath - kpage;
+    uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
+
+    /* Prepare arguments for sysexec: [path, argv] */
+    args[0] = (ulong)upath;
+    args[1] = 0; /* argv - userspace argv not yet marshaled */
+
+    print("router_proc: Tsysexec calling sysexec('%s')\n",
+          t->name ? t->name : "nil");
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+    sysexec(args);
+    poperror();
     return 0;
   }
 

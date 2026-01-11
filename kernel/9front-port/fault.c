@@ -308,6 +308,10 @@ int fixfault(Segment *s, uintptr addr, int read) {
     mmuphys |= PTENOEXEC;
 #endif
 
+  /* Ensure user-space pages are accessible from user mode */
+  if (addr < USTKTOP)
+    mmuphys |= PTEUSER;
+
   qunlock(&s->qlock);
 
   putmmu(addr, mmuphys, *pg);
@@ -360,6 +364,8 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   settxtflush(&pg, s->flushme);
 
   mmuphys = PPN(pg.pa) | PTEVALID;
+  if (addr < USTKTOP)
+    mmuphys |= PTEUSER;
   if ((attr & SG_RONLY) == 0)
     mmuphys |= PTEWRITE;
   else
@@ -379,6 +385,14 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
     mmuphys |= PTEUNCACHED;
   else
     mmuphys |= PTECACHED;
+
+  /* Debug: Verify flags before putmmu at exchange page */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    print(
+        "mapphys: PRE-PUTMMU flags check: mmuphys=%#p (NX=%d W=%d VALID=%d)\n",
+        mmuphys, (mmuphys & PTENOEXEC) ? 1 : 0, (mmuphys & PTEWRITE) ? 1 : 0,
+        (mmuphys & PTEVALID) ? 1 : 0);
+  }
 
   qunlock(&s->qlock);
 

@@ -272,6 +272,34 @@ uintptr sysrfork(void *list_void) {
 
   pid = pidalloc(p);
 
+  /* Transfer initial Pebble budget from parent to child.
+   * Child needs tokens to allocate its stack and initial segments.
+   * Strategy: Transfer either 50% of parent's budget or 8MB, whichever is
+   * smaller. This maintains token conservation while ensuring child viability.
+   */
+  {
+    ulong parent_budget = up->pebble.colorless_bank;
+    ulong child_budget;
+    ulong half_parent = parent_budget / 2;
+    ulong fixed_grant = 8 * 1024 * 1024; /* 8 MB */
+
+    /* Choose the smaller of half-parent or fixed grant */
+    child_budget = (half_parent < fixed_grant) ? half_parent : fixed_grant;
+
+    /* Ensure parent has enough to transfer */
+    if (parent_budget < child_budget)
+      child_budget = parent_budget;
+
+    /* Atomic transfer: parent loses exactly what child gains */
+    p->pebble.colorless_bank = child_budget;
+    up->pebble.colorless_bank -= child_budget;
+
+    print("PEBBLE: sysrfork transferred %lud bytes (%lud MB) to child pid %lud "
+          "(parent %lud has %lud bytes remaining)\n",
+          child_budget, child_budget / (1024 * 1024), pid, up->pid,
+          up->pebble.colorless_bank);
+  }
+
   qunlock(&p->debug);
   qunlock(&up->debug);
 
@@ -383,13 +411,11 @@ uintptr sysrfork(void *list_void) {
       p->pid);
 
   /*
-   * Setup 9P exchange page AFTER procfork.
-   * Child's P9SEG is demand-paged and will allocate on first fault.
+   * Setup stub P9SEG segment for lazy exchange page allocation.
+   * Page is allocated on first access via fault handler.
    */
-  print(
-      "DEBUG: sysrfork about to call proc_setup_p9page, child pid=%lud p=%p\\n",
-      p->pid, p);
-  if (proc_setup_p9page(p) < 0)
+  extern int proc_setup_p9seg_stub(Proc *);
+  if (proc_setup_p9seg_stub(p) < 0)
     error(Enovmem);
 
   poperror(); /* abortion */
@@ -411,15 +437,11 @@ uintptr sysrfork(void *list_void) {
    *  any mmu info about this process is now stale
    *  (i.e. has bad properties) and has to be discarded.
    *
-   *  CRITICAL FIX: Do NOT call flushmmu() here!
+   *  NOTE: Do NOT call flushmmu() here!
    *  At this point 'up' is the PARENT, and calling flushmmu() destroys
-   *  the parent's user PTEs including the exchange page at 0x7FFFFEEFF000.
-   *  This causes the parent to fault when reading the syscall reply.
-   *  The child will get its TLB flushed automatically when scheduled.
+   *  the parent's user PTEs. The child will get its TLB flushed
+   *  automatically when scheduled.
    */
-  /* proc_setup_p9page moved above procfork */
-
-  /* REMOVED: flushmmu(); -- This was destroying parent's exchange page PTE! */
 
   procpriority(p, up->basepri, up->fixedpri);
   if (up->wired)

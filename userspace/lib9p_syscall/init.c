@@ -13,15 +13,17 @@ extern int sys_open(char *path, int mode);
 extern int sys_close(int fd);
 extern long sys_read(int fd, void *buf, long n);
 extern long sys_write(int fd, void *buf, long n);
-extern void sys_exit(char *msg);
 extern int sys_create(char *path, int mode, uint perm);
 extern int sys_rfork(int flags);
-extern void sys_exec(char *path);
+extern int sys_exec(char *path, char *argv[]);
+extern void sys_exit(char *msg);
 extern int sys_wait(void);
+extern int sys_pid(void);
 
 #define OREAD 0
 #define OWRITE 1
 #define ORDWR 2
+#define RFFDG (1 << 2)
 #define RFPROC (1 << 4)
 #define RFMEM (1 << 5)
 
@@ -124,52 +126,21 @@ static void register_service(const char *name, const char *exec_path) {
 }
 
 void main(void) {
-  int pid;
-
   init_print("=== Lux9 Init Starting ===\n");
   init_print("init: I AM NEW! Build ID: 1\n");
-  init_print("init: Starting resurrection server...\n");
-
-  /* Fork resurrection server */
-  /* Use RFPROC (COW) to ensure separate exchange pages to prevent race
-   * conditions */
-  pid = sys_rfork(RFPROC);
-
-  if (pid == 0) {
-    /* Child - exec wasm_test (use #/./boot/ prefix for direct device access) */
-    /* Note: /boot namespace isn't bound for userspace processes, must use #/.
-     */
-    init_print("init: Child starting, calling exec #/./boot/wasm_test\n");
-    sys_exec("#/./boot/wasm_test");
-    /* Should not return */
-    init_print("init: Failed to exec wasm_test\n");
-    sys_exit("exec failed");
-  }
-
+  int pid = sys_rfork(RFPROC | RFFDG);
   if (pid < 0) {
-    init_print("init: fork failed\n");
-    sys_exit("fork failed");
-  }
-
-  /* Parent - wait a moment for resurrection to start, then register services */
-  init_print("init: Resurrection server started (PID ");
-  /* TODO: print pid number */
-  init_print(")\n");
-
-  /* LUX_FIX: Wait for resurrection server to mount /srv (simple delay) */
-  /* Sleep removed due to hang - relying on scheduler */
-  // sys_sleep(500);
-
-  init_print("init: Registering services...\n");
-  register_service("rump_server", "/boot/rump_server");
-  register_service("turbocid", "/boot/turbocid");
-  register_service("wasm_test", "/boot/wasm_test");
-
-  init_print("init: Service registration complete\n");
-  init_print("init: Entering wait loop\n");
-
-  /* Wait for any children that exit */
-  for (;;) {
-    sys_wait();
+    init_print("init: rfork failed\n");
+  } else if (pid == 0) {
+    init_print("init: child running... execing wasm_test\n");
+    char *args[] = {"wasm_test", 0};
+    /* Use direct device path to bypass potential namespace issues */
+    int ret = sys_exec("#/./boot/wasm_test", args);
+    init_print("init: exec returned (FAILED)\n");
+    sys_exit("exec failed");
+  } else {
+    init_print("init: parent created child\n");
+    for (;;)
+      ;
   }
 }
