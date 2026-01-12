@@ -59,7 +59,7 @@ static void wasm_arena_test_main(void) {
 
     tx.type = Tsyscall;
     tx.tag = 1;
-    tx.scallnr = 100; /* SYS_WASM_COMPILE */
+    tx.scallnr = 160; /* SYS_WASM_COMPILE */
     tx.scount = 4 + module_size;
 
     /* Format: [module_size:4] [module_bytes:n] */
@@ -102,7 +102,7 @@ static void wasm_arena_test_main(void) {
 
         tx.type = Tsyscall;
         tx.tag = 1;
-        tx.scallnr = 101; /* SYS_WASM_EXECUTE */
+        tx.scallnr = 161; /* SYS_WASM_EXECUTE */
 
         u32int func_name_len = strlen(tests[i]);
         tx.scount = 4 + func_name_len;
@@ -132,7 +132,7 @@ static void wasm_arena_test_main(void) {
     memset(&rx, 0, sizeof(Fcall));
     tx.type = Tsyscall;
     tx.tag = 1;
-    tx.scallnr = 102; /* SYS_WASM_DESTROY */
+    tx.scallnr = 162; /* SYS_WASM_DESTROY */
 
     sys_wasm_destroy(&tx, &rx);
 

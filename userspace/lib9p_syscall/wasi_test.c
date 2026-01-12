@@ -6,9 +6,9 @@
 #define P9_CONTROL_OFFSET 0xF00
 #define Tsyscall 130
 #define Rsyscall 131
-#define SYS_WASM_COMPILE 100
-#define SYS_WASM_EXECUTE 101
-#define SYS_WASM_DESTROY 102
+#define SYS_WASM_COMPILE 160
+#define SYS_WASM_EXECUTE 161
+#define SYS_WASM_DESTROY 162
 
 typedef unsigned int uint;
 typedef unsigned char uchar;

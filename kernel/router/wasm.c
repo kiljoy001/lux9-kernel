@@ -1,5 +1,6 @@
 #include "router.h"
 #include "../wasm/wasm_runtime.h"
+#include "../include/fcall.h"
 
 int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
   /*@

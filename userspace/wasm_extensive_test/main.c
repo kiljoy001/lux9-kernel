@@ -17,9 +17,9 @@
 #define SYS_CLOSE 2
 #define SYS_SEEK 39
 #define SYS_EXITS 8
-#define SYS_WASM_COMPILE 63
-#define SYS_WASM_EXECUTE 64
-#define SYS_WASM_DESTROY 65
+#define SYS_WASM_COMPILE 160
+#define SYS_WASM_EXECUTE 161
+#define SYS_WASM_DESTROY 162
 
 // ...
 
