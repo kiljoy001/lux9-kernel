@@ -1,6 +1,6 @@
-#include "router.h"
 #include "../include/distributed_pebble.h"
 #include "../include/msgord.h"
+#include "router.h"
 
 /* Forward declarations */
 static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
@@ -90,7 +90,7 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
 
     memset(&r, 0, sizeof(r));
     /* Need to declare p9_dispatch in router.h or extern here */
-    extern int p9_dispatch(Proc *p, Fcall *t, Fcall *r);
+    extern int p9_dispatch(Proc * p, Fcall * t, Fcall * r);
     int disp = p9_dispatch(p, &t, &r);
     if (disp < 0)
       r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
@@ -117,7 +117,8 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
 int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   /*@
     @ requires \valid(p);
-    @ requires p->p9page == \null || \valid((uchar*)p->p9page + (0..P9_PAGE_SIZE-1));
+    @ requires p->p9page == \null || \valid((uchar*)p->p9page +
+    (0..P9_PAGE_SIZE-1));
     @ ensures p->p9page == \null ==> \result == -1;
     @*/
   P9Control *ctl;
@@ -185,6 +186,9 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   /* Mark as pending */
   atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
 
+  /* ALWAYS DUMP REQUEST FOR DEBUG */
+  dump_bytes("p9_handle_doorbell: REQUEST msg[0..31]:", msg_buf, 32);
+
   /* Ring-buffer mode for small messages */
   if (ctl->req_head != ctl->req_tail) {
     /* Memory barrier to ensure user writes are visible to kernel */
@@ -225,7 +229,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     print("p9_handle_doorbell: ctl req_head=%ud req_tail=%ud rep_head=%ud "
           "rep_tail=%ud\n",
           ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
-    dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
+    dump_bytes("p9_handle_doorbell: BAD SIZE msg[0..31]:", msg_buf, 32);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     result = -1;
     splx(s); /* Restore interrupts */
@@ -235,10 +239,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   if (convM2S(msg_buf, msg_size, &t) == 0) {
     print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
           msg_buf[0]);
-    print("p9_handle_doorbell: msg_size=%ud ctl req_head=%ud req_tail=%ud "
-          "rep_head=%ud rep_tail=%ud\n",
-          msg_size, ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
-    dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
+    dump_bytes("p9_handle_doorbell: PARSE FAIL msg[0..31]:", msg_buf, 32);
     splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
@@ -246,7 +247,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
 
   /* Dispatch through 9P router */
   memset(&r, 0, sizeof(r));
-  extern int p9_dispatch(Proc *p, Fcall *t, Fcall *r);
+  extern int p9_dispatch(Proc * p, Fcall * t, Fcall * r);
   result = p9_dispatch(p, &t, &r);
 
   /* Write reply to SAME buffer location (ownership-flip model) */
@@ -259,10 +260,15 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     result = -1;
     goto cleanup_ownership;
   }
+
+  /* ALWAYS DUMP REPLY FOR DEBUG */
+  dump_bytes("p9_handle_doorbell: REPLY msg[0..31]:", reply_copy, 32);
   memmove(&ctl_saved, ctl, sizeof(ctl_saved));
   scrub_exchange_page(p, reply_copy, rep_size, &ctl_saved, 0, 0, 0);
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
+
+  dump_bytes("p9_handle_doorbell: PAGEDUMP msg[0..31]:", msg_buf, 32);
 
   /* Set RAX to return value for ABI compatibility and efficient checking */
   if (ureg != nil) {

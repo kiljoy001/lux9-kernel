@@ -1,9 +1,7 @@
 #ifndef _LIBLUX_SERVER9P_H_
 #define _LIBLUX_SERVER9P_H_
 
-#include <u.h>
-#include <libc.h>
-#include <fcall.h>
+#include "lux.h"
 
 typedef struct Srv Srv;
 typedef struct Req Req;

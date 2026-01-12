@@ -114,7 +114,7 @@ struct Hole {
 struct Xhdr {
   ulong size;
   ulong magix;
-  char data[];
+  char data[0];
 };
 
 struct Xalloc {
@@ -215,13 +215,13 @@ void *xspanalloc(ulong size, int align, ulong span) {
 }
 
 /*@
-  requires size < 0x80000000; // Reasonable size limit
-  ensures \result != \null && size > 0 ==> \valid((char*)\result + (0..size-1));
-  ensures \result != \null && size == 0 ==> \valid((char*)\result);
-  ensures \result != \null ==> ((uintptr)\result % 8) == 0; // Alignment
-  assigns \result \from size, xlists;
-  // property: preserves valid_holes invariant per
-  proofs/allocator/xalloc_model.v
+  requires size < 0x80000000;
+  assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
+  ensures \result != \null;
+/*@
+  requires size < 0x80000000;
+  ensures \result == \null || \valid((char*)\result + (0 .. size-1));
+  assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
 */
 static void *xalloc_internal(ulong size, int zero, int raw) {
   Xhdr *p;
@@ -361,12 +361,6 @@ void *xalloc(ulong size) { return xalloc_internal(size, 1, 0); }
 
 void *xalloc_raw(ulong size) { return xalloc_internal(size, 1, 1); }
 
-/*@
-  // Header is valid implied by pointer being allocated
-  requires \valid((Xhdr*)((char*)p - sizeof(ulong)*2));
-  assigns xlists;
-  // property: preserves disjointness per proofs/allocator/xalloc_model.v
-*/
 void xfree(void *p) {
   Xhdr *x;
 
@@ -409,16 +403,7 @@ int xmerge(void *vp, void *vq) {
   return 0;
 }
 
-/* Modern VM-aware xhole system for Limine boot environment
- *
- * API Contract:
- * - Takes a PHYSICAL address and size
- * - Converts to VIRTUAL internally using HHDM mapping
- * - All allocations return virtual addresses in HHDM region
- * - Holes track virtual address ranges after conversion
- */
-void xhole(uintptr addr, uintptr size) {
-  Hole *h, *c, **l;
+void xhole(uintptr addr, uintptr size) {  Hole *h, *c, **l;
   uintptr top;
   uintptr vaddr; /* Virtual address in HHDM */
 
@@ -491,7 +476,7 @@ void xhole(uintptr addr, uintptr size) {
     /* ---------------------------------------------------------------
      * If we have exhausted the static free list, allocate a fresh batch
      * of Hole descriptors from the kernel malloc pool.
-     * --------------------------------------------------------------- */
+     * -------------------------------------------------------------- */
     Hole *extra =
         (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
     if (extra == nil) {

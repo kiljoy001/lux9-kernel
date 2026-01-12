@@ -44,15 +44,20 @@ int proc_setup_p9page(Proc *p) {
   UserCapability cap;
   BlindLedgerEntry entry;
   uintptr pa = 0;
+  void *kva = nil; /* Kernel virtual address for p9page */
 
   if (global_pool != nil) {
     PoolError perr = global_pool_alloc_page(p, &cap);
     if (perr == POOL_OK) {
-      /* Verify capability and get physical address */
+      /* Verify capability and get kernel virtual address */
       if (ledger_verify(&cap, &entry) == BLIND_LEDGER_OK) {
-        pa = entry.physical_address;
-        print("proc_setup_p9page: pid=%lud allocated pool page pa=%#p\n",
-              p->pid, (void *)pa);
+        /* NOTE: BlindLedger stores KADDR, not physical address!
+         * The pool was allocated via xspanalloc() which returns KADDR.
+         */
+        kva = (void *)entry.physical_address; /* This is actually KADDR */
+        pa = PADDR(kva); /* Convert to real physical address for MMU */
+        print("proc_setup_p9page: pid=%lud pool page kva=%p pa=%#p\n", p->pid,
+              kva, (void *)pa);
       } else {
         print("proc_setup_p9page: pid=%lud cap verify failed, fallback\n",
               p->pid);
@@ -76,13 +81,14 @@ int proc_setup_p9page(Proc *p) {
       print("proc_setup_p9page: fallback xspanalloc failed\n");
       return -1;
     }
+    kva = page; /* xspanalloc returns KADDR */
     pa = PADDR(page);
-    print("proc_setup_p9page: pid=%lud fallback page pa=%#p\n", p->pid,
-          (void *)pa);
+    print("proc_setup_p9page: pid=%lud fallback page kva=%p pa=%#p\n", p->pid,
+          kva, (void *)pa);
   }
 
-  /* Zero the page to prevent information leakage */
-  memset(KADDR(pa), 0, BY2PG);
+  /* Zero the page to prevent information leakage (use KADDR) */
+  memset(kva, 0, BY2PG);
 
   /*
    * Create segment for the exchange page at fixed virtual address.
@@ -134,7 +140,7 @@ int proc_setup_p9page(Proc *p) {
   print("DEBUG:proc_setup_p9page post-assignment p->pid=%lud\n", p->pid);
 
   /* Store kernel virtual address for p9_handle_doorbell */
-  p->p9page = KADDR(pa);
+  p->p9page = kva;
 
   print("proc_setup_p9page: pid=%lud seg=%p base=%#p pa=%#p kva=%p\n", p->pid,
         s, (void *)s->base, (void *)pa, p->p9page);

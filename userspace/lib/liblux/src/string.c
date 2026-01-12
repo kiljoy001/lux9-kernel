@@ -1,5 +1,7 @@
-#include <u.h>
+#include "../inc/lux.h"
+#include <stddef.h> // For size_t, which memmove/memset use
 
+extern void *memmove(void *dst, const void *src, ulong n);
 void *memmove(void *dst, const void *src, ulong n) {
   const char *s = src;
   char *d = dst;

@@ -508,6 +508,7 @@ syscallentry:
     swapgs
     /* WORKAROUND: KVM/QEMU might lose GS base, use global m pointer */
     movq m(%rip), %rax          /* m */
+    movq %rbx, 24(%rax)         /* SAVE USER RBX to m->rbx_restore (scratch) */
     movq 16(%rax), %rbx         /* up */
 
     /* DEBUG: Check if up is valid before using it */
@@ -540,7 +541,11 @@ syscallentry:
     /* Save all general purpose registers for potential noteret path
      * Note: ureg starts at rsp+8, so all offsets are +8 from struct offsets */
     movq %rax, 8(%rsp)          /* ureg->ax (offset 0 in struct) */
-    movq %rbx, 16(%rsp)         /* ureg->bx (offset 8) */
+    /* movq %rbx, 16(%rsp)      -- OLD BUGGY CODE: saved UP as ureg->bx */
+    /* We must save user RBX to ureg->bx. It's currently in m->rbx_restore.
+     * We need a temp register to move memory-to-memory.
+     * R10 is saved at offset 80. We can use R10 if we save user R10 first.
+     */
     movq %rcx, 24(%rsp)         /* ureg->cx (offset 16, user pc saved by syscall) */
     movq %rdx, 32(%rsp)         /* ureg->dx (offset 24) */
     movq %rsi, 40(%rsp)         /* ureg->si (offset 32) */
@@ -548,7 +553,13 @@ syscallentry:
     movq %rbp, 56(%rsp)         /* ureg->bp (offset 48, syscall number) */
     movq %r8,  64(%rsp)         /* ureg->r8 (offset 56) */
     movq %r9,  72(%rsp)         /* ureg->r9 (offset 64) */
-    movq %r10, 80(%rsp)         /* ureg->r10 (offset 72) */
+    movq %r10, 80(%rsp)         /* ureg->r10 (offset 72) - SAVE USER R10 FIRST */
+    
+    /* NOW RESTORE USER RBX using R10 as scratch */
+    movq 24(%rax), %r10         /* Load User RBX from m->rbx_restore */
+    movq %r10, 16(%rsp)         /* ureg->bx (offset 8) */ 
+    
+    /* Continue saving other registers */
     movq %r11, 88(%rsp)         /* ureg->r11 (offset 80, rflags saved by syscall) */
     movq %r12, 96(%rsp)         /* ureg->r12 (offset 88) */
     movq %r13, 104(%rsp)        /* ureg->r13 (offset 96) */

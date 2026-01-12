@@ -677,7 +677,8 @@ void procsave(Proc *);         /* Save process state */
 void procrestore(Proc *);      /* Restore process state */
 void procsetup(Proc *);        /* Setup process state */
 void procfork(Proc *);         /* Fork process state */
-int proc_setup_p9page(Proc *); /* Setup 9P exchange page */
+int proc_setup_p9page(Proc *); /* Setup 9P exchange page (deprecated) */
+int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */
 void *kernel_setup_init_exchange(
     Proc *); /* Kernel boot: setup #X exchange channel for init */
 

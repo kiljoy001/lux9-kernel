@@ -1,7 +1,6 @@
-/* Userspace version of convS2M */
-#include "../inc/libc.h"
-#include <fcall.h>
-#include <u.h>
+#include "../inc/lux.h"
+#include "../src/lux_internal.h" // For PBIT macros
+#include <stddef.h>             // For NULL if needed
 
 static uchar *pstring(uchar *p, char *s) {
   uint n;

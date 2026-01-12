@@ -1,0 +1,388 @@
+/*
+ * Exchange Pool Implementation
+ * 
+ * Global pool of exchange pages with dynamic allocation and proportional load balancing.
+ */
+
+// Use the standard kernel include approach with <>
+#include "u.h"
+#include "libc.h"
+#include "portdat.h"
+#include "fns.h"
+#include "9p_router.h"
+#include "blind_ledger.h"
+#include "borrowchecker.h"
+#include "mmu.h"
+#include "alloc.h"
+#include "print.h"
+#include "exchange_pool.h"
+#include "uuid.h"
+
+// Global pool instance
+static GlobalExchangePool *global_pool = nil;
+
+// Forward declarations for internal functions
+static void rebalance_kproc(void *arg);
+static PoolError reclaim_page_from_process(GlobalExchangePool *pool, ProcAllocation *pa);
+static PoolError allocate_page_to_process(GlobalExchangePool *pool, ProcAllocation *pa);
+static int should_rebalance(GlobalExchangePool *pool);
+static void log_pool_statistics(GlobalExchangePool *pool);
+
+// IPC Pub-Sub forward declarations
+static Topic* rbtree_insert(Topic *root, Topic *node);
+static Topic* rbtree_search(Topic *root, const uuid_t *topic_uuid);
+static void rbtree_rotate_left(Topic **root, Topic *x);
+static void rbtree_rotate_right(Topic **root, Topic *x);
+static void rbtree_insert_fixup(Topic **root, Topic *z);
+
+void exchange_pool_init(uint pool_size) {
+    global_pool = xalloc(sizeof(GlobalExchangePool));
+    if (global_pool == nil) {
+        print("exchange_pool_init: failed to allocate global pool\n");
+        return;
+    }
+    
+    memset(global_pool, 0, sizeof(GlobalExchangePool));
+    
+    global_pool->free_count = pool_size > POOL_SIZE ? POOL_SIZE : pool_size;
+    
+    // Initialize free list (simple FIFO)
+    for (uint i = 0; i < global_pool->free_count; i++) {
+        global_pool->free_list[i] = i;
+    }
+    
+    // Initialize all pages as kernel-owned
+    for (uint i = 0; i < global_pool->free_count; i++) {
+        // Each page gets unique physical address (using kernel heap base)
+        memset(&global_pool->pages[i].uuid, 0, sizeof(uuid_t));
+        memset(global_pool->pages[i].hash, 0, BLIND_LEDGER_CAP_SIZE);
+        global_pool->pages[i].size = 4096; // PAGE_SIZE
+        global_pool->pages[i].type = CAP_TYPE_MEMORY;
+        global_pool->pages[i].perms = CAP_PERM_READ | CAP_PERM_WRITE;
+    }
+    
+    // Initialize linked list
+    global_pool->proc_allocs = nil;
+    
+    // Initialize IPC components
+    global_pool->topics_root = nil;
+    global_pool->notification_count = 0;
+    
+    qlock(&global_pool->pool_lock);
+    qlock(&global_pool->topics_lock);
+    qlock(&global_pool->notifications_lock);
+    
+    print("Exchange pool initialized: %d pages\n", pool_size);
+    
+    // Start rebalancing kproc
+    start_rebalance_kproc();
+    
+    qunlock(&global_pool->notifications_lock);
+    qunlock(&global_pool->topics_lock);
+    qunlock(&global_pool->pool_lock);
+}
+
+PoolError pool_alloc_page(Proc *p, UserCapability *out) {
+    ProcAllocation *pa;
+    
+    if (!global_pool || !p || !out)
+        return POOL_EINVAL;
+    
+    // Get or create process allocation
+    pa = get_proc_allocation(p);
+    if (!pa)
+        return POOL_ENOMEM;
+    
+    // Check if process already has max pages
+    if (pa->num_pages >= MAX_PAGES_PER_PROCESS)
+        return POOL_ENOMEM;
+    
+    qlock(&global_pool->pool_lock);
+    
+    // Allocate from global pool
+    if (global_pool->free_count == 0) {
+        qunlock(&global_pool->pool_lock);
+        return POOL_ENOMEM;
+    }
+    
+    uint pool_idx = global_pool->free_list[--global_pool->free_count];
+    UserCapability *cap = &global_pool->pages[pool_idx];
+    
+    // Transfer ownership: kernel -> process
+    // Note: This is conceptual - actual borrow checker integration would go here
+    PoolError err = POOL_OK; // Simplified for now
+    
+    if (err != POOL_OK) {
+        global_pool->free_list[global_pool->free_count++] = pool_idx;
+        qunlock(&global_pool->pool_lock);
+        return POOL_EPERM;
+    }
+    
+    // Add to process allocation
+    pa->pages[pa->num_pages++] = *cap;
+    
+    // Return capability to caller
+    *out = *cap;
+    
+    qunlock(&global_pool->pool_lock);
+    return POOL_OK;
+}
+
+PoolError pool_free_page(Proc *p, const UserCapability *cap) {
+    ProcAllocation *pa;
+    uint found_idx = (uint)-1;
+    
+    if (!global_pool || !cap || !p)
+        return POOL_EINVAL;
+    
+    // Find process allocation
+    pa = get_proc_allocation(p);
+    if (!pa)
+        return POOL_EINVAL;
+    
+    // Find page in process allocation
+    for (uint i = 0; i < pa->num_pages; i++) {
+        // Compare by hash since that's the unique identifier
+        if (memcmp(pa->pages[i].hash, cap->hash, BLIND_LEDGER_CAP_SIZE) == 0) {
+            found_idx = i;
+            break;
+        }
+    }
+    
+    if (found_idx == (uint)-1)
+        return POOL_EINVAL;
+    
+    qlock(&global_pool->pool_lock);
+    
+    // Transfer ownership: process -> kernel
+    // Note: This is conceptual - actual borrow checker integration would go here
+    PoolError err = POOL_OK; // Simplified for now
+    
+    if (err != POOL_OK) {
+        qunlock(&global_pool->pool_lock);
+        return POOL_EPERM;
+    }
+    
+    // Remove from process allocation (swap with last)
+    pa->pages[found_idx] = pa->pages[--pa->num_pages];
+    
+    // Return to global free list
+    // Find the pool index by searching through pages
+    for (uint i = 0; i < POOL_SIZE; i++) {
+        if (memcmp(global_pool->pages[i].hash, cap->hash, BLIND_LEDGER_CAP_SIZE) == 0) {
+            global_pool->free_list[global_pool->free_count++] = i;
+            break;
+        }
+    }
+    
+    qunlock(&global_pool->pool_lock);
+    return POOL_OK;
+}
+
+ProcAllocation* get_proc_allocation(Proc *p) {
+    ProcAllocation *pa;
+    
+    if (!global_pool || !p)
+        return nil;
+    
+    // Search existing allocation
+    for (pa = global_pool->proc_allocs; pa != nil; pa = pa->next) {
+        if (pa->proc == p)
+            return pa;
+    }
+    
+    // Create new allocation
+    pa = xalloc(sizeof(ProcAllocation));
+    if (!pa)
+        return nil;
+        
+    memset(pa, 0, sizeof(ProcAllocation));
+    
+    pa->proc = p;
+    pa->num_pages = 0;
+    pa->target_pages = MIN_PAGES_PER_PROCESS;
+    pa->syscall_rate = 0.0;
+    pa->syscall_count = 0;
+    pa->last_measurement = fastticks(nil);
+    
+    // Add to linked list
+    pa->next = global_pool->proc_allocs;
+    global_pool->proc_allocs = pa;
+    
+    return pa;
+}
+
+void compute_target_allocations(GlobalExchangePool *pool) {
+    ProcAllocation *pa;
+    float total_demand = 0.0;
+    uint num_procs = 0;
+    
+    if (!pool)
+        return;
+    
+    // 1. Sum all demand
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+        measure_process_demand(pa);
+        total_demand += pa->syscall_rate;
+        num_procs++;
+    }
+    
+    // 2. Handle edge cases
+    if (total_demand < 0.001 || num_procs == 0) {
+        // No demand - equal distribution
+        uint pages_per_proc = pool->free_count / (num_procs > 0 ? num_procs : 1);
+        for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+            pa->target_pages = MAX(MIN_PAGES_PER_PROCESS, pages_per_proc);
+        }
+        return;
+    }
+    
+    // 3. Proportional allocation
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+        float share = pa->syscall_rate / total_demand;
+        uint target = (uint)(share * POOL_SIZE);
+        
+        // Clamp to reasonable bounds
+        pa->target_pages = MAX(MIN_PAGES_PER_PROCESS, 
+                              MIN(MAX_PAGES_PER_PROCESS, target));
+    }
+}
+
+void migrate_pages(GlobalExchangePool *pool) {
+    ProcAllocation *pa;
+    
+    if (!pool)
+        return;
+    
+    // Phase 1: Reclaim excess pages
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+        while (pa->num_pages > pa->target_pages) {
+            reclaim_page_from_process(pool, pa);
+        }
+    }
+    
+    // Phase 2: Allocate deficit pages
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+        while (pa->num_pages < pa->target_pages) {
+            allocate_page_to_process(pool, pa);
+        }
+    }
+}
+
+// Internal helper functions
+
+static PoolError reclaim_page_from_process(GlobalExchangePool *pool, ProcAllocation *pa) {
+    // Find page to reclaim (simple: reclaim first page)
+    if (pa->num_pages == 0)
+        return POOL_EINVAL;
+    
+    UserCapability *cap = &pa->pages[0];
+    
+    // Check if page is currently in use (simplified check)
+    // In reality, this would integrate with the borrow checker
+    
+    // Transfer back to pool (conceptual)
+    PoolError err = pool_free_page(pa->proc, cap);
+    if (err != POOL_OK) {
+        return err;
+    }
+    
+    return POOL_OK;
+}
+
+static PoolError allocate_page_to_process(GlobalExchangePool *pool, ProcAllocation *pa) {
+    UserCapability cap;
+    
+    // Try to allocate from global pool
+    PoolError err = pool_alloc_page(pa->proc, &cap);
+    if (err != POOL_OK) {
+        // Pool exhausted or other error
+        return err;
+    }
+    
+    return POOL_OK;
+}
+
+void rebalance_pool(GlobalExchangePool *pool) {
+    if (!pool)
+        return;
+        
+    compute_target_allocations(pool);
+    migrate_pages(pool);
+}
+
+void start_rebalance_kproc(void) {
+    if (global_pool) {
+        // Disabled for now - kproc infrastructure needs to be verified
+        // kproc("rebalance", rebalance_kproc, global_pool);
+        print("Rebalancing kproc scheduled (disabled in implementation)\n");
+    }
+}
+
+static void rebalance_kproc(void *arg) {
+    GlobalExchangePool *pool = (GlobalExchangePool *)arg;
+    
+    print("Rebalancing kproc started\n");
+    
+    for (;;) {
+        // Sleep for rebalance interval
+        // tsleep(&up->sleep, return0, nil, REBALANCE_INTERVAL_MS);
+        
+        // Check if rebalancing is needed
+        if (should_rebalance(pool)) {
+            compute_target_allocations(pool);
+            migrate_pages(pool);
+            
+            // Log statistics
+            log_pool_statistics(pool);
+        }
+    }
+}
+
+static int should_rebalance(GlobalExchangePool *pool) {
+    ProcAllocation *pa;
+    
+    if (!pool)
+        return 0;
+    
+    // Check if any process has >20% deviation from target
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+        if (pa->num_pages == 0 || pa->target_pages == 0)
+            continue;
+            
+        float deviation = ABS((float)pa->num_pages - pa->target_pages) / pa->target_pages;
+        if (deviation > 0.2)  // 20% threshold
+            return 1;
+    }
+    
+    return 0;
+}
+
+static void log_pool_statistics(GlobalExchangePool *pool) {
+    // Log basic pool statistics
+    print("Exchange Pool Stats: %d free, %d used\n", 
+          pool->free_count, POOL_SIZE - pool->free_count);
+}
+
+void measure_process_demand(ProcAllocation *pa) {
+    uvlong now = fastticks(nil);
+    uvlong elapsed_ticks = now - pa->last_measurement;
+    
+    if (elapsed_ticks < 1000000)  // Less than ~1ms, skip
+        return;
+    
+    // Convert ticks to seconds (approximate)
+    float elapsed_sec = elapsed_ticks / 1000000000.0; // Assuming 1GHz ticks
+    if (elapsed_sec > 0.001) {
+        pa->syscall_rate = pa->syscall_count / elapsed_sec;
+    }
+    
+    pa->syscall_count = 0;
+    pa->last_measurement = now;
+}
+
+float get_process_syscall_rate(ProcAllocation *pa) {
+    if (!pa)
+        return 0.0;
+    return pa->syscall_rate;
+}

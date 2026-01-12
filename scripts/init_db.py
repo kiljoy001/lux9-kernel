@@ -212,7 +212,15 @@ def register_init(binary_path, notes=None):
     # Copy to canonical location
     canonical_path = CANONICAL_INIT_DIR / "init"
     canonical_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(['cp', binary_path, canonical_path], check=True)
+    
+    # Resolve paths to check for equality
+    try:
+        if Path(binary_path).resolve() != canonical_path.resolve():
+            subprocess.run(['cp', binary_path, canonical_path], check=True)
+    except OSError:
+         # Fallback if resolve fails (e.g. file doesn't exist yet, though we checked)
+         subprocess.run(['cp', binary_path, canonical_path], check=True)
+
     subprocess.run(['chmod', '755', canonical_path], check=True)
 
     # Register in database

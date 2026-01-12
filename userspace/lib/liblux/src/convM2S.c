@@ -1,16 +1,7 @@
-/* Userspace version of convM2S */
-#include "../inc/libc.h"
-#include <fcall.h>
-#include <u.h>
+#include "../inc/lux.h"
+#include "../src/lux_internal.h" // For GBIT macros
+#include <stddef.h>             // For NULL if needed
 
-#define GBIT8(p) ((p)[0])
-#define GBIT16(p) ((p)[0] | ((p)[1] << 8))
-#define GBIT32(p) ((p)[0] | ((p)[1] << 8) | ((p)[2] << 16) | ((p)[3] << 24))
-#define GBIT64(p)                                                              \
-  ((u64int)((p)[0]) | ((u64int)((p)[1]) << 8) | ((u64int)((p)[2]) << 16) |     \
-   ((u64int)((p)[3]) << 24) | ((u64int)((p)[4]) << 32) |                       \
-   ((u64int)((p)[5]) << 40) | ((u64int)((p)[6]) << 48) |                       \
-   ((u64int)((p)[7]) << 56))
 
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
   uint n;

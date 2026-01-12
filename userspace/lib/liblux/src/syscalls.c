@@ -1,12 +1,11 @@
 #include "lux_internal.h"
+#include <stdarg.h>
+#include <string.h> // For memmove and memset
 
-extern uint convS2M(Fcall *f, uchar *ap, uint n);
-extern uint convM2S(uchar *ap, uint n, Fcall *f);
-extern void *memmove(void *dst, const void *src, ulong n);
-extern void *memset(void *dst, int c, ulong n);
-/* SECURITY: No malloc/free - all allocations via pebble system */
-extern int pebble_alloc(ulong size, void **addr);
-extern int pebble_free(void *addr);
+/* Helper function declarations (must be after lux_internal.h for types) */
+extern uint convS2M(struct Fcall *f, uchar *ap, uint n);
+extern uint convM2S(uchar *ap, uint n, struct Fcall *f);
+extern int vsnprint(char *buf, int len, const char *fmt, va_list args);
 
 /* Packing Helpers */
 static void pack8(uchar *p, int v) { p[0] = v; }
@@ -20,10 +19,6 @@ static void pack32(uchar *p, int v) {
   p[2] = v >> 16;
   p[3] = v >> 24;
 }
-
-/* Exchange Pool Syscalls */
-#define SYS_EXCHANGE_ALLOC 67
-#define SYS_EXCHANGE_FREE 68
 
 static void pack64(uchar *p, uvlong v) {
   p[0] = v;
@@ -44,7 +39,7 @@ static int packstr(uchar *p, char *s) {
   return 2 + n;
 }
 
-int lux_call(Fcall *tx, Fcall *rx) {
+int lux_call(struct Fcall *tx, struct Fcall *rx) {
   uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
 
   /* 1. Marshal Request */
@@ -74,6 +69,10 @@ int lux_call(Fcall *tx, Fcall *rx) {
   return 0;
 }
 
+extern uint convS2M(Fcall *f, uchar *ap, uint n);
+extern uint convM2S(uchar *ap, uint n, Fcall *f);
+extern int vsnprint(char *, int, const char *, va_list);
+
 /* Generic syscall wrapper with sdata buffer management */
 static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   Fcall tx, rx;
@@ -96,6 +95,19 @@ static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   if (retval)
     *retval = rx.retval;
   return 0;
+}
+
+// Implement sys_print
+int sys_print(const char *fmt, ...) {
+  char buf[256];
+  va_list args;
+  int n;
+
+  va_start(args, fmt);
+  n = vsnprint(buf, sizeof(buf), fmt, args);
+  va_end(args);
+
+  return sys_write(1, buf, n);
 }
 
 #define SYS_BIND_RAW 2
@@ -264,14 +276,15 @@ extern long _syscall(void);
 
 int sys_rfork(int flags) {
   /* Special handling for rfork:
-     Parent receives Rsysfork reply with child PID in r->pid.
-     Child gets a fresh exchange page (P9SEG is nil on fork, demand-paged).
+     With PTE save/restore in kernel:
+     - Parent keeps its exchange page PTE (points to page with Rsysfork reply)
+     - Child inherits INVALID PTE, faults on first access, gets fresh empty page
 
      Detection strategy:
      1. Issue syscall
-     2. Try to parse reply from exchange page
-     3. If parse fails or reply is wrong type -> we are child (return 0)
-     4. If parse succeeds with Rsysfork -> we are parent (return r->pid)
+     2. Try to parse exchange page
+     3. If parse succeeds with Rsysfork -> parent (has saved PTE with reply)
+     4. If parse fails -> child (has fresh empty page from fault)
   */
   uchar buf[16];
   Fcall tx, rx;
@@ -292,21 +305,19 @@ int sys_rfork(int flags) {
   /* 2. Syscall */
   _syscall();
 
-  /* 3. Parse reply to distinguish parent from child */
+  /* 3. Parse exchange page to distinguish parent from child
+   * Parent: has restored PTE pointing to page with Rsysfork reply
+   * Child: has invalid PTE, faults to get fresh empty page */
   memset(&rx, 0, sizeof(Fcall));
+
   uint parsed = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, &rx);
 
-  /* Child detection:
-   * - Child's exchange page is fresh/empty (P9SEG newly allocated on fault)
-   * - Parse will fail OR return wrong message type
-   * - Parent's page has valid Rsysfork reply
-   */
   if (parsed == 0 || rx.type != Rsysfork) {
-    /* We are the child - return 0 */
+    /* Potential Child: check if page is actually empty */
     return 0;
   }
 
-  /* We are the parent - return child PID from reply */
+  /* Success case */
   return (int)rx.pid;
 }
 
@@ -333,7 +344,7 @@ int sys_getpid2(void *out, ulong len) {
   return do_syscall(SYS_GETPID2, buf, p - buf, nil);
 }
 
-void sys_exec(char *path) {
+void sys_exec(char *path, char *argv[]) {
   /* Use Tsysexec (162) which is cleaner and verified in kernel */
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
@@ -341,7 +352,16 @@ void sys_exec(char *path) {
   tx.type = Tsysexec;
   tx.tag = 1;
   tx.path = path;
-  tx.argc = 0; /* No additional args for now */
+  tx.argv = argv;
+
+  // Count argc
+  int argc = 0;
+  if (argv != nil) {
+    while (argv[argc] != nil) {
+      argc++;
+    }
+  }
+  tx.argc = argc;
 
   int ret = lux_call(&tx, &rx);
   /* If we return, exec failed */

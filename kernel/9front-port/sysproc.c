@@ -31,6 +31,7 @@ typedef ulong *syscall_va_list;
 #include "fns.h"
 #include "ureg.h"
 #include <error.h>
+#include "9p_router.h"
 
 #include "edf.h"
 #include "elf.h"
@@ -324,7 +325,14 @@ uintptr sysrfork(void *list_void) {
      * The child will allocate its own exchange page on first fault.
      * This avoids MMU aliasing - child never inherits parent's PTE.
      */
-    if (i == P9SEG) {
+    /*
+     * CRITICAL: Skip P9SEG (exchange page) during fork.
+     * The child will allocate its own exchange page on first fault.
+     * This avoids MMU aliasing - child never inherits parent's PTE.
+     * Use address check to be robust against slot assignment.
+     */
+    if (i == P9SEG ||
+        (up->seg[i] != nil && up->seg[i]->base == EXCHANGE_PAGE_ADDR)) {
       p->seg[i] = nil; /* Child will fault and allocate fresh page */
       continue;
     }
@@ -337,8 +345,10 @@ uintptr sysrfork(void *list_void) {
   /* DEBUG: Verify Child Segments */
   for (i = 0; i < NSEG; i++) {
     if (p->seg[i] != nil) {
+      /*
       print("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
             (void *)p->seg[i]->base, (void *)p->seg[i]->top, p->seg[i]->type);
+      */
     }
   }
 
@@ -392,10 +402,25 @@ uintptr sysrfork(void *list_void) {
   }
 
   /*
-   * CRITICAL: Invalidate parent's exchange page PTE BEFORE procfork.
-   * This ensures child inherits invalid PTE and will fault on first access.
+   * CRITICAL: Save, invalidate, and restore parent's exchange page PTE for
+   * fork.
+   * 1. Save parent's PTE (points to page with Rsysfork reply)
+   * 2. Invalidate PTE so child inherits invalid PTE and faults on first access
+   * 3. Fork child (inherits invalid PTE)
+   * 4. Restore parent's saved PTE so it can continue using exchange page
    */
   extern void putmmu(uintptr, uintptr, Page *);
+  extern uintptr getmmu(uintptr, Page **);
+
+  uintptr saved_pte;
+  Page *saved_page = nil;
+
+  /* Save parent's current PTE */
+  saved_pte = getmmu(0x7FFFFEEFF000ULL, &saved_page);
+  print("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
+        saved_page);
+
+  /* Invalidate parent's PTE before fork */
   print("DEBUG: sysrfork pid %lud->%lud invalidating parent PTE before fork\n",
         up->pid, p->pid);
   putmmu(0x7FFFFEEFF000ULL, 0, nil);
@@ -409,6 +434,14 @@ uintptr sysrfork(void *list_void) {
   print(
       "DEBUG: sysrfork procfork complete, child pid %lud has invalidated PTE\n",
       p->pid);
+
+  /*
+   * CRITICAL: Restore parent's SAVED PTE after fork.
+   * This preserves the parent's exchange page with Rsysfork reply.
+   */
+  putmmu(0x7FFFFEEFF000ULL, saved_pte, saved_page);
+  __asm__ volatile("invlpg (%0)" ::"r"(0x7FFFFEEFF000ULL) : "memory");
+  print("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
 
   /*
    * Setup stub P9SEG segment for lazy exchange page allocation.
@@ -451,8 +484,17 @@ uintptr sysrfork(void *list_void) {
    */
   p->newtlb = 1; /* For forcing TLB flush on child */
   ready(p);
-  sched();
-  return pid;
+
+  /* vfork synchronization: Block parent if sharing stack (RFMEM) */
+  if (flag & RFMEM) {
+    p->vforkp = up;
+    proc_event(up, EV_VFORK);
+    print("VFORK: Blocking parent pid %lud until child pid %lud execs/exits\n",
+          up->pid, p->pid);
+    sched();
+  }
+
+  return p->pid;
 }
 
 static int shargs(char *s, int n, char **ap, int nap) {
@@ -1542,8 +1584,17 @@ found:
   up->seg[i] = nil;
   putseg(s);
   qunlock(&up->seglock);
-  poperror();
 
+  /* vfork synchronization: Unblock parent after successful exec */
+  if (up->vforkp != nil) {
+    print("VFORK: Unblocking parent pid %lud after child pid %lud execs\n",
+          up->vforkp->pid, up->pid);
+    proc_event(up->vforkp, EV_VFORK_DONE);
+    ready(up->vforkp);
+    up->vforkp = nil;
+  }
+
+  poperror();
   /* Ensure we flush any entries from the lost segment */
   flushmmu();
   return 0;

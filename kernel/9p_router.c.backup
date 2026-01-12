@@ -2081,6 +2081,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     sysexec(args);
     poperror();
 
+    extern void noteret(void);  /* Assembly label for exec return path */
     if (up->dbgreg != nil && ((void **)up->dbgreg)[-1] == noteret) {
       r->type = Rsysexec;
       r->tag = t->tag;

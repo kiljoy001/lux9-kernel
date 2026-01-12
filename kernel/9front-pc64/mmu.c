@@ -1247,11 +1247,29 @@ void putmmu(uintptr va, uintptr pa, Page *pg) {
     /* Invalidate PTE */
     *pte = 0;
   } else {
-    /* Map with flags - strict hierarchy: PA=0 is invalid unless specified */
-    *pte = pa | PTEACCESSED | PTEDIRTY | PTEUSER | PTEWRITE | PTEVALID;
+    /* Use pa as-is - already contains correct flags from caller */
+    *pte = pa;
   }
   splx(x);
   invlpg(va);
+}
+
+/* Read current PTE value for a virtual address */
+uintptr getmmu(uintptr va, Page **pgp) {
+  uintptr *pte;
+  uintptr val;
+  int x;
+
+  x = splhi();
+  pte = getpte(va);
+  val = *pte;
+  splx(x);
+
+  /* For now, don't try to extract Page* from PTE */
+  if (pgp != nil)
+    *pgp = nil;
+
+  return val;
 }
 
 /*

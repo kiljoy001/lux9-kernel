@@ -176,10 +176,11 @@ struct Mach {
   Proc *proc;    /* current process on this processor */
 
   /* PMach fields */
-  Proc *readied;    /* for runproc */
-  Label sched;      /* scheduler wakeup */
-  ulong ticks;      /* of the clock since boot time */
-  ulong schedticks; /* next forced context switch */
+  uintptr rbx_restore; /* scratch for saving user RBX during syscallentry */
+  Proc *readied;       /* for runproc */
+  Label sched;         /* scheduler wakeup */
+  ulong ticks;         /* of the clock since boot time */
+  ulong schedticks;    /* next forced context switch */
   int pfault;
   int cs;
   int syscall;

@@ -89,7 +89,7 @@ int pow_solve(u64int context, int difficulty, u64int *nonce_out) {
     }
 }
 
-int msgord_submit(char *path, Fcall *t) {
+int msgord_submit(char *path, MsgOrdFcall *t) {
     /* Wrapper for future use */
     return -1;
 }

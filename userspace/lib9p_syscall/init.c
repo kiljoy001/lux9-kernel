@@ -140,9 +140,9 @@ void main(void) {
     if (fd < 0) {
       init_print("init: FAILED to open #/./boot/wasm_test - file missing?\n");
     } else {
-      init_print(
-          "init: SUCCESS opened #/./boot/wasm_test, closing and execing\n");
-      sys_close(fd);
+      init_print("init: SUCCESS opened #/./boot/wasm_test, SKIPPING close and "
+                 "execing\n");
+      // sys_close(fd); // Workaround for panic: cclose ref < 1
     }
 
     init_print("init: CHILD calling sys_exec\n");

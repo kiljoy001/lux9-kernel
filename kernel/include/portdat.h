@@ -725,10 +725,11 @@ struct Proc {
   ushort hdr_checksum; /* CRC-16 of critical fields */
 
   /* 9P Exchange Page for pure 9P architecture */
-  void *p9page; /* DEPRECATED: Fixed exchange page (legacy).
-                 * New code should use exchange_channel via #X device.
-                 * Kept for backwards compatibility with existing doorbell code.
-                 */
+  void *p9page;       /* DEPRECATED: Fixed exchange page (legacy).
+                       * New code should use exchange_channel via #X device.
+                       * Kept for backwards compatibility with existing doorbell code.
+                       */
+  uvlong p9page_phys; /* physical address of p9page */
 
   void *exchange_channel; /* ExchangeChannel from #X device (devexchange.c)
                            * Provides: ring buffer, page pool, capabilities */
@@ -796,6 +797,8 @@ struct Proc {
   Proc *palarm;    /* Next alarm time */
   ulong alarm;     /* Time of call */
   int newtlb;      /* Pager has changed my pte's, I must flush */
+
+  Proc *vforkp; /* vfork parent to unblock on exec/exit */
 
   uintptr rendtag; /* Tag for rendezvous */
   uintptr rendval; /* Value for rendezvous */

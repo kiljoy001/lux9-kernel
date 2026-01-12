@@ -148,6 +148,10 @@ static ProcTransition fsm_transitions[] = {
     {PS_Running, EV_STOP, PS_Stopped, nil},
     {PS_Stopped, EV_CONT, PS_Ready, nil},
 
+    /* vfork Synchronization (RFMEM) */
+    {PS_Running, EV_VFORK, PS_Waitrelease, nil},
+    {PS_Waitrelease, EV_VFORK_DONE, PS_Ready, nil},
+
     /* Exit */
     {PS_Running, EV_EXIT, PS_Moribund, nil},
     {PS_Moribund, EV_REAP, PS_Dead, guard_mach_nil},

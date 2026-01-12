@@ -7,14 +7,8 @@
 #pragma once
 
 #include "../include/u.h"
-/* Forward declare to avoid include hell */
-typedef struct Fcall Fcall;
+#include "../include/fcall.h" // For Fcall and SYS_WASM_* defines
 typedef struct Proc Proc;
-
-/* Syscall numbers for WASM operations */
-#define SYS_WASM_COMPILE 100 /* Compile WASM module */
-#define SYS_WASM_EXECUTE 101 /* Execute WASM function */
-#define SYS_WASM_DESTROY 102 /* Destroy WASM instance */
 
 /* Capability permissions for WASM */
 #define PERM_WASM_COMPILE (1 << 16) /* Can compile WASM modules */

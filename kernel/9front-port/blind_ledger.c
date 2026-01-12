@@ -18,6 +18,57 @@
 #include "crypto.h"
 #include "siphash.h"
 // =========================================================================
+//  ACSL Logical Model & Ghost State (Bridge to Coq)
+// =========================================================================
+
+/*@
+  @ axiomatic ledger_logic {
+  @   type logical_hash;
+  @   logic logical_hash hash_of(u8int *p);
+  @
+  @   type ledger_map;
+  @   logic ledger_map empty;
+  @   logic ledger_map update(ledger_map m, logical_hash k, BlindLedgerEntry e);
+  @   logic ledger_map remove(ledger_map m, logical_hash k);
+  @   logic boolean exists(ledger_map m, logical_hash k);
+  @
+  @   axiom exists_empty:
+  @     \forall logical_hash k; exists(empty, k) == \false;
+  @
+  @   axiom exists_update:
+  @     \forall ledger_map m, logical_hash k, BlindLedgerEntry e;
+  @     exists(update(m, k, e), k) == \true;
+  @
+  @   axiom exists_remove:
+  @     \forall ledger_map m, logical_hash k;
+  @     exists(remove(m, k), k) == \false;
+  @
+  @   predicate Refinement(struct rb_root tree, ledger_map map) =
+  @     \forall logical_hash k;
+  @     (exists(map, k) <==> (\exists LedgerEntryNode* n;
+  @       \valid(n) && hash_of(n->entry.capability.hash) == k));
+  @
+  @   logic ledger_map m_of(struct rb_root tree);
+  @
+  @   axiom refinement_def:
+  @     \forall struct rb_root tree, ledger_map m;
+  @     Refinement(tree, m) <== (m == m_of(tree));
+  @ }
+  @
+  @ // Refinement Predicate: Linking RB-Tree to Abstract Map
+  @ predicate Refinement(struct rb_root tree, ledger_map map) =
+  @   \forall logical_hash k;
+  @   (exists(map, k) <==> (\exists LedgerEntryNode* n;
+  @     \valid(n) && hash_of(n->entry.capability.hash) == k));
+  @
+  @ // Separation Invariant: The ledger structure is separated from user memory
+  @ predicate LedgerInvariants(struct rb_root tree) =
+  @   \exists ledger_map m; Refinement(tree, m);
+  @*/
+
+// Ghost variable to track the abstract ledger state independently of the tree
+
+// =========================================================================
 //  Internal Data Structures
 // =========================================================================
 
@@ -98,6 +149,14 @@ static u32int hash_physical_address(uintptr pa) {
 }
 
 // RB-tree search for capability hash
+/*@
+  @ requires \valid_read(hash + (0 .. BLIND_LEDGER_CAP_SIZE - 1));
+  @ assigns \nothing;
+  @ ensures \result != \null ==> \valid(\result) &&
+  hash_of(\result->entry.capability.hash) == hash_of(hash) &&
+  exists(m_of(ledger_tree), hash_of(hash));
+  @ ensures \result == \null ==> !exists(m_of(ledger_tree), hash_of(hash));
+  @*/
 static LedgerEntryNode *ledger_tree_search(const u8int *hash) {
   struct rb_node *node = ledger_tree.rb_node;
 
@@ -116,16 +175,18 @@ static LedgerEntryNode *ledger_tree_search(const u8int *hash) {
 }
 
 // RB-tree insert for new entry (Incremental Merkle)
-/*@ requires new_node != \null;
-  @ requires \valid(new_node);
-  @ requires \valid(new_node->entry.capability.hash +
-  @                (0 .. BLIND_LEDGER_CAP_SIZE - 1));
-  @ requires \valid(new_node->subtree_hash +
-  @                (0 .. BLIND_LEDGER_CAP_SIZE - 1));
-  @ assigns new_node->subtree_hash[0 .. BLIND_LEDGER_CAP_SIZE - 1],
-  @         ledger_tree;
-  @ ensures \result == 0 || \result == -1;
-  */
+/*@
+  @ requires new_node != \null && \valid(new_node);
+  @ requires \valid_read(new_node->entry.capability.hash + (0 ..
+  BLIND_LEDGER_CAP_SIZE - 1));
+  @ requires !exists(m_of(ledger_tree),
+  hash_of(new_node->entry.capability.hash));
+  @ assigns ledger_tree, *new_node;
+  @ ensures \result == 0 ==> exists(m_of(ledger_tree),
+  hash_of(new_node->entry.capability.hash));
+  @ ensures \result == -1 ==> !exists(m_of(ledger_tree),
+  hash_of(new_node->entry.capability.hash));
+  @*/
 static int ledger_tree_insert(LedgerEntryNode *new_node) {
   struct rb_node **link = &ledger_tree.rb_node;
   struct rb_node *parent = nil;

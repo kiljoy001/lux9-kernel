@@ -1,5 +1,6 @@
 /* clang-format off */
 /* u.h is included via command line -include */
+#include "kernel.h"
 
 /* Local Plan 9 Syscall ABI fix */
 typedef ulong *syscall_va_list;

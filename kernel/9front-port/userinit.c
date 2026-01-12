@@ -819,54 +819,13 @@ static void proc0(void *arg) {
    *	setup environment variables
    *	prepare the stack for init process
    *	switch to usermode to run /boot/init
+   *
+   * Setup stub P9SEG for lazy exchange page allocation.
+   * Page is allocated on first access via fault handler.
    */
-  /* ============================================================================
-   * BOOT ARCHITECTURE: Kernel-Initiated Exchange Setup (Phase 6+)
-   * ============================================================================
-   *
-   * PROBLEM: Chicken-Egg Dilemma
-   * ----------------------------
-   * Init needs syscalls to open #X device and get exchange pages.
-   * But syscalls require exchange pages to send 9P messages.
-   * This creates a circular dependency.
-   *
-   * SOLUTION: Kernel Proactively Sets Up Exchange Infrastructure
-   * -------------------------------------------------------------
-   * Instead of waiting for init to open #X/clone, the kernel directly calls
-   * into devexchange.c during proc0 initialization to create an exchange
-   * channel with pool of pages.
-   *
-   * This approach:
-   * 1. Eliminates the chicken-egg problem
-   * 2. Provides init with ready-to-use exchange pages at boot
-   * 3. Uses the same #X device infrastructure as normal processes
-   * 4. Allows init to immediately use syscalls for 9P operations
-   *
-   * HOW IT WORKS:
-   * -------------
-   * 1. kernel_setup_init_exchange() called from proc0() during boot
-   * 2. Creates ExchangeChannel via channel_alloc() (same as #X/clone)
-   * 3. Allocates ring buffer control page with UUIDv8 session ID
-   * 4. Allocates pool of exchange pages (2 pages: request + reply)
-   * 5. Maps pages to userspace at EXCHANGE_PAGE_ADDR (0x7FFFFEEFF000)
-   * 6. Stores channel in up->exchange_channel for future use
-   * 7. Stores p9page in up->p9page for doorbell handler compatibility
-   *
-   * FUTURE: Normal Process Flow
-   * ---------------------------
-   * After boot, normal processes will:
-   * 1. Open #X/clone to get a channel ID
-   * 2. Read/write #X/N/pool to allocate/free exchange pages
-   * 3. Map #X/N/ring for batched message submission
-   * 4. Use capability-based addressing via Blind Ledger
-   *
-   * This init-specific setup is a bootstrap mechanism that uses the same
-   * underlying infrastructure but bypasses the VFS layer.
-   * ============================================================================
-   */
-  up->exchange_channel = kernel_setup_init_exchange(up);
-  if (up->exchange_channel == nil)
-    panic("proc0: failed to setup exchange channel");
+  extern int proc_setup_p9seg_stub(Proc *);
+  if (proc_setup_p9seg_stub(up) < 0)
+    panic("proc0: failed to setup P9SEG stub");
 
   print("BOOT[proc0]: about to call init0 - switching to userspace\n");
   init0();

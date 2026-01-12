@@ -42,7 +42,7 @@
 
 /* External internal Lux9 syscall helpers (from start.S / init.c / resurrection
  * logic) */
-#define SYS_WRITE 20 /* _WRITE syscall number from kernel/include/sys.h */
+#define SYS_WRITE 4 /* _WRITE syscall number from kernel/include/sys.h */
 #define SYS_EXIT 8   /* EXITS syscall number from kernel/include/sys.h */
 
 void _sys_write(int fd, const void *buf, size_t count) {

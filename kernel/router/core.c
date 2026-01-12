@@ -88,9 +88,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Misc */
     case SYS_NSEC:
-      /* Moved to router_dispatch_fs or handle here? 
-         Original 9p_router.c handled it inline. 
-         Let's put it in fs.c or separate misc? 
+      /* Moved to router_dispatch_fs or handle here?
+         Original 9p_router.c handled it inline.
+         Let's put it in fs.c or separate misc?
          For now, let's keep it here but fix the implicit decl. */
       print("p9_dispatch: SYS_NSEC\n");
       r->type = Rsyscall;
@@ -111,17 +111,17 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
   }
 
-    /* Handle Texec (128) - Direct execution message */
+  /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
     return router_dispatch_proc(p, t, r);
   }
-
 
   /* Handle Tsys* - Specific syscall message types (132-205) */
   if (t->type >= Tsysopen && t->type <= Tsysremove) {
     return router_dispatch_fs(p, t, r);
   }
-  if (t->type == Tsysexit || t->type == Tsysbrk || t->type == Tsysfork) {
+  if (t->type == Tsysexit || t->type == Tsysbrk || t->type == Tsysfork ||
+      t->type == Tsysexec) {
     return router_dispatch_proc(p, t, r);
   }
   if (t->type == Tsysdup) {
@@ -132,6 +132,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   }
 
   r->type = Rerror;
-  snprint(r->ename, sizeof(r->ename), "unknown message type %d", t->type);
+  if (up != nil) {
+    snprint(up->errstr, ERRMAX, "unknown message type %d", t->type);
+    r->ename = up->errstr;
+  } else {
+    r->ename = "unknown message type (no proc)";
+  }
   return -1;
 }

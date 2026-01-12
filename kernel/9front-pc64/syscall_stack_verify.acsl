@@ -1,0 +1,204 @@
+/*@ ACSL Verification: Syscall Stack Layout
+ *
+ * This verifies the stack manipulation in syscallentry -> syscall() -> syscallret
+ * to find the PC corruption bug (0x2000d3 -> 0x200009)
+ */
+
+/* Stack layout after syscallentry setup (before call syscall):
+ *
+ * RSP+0:   [alignment padding, 8 bytes]
+ * RSP+8:   ureg->ax    (0)
+ * RSP+16:  ureg->bx    (8)
+ * RSP+24:  ureg->cx    (16)  <- saved RCX (user PC)
+ * RSP+32:  ureg->dx    (24)
+ * RSP+40:  ureg->si    (32)
+ * RSP+48:  ureg->di    (40)
+ * RSP+56:  ureg->bp    (48)
+ * RSP+64:  ureg->r8    (56)
+ * RSP+72:  ureg->r9    (64)
+ * RSP+80:  ureg->r10   (72)
+ * RSP+88:  ureg->r11   (80)  <- saved R11 (rflags)
+ * RSP+96:  ureg->r12   (88)
+ * RSP+104: ureg->r13   (96)  <- THIS IS USER STACK! (was in R13 at line 518)
+ * RSP+112: ureg->r14   (104)
+ * RSP+120: ureg->r15   (112)
+ * RSP+128: ureg->ds    (120)
+ * RSP+130: ureg->es    (122)
+ * RSP+132: ureg->fs    (124)
+ * RSP+134: ureg->gs    (126)
+ * RSP+136: ureg->type  (128)  <- value 64 (VectorSYSCALL)
+ * RSP+144: ureg->error (136)  <- value 0
+ * RSP+152: ureg->pc    (144)  <- RCX (user return address, should be 0x2000d3)
+ * RSP+160: ureg->cs    (152)  <- UESEL
+ * RSP+168: ureg->flags (160)  <- R11 (user RFLAGS)
+ * RSP+176: ureg->sp    (168)  <- R13 (user RSP)
+ * RSP+184: ureg->ss    (176)  <- UD64SEL
+ *
+ * Total: 192 bytes (8 + 128 + 56)
+ * ureg pointer passed to syscall() = RSP+8
+ */
+
+/*@ axiomatic StackLayout {
+  @   logic integer UREG_OFFSET = 8;
+  @   logic integer AX_OFFSET = 8;
+  @   logic integer CX_OFFSET = 24;
+  @   logic integer R13_OFFSET = 104;
+  @   logic integer PC_OFFSET = 152;
+  @   logic integer CS_OFFSET = 160;
+  @   logic integer SP_OFFSET = 176;
+  @
+  @   // After popping 14 registers (14*8=112 bytes) + skipping padding (8 bytes)
+  @   // RSP should be at original RSP + 120
+  @   logic integer AFTER_POP14 = 120;
+  @ }
+  @*/
+
+/* CRITICAL BUG ANALYSIS:
+ *
+ * In syscallret at line 632-646:
+ * 1. popq %rax    -> RSP += 8  (now RSP = original+8, pointing at ureg->ax)
+ * 2. popq %rax    -> RSP += 8  (now RSP = original+16, pointing at ureg->bx)
+ * 3. popq %rbx    -> RSP += 8
+ * 4. popq %rcx    -> RSP += 8
+ * 5. popq %rdx    -> RSP += 8
+ * 6. popq %rsi    -> RSP += 8
+ * 7. popq %rdi    -> RSP += 8
+ * 8. popq %rbp    -> RSP += 8
+ * 9. popq %r8     -> RSP += 8
+ * 10. popq %r9    -> RSP += 8
+ * 11. popq %r10   -> RSP += 8
+ * 12. popq %r11   -> RSP += 8
+ * 13. popq %r12   -> RSP += 8
+ * 14. popq %r13   -> RSP += 8  (now RSP = original+120, pointing at ureg->r14)
+ *
+ * After 14 pops (1 discard + 13 register restores), RSP = original + 120
+ * This points at ureg->r14 (offset 112 in struct, but at RSP+112 in memory)
+ *
+ * At line 649: cmpq $KESEL, 48(%rsp)
+ * This reads [RSP+48] = [original+120+48] = [original+168]
+ * = ureg->flags (offset 160)
+ *
+ * WAIT! That's wrong! The comment says "CS is at r14+48" but:
+ * - ureg->r14 is at offset 104 in struct
+ * - ureg->cs is at offset 152 in struct
+ * - Difference = 152 - 104 = 48 ✓ This is correct!
+ *
+ * So after popping 14 values, RSP points to ureg->r14.
+ * RSP+48 = ureg->cs ✓ This check is correct!
+ *
+ * At line 657-658:
+ * movq 0(%rsp), %r14   <- loads ureg->r14
+ * movq 8(%rsp), %r15   <- loads ureg->r15
+ *
+ * At line 661-662:
+ * movw 16(%rsp), %ds   <- loads ureg->ds (offset 120)
+ * movw 18(%rsp), %es   <- loads ureg->es (offset 122)
+ *
+ * At line 666:
+ * addq $40, %rsp
+ * RSP = original + 120 + 40 = original + 160
+ *
+ * Wait! Let's recalculate where RSP is:
+ * - ureg->r14 is at RSP+112 (in memory from original RSP)
+ * - After popping 14 quads (120 bytes), RSP = original + 120
+ * - So RSP now points at memory address (original + 120)
+ * - ureg->r14 was at (original + 112)
+ * - So RSP is 8 bytes PAST ureg->r14!
+ *
+ * Let me recalculate the struct layout in memory:
+ * original+8:   ureg->ax
+ * original+112: ureg->r14
+ * original+120: ureg->r15
+ * original+128: ureg->ds/es/fs/gs (8 bytes total)
+ * original+136: ureg->type (8 bytes)
+ * original+144: ureg->error (8 bytes)
+ * original+152: ureg->pc (8 bytes) <- THE CRITICAL ONE!
+ * original+160: ureg->cs
+ * original+168: ureg->flags
+ * original+176: ureg->sp
+ * original+184: ureg->ss
+ *
+ * After popping 14 quads: RSP = original + 120 = pointing at ureg->r15
+ * After movq 0(%rsp), %r14: reads from [original+120] = ureg->r15 NOT ureg->r14!
+ * After movq 8(%rsp), %r15: reads from [original+128] = ureg->ds/es/... NOT ureg->r15!
+ *
+ * FOUND IT! The stack pointer is OFF BY ONE QUAD (8 bytes)!
+ */
+
+/*@ requires true;
+  @ ensures \result == -8;  // We're 8 bytes off!
+  @*/
+int verify_stack_offset(void) {
+    // After syscallentry pushes and subq:
+    // RSP points at alignment padding (8 bytes before ureg->ax)
+
+    // syscallret line 632: popq %rax (discard padding)
+    // RSP += 8, now points at ureg->ax (original+8)
+
+    // Lines 634-646: pop 13 registers (ax, bx, cx, ..., r13)
+    // RSP += 13*8 = 104 bytes
+    // RSP = original + 8 + 104 = original + 112
+
+    // But ureg->r14 is at original+112!
+    // So RSP should be pointing at ureg->r14, not ureg->r15!
+
+    // The comment at line 648 says "After popping 14 quads"
+    // But we only popped: 1 (padding) + 13 (registers) = 14 total ✓
+    //
+    // So after 14 pops, RSP = original + (14*8) = original + 112
+    // This points at ureg->r14 ✓ CORRECT!
+
+    // Then at line 657: movq 0(%rsp), %r14
+    // This loads from [original+112] which is ureg->r14 ✓
+
+    // Then at line 658: movq 8(%rsp), %r15
+    // This loads from [original+120] which is ureg->r15 ✓
+
+    // Then at line 661: movw 16(%rsp), %ds
+    // This loads from [original+128] which is ureg->ds ✓
+
+    // Then at line 666: addq $40, %rsp
+    // Skip r14(8) + r15(8) + segments(8) + type(8) + error(8) = 40 bytes
+    // RSP = original + 112 + 40 = original + 152
+
+    // Now RSP should point at ureg->pc!
+    // ureg->pc is at original+152 ✓ CORRECT!
+
+    // So IRETQ will pop:
+    // RIP from [original+152] = ureg->pc
+    // CS from [original+160] = ureg->cs
+    // RFLAGS from [original+168] = ureg->flags
+    // RSP from [original+176] = ureg->sp
+    // SS from [original+184] = ureg->ss
+
+    // This all looks CORRECT! So where's the bug?
+
+    return 0; // Stack layout is correct...
+}
+
+/* ALTERNATE HYPOTHESIS:
+ * The bug might not be in the stack layout, but in HOW RCX is saved!
+ *
+ * At syscallentry line 529: pushq %rcx
+ * This pushes RCX which should contain the user return address from SYSCALL
+ *
+ * But wait - at line 543: movq %rcx, 24(%rsp)
+ * This saves RCX AGAIN into ureg->cx!
+ *
+ * So we have RCX saved in TWO places:
+ * 1. ureg->pc (offset 152) - pushed at line 529
+ * 2. ureg->cx (offset 24) - saved at line 543
+ *
+ * Both should have the same value (the user return PC)
+ *
+ * But the syscall() function in C might MODIFY ureg->cx!
+ * And if we're restoring from the wrong location...
+ *
+ * Let's check: at line 636: popq %rcx
+ * This restores RCX from ureg->cx (offset 16)
+ *
+ * So if syscall() modifies ureg->cx, we get the modified value back!
+ * But ureg->pc remains unchanged and that's what IRETQ uses!
+ *
+ * So that's not it either...
+ */

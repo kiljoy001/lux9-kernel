@@ -194,15 +194,28 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
   IM3Function start_func;
   result = m3_FindFunction(&start_func, (IM3Runtime)up->wasm.runtime, "_start");
   if (result) {
-    print("wasm_exec_compile: entry point _start not found: %s\n", result);
-    /* Try "main" as fallback? */
-    return -1; // Fail if no start
+    print("wasm_exec_compile: _start not found, trying main\n");
+    result = m3_FindFunction(&start_func, (IM3Runtime)up->wasm.runtime, "main");
+    if (result) {
+      print("wasm_exec_compile: no entry point (_start or main): %s\n", result);
+      goto fail_compile;
+    }
   }
 
   print("wasm_exec_compile: success, entry=%p\n", start_func);
 
   if (out_start)
     *out_start = start_func;
+
+  /* Validate linear memory is accessible */
+  if (up->wasm.linear_memory && up->wasm.memory_size > 0) {
+    volatile u8int first = up->wasm.linear_memory[0];
+    volatile u8int last = up->wasm.linear_memory[up->wasm.memory_size - 1];
+    print("wasm_exec_compile: linear memory validated [%p-%p]\n",
+          up->wasm.linear_memory, up->wasm.linear_memory + up->wasm.memory_size);
+  } else {
+    print("wasm_exec_compile: WARNING - no linear memory mapped\n");
+  }
 
   // free(module_bytes); // Module bytes might be needed by M3?
   // M3 copies if compiled? m3_ParseModule says "i_wasmBytes data must be
@@ -227,6 +240,9 @@ fail_compile:
   return -1;
 }
 
+/* Forward declaration */
+static const char *wasm_trap_label(M3Result result);
+
 /*
  * wasm_exec_run: Execute _start function and handle WASM process lifecycle
  * Called from sysexec() when start_func is found.
@@ -236,16 +252,41 @@ void wasm_exec_run(IM3Function start_func) {
     print("wasm_exec_run: invalid start_func\n");
     pexit("wasm invalid start", 1);
   }
-  print("wasm_exec_run: executing _start for pid=%lu\n", up->pid);
 
+  print("wasm_exec_run: executing entry point for pid=%lu\n", up->pid);
+
+  /* Execute WASM entry point */
   M3Result result = m3_CallV(start_func);
 
-  if (result) {
-    print("wasm_exec_run: execution error: %s\n", result);
-    pexit("wasm execution failed", 1);
+  /* Check for WASI exit trap */
+  if (result && strcmp(result, m3Err_trapExit) == 0) {
+    u32int exit_code = 0;
+    if (up->wasm.wasi_ctx) {
+      exit_code = ((wasi_context_t *)up->wasm.wasi_ctx)->exit_code;
+    }
+    print("wasm_exec_run: pid=%lu exited with code %u\n", up->pid, exit_code);
+    if (exit_code == 0) {
+      pexit(nil, 0);
+    } else {
+      char exit_msg[32];
+      snprint(exit_msg, sizeof(exit_msg), "exit code %u", exit_code);
+      pexit(exit_msg, 1);
+    }
   }
 
-  /* WASM _start returned normally - process exits cleanly */
+  /* Check for other traps */
+  if (result) {
+    const char *trap_label = wasm_trap_label(result);
+    if (trap_label) {
+      print("wasm_exec_run: pid=%lu trapped: %s\n", up->pid, trap_label);
+      pexit(trap_label, 1);
+    } else {
+      print("wasm_exec_run: pid=%lu error: %s\n", up->pid, result);
+      pexit(result, 1);
+    }
+  }
+
+  /* Normal return from entry point */
   print("wasm_exec_run: pid=%lu completed successfully\n", up->pid);
   pexit(nil, 0);
 }

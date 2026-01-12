@@ -53,18 +53,18 @@ static const unsigned char *const exchange_base =
 #define Rerror 107
 
 /* Syscall numbers (Matches kernel/include/sys.h) */
-#define SYS_OPEN 14
-#define SYS_CLOSE 4
-#define SYS_READ 15
-#define SYS_WRITE 20
+#define SYS_OPEN 1
+#define SYS_CLOSE 2
+#define SYS_READ 3
+#define SYS_WRITE 4
 #define SYS_REMOVE 25
 #define SYS_EXIT 8
 #define SYS_RFORK 19
-#define SYS_WAIT 36
+#define SYS_WAIT 166
 #define SYS_MOUNT 46
 #define SYS_PIPE 21
 #define SYS_PIPE 21
-#define SYS_CREATE 22
+#define SYS_CREATE 7
 
 /* Mount flags */
 #define MREPL 0x0000
