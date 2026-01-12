@@ -16,16 +16,20 @@ OBJ = $(SRC:.c=.o)
 
 # Use same start.S as init/resurrection
 START_OBJ = ../lib9p_syscall/start.o
+EXIT_OBJ = ../lib9p_syscall/exit.o
 
-all: $(START_OBJ) $(TARGET)
+all: $(START_OBJ) $(EXIT_OBJ) $(TARGET)
 
-$(TARGET): $(START_OBJ) $(OBJ) ../lib9p_syscall/linker.ld
-	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld $(START_OBJ) $(OBJ) -o $@
+$(TARGET): $(START_OBJ) $(EXIT_OBJ) $(OBJ) ../lib9p_syscall/linker.ld
+	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld $(START_OBJ) $(EXIT_OBJ) $(OBJ) -o $@
 	@echo "Built TurboCID: $@"
 	@ls -lh $@
 
 $(START_OBJ):
 	$(MAKE) -C ../lib9p_syscall start.o
+
+$(EXIT_OBJ):
+	$(MAKE) -C ../lib9p_syscall exit.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

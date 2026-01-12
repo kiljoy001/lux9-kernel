@@ -29,12 +29,19 @@ LIBS = -L$(RUMPLIBDIR) \
 # Use --start-group to handle circular deps between rump and rumpuser/vfs
 LIBS_GROUP = -L$(RUMPLIBDIR) --start-group -lrump -lrumpvfs -lrumpfs_ffs -lrumpdev -lrumpdev_disk -lrumpdev_dm --end-group
 
-OBJ = start.o rumpuser_lux9.o rump_server.o
+OBJ = start.o exit.o rumpuser_lux9.o rump_server.o
+EXIT_OBJ = ../lib9p_syscall/exit.o
 
-all: $(TARGET)
+all: $(EXIT_OBJ) $(TARGET)
 
 start.o: start.S
 	$(CC) $(CFLAGS) -c start.S -o start.o
+
+$(EXIT_OBJ):
+	$(MAKE) -C ../lib9p_syscall exit.o
+
+exit.o: $(EXIT_OBJ)
+	cp $(EXIT_OBJ) exit.o
 
 rumpuser_lux9.o: rumpuser_lux9.c
 	$(CC) $(CFLAGS) -c rumpuser_lux9.c -o rumpuser_lux9.o

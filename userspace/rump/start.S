@@ -3,11 +3,16 @@
 _start:
     # Set up stack
     movq $stack_top, %rsp
-    
+
     # Call main
     call main
-    
-    # Exit (infinite loop for now)
+
+    # Exit with status from main's return value (in %rax)
+    # _exit is defined in exit.c and sends proper Tsysexit message
+    mov %rax, %rdi          # Pass return value as exit status
+    call _exit
+
+    # Should never reach here
 1:
     hlt
     jmp 1b

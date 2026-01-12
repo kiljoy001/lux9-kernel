@@ -16,6 +16,7 @@
 #define SYS_OPEN 14
 #define SYS_CLOSE 4
 #define SYS_SEEK 39
+#define SYS_EXITS 8
 #define SYS_WASM_COMPILE 100
 #define SYS_WASM_EXECUTE 101
 #define SYS_WASM_DESTROY 102
@@ -119,11 +120,10 @@ static void sys_print(const char *msg) {
   uchar *req = (uchar *)exchange;
   uint pos = 0;
 
-  // Fcall header: size[4] type[1] tag[2]
-  // Tsyscall args: scallnr[4] scount[4] sdata[scount]
+  // Tsyscall args: scallnr[4] sflags[4] scount[4] sdata[scount]
   // sdata for SYS_WRITE: ARGC[4] FD[4] OFFSET[8] COUNT[4] DATA[COUNT]
   uint sdata_len = 4 + 4 + 8 + 4 + msg_len;
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added +4 for sflags
 
   memset(req, 0, 256);
   put_u32(req + pos, size);
@@ -132,6 +132,8 @@ static void sys_print(const char *msg) {
   put_u16(req + pos, 1); // tag
   pos += 2;
   put_u32(req + pos, SYS_WRITE); // scallnr
+  pos += 4;
+  put_u32(req + pos, 0); // sflags (missing before)
   pos += 4;
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
@@ -209,7 +211,7 @@ static int wasm_compile(int fd) {
   uint pos = 0;
   // sdata for SYS_WASM_COMPILE: FD[4]
   uint sdata_len = 4;
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added sflags
 
   memset(req, 0, 256);
 
@@ -219,6 +221,8 @@ static int wasm_compile(int fd) {
   put_u16(req + pos, 1); // tag
   pos += 2;
   put_u32(req + pos, SYS_WASM_COMPILE); // scallnr
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
@@ -252,15 +256,18 @@ static u64int wasm_execute(const char *func_name) {
   int len = strlen(func_name);
   // sdata for SYS_WASM_EXECUTE: ARGC[4] NAME_LEN[4] NAME[NAME_LEN]
   uint sdata_len = 4 + 4 + len;
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added sflags
 
   memset(req, 0, 256);
+
   put_u32(req + pos, size);
   pos += 4;
   req[pos++] = Tsyscall;
   put_u16(req + pos, 1); // tag
   pos += 2;
   put_u32(req + pos, SYS_WASM_EXECUTE); // scallnr
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
@@ -306,7 +313,7 @@ static int sys_open(const char *path, int mode) {
   // Tsyscall args: scallnr[4] scount[4] sdata[scount]
   // sdata for SYS_OPEN: ARGC[4] FID[4] PATH_LEN[2] PATH[PATH_LEN] MODE[1]
   uint sdata_len = 4 + 4 + 2 + path_len + 1;
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added sflags
 
   if (pos + size > P9_PAGE_SIZE)
     return -1; // Check if request fits
@@ -318,6 +325,8 @@ static int sys_open(const char *path, int mode) {
   put_u16(req + pos, 1); // tag
   pos += 2;
   put_u32(req + pos, SYS_OPEN); // scallnr
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
@@ -351,7 +360,7 @@ static int sys_open(const char *path, int mode) {
 static int sys_read(int fd, void *buf, int count, u64int offset) {
   uchar *req = (uchar *)exchange;
   uint sdata_len = 4 + 4 + 8 + 4; // ARGC(4) + FID(4) + OFF(8) + COUNT(4)
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added sflags
   uint pos = 0;
 
   if (pos + size > P9_PAGE_SIZE)
@@ -364,6 +373,8 @@ static int sys_read(int fd, void *buf, int count, u64int offset) {
   put_u16(req + pos, 1); // tag
   pos += 2;
   put_u32(req + pos, SYS_READ); // scallnr
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_len); // scount
   pos += 4;
@@ -413,7 +424,7 @@ static void sys_close(int fd) {
   uchar *req = (uchar *)exchange;
   uint pos = 0;
   uint sdata_size = 4;
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_size;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_size; // Added sflags
 
   memset(req, 0, 512);
   put_u32(req + pos, size);
@@ -422,6 +433,8 @@ static void sys_close(int fd) {
   put_u16(req + pos, 1);
   pos += 2;
   put_u32(req + pos, SYS_CLOSE);
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_size);
   pos += 4;
@@ -475,9 +488,7 @@ int main() {
 
   sys_print("=== Test Suite Completed ===\n");
 
-  // Hang or exit? Init usually loops.
-  for (;;)
-    ;
+  // Exit cleanly - _exit() will be called automatically when main returns
   return 0;
 }
 
@@ -485,7 +496,7 @@ int main() {
 static u64int sys_seek(int fd, u64int offset, int whence) {
   uchar *req = (uchar *)exchange;
   uint sdata_len = 4 + 4 + 8 + 4; // ARGC(4) + FD(4) + OFF(8) + WHENCE(4)
-  uint size = 4 + 1 + 2 + 4 + 4 + sdata_len;
+  uint size = 4 + 1 + 2 + 4 + 4 + 4 + sdata_len; // Added sflags
   uint pos = 0;
 
   memset(req, 0, 256);
@@ -495,6 +506,8 @@ static u64int sys_seek(int fd, u64int offset, int whence) {
   put_u16(req + pos, 1);
   pos += 2;
   put_u32(req + pos, SYS_SEEK);
+  pos += 4;
+  put_u32(req + pos, 0); // sflags
   pos += 4;
   put_u32(req + pos, sdata_len);
   pos += 4;
