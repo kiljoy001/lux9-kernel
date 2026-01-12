@@ -407,6 +407,18 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
 
   putmmu(addr, mmuphys, &pg);
 
+  /* CRITICAL: Update kernel mapping for exchange page if we just allocated it.
+   * This ensures the kernel reads from the CORRECT physical page.
+   * Without this, up->p9page remains nil or points to the wrong page,
+   * causing syscalls to be silently ignored.
+   */
+  if (addr == EXCHANGE_PAGE_ADDR && up != nil) {
+    up->p9page = (uchar *)KADDR(pg.pa);
+    up->p9page_phys = pg.pa;
+    print("mapphys: updated up->p9page for pid %lud to pa %#llx kva %p\n",
+          up->pid, (unsigned long long)pg.pa, up->p9page);
+  }
+
   /* Verify data at exchange page after mapping */
   if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
     uchar *data = (uchar *)kaddr(pg.pa);
