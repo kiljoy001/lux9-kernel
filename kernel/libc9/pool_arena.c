@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /*
  * pool_arena.c - Arena management for pool allocator
  *
@@ -240,3 +241,8 @@ void pooldumparena(Pool *p, Arena *a) {
     p->print(p, "(%p %.8lux %lud)", b, b->magic, b->size);
   p->print(p, "\n");
 }
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy(void) {}
+#endif

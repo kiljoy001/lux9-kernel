@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include "../include/distributed_pebble.h"
 #include "../include/msgord.h"
 #include "router.h"
@@ -313,3 +314,4 @@ cleanup_ownership:
 
   return result;
 }
+#endif

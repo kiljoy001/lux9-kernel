@@ -119,6 +119,8 @@ def main() -> int:
                 while j < len(data) and is_ident_char(data[j]):
                     j += 1
                 ident = data[i:j]
+                if "nout" in ident or "out" in ident or ident == "if":
+                     sys.stderr.write(f"Seen ident: {ident} at {i}\n")
 
                 if ident in TARGETS:
                     if prev_ident(data, i) in DECL_KEYWORDS:
@@ -129,6 +131,7 @@ def main() -> int:
                     while k < len(data) and data[k].isspace():
                         k += 1
                     if k < len(data) and data[k] == "(":
+                        sys.stderr.write(f"Stripping call to {ident} at {i}\n")
                         level = 0
                         m = k
                         inner_state = "code"

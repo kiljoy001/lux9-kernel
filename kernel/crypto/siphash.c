@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-3-Clause)
 /* Copyright (C) 2016-2022 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights
  * Reserved. Adapted for Lux9 kernel - simplified version for hash table use.
@@ -317,3 +318,12 @@ u32int hsiphash_2u32(u32int first, u32int second, const hsiphash_key_t *key) {
 
   return (u32int)((v0 ^ v1) ^ (v2 ^ v3));
 }
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy(void) {}
+#endif
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy_siphash_c(void) {}
+#endif

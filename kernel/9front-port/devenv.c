@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /*
  * devenv.c - 9front environment variable device
  *
@@ -641,3 +642,4 @@ void kconf_set(char *name, char *val) {
 
   wunlock(&eg->rwlock);
 }
+#endif

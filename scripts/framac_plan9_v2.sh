@@ -26,6 +26,7 @@ gcc -D__FRAMAC__ \
     -Ikernel/include \
     -Ikernel/9front-pc64 \
     -Ikernel/9front-port \
+    -Ikernel/crypto \
     -I. \
     -E -P -C \
     "$INPUT_FILE" \
@@ -44,9 +45,6 @@ sed \
     -e '/#pragma pack/d' \
     -e '/#pragma textflag/d' \
     -e '/#pragma profile/d' \
-| \
-# Step 3b: Drop variadic print calls that trigger WP invalid-range errors
-python3 "$SCRIPT_DIR/framac_strip_calls.py" \
 | \
 # Step 4: Remove empty lines for compactness
 sed '/^$/d' \

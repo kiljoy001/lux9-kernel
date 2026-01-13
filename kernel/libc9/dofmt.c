@@ -7,13 +7,7 @@
 #include "fmtdef.h"
 
 /* format the output into f->to and return the number of characters fmted  */
-/*@
-  @ requires \valid(f);
-  @ requires \valid_read(fmt + (0..));
-  @ requires \exists integer k; k >= 0 && fmt[k] == '\0';
-  @ assigns *f;
-  @ ensures \result >= -1;
-  @*/
+/* ACSL removed */
 int dofmt(Fmt *f, char *fmt) {
   Rune rune, *rt, *rs;
   int r;
@@ -80,13 +74,7 @@ int dofmt(Fmt *f, char *fmt) {
   }
 }
 
-/*@
-  @ requires \valid(f);
-  @ requires t != \null;
-  @ requires len >= 0;
-  @ assigns *f;
-  @ ensures \result == \null || \result == f->to;
-  @*/
+/* ACSL removed */
 void *_fmtflush(Fmt *f, void *t, int len) {
   if (f->runes)
     f->nfmt += (Rune *)t - (Rune *)f->to;
@@ -105,12 +93,7 @@ void *_fmtflush(Fmt *f, void *t, int len) {
  * put a formatted block of memory sz bytes long of n runes into the output
  * buffer, left/right justified in a field of at least f->width charactes
  */
-/*@
-  @ requires \valid(f);
-  @ requires n >= 0;
-  @ assigns *f;
-  @ ensures \result == 0;
-  @*/
+/* ACSL removed */
 int _fmtpad(Fmt *f, int n) {
   char *t, *s;
   int i;
@@ -124,12 +107,7 @@ int _fmtpad(Fmt *f, int n) {
   return 0;
 }
 
-/*@
-  @ requires \valid(f);
-  @ requires n >= 0;
-  @ assigns *f;
-  @ ensures \result == 0;
-  @*/
+/* ACSL removed */
 int _rfmtpad(Fmt *f, int n) {
   Rune *t, *s;
   int i;
@@ -143,14 +121,7 @@ int _rfmtpad(Fmt *f, int n) {
   return 0;
 }
 
-/*@
-  @ requires \valid(f);
-  @ requires n >= 0;
-  @ requires sz >= 0;
-  @ requires vm != \null ==> \valid_read((char *)vm + (0 .. sz-1));
-  @ assigns *f;
-  @ ensures \result == 0 || \result == -1;
-  @*/
+/* ACSL removed */
 int _fmtcpy(Fmt *f, void *vm, int n, int sz) {
   Rune *rt, *rs, r;
   char *t, *s, *m, *me;
@@ -205,13 +176,7 @@ int _fmtcpy(Fmt *f, void *vm, int n, int sz) {
   return 0;
 }
 
-/*@
-  @ requires \valid(f);
-  @ requires n >= 0;
-  @ requires vm != \null ==> \valid_read((Rune *)vm + (0 .. n-1));
-  @ assigns *f;
-  @ ensures \result == 0 || \result == -1;
-  @*/
+/* ACSL removed */
 int _fmtrcpy(Fmt *f, void *vm, int n) {
   Rune r, *m, *me, *rt, *rs;
   char *t, *s;

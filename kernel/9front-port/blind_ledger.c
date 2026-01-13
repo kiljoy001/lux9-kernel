@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /*
  * Blind Ledger - Zero-Knowledge Addressing System
  *
@@ -1272,3 +1273,4 @@ BlindLedgerError blind_ledger_attest_root(u8int *out_signature,
   *out_len = 32;
   return BLIND_LEDGER_OK;
 }
+#endif

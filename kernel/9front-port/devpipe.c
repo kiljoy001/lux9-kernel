@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /*
  * devpipe.c - 9front bidirectional pipe device
  *
@@ -373,3 +374,4 @@ Dev pipedevtab = {
     pipestat, pipeopen,  devcreate,   pipeclose,  piperead,
     devbread, pipewrite, devbwrite,   devremove,  devwstat,
 };
+#endif

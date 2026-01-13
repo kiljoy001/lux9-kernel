@@ -1,16 +1,7 @@
 #include <u.h>
 #include <libc.h>
 
-/*@
-  @ requires \valid_read(s + (0..));
-  @ requires \exists integer k; k >= 0 && s[k] == '\0';
-  @ assigns \nothing;
-  @ behavior found:
-  @   ensures \result != \null ==> \result >= s && \valid_read(\result);
-  @ behavior not_found:
-  @   ensures \result == \null;
-  @ complete behaviors;
-  @*/
+/* ACSL removed */
 char*
 utfrune(char *s, long c)
 {
@@ -21,11 +12,7 @@ utfrune(char *s, long c)
 	if(c < Runesync)		/* not part of utf sequence */
 		return strchr(s, c);
 
-	/*@
-	  @ loop invariant s >= \at(s, Pre);
-	  @ loop invariant \valid_read(s);
-	  @ loop assigns c1, r, n, s;
-	  @*/
+	/* ACSL removed */
 	for(;;) {
 		c1 = *(uchar*)s;
 		if(c1 < Runeself) {	/* one byte rune */

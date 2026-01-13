@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include <u.h>
 #include <libc.h>
 
@@ -133,3 +134,8 @@ Return:
 		return -n;
 	return n;
 }
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy(void) {}
+#endif

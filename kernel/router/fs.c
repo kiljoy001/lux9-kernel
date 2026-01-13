@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include "router.h"
 #include <error.h>
 
@@ -160,7 +161,7 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
     }
 
     case SYS_SEEK: {
-      /* Seek syscall - Format: [fd 4] [offset 8] [whence 4] 
+      /* Seek syscall - Format: [fd 4] [offset 8] [whence 4]
        * whence: 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
        * Returns new position as retval
        */
@@ -219,7 +220,8 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
       }
 
       print("router_fs: %s fd=%d count=%d off=%lld\n",
-            t->scallnr == SYS_WRITE ? "SYS_WRITE" : "SYS_PWRITE", fid, count, offset);
+            t->scallnr == SYS_WRITE ? "SYS_WRITE" : "SYS_PWRITE", fid, count,
+            offset);
 
       extern Chan *fdtochan(int, int, int, int);
       Chan *c;
@@ -451,7 +453,7 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
         r->ename = "short msg";
         return -1;
       }
-      
+
       char *path = smalloc(len + 1);
       memmove(path, ptr, len);
       path[len] = 0;
@@ -468,11 +470,13 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
 
       c = namec(path, Aremove, 0, 0);
       poperror();
-      /* devremove calls cclose(c) implicitly if successful? No, 9front remove calls remove then cclose */
-      /* BUT namec with Aremove returns a channel. We call devtab[c->type]->remove(c) */
+      /* devremove calls cclose(c) implicitly if successful? No, 9front remove
+       * calls remove then cclose */
+      /* BUT namec with Aremove returns a channel. We call
+       * devtab[c->type]->remove(c) */
       devtab[c->type]->remove(c);
       /* remove closes the channel */
-      
+
       free(path);
 
       r->type = Rsyscall;
@@ -482,11 +486,11 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
       r->sdata = nil;
       return 0;
     }
-    
+
     case SYS_MOUNT: {
       extern uintptr sysmount(void *list_void);
 
-      /* Pebble: Check/deduct budget for mount (userspace only). 
+      /* Pebble: Check/deduct budget for mount (userspace only).
        * TCB processes (kp == 1) are exempt. */
       if (up != nil && up->kp == 0) {
         lock(&pebble_global_lock);
@@ -928,3 +932,4 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
 
   return -1;
 }
+#endif

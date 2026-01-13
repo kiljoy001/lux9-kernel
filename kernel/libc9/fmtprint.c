@@ -1,7 +1,7 @@
 #include <u.h>
 #include <libc.h>
+#include <acsl_bounds.h>
 #include "fmtdef.h"
-
 
 /*
  * format a string into the output buffer
@@ -10,38 +10,23 @@
  */
 /*@
   @ requires \valid(f);
-  @ requires \valid_read(fmt + (0..));
-  @ requires \exists integer n; n >= 0 && fmt[n] == '\0';
+  @ requires \valid_read(fmt + (0..ACSL_MAX_FMT_LEN-1));
+  @ requires \exists integer k; 0 <= k < ACSL_MAX_FMT_LEN && fmt[k] == '\0';
   @ assigns *f;
-  @ ensures \result == 0 || \result < 0;
+  @ ensures \result == 0 || \result == -1;
   @*/
 int
 fmtprint(Fmt *f, char *fmt, ...)
 {
-	va_list saved;
-	int n;
+va_list va;
+int n;
 
-	f->flags = 0;
-	f->width = 0;
-	f->prec = 0;
-#if defined(__GNUC__) || defined(__clang__)
-	va_copy(saved, f->args);
-#else
-	saved = f->args;
-#endif
-	va_start(f->args, fmt);
-	n = dofmt(f, fmt);
-	va_end(f->args);
-	f->flags = 0;
-	f->width = 0;
-	f->prec = 0;
-#if defined(__GNUC__) || defined(__clang__)
-	va_copy(f->args, saved);
-	va_end(saved);
-#else
-	f->args = saved;
-#endif
-	if(n >= 0)
-		return 0;
-	return n;
+f->flags &= ~FmtWidth;
+f->width = 0;
+va_start(va, fmt);
+n = dofmt(f, fmt);
+va_end(va);
+if(n >= 0)
+ 0;
+return n;
 }

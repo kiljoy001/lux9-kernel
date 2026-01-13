@@ -164,9 +164,6 @@ def verify_acsl_file(file_info):
         "-wp-timeout", "5",
         full_path,
     ]
-    if path == os.path.join("kernel", "9front-port", "proc.c"):
-        cmd.insert(-1, "-wp-skip-fct")
-        cmd.insert(-1, "runproc,rebalance")
     env = os.environ.copy()
     env.setdefault("WHY3CONFIG", os.path.join(REPO_ROOT, "why3.conf"))
 

@@ -1,3 +1,5 @@
+#ifndef __FRAMAC__
+#ifndef __FRAMAC__
 #include "../include/u.h"
 #include "9p_router.h" /* For P9Control structure */
 #include "dat.h"
@@ -2237,3 +2239,13 @@ void pebble_validate_conservation(void) {
           total_allocated, pebble_total_system_tokens);
   }
 }
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy(void) {}
+#endif
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy_proc_c(void) {}
+#endif

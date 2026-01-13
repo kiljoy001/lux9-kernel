@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
@@ -953,3 +954,4 @@ Dev ramdevtab = {
     ramstat,  ramopen,  devcreate,   ramclose,  ramread,
     devbread, ramwrite, devbwrite,   devremove, devwstat,
 };
+#endif

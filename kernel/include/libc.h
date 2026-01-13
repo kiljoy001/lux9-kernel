@@ -5,7 +5,9 @@
 
 #ifdef _PORTLIB_H_
 typedef long jmp_buf[16];
+#ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
+#endif
 extern void longjmp(jmp_buf, int);
 #else
 #include <setjmp.h>
@@ -472,7 +474,9 @@ extern int postnote(int, int, char *);
 extern double pow10(int);
 extern int putenv(char *, char *);
 extern void qsort(void *, usize, usize, int (*)(void *, void *));
+#ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
+#endif
 extern double strtod(char *, char **);
 extern long strtol(char *, char **, int);
 extern ulong strtoul(char *, char **, int);

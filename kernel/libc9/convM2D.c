@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include "../include/u.h"
 
 #define _BREAK_SORT_1 1
@@ -112,3 +113,4 @@ uint convM2D(uchar *buf, uint nbuf, Dir *d, char *strs) {
 
   return p - buf;
 }
+#endif

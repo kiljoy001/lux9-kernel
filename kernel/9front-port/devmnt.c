@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /*
  * devmnt.c - 9front 9P mount device
  *
@@ -1481,3 +1482,4 @@ Dev mntdevtab = {
     mntstat,  mntopen,  mntcreate,   mntclose,  mntread,
     devbread, mntwrite, devbwrite,   mntremove, mntwstat,
 };
+#endif

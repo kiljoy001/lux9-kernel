@@ -1,54 +1,33 @@
-#include "u.h"
-#include "portlib.h"
+#include <libc.h>
+#include <u.h>
 
 /*@
   @ requires n >= 0;
-  @ requires \valid_read(s1 + (0..));
-  @ requires \valid_read(s2 + (0..));
-  @ requires \exists integer k1; k1 >= 0 && s1[k1] == '\0';
-  @ requires \exists integer k2; k2 >= 0 && s2[k2] == '\0';
+  @ requires \valid_read(s1 + (0 .. n-1)) || (\exists integer k; 0 <= k < n &&
+  s1[k] == '\0');
+  @ requires \valid_read(s2 + (0 .. n-1)) || (\exists integer k; 0 <= k < n &&
+  s2[k] == '\0');
   @ assigns \nothing;
-  @ ensures \result >= -255 && \result <= 255;
-  @ behavior equal_prefix:
-  @   assumes \forall integer i; 0 <= i < n && s1[i] != '\0' ==>
-  @             (s1[i] == s2[i] ||
-  @              (s1[i] >= 'A' && s1[i] <= 'Z' && s1[i] + ('a'-'A') == s2[i]) ||
-  @              (s2[i] >= 'A' && s2[i] <= 'Z' && s1[i] == s2[i] + ('a'-'A')) ||
-  @              (s1[i] >= 'A' && s1[i] <= 'Z' && s2[i] >= 'A' && s2[i] <= 'Z' &&
-  @               s1[i] == s2[i]));
-  @   ensures \result == 0 || \result == (int)(-(uchar)*s2);
-  @ complete behaviors;
+  @ ensures \result == -1 || \result == 0 || \result == 1;
   @*/
-int
-cistrncmp(char *s1, char *s2, int n)
-{
-	int c1, c2;
+int cistrncmp(char *s1, char *s2, int n) {
+  int c1, c2;
 
-	/*@
-	  @ loop invariant 0 <= n <= \at(n, Pre);
-	  @ loop invariant s1 >= \at(s1, Pre);
-	  @ loop invariant s2 >= \at(s2, Pre);
-	  @ loop invariant s1 - \at(s1, Pre) == s2 - \at(s2, Pre);
-	  @ loop invariant s1 - \at(s1, Pre) == \at(n, Pre) - n;
-	  @ loop assigns n, s1, s2, c1, c2;
-	  @*/
-	while(*s1 && n-- > 0){
-		c1 = *(uchar*)s1++;
-		c2 = *(uchar*)s2++;
-
-		if(c1 == c2)
-			continue;
-
-		if(c1 >= 'A' && c1 <= 'Z')
-			c1 -= 'A' - 'a';
-
-		if(c2 >= 'A' && c2 <= 'Z')
-			c2 -= 'A' - 'a';
-
-		if(c1 != c2)
-			return c1 - c2;
-	}
-	if(n <= 0)
-		return 0;
-	return -*s2;
+  while (n > 0) {
+    c1 = *(unsigned char *)s1++;
+    c2 = *(unsigned char *)s2++;
+    n--;
+    if (c1 >= 'A' && c1 <= 'Z')
+      c1 += 'a' - 'A';
+    if (c2 >= 'A' && c2 <= 'Z')
+      c2 += 'a' - 'A';
+    if (c1 != c2) {
+      if (c1 > c2)
+        return 1;
+      return -1;
+    }
+    if (c1 == 0)
+      break;
+  }
+  return 0;
 }

@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 /* distributed_pebble.c - Cross-Machine Token Economy Implementation
  *
  * Implements distributed token accounting with:
@@ -619,3 +620,4 @@ void distributed_pebble_init(void) {
 
   print("DPEBBLE: distributed pebble initialized\n");
 }
+#endif

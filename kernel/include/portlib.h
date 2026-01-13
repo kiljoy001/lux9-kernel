@@ -102,7 +102,6 @@ extern int abs(int);
 /*
  * print routines
  */
-#ifndef __FRAMAC__
 typedef struct Fmt Fmt;
 typedef int (*Fmts)(Fmt *);
 struct Fmt {
@@ -119,7 +118,6 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-#endif
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
