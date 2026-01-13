@@ -8,9 +8,9 @@
 #include <limits.h>
 #include <stdarg.h>
 
+#include "../wasm_kernel_alloc.h"
 #include "m3_compile.h"
 #include "m3_env.h"
-#include "../wasm_kernel_alloc.h"
 #include "m3_exception.h"
 #include "m3_info.h"
 
@@ -1254,7 +1254,7 @@ uint8_t *m3_GetMemory(IM3Runtime i_runtime, uint32_t *o_memorySizeInBytes,
   uint8_t *memory = NULL;
   d_m3Assert(i_memoryIndex == 0);
 
-  if (i_runtime) {
+  if (i_runtime && i_runtime->memory.mallocated) {
     u32 size = (u32)i_runtime->memory.mallocated->length;
 
     if (o_memorySizeInBytes)
@@ -1268,7 +1268,10 @@ uint8_t *m3_GetMemory(IM3Runtime i_runtime, uint32_t *o_memorySizeInBytes,
 }
 
 uint32_t m3_GetMemorySize(IM3Runtime i_runtime) {
-  return i_runtime->memory.mallocated->length;
+  if (i_runtime && i_runtime->memory.mallocated) {
+    return i_runtime->memory.mallocated->length;
+  }
+  return 0;
 }
 
 M3BacktraceInfo *m3_GetBacktrace(IM3Runtime i_runtime) {

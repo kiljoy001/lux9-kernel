@@ -116,6 +116,8 @@ static uvlong get_u64(const uchar *p) {
 /* --- Syscall Wrappers --- */
 
 static void sys_print(const char *msg) {
+  if (msg == 0)
+    return;
   int msg_len = strlen(msg);
   uchar *req = (uchar *)exchange;
   uint pos = 0;
@@ -155,23 +157,6 @@ static void sys_print(const char *msg) {
 }
 
 static void print_u32(uint val) {
-  char buf[16];
-  int i = 0;
-  if (val == 0) {
-    sys_print("0");
-    return;
-  }
-  while (val > 0) {
-    buf[i++] = '0' + (val % 10);
-    val /= 10;
-  }
-  while (i > 0) {
-    char c[2] = {buf[--i], 0};
-    sys_print(c);
-  }
-}
-
-static void print_u64(u64int val) {
   char buf[32];
   int i = 0;
   if (val == 0) {
@@ -182,9 +167,31 @@ static void print_u64(u64int val) {
     buf[i++] = '0' + (val % 10);
     val /= 10;
   }
-  while (i > 0) {
-    char c[2] = {buf[--i], 0};
-    sys_print(c);
+  // Reverse in place
+  for (int j = 0; j < i / 2; j++) {
+    char tmp = buf[j];
+    buf[j] = buf[i - 1 - j];
+    buf[i - 1 - j] = tmp;
+  }
+  buf[i] = 0;
+  sys_print(buf);
+}
+
+static void print_recursive(uint v) {
+  if (v / 10)
+    print_recursive(v / 10);
+  char c[2];
+  c[0] = '0' + (v % 10);
+  c[1] = 0;
+  sys_print(c);
+}
+
+static void print_u64(u64int val) {
+  uint v32 = (uint)val;
+  if (v32 == 0) {
+    sys_print("0");
+  } else {
+    print_recursive(v32);
   }
 }
 
@@ -232,21 +239,38 @@ static int wasm_compile(int fd) {
   pos += 4;
 
   ctl->doorbell = 1;
+  sys_print("[USER] Entering syscall...\n");
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
+  sys_print("[USER] Returned from syscall.\n");
 
   // Check reply
   pos = 0;
   get_u32(req + pos);
   pos += 4; // size
   uchar type = req[pos++];
+  print_u32((uint)type);
+  sys_print(" (msg type)\n");
+
   if (type == Rerror) {
-    sys_print("WASM Compile Error\n");
+    char errbuf[128];
+    pos += 2; // tag
+    uint elen = (uint)req[pos] | ((uint)req[pos + 1] << 8);
+    pos += 2;
+    if (elen > 127)
+      elen = 127;
+    memcpy(errbuf, (void *)(req + pos), elen);
+    errbuf[elen] = 0;
+    sys_print("WASM Compile Error: ");
+    sys_print(errbuf);
+    sys_print("\n");
     return -1;
   }
 
   // Rsyscall: retval[8] scount[4] sdata...
   // For compile, retval is PID (u64).
+  pos += 2; // skip tag
   u64int retval = get_u64(req + pos);
+  sys_print("[USER] Parsed return value.\n");
   return (int)retval;
 }
 
@@ -332,9 +356,7 @@ static int sys_open(const char *path, int mode) {
   pos += 4;
 
   // sdata
-  put_u32(req + pos, 2); // ARGC=2 (fid, path+mode)
-  pos += 4;
-  put_u32(req + pos, 0); // Dummy FID (unused by kernel for SYS_OPEN)
+  put_u32(req + pos, 2); // ARGC=2 (path+mode)
   pos += 4;
   put_u16(req + pos, path_len);
   pos += 2;
@@ -348,6 +370,7 @@ static int sys_open(const char *path, int mode) {
 
   pos = 0;
   get_u32(req + pos);
+
   pos += 4;
   if (req[pos++] == Rerror)
     return -1;
@@ -454,14 +477,18 @@ int main() {
   // sys_print("Loading #/./boot/extensive_test.wasm...\n");
   // int wasm_len = read_file("#/./boot/extensive_test.wasm", heap, 64 * 1024);
 
-  sys_print("Opening #/./boot/extensive_test.wasm...\n");
+  sys_print("Opening #/./boot/extensive_test.wasm... (FIXED2)\n");
   int fd = sys_open("#/./boot/extensive_test.wasm", OREAD);
+  sys_print("sys_open returned: ");
+  print_u32((uint)fd);
+  sys_print("\n");
   if (fd < 0) {
     sys_print("Failed to open WASM file\n");
     return 1;
   }
 
   // 2. Compile
+  sys_print("PRE-COMPILE: calling wasm_compile...\n");
   sys_print("Compiling WASM...\n");
   if (wasm_compile(fd) < 0) {
     sys_print("Compilation failed!\n");
@@ -470,13 +497,34 @@ int main() {
   sys_print("Compilation success.\n");
 
   // 3. Execute Tests
-  const char *tests[] = {"test_arithmetic", "test_control_flow", "test_memory",
-                         "test_host_interop", "test_globals"};
+  // 3. Execute Tests
+  static const char *tests[] = {"test_arithmetic", "test_control_flow",
+                                "test_memory", "test_host_interop",
+                                "test_globals"};
+
+  sys_print("DEBUG: tests array base: ");
+  print_u64((u64int)tests);
+  sys_print("\n");
+
+  sys_print("DEBUG: print_u64 check: ");
+  print_u64(0x12345678);
+  sys_print("\n");
+
+  unsigned long manual_addr = 0x401000;
+  sys_print("DEBUG: manual read 0x401000: ");
+  u64int *ptr = (u64int *)manual_addr;
+  u64int val = *ptr;
+  print_u64(val);
+  sys_print("\n");
 
   for (int i = 0; i < 5; i++) {
     sys_print("Running ");
     sys_print(tests[i]);
     sys_print("... ");
+    // Debug pointer value
+    sys_print(" (ptr: ");
+    print_u64((u64int)tests[i]);
+    sys_print(") ");
 
     u64int res = wasm_execute(tests[i]);
     if (res == 1) {

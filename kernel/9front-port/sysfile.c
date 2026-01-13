@@ -89,8 +89,10 @@ static int findfreefd(Fgrp *f, int start) {
   for (fd = start; fd < f->nfd; fd++)
     if (f->fd[fd] == nil)
       break;
-  if (fd >= f->nfd && growfd(f, fd) < 0)
+  if (fd >= f->nfd && growfd(f, fd) < 0) {
+    print("findfreefd: growfd failed for fd=%d\n", fd);
     return -1;
+  }
   return fd;
 }
 

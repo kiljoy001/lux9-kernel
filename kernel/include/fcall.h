@@ -1,6 +1,9 @@
 #ifndef _FCALL_H_
 #define _FCALL_H_
 
+#include "portlib.h"
+#include "u.h"
+
 #ifndef __FRAMAC__
 #pragma src "/sys/src/libc/9sys"
 #pragma lib "libc.a"

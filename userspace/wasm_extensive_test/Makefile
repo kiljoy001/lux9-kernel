@@ -2,7 +2,7 @@
 
 KERNEL = ../../kernel
 CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
-         -mno-red-zone -mcmodel=small -fPIC -O2 -Wall \
+         -mno-red-zone -mcmodel=small -O2 -Wall \
          -fcf-protection=none \
          -I$(KERNEL)/include
 

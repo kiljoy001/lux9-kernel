@@ -14,7 +14,8 @@ SRC = src/syscalls.c \
       src/convM2S.c \
       src/convS2M.c \
       src/server9p.c \
-      src/printf.c
+      src/printf.c \
+      src/wasm_fileserver.c
 
 # Object files
 OBJ = $(SRC:.c=.o)
@@ -38,7 +39,11 @@ $(TARGET): $(OBJ) $(ASM_OBJ)
 %.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# WASM fileserver standalone executable
+wasm_fileserver: src/wasm_fileserver.o $(OBJ) $(ASM_OBJ)
+	$(CC) -o $@ $^ -ldl -lpthread
+
 clean:
-	rm -f $(OBJ) $(ASM_OBJ) $(TARGET)
+	rm -f $(OBJ) $(ASM_OBJ) $(TARGET) wasm_fileserver
 
 .PHONY: all clean

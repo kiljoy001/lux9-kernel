@@ -586,9 +586,7 @@ static char *syscallnames[] = {
 };
 
 void syscall(Ureg *ureg) {
-  ulong scallnr;
   static int syscall_count = 0;
-  char *scname;
 
   syscall_count++;
   if (!kenter(ureg))
@@ -596,57 +594,31 @@ void syscall(Ureg *ureg) {
   if (pebble_enabled)
     pebble_auto_verify(up, ureg);
   fpukenter(ureg);
-  scallnr = ureg->bp; /* RARG */
 
-  /* Get syscall name for debug output */
-  scname = "UNKNOWN";
-  if (scallnr < nelem(syscallnames) && syscallnames[scallnr] != nil)
-    scname = syscallnames[scallnr];
-
-  /* Print syscall entry for first few and every 100th */
-  if ((syscall_count <= 50 || syscall_count % 100 == 0) && boot_verbose)
-    print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p cx=%#p\n", syscall_count,
-          scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
-
-  /* DEBUG: Always print PID for Tsysexec to debug process context */
-  print("SYSCALL[%d]: pid=%ld scallnr=%ld\n", syscall_count, up ? up->pid : -1,
-        scallnr);
-
-  /* Phase 6: Pure 9P - TRUE syscall elimination
-   * The syscall instruction is ONLY a doorbell trigger.
-   * All operations come from 9P messages in the exchange page.
-   * No legacy syscall ABI - rbp is not used.
+  /* PURE MESSAGE-BASED ARCHITECTURE
+   * ===============================
+   * Syscall instruction is ONLY a doorbell trigger.
+   * All operations come from 9P messages in exchange page.
+   * NO RBP reading - NO legacy Plan 9 syscall ABI.
    */
+
+  /* Print clean syscall entry */
+  if ((syscall_count <= 50 || syscall_count % 100 == 0) && boot_verbose)
+    print("SYSCALL[%d]: PURE-9P-DOORBELL pid=%ld\n", syscall_count,
+          up ? up->pid : -1);
+
+  /* PURE DOORBELL TRIGGER - No RBP reading */
   int result = p9_handle_doorbell(up, ureg);
-  print("!!!___DEBUG_RESULT___!!!: %d\n", result);
+
   if (result < 0) {
-    /* No valid message in exchange page - this is an error in pure 9P mode.
-     * The userspace must write a valid 9P message before issuing syscall.
-     */
-    print("SYSCALL: Pure 9P mode - no valid message in exchange page\n");
+    /* No valid message in exchange page */
+    print("SYSCALL: Pure 9P mode - no valid message\n");
     ureg->ax = -1;
   } else {
-    /* Message processed via 9P - result already written to reply buffer.
-     * Userspace will read the result from exchange page.
-     */
+    /* Message processed via 9P - result written to reply */
     print("SYSCALL: 9P message processed successfully\n");
-    /* RAX is already set by p9_handle_doorbell using r.retval */
-
-    /* CRITICAL CHECK: Detect PC corruption before return */
-    if (ureg->pc == 0x7FFFFEEFF000ULL) {
-      print(
-          "PANIC: syscall[pid=%ld] returning to EXCHANGE PAGE! pc=%#p sp=%#p\n",
-          up->pid, ureg->pc, ureg->sp);
-      /* Force it back to a safe crash if needed, or panic */
-      panic("PC CORRUPTION");
-    }
+    /* ureg->ax already set by p9_handle_doorbell */
   }
-
-  /* Debug: after 9P dispatch */
-  /* DEBUG: Disabled verbose syscall return tracing */
-  if (syscall_count <= 50 || syscall_count % 100 == 0)
-    print("syscall: 9P dispatch returned ret=%ld delaysched=%d islo=%d\n",
-          ureg->ax, up->delaysched, islo());
 
   /* FORCE INTERRUPTS ENABLED ON RETURN */
   /* Ensure R11 (for sysret) and Flags (for iret) have IF=1 */
@@ -658,22 +630,6 @@ void syscall(Ureg *ureg) {
     print("syscall: calling sched()\n");
     sched();
     print("syscall: sched() returned\n");
-  }
-
-  /* Debug: print return address after EXEC */
-  if (scallnr == 7) { /* EXEC */
-    extern Mach *m;
-    print("EXEC return: pc=%#p sp=%#p cs=%#x\n", ureg->pc, ureg->sp,
-          (uint)ureg->cs);
-    print("EXEC pre-kexit: pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
-
-    /*
-     * Important: keep KernelGSBase pointing at the kernel Mach*.
-     * Only set user TLS via FS (and, if needed, user GS base),
-     * never overwrite KernelGSBase with a user pointer.
-     * Go runtime expects SP+16 for _privates via FS.
-     */
-    wrmsr(0xC0000100, ureg->sp + 16); /* IA32_FS_BASE */
   }
 
   /* Initialize stack slot to 0 for fast SYSRET path */

@@ -119,6 +119,8 @@ retry:
       nexterror();
     }
     n = devtab[c->type]->read(c, (uchar *)VA(k), ask, daddr);
+    if (n < 0)
+      nexterror();
     if (n != ask)
       error(Eshort);
     if (n < BY2PG)
@@ -127,11 +129,12 @@ retry:
     {
       uchar *data = (uchar *)VA(k);
       print(
-          "pio: read %d bytes from offset %#llux, first 16: %02x %02x %02x "
+          "pio: read %d bytes from offset %#llux, pa=%#llx, first 16: %02x "
+          "%02x %02x "
           "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-          n, (uvlong)daddr, data[0], data[1], data[2], data[3], data[4],
-          data[5], data[6], data[7], data[8], data[9], data[10], data[11],
-          data[12], data[13], data[14], data[15]);
+          n, (uvlong)daddr, (uvlong)new->pa, data[0], data[1], data[2], data[3],
+          data[4], data[5], data[6], data[7], data[8], data[9], data[10],
+          data[11], data[12], data[13], data[14], data[15]);
     }
     kunmap(k);
     settxtflush(new, s->flushme);
@@ -264,6 +267,7 @@ int fixfault(Segment *s, uintptr addr, int read) {
      */
     if (read && conf.copymode == 0 && s->ref == 1) {
       mmuphys = PPN((*pg)->pa) | PTERONLY | PTECACHED | PTEVALID;
+      print("fixfault: SG_DATA mapping pa=%#llx\n", (uvlong)(*pg)->pa);
       (*pg)->modref |= PG_REF;
       break;
     }

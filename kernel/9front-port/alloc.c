@@ -106,7 +106,7 @@ static void *pebble_arena_alloc(ulong size) {
 
 static Pool pmainmem = {
     .name = "Main",
-    .maxsize = 4 * 1024 * 1024,
+    .maxsize = 32 * 1024 * 1024,
     .minarena = 128 * 1024,
     .quantum = 32,
     .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
@@ -124,7 +124,7 @@ static Pool pmainmem = {
 static Private pimagpriv;
 static Pool pimagmem = {
     .name = "Image",
-    .maxsize = 16 * 1024 * 1024,
+    .maxsize = 64 * 1024 * 1024,
     .minarena = 2 * 1024 * 1024,
     .quantum = 32,
     .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
@@ -169,7 +169,7 @@ Pool *secrmem = &psecrmem;
 static Private pmetapriv;
 static Pool pmetamem = {
     .name = "Meta",
-    .maxsize = 4 * 1024 * 1024,
+    .maxsize = 16 * 1024 * 1024,
     .minarena = 4096,
     .quantum = 32,
     .alloc = xalloc_raw, /* RAW BACKING - No Borrow Checker tracking */

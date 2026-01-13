@@ -126,7 +126,7 @@
 #endif
 
 #ifndef d_m3LogHeapOps
-#define d_m3LogHeapOps 0 // track heap usage
+#define d_m3LogHeapOps 1 // track heap usage
 #endif
 
 #ifndef d_m3LogTimestamps

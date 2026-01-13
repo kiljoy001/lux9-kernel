@@ -503,8 +503,37 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     args[0] = (ulong)upath;
     args[1] = (ulong)uargv;
 
+    {
+      extern void uartputs(char *, int);
+      extern int snprint(char *, int, char *, ...);
+      /* strlen is from headers */
+      char buf[256];
+      snprint(buf, sizeof(buf), "CONSOLE: Tsysexec path hex: ");
+      uartputs(buf, (int)strlen(buf));
+      unsigned char *cp = (unsigned char *)kpath;
+      for (int i = 0; i < (int)strlen((char *)kpath) + 1; i++) {
+        snprint(buf, sizeof(buf), "%02x ", cp[i]);
+        uartputs(buf, (int)strlen(buf));
+      }
+      uartputs("\n", 1);
+
+      snprint(buf, sizeof(buf),
+              "CONSOLE: Tsysexec up=%p p=%p up->slash=%p up->dot=%p\n", up, p,
+              up ? up->slash : 0, up ? up->dot : 0);
+      uartputs(buf, (int)strlen(buf));
+    }
+
     print("router_proc: Tsysexec calling sysexec('%s', argv=%#p)\n",
           (char *)kpath, (void *)uargv);
+    {
+      extern void uartputs(char *, int);
+      extern int snprint(char *, int, char *, ...);
+      /* strlen is available from portlib.h via includes */
+      char buf[256];
+      snprint(buf, sizeof(buf), "CONSOLE: Tsysexec calling sysexec('%s')\n",
+              (char *)kpath);
+      uartputs(buf, (int)strlen(buf));
+    }
 
     if (waserror()) {
       print("router_proc: Tsysexec ERROR: %s\n", up->errstr);

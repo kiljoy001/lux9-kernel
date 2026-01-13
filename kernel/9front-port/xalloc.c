@@ -403,7 +403,8 @@ int xmerge(void *vp, void *vq) {
   return 0;
 }
 
-void xhole(uintptr addr, uintptr size) {  Hole *h, *c, **l;
+void xhole(uintptr addr, uintptr size) {
+  Hole *h, *c, **l;
   uintptr top;
   uintptr vaddr; /* Virtual address in HHDM */
 

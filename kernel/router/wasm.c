@@ -1,6 +1,5 @@
-#include "router.h"
 #include "../wasm/wasm_runtime.h"
-#include "../include/fcall.h"
+#include "router.h"
 
 int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
   /*@
@@ -11,22 +10,35 @@ int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
     @*/
   print("router_wasm: dispatching scallnr=%d\n", t->scallnr);
 
+  if (waserror()) {
+    r->type = Rerror;
+    snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+    return -1;
+  }
+
+  int ret = -1;
   switch (t->scallnr) {
   case SYS_WASM_COMPILE:
-    if (sys_wasm_compile(t, r) != 0) return -1;
-    return 0;
+    if (sys_wasm_compile(t, r) == 0)
+      ret = 0;
+    break;
 
   case SYS_WASM_EXECUTE:
-    if (sys_wasm_execute(t, r) != 0) return -1;
-    return 0;
+    if (sys_wasm_execute(t, r) == 0)
+      ret = 0;
+    break;
 
   case SYS_WASM_DESTROY:
-    if (sys_wasm_destroy(t, r) != 0) return -1;
-    return 0;
+    if (sys_wasm_destroy(t, r) == 0)
+      ret = 0;
+    break;
 
   default:
     r->type = Rerror;
     r->ename = "unknown wasm syscall";
-    return -1;
+    ret = -1;
   }
+
+  poperror();
+  return ret;
 }

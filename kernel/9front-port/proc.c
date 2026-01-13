@@ -1,7 +1,7 @@
 #include "../include/u.h"
-#include "../wasm/wasm_runtime.h"
 #include "9p_router.h" /* For P9Control structure */
 #include "dat.h"
+#include "../wasm/wasm_runtime.h"
 #include "edf.h"
 #include "fns.h"
 #include "mem.h"

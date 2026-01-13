@@ -46,6 +46,12 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
   /* Handle Generic Tsyscall (130) */
   if (t->type == Tsyscall) {
+    /* DEBUG: Diagnose routing issues */
+    if (t->scallnr == 160 || t->scallnr == SYS_WASM_COMPILE) {
+      print("p9_dispatch: Tsyscall scallnr=%d (SYS_WASM_COMPILE=%d)\n",
+            t->scallnr, SYS_WASM_COMPILE);
+    }
+
     /* Dispatch based on syscall number groups */
     switch (t->scallnr) {
     /* File System Operations */
@@ -106,7 +112,14 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     default:
       r->type = Rerror;
-      snprint(r->ename, sizeof(r->ename), "unknown syscall %d", t->scallnr);
+      /* FIX: Don't write to NULL r->ename! Use up->errstr. */
+      if (up) {
+        snprint(up->errstr, ERRMAX, "unknown syscall %d", t->scallnr);
+        r->ename = up->errstr;
+      } else {
+        r->ename = "unknown syscall (no proc)";
+      }
+      print("p9_dispatch: REJECTED unknown syscall %d\n", t->scallnr);
       return -1;
     }
   }

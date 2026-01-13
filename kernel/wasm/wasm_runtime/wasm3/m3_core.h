@@ -279,16 +279,16 @@ void *m3_CopyMem(const void *i_from, size_t i_size);
 
 static inline void *m3_AllocStruct_Impl(ccstr_t name, size_t i_size) {
   void *result = m3_Malloc_Impl(i_size);
-  fprintf(stderr, PRIts ";heap:AllocStruct;%s;%zu;;%p;;\n", m3_GetTimestamp(),
-          name, i_size, result);
+  fprintf(stderr, PRIts ";heap:AllocStruct;%s;%lud;;%p;;\n", m3_GetTimestamp(),
+          name, (unsigned long)i_size, result);
   return result;
 }
 
 static inline void *m3_AllocArray_Impl(ccstr_t name, size_t i_num,
                                        size_t i_size) {
   void *result = m3_Malloc_Impl(i_size * i_num);
-  fprintf(stderr, PRIts ";heap:AllocArr;%s;%zu;%zu;%p;;\n", m3_GetTimestamp(),
-          name, i_size, i_num, result);
+  fprintf(stderr, PRIts ";heap:AllocArr;%s;%lud;%lud;%p;;\n", m3_GetTimestamp(),
+          name, (unsigned long)i_size, (unsigned long)i_num, result);
   return result;
 }
 
@@ -297,23 +297,25 @@ static inline void *m3_ReallocArray_Impl(ccstr_t name, void *i_ptr_old,
                                          size_t i_size) {
   void *result =
       m3_Realloc_Impl(i_ptr_old, i_size * i_num_new, i_size * i_num_old);
-  fprintf(stderr, PRIts ";heap:ReallocArr;%s;%zu;%zu;%p;%zu;%p\n",
-          m3_GetTimestamp(), name, i_size, i_num_new, result, i_num_old,
+  fprintf(stderr, PRIts ";heap:ReallocArr;%s;%lud;%lud;%p;%lud;%p\n",
+          m3_GetTimestamp(), name, (unsigned long)i_size,
+          (unsigned long)i_num_new, result, (unsigned long)i_num_old,
           i_ptr_old);
   return result;
 }
 
 static inline void *m3_Malloc(ccstr_t name, size_t i_size) {
   void *result = m3_Malloc_Impl(i_size);
-  fprintf(stderr, PRIts ";heap:AllocMem;%s;%zu;;%p;;\n", m3_GetTimestamp(),
-          name, i_size, result);
+  fprintf(stderr, PRIts ";heap:AllocMem;%s;%lud;;%p;;\n", m3_GetTimestamp(),
+          name, (unsigned long)i_size, result);
   return result;
 }
 static inline void *m3_Realloc(ccstr_t name, void *i_ptr, size_t i_newSize,
                                size_t i_oldSize) {
   void *result = m3_Realloc_Impl(i_ptr, i_newSize, i_oldSize);
-  fprintf(stderr, PRIts ";heap:ReallocMem;%s;;%zu;%p;%zu;%p\n",
-          m3_GetTimestamp(), name, i_newSize, result, i_oldSize, i_ptr);
+  fprintf(stderr, PRIts ";heap:ReallocMem;%s;;%lud;%p;%lud;%p\n",
+          m3_GetTimestamp(), name, (unsigned long)i_newSize, result,
+          (unsigned long)i_oldSize, i_ptr);
   return result;
 }
 

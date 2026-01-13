@@ -551,6 +551,7 @@ uintptr sysexec(void *list_void) {
   int i, n, indir, is_elf;
   ulong magic, stacksize, nargs, nbytes;
   uintptr entry, text, data, bss, adata, abss, ebss, tstk, align, file_offset;
+  uintptr data_file_offset = 0; /* New: Track data segment file offset */
   uintptr text_base = UTZERO;
   int text_writable = 0;
   Segment *s, *ts;
@@ -562,37 +563,32 @@ uintptr sysexec(void *list_void) {
   const char *stage_desc;
 
   stage_desc = "start";
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec started, list=%p\n",
-          list_void);
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec started, list=%p\n", list_void);
 
-  /* Save error stack level - we'll restore it before returning
-   * The syscall wrapper will pop once after we return, so we need to be at
-   * saved+1 */
+  /* Save error stack level */
   saved_nerrlab = up->nerrlab;
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec saved_nerrlab=%d\n",
-          saved_nerrlab);
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec saved_nerrlab=%d\n", saved_nerrlab);
+  print("CONSOLE: sysexec internal up=%p up->slash=%p up->dot=%p\n", up,
+        up ? up->slash : 0, up ? up->dot : 0);
 
-  /* Initialize to nil before any error can occur */
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec initializing variables\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  /* Initialize to nil */
   args = elem = nil;
   file0 = nil;
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec variables initialized\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  tc = nil;
 
   /* Set up error handler BEFORE any code that can call error() */
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec about to call waserror()\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec about to call waserror()\n");
   if (waserror()) {
-    snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec ERROR PATH: %s\n",
-            up->errstr);
-    uartputs(debug_buf, (int)strlen(debug_buf));
+    print("CONSOLE: sysexec ERROR PATH: %s\n", up->errstr);
     print("sysexec: error at %s: %s\n", stage_desc, up->errstr);
+    if (tc) {
+      print("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
+      if (tc->ref > 0) {
+        if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      } else {
+        print("sysexec: warning - tc ref count already zero\n");
+      }
+    }
     free(file0);
     free(elem);
     free(args);
@@ -601,71 +597,79 @@ uintptr sysexec(void *list_void) {
       pexit(up->errstr, 1);
     nexterror();
   }
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec waserror() returned\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec waserror() returned\n");
 
   /* Now we have an error handler, safe to do validation that might error */
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec getting file0 from uargs[0]\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec getting file0 from uargs[0]\n");
   stage_desc = "arg file0";
   file0 = (char *)uargs[0];
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got file0=%p\n", file0);
-  uartputs(debug_buf, (int)strlen(debug_buf));
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec calling validaddr for file0\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec got file0=%p\n", file0);
+  print("CONSOLE: sysexec calling validaddr for file0\n");
   stage_desc = "validaddr file0";
   validaddr((uintptr)file0, 1, 0);
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validaddr returned\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec getting argp0\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec validaddr returned\n");
+  print("CONSOLE: sysexec getting argp0\n");
   stage_desc = "arg argp0";
   argp0 = (char **)uargs[1];
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec got argp0=%p\n", argp0);
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec got argp0=%p\n", argp0);
   stage_desc = "evenaddr argp0";
   evenaddr((uintptr)argp0);
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec evenaddr done\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec evenaddr done\n");
   stage_desc = "validaddr argp0";
   validaddr((uintptr)argp0, 2 * BY2WD, 0);
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec validaddr argp0 done\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec validaddr argp0 done\n");
   if (*argp0 == nil)
     error(Ebadarg);
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec checked *argp0\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec checked *argp0\n");
   stage_desc = "validnamedup";
   file0 = validnamedup(file0, 1);
-  snprint(debug_buf, sizeof(debug_buf), "DEBUG: sysexec validated file '%s'\n",
-          file0);
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec validated file '%s'\n", file0);
 
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec setting up variables\n");
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec setting up variables\n");
   align = BY2PG - 1;
   indir = 0;
   is_elf = 0;
   file_offset = 0;
   file = file0;
-  snprint(debug_buf, sizeof(debug_buf),
-          "DEBUG: sysexec entering loop with file='%s'\n", file);
-  uartputs(debug_buf, (int)strlen(debug_buf));
+  print("CONSOLE: sysexec entering loop with file='%s'\n", file);
+
+  /* Probe namec capabilities */
+  {
+    Chan *probe;
+    print("CONSOLE: PROBE: namec('/')\n");
+    if (waserror()) {
+      print("CONSOLE: PROBE: namec('/') FAILED: %s\n", up->errstr);
+    } else {
+      probe = namec("/", Aopen, OREAD, 0);
+      print("CONSOLE: PROBE: namec('/') SUCCESS tc=%p\n", probe);
+      cclose(probe);
+      poperror();
+    }
+
+    print("CONSOLE: PROBE: namec('/boot')\n");
+    if (waserror()) {
+      print("CONSOLE: PROBE: namec('/boot') FAILED: %s\n", up->errstr);
+    } else {
+      probe = namec("/boot", Aopen, OREAD, 0);
+      print("CONSOLE: PROBE: namec('/boot') SUCCESS tc=%p\n", probe);
+      cclose(probe);
+      poperror();
+    }
+  }
+
   for (;;) {
-    snprint(debug_buf, sizeof(debug_buf),
-            "DEBUG: sysexec about to call namec('%s')\n", file);
-    uartputs(debug_buf, (int)strlen(debug_buf));
+    print("CONSOLE: sysexec about to call namec('%s')\n", file);
+    uartputs(debug_buf,
+             (int)strlen(debug_buf)); /* Keep uartputs just in case print fails?
+                                         No, remove it. */
     stage_desc = "namec";
-    tc = namec(file, Aopen, OEXEC, 0);
+    /* Use OREAD instead of OEXEC to avoid permission issues with WASM files */
+    tc = namec(file, Aopen, OREAD, 0);
     snprint(debug_buf, sizeof(debug_buf),
-            "DEBUG: sysexec namec returned tc=%p\n", tc);
+            "CONSOLE: sysexec namec returned tc=%p\n", tc);
     uartputs(debug_buf, (int)strlen(debug_buf));
     if (waserror()) {
-      cclose(tc);
+      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
       nexterror();
     }
     snprint(debug_buf, sizeof(debug_buf),
@@ -681,13 +685,13 @@ uintptr sysexec(void *list_void) {
     /*
      * Read header
      */
-    tc = namec(file, Aopen, OEXEC, 0);
+    /* Duplicate namec removed */
     if (waserror()) {
       /* If read/attach fails, print debug */
       snprint(debug_buf, sizeof(debug_buf),
               "EXEC: attach/read failed for %s error=%s\n", file, up->errstr);
       uartputs(debug_buf, (int)strlen(debug_buf));
-      cclose(tc);
+      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
       nexterror();
     }
 
@@ -720,13 +724,15 @@ uintptr sysexec(void *list_void) {
 
       /* Compile WASM module into current process */
       if (wasm_exec_compile(tc, &start_func) < 0) {
-        cclose(tc);
+        if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+        tc = nil;
         poperror(); /* tc error handler */
         error("WASM compile failed");
       }
 
       /* Close the file channel */
-      cclose(tc);
+      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      tc = nil;
       poperror(); /* tc error handler */
 
       /* Clean up exec state */
@@ -743,7 +749,7 @@ uintptr sysexec(void *list_void) {
     /* Check for .NET/CLR PE/COFF signature ("MZ") */
     if (n >= 2 && u.buf[0] == 'M' && u.buf[1] == 'Z') {
       /* CLR execution moved to userspace - use userspace runtime */
-      cclose(tc);
+      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
       poperror();
       error("CLR execution moved to userspace - recompile for WASM or use "
             "userspace CLR");
@@ -851,8 +857,10 @@ uintptr sysexec(void *list_void) {
               if (phdr.p_flags & PF_W)
                 text_writable = 1;
             } else if (phdr.p_flags & PF_W) {
-              if (phdr.p_vaddr < data_start)
+              if (phdr.p_vaddr < data_start) {
                 data_start = phdr.p_vaddr;
+                data_file_offset = phdr.p_offset;
+              }
               if (phdr.p_vaddr + phdr.p_filesz > data_file_end)
                 data_file_end = phdr.p_vaddr + phdr.p_filesz;
               if (phdr.p_vaddr + phdr.p_memsz > data_mem_end)
@@ -862,6 +870,7 @@ uintptr sysexec(void *list_void) {
         }
 
         print("EXEC: ELF file offset = %#llux\n", (uvlong)elf_file_offset);
+        print("EXEC: Data file offset = %#llux\n", (uvlong)data_file_offset);
 
         print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
         print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
@@ -924,7 +933,7 @@ uintptr sysexec(void *list_void) {
     file = progarg[0];
     progarg[0] = elem;
     poperror();
-    cclose(tc);
+    if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
   }
 
   if (is_elf) {
@@ -1157,22 +1166,16 @@ uintptr sysexec(void *list_void) {
   if (data > 0) {
     s = newseg(SG_DATA, adata, PGROUND(data) >> PGSHIFT);
     s->image = img;
-    s->fstart = text;
+    s->fstart = is_elf ? data_file_offset : text;
     s->flen = data;
     incref((Ref *)&img->ref);
     up->seg[DSEG] = s;
-#ifdef DEBUG
-    /*
-    print("EXEC: mapped data segment base=%#llx size=%lud bytes\n",
-            (unsigned long long)s->base,
-            (unsigned long long)(s->size*BY2PG));
-    */
-#endif
+    print("EXEC: mapped data segment base=%#llx size=%lud bytes fstart=%#llx\n",
+          (unsigned long long)s->base, (unsigned long long)(s->size * BY2PG),
+          (unsigned long long)s->fstart);
   } else {
     up->seg[DSEG] = nil;
-#ifdef DEBUG
     /* print("EXEC: skipping data segment (size 0)\n"); */
-#endif
   }
 
   /* BSS. Zero fill on demand */
@@ -1197,7 +1200,7 @@ uintptr sysexec(void *list_void) {
     tc->flag &= (ushort)~CCACHE;
     cclunk(tc);
   }
-  cclose(tc);
+  if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
   poperror(); /* tc */
 
   free(file0);

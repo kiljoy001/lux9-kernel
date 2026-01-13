@@ -1481,10 +1481,14 @@ void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
   }
   unlock(&pebble_global_lock);
 
-  if (pebble_debug)
-    print(
-        "PEBBLE: arena_branch_init provisioned %lu tokens (low=%lu high=%lu)\n",
-        branch->local_colorless, branch->low_water, branch->high_water);
+  if (pebble_debug) {
+    print("PEBBLE: arena_branch_init ps->colorless_bank=%lud "
+          "initial_request=%lud\n",
+          ps->colorless_bank, initial_budget);
+    print("PEBBLE: arena_branch_init provisioned %lud tokens (low=%lud "
+          "high=%lud)\n",
+          branch->local_colorless, branch->low_water, branch->high_water);
+  }
 }
 
 /*
@@ -1507,8 +1511,17 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
   if (size < PEBBLE_MIN_ALLOC)
     size = PEBBLE_MIN_ALLOC;
   tokens_needed = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
-  if (branch->max_tokens > 0 && tokens_needed > branch->max_tokens)
+
+  if (pebble_debug)
+    print("arena_branch_alloc: size=%lud tokens_needed=%lud local=%lud "
+          "max=%lud\n",
+          size, tokens_needed, branch->local_colorless, branch->max_tokens);
+
+  if (branch->max_tokens > 0 && tokens_needed > branch->max_tokens) {
+    if (pebble_debug)
+      print("arena_branch_alloc: failed max_tokens check\n");
     return -1;
+  }
 
   lock(&branch->lock);
 
@@ -1516,12 +1529,17 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
   if (branch->local_colorless < tokens_needed) {
     unlock(&branch->lock);
     /* Try refill from process bank */
-    if (arena_branch_refill(branch) != 0)
+    if (arena_branch_refill(branch) != 0) {
+      if (pebble_debug)
+        print("arena_branch_alloc: failed refill\n");
       return -1;
+    }
     /* Retry after refill */
     lock(&branch->lock);
     if (branch->local_colorless < tokens_needed) {
       unlock(&branch->lock);
+      if (pebble_debug)
+        print("arena_branch_alloc: failed after refill\n");
       return -1; /* Still not enough after refill */
     }
   }
@@ -1602,8 +1620,7 @@ int arena_branch_refill(arena_branch_t *branch) {
     return 0;
   }
 
-  if (branch->max_tokens > 0 &&
-      branch->local_colorless >= branch->max_tokens) {
+  if (branch->max_tokens > 0 && branch->local_colorless >= branch->max_tokens) {
     unlock(&branch->lock);
     unlock(&pebble_global_lock);
     return 0;

@@ -62,7 +62,7 @@ typedef struct WasmRuntime {
 #define WASM_LINEAR_GUARD (2 * BY2PG)
 #define WASM_LINEAR_SLOTS 16
 #define WASM_LINEAR_SLOT_BYTES (WASM_MAX_LINEAR_BYTES + (4 * BY2PG))
-#define WASM_HEAP_BYTES (8 * 1024 * 1024)
+#define WASM_HEAP_BYTES (2 * 1024 * 1024)
 #define WASM_HEAP_GUARD (2 * BY2PG)
 #define WASM_HEAP_ALIGN 16
 
@@ -70,6 +70,22 @@ static WasmRuntime wasm_runtime;
 static int runtime_initialized = 0;
 static uchar wasm_compile_reply[8];
 static uchar wasm_execute_reply[8];
+
+/* Safe channel cleanup wrapper to prevent cclose panics */
+static int wasm_safe_channel_close(Chan **c) {
+    if (c && *c) {
+        /* Check if channel is already being closed */
+        if ((*c)->ref <= 0) {
+            print("wasm_safe_channel_close: warning - channel %p already freed\n", *c);
+            *c = nil;
+            return 0;
+        }
+        cclose(*c);
+        *c = nil;
+        return 1;
+    }
+    return 0;
+}
 
 static int wasm_heap_init(Proc *p);
 void *wasm_heap_alloc(size_t size);
@@ -162,24 +178,48 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
   }
 
   /* Link WASM binary with Lux9 kernel APIs */
-  /* Initialize WASI context */
+  /* Initialize WASI context with validation */
   up->wasm.wasi_ctx = wasm_heap_alloc(sizeof(wasi_context_t));
   if (up->wasm.wasi_ctx) {
+    print("wasm_exec_compile: initializing WASI context at %p\n", up->wasm.wasi_ctx);
     wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx, up);
+    
+    /* Validate WASI context initialization */
+    wasi_context_t *ctx = (wasi_context_t *)up->wasm.wasi_ctx;
+    if (!ctx) {
+      print("wasm_exec_compile: ERROR - WASI context is null after init\n");
+      wasm_heap_free(up->wasm.wasi_ctx);
+      up->wasm.wasi_ctx = nil;
+    } else {
+      /* Check that essential FDs are initialized */
+      if (!ctx->fds[0].is_open || !ctx->fds[1].is_open || !ctx->fds[2].is_open) {
+        print("wasm_exec_compile: warning - stdio FDs not properly initialized\n");
+        /* Don't fail - this might be OK in some contexts */
+      }
 
-    /* Link WASI functions */
-    result = LinkWasi(module, WASI_ALLOW_DEFAULT);
-    if (result) {
-      print("LinkWasi warning: %s\n", result);
-    }
+      /* Link WASI functions with enhanced error handling */
+      print("wasm_exec_compile: linking WASI functions with mask 0x%08x\n", WASI_ALLOW_DEFAULT);
+      result = LinkWasi(module, WASI_ALLOW_DEFAULT);
+      if (result) {
+        print("wasm_exec_compile: WASI link warning: %s (continuing...)\n", result);
+        /* Don't fail compilation - WASI link warnings are common */
+      } else {
+        print("wasm_exec_compile: WASI functions linked successfully\n");
+      }
 
-    /* Link Lux9 Host Functions */
-    result = LinkLux9(module);
-    if (result) {
-      print("LinkLux9 warning: %s\n", result);
+      /* Link Lux9 Host Functions */
+      print("wasm_exec_compile: linking Lux9 host functions\n");
+      result = LinkLux9(module);
+      if (result) {
+        print("wasm_exec_compile: Lux9 link warning: %s (continuing...)\n", result);
+        /* Don't fail - some modules might not need Lux9 functions */
+      } else {
+        print("wasm_exec_compile: Lux9 host functions linked successfully\n");
+      }
     }
   } else {
-    print("wasm_exec_compile: warning: failed to alloc wasi context\n");
+    print("wasm_exec_compile: WARNING - failed to allocate WASI context\n");
+    /* Continue without WASI context - some WASM modules don't need it */
   }
 
   /* Compile all functions */
@@ -212,7 +252,8 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
     volatile u8int first = up->wasm.linear_memory[0];
     volatile u8int last = up->wasm.linear_memory[up->wasm.memory_size - 1];
     print("wasm_exec_compile: linear memory validated [%p-%p]\n",
-          up->wasm.linear_memory, up->wasm.linear_memory + up->wasm.memory_size);
+          up->wasm.linear_memory,
+          up->wasm.linear_memory + up->wasm.memory_size);
   } else {
     print("wasm_exec_compile: WARNING - no linear memory mapped\n");
   }
@@ -375,12 +416,17 @@ static int wasm_heap_init(Proc *p) {
     p->seg[SEG4] = nil;
   }
   p->seg[SEG4] = h;
+  /* Initialize Pebble Arena Branch for this WASM heap */
+  /* Provision initial budget equal to heap size (1:1 conservation) */
+  arena_branch_init(&p->wasm.branch, pebble_state(), WASM_HEAP_BYTES);
+
   p->wasm.heap_base = (u8int *)heap_base;
   p->wasm.heap_size = WASM_HEAP_BYTES;
   p->wasm.heap_used = 0;
   p->wasm.heap_head = nil;
   p->wasm.heap_live = 0;
   p->wasm.linear_charged = 0;
+  p->wasm.initialized = 1;
   return 0;
 }
 
@@ -414,16 +460,24 @@ static int wasm_charge_linear(Proc *p, u32int new_size) {
   u32int old_size = p->wasm.linear_charged;
   if (p->wasm.branch.max_tokens > 0) {
     u64int cap = (u64int)p->wasm.branch.max_tokens;
-    if ((u64int)new_size + (u64int)p->wasm.heap_live > cap)
+    if ((u64int)new_size + (u64int)p->wasm.heap_live > cap) {
+      print("wasm_charge_linear: FAIL max_tokens check. new=%lud live=%lud "
+            "cap=%lud\n",
+            (ulong)new_size, (ulong)p->wasm.heap_live, (ulong)cap);
       return -1;
+    }
   }
   if (new_size == old_size)
     return 0;
 
   if (new_size > old_size) {
     u32int delta = new_size - old_size;
-    if (arena_branch_alloc(&p->wasm.branch, delta) < 0)
+    print("wasm_charge_linear: calling alloc delta=%lud\n", (ulong)delta);
+    if (arena_branch_alloc(&p->wasm.branch, delta) < 0) {
+      print("wasm_charge_linear: arena_branch_alloc failed for delta=%lud\n",
+            (ulong)delta);
       return -1;
+    }
   } else {
     u32int delta = old_size - new_size;
     arena_branch_free(&p->wasm.branch, delta);
@@ -435,6 +489,8 @@ static int wasm_charge_linear(Proc *p, u32int new_size) {
 
 int wasm_linear_charge_reserve(uint32_t new_size, uint32_t old_size) {
   Proc *p = up;
+  print("wasm_linear_charge_reserve: new=%lud old=%lud p=%p init=%d\n",
+        (ulong)new_size, (ulong)old_size, p, p ? p->wasm.initialized : 0);
   if (!p || !p->wasm.initialized)
     return -1;
   if (wasm_charge_linear(p, new_size) != 0)
@@ -498,10 +554,20 @@ void *wasm_heap_alloc(size_t size) {
 
   u32int used = ROUNDUP(p->wasm.heap_used, WASM_HEAP_ALIGN);
   u32int need = WASM_HEAP_HDR_SIZE + (u32int)size;
-  if (used + need > p->wasm.heap_size)
+  if (pebble_debug)
+    print("wasm_heap_alloc: size=%lud used=%d need=%d heap_size=%lud\n", size,
+          used, need, p->wasm.heap_size);
+
+  if (used + need > p->wasm.heap_size) {
+    if (pebble_debug)
+      print("wasm_heap_alloc: failed heap_size check\n");
     return nil;
-  if (arena_branch_alloc(&p->wasm.branch, size) < 0)
+  }
+  if (arena_branch_alloc(&p->wasm.branch, size) < 0) {
+    if (pebble_debug)
+      print("wasm_heap_alloc: failed arena_branch_alloc\n");
     return nil;
+  }
 
   WasmHeapBlock *blk = (WasmHeapBlock *)(p->wasm.heap_base + used);
   blk->size = (u32int)size;
@@ -517,6 +583,8 @@ void *wasm_heap_alloc(size_t size) {
 
   void *ptr = (u8int *)blk + WASM_HEAP_HDR_SIZE;
   memset(ptr, 0, size);
+  if (pebble_debug)
+    print("wasm_heap_alloc: success ptr=%p\n", ptr);
   return ptr;
 }
 
@@ -808,8 +876,9 @@ void wasm_runtime_cleanup_process(Proc *p) {
   if (p->wasm.runtime) {
     /* Should already be freed by sys_wasm_destroy, but safety net */
     m3_FreeRuntime((IM3Runtime)p->wasm.runtime);
-    p->wasm.runtime = nil;
   }
+  p->wasm.runtime = nil;
+  p->wasm.module = nil;
   if (p->wasm.env) {
     m3_FreeEnvironment((IM3Environment)p->wasm.env);
     p->wasm.env = nil;
@@ -885,21 +954,26 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
   long rn;
 
   if (!runtime_initialized) {
+    print("DEBUG: sys_wasm_compile: runtime not initialized\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "wasm runtime not initialized");
     return -1;
   }
+  print("DEBUG: sys_wasm_compile: runtime init ok\n");
 
   /* Check capability: process must have PERM_WASM_COMPILE */
   if (!(up->capabilities & PERM_WASM_COMPILE)) {
+    print("DEBUG: sys_wasm_compile: no permission\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "no WASM compile permission");
     wasm_runtime.stats.errors++;
     return -1;
   }
+  print("DEBUG: sys_wasm_compile: permission ok\n");
 
   /* Check if already initialized (can't compile twice) */
   if (up->wasm.initialized) {
+    print("DEBUG: sys_wasm_compile: already initialized\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename),
             "WASM already compiled for this process");
@@ -909,6 +983,7 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
 
   /* Parse sdata for FD (4 bytes) */
   if (!tx->sdata || tx->scount < 4) {
+    print("DEBUG: sys_wasm_compile: invalid payload\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename),
             "invalid compile payload (expecting FD)");
@@ -916,11 +991,12 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     return -1;
   }
   u32int fd = GBIT32(tx->sdata);
+  print("DEBUG: sys_wasm_compile: fd=%d\n", fd);
 
   /* Error handling wrapper for file ops */
   if (waserror()) {
-    if (c)
-      cclose(c);
+    print("DEBUG: sys_wasm_compile: error during IO: %s\n", up->errstr);
+    wasm_safe_channel_close(&c);
     if (module_bytes)
       free(module_bytes);
     rx->type = Rerror;
@@ -931,6 +1007,7 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
 
   /* Resolve FD to Chan */
   c = fdtochan((int)fd, OREAD, 0, 1);
+  print("DEBUG: sys_wasm_compile: fd resolved to chan\n");
 
   /* Get File Size using stat */
   n = devtab[c->type]->stat(c, statbuf, sizeof(statbuf));
@@ -939,6 +1016,7 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
 
   convM2D(statbuf, (uint)n, &d, nil);
   module_size = (u32int)d.length;
+  print("DEBUG: sys_wasm_compile: stat ok, size=%d\n", module_size);
 
   if (module_size == 0 || module_size > WASM_MAX_MODULE_BYTES) {
     error("invalid module size");
@@ -951,26 +1029,30 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
   module_bytes = malloc(module_size);
   if (module_bytes == nil)
     error(Enomem);
+  print("DEBUG: sys_wasm_compile: malloc ok\n");
 
   /* Read file content */
   rn = devtab[c->type]->read(c, module_bytes, module_size, 0);
   if (rn != module_size) {
     error("short read");
   }
+  print("DEBUG: sys_wasm_compile: read ok\n");
 
   /* Close channel and clear error stack */
-  cclose(c);
-  c = nil;
+  wasm_safe_channel_close(&c);
   poperror();
+  print("DEBUG: sys_wasm_compile: IO complete\n");
 
   ps = pebble_state();
   if (ps == nil) {
+    print("DEBUG: sys_wasm_compile: pebble state nil\n");
     free(module_bytes);
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "pebble state not initialized");
     wasm_runtime.stats.errors++;
     return -1;
   }
+  print("DEBUG: sys_wasm_compile: pebble state ok\n");
 
   /* Persist module bytes in process structure */
   up->wasm.module_bytes = module_bytes;
@@ -984,81 +1066,104 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
     initial_budget = (ulong)branch_cap;
   arena_branch_init(&up->wasm.branch, ps, initial_budget);
   up->wasm.branch.max_tokens = (ulong)ROUNDUP(branch_cap, PEBBLE_MEM_PER_TOKEN);
+  print("DEBUG: sys_wasm_compile: arena branch init ok\n");
+
   if (wasm_heap_init(up) < 0) {
+    print("DEBUG: sys_wasm_compile: heap init failed\n");
     snprint(rx->ename, sizeof(rx->ename), "failed to init wasm heap");
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: heap init ok\n");
   up->wasm.initialized = 1;
   branch_inited = 1;
 
   up->wasm.env = m3_NewEnvironment();
   if (!up->wasm.env) {
+    print("DEBUG: sys_wasm_compile: env creat failed\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "failed to create wasm3 environment");
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: env created %p\n", up->wasm.env);
 
   /* Create wasm3 runtime for THIS process (64KB stack) */
   up->wasm.runtime =
       m3_NewRuntime((IM3Environment)up->wasm.env, 64 * 1024, nil);
   if (!up->wasm.runtime) {
+    print("DEBUG: sys_wasm_compile: runtime creat failed\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "failed to create wasm3 runtime");
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: runtime created %p\n", up->wasm.runtime);
 
   /* Parse and load WASM module - using persistent kernel buffer */
+  print("DEBUG: sys_wasm_compile: parsing module\n");
   M3Result result = m3_ParseModule(
       (IM3Environment)up->wasm.env, (IM3Module *)&up->wasm.module,
       up->wasm.module_bytes, up->wasm.module_bytes_len);
   if (result) {
+    print("DEBUG: sys_wasm_compile: parse failed: %s\n", result);
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "module parse failed: %s", result);
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: parse ok\n");
 
   /* Load module into runtime */
+  print("DEBUG: sys_wasm_compile: loading module\n");
   result =
       m3_LoadModule((IM3Runtime)up->wasm.runtime, (IM3Module)up->wasm.module);
   if (result) {
+    print("DEBUG: sys_wasm_compile: load failed: %s\n", result);
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "module load failed: %s", result);
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: load ok\n");
 
   if (wasm_refresh_linear_mapping(up) != 0) {
+    print("DEBUG: sys_wasm_compile: refresh mapping failed\n");
     rx->type = Rerror;
     snprint(rx->ename, sizeof(rx->ename), "failed to map linear memory");
     wasm_runtime.stats.errors++;
     goto fail_compile;
   }
+  print("DEBUG: sys_wasm_compile: refresh mapping ok\n");
 
   /* Initialize WASI Context */
+  print("DEBUG: sys_wasm_compile: allocating WASI context\n");
   up->wasm.wasi_ctx = wasm_heap_alloc(sizeof(wasi_context_t));
   if (!up->wasm.wasi_ctx) {
     print("wasm_runtime: failed to allocate WASI context\n");
     // Cleanup?
   } else {
+    print("DEBUG: sys_wasm_compile: initializing WASI context\n");
     wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx, up);
 
     /* Link WASI functions */
     u32int allow_mask = WASI_ALLOW_DEFAULT;
     if (up->capabilities & PERM_WASM_NET)
       allow_mask |= (WASI_ALLOW_SOCK | WASI_ALLOW_POLL);
+
+    print("DEBUG: sys_wasm_compile: Linking WASI\n");
     M3Result link_res = LinkWasi((IM3Module)up->wasm.module, allow_mask);
     if (link_res) {
       print("wasm_runtime: WASI link warning: %s\n", link_res);
     }
+
+    print("DEBUG: sys_wasm_compile: Linking Lux9\n");
     M3Result lux_res = LinkLux9((IM3Module)up->wasm.module);
     if (lux_res) {
       print("wasm_runtime: lux9 link warning: %s\n", lux_res);
     }
   }
+  print("DEBUG: sys_wasm_compile: linking complete\n");
 
   wasm_runtime.stats.total_modules++;
   wasm_runtime.stats.active_instances++;
@@ -1069,11 +1174,11 @@ int sys_wasm_compile(Fcall *tx, Fcall *rx) {
   /* Send success reply */
   rx->type = Rsyscall;
   rx->tag = tx->tag;
-  rx->retval = 0;
-  rx->scount = 8;
-  rx->sdata = wasm_compile_reply;
-  /* Return pid as success confirmation */
-  PBIT64(wasm_compile_reply, up->pid);
+  /* Return pid as success confirmation in header retval */
+  rx->retval = up->pid;
+  rx->scount = 0;
+  rx->sdata = nil;
+  print("DEBUG: sys_wasm_compile: returning success pid=%lu\n", up->pid);
   return 0;
 
 fail_compile:
@@ -1165,6 +1270,10 @@ int sys_wasm_execute(Fcall *tx, Fcall *rx) {
   func_name_buf[func_name_len] = '\0';
 
   print("wasm_runtime: execute pid=%lu func='%s'\n", up->pid, func_name_buf);
+  uint32_t mem_size = 0;
+  void *mem_ptr = m3_GetMemory((IM3Runtime)up->wasm.runtime, &mem_size, 0);
+  print("wasm_runtime: runtime=%p memory=%p size=%u\n", up->wasm.runtime,
+        mem_ptr, mem_size);
 
   /* Find function in THIS process's WASM runtime */
   IM3Function func;
@@ -1328,15 +1437,10 @@ int sys_wasm_execute(Fcall *tx, Fcall *rx) {
   /* Send success reply */
   rx->type = Rsyscall;
   rx->tag = tx->tag;
-  rx->retval = 0;
-  if (retc == 1) {
-    rx->scount = 8;
-    rx->sdata = wasm_execute_reply;
-    PBIT64(wasm_execute_reply, retval);
-  } else {
-    rx->scount = 0;
-    rx->sdata = nil;
-  }
+  /* Use the header retval field for the 64-bit return value */
+  rx->retval = retval;
+  rx->scount = 0;
+  rx->sdata = nil;
   return 0;
 }
 

@@ -135,21 +135,23 @@ void main(void) {
   if (pid < 0) {
     init_print("init: rfork failed\n");
   } else if (pid == 0) {
-    init_print("init: CHILD running... checking for #/./boot/wasm_test\n");
-    int fd = sys_open("#/./boot/wasm_test", 0);
+    init_print("init: CHILD running... checking for #/./boot/hello.wasm\n");
+    int fd = sys_open("#/./boot/hello.wasm", 0);
     if (fd < 0) {
-      init_print("init: FAILED to open #/./boot/wasm_test - file missing?\n");
+      init_print("init: FAILED to open #/./boot/hello.wasm - file missing?\n");
     } else {
-      init_print("init: SUCCESS opened #/./boot/wasm_test, SKIPPING close and "
+      init_print("init: SUCCESS opened #/./boot/hello.wasm, SKIPPING close and "
                  "execing\n");
       // sys_close(fd); // Workaround for panic: cclose ref < 1
     }
 
     init_print("init: CHILD calling sys_exec\n");
-    char *args[] = {"wasm_test", 0};
-    /* Use device path to access root device directly */
-    int ret = sys_exec("#/./boot/wasm_test", args);
-    init_print("init: exec returned (FAILED)\n");
+    char *args[] = {"hello.wasm", 0};
+    /* Match the path that worked */
+    int ret = sys_exec("#/./boot/hello.wasm", args);
+    init_print("init: exec returned (FAILED) ret=");
+    print_int(ret);
+    init_print("\n");
     sys_exit("exec failed");
   } else {
     /* Atomic print to avoid interleaving with doorbell dumps */
