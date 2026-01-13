@@ -19,6 +19,10 @@ extern uint convD2M(Dir *d, uchar *buf, uint n);
 #define nil ((void *)0)
 #endif
 
+#define DPRINT(...)                                                            \
+  if (boot_verbose)                                                            \
+  print(__VA_ARGS__)
+
 extern vlong nsec(void);
 
 /* Provide standard types if missing */
@@ -718,9 +722,9 @@ void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
     ctx->fds[3].base_path = (char *)wasi_root_path;
     ctx->fds[3].rights = WASI_RIGHTS_ALL;
     ctx->fds[3].rights_inheriting = WASI_RIGHTS_ALL;
-    print("WASI: Opened / at fd 3 (kernel fd %d)\n", rootfd);
+    DPRINT("WASI: Opened / at fd 3 (kernel fd %d)\n", rootfd);
   } else {
-    print("WASI: Failed to open /, using stub\n");
+    DPRINT("WASI: Failed to open /, using stub\n");
     ctx->fds[3].is_open = 1;
     ctx->fds[3].lux9_fid = 3;
     ctx->fds[3].is_dir = 1;
@@ -775,83 +779,85 @@ void wasi_lux9_destroy_context(wasi_context_t *ctx) {
 
 /* wasi_fd_write(fd, iovs, iovs_len, nwritten) */
 m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
-  print("wasi_snapshot_preview1_fd_write: ENTRY runtime=%p _ctx=%p _sp=%p "
-        "_mem=%p\n",
-        runtime, _ctx, _sp, _mem);
+  DPRINT("FD_WRITE: runtime=%p mem=%p\n", runtime, _mem);
 
-  m3ApiReturnType(uint32_t)
-  m3ApiGetArg(int32_t, fd)
-  m3ApiGetArg(uint32_t, iovs_ptr)
-  m3ApiGetArg(uint32_t, iovs_len)
-  m3ApiGetArg(uint32_t, nwritten_ptr)
+  m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
+      m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
+          m3ApiGetArg(uint32_t, nwritten_ptr)
 
-              print("WASI_FD_WRITE: CALLED fd=%d iovs_ptr=%u iovs_len=%u "
-                    "nwritten_ptr=%u\n",
-                    fd, iovs_ptr, iovs_len, nwritten_ptr);
+              uint32_t mem_size = m3_GetMemorySize(runtime);
+  DPRINT("FD_WRITE_ARGS: fd=%d iovs=%ud len=%ud ret=%ud mem_size=%ud\n", (int)fd,
+        (uint)iovs_ptr, (uint)iovs_len, (uint)nwritten_ptr, mem_size);
 
   uint32_t iov_size = 0;
   if (wasi_iovecs_size(iovs_len, &iov_size) < 0) {
+    DPRINT("FD_WRITE: bad iovec size\n");
     m3ApiReturn(WASI_ERRNO_INVAL);
   }
-  m3ApiCheckMem(iovs_ptr, iov_size); /* 8 bytes per iovec struct */
-  m3ApiCheckMem(nwritten_ptr, sizeof(uint32_t));
+  DPRINT("FD_WRITE: iov_size=%ud\n", iov_size);
+
+  m3ApiCheckMem(m3ApiOffsetToPtr(iovs_ptr), iov_size);
+  m3ApiCheckMem(m3ApiOffsetToPtr(nwritten_ptr), sizeof(uint32_t));
 
   /* Get Process Context */
   Proc *p = up; // Current process
   if (!p->wasm.initialized || !p->wasm.wasi_ctx) {
+    DPRINT("FD_WRITE: not initialized or no wasi_ctx\n");
     m3ApiReturn(WASI_ERRNO_BADF);
   }
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
 
+  DPRINT("FD_WRITE: checking fd rights...\n");
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_WRITE);
-  if (cap != WASI_ERRNO_SUCCESS)
+  if (cap != WASI_ERRNO_SUCCESS) {
+    DPRINT("FD_WRITE: wasi_require_fd failed: %d\n", cap);
     m3ApiReturn(cap);
+  }
 
   uint32_t total_written = 0;
 
   // Iterate over IO vectors
+  DPRINT("FD_WRITE: iterating %ud iovecs\n", iovs_len);
   for (int32_t i = 0; i < (int32_t)iovs_len; i++) {
-    // Read iovec from WASM memory
     uint32_t iov_addr = iovs_ptr + (i * 8);
 
-    // Manual read to avoid struct padding issues if any
-    uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
-    uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
+    uint32_t buf_ptr = m3ApiReadMem32(m3ApiOffsetToPtr(iov_addr));
+    uint32_t buf_len = m3ApiReadMem32(m3ApiOffsetToPtr(iov_addr + 4));
+
+    DPRINT("FD_WRITE: iov[%d] buf=%ud len=%ud\n", i, buf_ptr, buf_len);
 
     if (buf_len == 0)
       continue;
 
-    m3ApiCheckMem(buf_ptr, buf_len);
+    m3ApiCheckMem(m3ApiOffsetToPtr(buf_ptr), buf_len);
     void *buf = m3ApiOffsetToPtr(buf_ptr);
 
-    // Write to Lux9 9P FID
     if (fd == 1 || fd == 2) {
-      // Direct console write for debug AND kernel write
-      print("%.*s", buf_len, (char *)buf);
-      // Also write to underlying FD if valid (0,1,2 map to kernel 0,1,2
-      // usually)
-      kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
+      DPRINT("FD_WRITE: printing content: '%.*s'\n", buf_len, (char *)buf);
+      DPRINT("%.*s", buf_len, (char *)buf);
+      if (ctx->fds[fd].lux9_fid >= 0) {
+        kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
+      }
       total_written += buf_len;
     } else {
       long n = kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
       if (n < 0) {
+        DPRINT("FD_WRITE: kwrite failed\n");
         m3ApiReturn(WASI_ERRNO_IO);
       }
       total_written += n;
     }
   }
 
-  m3ApiWriteMem32(nwritten_ptr, total_written);
+  m3ApiWriteMem32(m3ApiOffsetToPtr(nwritten_ptr), total_written);
 
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
-
-/* wasi_proc_exit(rval) */
 m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
   m3ApiGetArg(int32_t, rval)
 
-      print("WASI_PROC_EXIT: CALLED rval=%d\n", rval);
-  print("Pretend exiting with code %d\n", rval);
+      DPRINT("WASI_PROC_EXIT: CALLED rval=%d\n", rval);
+  DPRINT("Pretend exiting with code %d\n", rval);
   if (up->wasm.wasi_ctx)
     ((wasi_context_t *)up->wasm.wasi_ctx)->exit_code = (u32int)rval;
 
@@ -1081,7 +1087,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
   /* Safe copy/null-terminate not strictly needed if we obey len,
      but good practice if we pass to kernel functions */
 
-  print("WASI: path_open(dirfd=%d, path='%.*s')\n", dirfd, path_len, path);
+  DPRINT("WASI: path_open(dirfd=%d, path='%.*s')\n", dirfd, path_len, path);
 
   /* Get Context */
   Proc *p = up;
@@ -1643,7 +1649,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_get) {
   uint64_t rights_inh = ctx->fds[fd].rights_inheriting;
 
   m3ApiWriteMem8(buf_ptr + 0, filetype);
-  m3ApiWriteMem16(buf_ptr + 2, flags); // Alignment padding? Check struct layout
+  m3ApiWriteMem16(buf_ptr + 2,
+                  flags); // Alignment padding? Check struct layout
   // wasi_fdstat_t layout:
   // 0: u8 filetype
   // 1: (pad)
@@ -2938,7 +2945,7 @@ static M3Result wasi_link_if(IM3Module module, u32int allow_mask, u32int flag,
                              const char *ns, const char *name, const char *sig,
                              M3RawCall func) {
   if ((allow_mask & flag) == 0) {
-    print("WASI_LINK_SKIP: %s (flag 0x%x not in mask 0x%x)\n", name, flag,
+    DPRINT("WASI_LINK_SKIP: %s (flag 0x%x not in mask 0x%x)\n", name, flag,
           allow_mask);
     return m3Err_none;
   }
@@ -2947,9 +2954,9 @@ static M3Result wasi_link_if(IM3Module module, u32int allow_mask, u32int flag,
 
   // Debug output for all functions now
   if (res == m3Err_none) {
-    print("WASI_LINK_OK: %s\n", name);
+    DPRINT("WASI_LINK_OK: %s\n", name);
   } else if (res) {
-    print("WASI_LINK_FAIL: %s -> %s\n", name, res);
+    DPRINT("WASI_LINK_FAIL: %s -> %s\n", name, res);
   }
 
   return res;

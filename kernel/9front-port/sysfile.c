@@ -746,17 +746,21 @@ uintptr syspread(void *list_void) {
   return (uintptr)read(fd, buf, len, offp);
 }
 
-static long write(int fd, void *buf, long len, vlong *offp) {
+static long write(int fd, void *buf, long len, vlong *offp, int check) {
   Chan *c;
   long m, n;
   vlong off;
 
-  print("write: fd=%d buf=%p len=%ld\n", fd, buf, len);
-  validaddr((uintptr)buf, len, 0);
-  print("write: validaddr passed\n");
+  if (boot_verbose)
+    print("write: fd=%d buf=%p len=%ld\n", fd, buf, len);
+  if (check)
+    validaddr((uintptr)buf, len, 0);
+  if (boot_verbose)
+    print("write: validaddr passed\n");
   n = 0;
   c = fdtochan(fd, OWRITE, 1, 1);
-  print("write: fdtochan returned c=%p type=%d\n", c, c ? c->type : -1);
+  if (boot_verbose)
+    print("write: fdtochan returned c=%p type=%d\n", c, c ? c->type : -1);
   if (waserror()) {
     if (offp == nil) {
       lock(c);
@@ -804,7 +808,7 @@ uintptr sys_write(void *list_void) {
   fd = SYSCALL_ARG(list, int);
   buf = SYSCALL_ARG(list, void *);
   len = SYSCALL_ARG(list, long);
-  return (uintptr)write(fd, buf, len, nil);
+  return (uintptr)write(fd, buf, len, nil, 1);
 }
 
 uintptr syspwrite(void *list_void) {
@@ -820,15 +824,17 @@ uintptr syspwrite(void *list_void) {
   off = SYSCALL_ARG(list, vlong);
 
   /* Debug: print PWRITE arguments */
-  print("syspwrite: fd=%d buf=%p len=%ld off=%lld\n", fd, buf, len, off);
+  if (boot_verbose)
+    print("syspwrite: fd=%d buf=%p len=%ld off=%lld\n", fd, buf, len, off);
 
   if (off != ~0ULL)
     offp = &off;
   else
     offp = nil;
   {
-    long ret = write(fd, buf, len, offp);
-    print("syspwrite: write returned %ld\n", ret);
+    long ret = write(fd, buf, len, offp, 1);
+    if (boot_verbose)
+      print("syspwrite: write returned %ld\n", ret);
     return (uintptr)ret;
   }
 }
@@ -1387,7 +1393,7 @@ uintptr sys_fwstat(void *list_void) {
 long kread(int fd, void *buf, long n) { return read(fd, buf, n, nil); }
 
 /* Exposed kernel write function */
-long kwrite(int fd, void *buf, long n) { return write(fd, buf, n, nil); }
+long kwrite(int fd, void *buf, long n) { return write(fd, buf, n, nil, 0); }
 
 /* Exposed kernel seek function */
 vlong kseek(int fd, vlong offset, int whence) {
