@@ -775,9 +775,15 @@ void wasi_lux9_destroy_context(wasi_context_t *ctx) {
 
 /* wasi_fd_write(fd, iovs, iovs_len, nwritten) */
 m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
-  m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
-      m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
-          m3ApiGetArg(uint32_t, nwritten_ptr)
+  print("wasi_snapshot_preview1_fd_write: ENTRY runtime=%p _ctx=%p _sp=%p "
+        "_mem=%p\n",
+        runtime, _ctx, _sp, _mem);
+
+  m3ApiReturnType(uint32_t)
+  m3ApiGetArg(int32_t, fd)
+  m3ApiGetArg(uint32_t, iovs_ptr)
+  m3ApiGetArg(uint32_t, iovs_len)
+  m3ApiGetArg(uint32_t, nwritten_ptr)
 
               print("WASI_FD_WRITE: CALLED fd=%d iovs_ptr=%u iovs_len=%u "
                     "nwritten_ptr=%u\n",

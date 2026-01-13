@@ -73,18 +73,19 @@ static uchar wasm_execute_reply[8];
 
 /* Safe channel cleanup wrapper to prevent cclose panics */
 static int wasm_safe_channel_close(Chan **c) {
-    if (c && *c) {
-        /* Check if channel is already being closed */
-        if ((*c)->ref <= 0) {
-            print("wasm_safe_channel_close: warning - channel %p already freed\n", *c);
-            *c = nil;
-            return 0;
-        }
-        cclose(*c);
-        *c = nil;
-        return 1;
+  if (c && *c) {
+    /* Check if channel is already being closed */
+    if ((*c)->ref <= 0) {
+      print("wasm_safe_channel_close: warning - channel %p already freed\n",
+            *c);
+      *c = nil;
+      return 0;
     }
-    return 0;
+    cclose(*c);
+    *c = nil;
+    return 1;
+  }
+  return 0;
 }
 
 static int wasm_heap_init(Proc *p);
@@ -177,13 +178,26 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
     goto fail_compile;
   }
 
+  /* Get linear memory pointer after loading module */
+  u32int mem_size = 0;
+  up->wasm.linear_memory =
+      m3_GetMemory((IM3Runtime)up->wasm.runtime, &mem_size, 0);
+  up->wasm.memory_size = mem_size;
+  if (up->wasm.linear_memory) {
+    print("wasm_exec_compile: linear memory at %p, size=%u bytes\n",
+          up->wasm.linear_memory, mem_size);
+  } else {
+    print("wasm_exec_compile: no linear memory (size=%u)\n", mem_size);
+  }
+
   /* Link WASM binary with Lux9 kernel APIs */
   /* Initialize WASI context with validation */
   up->wasm.wasi_ctx = wasm_heap_alloc(sizeof(wasi_context_t));
   if (up->wasm.wasi_ctx) {
-    print("wasm_exec_compile: initializing WASI context at %p\n", up->wasm.wasi_ctx);
+    print("wasm_exec_compile: initializing WASI context at %p\n",
+          up->wasm.wasi_ctx);
     wasi_lux9_init_context((wasi_context_t *)up->wasm.wasi_ctx, up);
-    
+
     /* Validate WASI context initialization */
     wasi_context_t *ctx = (wasi_context_t *)up->wasm.wasi_ctx;
     if (!ctx) {
@@ -192,16 +206,20 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
       up->wasm.wasi_ctx = nil;
     } else {
       /* Check that essential FDs are initialized */
-      if (!ctx->fds[0].is_open || !ctx->fds[1].is_open || !ctx->fds[2].is_open) {
-        print("wasm_exec_compile: warning - stdio FDs not properly initialized\n");
+      if (!ctx->fds[0].is_open || !ctx->fds[1].is_open ||
+          !ctx->fds[2].is_open) {
+        print("wasm_exec_compile: warning - stdio FDs not properly "
+              "initialized\n");
         /* Don't fail - this might be OK in some contexts */
       }
 
       /* Link WASI functions with enhanced error handling */
-      print("wasm_exec_compile: linking WASI functions with mask 0x%08x\n", WASI_ALLOW_DEFAULT);
+      print("wasm_exec_compile: linking WASI functions with mask 0x%08x\n",
+            WASI_ALLOW_DEFAULT);
       result = LinkWasi(module, WASI_ALLOW_DEFAULT);
       if (result) {
-        print("wasm_exec_compile: WASI link warning: %s (continuing...)\n", result);
+        print("wasm_exec_compile: WASI link warning: %s (continuing...)\n",
+              result);
         /* Don't fail compilation - WASI link warnings are common */
       } else {
         print("wasm_exec_compile: WASI functions linked successfully\n");
@@ -211,7 +229,8 @@ int wasm_exec_compile(Chan *tc, IM3Function *out_start) {
       print("wasm_exec_compile: linking Lux9 host functions\n");
       result = LinkLux9(module);
       if (result) {
-        print("wasm_exec_compile: Lux9 link warning: %s (continuing...)\n", result);
+        print("wasm_exec_compile: Lux9 link warning: %s (continuing...)\n",
+              result);
         /* Don't fail - some modules might not need Lux9 functions */
       } else {
         print("wasm_exec_compile: Lux9 host functions linked successfully\n");
