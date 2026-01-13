@@ -709,7 +709,7 @@ void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
   ctx->fds[2].rights = WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_FILESTAT_GET;
 
   /* Pre-populate WASM root (3) */
-  int rootfd = kopen("/wasm", 0); /* OREAD */
+  int rootfd = kopen("/", 0); /* OREAD */
   if (rootfd >= 0) {
     ctx->fds[3].is_open = 1;
     ctx->fds[3].lux9_fid = rootfd;
@@ -718,9 +718,9 @@ void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
     ctx->fds[3].base_path = (char *)wasi_root_path;
     ctx->fds[3].rights = WASI_RIGHTS_ALL;
     ctx->fds[3].rights_inheriting = WASI_RIGHTS_ALL;
-    print("WASI: Opened /wasm at fd 3 (kernel fd %d)\n", rootfd);
+    print("WASI: Opened / at fd 3 (kernel fd %d)\n", rootfd);
   } else {
-    print("WASI: Failed to open /wasm, using stub\n");
+    print("WASI: Failed to open /, using stub\n");
     ctx->fds[3].is_open = 1;
     ctx->fds[3].lux9_fid = 3;
     ctx->fds[3].is_dir = 1;
@@ -779,7 +779,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
       m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
           m3ApiGetArg(uint32_t, nwritten_ptr)
 
-              uint32_t iov_size = 0;
+              print("WASI_FD_WRITE: CALLED fd=%d iovs_ptr=%u iovs_len=%u "
+                    "nwritten_ptr=%u\n",
+                    fd, iovs_ptr, iovs_len, nwritten_ptr);
+
+  uint32_t iov_size = 0;
   if (wasi_iovecs_size(iovs_len, &iov_size) < 0) {
     m3ApiReturn(WASI_ERRNO_INVAL);
   }
@@ -840,7 +844,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
 m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
   m3ApiGetArg(int32_t, rval)
 
-      print("Pretend exiting with code %d\n", rval);
+      print("WASI_PROC_EXIT: CALLED rval=%d\n", rval);
+  print("Pretend exiting with code %d\n", rval);
   if (up->wasm.wasi_ctx)
     ((wasi_context_t *)up->wasm.wasi_ctx)->exit_code = (u32int)rval;
 
@@ -2926,9 +2931,22 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_get) {
 static M3Result wasi_link_if(IM3Module module, u32int allow_mask, u32int flag,
                              const char *ns, const char *name, const char *sig,
                              M3RawCall func) {
-  if ((allow_mask & flag) == 0)
+  if ((allow_mask & flag) == 0) {
+    print("WASI_LINK_SKIP: %s (flag 0x%x not in mask 0x%x)\n", name, flag,
+          allow_mask);
     return m3Err_none;
-  return m3_LinkRawFunction(module, ns, name, sig, func);
+  }
+
+  M3Result res = m3_LinkRawFunction(module, ns, name, sig, func);
+
+  // Debug output for all functions now
+  if (res == m3Err_none) {
+    print("WASI_LINK_OK: %s\n", name);
+  } else if (res) {
+    print("WASI_LINK_FAIL: %s -> %s\n", name, res);
+  }
+
+  return res;
 }
 
 M3Result LinkWasi(IM3Module module, u32int allow_mask) {
@@ -2940,299 +2958,299 @@ M3Result LinkWasi(IM3Module module, u32int allow_mask) {
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_ARGS, wasi, "args_sizes_get",
                    "i(**)", &wasi_snapshot_preview1_args_sizes_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // args_get: (i32*, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_ARGS, wasi, "args_get",
                         "i(**)", &wasi_snapshot_preview1_args_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // environ_sizes_get: (i32*, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_ARGS, wasi,
                         "environ_sizes_get", "i(**)",
                         &wasi_snapshot_preview1_environ_sizes_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // environ_get: (i32*, i32) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_ARGS, wasi, "environ_get",
                    "i(**)", &wasi_snapshot_preview1_environ_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_prestat_get: (i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_DIR, wasi, "fd_prestat_get",
                    "i(i*)", &wasi_snapshot_preview1_fd_prestat_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_prestat_dir_name: (i32, i32, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_DIR, wasi,
                         "fd_prestat_dir_name", "i(i*i)",
                         &wasi_snapshot_preview1_fd_prestat_dir_name);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // random_get: (i32, i32) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_RANDOM, wasi, "random_get",
                    "i(*i)", &wasi_snapshot_preview1_random_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // clock_res_get: (i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_CLOCK, wasi, "clock_res_get",
                    "i(i*)", &wasi_snapshot_preview1_clock_res_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // clock_time_get: (i32, i64, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_CLOCK, wasi, "clock_time_get",
                    "i(iI*)", &wasi_snapshot_preview1_clock_time_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_write: (i32, i32*, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_write",
                         "i(i*i*)", &wasi_snapshot_preview1_fd_write);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_read: (i32, i32*, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_read",
                         "i(i*i*)", &wasi_snapshot_preview1_fd_read);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_pread: (i32, i32*, i32, i64, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_pread",
                         "i(i*iI*)", &wasi_snapshot_preview1_fd_pread);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_pwrite: (i32, i32*, i32, i64, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_pwrite",
                         "i(i*iI*)", &wasi_snapshot_preview1_fd_pwrite);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_advise",
                         "i(iIIi)", &wasi_snapshot_preview1_fd_advise);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_allocate",
                         "i(iII)", &wasi_snapshot_preview1_fd_allocate);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_seek: (i32, i64, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_seek",
                         "i(iIi*)", &wasi_snapshot_preview1_fd_seek);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_close: (i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_close",
                         "i(i)", &wasi_snapshot_preview1_fd_close);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_renumber",
                         "i(ii)", &wasi_snapshot_preview1_fd_renumber);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // proc_exit: (i32) -> void
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PROC, wasi, "proc_exit",
                         "v(i)", &wasi_snapshot_preview1_proc_exit);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PROC, wasi, "proc_raise",
                         "i(i)", &wasi_snapshot_preview1_proc_raise);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_PROC, wasi, "sched_yield",
                    "i()", &wasi_snapshot_preview1_sched_yield);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_open: (i32, i32, i32*, i32, i32, i64, i64, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi, "path_open",
                         "i(ii*iiIIi*)", &wasi_snapshot_preview1_path_open);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_fdstat_get: (i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_fdstat_get",
                    "i(i*)", &wasi_snapshot_preview1_fd_fdstat_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi,
                         "fd_fdstat_set_flags", "i(ii)",
                         &wasi_snapshot_preview1_fd_fdstat_set_flags);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi,
                         "fd_fdstat_set_rights", "i(iII)",
                         &wasi_snapshot_preview1_fd_fdstat_set_rights);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_readdir: (i32, i32*, i32, i64, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_DIR, wasi, "fd_readdir",
                         "i(i*iI*)", &wasi_snapshot_preview1_fd_readdir);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_sync: (i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_sync",
                         "i(i)", &wasi_snapshot_preview1_fd_sync);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_datasync",
                         "i(i)", &wasi_snapshot_preview1_fd_datasync);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_tell: (i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_tell",
                         "i(i*)", &wasi_snapshot_preview1_fd_tell);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_filestat_get: (i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi, "fd_filestat_get",
                    "i(i*)", &wasi_snapshot_preview1_fd_filestat_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_filestat_set_size: (i32, i64) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi,
                         "fd_filestat_set_size", "i(iI)",
                         &wasi_snapshot_preview1_fd_filestat_set_size);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // fd_filestat_set_times: (i32, i64, i64, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_FD, wasi,
                         "fd_filestat_set_times", "i(iIIi)",
                         &wasi_snapshot_preview1_fd_filestat_set_times);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_filestat_set_size", "i(ii*iI)",
                         &wasi_snapshot_preview1_path_filestat_set_size);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_filestat_get: (i32, i32, i32*, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_filestat_get", "i(ii*i*)",
                         &wasi_snapshot_preview1_path_filestat_get);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_filestat_set_times: (i32, i32, i32*, i32, i64, i64, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_filestat_set_times", "i(ii*iIIi)",
                         &wasi_snapshot_preview1_path_filestat_set_times);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_create_directory: (i32, i32*, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_create_directory", "i(i*i)",
                         &wasi_snapshot_preview1_path_create_directory);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_remove_directory: (i32, i32*, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_remove_directory", "i(i*i)",
                         &wasi_snapshot_preview1_path_remove_directory);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_unlink_file: (i32, i32*, i32) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi,
                         "path_unlink_file", "i(i*i)",
                         &wasi_snapshot_preview1_path_unlink_file);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_rename: (i32, i32*, i32, i32, i32*, i32) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi, "path_rename",
                    "i(i*ii*i)", &wasi_snapshot_preview1_path_rename);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi, "path_link",
                         "i(i*ii*i)", &wasi_snapshot_preview1_path_link);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_symlink: (i32*, i32, i32, i32*, i32) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi, "path_symlink",
                    "i(*ii*i)", &wasi_snapshot_preview1_path_symlink);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // path_readlink: (i32, i32*, i32, i32*, i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_PATH, wasi, "path_readlink",
                    "i(i*i*i*)", &wasi_snapshot_preview1_path_readlink);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // poll_oneoff: (i32*, i32*, i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_POLL, wasi, "poll_oneoff",
                    "i(**i*)", &wasi_snapshot_preview1_poll_oneoff);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // sock_accept: (i32, i32, i32*) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_SOCK, wasi, "sock_accept",
                    "i(ii*)", &wasi_snapshot_preview1_sock_accept);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // sock_recv: (i32, i32*, i32, i32, i32*, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_SOCK, wasi, "sock_recv",
                         "i(i*ii**)", &wasi_snapshot_preview1_sock_recv);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // sock_send: (i32, i32*, i32, i32, i32*) -> i32
   result = wasi_link_if(module, allow_mask, WASI_ALLOW_SOCK, wasi, "sock_send",
                         "i(i*ii*)", &wasi_snapshot_preview1_sock_send);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   // sock_shutdown: (i32, i32) -> i32
   result =
       wasi_link_if(module, allow_mask, WASI_ALLOW_SOCK, wasi, "sock_shutdown",
                    "i(ii)", &wasi_snapshot_preview1_sock_shutdown);
-  if (result)
+  if (result && result != m3Err_functionLookupFailed)
     return result;
 
   return result;
