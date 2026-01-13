@@ -369,7 +369,14 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
       return 0;
     f->argc = GBIT32(p);
     p += BIT32SZ;
-    /* Note: argv array parsing would go here if needed */
+    if (f->argc > MAXWELEM)
+      return 0;
+    for (u32int i = 0; i < f->argc; i++) {
+      p = gstring(p, ep, &f->args[i]);
+      if (p == nil)
+        return 0;
+    }
+    f->argv = f->args;
     break;
 
   case Tsysexit:

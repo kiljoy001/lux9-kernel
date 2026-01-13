@@ -79,6 +79,8 @@ typedef struct Fcall {
       char *path;  /* Tsysexec - executable path */
       char **argv; /* Tsysexec - argument array */
       u32int argc; /* Tsysexec - argument count */
+      char
+          *args[MAXWELEM]; /* Tsysexec - workspace for deserialized arguments */
     };
     struct {
       u64int addr; /* Tsysbrk, Rsysbrk - memory address */
@@ -310,6 +312,8 @@ enum {
   SYS_MOUNT = 46,
   SYS_NSEC = 53,
   SYS_BRK = 55,
+  SYS_PEBBLE_ALLOC = 59,
+  SYS_PEBBLE_FREE = 60,
   SYS_WASM_COMPILE = 160,
   SYS_WASM_EXECUTE = 161,
   SYS_WASM_DESTROY = 162,

@@ -17,8 +17,10 @@ extern void longjmp(jmp_buf, int);
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
 #define assert(x)                                                              \
   if (x) {                                                                     \
-  } else                                                                       \
-    _assert("x")
+  } else {                                                                     \
+    print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);                \
+    /* _assert(#x); */                                                         \
+  }
 
 /*
  * mem routines

@@ -614,8 +614,11 @@ int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
     return -1;
   }
 
-  /* Step 2: Allocate physical memory */
-  buf = xallocz(size, 1);
+  /* Step 2: Allocate physical memory (padded for page alignment) */
+  /* We allocate extra space to ensure we can find a full page-aligned region
+     that is exclusively owned by this process, preventing pool corruption. */
+  ulong alloc_size = size + 2 * BY2PG;
+  buf = xallocz(alloc_size, 1);
   if (buf == nil) {
     /* Return WHITE to budget */
     lock(&pebble_global_lock);

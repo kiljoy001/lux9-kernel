@@ -74,6 +74,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_EXIT:
     case SYS_WAIT:
     case SYS_BRK:
+    case SYS_PEBBLE_ALLOC:
+    case SYS_PEBBLE_FREE:
       return router_dispatch_proc(p, t, r);
 
     /* IPC & Exchange */

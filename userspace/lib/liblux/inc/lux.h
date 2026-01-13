@@ -29,7 +29,7 @@ typedef signed long long s64int;
 typedef u32int Rune; /* UTF-8 code point */
 
 #ifndef nil
-#define nil ((void*)0)
+#define nil ((void *)0)
 #endif
 
 #ifndef offsetof
@@ -116,6 +116,7 @@ typedef struct Fcall {
       char *path;
       char **argv;
       u32int argc;
+      char *args[16];
     };
     struct {
       u64int addr;
@@ -278,30 +279,30 @@ enum {
 
 // Basic Pebble types
 typedef struct PebbleWhite {
-    ulong token;
-    uintptr size;
+  ulong token;
+  uintptr size;
 } PebbleWhite;
 
 typedef struct PebbleBlue {
-    ulong tokens;
+  ulong tokens;
 } PebbleBlue;
 
 /* Exchange Pool Types */
 typedef struct {
-    uchar uuid[16];
-    uchar hash[32];
-    ulong size;
-    uint type;
-    uint perms;
+  uchar uuid[16];
+  uchar hash[32];
+  ulong size;
+  uint type;
+  uint perms;
 } ExchangeCapability;
 
 /* IPC Notification Structure */
 typedef struct {
-    uchar message_id[16];
-    uchar topic_uuid[16];
-    ExchangeCapability *capability;
-    int delivered_count;
-    int ack_count;
+  uchar message_id[16];
+  uchar topic_uuid[16];
+  ExchangeCapability *capability;
+  int delivered_count;
+  int ack_count;
 } Notification;
 
 /* Userspace Syscall Wrappers */
@@ -329,21 +330,21 @@ int sys_bind(char *old, char *newname, int flags);
 int sys_print(const char *fmt, ...);
 
 /* Exchange Pool Syscalls */
-ExchangeCapability* sys_exchange_alloc(void);
+ExchangeCapability *sys_exchange_alloc(void);
 int sys_exchange_free(ExchangeCapability *cap);
-ExchangeCapability* sys_exchange_publish(char *topic, void *data, ulong len);
+ExchangeCapability *sys_exchange_publish(char *topic, void *data, ulong len);
 int sys_exchange_subscribe(char *topic);
 int sys_exchange_unsubscribe(char *topic);
-Notification* sys_exchange_receive(void);
+Notification *sys_exchange_receive(void);
 
 /* MsgOrd / Kinetic Defense */
 typedef struct {
-    uchar type;
-    ushort tag;
-    u32int scallnr;
-    u32int sflags;
-    uchar *sdata;
-    u32int scount;
+  uchar type;
+  ushort tag;
+  u32int scallnr;
+  u32int sflags;
+  uchar *sdata;
+  u32int scount;
 } MsgOrdFcall;
 int msgord_submit(char *path, MsgOrdFcall *t);
 
