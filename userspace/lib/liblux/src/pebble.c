@@ -38,6 +38,8 @@ int pebble_alloc(ulong size, void **addr) {
 
   if (lux_call(&tx, &rx) < 0)
     return -1;
+  if (addr != nil)
+    *addr = (void *)rx.retval;
   return 0;
 }
 

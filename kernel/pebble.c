@@ -52,6 +52,7 @@ static void pebble_reset_state(PebbleState *ps) {
   ps->colorless_bank = 0; /* Processes start with 0 tokens */
   ps->white_head = 0;
   ps->white_pending = 0;
+  ps->vbase = 0x400000000000ull; /* Base for user-space Pebble mapping */
 }
 
 // Boot-time state for use before proc0
@@ -556,6 +557,7 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
   memset(pb, 0, sizeof(PebbleBlack));
   pb->capability = *out_cap;
   pb->physical_addr = buf;
+  pb->user_vaddr = 0; /* Not mapped yet */
   pb->size = size;
   pb->flags = PEBBLE_CAP_BLACK | PEBBLE_CAP_ACTIVE;
 

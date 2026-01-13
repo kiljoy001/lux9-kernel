@@ -139,7 +139,8 @@ typedef struct PebbleBlack {
   UserCapability capability; // The UserCapability provided by Blind Ledger
   void *
       physical_addr; // The actual physical memory address managed by this token
-  ulong size;        // Size of the allocation
+  uintptr user_vaddr; // The user-space virtual address mapping (if any)
+  ulong size;         // Size of the allocation
   ulong flags;
   struct PebbleBlack *next;
 } PebbleBlack;
@@ -156,6 +157,8 @@ typedef struct PebbleState {
   ulong blue_count;     /* number of live blue tokens */
   ulong total_allocs;   /* total allocations made */
   ulong total_frees;    /* total frees performed */
+
+  uintptr vbase; /* next available user virtual address for Pebble mapping */
 
   /* Lists for tracking objects */
   PebbleBlack *black_list;

@@ -346,6 +346,94 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    case SYS_PEBBLE_ALLOC: {
+      extern int pebble_alloc_with_white(ulong, UserCapability *, void **);
+      extern void userpmap(uintptr, uintptr, int);
+      extern PebbleBlack *pebble_lookup_black(PebbleState *, void *);
+
+      /* Format: [size 8] [userp 8] */
+      ptr = tsyscall_skip_argc(ptr, ep, 2);
+      if (ptr + 16 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      ulong size = (ulong)GBIT64(ptr);
+      void **userp = (void **)GBIT64(ptr + 8);
+
+      UserCapability cap;
+      void *handle = nil;
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      if (pebble_alloc_with_white(size, &cap, &handle) != 0)
+        error("pebble: no memory");
+
+      /* Establish User-Space Mapping */
+      uintptr uva = p->pebble.vbase;
+      uintptr pa = PADDR(handle);
+
+      /* Map physically contiguous pages into UVA range */
+      for (ulong off = 0; off < size; off += BY2PG) {
+        userpmap(uva + off, pa + off, PTEVALID | PTEUSER | PTEWRITE);
+      }
+
+      /* Link UVA to Metadata */
+      PebbleBlack *pb = pebble_lookup_black(&p->pebble, handle);
+      if (pb != nil) {
+        pb->user_vaddr = uva;
+      }
+
+      /* Advance VBASE for next allocation */
+      p->pebble.vbase += PGROUND(size);
+
+      /* Return UVA to user space via retval */
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = (u64int)uva;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_PEBBLE_FREE: {
+      extern int pebble_black_free(const UserCapability *);
+      /* Format: [addr 8] */
+      ptr = tsyscall_skip_argc(ptr, ep, 1);
+      if (ptr + 8 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      uintptr uva = GBIT64(ptr);
+
+      /* Find metadata by User Virtual Address */
+      PebbleBlack *pb = nil;
+      for (pb = p->pebble.black_list; pb != nil; pb = pb->next) {
+        if (pb->user_vaddr == uva)
+          break;
+      }
+
+      if (pb == nil) {
+        r->type = Rerror;
+        r->ename = "pebble: invalid address";
+        return -1;
+      }
+
+      /* pebble_black_free cleans up physical memory and metadata */
+      pebble_black_free(&pb->capability);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
     default:
       r->type = Rerror;
       r->ename = "Proc syscall not found";
@@ -470,6 +558,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     ulong args[2];
     uintptr kpage = (uintptr)p->p9page;
     uintptr kpath = (uintptr)t->path;
+    int i;
 
     /* Calculate User Address of the path string */
     if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
@@ -480,24 +569,31 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     uintptr path_offset = kpath - kpage;
     uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
 
-    /* 3. Construct argv array in the Exchange Page */
-    /* We need space for 2 pointers: [upath, 0] */
-    /* Use the space immediately following the path string.
-     * t->path points into kpage. */
-    uintptr kargv_start = kpath + strlen((char *)kpath) + 1;
-    /* Align to 8 bytes */
-    kargv_start = (kargv_start + 7) & ~7ULL;
+    /* Reconstruction offset: 0xE00 (P9_CONTROL_OFFSET - (MAX_ARGS *
+     * sizeof(uintptr))) Use 0xE00 to avoid collision with message buffers.
+     */
+    uintptr *argv_ptr_list = (uintptr *)((uintptr)p->p9page + 0xE00);
+    ulong arg_count = t->argc;
 
-    if (kargv_start + 2 * sizeof(ulong) > kpage + P9_PAGE_SIZE) {
-      r->type = Rerror;
-      r->ename = "Tsysexec: message too large for argv";
-      return -1;
+    if (arg_count > MAXWELEM)
+      arg_count = MAXWELEM;
+
+    /*
+     * Construct argv in exchange page.
+     * Kernel pointers (t->args[i]) must be mapped to user addresses.
+     */
+    for (i = 0; i < (int)arg_count; i++) {
+      uintptr karg = (uintptr)t->args[i];
+      if (karg >= kpage && karg < kpage + P9_PAGE_SIZE) {
+        uintptr offset = karg - kpage;
+        argv_ptr_list[i] = EXCHANGE_PAGE_ADDR + offset;
+      } else {
+        argv_ptr_list[i] = 0;
+      }
     }
+    argv_ptr_list[arg_count] = 0; /* Null terminator */
 
-    ulong *argv_ptr = (ulong *)kargv_start;
-    argv_ptr[0] = (ulong)upath;
-    argv_ptr[1] = 0;
-    uintptr uargv = EXCHANGE_PAGE_ADDR + (kargv_start - kpage);
+    uintptr uargv = EXCHANGE_PAGE_ADDR + 0xE00;
 
     /* Prepare arguments for sysexec: [path, argv] */
     args[0] = (ulong)upath;
