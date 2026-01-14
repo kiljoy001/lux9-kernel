@@ -1,7 +1,7 @@
-#include <u.h>
-#include <libc.h>
-#include <acsl_bounds.h>
 #include "fmtdef.h"
+#include <acsl_bounds.h>
+#include <libc.h>
+#include <u.h>
 
 /*
  * format a string into the output buffer
@@ -15,18 +15,16 @@
   @ assigns *f;
   @ ensures \result == 0 || \result == -1;
   @*/
-int
-fmtprint(Fmt *f, char *fmt, ...)
-{
-va_list va;
-int n;
+int fmtprint(Fmt *f, char *fmt, ...) {
+  va_list va;
+  int n;
 
-f->flags &= ~FmtWidth;
-f->width = 0;
-va_start(va, fmt);
-n = dofmt(f, fmt);
-va_end(va);
-if(n >= 0)
- 0;
-return n;
+  f->flags &= ~FmtWidth;
+  f->width = 0;
+  va_start(va, fmt);
+  n = dofmt(f, fmt);
+  va_end(va);
+  if (n >= 0)
+    return 0;
+  return n;
 }

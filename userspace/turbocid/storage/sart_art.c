@@ -90,9 +90,10 @@ struct ArtNode256 {
 
 /* Leaf node holding actual data */
 struct ArtLeaf {
-  ArtNode base;     /* type = ART_LEAF */
-  UUIDv8 key;       /* Full key for verification */
-  RecordData value; /* The stored record */
+  ArtNode base;    /* type = ART_LEAF */
+  u16int key_len;  /* Length of key in data[] */
+  u16int val_len;  /* Length of value in data[] after key */
+  u8int data[256]; /* Flex-ish buffer: [Key...][Value...] */
 };
 
 /* ART Tree root */
@@ -247,8 +248,8 @@ static void *art_search_internal(ArtTree *tree, const u8int *key, int key_len) {
     if (n->type == ART_LEAF) {
       ArtLeaf *leaf = (ArtLeaf *)n;
       /* Verify full key match */
-      if (memcmp(leaf->key.data, key, key_len) == 0)
-        return &leaf->value;
+      if (leaf->key_len == key_len && memcmp(leaf->data, key, key_len) == 0)
+        return &leaf->data[leaf->key_len];
       return nil;
     }
 
@@ -311,13 +312,14 @@ static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
 
   memset(leaf, 0, sizeof(*leaf));
   leaf->base.type = ART_LEAF;
-  /* Standardizing on 16-byte key for the leaf structure,
-   * but in namespace ART 'key' contains both ParentUUID and Name.
-   * TODO: Fix leaf structure to support variable-size keys if needed.
-   * For now, storing full key in 'leaf->key' might truncate if > 16 bytes.
-   */
-  memmove(leaf->key.data, key, (key_len > 16) ? 16 : key_len);
-  memmove(&leaf->value, value, val_len);
+  leaf->key_len = key_len;
+  leaf->val_len = val_len;
+  if ((uint)key_len + (uint)val_len > 256) {
+    /* TODO: free leaf */
+    return -1;
+  }
+  memmove(leaf->data, key, key_len);
+  memmove(&leaf->data[key_len], value, val_len);
 
   /* Empty tree - insert as root */
   if (tree->root == nil) {
@@ -331,12 +333,14 @@ static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
     ArtLeaf *existing = (ArtLeaf *)tree->root;
 
     /* Check for duplicate */
-    if (memcmp(existing->key.data, key, key_len) == 0)
+    if (existing->key_len == key_len &&
+        memcmp(existing->data, key, key_len) == 0)
       return -1;
 
     /* Find first differing byte */
     int differ = 0;
-    while (differ < key_len && existing->key.data[differ] == key[differ])
+    while (differ < key_len && differ < existing->key_len &&
+           existing->data[differ] == key[differ])
       differ++;
 
     /* Create new inner node */
@@ -352,8 +356,7 @@ static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
     }
 
     /* Add both leaves as children */
-    add_child((ArtNode *)new_node, existing->key.data[differ],
-              (ArtNode *)existing);
+    add_child((ArtNode *)new_node, existing->data[differ], (ArtNode *)existing);
     add_child((ArtNode *)new_node, key[differ], (ArtNode *)leaf);
 
     tree->root = (ArtNode *)new_node;
@@ -395,12 +398,14 @@ static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
   /* Reached a leaf - check for duplicate */
   if (n != nil && n->type == ART_LEAF) {
     ArtLeaf *existing = (ArtLeaf *)n;
-    if (memcmp(existing->key.data, key, key_len) == 0)
+    if (existing->key_len == key_len &&
+        memcmp(existing->data, key, key_len) == 0)
       return -1;
 
     /* Create inner node */
     int differ = depth;
-    while (differ < key_len && existing->key.data[differ] == key[differ])
+    while (differ < key_len && differ < existing->key_len &&
+           existing->data[differ] == key[differ])
       differ++;
 
     new_node = (ArtNode4 *)art_alloc(sizeof(ArtNode4));
@@ -410,7 +415,7 @@ static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
     memset(new_node, 0, sizeof(*new_node));
     new_node->base.type = ART_NODE4;
 
-    add_child((ArtNode *)new_node, existing->key.data[differ], n);
+    add_child((ArtNode *)new_node, existing->data[differ], n);
     add_child((ArtNode *)new_node, key[differ], (ArtNode *)leaf);
 
     *current = (ArtNode *)new_node;

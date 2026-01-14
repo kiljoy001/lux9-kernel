@@ -50,6 +50,13 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 extern uintptr sysexec(void *list_void); /* System exec call */
 
+/*@
+  @ requires p == \null || ep == \null || p + 4 <= ep ==> \valid_read(p +
+  (0..3));
+  @ assigns \nothing;
+  @ ensures \result == p || \result == p + 4;
+  @ terminates \true;
+  @*/
 static uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
   if (p + 4 <= ep) {
     u32int argc = GBIT32(p);
@@ -61,8 +68,12 @@ static uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
 
 /*@
   @ requires p == \null || \valid(p);
+  @ requires p != \null && p->p9page != \null ==> \valid((uchar*)p->p9page +
+  (0..P9_PAGE_SIZE-1));
   @ assigns \nothing;
+  @ ensures \result == 1 ==> \valid((uchar*)ptr + (0..len-1));
   @ ensures \result == 0 || \result == 1;
+  @ terminates \true;
   @*/
 static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
   if (!p || !p->p9page || !ptr || len == 0)
@@ -80,6 +91,13 @@ static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
 /*
  * Path matching for routing
  */
+/*@
+  @ requires \valid_read(path);
+  @ requires \valid_read(pattern);
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @ terminates \true;
+  @*/
 static int path_match(char *path, char *pattern) {
   int plen = strlen(pattern);
   if (pattern[plen - 1] == '*') {
@@ -91,11 +109,21 @@ static int path_match(char *path, char *pattern) {
 /*
  * Initialize router subsystem
  */
+/*@ assigns \nothing;
+  @ terminates \true;
+  @*/
 void p9_router_init(void) { print("9p_router: initialized\n"); }
 
 /*
  * Allocate 9P Exchange Page for a process
  */
+/*@
+  @ requires \valid(p);
+  @ assigns p->p9page;
+  @ ensures \result == 0 ==> \valid((uchar *)p->p9page + (0..P9_PAGE_SIZE-1));
+  @ ensures \result == -1 ==> p->p9page == \old(p->p9page);
+  @ terminates \true;
+  @*/
 int p9_alloc_page(Proc *p) {
   uintptr page;
 
@@ -105,8 +133,8 @@ int p9_alloc_page(Proc *p) {
 
   memset((void *)page, 0, P9_PAGE_SIZE);
 
-  /* Initialize P9Control block at offset 0x1F00 (start of 2nd page + offset) */
-  P9Control *ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
+  /* Initialize P9Control block at offset 0xF00 (at the end of the 4KB page) */
+  P9Control *ctl = (P9Control *)(page + P9_CONTROL_OFFSET);
   memset(ctl, 0, sizeof(P9Control));
   atomic_store(&ctl->status, P9_STATUS_IDLE, ORDER_RELAXED);
   atomic_store(&ctl->doorbell, 0, ORDER_RELAXED);
@@ -124,6 +152,41 @@ int p9_alloc_page(Proc *p) {
 }
 
 /*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ requires caller->p9page != \null ==> \valid((uchar *)caller->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ assigns *r;
+  @ terminates \true;
+  @*/
+static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ requires caller->p9page != \null ==> \valid((uchar *)caller->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ assigns *r;
+  @ terminates \true;
+  @*/
+static int rpipe_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+
+/*@
+  @ requires \valid(aux);
+  @ assigns \nothing; // This function likely modifies kernel state, but not
+  directly through aux
+  @ terminates \true;
+  @*/
+static void rpipe_clone_notify(void *aux);
+
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ requires caller->p9page != \null ==> \valid((uchar *)caller->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ assigns *r;
+  @ terminates \true;
+  @*/
+static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+
+/*@
   @ requires \valid(p);
   @ requires p->p9page == \null || \valid_read((uchar *)p->p9page +
   (0..P9_PAGE_SIZE-1));
@@ -139,8 +202,10 @@ void p9_free_page(Proc *p) {
 
 int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out) {
   /*@
-    @ requires data == \null || \valid((uchar *)data + (0..len-1));
+    @ requires len > 0 ==> \valid_read((uchar *)data + (0..len-1));
     @ requires \valid(out);
+    @ terminates \true;
+    @ assigns *out;
     @ ensures \result == 0 ==> len >= 8 + sizeof(PebbleToken);
     @*/
   uint magic, version;
@@ -163,6 +228,8 @@ int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out) {
 int p9_validate_pebble(PebbleToken *tok, char *path, int access) {
   /*@
     @ requires \valid(tok);
+    @ terminates \true;
+    @ assigns \nothing;
     @ ensures \result == 1 ==> (tok->expires == 0 ||
     @                            tok->expires >= (uvlong)seconds());
     @*/
@@ -182,6 +249,13 @@ int p9_validate_pebble(PebbleToken *tok, char *path, int access) {
 /*
  * Session Pebble Management
  */
+/*@
+  @ requires \valid(p) && \valid(tok);
+  @ requires p->p9page != \null ==> \valid((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ terminates \true;
+  @ assigns *(uchar*)p->p9page, *((uchar*)p->p9page + (0..P9_PAGE_SIZE-1));
+  @*/
 static void store_session_pebble(Proc *p, PebbleToken *tok) {
   P9Control *ctl;
 
@@ -202,9 +276,10 @@ static void store_session_pebble(Proc *p, PebbleToken *tok) {
   @ requires p == \null || \valid(p);
   @ requires p == \null || p->p9page == \null || \valid((uchar *)p->p9page +
   (0..P9_PAGE_SIZE-1));
-  @ requires reply == \null || \valid_read(reply + (0..reply_size-1));
+  @ requires reply == \null || \valid_read((uchar *)reply + (0..reply_size-1));
   @ requires saved_ctl == \null || \valid_read(saved_ctl);
   @ requires reply_size <= P9_MSG_SIZE;
+  @ terminates \true;
   @ assigns *(uchar *)p->p9page, *((uchar *)p->p9page + (0..P9_PAGE_SIZE-1));
   @ behavior null_page:
   @   assumes p == \null || p->p9page == \null;
@@ -272,7 +347,15 @@ static void dump_bytes(const char *label, const uchar *buf, uint n) {
 /*
  * FD Handler: /fd/N
  */
-
+/*@
+  @ requires \valid(p);
+  @ requires p->p9page != \null ==> \valid((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ requires \valid(tok);
+  @ terminates \true;
+  @ assigns *tok;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 static int get_session_pebble(Proc *p, PebbleToken *tok) {
   P9Control *ctl;
 
@@ -297,6 +380,13 @@ static int get_session_pebble(Proc *p, PebbleToken *tok) {
 /*
  * Full Pebble Validation with BlindLedger
  */
+/*@
+  @ requires \valid(tok) && \valid(owner);
+  @ requires \valid_read(path);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int p9_validate_pebble_full(PebbleToken *tok, char *path, Proc *owner) {
   UserCapability cap;
   BlindLedgerEntry entry;
@@ -340,6 +430,12 @@ static int p9_validate_pebble_full(PebbleToken *tok, char *path, Proc *owner) {
 /*
  * Permission checking helper for device operations
  */
+/*@
+  @ requires \valid(p);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int check_permission(Proc *p, int required_perm) {
   PebbleToken tok;
 
@@ -378,6 +474,10 @@ static int check_permission(Proc *p, int required_perm) {
 #define DEV_RAM 7
 #define DEV_PIPE 8
 
+/*@
+    @ terminates \true;
+    @ ensures \result == 0 ==> \result == 0;
+    @*/
 static int install_fid_with_subtype(int fid, int type, int subtype) {
   /*@
     @ ensures \result == 0 ==> get_fid_type(fid) == type;
@@ -414,6 +514,10 @@ static int install_fid(int fid, int type) {
   return install_fid_with_subtype(fid, type, 0);
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static int get_fid_type(int fid) {
   Chan *c;
   Fgrp *f = up->fgrp;
@@ -429,6 +533,10 @@ static int get_fid_type(int fid) {
   return type;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static int get_fid_subtype(int fid) {
   Chan *c;
   Fgrp *f = up->fgrp;

@@ -50,6 +50,24 @@ typedef struct Qid {
   u64int path;
 } Qid;
 
+/* Userspace compatible Dir structure */
+#ifndef _DIR_H_
+#define _DIR_H_
+typedef struct Dir {
+  ushort type;
+  uint dev;
+  Qid qid;
+  ulong mode;
+  ulong atime;
+  ulong mtime;
+  vlong length;
+  char *name;
+  char *uid;
+  char *gid;
+  char *muid;
+} Dir;
+#endif
+
 /* Userspace compatible Fcall structure */
 typedef struct Fcall {
   uchar type;

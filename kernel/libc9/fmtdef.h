@@ -1,5 +1,12 @@
+#ifndef _FMTDEF_H_
+#define _FMTDEF_H_
+
+#include <libc.h>
+#include <u.h>
+
 /*
  * dofmt -- format to a buffer
+...
  * the number of characters formatted is returned,
  * or -1 if there was an error.
  * if the buffer is ever filled, flush is called.
@@ -84,3 +91,5 @@ void _fmtunlock(void);
       t += runetochar(t, &_rune);                                              \
     }                                                                          \
   } while (0)
+
+#endif /* _FMTDEF_H_ */

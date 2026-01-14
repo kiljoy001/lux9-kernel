@@ -58,8 +58,8 @@ typedef struct P9Control {
   volatile uint rep_tail;
   volatile uint req_seq;
   volatile uint rep_seq;
-  uchar session_pebble[32];
-  uchar reserved[192];
+  uchar session_pebble[64];
+  uchar reserved[160];
 } P9Control;
 
 /* Status codes */

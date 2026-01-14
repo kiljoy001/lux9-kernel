@@ -9,6 +9,31 @@ typedef unsigned int uint;
 typedef unsigned long ulong;
 typedef unsigned long long uvlong;
 
+typedef unsigned char u8int;
+typedef unsigned short u16int;
+typedef unsigned int u32int;
+typedef unsigned long long u64int;
+
+typedef struct Qid {
+  u64int path;
+  u32int vers;
+  u8int type;
+} Qid;
+
+typedef struct Dir {
+  u16int type;
+  u32int dev;
+  Qid qid;
+  u32int mode;
+  u32int atime;
+  u32int mtime;
+  u64int length;
+  char *name;
+  char *uid;
+  char *gid;
+  char *muid;
+} Dir;
+
 extern int sys_open(char *path, int mode);
 extern int sys_close(int fd);
 extern long sys_read(int fd, void *buf, long n);
@@ -16,9 +41,13 @@ extern long sys_write(int fd, void *buf, long n);
 extern int sys_create(char *path, int mode, uint perm);
 extern int sys_rfork(int flags);
 extern int sys_exec(char *path, char *argv[]);
+extern char *sys_exec_error(void);
 extern void sys_exit(char *msg);
 extern int sys_wait(void);
 extern int sys_pid(void);
+extern int sys_pipe(int *fds);
+extern int sys_mount(int fd, int afd, char *old, int flags, char *aname);
+extern int sys_stat(char *path, Dir *d); // Use Dir*
 
 #define OREAD 0
 #define OWRITE 1
@@ -26,6 +55,7 @@ extern int sys_pid(void);
 #define RFFDG (1 << 2)
 #define RFPROC (1 << 4)
 #define RFMEM (1 << 5)
+#define DMDIR 0x80000000
 
 /* Minimal print implementation for liblux convM2S debug output */
 int print(char *fmt, ...) {
@@ -125,7 +155,7 @@ static void register_service(const char *name, const char *exec_path) {
   sys_close(fd);
 }
 
-void main(void) {
+int main(void) {
   init_print("=== Lux9 Init Starting ===\n");
   init_print("init: I AM NEW! Build ID: 3\n");
   /* ZERO-COPY FORK: Must use RFMEM to share stack (vfork style) because we
@@ -145,7 +175,12 @@ void main(void) {
   if (pid < 0) {
     init_print("init: rfork failed\n");
   } else if (pid == 0) {
-    /* CHILD: EXEC SOPHIA */
+    /* CHILD: EXEC SOPHIA
+     * CRITICAL: Do NOT call any syscalls before exec in RFMEM fork!
+     * The child shares memory with parent, and syscalls overwrite the
+     * shared exchange page, causing corruption and null pointer dereferences.
+     */
+
     /* Format pipe FD as string manually */
     char fd_str[16];
     int n = 0;
@@ -165,11 +200,11 @@ void main(void) {
     }
     fd_str[n] = '\0';
 
-    init_print("init: spawning sophia server on pipe...\n");
+    init_print("init: CHILD calling sys_exec...\n");
     char *args[] = {"sophia", fd_str, 0};
-    /* Match the path that worked */
     int ret = sys_exec("#/./boot/sophia", args);
-    init_print("init: exec sophia returned (FAILED) ret=");
+    /* If we get here, exec failed */
+    init_print("init: exec FAILED ret=");
     print_int(ret);
     init_print("\n");
     sys_exit("exec failed");
@@ -177,23 +212,40 @@ void main(void) {
     /* PARENT: WAIT AND MOUNT */
     init_print("init: parent waiting for sophia...\n");
 
+#define MREPL 0
+#define MAFTER 1
+#define MBEFORE 2
+#define MCREATE 4
+
+#define OREAD 0
+#define OWRITE 1
+#define ORDWR 2
+#define OEXEC 3
+
+#define DMDIR 0x80000000
+
     /* Give Sophia time to initialize */
     for (volatile int i = 0; i < 10000000; i++)
       ;
 
+    init_print("init: creating /mnt/sophia...\n");
+    if (sys_create("/mnt/sophia", OREAD, DMDIR | 0777) < 0) {
+      init_print("init: mkdir /mnt/sophia failed (may exist)\n");
+    }
+
     init_print("init: mounting sophiafs on /mnt/sophia...\n");
-    /* Mount SophiaFS (served by child PID) onto /mnt/sophia */
-    /* Note: We use the PID service syntax or just the SRV channel */
-    /* For now, assuming standard 9P attach to the server we just spawned?
-       Actually, in Plan 9, the server posts a file descriptor or we use a pipe.
-       But here we just spawned it.
 
-       Let's try to mount using the service registry /srv if available?
-       Or assuming sophia listens on a known channel.
+    /* Mount using the pipe FD (pfd[0]) */
+    /* We assume the child (sophia) is now listening on the other end (pfd[1])
+     */
+    /* and treating it as its root server connection. */
 
-       For this test, we just want to Verify it runs. The logs showed it
-       answered 9P. WE WILL JUST LOOP AND PRINT STATUS.
-    */
+    if (sys_mount(pfd[0], -1, "/mnt/sophia", MREPL, "") < 0) {
+      init_print("init: mount failed\n");
+    } else {
+      init_print("init: mount success!\n");
+      // Optional: List directory/test access
+    }
 
     init_print("init: sophia running (pid ");
     print_int(pid);

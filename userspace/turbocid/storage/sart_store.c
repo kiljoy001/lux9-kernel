@@ -46,6 +46,7 @@ extern void art_clear(void);
 
 /* Forward declarations */
 int sart_rebuild_index(void);
+int sart_add_edge(UUIDv8 *parent, const char *name, UUIDv8 *child);
 
 /*
  * Monocypher BLAKE2b (from monocypher.h)
@@ -308,25 +309,8 @@ static void generate_uuid_from_record(RecordData *rec, UUIDv8 *id) {
 
 /*
  * sart_write_immutable - Write data and return content-derived identity
- *
- * This is the core operation implementing "Update is Recreation":
- *   1. Hash content for deduplication check
- *   2. If duplicate, return existing UUID
- *   3. Allocate block(s) via HJFS
- *   4. Write data to disk
- *   5. Compute hashes (BLAKE2b for integrity, TLSH for similarity)
- *   6. Generate UUIDv8 from metadata
- *   7. Append to journal
- *   8. Insert into ART index and dedup table
- *   9. Return the new identity
- *
- * data: Pointer to data to write
- * len: Length of data in bytes
- * id_out: Output UUIDv8 (content-derived identity)
- *
- * Returns 0 on success, negative on error.
  */
-int sart_write_immutable(void *data, u64int len, UUIDv8 *id_out) {
+int sart_write_immutable(void *data, u64int len, u32int perms, UUIDv8 *id_out) {
   RecordData rec;
   u8int content_hash[32];
   UUIDv8 *existing;
@@ -334,72 +318,83 @@ int sart_write_immutable(void *data, u64int len, UUIDv8 *id_out) {
   u64int blocks_needed;
   int rc;
 
-  if (!g_initialized || data == nil || id_out == nil)
+  if (!g_initialized || id_out == nil)
     return SART_ERR_IO;
 
   /* Step 1: Hash content for deduplication */
-  crypto_blake2b(content_hash, 32, (const u8int *)data, len);
+  if (data && len > 0) {
+    crypto_blake2b(content_hash, 32, (const u8int *)data, len);
+  } else {
+    /* Empty content hash */
+    memset(content_hash, 0, 32);
+    len = 0;
+  }
 
-  /* Step 2: Check dedup table */
-  existing = dedup_lookup(content_hash);
-  if (existing != nil) {
-    /* Content already exists - return existing UUID */
-    memmove(id_out, existing, sizeof(UUIDv8));
-    return SART_OK;
+  /* Step 2: Check dedup table (only for files with content) */
+  if (len > 0) {
+    existing = dedup_lookup(content_hash);
+    if (existing != nil) {
+      memmove(id_out, existing, sizeof(UUIDv8));
+      return SART_OK;
+    }
   }
 
   /* Step 3: Allocate blocks */
-  blocks_needed = (len + SART_BLOCK_SIZE - 1) / SART_BLOCK_SIZE;
-  if (blocks_needed == 0)
-    blocks_needed = 1;
+  if (len > 0) {
+    blocks_needed = (len + SART_BLOCK_SIZE - 1) / SART_BLOCK_SIZE;
+    rc = hjfs_alloc_block(&block_addr);
+    if (rc != SART_OK)
+      return rc;
+    g_store_instance.next_block += (blocks_needed - 1);
 
-  rc = hjfs_alloc_block(&block_addr);
-  if (rc != SART_OK)
-    return rc;
+    /* Step 4: Write data to disk */
+    rc = hjfs_write_block(block_addr, data, len);
+    if (rc != SART_OK)
+      return rc;
+  } else {
+    block_addr = (u64int)-1; /* Sentinel for no data */
+  }
 
-  /* Reserve additional blocks if needed */
-  g_store_instance.next_block += (blocks_needed - 1);
-
-  /* Step 4: Write data to disk via HJFS */
-  rc = hjfs_write_block(block_addr, data, len);
-  if (rc != SART_OK)
-    return rc;
-
-  /* Step 5: Build RecordData with hashes */
+  /* Step 5: Build RecordData */
   memset(&rec, 0, sizeof(rec));
   rec.size = len;
   rec.block_addr = block_addr;
-  rec.type = 0;     /* TODO: detect file type from magic bytes */
-  rec.perms = 0644; /* Default permissions */
-  rec.uid = 0;      /* root */
+  rec.perms = perms;
+  rec.uid = 0;
   rec.gid = 0;
   rec.atime = rec.mtime = sys_nsec();
-
-  /* Copy content hash (already computed for dedup) */
   memmove(rec.data_hash, content_hash, 32);
 
-  /* Compute TLSH for similarity search */
-  tlsh_from_blake2b(data, len, rec.tlsh);
+  if (len > 0 && data) {
+    tlsh_from_blake2b(data, len, rec.tlsh);
+  }
 
-  /* Step 6: Generate content-derived UUIDv8 */
+  /* Step 6: Generate UUID */
   generate_uuid_from_record(&rec, id_out);
 
-  /* Step 7: Persist to journal */
+  /* Step 7: Persist */
   rc = journal_append_blob(id_out, &rec);
   if (rc != SART_OK)
     return rc;
 
-  /* Step 8: Add to ART index */
-  rc = art_insert(id_out, &rec);
-  if (rc != 0) {
-    /* Already exists in ART (shouldn't happen after dedup check) */
-    return SART_OK;
-  }
-
-  /* Add to dedup table */
-  dedup_insert(content_hash, id_out);
+  /* Step 8: Index */
+  art_insert(id_out, &rec);
+  if (len > 0)
+    dedup_insert(content_hash, id_out);
 
   return SART_OK;
+}
+
+/*
+ * sart_mkdir - Create a persistent directory
+ */
+int sart_mkdir(UUIDv8 *parent, const char *name, u32int perms, UUIDv8 *id_out) {
+  int rc;
+  rc = sart_write_immutable(nil, 0, perms | DMDIR, id_out);
+  if (rc != SART_OK)
+    return rc;
+
+  return sart_add_edge(parent, name, id_out);
 }
 
 /*

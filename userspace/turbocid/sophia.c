@@ -27,15 +27,22 @@ extern RecordData *art_search(const UUIDv8 *key);
 extern UUIDv8 *ns_art_search(const UUIDv8 *parent, const char *name);
 extern int ns_art_insert(const UUIDv8 *parent, const char *name,
                          const UUIDv8 *child);
+extern int sart_write_immutable(void *data, u64int len, u32int perms,
+                                UUIDv8 *id_out);
+extern int sart_add_edge(UUIDv8 *parent, const char *name, UUIDv8 *child);
+extern int sart_mkdir(UUIDv8 *parent, const char *name, u32int perms,
+                      UUIDv8 *id_out);
 
 /*
  * SophiaNode: A node in the DAG.
  */
 typedef struct SophiaNode {
-  UUIDv8 cid;      /* The Pointer (UUIDv8 Content Identity) */
-  RecordData *rec; /* Persistent metadata (if JENT_BLOB) */
-  u32int mode;     /* QID type | permissions */
-  void *data;      /* Cached data pointer */
+  UUIDv8 cid;        /* The Pointer (UUIDv8 Content Identity) */
+  UUIDv8 parent_cid; /* Stable parent anchor */
+  char name[128];    /* Name in parent directory */
+  RecordData *rec;   /* Persistent metadata (if JENT_BLOB) */
+  u32int mode;       /* QID type | permissions */
+  void *data;        /* Cached data pointer */
 } SophiaNode;
 
 #define EDGE_KEY_MAX 256
@@ -52,9 +59,7 @@ static SophiaNode *edge_lookup(SophiaNode *parent, char *name) {
 
   RecordData *rec = art_search(child_id);
   if (rec == nil) {
-    /* This is an inconsistency: edge exists but blob metadata doesn't?
-     * Might happen for directories if they don't have RecordData yet.
-     */
+    /* Potential inconsistency handled by fallback */
   }
 
   SophiaNode *node = malloc(sizeof(SophiaNode));
@@ -63,12 +68,19 @@ static SophiaNode *edge_lookup(SophiaNode *parent, char *name) {
 
   memset(node, 0, sizeof(SophiaNode));
   memmove(&node->cid, child_id, 16);
+  memmove(&node->parent_cid, &parent->cid, 16);
+
+  int nlen = strlen(name);
+  if (nlen > 127)
+    nlen = 127;
+  memmove(node->name, name, nlen);
+  node->name[nlen] = '\0';
+
   node->rec = rec;
-  /* If rec exists, take mode from it. Else default to dir? */
   if (rec)
     node->mode = rec->perms;
   else
-    node->mode = DMDIR | 0755; /* Fallback for directories */
+    node->mode = DMDIR | 0755;
 
   return node;
 }
@@ -100,7 +112,7 @@ static void sophia_attach(Req *r) {
   /* Bind the FID to the Root Node */
   r->fid->aux = root_node;
   r->fid->qid.type = QTDIR;
-  r->fid->qid.path = 0;
+  r->fid->qid.path = *(u64int *)root_node->cid.data;
   r->fid->qid.vers = 0;
 
   r->ofcall.qid = r->fid->qid;
@@ -132,7 +144,7 @@ static void sophia_walk(Req *r) {
 
       curr = next;
       r->ofcall.wqid[i].type = (curr->mode & DMDIR) ? QTDIR : QTFILE;
-      r->ofcall.wqid[i].path = 0; /* TODO: Map UUID to path */
+      r->ofcall.wqid[i].path = *(u64int *)curr->cid.data;
       r->ofcall.wqid[i].vers = 0;
     }
 
@@ -146,27 +158,124 @@ static void sophia_walk(Req *r) {
   srv_respond(r, nil);
 }
 
+static void sophia_create(Req *r) {
+  SophiaNode *parent = r->fid->aux;
+  char *name = r->ifcall.name;
+  u32int perm = r->ifcall.perm;
+  UUIDv8 child_id;
+  int rc;
+
+  if (perm & DMDIR) {
+    rc = sart_mkdir(&parent->cid, name, perm, &child_id);
+  } else {
+    rc = sart_write_immutable(nil, 0, perm, &child_id);
+    if (rc == 0) {
+      rc = sart_add_edge(&parent->cid, name, &child_id);
+    }
+  }
+
+  if (rc != 0) {
+    srv_respond(r, "create failed");
+    return;
+  }
+
+  SophiaNode *node = malloc(sizeof(SophiaNode));
+  if (!node) {
+    srv_respond(r, "out of memory");
+    return;
+  }
+  memset(node, 0, sizeof(SophiaNode));
+  memmove(&node->cid, &child_id, 16);
+  memmove(&node->parent_cid, &parent->cid, 16);
+  int nlen = strlen(name);
+  if (nlen > 127)
+    nlen = 127;
+  memmove(node->name, name, nlen);
+  node->name[nlen] = '\0';
+  node->mode = perm;
+  node->rec = art_search(&node->cid);
+
+  r->fid->aux = node;
+  r->fid->qid.type = (perm & DMDIR) ? QTDIR : QTFILE;
+  r->fid->qid.path = (u64int)node->rec; /* Temporary path */
+  r->fid->qid.vers = 0;
+
+  r->ofcall.qid = r->fid->qid;
+  srv_respond(r, nil);
+}
+
 static void sophia_read(Req *r) {
   SophiaNode *node = r->fid->aux;
+  extern long sart_read(UUIDv8 * id, void *buf, u64int len);
+
   if (node->mode & DMDIR) {
     srv_respond(r, "directory read not implemented");
     return;
   }
-  srv_respond(r, "file read not implemented");
+
+  long n = sart_read(&node->cid, r->ofcall.data, r->ifcall.count);
+  if (n < 0) {
+    srv_respond(r, "read failed");
+    return;
+  }
+
+  r->ofcall.count = n;
+  srv_respond(r, nil);
+}
+
+static void sophia_write(Req *r) {
+  SophiaNode *node = r->fid->aux;
+  if (node->mode & DMDIR) {
+    srv_respond(r, "cannot write to directory");
+    return;
+  }
+
+  UUIDv8 new_cid;
+  int rc = sart_write_immutable(r->ifcall.data, r->ifcall.count, node->mode,
+                                &new_cid);
+  if (rc != 0) {
+    srv_respond(r, "write failed");
+    return;
+  }
+
+  rc = sart_add_edge(&node->parent_cid, node->name, &new_cid);
+  if (rc != 0) {
+    srv_respond(r, "namespace update failed");
+    return;
+  }
+
+  memmove(&node->cid, &new_cid, 16);
+  node->rec = art_search(&node->cid);
+
+  r->ofcall.count = r->ifcall.count;
+  srv_respond(r, nil);
 }
 
 static void sophia_stat(Req *r) {
   SophiaNode *node = r->fid->aux;
+  extern uint convD2M(Dir * d, uchar * buf, uint nbuf);
+  extern uint sizeD2M(Dir * d);
+
   Dir d;
   memset(&d, 0, sizeof(Dir));
 
   d.qid.type = (node->mode & DMDIR) ? QTDIR : QTFILE;
-  d.qid.path = 0;
+  d.qid.path = *(u64int *)node->cid.data;
   d.mode = node->mode;
   d.length = node->rec ? node->rec->size : 0;
-  d.name = "";
+  d.atime = node->rec ? node->rec->atime : 0;
+  d.mtime = node->rec ? node->rec->mtime : 0;
+  d.name = node->name;
+  d.uid = "root";
+  d.gid = "root";
+  d.muid = "root";
 
-  r->ofcall.stat = nil; /* TODO: implement stat serialization */
+  uint sz = sizeD2M(&d);
+  r->ofcall.stat = malloc(sz);
+  if (r->ofcall.stat) {
+    r->ofcall.nstat = convD2M(&d, (uchar *)r->ofcall.stat, sz);
+  }
+
   srv_respond(r, nil);
 }
 
@@ -177,6 +286,8 @@ int main(int argc, char **argv) {
       .attach = sophia_attach,
       .walk = sophia_walk,
       .read = sophia_read,
+      .write = sophia_write,
+      .create = sophia_create,
       .stat = sophia_stat,
   };
 

@@ -12,6 +12,7 @@
 
 #ifndef SART_DAT_H
 #define SART_DAT_H
+#define DMDIR 0x80000000
 
 /*
  * Plan 9 / Lux9 Type Compatibility Layer
