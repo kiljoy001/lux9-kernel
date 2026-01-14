@@ -36,6 +36,12 @@ static int pebble_initialized;
 
 static void pebble_free_red(PebbleRed *);
 
+/*@
+  @ requires \valid(ps);
+  @ requires cap != \null && \valid_read(cap);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static PebbleBlack *
 pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap) {
   PebbleBlack *pb;
@@ -47,6 +53,11 @@ pebble_lookup_black_by_cap_locked(PebbleState *ps, const UserCapability *cap) {
   return nil;
 }
 
+/*@
+  @ requires \valid(ps);
+  @ terminates \true;
+  @ assigns *ps;
+  @*/
 static void pebble_reset_state(PebbleState *ps) {
   memset(ps, 0, sizeof(*ps));
   ps->colorless_bank = 0; /* Processes start with 0 tokens */
@@ -58,6 +69,11 @@ static void pebble_reset_state(PebbleState *ps) {
 // Boot-time state for use before proc0
 static PebbleState boot_pstate;
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result != \null;
+  @*/
 PebbleState *pebble_state(void) {
   if (up == nil)
     return &boot_pstate;
@@ -67,6 +83,11 @@ PebbleState *pebble_state(void) {
 /*
  * Calculate total system RAM from conf.mem[] entries
  */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @*/
 static ulong pebble_calculate_system_ram(void) {
   ulong total = 0;
   int i;
@@ -77,6 +98,11 @@ static ulong pebble_calculate_system_ram(void) {
   return total;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns pebble_initialized, pebble_total_system_tokens,
+  pebble_global_colorless_bank, boot_pstate;
+  @*/
 void pebbleinit(void) {
   ulong total_ram;
   ulong boot_tokens, init_tokens;
@@ -112,6 +138,10 @@ void pebbleinit(void) {
   pebble_initialized = 1;
 }
 
+/*@
+  @ requires p != \null ==> \valid(p);
+  @ terminates \true;
+  @*/
 void pebbleprocinit(Proc *p) {
   if (p == nil)
     return;
@@ -126,6 +156,11 @@ void pebbleprocinit(Proc *p) {
   }
 }
 
+/*@
+  @ requires \valid(ps);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static PebbleBlack *pebble_lookup_black_locked(PebbleState *ps, void *handle) {
   PebbleBlack *pb;
   /* Strip wave bits (Holographic View) */
@@ -137,7 +172,11 @@ static PebbleBlack *pebble_lookup_black_locked(PebbleState *ps, void *handle) {
   return nil;
 }
 
-PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
+/*@
+  @ requires ps != \null ==> \valid(ps);
+  @ terminates \true;
+  @*/
+PebbleBlack *pebble_lookup_black(Pebble State *ps, void *handle) {
   PebbleBlack *pb;
 
   if (ps == nil || handle == nil)

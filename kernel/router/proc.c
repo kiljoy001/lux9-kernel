@@ -1,8 +1,3 @@
-/*
- * ACSL verification disabled for this file due to preprocessing issues
- * that cause Frama-C WP to generate invalid infinite range errors.
- */
-
 #include "../include/proc_packet.h"
 #include "router.h"
 
@@ -18,13 +13,13 @@
 #define PROC_NS 4
 #define PROC_SEGMENT 5
 
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
-  /*@
-    @ requires \valid(caller);
-    @ requires \valid(t);
-    @ requires \valid(r);
-    @ ensures \result == 0 || \result == -1;
-    @*/
   Proc *target = caller; /* Default to self */
   int type = 0;
 
@@ -56,13 +51,13 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   }
 }
 
+/*@
+  @ requires \valid(p) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
-  /*@
-    @ requires \valid(p);
-    @ requires \valid(t);
-    @ requires \valid(r);
-    @ ensures \result == 0 || \result == -1;
-    @*/
   uchar *ep = t->sdata + t->scount;
   uchar *ptr = t->sdata;
 

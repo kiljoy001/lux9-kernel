@@ -8,9 +8,15 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 extern uint convM2S(uchar *, uint, Fcall *);
 extern uint convS2M(Fcall *, uchar *, uint);
 
-static void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
-                                P9Control *saved_ctl, u32int rep_head,
-                                u32int rep_tail, int ring_mode) {
+/*@
+  @ requires \valid(p) && p->p9page != \null;
+  @ requires \valid_read(reply + (0..reply_size-1));
+  @ requires \valid(saved_ctl);
+  @ terminates \true;
+  @*/
+void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
+                         P9Control *saved_ctl, u32int rep_head, u32int rep_tail,
+                         int ring_mode) {
   P9Control *ctl;
   uchar *msg_buf;
   uchar reply_copy[P9_MSG_SIZE];
@@ -51,7 +57,12 @@ static void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
   }
 }
 
-static void dump_bytes(const char *label, const uchar *buf, uint n) {
+static /*@
+  @ requires \valid_read(buf + (0..n-1));
+  @ terminates \true;
+  @*/
+    void
+    dump_bytes(const char *label, const uchar *buf, uint n) {
   uint i;
 
   if (buf == nil || n == 0)
@@ -68,6 +79,13 @@ static void dump_bytes(const char *label, const uchar *buf, uint n) {
  * Layout per slot: [req_size:4][rep_size:4][data...]
  * req_head/req_tail and rep_head/rep_tail are slot indices.
  */
+/*@
+  @ requires \valid(p) && p->p9page != \null;
+  @ requires \valid(ctl);
+  @ requires \valid(msg_buf + (0..P9_MSG_SIZE-1));
+  @ terminates \true;
+  @ assigns *ctl, msg_buf[0..P9_MSG_SIZE-1];
+  @*/
 static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
   u32int head = ctl->req_head;
   u32int tail = ctl->req_tail;
@@ -115,6 +133,11 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
   return 0;
 }
 
+/*@
+  @ requires \valid(p) && p->p9page != \null;
+  @ requires \valid((uchar *)p->p9page + (0..P9_PAGE_SIZE-1));
+  @ terminates \true;
+  @*/
 int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   /*@
     @ requires \valid(p);

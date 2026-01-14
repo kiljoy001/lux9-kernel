@@ -1,6 +1,12 @@
 #include "../wasm/wasm_runtime.h"
 #include "router.h"
 
+/*@
+  @ requires \valid(p) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
   /*@
     @ requires \valid(p);

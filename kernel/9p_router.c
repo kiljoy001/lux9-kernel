@@ -658,6 +658,14 @@ static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
 /*
  * Dispatch message to appropriate handler
  */
+/*@
+  @ requires \valid(p) && \valid(t) && \valid(r);
+  @ requires p->p9page != \null ==> \valid((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ terminates \true;
+  @ assigns *r;
+  @ ensures p->p9page != \null ==> r->data == (char *)p->p9page + P9_MSG_OFFSET;
+  @*/
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
   extern void uartputs(char *, int);
@@ -667,6 +675,12 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   snprint(buf, sizeof(buf), "CONSOLE: p9_dispatch: ENTRY type=%d tag=%d\n",
           t->type, t->tag);
   uartputs(buf, strlen(buf));
+
+  /* Initialize reply data buffer to exchange page message area.
+   * Handlers that generate read responses (Rread) will write to r->data. */
+  if (p->p9page != nil) {
+    r->data = (char *)p->p9page + P9_MSG_OFFSET;
+  }
 
   /* Hardening: All data pointers in Fcall must reside within the exchange page.
    * This prevents malicious or malformed messages from redirecting kernel
@@ -3021,6 +3035,10 @@ cleanup_ownership:
  * Spawn entry point - run as a kernel process (kproc)
  * Transitions to userspace by exec'ing the specified binary.
  */
+/*@
+  @ requires \valid((char*)arg);
+  @ terminates \false;
+  @*/
 static void kspawn_entry(void *arg) {
   char *path = (char *)arg;
   char *argv[2];
@@ -3064,6 +3082,10 @@ static void kspawn_entry(void *arg) {
 /*
  * Helper: Handle writes to /proc/self/ctl
  */
+/*@
+  @ requires \valid(p) && \valid_read(cmd + (0..len-1)) && len >= 0;
+  @ terminates \true;
+  @*/
 static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
   char buf[256];
   char *args[16];
@@ -3328,6 +3350,11 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
 #define PROC_NS 4
 #define PROC_SEGMENT 5
 
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   Proc *target = caller; /* Default to self */
   int type = 0;
@@ -3509,6 +3536,11 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Device path parsing helper
  */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result != \null && \valid_read(\result);
+  @*/
 static char *devname_from_path(char *path) {
   if (path == nil)
     return "cons";
@@ -3521,6 +3553,13 @@ static char *devname_from_path(char *path) {
  * Common Tattach handler with Pebble validation
  * Returns 0 on success, -1 on permission error
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ requires t->data != \null && t->count > 0 ==> \valid_read((uchar*)t->data +
+  (0..t->count-1));
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int handle_tattach_with_pebble(Proc *caller, Fcall *t, Fcall *r,
                                       int required_perms, uchar qid_path) {
   PebbleToken tok;
@@ -3668,6 +3707,11 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
 /*
  * Console device handler: /dev/cons
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int cons_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   r->tag = t->tag;
 
@@ -3731,6 +3775,11 @@ static int cons_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Null device handler: /dev/null
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int null_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   r->tag = t->tag;
 
@@ -3794,6 +3843,11 @@ static int null_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Zero device handler: /dev/zero
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int zero_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   static uchar zerobuf[8192];
   r->tag = t->tag;
@@ -3860,6 +3914,11 @@ static int zero_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Random device handler: /dev/random
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int random_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   static uchar randbuf[8192];
   r->tag = t->tag;
@@ -3980,6 +4039,11 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Time device handler: /dev/time
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int time_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   static char timebuf[64];
   int n;
@@ -4046,6 +4110,11 @@ static int time_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 /*
  * Sysname device handler: /dev/sysname
  */
+/*@
+  @ requires \valid(caller) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @*/
 static int sysname_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   static char namebuf[128];
   int n;
@@ -4271,6 +4340,10 @@ static SrvEntry srv_registry[SRV_MAX_ENTRIES];
 static Lock srv_lock;
 static int srv_initialized = 0;
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static int srv_visible_to(Proc *caller, SrvEntry *e) {
   if (e == nil || !e->active)
     return 0;
@@ -4282,6 +4355,10 @@ static int srv_visible_to(Proc *caller, SrvEntry *e) {
   return 1;
 }
 
+/*@
+  @ assigns srv_registry[0..SRV_MAX_ENTRIES-1], srv_initialized;
+  @ terminates \true;
+  @*/
 void srv_init(void) {
   if (srv_initialized)
     return;
@@ -4290,6 +4367,11 @@ void srv_init(void) {
 }
 
 /* Find entry by name */
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static SrvEntry *srv_find(char *name) {
   int i;
   for (i = 0; i < SRV_MAX_ENTRIES; i++) {
@@ -4300,6 +4382,10 @@ static SrvEntry *srv_find(char *name) {
 }
 
 /* Find free slot */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static SrvEntry *srv_alloc(void) {
   int i;
   for (i = 0; i < SRV_MAX_ENTRIES; i++) {
@@ -4309,6 +4395,10 @@ static SrvEntry *srv_alloc(void) {
   return nil;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_create_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 
@@ -4337,6 +4427,10 @@ int srv_create_entry(Proc *caller, const char *name) {
   return 0;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_post_fd(Proc *caller, const char *name, int fd) {
   SrvEntry *e;
   Chan *c;
@@ -4383,6 +4477,10 @@ int srv_post_fd(Proc *caller, const char *name, int fd) {
   return 0;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 Chan *srv_clone_chan(const char *name) {
   Chan *c = nil;
   SrvEntry *e;
@@ -4399,6 +4497,10 @@ Chan *srv_clone_chan(const char *name) {
   return c;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_remove_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 

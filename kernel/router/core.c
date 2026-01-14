@@ -1,5 +1,11 @@
 #include "router.h"
 
+/*@
+  @ requires \valid_read(p + (0..3)) && p <= ep;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == p || \result == p + 4;
+  @*/
 uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
   if (p + 4 <= ep) {
     u32int argc = GBIT32(p);
@@ -9,6 +15,17 @@ uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
   return p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @ ensures p != \null && p->p9page != \null ==>
+  @   (\result == 1 <==>
+  @     (uintptr)ptr >= (uintptr)p->p9page + P9_REQUEST_OFFSET &&
+  @     (uintptr)ptr + len <= (uintptr)p->p9page + P9_REQUEST_OFFSET +
+  P9_REQUEST_SIZE);
+  @*/
 int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
   if (!p || !p->p9page || !ptr || len == 0)
     return 0;
@@ -22,13 +39,13 @@ int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
   return 1;
 }
 
+/*@
+  @ requires \valid(p) && \valid(t) && \valid(r);
+  @ terminates \true;
+  @ assigns *r;
+  @ ensures \result == 0 || \result == -1;
+  @*/
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
-  /*@
-    @ requires \valid(p);
-    @ requires \valid(t);
-    @ requires \valid(r);
-    @ ensures \result == 0 || \result == -1;
-    @*/
   if (p->wasm.initialized) {
     if (t->data && t->count > 0 &&
         !p9_exchange_contains(p, t->data, t->count)) {

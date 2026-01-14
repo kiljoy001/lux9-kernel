@@ -18,6 +18,10 @@ static SrvEntry srv_registry[SRV_MAX_ENTRIES];
 static Lock srv_lock;
 static int srv_initialized = 0;
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static int srv_visible_to(Proc *caller, SrvEntry *e) {
   if (e == nil || !e->active)
     return 0;
@@ -29,6 +33,10 @@ static int srv_visible_to(Proc *caller, SrvEntry *e) {
   return 1;
 }
 
+/*@
+  @ assigns srv_registry[0..SRV_MAX_ENTRIES-1], srv_initialized;
+  @ terminates \true;
+  @*/
 void srv_init(void) {
   if (srv_initialized)
     return;
@@ -37,6 +45,11 @@ void srv_init(void) {
 }
 
 /* Find entry by name */
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static SrvEntry *srv_find(char *name) {
   int i;
   for (i = 0; i < SRV_MAX_ENTRIES; i++) {
@@ -47,6 +60,10 @@ static SrvEntry *srv_find(char *name) {
 }
 
 /* Find free slot */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static SrvEntry *srv_alloc(void) {
   int i;
   for (i = 0; i < SRV_MAX_ENTRIES; i++) {
@@ -56,6 +73,10 @@ static SrvEntry *srv_alloc(void) {
   return nil;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_create_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 
@@ -84,6 +105,10 @@ int srv_create_entry(Proc *caller, const char *name) {
   return 0;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_post_fd(Proc *caller, const char *name, int fd) {
   SrvEntry *e;
   Chan *c;
@@ -130,6 +155,10 @@ int srv_post_fd(Proc *caller, const char *name, int fd) {
   return 0;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 Chan *srv_clone_chan(const char *name) {
   Chan *c = nil;
   SrvEntry *e;
@@ -146,6 +175,10 @@ Chan *srv_clone_chan(const char *name) {
   return c;
 }
 
+/*@
+  @ requires name != \null && \valid_read(name);
+  @ terminates \true;
+  @*/
 int srv_remove_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 
@@ -172,6 +205,10 @@ int srv_remove_entry(Proc *caller, const char *name) {
   return 0;
 }
 
+/*@
+  @ requires \valid(name + (0..namelen-1));
+  @ terminates \true;
+  @*/
 int srv_get_by_index(int index, char *name, int namelen) {
   int i;
   int seen = 0;

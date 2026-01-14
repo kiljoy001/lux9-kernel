@@ -20,6 +20,7 @@ void free(void *ptr) { pebble_free(ptr); }
 extern void *memset(void *s, int c, ulong n);
 extern void *memmove(void *dest, const void *src, ulong n);
 extern ulong strlen(const char *s);
+extern long sys_write(int fd, void *buf, long n);
 
 /* Sartfs Externs */
 extern int sart_init(int disk_fd, int journal_fd, u64int total_blocks);
@@ -88,8 +89,10 @@ static SophiaNode *edge_lookup(SophiaNode *parent, char *name) {
 /* Bootstrap the FS with persistent Sartfs backend */
 static void sophia_bootstrap(void) {
   /* disk_fd = 3, journal_fd = 4 assigned by init */
-  if (sart_init(3, 4, 1024) != SART_OK) {
-    /* TODO: handle init failure */
+  int rc = sart_init(3, 4, 1024);
+  if (rc != SART_OK) {
+    char err[] = "Sophia: sart_init failed, continuing anyway\n";
+    sys_write(2, err, sizeof(err) - 1);
   }
 
   /* Root Node bootstrap */
@@ -280,6 +283,10 @@ static void sophia_stat(Req *r) {
 }
 
 int main(int argc, char **argv) {
+  /* Debug: Print startup message */
+  char msg[] = "Sophia: starting up\n";
+  sys_write(2, msg, sizeof(msg) - 1);
+
   sophia_bootstrap();
 
   Srv s = {
@@ -293,6 +300,9 @@ int main(int argc, char **argv) {
 
   srv_init(&s);
 
+  char srv_msg[] = "Sophia: entering srv_loop\n";
+  sys_write(2, srv_msg, sizeof(srv_msg) - 1);
+
   if (argc > 1) {
     int fd = 0;
     char *p = argv[1];
@@ -302,6 +312,7 @@ int main(int argc, char **argv) {
     }
     srv_loop(&s, fd, fd);
   } else {
+    /* Default: use stdin/stdout for testing */
     srv_loop(&s, 0, 1);
   }
   return 0;
