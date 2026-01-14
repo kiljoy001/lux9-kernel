@@ -1,3 +1,4 @@
+#ifndef __FRAMAC__
 #include "acsl_bounds.h"
 #include "fmtdef.h"
 #include <libc.h>
@@ -92,3 +93,8 @@ char *vsmprint(char *fmt, va_list args) {
   *(char *)f.to = '\0';
   return f.start;
 }
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy_vsmprint_c(void) {}
+#endif
