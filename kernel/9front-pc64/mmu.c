@@ -1211,7 +1211,9 @@ void mmuswitch(Proc *proc) {
   }
 
   /* Process all PML4E entries in the linked list */
-  for (p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next) {
+  for (p = proc->mmuhead; p != nil; p = p->next) {
+    if (p->level != PML4E)
+      continue;
     m->mmumap[p->index / MAPBITS] |= 1ull << (p->index % MAPBITS);
     m->pml4[p->index] = PADDR(p->page) | PTEUSER | PTEWRITE | PTEVALID;
   }

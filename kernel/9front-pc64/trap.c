@@ -194,7 +194,7 @@ void trap(Ureg *ureg) {
 
   /* DEBUG: Show first few traps during boot */
   trap_count++;
-  if ((trap_count <= 50 || vno < 32 || trap_count % 100 == 0) && boot_verbose) {
+  if ((trap_count <= 256 || vno < 32 || trap_count % 100 == 0)) {
     uintptr pc = ureg->pc;
     print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
           ureg->sp, userureg(ureg));

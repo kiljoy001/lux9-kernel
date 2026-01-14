@@ -26,15 +26,15 @@ typedef unsigned int Rune;
  * mem routines
  */
 extern void *memccpy(void *, const void *, int, usize);
-/*@ assigns \result \from s;
+/*@ terminates \true;
+  @ assigns \result \from s;
   @ ensures \result == s;
-  @ terminates \true;
   */
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(const void *, const void *, usize);
-/*@ assigns \result \from dst;
+/*@ terminates \true;
+  @ assigns \result \from dst;
   @ ensures \result == dst;
-  @ terminates \true;
   */
 extern void *memmove(void *dst, const void *src, usize n);
 extern void *memchr(const void *, int, usize);
@@ -47,8 +47,8 @@ extern char *strchr(char *, int);
 extern char *strrchr(char *, int);
 /*@ requires s1 == \null || \valid(s1);
   @ requires s2 == \null || \valid(s2);
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 extern int strcmp(char *s1, char *s2);
 extern char *strcpy(char *, char *);
@@ -57,9 +57,9 @@ extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
 /*@ requires s == \null || \valid(s);
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= 0;
-  @ terminates \true;
   */
 extern long strlen(char *s);
 extern char *strstr(char *, char *);
@@ -68,6 +68,7 @@ extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
+#ifndef _LIBC_H_
 #ifndef __FRAMAC__
 enum {
   UTFmax = 4,         /* maximum bytes per rune */
@@ -76,6 +77,7 @@ enum {
   Runeerror = 0xFFFD, /* decoding error in UTF */
   Runemax = 0x10FFFF, /* 21 bit rune */
 };
+#endif
 #endif
 
 /*
@@ -102,8 +104,9 @@ extern int abs(int);
 /*
  * print routines
  */
+#ifndef _FMT_TYPEDEF_
+#define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
-typedef int (*Fmts)(Fmt *);
 struct Fmt {
   uchar runes;         /* output buffer is runes or chars? */
   void *start;         /* of buffer */
@@ -118,6 +121,8 @@ struct Fmt {
   int prec;
   ulong flags;
 };
+#endif
+typedef int (*Fmts)(Fmt *);
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
@@ -125,6 +130,7 @@ extern int snprint(char *, int, char *, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos print 1
 #pragma varargck argpos seprint 3
@@ -168,6 +174,7 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "p" uintptr
 #pragma varargck type "p" void *
 #pragma varargck flag ','
+#endif /* __FRAMAC__ */
 
 extern int fmtstrinit(Fmt *);
 extern int fmtinstall(int, int (*)(Fmt *));
@@ -246,13 +253,17 @@ typedef struct Waitmsg Waitmsg;
 #define DMWRITE 0x2         /* mode bit for write permission */
 #define DMEXEC 0x1          /* mode bit for execute permission */
 
-#ifndef __FRAMAC__
+#ifndef _QID_TYPEDEF_
+#define _QID_TYPEDEF_
 struct Qid {
   uvlong path;
   ulong vers;
   uchar type;
 };
+#endif
 
+#ifndef _DIR_TYPEDEF_
+#define _DIR_TYPEDEF_
 struct Dir {
   /* system-modified data */
   ushort type; /* server type */
@@ -268,6 +279,7 @@ struct Dir {
   char *gid;    /* group name */
   char *muid;   /* last modifier name */
 };
+#endif
 
 struct OWaitmsg {
   char pid[12];      /* of loved one */
@@ -275,6 +287,8 @@ struct OWaitmsg {
   char msg[64];      /* compatibility BUG */
 };
 
+#ifndef _WAITMSG_TYPEDEF_
+#define _WAITMSG_TYPEDEF_
 struct Waitmsg {
   int pid;          /* of loved one */
   ulong time[3];    /* of loved one and descendants */

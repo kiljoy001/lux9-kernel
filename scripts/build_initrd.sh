@@ -18,7 +18,7 @@ fi
 
 # Get latest verified init from database
 echo "Fetching latest init from manifest database..."
-INIT_BINARY=$("$INIT_DB" latest)
+INIT_BINARY=$("$INIT_DB" latest init)
 
 if [ -z "$INIT_BINARY" ]; then
     echo "ERROR: No init binary registered in database" >&2

@@ -1,11 +1,18 @@
 #include "lux_internal.h"
 #include <stdarg.h>
-#include <string.h> // For memmove and memset
+
+/* Use custom string functions from string.c, NOT glibc */
+extern void *memmove(void *dst, const void *src, ulong n);
+extern void *memset(void *dst, int c, ulong n);
+extern ulong strlen(const char *s);
 
 /* Helper function declarations (must be after lux_internal.h for types) */
 extern uint convS2M(struct Fcall *f, uchar *ap, uint n);
 extern uint convM2S(uchar *ap, uint n, struct Fcall *f);
+extern uint convM2S(uchar *ap, uint n, struct Fcall *f);
 extern int vsnprint(char *buf, int len, const char *fmt, va_list args);
+extern void *malloc(unsigned long);
+extern void free(void *);
 
 /* Packing Helpers */
 static void pack8(uchar *p, int v) { p[0] = v; }
@@ -344,11 +351,14 @@ int sys_getpid2(void *out, ulong len) {
   return do_syscall(SYS_GETPID2, buf, p - buf, nil);
 }
 
-void sys_exec(char *path, char *argv[]) {
+/* Global to preserve error details across sys_exec call */
+static Fcall sys_exec_rx_global;
+
+int sys_exec(char *path, char *argv[]) {
   /* Use Tsysexec (162) which is cleaner and verified in kernel */
-  Fcall tx, rx;
+  Fcall tx;
   memset(&tx, 0, sizeof(Fcall));
-  memset(&rx, 0, sizeof(Fcall));
+  memset(&sys_exec_rx_global, 0, sizeof(Fcall));
   tx.type = Tsysexec;
   tx.tag = 1;
   tx.path = path;
@@ -363,8 +373,23 @@ void sys_exec(char *path, char *argv[]) {
   }
   tx.argc = argc;
 
-  int ret = lux_call(&tx, &rx);
-  /* If we return, exec failed */
+  int ret = lux_call(&tx, &sys_exec_rx_global);
+  /* If we return, exec failed - return error code */
+  return ret;
+}
+
+/* Get the last exec error message (if any) - safe for NULL pointers */
+char *sys_exec_error(void) {
+  /* Check if we have a valid Rerror with an error name */
+  if (sys_exec_rx_global.type == Rerror) {
+    /* The ename might be in the exchange page, which could be invalid
+     * Check if ename is a reasonable kernel or user address before using */
+    if (sys_exec_rx_global.ename != nil &&
+        (uintptr)sys_exec_rx_global.ename != 0) {
+      return sys_exec_rx_global.ename;
+    }
+  }
+  return "(no error message available)";
 }
 
 int sys_pipe(int *fds) {

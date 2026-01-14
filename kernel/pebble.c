@@ -570,6 +570,10 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
    */
   white->token = 0;
 
+  /* Account for the transition: WHITE -> BLACK */
+  /* white_pending was already updated in white_verify */
+  pebble_state()->black_inuse += size;
+
   unlock(&pebble_global_lock);
 
   return 0;
@@ -813,7 +817,7 @@ int pebble_white_verify(PebbleWhite *white_cap, void **black_cap) {
 
   ret = white_cap->data_ptr;
   if (white_cap->size != 0)
-    ps->white_pending += white_cap->size;
+    ps->white_pending -= white_cap->size;
   ps->white_verified++;
 
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
@@ -1239,14 +1243,13 @@ void pebble_cleanup(Proc *p) {
   lock(&pebble_global_lock);
 
   /* Calculate total tokens to return to global pool:
-   * - Unused colorless_bank tokens
-   * - black_inuse tokens (from allocations being freed)
-   * - blue_inuse and red_inuse tokens
+   * - Unused colorless_bank tokens (stored in tokens)
+   * - black_inuse tokens (from allocations being freed, stored in bytes)
+   * - blue_inuse and red_inuse tokens (stored in bytes)
    */
-  return_tokens = ps->colorless_bank +
-                  (ps->black_inuse / PEBBLE_BYTES_PER_TOKEN) +
-                  (ps->blue_inuse / PEBBLE_BYTES_PER_TOKEN) +
-                  (ps->red_inuse / PEBBLE_BYTES_PER_TOKEN);
+  return_tokens =
+      ps->colorless_bank + ((ps->black_inuse + ps->blue_inuse + ps->red_inuse) /
+                            PEBBLE_BYTES_PER_TOKEN);
 
   /* Return tokens to global pool */
   lock(&pebble_bank_lock);

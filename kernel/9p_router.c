@@ -1,4 +1,3 @@
-#ifndef __FRAMAC__
 /*
  * Lux9 9P Router Implementation
  *
@@ -6,9 +5,11 @@
  */
 
 #include "error.h"
+#include "errstr.h" /* For Eisdir and other error string definitions */
 #include "portlib.h"
 #include "u.h"
 #include "ureg.h"
+#include <lib.h>
 
 /* Manual typedefs (portlib.h gives structs but not always typedefs used by
  * kernel) */
@@ -58,6 +59,11 @@ static uchar *tsyscall_skip_argc(uchar *p, uchar *ep, u32int expected) {
   return p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
   if (!p || !p->p9page || !ptr || len == 0)
     return 0;
@@ -117,6 +123,13 @@ int p9_alloc_page(Proc *p) {
   return 0;
 }
 
+/*@
+  @ requires \valid(p);
+  @ requires p->p9page == \null || \valid_read((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ assigns p->p9page;
+  @ ensures p->p9page == \null;
+  @*/
 void p9_free_page(Proc *p) {
   if (p->p9page) {
     xfree(p->p9page);
@@ -185,6 +198,21 @@ static void store_session_pebble(Proc *p, PebbleToken *tok) {
   PBIT64(ctl->session_pebble + 25, tok->expires);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires p == \null || p->p9page == \null || \valid((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ requires reply == \null || \valid_read(reply + (0..reply_size-1));
+  @ requires saved_ctl == \null || \valid_read(saved_ctl);
+  @ requires reply_size <= P9_MSG_SIZE;
+  @ assigns *(uchar *)p->p9page, *((uchar *)p->p9page + (0..P9_PAGE_SIZE-1));
+  @ behavior null_page:
+  @   assumes p == \null || p->p9page == \null;
+  @   assigns \nothing;
+  @ behavior scrub_and_write:
+  @   assumes p != \null && p->p9page != \null;
+  @   assigns *((uchar *)p->p9page + (0..P9_PAGE_SIZE-1));
+  @*/
 static void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
                                 P9Control *saved_ctl, u32int rep_head,
                                 u32int rep_tail, int ring_mode) {
@@ -418,6 +446,107 @@ static int get_fid_subtype(int fid) {
 
 static void remove_fid(int fid) { fdclose(fid, 0); }
 
+/*@
+  @ requires \valid(p) && \valid(t) && \valid(r);
+  @ requires \valid_read(t->data + (0..t->count-1));
+  @ assigns *r, *p;
+  @*/
+static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
+  char *path;
+  uint pathlen;
+  uintptr kpage, kpath, path_offset, upath;
+
+  /* Extract path from Texec message data
+   * Format: [2] pathlen + [n] path bytes */
+  if (t->count < 2) {
+    r->type = Rerror;
+    r->ename = "Texec: invalid message format";
+    return -1;
+  }
+
+  pathlen = (uint)t->data[0] | ((uint)t->data[1] << 8);
+  if (pathlen == 0 || pathlen > t->count - 2) {
+    r->type = Rerror;
+    r->ename = "Texec: invalid path length";
+    return -1;
+  }
+
+  /* Allocate and copy path string for kernel logging/debugging */
+  path = xalloc(pathlen + 1);
+  if (path == nil) {
+    r->type = Rerror;
+    r->ename = "Texec: out of memory";
+    return -1;
+  }
+  memmove(path, t->data + 2, pathlen);
+  path[pathlen] = '\0';
+
+  print("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
+
+  /* Sysexec requires User Virtual Addresses for both path and argv.
+   * We must calculate the user address of the path existing in the
+   * exchange page, and construct a user-space argv array there as well. */
+
+  /* 1. Calculate User Address of the path string */
+  kpage = (uintptr)p->p9page;
+  kpath = (uintptr)t->data + 2;
+  path_offset = kpath - kpage;
+  upath = EXCHANGE_PAGE_ADDR + path_offset;
+
+  /* 2. Ensure null-termination in the user buffer
+   * We can safely write \0 because validaddr/namec expects it.
+   * Check bounds to ensure we don't write past valid page. */
+  if (path_offset + pathlen < P9_PAGE_SIZE) {
+    ((char *)kpath)[pathlen] = 0;
+  }
+
+  /* 3. Construct argv array in the Exchange Page
+   * We need space for 2 pointers: [upath, 0]
+   * Use the space immediately following the message payload */
+  uintptr kargv_start = (uintptr)t->data + t->count;
+  kargv_start = (kargv_start + 7) & ~7ULL; /* Align to 8 bytes */
+
+  /* Check if we have room in the request buffer */
+  if (kargv_start + 2 * sizeof(ulong) > kpage + P9_REQUEST_SIZE) {
+    xfree(path);
+    r->type = Rerror;
+    r->ename = "Texec: message too large, no room for argv";
+    return -1;
+  }
+
+  /* Write argv to the user page (via kernel mapping) */
+  ulong *argv_ptr = (ulong *)kargv_start;
+  argv_ptr[0] = (ulong)upath;
+  argv_ptr[1] = 0;
+
+  /* Calculate User Address of argv */
+  uintptr argv_offset = kargv_start - kpage;
+  uintptr uargv = EXCHANGE_PAGE_ADDR + argv_offset;
+
+  /* Prepare arguments for sysexec */
+  ulong args[2];
+  args[0] = (ulong)upath;
+  args[1] = (ulong)uargv;
+
+  /* Call sysexec - never returns on success */
+  if (waserror()) {
+    print("p9_dispatch: Texec failed: %s\n", up->errstr);
+    xfree(path);
+    r->type = Rerror;
+    r->ename = up->errstr;
+    return -1;
+  }
+
+  sysexec(args);
+  /* Not reached on success */
+  poperror();
+
+  xfree(path);
+  r->type = Rerror;
+  r->ename = "Texec: exec returned unexpectedly";
+  return -1;
+}
+
 /*
  * Dispatch message to appropriate handler
  */
@@ -431,125 +560,27 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
           t->type, t->tag);
   uartputs(buf, strlen(buf));
 
-  if (p->wasm.initialized) {
-    if (t->data && t->count > 0 &&
-        !p9_exchange_contains(p, t->data, t->count)) {
+  /* Hardening: All data pointers in Fcall must reside within the exchange page.
+   * This prevents malicious or malformed messages from redirecting kernel
+   * access to arbitrary memory. */
+  if (t->data && t->count > 0) {
+    if (!p9_exchange_contains(p, t->data, t->count)) {
       r->type = Rerror;
-      r->ename = "wasm data must use exchange page";
+      r->ename = "data must use exchange page";
       return -1;
     }
-    if (t->sdata && t->scount > 0 &&
-        !p9_exchange_contains(p, t->sdata, t->scount)) {
+  }
+  if (t->sdata && t->scount > 0) {
+    if (!p9_exchange_contains(p, t->sdata, t->scount)) {
       r->type = Rerror;
-      r->ename = "wasm sdata must use exchange page";
+      r->ename = "sdata must use exchange page";
       return -1;
     }
   }
 
-  /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
-    char *path;
-    char *argv[2];
-    ulong args[2];
-
-    /* Extract path from Texec message data */
-    /* Format: [2] pathlen + [n] path bytes */
-    if (t->count < 2) {
-      r->type = Rerror;
-      r->ename = "Texec: invalid message format";
-      return -1;
-    }
-
-    uint pathlen = (uint)t->data[0] | ((uint)t->data[1] << 8);
-    if (pathlen == 0 || pathlen > t->count - 2) {
-      r->type = Rerror;
-      r->ename = "Texec: invalid path length";
-      return -1;
-    }
-
-    /* Allocate and copy path string for kernel logging/debugging */
-    path = xalloc(pathlen + 1);
-    if (path == nil) {
-      r->type = Rerror;
-      r->ename = "Texec: out of memory";
-      return -1;
-    }
-    memmove(path, t->data + 2, pathlen);
-    path[pathlen] = '\0';
-
-    print("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
-
-    /*
-     * Sysexec requires User Virtual Addresses for both path and argv.
-     * We must calculate the user address of the path existing in the
-     * exchange page, and construct a user-space argv array there as well.
-     */
-
-    /* 1. Calculate User Address of the path string */
-    /* t->data points into p->p9page. The string starts at data+2 */
-    uintptr kpage = (uintptr)p->p9page;
-    uintptr kpath = (uintptr)t->data + 2;
-    uintptr path_offset = kpath - kpage;
-    uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
-
-    /* 2. Ensure null-termination in the user buffer */
-    /* We can safely write \0 because validaddr/namec expects it.
-     * Check bounds to ensure we don't write past valid page. */
-    if (path_offset + pathlen < P9_PAGE_SIZE) {
-      ((char *)kpath)[pathlen] = 0;
-    }
-
-    /* 3. Construct argv array in the Exchange Page */
-    /* We need space for 2 pointers: [upath, 0] */
-    /* Use the space immediately following the message payload */
-    uintptr kargv_start = (uintptr)t->data + t->count;
-
-    /* Align to 8 bytes */
-    kargv_start = (kargv_start + 7) & ~7ULL;
-
-    /* Check if we have room in the request buffer */
-    if (kargv_start + 2 * sizeof(ulong) > kpage + P9_REQUEST_SIZE) {
-      xfree(path);
-      r->type = Rerror;
-      r->ename = "Texec: message too large, no room for argv";
-      return -1;
-    }
-
-    /* Write argv to the user page (via kernel mapping) */
-    ulong *argv_ptr = (ulong *)kargv_start;
-    argv_ptr[0] = (ulong)upath;
-    argv_ptr[1] = 0;
-
-    /* Calculate User Address of argv */
-    uintptr argv_offset = kargv_start - kpage;
-    uintptr uargv = EXCHANGE_PAGE_ADDR + argv_offset;
-
-    /* Prepare arguments for sysexec */
-    /* args[0] = file (user char*) */
-    /* args[1] = argv (user char**) */
-    args[0] = (ulong)upath;
-    args[1] = (ulong)uargv;
-
-    /* Call sysexec - never returns on success */
-    if (waserror()) {
-      print("p9_dispatch: Texec failed: %s\n", up->errstr);
-      xfree(path);
-      r->type = Rerror;
-      r->ename = up->errstr;
-      return -1;
-    }
-
-    sysexec(args);
-    /* Not reached on success */
-    poperror();
-
-    /* If we get here, exec failed somehow */
-    xfree(path);
-    r->type = Rerror;
-    r->ename = "Texec: exec returned unexpectedly";
-    return -1;
+    return p9_handle_texec(p, t, r);
   }
-
   /* Handle Generic Tsyscall (130) */
   if (t->type == Tsyscall) {
     Proc *proc = p;
@@ -2674,6 +2705,18 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
  *
  * Called by: VectorSYSCALL handler (doorbell-only mode)
  */
+/*@
+  @ requires \valid(p);
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns *p;
+  @ ensures \result == -1 || \result == 0 || \result == 1;
+  @ behavior no_exchange_page:
+  @   assumes p->p9page == \null;
+  @   ensures \result == -1;
+  @ behavior has_exchange_page:
+  @   assumes p->p9page != \null;
+  @   ensures \result == -1 || \result == 0 || \result == 1;
+  @*/
 int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   /*@
     @ requires \valid(p);
@@ -3453,6 +3496,22 @@ static int handle_device_stat(Fcall *t, Fcall *r, char *name, uchar qid_path,
  * Layout per slot: [req_size:4][rep_size:4][data...]
  * req_head/req_tail and rep_head/rep_tail are slot indices.
  */
+/*@
+  @ requires \valid(p);
+  @ requires \valid(ctl);
+  @ requires \valid(msg_buf + (0..P9_MSG_SIZE-1));
+  @ assigns *p, *ctl, msg_buf[0..P9_MSG_SIZE-1];
+  @ ensures \result == 0 || \result == -1;
+  @ behavior invalid_ring:
+  @   assumes ctl->req_head >= P9_RING_SLOTS || ctl->req_tail >= P9_RING_SLOTS
+  ||
+  @           ctl->rep_head >= P9_RING_SLOTS || ctl->rep_tail >= P9_RING_SLOTS;
+  @   ensures \result == -1;
+  @ behavior valid_processing:
+  @   assumes ctl->req_head < P9_RING_SLOTS && ctl->req_tail < P9_RING_SLOTS &&
+  @           ctl->rep_head < P9_RING_SLOTS && ctl->rep_tail < P9_RING_SLOTS;
+  @   ensures \result == 0 || \result == -1;
+  @*/
 static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
   u32int head = ctl->req_head;
   u32int tail = ctl->req_tail;
@@ -4638,6 +4697,17 @@ extern RollbackRegistry *global_rollback_registry;
 /*
  * Callback wrapper that fires when MSGORD completes message ordering
  */
+/*@
+  @ requires msg == \null || \valid(msg);
+  @ requires arg == \null || \valid((AsyncP9Op *)arg);
+  @ assigns *((AsyncP9Op *)arg);
+  @ behavior null_arg:
+  @   assumes arg == \null;
+  @   assigns \nothing;
+  @ behavior valid_callback:
+  @   assumes arg != \null;
+  @   assigns ((AsyncP9Op *)arg)->status;
+  @*/
 static void p9_msgord_callback(OrdMsg *msg, int status, void *arg) {
   AsyncP9Op *op = (AsyncP9Op *)arg;
 
@@ -4661,6 +4731,25 @@ static void p9_msgord_callback(OrdMsg *msg, int status, void *arg) {
 /*
  * Submit 9P operation asynchronously through MSGORD
  */
+/*@
+  @ requires \valid(p);
+  @ requires \valid_read(t);
+  @ requires path == \null || \valid_read(path + (0..255));
+  @ assigns \nothing;
+  @ ensures \result == 0 || \result > 0;
+  @ behavior null_input:
+  @   assumes p == \null || t == \null;
+  @   ensures \result == 0;
+  @ behavior alloc_failed:
+  @   assumes p != \null && t != \null;
+  @   ensures \result == 0;
+  @ behavior immediate_exec:
+  @   assumes p != \null && t != \null;
+  @   ensures \result == 0;
+  @ behavior async_submitted:
+  @   assumes p != \null && t != \null;
+  @   ensures \result > 0;
+  @*/
 uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
                      void *arg) {
   AsyncP9Op *op;
@@ -4717,10 +4806,27 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
 /*
  * Handle doorbell asynchronously using consensus depth classification
  */
+/*@
+  @ requires \valid(p);
+  @ requires p->p9page == \null || \valid((uchar *)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ assigns *p;
+  @ ensures \result == -1 || \result == 0 || \result == 1;
+  @ behavior no_page:
+  @   assumes p == \null || p->p9page == \null;
+  @   ensures \result == -1;
+  @ behavior no_doorbell:
+  @   assumes p != \null && p->p9page != \null;
+  @   assumes ((P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET))->doorbell
+  == 0;
+  @   ensures \result == 0;
+  @ behavior has_doorbell:
+  @   assumes p != \null && p->p9page != \null;
+  @   assumes ((P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET))->doorbell
+  != 0;
+  @   ensures \result == 1 || \result == -1;
+  @*/
 int p9_handle_doorbell_async(Proc *p) {
-  /*@
-    @ requires \valid(p);
-    @*/
   P9Control *ctl;
   uchar *reqbuf;
   Fcall t, r;
@@ -4797,6 +4903,19 @@ int p9_handle_doorbell_async(Proc *p) {
 /*
  * Check if an async operation has completed
  */
+/*@
+  @ requires \valid(p);
+  @ requires reply_out == \null || \valid(reply_out);
+  @ assigns \nothing;
+  @ ensures \result == P9_ASYNC_ERROR || \result == P9_ASYNC_SUCCESS || \result
+  == P9_ASYNC_PENDING;
+  @ behavior invalid_id:
+  @   assumes op_id == 0;
+  @   ensures \result == P9_ASYNC_ERROR;
+  @ behavior completed:
+  @   assumes op_id != 0;
+  @   ensures \result == P9_ASYNC_SUCCESS || \result == P9_ASYNC_PENDING;
+  @*/
 int p9_check_async(Proc *p, uint op_id, Fcall *reply_out) {
   OrdMsg *msg;
 
@@ -5344,8 +5463,3 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     return -1;
   }
 }
-#endif
-
-#ifdef __FRAMAC__
-/*@ ensures \true; */ void framac_pass_dummy_9p_router_c(void) {}
-#endif

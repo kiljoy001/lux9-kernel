@@ -453,6 +453,36 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    case SYS_PEBBLE_INCREASE_BUDGET: {
+      extern int pebble_increase_budget(ulong, u64int);
+      /* Format: [size 8] [nonce 8] */
+      ptr = tsyscall_skip_argc(ptr, ep, 2);
+      if (ptr + 16 > ep) {
+        r->type = Rerror;
+        return -1;
+      }
+      ulong size = (ulong)GBIT64(ptr);
+      u64int nonce = GBIT64(ptr + 8);
+
+      print("router_proc: Tsyscall SYS_PEBBLE_INCREASE_BUDGET size=%lud "
+            "nonce=%llud\n",
+            size, nonce);
+
+      if (pebble_increase_budget(size, nonce) != 0) {
+        r->type = Rerror;
+        r->ename =
+            "pebble: budget increase failed (invalid PoW or out of tokens)";
+        return -1;
+      }
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
     default:
       r->type = Rerror;
       r->ename = "Proc syscall not found";

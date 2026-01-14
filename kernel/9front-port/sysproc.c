@@ -282,7 +282,7 @@ uintptr sysrfork(void *list_void) {
     ulong parent_budget = up->pebble.colorless_bank;
     ulong child_budget;
     ulong half_parent = parent_budget / 2;
-    ulong fixed_grant = 8 * 1024 * 1024; /* 8 MB */
+    ulong fixed_grant = 32 * 1024 * 1024; /* 32 MB */
 
     /* Choose the smaller of half-parent or fixed grant */
     child_budget = (half_parent < fixed_grant) ? half_parent : fixed_grant;
@@ -584,7 +584,11 @@ uintptr sysexec(void *list_void) {
     if (tc) {
       print("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
       if (tc->ref > 0) {
-        if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+        if (tc->ref > 0) {
+          cclose(tc);
+        } else {
+          print("sysexec: warning - tc ref count already zero\n");
+        }
       } else {
         print("sysexec: warning - tc ref count already zero\n");
       }
@@ -669,7 +673,11 @@ uintptr sysexec(void *list_void) {
             "CONSOLE: sysexec namec returned tc=%p\n", tc);
     uartputs(debug_buf, (int)strlen(debug_buf));
     if (waserror()) {
-      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      if (tc->ref > 0) {
+        cclose(tc);
+      } else {
+        print("sysexec: warning - tc ref count already zero\n");
+      }
       nexterror();
     }
     snprint(debug_buf, sizeof(debug_buf),
@@ -691,7 +699,11 @@ uintptr sysexec(void *list_void) {
       snprint(debug_buf, sizeof(debug_buf),
               "EXEC: attach/read failed for %s error=%s\n", file, up->errstr);
       uartputs(debug_buf, (int)strlen(debug_buf));
-      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      if (tc->ref > 0) {
+        cclose(tc);
+      } else {
+        print("sysexec: warning - tc ref count already zero\n");
+      }
       nexterror();
     }
 
@@ -724,14 +736,22 @@ uintptr sysexec(void *list_void) {
 
       /* Compile WASM module into current process */
       if (wasm_exec_compile(tc, &start_func) < 0) {
-        if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+        if (tc->ref > 0) {
+          cclose(tc);
+        } else {
+          print("sysexec: warning - tc ref count already zero\n");
+        }
         tc = nil;
         poperror(); /* tc error handler */
         error("WASM compile failed");
       }
 
       /* Close the file channel */
-      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      if (tc->ref > 0) {
+        cclose(tc);
+      } else {
+        print("sysexec: warning - tc ref count already zero\n");
+      }
       tc = nil;
       poperror(); /* tc error handler */
 
@@ -749,7 +769,11 @@ uintptr sysexec(void *list_void) {
     /* Check for .NET/CLR PE/COFF signature ("MZ") */
     if (n >= 2 && u.buf[0] == 'M' && u.buf[1] == 'Z') {
       /* CLR execution moved to userspace - use userspace runtime */
-      if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+      if (tc->ref > 0) {
+        cclose(tc);
+      } else {
+        print("sysexec: warning - tc ref count already zero\n");
+      }
       poperror();
       error("CLR execution moved to userspace - recompile for WASM or use "
             "userspace CLR");
@@ -933,7 +957,11 @@ uintptr sysexec(void *list_void) {
     file = progarg[0];
     progarg[0] = elem;
     poperror();
-    if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+    if (tc->ref > 0) {
+      cclose(tc);
+    } else {
+      print("sysexec: warning - tc ref count already zero\n");
+    }
   }
 
   if (is_elf) {
@@ -1200,7 +1228,11 @@ uintptr sysexec(void *list_void) {
     tc->flag &= (ushort)~CCACHE;
     cclunk(tc);
   }
-  if (tc->ref > 0) { cclose(tc); } else { print("sysexec: warning - tc ref count already zero\n"); }
+  if (tc->ref > 0) {
+    cclose(tc);
+  } else {
+    print("sysexec: warning - tc ref count already zero\n");
+  }
   poperror(); /* tc */
 
   free(file0);

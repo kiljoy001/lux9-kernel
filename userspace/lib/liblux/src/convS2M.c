@@ -1,6 +1,6 @@
 #include "../inc/lux.h"
 #include "../src/lux_internal.h" // For PBIT macros
-#include <stddef.h>             // For NULL if needed
+#include <stddef.h>              // For NULL if needed
 
 static uchar *pstring(uchar *p, char *s) {
   uint n;
@@ -198,6 +198,8 @@ uint sizeS2M(Fcall *f) {
   case Tsysexec:
     n += stringsz(f->path);
     n += BIT32SZ; /* argc */
+    for (i = 0; i < f->argc; i++)
+      n += stringsz(f->argv[i]);
     break;
 
   case Texec:
@@ -599,6 +601,8 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
     p = pstring(p, f->path);
     PBIT32(p, f->argc);
     p += BIT32SZ;
+    for (i = 0; i < f->argc; i++)
+      p = pstring(p, f->argv[i]);
     break;
 
   case Texec: {

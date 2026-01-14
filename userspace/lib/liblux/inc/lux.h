@@ -315,7 +315,8 @@ long sys_pread(int fd, void *buf, long n, long offset);
 void sys_exit(char *msg);
 int sys_create(char *path, int mode, uint perm);
 int sys_rfork(int flags);
-void sys_exec(char *path, char *argv[]);
+int sys_exec(char *path, char *argv[]);
+char *sys_exec_error(void);
 int sys_pipe(int *fds);
 long sys_seek(int fd, long offset, int whence);
 int sys_wait(void);
@@ -353,5 +354,6 @@ int pow_solve(u64int context, int difficulty, u64int *nonce_out);
 /* Pebble */
 int pebble_alloc(ulong size, void **addr);
 int pebble_free(void *addr);
+int pebble_increase_budget(ulong size, u64int nonce);
 
 #endif

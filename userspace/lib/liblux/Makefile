@@ -15,6 +15,7 @@ SRC = src/syscalls.c \
       src/convS2M.c \
       src/server9p.c \
       src/printf.c \
+      src/convD2M.c \
       src/wasm_fileserver.c
 
 # Object files

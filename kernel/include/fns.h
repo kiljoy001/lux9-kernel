@@ -87,8 +87,7 @@ void devdir(Chan *c, Qid qid, char *name, vlong length, char *user, long perm,
   @ assigns \nothing;
   @ terminates \true;
   */
-long devdirread(Chan *c, char *va, long n, Dirtab *tab, int ntab,
-                Devgen *gen);
+long devdirread(Chan *c, char *va, long n, Dirtab *tab, int ntab, Devgen *gen);
 Devgen devgen;
 void devinit(void);
 int devno(int, int);
@@ -134,12 +133,18 @@ void envcpy(Egrp *, Egrp *);
 int eqchan(Chan *, Chan *, int);
 int eqchantdqid(Chan *, int, int, Qid, int);
 int eqqid(Qid, Qid);
+#ifdef __FRAMAC__
+/* Frama-C compatible version without attributes */
+void lux9_error(char *e);
+#define error(e) lux9_error(e)
+#else
 /*@ requires e == \null || \valid(e);
   @ assigns \nothing;
   @ ensures \false;
   @ terminates \true;
   */
 _Noreturn void error(char *e);
+#endif
 void eqlock(QLock *);
 uintptr execregs(uintptr, ulong, ulong);
 void exhausted(char *);
@@ -234,7 +239,8 @@ void machinit(void);
   @ behavior nonzero:
   @   assumes size > 0;
   @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
   @ complete behaviors;
   @ disjoint behaviors;
   @ terminates \true;
@@ -247,7 +253,8 @@ void *mallocz(ulong size, int clr);
   @ behavior nonzero:
   @   assumes size > 0;
   @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
   @ complete behaviors;
   @ disjoint behaviors;
   @ terminates \true;
@@ -260,7 +267,8 @@ void *malloc(ulong size);
   @ behavior nonzero:
   @   assumes size > 0;
   @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
   @ complete behaviors;
   @ disjoint behaviors;
   @ terminates \true;
@@ -666,18 +674,23 @@ void outs(int port, ushort value); /* Output to I/O port */
 /* Memory and page ownership functions */
 uintptr cankaddr(uintptr); /* Check if address in kernel address space - matches
                               arch signature */
+#ifdef __FRAMAC__
+int pageown_acquire(Proc *, uintptr, u64int); /* Acquire page ownership */
+int pageown_release(Proc *, uintptr);         /* Release page ownership */
+#else
 enum PageOwnError pageown_acquire(Proc *, uintptr,
                                   u64int);          /* Acquire page ownership */
 enum PageOwnError pageown_release(Proc *, uintptr); /* Release page ownership */
+#endif
 void pageown_cleanup_process(Proc *); /* Clean up page ownership for process */
 
 /* Architecture-specific process functions - declarations handled in
  * arch-specific fns.h */
-void procsave(Proc *);         /* Save process state */
-void procrestore(Proc *);      /* Restore process state */
-void procsetup(Proc *);        /* Setup process state */
-void procfork(Proc *);         /* Fork process state */
-int proc_setup_p9page(Proc *); /* Setup 9P exchange page (deprecated) */
+void procsave(Proc *);             /* Save process state */
+void procrestore(Proc *);          /* Restore process state */
+void procsetup(Proc *);            /* Setup process state */
+void procfork(Proc *);             /* Fork process state */
+int proc_setup_p9page(Proc *);     /* Setup 9P exchange page (deprecated) */
 int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */
 void *kernel_setup_init_exchange(
     Proc *); /* Kernel boot: setup #X exchange channel for init */
@@ -714,7 +727,7 @@ vlong kseek(int, vlong, int);
 /* WASM runtime functions */
 void wasm_runtime_init(void);
 void wasm_arena_test(void);
-struct Chan; /* Forward declaration */
+struct Chan;       /* Forward declaration */
 struct M3Function; /* Forward declaration for WASM3 */
 int wasm_exec_compile(struct Chan *, struct M3Function **);
 void wasm_exec_run(struct M3Function *);

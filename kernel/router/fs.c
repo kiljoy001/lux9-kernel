@@ -15,117 +15,6 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
   /* Handle Generic Tsyscall (130) */
   if (t->type == Tsyscall) {
     switch (t->scallnr) {
-    case SYS_OPEN: {
-      extern int newfd(Chan *, int);
-      extern int openmode(ulong);
-      /* Format: [path s] [mode 1] */
-      ptr = tsyscall_skip_argc(ptr, ep, 2);
-      if (ptr + 2 > ep) {
-        r->type = Rerror;
-        r->ename = "short msg";
-        return -1;
-      }
-      int len = GBIT16(ptr);
-      ptr += 2;
-      if (ptr + len + 1 > ep) {
-        r->type = Rerror;
-        r->ename = "short msg";
-        return -1;
-      }
-
-      char *path = smalloc(len + 1);
-      memmove(path, ptr, len);
-      path[len] = 0;
-      ptr += len;
-
-      int mode = GBIT8(ptr);
-      ptr += 1;
-
-      print("router_fs: SYS_OPEN ptr '%s' mode=%d\n", path, mode);
-
-      int fd;
-      Chan *c = 0;
-      if (waserror()) {
-        if (c)
-          cclose(c);
-        free(path);
-        r->type = Rerror;
-        r->ename = up->errstr;
-        return -1;
-      }
-      openmode(mode);
-      c = namec(path, Aopen, mode, 0);
-      fd = newfd(c, mode);
-      poperror();
-      free(path);
-
-      r->type = Rsyscall;
-      r->tag = t->tag;
-      r->retval = fd;
-      r->scount = 0;
-      r->sdata = nil;
-      return 0;
-    }
-
-    case SYS_CREATE: {
-      extern int newfd(Chan *, int);
-      extern int openmode(ulong);
-      /* Format: [path s] [mode 4] [perm 4] */
-      ptr = tsyscall_skip_argc(ptr, ep, 3);
-
-      /* Parse Path */
-      if (ptr + 2 > ep) {
-        r->type = Rerror;
-        return -1;
-      }
-      int len = GBIT16(ptr);
-      ptr += 2;
-      if (ptr + len > ep) {
-        r->type = Rerror;
-        return -1;
-      }
-      char *path = smalloc(len + 1);
-      memmove(path, ptr, len);
-      path[len] = 0;
-      ptr += len;
-
-      /* Parse Mode and Perm */
-      if (ptr + 4 + 4 > ep) {
-        free(path);
-        r->type = Rerror;
-        return -1;
-      }
-      int mode = GBIT32(ptr);
-      ptr += 4;
-      int perm = GBIT32(ptr);
-      ptr += 4;
-
-      print("router_fs: SYS_CREATE '%s' mode=%d perm=%o\n", path, mode, perm);
-
-      Chan *c = nil;
-      int fd;
-      if (waserror()) {
-        if (c)
-          cclose(c);
-        free(path);
-        r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
-        return -1;
-      }
-
-      openmode(mode);
-      c = namec(path, Acreate, mode, perm);
-      fd = newfd(c, mode);
-      poperror();
-      free(path);
-
-      r->type = Rsyscall;
-      r->tag = t->tag;
-      r->retval = fd;
-      r->scount = 0;
-      r->sdata = nil;
-      return 0;
-    }
 
     case SYS_CLOSE: {
       extern void fdclose(int, int);
@@ -588,6 +477,115 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
       r->type = Rsyscall;
       r->tag = t->tag;
       r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_OPEN: {
+      extern int newfd(Chan * c, int mode);
+      extern int openmode(ulong o);
+      Chan *c = nil;
+      /* Format: [path s] [mode 1] */
+      ptr = tsyscall_skip_argc(ptr, ep, 2);
+      if (ptr + 2 > ep) {
+      short_msg_open:
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+      int len = GBIT16(ptr);
+      ptr += 2;
+      if (ptr + len + 1 > ep)
+        goto short_msg_open;
+
+      char *path = smalloc(len + 1);
+      memmove(path, ptr, len);
+      path[len] = 0;
+      ptr += len;
+
+      int mode = GBIT8(ptr);
+      ptr += 1;
+
+      print("router_fs: SYS_OPEN '%s' mode=%d\n", path, mode);
+
+      if (waserror()) {
+        if (c)
+          cclose(c);
+        free(path);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      openmode(mode);
+      c = namec(path, Aopen, mode, 0);
+      int fd = newfd(c, mode);
+      if (fd < 0)
+        error(Enofd);
+
+      poperror();
+      free(path);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = fd;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_CREATE: {
+      extern int newfd(Chan * c, int mode);
+      extern int openmode(ulong o);
+      Chan *c = nil;
+      /* Format: [path s] [mode 4] [perm 4] */
+      ptr = tsyscall_skip_argc(ptr, ep, 3);
+      if (ptr + 2 > ep) {
+      short_msg_create:
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      int len = GBIT16(ptr);
+      ptr += 2;
+      if (ptr + len + 8 > ep)
+        goto short_msg_create;
+
+      char *path = smalloc(len + 1);
+      memmove(path, ptr, len);
+      path[len] = 0;
+      ptr += len;
+
+      int mode = GBIT32(ptr);
+      ptr += 4;
+      int perm = GBIT32(ptr);
+      ptr += 4;
+
+      print("router_fs: SYS_CREATE '%s' mode=%d perm=%o\n", path, mode, perm);
+
+      if (waserror()) {
+        if (c)
+          cclose(c);
+        free(path);
+        r->type = Rerror;
+        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        return -1;
+      }
+
+      openmode(mode);
+      c = namec(path, Acreate, mode, perm);
+      int fd = newfd(c, mode);
+      if (fd < 0)
+        error(Enofd);
+
+      poperror();
+      free(path);
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = fd;
       r->scount = 0;
       r->sdata = nil;
       return 0;

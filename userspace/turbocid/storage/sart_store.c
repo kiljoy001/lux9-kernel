@@ -36,12 +36,6 @@ static int memcmp(const void *s1, const void *s2, unsigned long n) {
   return 0;
 }
 
-/* Journal functions (from sart_journal.c) */
-extern int journal_init(SartStore *store);
-extern int journal_append(UUIDv8 *id, RecordData *rec);
-extern int journal_replay(void (*callback)(UUIDv8 *, RecordData *, void *),
-                          void *ctx);
-
 /* ART index functions (from sart_art.c) */
 extern void art_init(void);
 extern RecordData *art_search(const UUIDv8 *key);
@@ -148,11 +142,6 @@ static void dedup_insert(const u8int *content_hash, const UUIDv8 *uuid) {
   /* Table full - silently ignore (dedup is optimization, not required) */
 }
 
-/*
- * Block I/O Layer Functions (from sart_blkio.c)
- *
- * Provides HJFS-compatible synchronous block operations.
- */
 extern int blkio_init(int fd, u64int size);
 extern int blkio_getfree(u64int *r);
 extern int blkio_putfree(u64int r);
@@ -162,6 +151,15 @@ extern void blkio_mark_dirty(void *b);
 extern void blkio_sync(void);
 extern long blkio_read_block(u64int blkno, void *buf, u64int len);
 extern long blkio_write_block(u64int blkno, const void *buf, u64int len);
+
+/* Journal Layer Functions */
+extern int journal_init(SartStore *store);
+extern int journal_append_blob(UUIDv8 *id, RecordData *rec);
+extern int journal_append_edge(UUIDv8 *parent, const char *name, UUIDv8 *child);
+extern int journal_replay(void (*on_blob)(UUIDv8 *, RecordData *, void *),
+                          void (*on_edge)(UUIDv8 *, const char *, UUIDv8 *,
+                                          void *),
+                          void *ctx);
 
 /* BlkBuf structure from sart_blkio.c */
 typedef struct {
@@ -373,6 +371,9 @@ int sart_write_immutable(void *data, u64int len, UUIDv8 *id_out) {
   rec.block_addr = block_addr;
   rec.type = 0;     /* TODO: detect file type from magic bytes */
   rec.perms = 0644; /* Default permissions */
+  rec.uid = 0;      /* root */
+  rec.gid = 0;
+  rec.atime = rec.mtime = sys_nsec();
 
   /* Copy content hash (already computed for dedup) */
   memmove(rec.data_hash, content_hash, 32);
@@ -384,7 +385,7 @@ int sart_write_immutable(void *data, u64int len, UUIDv8 *id_out) {
   generate_uuid_from_record(&rec, id_out);
 
   /* Step 7: Persist to journal */
-  rc = journal_append(id_out, &rec);
+  rc = journal_append_blob(id_out, &rec);
   if (rc != SART_OK)
     return rc;
 
@@ -452,39 +453,45 @@ int sart_get_metadata(UUIDv8 *id, RecordData *rec_out) {
 }
 
 /*
- * Callback for journal replay - adds entry to ART index and dedup table
+ * on_blob_callback - Rebuild content index
  */
-static void rebuild_callback(UUIDv8 *id, RecordData *rec, void *ctx) {
-  (void)ctx; /* unused */
-
-  /* Update next_block to avoid reusing blocks */
+static void on_blob_callback(UUIDv8 *id, RecordData *rec, void *ctx) {
+  (void)ctx;
   u64int end_block =
       rec->block_addr + (rec->size + SART_BLOCK_SIZE - 1) / SART_BLOCK_SIZE;
-
   if (end_block >= g_store_instance.next_block)
     g_store_instance.next_block = end_block + 1;
-
-  /* Add to ART index */
   art_insert(id, rec);
-
-  /* Add to dedup table */
   dedup_insert(rec->data_hash, id);
 }
 
 /*
+ * on_edge_callback - Rebuild namespace index
+ */
+static void on_edge_callback(UUIDv8 *parent, const char *name, UUIDv8 *child,
+                             void *ctx) {
+  (void)ctx;
+  extern int ns_art_insert(const UUIDv8 *parent, const char *name,
+                           const UUIDv8 *child);
+  ns_art_insert(parent, name, child);
+}
+
+/*
  * sart_rebuild_index - Replay journal to rebuild in-memory structures
- *
- * Called on startup to restore state from persistent journal.
- * Rebuilds both ART index and dedup table.
- * Returns number of entries recovered, or negative on error.
  */
 int sart_rebuild_index(void) {
-  /* Clear existing structures */
   art_clear();
   memset(g_dedup_table, 0, sizeof(g_dedup_table));
+  return journal_replay(on_blob_callback, on_edge_callback, nil);
+}
 
-  /* Replay journal */
-  return journal_replay(rebuild_callback, nil);
+/*
+ * sart_add_edge - Persistent directory relationship
+ */
+int sart_add_edge(UUIDv8 *parent, const char *name, UUIDv8 *child) {
+  if (!g_initialized)
+    return SART_ERR_IO;
+  return journal_append_edge(parent, name, child);
 }
 
 /*

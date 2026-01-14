@@ -8,6 +8,7 @@
 #define _9P_ROUTER_H_
 
 /* Include base types */
+#include "fcall.h"
 #include "types_fwd.h"
 #include "u.h"
 
@@ -134,8 +135,8 @@ typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);
 /* Async operation tracking */
 typedef struct AsyncP9Op {
   uint op_id;                    /* MSGORD message ID */
-  Fcall *request;                /* Original request (copied) */
-  Fcall *reply;                  /* Reply when ready */
+  Fcall request;                 /* Original request (copied) */
+  Fcall reply;                   /* Reply when ready */
   P9CompletionCallback callback; /* Completion callback */
   void *callback_arg;            /* Callback argument */
   uvlong submit_time;            /* When submitted */

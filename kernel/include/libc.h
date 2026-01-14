@@ -1,3 +1,6 @@
+#ifndef _LIBC_H_
+#define _LIBC_H_
+
 #ifndef __FRAMAC__
 #pragma lib "libc.a"
 #pragma src "/sys/src/libc"
@@ -7,10 +10,14 @@
 typedef long jmp_buf[16];
 #ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
-#endif
 extern void longjmp(jmp_buf, int);
+#endif
+#else
+#ifdef __FRAMAC__
+typedef long jmp_buf[16];
 #else
 #include <setjmp.h>
+#endif
 #endif
 #include "u.h"
 #include <stdarg.h>
@@ -151,7 +158,8 @@ extern void *malloctopoolblock(void *);
 /*
  * print routines
  */
-#ifndef _PORTLIB_H_
+#ifndef _FMT_TYPEDEF_
+#define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
 struct Fmt {
   uchar runes;         /* output buffer is runes or chars? */
@@ -163,8 +171,8 @@ struct Fmt {
   int nfmt;            /* num chars formatted so far */
   va_list args;        /* args passed to dofmt */
   int r;               /* % format Rune */
-  int width;
-  int prec;
+  int width;           /* width of format */
+  int prec;            /* precision of format */
   ulong flags;
 };
 #endif
@@ -283,7 +291,16 @@ extern Rune *runefmtstrflush(Fmt *);
 #endif
 
 extern int fmtinstall(int, int (*)(Fmt *));
-extern int dofmt(Fmt *, char *);
+#include "acsl_bounds.h"
+
+/*@
+  @ requires \valid(f);
+  @ requires \valid_read(fmt + (0..ACSL_MAX_FMT_LEN-1));
+  @ requires \exists integer k; 0 <= k < ACSL_MAX_FMT_LEN && fmt[k] == '\0';
+  @ assigns *f;
+  @ ensures \result >= -1;
+  @*/
+extern int dofmt(Fmt *f, char *fmt);
 extern int dorfmt(Fmt *, Rune *);
 extern int fmtprint(Fmt *, char *, ...);
 extern int fmtvprint(Fmt *, char *, va_list);
@@ -464,7 +481,9 @@ extern char *getwd(char *, int);
 extern int iounit(int);
 extern long labs(long);
 extern double ldexp(double, int);
+#ifndef __FRAMAC__
 extern _Noreturn void longjmp(jmp_buf, int);
+#endif
 extern char *mktemp(char *);
 extern double modf(double, double *);
 extern int netcrypt(void *, void *);
@@ -718,13 +737,17 @@ enum {
   RFNOMNT = (1 << 14)
 };
 
-#ifndef _PORTLIB_H_
+#ifndef _QID_TYPEDEF_
+#define _QID_TYPEDEF_
 typedef struct Qid {
   uvlong path;
   ulong vers;
   uchar type;
 } Qid;
+#endif
 
+#ifndef _DIR_TYPEDEF_
+#define _DIR_TYPEDEF_
 typedef struct Dir {
   /* system-modified data */
   ushort type; /* server type */
@@ -740,8 +763,10 @@ typedef struct Dir {
   char *gid;    /* group name */
   char *muid;   /* last modifier name */
 } Dir;
+#endif
 
-/* keep /sys/src/ape/lib/ap/plan9/sys9.h in sync with this -rsc */
+#ifndef _WAITMSG_TYPEDEF_
+#define _WAITMSG_TYPEDEF_
 typedef struct Waitmsg {
   int pid;       /* of loved one */
   ulong time[3]; /* of loved one & descendants */
@@ -862,3 +887,4 @@ extern char *argv0;
 
 /* this is used by sbrk and brk,  it's a really bad idea to redefine it */
 extern char end[];
+#endif /* _LIBC_H_ */

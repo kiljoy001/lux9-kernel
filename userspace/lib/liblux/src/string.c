@@ -35,13 +35,13 @@ ulong strlen(const char *s) {
  * All allocations must go through pebble_alloc(). */
 extern void sys_exit(char *msg);
 
-void *malloc(ulong size) {
+__attribute__((weak)) void *malloc(ulong size) {
   (void)size;
   sys_exit("PANIC: malloc() called - use pebble_alloc()");
   return (void *)0;
 }
 
-void free(void *ptr) {
+__attribute__((weak)) void free(void *ptr) {
   (void)ptr;
   sys_exit("PANIC: free() called - use pebble_free()");
 }

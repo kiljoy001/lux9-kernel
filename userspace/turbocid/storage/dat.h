@@ -21,6 +21,7 @@
  * Sartfs operates in single-threaded synchronous mode.
  */
 
+#ifndef _LIBLUX_H_
 /* Basic integer types */
 typedef unsigned char uchar;
 typedef unsigned short ushort;
@@ -43,8 +44,11 @@ typedef struct Qid {
   ulong vers;
   uchar type;
 } Qid;
+#endif
 
 /* Dir - Plan 9 directory entry (minimal) */
+#ifndef _DIR_H_
+#define _DIR_H_
 typedef struct Dir {
   ushort type;
   uint dev;
@@ -58,6 +62,7 @@ typedef struct Dir {
   char *gid;
   char *muid;
 } Dir;
+#endif
 
 /* Threading stubs - not used in synchronous Sartfs */
 typedef struct {
@@ -99,23 +104,51 @@ typedef struct RecordData {
   u64int size;         /* Logical size in bytes */
   u32int type;         /* File Type Hash (magic number) */
   u32int perms;        /* Permissions (rwx flags) */
+  u32int uid;          /* User ID */
+  u32int gid;          /* Group ID */
+  u64int atime;        /* Access time */
+  u64int mtime;        /* Modification time */
   u64int block_addr;   /* Physical Block Address (start of data) */
   u8int data_hash[32]; /* BLAKE3 Hash of content */
 } RecordData;
 
 /*
+ * Journal Entry Types
+ */
+typedef enum {
+  JENT_BLOB = 0, /* Content registration (UUID -> RecordData) */
+  JENT_EDGE = 1  /* Namespace edge (Parent + Name -> Child) */
+} JournalEntryType;
+
+/*
+ * EdgeRecord - Namespace Relationship
+ *
+ * Maps a name within a parent directory to a child object.
+ */
+typedef struct EdgeRecord {
+  UUIDv8 parent_id; /* UUID of the parent directory */
+  UUIDv8 child_id;  /* UUID of the child object (file or dir) */
+  char name[128];   /* Name of the entry in the directory */
+} EdgeRecord;
+
+/*
  * JournalEntry - Persistent Log Record
  *
- * Each entry represents a single immutable file creation.
- * The journal is append-only; entries are never modified.
+ * Each entry represents a single atomic update to the system.
  */
 typedef struct JournalEntry {
   u32int magic;     /* Entry magic: SART_ENTRY_MAGIC */
-  u32int version;   /* Entry format version */
-  UUIDv8 id;        /* Content-derived identity */
-  RecordData rec;   /* File metadata */
+  u16int type;      /* JournalEntryType */
+  u16int version;   /* Entry format version */
   u64int timestamp; /* Creation time (nsec) */
-  u64int checksum;  /* XOR fold integrity check */
+  union {
+    struct {
+      UUIDv8 id;
+      RecordData rec;
+    } blob;
+    EdgeRecord edge;
+  } u;
+  u64int checksum; /* XOR fold integrity check */
 } JournalEntry;
 
 /*

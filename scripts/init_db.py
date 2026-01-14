@@ -210,7 +210,8 @@ def register_init(binary_path, notes=None):
     commit = get_git_commit()
 
     # Copy to canonical location
-    canonical_path = CANONICAL_INIT_DIR / "init"
+    binary_name = Path(binary_path).name
+    canonical_path = CANONICAL_INIT_DIR / binary_name
     canonical_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Resolve paths to check for equality
@@ -306,15 +307,22 @@ def verify_init(binary_path):
 
     return True
 
-def get_latest_init():
-    """Get the path to the latest init binary"""
+def get_latest_init(name=None):
+    """Get the path to the latest init binary (optionally filtered by name)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    c.execute('''
-        SELECT canonical_path, sha256 FROM init_binaries
-        ORDER BY timestamp DESC LIMIT 1
-    ''')
+    if name:
+        c.execute('''
+            SELECT canonical_path, sha256 FROM init_binaries
+            WHERE canonical_path LIKE ?
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (f'%{name}',))
+    else:
+        c.execute('''
+            SELECT canonical_path, sha256 FROM init_binaries
+            ORDER BY timestamp DESC LIMIT 1
+        ''')
 
     row = c.fetchone()
     conn.close()
@@ -484,7 +492,8 @@ def main():
         if not verify_init(sys.argv[2]):
             sys.exit(1)
     elif cmd == 'latest':
-        path = get_latest_init()
+        name = sys.argv[2] if len(sys.argv) > 2 else None
+        path = get_latest_init(name)
         if path:
             print(path)
         else:

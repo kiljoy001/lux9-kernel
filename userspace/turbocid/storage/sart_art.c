@@ -12,6 +12,7 @@
 
 extern void *memset(void *dst, int c, unsigned long n);
 extern void *memmove(void *dst, const void *src, unsigned long n);
+extern unsigned long strlen(const char *s);
 
 /* Local memcmp implementation */
 static int memcmp(const void *s1, const void *s2, unsigned long n) {
@@ -100,8 +101,9 @@ typedef struct {
   u64int size; /* Number of entries */
 } ArtTree;
 
-/* Global tree instance */
-static ArtTree g_art = {nil, 0};
+/* Global tree instances */
+static ArtTree g_art = {nil, 0};    /* UUIDv8 -> RecordData */
+static ArtTree g_ns_art = {nil, 0}; /* (ParentUUID + Name) -> ChildUUID */
 
 /*
  * Simple memory allocation (using static pool for freestanding)
@@ -232,15 +234,11 @@ void art_init(void) {
 }
 
 /*
- * art_search - Look up a key in the tree
- *
- * Returns pointer to RecordData if found, nil otherwise.
- * O(k) where k = key length (16 bytes for UUIDv8)
+ * art_search_internal - Look up a key in a specific tree
  */
-RecordData *art_search(const UUIDv8 *key) {
-  ArtNode *n = g_art.root;
+static void *art_search_internal(ArtTree *tree, const u8int *key, int key_len) {
+  ArtNode *n = tree->root;
   int depth = 0;
-  int key_len = 16;
 
   if (n == nil)
     return nil;
@@ -249,14 +247,14 @@ RecordData *art_search(const UUIDv8 *key) {
     if (n->type == ART_LEAF) {
       ArtLeaf *leaf = (ArtLeaf *)n;
       /* Verify full key match */
-      if (UUID_EQUAL(&leaf->key, key))
+      if (memcmp(leaf->key.data, key, key_len) == 0)
         return &leaf->value;
       return nil;
     }
 
     /* Check prefix */
     if (n->prefix_len > 0) {
-      int prefix_len = check_prefix(n, key->data, depth, key_len);
+      int prefix_len = check_prefix(n, key, depth, key_len);
       if (prefix_len != n->prefix_len)
         return nil;
       depth += n->prefix_len;
@@ -266,7 +264,7 @@ RecordData *art_search(const UUIDv8 *key) {
     if (depth >= key_len)
       return nil;
 
-    ArtNode **child = find_child(n, key->data[depth]);
+    ArtNode **child = find_child(n, key[depth]);
     if (child == nil)
       return nil;
 
@@ -278,15 +276,33 @@ RecordData *art_search(const UUIDv8 *key) {
 }
 
 /*
- * art_insert - Insert a key-value pair
- *
- * Returns 0 on success, -1 on failure (duplicate or OOM).
+ * art_search - Look up a UUID in the content index
  */
-int art_insert(const UUIDv8 *key, const RecordData *value) {
+RecordData *art_search(const UUIDv8 *key) {
+  return (RecordData *)art_search_internal(&g_art, key->data, 16);
+}
+
+/*
+ * ns_art_search - Look up a name in the namespace index
+ */
+UUIDv8 *ns_art_search(const UUIDv8 *parent, const char *name) {
+  u8int key[16 + 128];
+  int len = strlen(name);
+  if (len > 127)
+    return nil;
+  memmove(key, parent->data, 16);
+  memmove(key + 16, name, len);
+  return (UUIDv8 *)art_search_internal(&g_ns_art, key, 16 + len);
+}
+
+/*
+ * art_insert_internal - Insert into a specific tree
+ */
+static int art_insert_internal(ArtTree *tree, const u8int *key, int key_len,
+                               const void *value, int val_len) {
   ArtLeaf *leaf;
   ArtNode4 *new_node;
   int depth = 0;
-  int key_len = 16;
 
   /* Create leaf node */
   leaf = (ArtLeaf *)art_alloc(sizeof(ArtLeaf));
@@ -295,27 +311,32 @@ int art_insert(const UUIDv8 *key, const RecordData *value) {
 
   memset(leaf, 0, sizeof(*leaf));
   leaf->base.type = ART_LEAF;
-  memmove(&leaf->key, key, sizeof(UUIDv8));
-  memmove(&leaf->value, value, sizeof(RecordData));
+  /* Standardizing on 16-byte key for the leaf structure,
+   * but in namespace ART 'key' contains both ParentUUID and Name.
+   * TODO: Fix leaf structure to support variable-size keys if needed.
+   * For now, storing full key in 'leaf->key' might truncate if > 16 bytes.
+   */
+  memmove(leaf->key.data, key, (key_len > 16) ? 16 : key_len);
+  memmove(&leaf->value, value, val_len);
 
   /* Empty tree - insert as root */
-  if (g_art.root == nil) {
-    g_art.root = (ArtNode *)leaf;
-    g_art.size = 1;
+  if (tree->root == nil) {
+    tree->root = (ArtNode *)leaf;
+    tree->size = 1;
     return 0;
   }
 
   /* Single leaf at root - need to create inner node */
-  if (g_art.root->type == ART_LEAF) {
-    ArtLeaf *existing = (ArtLeaf *)g_art.root;
+  if (tree->root->type == ART_LEAF) {
+    ArtLeaf *existing = (ArtLeaf *)tree->root;
 
     /* Check for duplicate */
-    if (UUID_EQUAL(&existing->key, key))
+    if (memcmp(existing->key.data, key, key_len) == 0)
       return -1;
 
     /* Find first differing byte */
     int differ = 0;
-    while (differ < key_len && existing->key.data[differ] == key->data[differ])
+    while (differ < key_len && existing->key.data[differ] == key[differ])
       differ++;
 
     /* Create new inner node */
@@ -327,30 +348,29 @@ int art_insert(const UUIDv8 *key, const RecordData *value) {
     new_node->base.type = ART_NODE4;
     new_node->base.prefix_len = differ;
     if (differ > 0 && differ <= 8) {
-      memmove(new_node->base.prefix, key->data, differ);
+      memmove(new_node->base.prefix, key, differ);
     }
 
     /* Add both leaves as children */
     add_child((ArtNode *)new_node, existing->key.data[differ],
               (ArtNode *)existing);
-    add_child((ArtNode *)new_node, key->data[differ], (ArtNode *)leaf);
+    add_child((ArtNode *)new_node, key[differ], (ArtNode *)leaf);
 
-    g_art.root = (ArtNode *)new_node;
-    g_art.size++;
+    tree->root = (ArtNode *)new_node;
+    tree->size++;
     return 0;
   }
 
   /* Navigate to insertion point */
-  ArtNode **current = &g_art.root;
-  ArtNode *n = g_art.root;
+  ArtNode **current = &tree->root;
+  ArtNode *n = tree->root;
 
   while (n != nil && n->type != ART_LEAF) {
     /* Check prefix */
     if (n->prefix_len > 0) {
-      int prefix_len = check_prefix(n, key->data, depth, key_len);
+      int prefix_len = check_prefix(n, key, depth, key_len);
       if (prefix_len != n->prefix_len) {
         /* Need to split */
-        /* Simplified: just fail for now */
         return -1;
       }
       depth += n->prefix_len;
@@ -359,11 +379,11 @@ int art_insert(const UUIDv8 *key, const RecordData *value) {
     if (depth >= key_len)
       return -1;
 
-    ArtNode **child = find_child(n, key->data[depth]);
+    ArtNode **child = find_child(n, key[depth]);
     if (child == nil) {
       /* Insert here */
-      add_child(n, key->data[depth], (ArtNode *)leaf);
-      g_art.size++;
+      add_child(n, key[depth], (ArtNode *)leaf);
+      tree->size++;
       return 0;
     }
 
@@ -375,12 +395,12 @@ int art_insert(const UUIDv8 *key, const RecordData *value) {
   /* Reached a leaf - check for duplicate */
   if (n != nil && n->type == ART_LEAF) {
     ArtLeaf *existing = (ArtLeaf *)n;
-    if (UUID_EQUAL(&existing->key, key))
-      return -1; /* Duplicate */
+    if (memcmp(existing->key.data, key, key_len) == 0)
+      return -1;
 
     /* Create inner node */
     int differ = depth;
-    while (differ < key_len && existing->key.data[differ] == key->data[differ])
+    while (differ < key_len && existing->key.data[differ] == key[differ])
       differ++;
 
     new_node = (ArtNode4 *)art_alloc(sizeof(ArtNode4));
@@ -391,14 +411,34 @@ int art_insert(const UUIDv8 *key, const RecordData *value) {
     new_node->base.type = ART_NODE4;
 
     add_child((ArtNode *)new_node, existing->key.data[differ], n);
-    add_child((ArtNode *)new_node, key->data[differ], (ArtNode *)leaf);
+    add_child((ArtNode *)new_node, key[differ], (ArtNode *)leaf);
 
     *current = (ArtNode *)new_node;
-    g_art.size++;
+    tree->size++;
     return 0;
   }
 
   return -1;
+}
+
+/*
+ * art_insert - Insert into content index
+ */
+int art_insert(const UUIDv8 *key, const RecordData *value) {
+  return art_insert_internal(&g_art, key->data, 16, value, sizeof(RecordData));
+}
+
+/*
+ * ns_art_insert - Insert into namespace index
+ */
+int ns_art_insert(const UUIDv8 *parent, const char *name, const UUIDv8 *child) {
+  u8int key[16 + 128];
+  int len = strlen(name);
+  if (len > 127)
+    return -1;
+  memmove(key, parent->data, 16);
+  memmove(key + 16, name, len);
+  return art_insert_internal(&g_ns_art, key, 16 + len, child, sizeof(UUIDv8));
 }
 
 /*

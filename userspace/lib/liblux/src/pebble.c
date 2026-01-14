@@ -62,3 +62,24 @@ int pebble_free(void *addr) {
     return -1;
   return 0;
 }
+
+int pebble_increase_budget(ulong size, u64int nonce) {
+  Fcall tx, rx;
+  uchar buf[16];
+
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = 61; /* SYS_PEBBLE_INCREASE_BUDGET */
+  tx.sdata = buf;
+  tx.scount = 16;
+
+  put64(buf, (u64int)size);
+  put64(buf + 8, (u64int)nonce);
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  return 0;
+}
