@@ -136,6 +136,9 @@ sdstat(Chan *c, uchar *dp, int n)
 static Chan*
 sdopen(Chan *c, int omode)
 {
+	/* Allow late driver startup from userspace HAL */
+	if(ahci_chan == nil && ide_chan == nil)
+		sdprobe();
 	switch(TYPE(c->qid)) {
 	case Qdir:
 		if(omode & ORCLOSE)

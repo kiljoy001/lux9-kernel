@@ -1,7 +1,7 @@
 /* proc_p9setup_stub.c - Lazy exchange page allocation setup
  *
  * Creates a stub P9SEG segment that triggers on-demand allocation
- * via page fault handler when process first accesses EXCHANGE_PAGE_ADDR.
+ * via page fault handler when process first accesses its p9uaddr.
  */
 
 #include "u.h"
@@ -18,8 +18,13 @@ int proc_setup_p9seg_stub(Proc *p) {
   if (p->seg[P9SEG] != nil)
     return 0; /* Already set up */
 
+  if (p->p9uaddr == 0)
+    p->p9uaddr = p9_pick_uaddr(p, nil);
+  if (p->p9uaddr == 0)
+    p->p9uaddr = EXCHANGE_PAGE_ADDR;
+
   /* Create empty segment for lazy allocation */
-  Segment *s = newseg(SG_PHYSICAL, EXCHANGE_PAGE_ADDR, 1);
+  Segment *s = newseg(SG_PHYSICAL, p->p9uaddr, 1);
   if (s == nil) {
     print("proc_setup_p9seg_stub: newseg failed\n");
     return -1;
@@ -46,7 +51,7 @@ int proc_setup_p9seg_stub(Proc *p) {
     Segment *oseg = p->seg[i];
     if (oseg == nil)
       continue;
-    if (EXCHANGE_PAGE_ADDR >= oseg->base && EXCHANGE_PAGE_ADDR < oseg->top) {
+    if (p->p9uaddr >= oseg->base && p->p9uaddr < oseg->top) {
       print("proc_setup_p9seg_stub: clearing conflicting seg[%d]\n", i);
       p->seg[i] = nil;
       putseg(oseg);

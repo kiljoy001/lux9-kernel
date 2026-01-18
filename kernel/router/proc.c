@@ -52,14 +52,35 @@ int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 }
 
 /*@
+  @
+  //============================================================================
+  @ // PROCESS CONTROL DISPATCHER - Routes process syscalls
+  @
+  //============================================================================
+  @
   @ requires \valid(p) && \valid(t) && \valid(r);
-  @ terminates \true;
-  @ assigns *r;
+  @ requires p->p9page == \null || \valid((uchar*)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @ requires t->sdata == \null || \valid_read(t->sdata + (0..t->scount-1));
+  @
+  @ // Return value semantics
   @ ensures \result == 0 || \result == -1;
+  @ ensures \result == 0 ==> (r->type == Rsyscall || r->type == Rsysexec ||
+  @                           r->type == Rsysbrk || r->type == Rsysfork);
+  @ ensures \result == -1 ==> r->type == Rerror;
+  @
+  @ // Protocol correctness: Tag preservation
+  @ ensures r->tag == t->tag;
+  @
+  @ // Memory safety
+  @ assigns *r;
+  @
+  @ terminates \true;
   @*/
 int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
   uchar *ep = t->sdata + t->scount;
   uchar *ptr = t->sdata;
+  uintptr ubase = p9_user_base(p);
 
   /* Handle Texec (128) - Direct execution message */
   if (t->type == Texec) {
@@ -104,7 +125,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     uintptr kpage = (uintptr)p->p9page;
     uintptr kpath = (uintptr)t->data + 2;
     uintptr path_offset = kpath - kpage;
-    uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
+    uintptr upath = ubase + path_offset;
 
     /* 2. Ensure null-termination in the user buffer */
     /* We can safely write \0 because validaddr/namec expects it.
@@ -137,7 +158,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
 
     /* Calculate User Address of argv */
     uintptr argv_offset = kargv_start - kpage;
-    uintptr uargv = EXCHANGE_PAGE_ADDR + argv_offset;
+    uintptr uargv = ubase + argv_offset;
 
     /* Prepare arguments for sysexec */
     /* args[0] = file (user char*) */
@@ -611,16 +632,33 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       return -1;
     }
     uintptr path_offset = kpath - kpage;
-    uintptr upath = EXCHANGE_PAGE_ADDR + path_offset;
+    uintptr upath = ubase + path_offset;
 
-    /* Reconstruction offset: 0xE00 (P9_CONTROL_OFFSET - (MAX_ARGS *
-     * sizeof(uintptr))) Use 0xE00 to avoid collision with message buffers.
-     */
-    uintptr *argv_ptr_list = (uintptr *)((uintptr)p->p9page + 0xE00);
     ulong arg_count = t->argc;
 
     if (arg_count > MAXWELEM)
       arg_count = MAXWELEM;
+
+    for (i = 0; i < (int)arg_count; i++) {
+      if (t->args[i] != nil) {
+        print("router_proc: Tsysexec arg[%d]=%s\n", i, t->args[i]);
+        print("router_proc: Tsysexec arg[%d] ptr=%p\n", i, t->args[i]);
+      }
+    }
+
+    uchar *msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
+    uint msg_size = GBIT32(msg_buf);
+    print("router_proc: Tsysexec msg_size=%ud argvp_base=%p\n", msg_size,
+          msg_buf);
+    uintptr argvp = (uintptr)msg_buf + msg_size;
+    argvp = (argvp + 7) & ~7ULL;
+    if (argvp + (arg_count + 1) * sizeof(uintptr) >
+        (uintptr)p->p9page + P9_MSG_OFFSET + P9_MSG_SIZE) {
+      r->type = Rerror;
+      r->ename = "Tsysexec: argv out of exchange page";
+      return -1;
+    }
+    uintptr *argv_ptr_list = (uintptr *)argvp;
 
     /*
      * Construct argv in exchange page.
@@ -630,14 +668,14 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       uintptr karg = (uintptr)t->args[i];
       if (karg >= kpage && karg < kpage + P9_PAGE_SIZE) {
         uintptr offset = karg - kpage;
-        argv_ptr_list[i] = EXCHANGE_PAGE_ADDR + offset;
+        argv_ptr_list[i] = ubase + offset;
       } else {
         argv_ptr_list[i] = 0;
       }
     }
     argv_ptr_list[arg_count] = 0; /* Null terminator */
 
-    uintptr uargv = EXCHANGE_PAGE_ADDR + 0xE00;
+    uintptr uargv = ubase + (argvp - (uintptr)p->p9page);
 
     /* Prepare arguments for sysexec: [path, argv] */
     args[0] = (ulong)upath;

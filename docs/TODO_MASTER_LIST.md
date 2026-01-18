@@ -1,17 +1,33 @@
 # Lux9 Master TODO List
 
 ## Immediate Priorities (Phase 1 Cleanup & Verification)
+- [x] **Kinetic Defense Integration**
+  - [x] Integrate `kernel/pow_gate.c` into `kernel/msgord.c`.
+    - [x] Add PoW nonce check to message submission.
+    - [x] Exempt TCB processes (kp == 1) to prevent circular dependencies.
+    - [x] Enforce PoW for user-space drivers.
 
 
 ## Kernel Core
-- [ ] **Memory Safety**
-  - [ ] Verify `bootstrap_alloc.c` (currently unverified vs `xalloc.c`).
-  - [ ] Extend Pebble tracking to all driver allocations.
+  - [x] **Memory Safety**
+  - [x] Verify `bootstrap_alloc.c` (currently unverified vs `xalloc.c`). ✅ Verified - separate implementation for early boot hole descriptors
+  - [ ] Extend Pebble tracking to all driver allocations. ⚠️ See `docs/PEBBLE_DRIVER_AUDIT.md` for analysis and recommendations
+  - [x] Fix potential raw address leak on verify failure in `kernel/9front-port/alloc.c`.
 
+- [x] **Exchange & IPC**
+  - [x] **Exchange Pool**: Add proper RBTree insertion (`kernel/exchange_pool_ipc.c`). ✅ Already implemented
+  - [x] **Load Balancing**: Implement proportional allocation and dynamic resizing (`kernel/exchange_pool.c`). ✅ Implemented measure_process_demand() and compute_target_allocations()
+  - [x] **9P Router**: Implement proper server lookup (currently stubbed) (`kernel/9p_router.c`). ✅ Implemented WASM server registry with registration/lookup by name and capability UUID
+
+- [ ] **CLR / Language Runtimes**
+  
+- [ ] **Drivers & Hardware**
+  - [ ] **TPM**: Implement actual hardware detection/init and TPM 2.0 HMAC (`kernel/9front-port/tpm_minimal.c.old`).
+  - [x] **Devsrv**: Fix `Chan` missing name field FIXME (`kernel/9front-port/devsrv.c`). ✅ Fixed: replaced `c->name->s` with `c->path->s`
+  - [ ] **CGA**: Handle screen memory mapping (`kernel/9front-pc64/cga.c`).
 
 - [ ] **Subsystem TODO/FIXME Inventory (code scan)**
-  - [ ] **WASI completeness**: implement missing WASI syscalls (args/env, clocks, random, fd flags/advise, full path ops, fs sync/stat, polling) and normalize errno mappings for common runtimes. (`kernel/wasm/wasi_lux9_shim.c`, `kernel/wasm/wasm_runtime.c`)
-  - [ ] **WASM memory model hardening**: finalize arena-based linear memory, enforce guard pages on grow/shrink, and remove any kernel-heap fallbacks in wasm3 alloc paths. (`kernel/wasm/wasm_runtime.c`, `kernel/wasm/wasm_runtime/wasm3/m3_core.c`)
+  - [ ] **WASI completeness**: implement missing WASI syscalls (args/env, clocks, [x] random, fd flags/advise, full path ops, fs sync/stat, polling) and normalize errno mappings for common runtimes. (`kernel/wasm/wasi_lux9_shim.c`, `kernel/wasm/wasm_runtime.c`)  - [ ] **WASM memory model hardening**: finalize arena-based linear memory, enforce guard pages on grow/shrink, and remove any kernel-heap fallbacks in wasm3 alloc paths. (`kernel/wasm/wasm_runtime.c`, `kernel/wasm/wasm_runtime/wasm3/m3_core.c`)
   - [ ] **WASM syscall surface**: complete `Tsyscall` coverage for WASI-hosted ops and align ABI/errno conversions. (`kernel/9p_router.c`, `kernel/wasm/wasi_lux9_shim.c`)
   - [ ] **WASM namespace plumbing**: finalize `/wasm` preopens, fd rights inheritance, and per-process namespace isolation. (`kernel/9front-port/devroot.c`, `kernel/9front-port/userinit.c`, `kernel/wasm/wasi_lux9_shim.c`)
   - [ ] **WASM pebble accounting**: ensure all linear memory growth and host allocations are charged/returned to pebble. (`kernel/wasm/wasm_runtime.c`, `kernel/9front-port/page.c`)
@@ -30,20 +46,26 @@
     - [x] sockets (accept, recv, send, shutdown)
     - [x] path ops (mkdir, rmdir, unlink, rename, symlink, readlink)
     - [x] fd ops (sync, set_size)
-    - [ ] poll (poll_oneoff)
-    - [ ] times (fd_set_times, path_set_times)
+    - [x] poll (poll_oneoff) ✅
+    - [x] times (fd_set_times, path_set_times) ✅
     (`userspace/rump/rump_server.c`)
   - [ ] **9front-pc64 globals routing**: wire to `9p_router`. (`kernel/9front-pc64/globals.c:457`)
-  - [ ] **CGA mapping**: handle screen memory not mapped yet. (`kernel/9front-pc64/cga.c:158`)
   - [ ] **Crypto arch detection**: enhance automatic detection coverage (likely upstream). (`kernel/crypto/sph_types.h:997`)
-
-- [ ] **Scheduler**
-  - [ ] Formalize ULE scheduler status (currently "experimental/unverified").
-  - [ ] Decide on ULE vs EDF as primary verified scheduler.
 
 ## User Space
 - [ ] **Drivers**
   - [ ] Audit user-space drivers for PoW compliance (link against `liblux`).
+
+## Sovereign Stack (Internet 2.0)
+- [ ] **Brunnen-G Identity**
+  - [ ] Implement "Risk" prefix routing (`risk:domain.coin`) in `9p_router.c`.
+  - [ ] Integrate YubiKey/TPM signatures into kernel login/auth.
+- [ ] **Sovereign AI (Bio-Computer)**
+  - [ ] **Compute Oracle**: Design 9P-to-OpenCL/LevelZero bridge for Intel XPU.
+  - [ ] **SNN Runtime**: Port Spiking Neural Network model to WASM container.
+- [ ] **Decentralized Web**
+  - [ ] **Gemini Server**: Port a lightweight Gemini server to run on WASM+Rump.
+  - [ ] **Agregore Bridge**: Integrate Hypercore/IPFS protocols via Rump networking.
 
 ## Testing/Tooling
 

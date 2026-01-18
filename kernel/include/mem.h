@@ -51,6 +51,11 @@
 #define USTKTOP (0x00007ffffffff000ull)
 #define USTKSIZE (16 * MiB) /* size of user stack */
 
+/* Per-process exchange page VA region (below the stack). */
+#define P9_VA_REGION_PAGES 256
+#define P9_VA_REGION_SIZE (P9_VA_REGION_PAGES * BY2PG)
+#define P9_VA_REGION_BASE (USTKTOP - USTKSIZE - P9_VA_REGION_SIZE)
+
 /*
  *  Address spaces. Kernel, sorted by address.
  */

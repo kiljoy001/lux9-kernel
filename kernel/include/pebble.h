@@ -244,9 +244,57 @@ int pebble_increase_budget(ulong size, u64int nonce);
 void pebble_auto_verify(Proc *p, Ureg *ureg);
 
 void pebble_red_blue_exit(void);
+
+/*@ requires ps != \null;
+  @ requires \valid(ps);
+  @ requires data == \null || \valid((uchar*)data + (0..(integer)size-1));
+  @ requires size > 0;
+  @ terminates \true;
+  @ assigns ps->whites[0..PEBBLE_MAX_TOKENS-1],
+  ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  @         ps->white_generation, ps->white_head, ps->white_pending;
+  @ ensures \result != \null ==> \valid(\result);
+  @ ensures \result != \null ==> \result->size == size;
+  @ behavior success:
+  @   assumes ps->white_pending + size <= ps->colorless_bank;
+  @   ensures \result != \null;
+  @ behavior failure:
+  @   assumes ps->white_pending + size > ps->colorless_bank;
+  @   ensures \result == \null;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  */
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires data == \null || \valid((uchar*)data + (0..(integer)size-1));
+  @ requires size > 0 && size <= ps->colorless_bank;
+  @ terminates \true;
+  @ assigns ps->whites[0..PEBBLE_MAX_TOKENS-1],
+  ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  @         ps->white_generation, ps->white_head, ps->white_pending;
+  @ ensures \result != \null ==> \valid(\result);
+  @ ensures \result != \null ==> \result->data_ptr == data;
+  @ ensures \result != \null ==> \result->size == size;
+  @ ensures \result == \null || (\result->token < PEBBLE_MAX_TOKENS &&
+  ps->whites_active[\result->token] != 0);
+  */
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires white != \null ==> \valid(white);
+  @ requires white != \null ==> white->token < PEBBLE_MAX_TOKENS;
+  @ terminates \true;
+  @ assigns ps->whites_active[0..PEBBLE_MAX_TOKENS-1], ps->white_pending;
+  */
 void pebble_return_white(PebbleState *ps, PebbleWhite *white);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires handle != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  */
 PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle);
 int pebble_blue_exists(PebbleState *ps, PebbleBlue *blue);
 int pebble_has_matching_red(PebbleState *ps, PebbleBlue *blue);

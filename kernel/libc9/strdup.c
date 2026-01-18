@@ -2,10 +2,11 @@
  * strdup - duplicate a string
  */
 #include "u.h"
+#include "acsl_bounds.h"
 #include "../include/libc.h"
 
 /*@
-  @ requires s == \null || (\valid_read(s + (0..)) && \exists integer n; n >= 0 && s[n] == '\0');
+  @ requires s == \null || (valid_string(s) && \exists integer n; n >= 0 && s[n] == '\0');
   @ assigns \nothing;
   @ behavior null_input:
   @   assumes s == \null;

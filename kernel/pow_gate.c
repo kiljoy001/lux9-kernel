@@ -82,6 +82,18 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
     diff = 16;
     break;
 
+  case POW_OP_MSGORD:
+    /* MsgOrd Consensus Admission
+     * magnitude = Red Message Ratio (0-100)
+     * If DAG is healthy (low red ratio), entry is cheap.
+     * If DAG is contested (high red ratio), entry gets expensive.
+     */
+    if (magnitude <= 10)
+      return 0; /* No PoW required if healthy */
+    
+    diff = 1 + ((magnitude - 10) / 5);
+    break;
+
   default:
     diff = 4;
     break;

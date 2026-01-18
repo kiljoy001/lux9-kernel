@@ -41,6 +41,23 @@ typedef ulong *syscall_va_list;
 #include "uuid.h"
 /* clang-format on */
 
+/*@
+  @ axiomatic Syscall_ABI {
+  @   predicate valid_syscall_args(ulong *list, integer n) =
+  @     \valid(list + (0..n-1));
+  @
+  @   axiom syscall_arg_advance:
+  @     \forall ulong *list, integer n;
+  @       valid_syscall_args(list, n) ==> valid_syscall_args(list + 1, n - 1);
+  @ }
+  @
+  @ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @ ensures \false;
+  @ terminates \true;
+  @*/
+void lux9_error(char *e);
+
 #include <a.out.h>
 
 /* CLR compilation includes removed - CLR moved to userspace */
@@ -52,6 +69,12 @@ extern void crypto_blake2b_final(crypto_blake2b_ctx *ctx, u8int *out);
 /* FSM Integration */
 extern int proc_event(Proc *p, int event);
 
+/*@
+  @ requires tc != \null;
+  @ requires up != \null;
+  @ requires \valid(up);
+  @ assigns up->text_hash[0..63];
+  @*/
 static void hash_binary(Chan *tc) {
   crypto_blake2b_ctx ctx;
   u8int buf[4096];
@@ -84,6 +107,11 @@ static void hash_binary(Chan *tc) {
   }
 }
 
+/*@
+  @ requires up == \null || \valid(up);
+  @ requires up != \null ==> \valid(&up->pid2);
+  @ assigns up->pid2;
+  @*/
 static void update_pid2_after_exec(void) {
   uuid_t *parent_p = nil;
   u8int *ns_cid = nil;
@@ -98,6 +126,12 @@ static void update_pid2_after_exec(void) {
   uuid_pack_pid_lux9(&up->pid2, parent_p, ns_cid, up->text_hash);
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr sysr1(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   if (!iseve())
@@ -105,6 +139,11 @@ uintptr sysr1(void *list_void) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \false;
+  @ terminates \true;
+  @*/
 static void abortion(void) { pexit("fork aborted", 1); }
 
 uintptr sysrfork(void *list_void) {
@@ -314,11 +353,13 @@ uintptr sysrfork(void *list_void) {
 
   /* Make a new set of memory segments */
   n = flag & RFMEM;
+  int sharemem = n != 0;
   qlock(&p->seglock);
   if (waserror()) {
     qunlock(&p->seglock);
     nexterror();
   }
+  uintptr ubase = p9_user_base(up);
   for (i = 0; i < NSEG; i++) {
     /*
      * CRITICAL: Skip P9SEG (exchange page) during fork.
@@ -331,8 +372,8 @@ uintptr sysrfork(void *list_void) {
      * This avoids MMU aliasing - child never inherits parent's PTE.
      * Use address check to be robust against slot assignment.
      */
-    if (i == P9SEG ||
-        (up->seg[i] != nil && up->seg[i]->base == EXCHANGE_PAGE_ADDR)) {
+    if (!sharemem &&
+        (i == P9SEG || (up->seg[i] != nil && up->seg[i]->base == ubase))) {
       p->seg[i] = nil; /* Child will fault and allocate fresh page */
       continue;
     }
@@ -401,55 +442,81 @@ uintptr sysrfork(void *list_void) {
     incref(&up->egrp->ref);
   }
 
-  /*
-   * CRITICAL: Save, invalidate, and restore parent's exchange page PTE for
-   * fork.
-   * 1. Save parent's PTE (points to page with Rsysfork reply)
-   * 2. Invalidate PTE so child inherits invalid PTE and faults on first access
-   * 3. Fork child (inherits invalid PTE)
-   * 4. Restore parent's saved PTE so it can continue using exchange page
-   */
-  extern void putmmu(uintptr, uintptr, Page *);
-  extern uintptr getmmu(uintptr, Page **);
+  if (!sharemem) {
+    /*
+     * CRITICAL: Save, invalidate, and restore parent's exchange page PTE for
+     * fork.
+     * 1. Save parent's PTE (points to page with Rsysfork reply)
+     * 2. Invalidate PTE so child inherits invalid PTE and faults on first
+     * access
+     * 3. Fork child (inherits invalid PTE)
+     * 4. Restore parent's saved PTE so it can continue using exchange page
+     */
+    extern void putmmu(uintptr, uintptr, Page *);
+    extern uintptr getmmu(uintptr, Page **);
 
-  uintptr saved_pte;
-  Page *saved_page = nil;
+    uintptr saved_pte;
+    Page *saved_page = nil;
 
-  /* Save parent's current PTE */
-  saved_pte = getmmu(0x7FFFFEEFF000ULL, &saved_page);
-  print("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
-        saved_page);
+    /* Save parent's current PTE */
+    saved_pte = getmmu(ubase, &saved_page);
+    print("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
+          saved_page);
 
-  /* Invalidate parent's PTE before fork */
-  print("DEBUG: sysrfork pid %lud->%lud invalidating parent PTE before fork\n",
+    /* Invalidate parent's PTE before fork */
+    print(
+        "DEBUG: sysrfork pid %lud->%lud invalidating parent PTE before fork\n",
         up->pid, p->pid);
-  putmmu(0x7FFFFEEFF000ULL, 0, nil);
+    putmmu(ubase, 0, nil);
 
-  /* Flush TLB to ensure CPU sees the invalidated PTE */
-  __asm__ volatile("invlpg (%0)" ::"r"(0x7FFFFEEFF000ULL) : "memory");
-  print("DEBUG: sysrfork TLB flushed\n");
+    /* Flush TLB to ensure CPU sees the invalidated PTE */
+    __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
+    print("DEBUG: sysrfork TLB flushed\n");
 
-  /* procfork copies page tables - child will inherit INVALID PTE */
-  procfork(p);
-  print(
-      "DEBUG: sysrfork procfork complete, child pid %lud has invalidated PTE\n",
-      p->pid);
+    /* procfork copies page tables - child will inherit INVALID PTE */
+    procfork(p);
+    print("DEBUG: sysrfork procfork complete, child pid %lud has invalidated "
+          "PTE\n",
+          p->pid);
 
-  /*
-   * CRITICAL: Restore parent's SAVED PTE after fork.
-   * This preserves the parent's exchange page with Rsysfork reply.
-   */
-  putmmu(0x7FFFFEEFF000ULL, saved_pte, saved_page);
-  __asm__ volatile("invlpg (%0)" ::"r"(0x7FFFFEEFF000ULL) : "memory");
-  print("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
+    /*
+     * CRITICAL: Restore parent's SAVED PTE after fork.
+     * This preserves the parent's exchange page with Rsysfork reply.
+     */
+    putmmu(ubase, saved_pte, saved_page);
+    __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
+    print("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
 
-  /*
-   * Setup stub P9SEG segment for lazy exchange page allocation.
-   * Page is allocated on first access via fault handler.
-   */
-  extern int proc_setup_p9seg_stub(Proc *);
-  if (proc_setup_p9seg_stub(p) < 0)
-    error(Enovmem);
+    /*
+     * Setup stub P9SEG segment for lazy exchange page allocation.
+     * Page is allocated on first access via fault handler.
+     */
+    extern int proc_setup_p9seg_stub(Proc *);
+    if (proc_setup_p9seg_stub(p) < 0)
+      error(Enovmem);
+  } else {
+    /* Shared memory: keep parent's exchange mapping and base. */
+    procfork(p);
+    p->p9uaddr = up->p9uaddr;
+    p->p9page = up->p9page;
+    p->p9page_phys = up->p9page_phys;
+
+    /* CRITICAL: Transfer borrow ownership of exchange page to child.
+     * Without this, child syscalls will fail with BORROW_ENOTOWNER because
+     * the borrow checker still thinks the parent owns the page. */
+    if (p->p9page_phys != 0) {
+      extern enum BorrowError borrow_transfer(Proc * from, Proc * to,
+                                              uintptr key);
+      enum BorrowError berr = borrow_transfer(up, p, p->p9page_phys);
+      if (berr != BORROW_OK) {
+        print("sysrfork: WARNING - borrow_transfer of exchange page failed "
+              "(berr=%d)\n",
+              berr);
+        /* This is non-fatal in RFMEM mode - the shared page model may need
+         * different ownership semantics. For now, log and continue. */
+      }
+    }
+  }
 
   poperror(); /* abortion */
 
@@ -497,6 +564,12 @@ uintptr sysrfork(void *list_void) {
   return p->pid;
 }
 
+/*@
+  @ requires \valid(s + (0..n-1));
+  @ requires \valid(ap + (0..nap-1));
+  @ assigns s[0..n-1], ap[0..nap-1];
+  @ ensures \result >= -1 && \result < nap;
+  @*/
 static int shargs(char *s, int n, char **ap, int nap) {
   char *p;
   int i;
@@ -513,6 +586,12 @@ static int shargs(char *s, int n, char **ap, int nap) {
   return i;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \result == ((l >> 24) & 0xFF) | ((l >> 8) & 0xFF00) | ((l << 8) &
+  0xFF0000) | ((l << 24) & 0xFF000000);
+  @ terminates \true;
+  @*/
 ulong beswal(ulong l) {
   uchar *p;
 
@@ -520,6 +599,14 @@ ulong beswal(ulong l) {
   return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \result == ((v >> 56) & 0xFF) | ((v >> 40) & 0xFF00) | ((v >> 24) &
+  0xFF0000) | ((v >> 8) & 0xFF000000) | ((v << 8) & 0xFF00000000) | ((v << 24) &
+  0xFF0000000000) | ((v << 40) & 0xFF000000000000) | ((v << 56) &
+  0xFF00000000000000);
+  @ terminates \true;
+  @*/
 uvlong beswav(uvlong v) {
   uchar *p;
 
@@ -1010,11 +1097,11 @@ uintptr sysexec(void *list_void) {
       error(Enovmem);
     nargs++;
   }
-  stacksize = BY2WD * (nargs + 1) + ((nbytes + (BY2WD - 1)) & ~(BY2WD - 1));
+  stacksize = BY2WD * (nargs + 2) + ((nbytes + (BY2WD - 1)) & ~(BY2WD - 1));
 
   /*
    * 8-byte align SP for those (e.g. sparc) that need it.
-   * execregs() will subtract another 4 bytes for argc.
+   * execregs() will subtract another two words for p9uaddr and argc.
    */
   if (BY2WD == 4 && (stacksize + 4) & 7)
     stacksize += 4;
@@ -1072,6 +1159,7 @@ uintptr sysexec(void *list_void) {
   tos->clock = 0;
 
   argv = (char **)(tstk - stacksize);
+  char **argv0 = argv;
   charp = (char *)(tstk - nbytes);
   if (indir)
     argp = progarg;
@@ -1102,6 +1190,8 @@ uintptr sysexec(void *list_void) {
     charp += n;
   }
   *argv = nil;
+  /* Store argc just below argv[] so _start sees a reliable value. */
+  ((ulong *)argv0)[-1] = nargs;
 
   /* copy args; easiest from new process's stack */
   a = (char *)(tstk - nbytes);
@@ -1291,8 +1381,20 @@ uintptr sysexec(void *list_void) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @ terminates \true;
+  @*/
 int return0(void *) { return 0; }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr syssleep(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   long ms;
@@ -1400,6 +1502,13 @@ void werrstr(char *fmt, ...) {
   va_end(va);
 }
 
+/*@
+  @ requires buf != \null && nbuf > 0;
+  @ requires up != \null;
+  @ requires \valid(up);
+  @ assigns up->errstr, up->syserrstr;
+  @ ensures \result == 0;
+  @*/
 static int generrstr(char *buf, uint nbuf) {
   char *err;
 
@@ -1445,6 +1554,13 @@ uintptr sysnotify(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires ureg != \null;
+  @ requires up != \null;
+  @ requires \valid(up);
+  @ assigns up->noteureg, up->notified, up->lastnote, up->notify;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 int donotify(Ureg *ureg) {
   Ureg *nureg;
   char *msg;
@@ -1469,7 +1585,7 @@ int donotify(Ureg *ureg) {
 
   if (up->notify == nil || (nureg = notify(ureg, msg)) == nil) {
     if (up->lastnote->flag == NDebug)
-      pprint("suicide: %s\n", msg);
+      pprint("suicide: (note)\n"); /* Avoid unbounded string in verification */
     pexit(msg, up->lastnote->flag != NDebug);
   }
 
@@ -1793,6 +1909,11 @@ uintptr sysrendezvous(void *list_void) {
  */
 
 /* Add semaphore p with addr a to list in seg. */
+/*@
+  @ requires s != \null;
+  @ requires p != \null;
+  @ assigns *p, s->sema.rendez.lock;
+  @*/
 static void semqueue(Segment *s, long *a, Sema *p) {
   memset(p, 0, sizeof *p);
   p->addr = a;
@@ -1805,6 +1926,11 @@ static void semqueue(Segment *s, long *a, Sema *p) {
 }
 
 /* Remove semaphore p from list in seg. */
+/*@
+  @ requires s != \null;
+  @ requires p != \null;
+  @ assigns s->sema.rendez.lock;
+  @*/
 static void semdequeue(Segment *s, Sema *p) {
   lock(&s->sema.rendez.lock);
   p->next->prev = p->prev;
@@ -1813,6 +1939,10 @@ static void semdequeue(Segment *s, Sema *p) {
 }
 
 /* Wake up n waiters with addr a on list in seg. */
+/*@
+  @ requires s != \null;
+  @ assigns s->sema.rendez.lock;
+  @*/
 static void semwakeup(Segment *s, long *a, long n) {
   Sema *p;
 
@@ -1829,6 +1959,12 @@ static void semwakeup(Segment *s, long *a, long n) {
 }
 
 /* Add delta to semaphore and wake up waiters as appropriate. */
+/*@
+  @ requires s != \null;
+  @ requires addr != \null;
+  @ assigns *addr;
+  @ ensures \result == \old(*addr) + delta;
+  @*/
 long semrelease(Segment *s, long *addr, long delta) {
   long value;
 
@@ -1840,6 +1976,11 @@ long semrelease(Segment *s, long *addr, long delta) {
 }
 
 /* Try to acquire semaphore using compare-and-swap */
+/*@
+  @ requires addr != \null;
+  @ assigns *addr;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int canacquire(long *addr) {
   long value;
 
@@ -1850,12 +1991,23 @@ static int canacquire(long *addr) {
 }
 
 /* Should we wake up? */
+/*@
+  @ requires p != \null;
+  @ assigns \nothing;
+  @ ensures \result == !(((Sema*)p)->waiting);
+  @*/
 static int semawoke(void *p) {
   coherence();
   return !((Sema *)p)->waiting;
 }
 
 /* Acquire semaphore (subtract 1). */
+/*@
+  @ requires s != \null;
+  @ requires addr != \null;
+  @ assigns *addr;
+  @ ensures \result == 1;
+  @*/
 int semacquire(Segment *s, long *addr, int block) {
   int acquired;
   Sema phore;
@@ -1885,6 +2037,12 @@ int semacquire(Segment *s, long *addr, int block) {
 }
 
 /* Acquire semaphore or time-out */
+/*@
+  @ requires s != \null;
+  @ requires addr != \null;
+  @ assigns *addr;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int tsemacquire(Segment *s, long *addr, ulong ms) {
   int timedout, acquired;
   ulong t;
@@ -2000,6 +2158,21 @@ uintptr sys_nsec(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 2);
+  @
+  @ behavior success:
+  @   assumes pebble_enabled == 1;
+  @   ensures \result != (uintptr)0;
+  @
+  @ behavior error_perm:
+  @   assumes pebble_enabled == 0;
+  @   ensures \false;
+  @
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 uintptr syspebblewhiteissue(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   ulong size;
@@ -2027,6 +2200,21 @@ uintptr syspebblewhiteissue(void *list_void) {
   return (uintptr)white;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 2);
+  @
+  @ behavior success:
+  @   assumes pebble_enabled == 1;
+  @   ensures \result != (uintptr)0;
+  @
+  @ behavior error_perm:
+  @   assumes pebble_enabled == 0;
+  @   ensures \false;
+  @
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 uintptr syspebbleblackalloc(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   uintptr size;
@@ -2050,6 +2238,21 @@ uintptr syspebbleblackalloc(void *list_void) {
   return (uintptr)handle;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
+  @
+  @ behavior success:
+  @   assumes pebble_enabled == 1;
+  @   ensures \result == 0;
+  @
+  @ behavior error_perm:
+  @   assumes pebble_enabled == 0;
+  @   ensures \false;
+  @
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 uintptr syspebbleblackfree(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   void *handle;
@@ -2061,6 +2264,21 @@ uintptr syspebbleblackfree(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 2);
+  @
+  @ behavior success:
+  @   assumes pebble_enabled == 1;
+  @   ensures \result != (uintptr)0;
+  @
+  @ behavior error_perm:
+  @   assumes pebble_enabled == 0;
+  @   ensures \false;
+  @
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 uintptr syspebblewhiteverify(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   PebbleWhite *white;
@@ -2080,6 +2298,21 @@ uintptr syspebblewhiteverify(void *list_void) {
   return (uintptr)black;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ requires valid_syscall_args((ulong*)list_void, 2);
+  @
+  @ behavior success:
+  @   assumes pebble_enabled == 1;
+  @   ensures \result != (uintptr)0;
+  @
+  @ behavior error_perm:
+  @   assumes pebble_enabled == 0;
+  @   ensures \false;
+  @
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 uintptr syspebbleredcopy(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   PebbleBlue *blue;

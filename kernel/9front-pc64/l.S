@@ -439,23 +439,9 @@ touser:
      * so that interrupts and syscalls from userspace can access it.
      * The swapgs in syscallentry/trap handlers will handle the swap. */
 
-    /* Debug: print the user stack pointer and entry point we're about to use */
-    pushq %rax
-    pushq %rdx
-    pushq %rsi                  /* save entry point */
-    pushq %rdi                  /* save user SP argument */
-    movq %rsi, %rdx             /* arg3 = entry point */
-    movq %rdi, %rsi             /* arg2 = user sp value */
-    leaq touser_sp_msg(%rip), %rdi  /* arg1 = format string */
-    xorq %rax, %rax             /* no vector args */
-    call print
-    popq %rdi                   /* restore user SP */
-    popq %r13                   /* restore entry point to r13 */
-    popq %rdx
-    popq %rax
-
-    	/* Save user SP and entry point in registers before setting up IRET frame */
-    	movq %rdi, %r12             /* r12 = user SP */
+    /* Save user SP and entry point in registers before setting up IRET frame */
+    movq %rdi, %r12             /* r12 = user SP */
+    movq %rsi, %r13             /* r13 = entry point */
 
     	/* Build IRETQ frame on current kernel stack:
     	 * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
@@ -464,16 +450,9 @@ touser:
     	pushq $0x002                /* RFLAGS - interrupts disabled */
     	pushq $UESEL                /* CS - user code segment */
     	pushq %r13                  /* RIP - entry point from parameter (was r13) */
-    /* Debug: print the IRET frame */
-    pushq %rax
-    pushq %rdi
-    pushq %rsi
-    leaq touser_iret_msg(%rip), %rdi
-    xorq %rax, %rax
-    call print
-    popq %rsi
-    popq %rdi
-    popq %rax
+    /* Seed user rax/rdi with p9uaddr for _start */
+    movq %rdx, %rax
+    movq %rdx, %rdi
 
     /* Zero kernel pointers before entering userspace */
     xor %r15d, %r15d            /* RMACH = nil */

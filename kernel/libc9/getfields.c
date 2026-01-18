@@ -1,8 +1,9 @@
 #include <u.h>
+#include "acsl_bounds.h"
 #include <libc.h>
 
 /*@
-  @ requires \valid_read(sep + (0..));
+  @ requires valid_string(sep);
   @ requires \exists integer k; k >= 0 && sep[k] == '\0';
   @ assigns \nothing;
   @ ensures \result == 0 || \result == 1;
@@ -16,9 +17,9 @@ isdelim(int c, char *sep)
 
 /*@
   @ requires n > 0 ==> \valid(fields + (0 .. n-1));
-  @ requires str != \null ==> \valid(str + (0..));
+  @ requires str != \null ==> valid_string(str);
   @ requires str != \null ==> \exists integer k; k >= 0 && str[k] == '\0';
-  @ requires sep != \null ==> \valid_read(sep + (0..));
+  @ requires sep != \null ==> valid_string(sep);
   @ requires sep != \null ==> \exists integer k; k >= 0 && sep[k] == '\0';
   @ assigns str == \null ? \nothing : str[0 .. \strlen(\at(str, Pre))],
   @         (str == \null || fields == \null || n <= 0) ? \nothing : fields[0 .. n-1];

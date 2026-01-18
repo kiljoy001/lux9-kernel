@@ -1,8 +1,9 @@
 #include "u.h"
+#include "acsl_bounds.h"
 #include "portlib.h"
 
 /*@
-  @ requires \valid_read(s + (0..));
+  @ requires valid_string(s);
   @ requires \exists integer n; n >= 0 && s[n] == '\0';
   @ assigns \nothing;
   @ behavior found:

@@ -439,6 +439,13 @@ static void proc0(void *arg) {
   m->pml4[PTLX(UTZERO, 3)] = 0;
   m->pml4[PTLX(USTKTOP - 1, 3)] = 0;
 
+  /* Pick per-process exchange VA early so it is on the initial user stack. */
+  if (up->p9uaddr == 0) {
+    up->p9uaddr = p9_pick_uaddr(up, nil);
+    if (up->p9uaddr == 0)
+      up->p9uaddr = EXCHANGE_PAGE_ADDR;
+  }
+
   /*
    * Setup Stack segment for init process.
    * Text segment (TSEG) is set up by ELF loader when loading /boot/init.
@@ -470,16 +477,21 @@ static void proc0(void *arg) {
   else
     print("BOOT[proc0]: stack page pa nonzero\n");
   {
+    uintptr *stack;
     char **ustack;
     uintptr user_sp;
 
-    ustack = (char **)((uchar *)VA(k) + BY2PG - sizeof(Tos) - 8 -
-                       sizeof(ustack[0]) * 4);
-    user_sp = USTKTOP - sizeof(Tos) - 8 - sizeof(ustack[0]) * 4;
+    stack = (uintptr *)((uchar *)VA(k) + BY2PG - sizeof(Tos) - 16 -
+                        sizeof(ustack[0]) * 4);
+    user_sp = USTKTOP - sizeof(Tos) - 16 - sizeof(ustack[0]) * 4;
+    stack[0] = p9_user_base(up);
+    stack[1] = 0; /* argc (unused by start.S) */
+    ustack = (char **)(stack + 2);
 
     ustack[3] = ustack[2] = nil;
     strcpy((char *)&ustack[4], "boot");
-    ustack[1] = (char *)(user_sp + sizeof(ustack[0]) * 4);
+    ustack[1] =
+        (char *)(user_sp + 16 + sizeof(ustack[0]) * 4);
     ustack[0] = nil;
   }
   kunmap(k);
@@ -753,6 +765,11 @@ static void proc0(void *arg) {
   procpriority(up, PriNormal, 0);
   procsetup(up);
 
+  /* Setup stub P9SEG after dropping kernel status so it is visible to faults. */
+  extern int proc_setup_p9seg_stub(Proc *);
+  if (proc_setup_p9seg_stub(up) < 0)
+    panic("proc0: failed to setup P9SEG stub");
+
   /* Install user mappings now that proc0 drops kernel privileges */
   {
     print("userinit: about to call mmuswitch, checking mmuhead...\n");
@@ -819,14 +836,7 @@ static void proc0(void *arg) {
    *	setup environment variables
    *	prepare the stack for init process
    *	switch to usermode to run /boot/init
-   *
-   * Setup stub P9SEG for lazy exchange page allocation.
-   * Page is allocated on first access via fault handler.
    */
-  extern int proc_setup_p9seg_stub(Proc *);
-  if (proc_setup_p9seg_stub(up) < 0)
-    panic("proc0: failed to setup P9SEG stub");
-
   print("BOOT[proc0]: about to call init0 - switching to userspace\n");
   init0();
 

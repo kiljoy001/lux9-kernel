@@ -13,10 +13,11 @@
 #include "u.h"
 
 /*
- * 9P Exchange Page Layout - SINGLE 4KB PAGE MODEL
- * ================================================
- * Each process has ONE 4KB page for syscall communication.
- * Ownership flips between process and kernel via borrow checker.
+ * 9P Exchange Page Layout - PER-PROCESS VA MODEL
+ * ==============================================
+ * Each process has ONE 4KB exchange page allocated from the pool and mapped
+ * at a per-process virtual address (p->p9uaddr). Ownership flips between
+ * process and kernel via borrow checker.
  *
  * Layout:
  *   0x000 - 0xEFF: Message area (3840 bytes) - request OR reply
@@ -42,9 +43,10 @@
                  */
 #define P9_REPLY_SIZE P9_MSG_SIZE
 
-/* Fixed user virtual address for the Exchange Page (below stack at
- * 0x7FFFFEFFF000) */
+/* Legacy fixed user VA (deprecated). */
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
+
+uintptr p9_user_base(Proc *p);
 
 #include "atomic.h"
 

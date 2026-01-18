@@ -692,6 +692,7 @@ void procsetup(Proc *);            /* Setup process state */
 void procfork(Proc *);             /* Fork process state */
 int proc_setup_p9page(Proc *);     /* Setup 9P exchange page (deprecated) */
 int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */
+uintptr p9_pick_uaddr(Proc *, const UserCapability *);
 void *kernel_setup_init_exchange(
     Proc *); /* Kernel boot: setup #X exchange channel for init */
 
@@ -734,3 +735,7 @@ void wasm_exec_run(struct M3Function *);
 void wasm_runtime_cleanup_process(Proc *);
 
 extern int boot_verbose;
+
+/* Bounded print for formal verification */
+int bprint(const char *fmt, ...);
+void bpanic(const char *fmt, ...) __attribute__((noreturn));

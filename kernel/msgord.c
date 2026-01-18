@@ -341,13 +341,10 @@ static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
    * Only enforce for User Processes (!kp).
    */
   if (caller && !caller->kp && dag->gd_total_msgs > 100) {
-    int difficulty = 0;
     ulong ratio_pct = (dag->gd_red_msgs * 100) / dag->gd_total_msgs;
+    int difficulty = pow_calculate_difficulty(POW_OP_MSGORD, ratio_pct);
 
-    if (ratio_pct > 10) { /* >10% red messages implies congestion */
-      /* Base difficulty on ratio. 10% -> 1, 100% -> 19 */
-      difficulty = 1 + ((ratio_pct - 10) / 5);
-
+    if (difficulty > 0) {
       /* Verify PoW */
       /* Context: caller PID binds work to the process */
       u64int context = (u64int)caller->pid;
@@ -609,13 +606,11 @@ uint msgord_submit_async(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
    * Kinetic Defense: Congestion Pricing (Async)
    */
   if (caller && !caller->kp && dag->gd_total_msgs > 100) {
-    int difficulty = 0;
     ulong ratio_pct = (dag->gd_red_msgs * 100) / dag->gd_total_msgs;
+    int difficulty = pow_calculate_difficulty(POW_OP_MSGORD, ratio_pct);
 
-    if (ratio_pct > 10) {
-      difficulty = 1 + ((ratio_pct - 10) / 5);
+    if (difficulty > 0) {
       u64int context = (u64int)caller->pid;
-
       if (!pow_verify(nonce, context, difficulty)) {
         return 0;
       }

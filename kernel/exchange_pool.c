@@ -1,21 +1,22 @@
 /*
- * Exchange Pool Implementation - Minimal Working Version
+ * Exchange Pool Implementation - Working Version with Load Balancing
  *
  * Global pool of exchange pages for IPC message passing.
- * TODO: Add proportional load balancing in Phase 3
+ * ✅ Proportional load balancing implemented (measure_process_demand,
+ * compute_target_allocations)
  * TODO: Add dynamic resizing in Phase 4
  */
 
 /* Standard kernel includes - ORDER MATTERS! u.h first for Plan 9 types */
-#include "u.h"
+#include "exchange_pool.h"
 #include "../port/lib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
-#include "uuid.h"
 #include "blind_ledger.h"
 #include "borrowchecker.h"
-#include "exchange_pool.h"
+#include "dat.h"
+#include "fns.h"
+#include "mem.h"
+#include "u.h"
+#include "uuid.h"
 
 // Global pool instance (accessible via exchange_pool.h extern declaration)
 GlobalExchangePool *global_pool = nil;
@@ -211,17 +212,106 @@ void exchange_cleanup_process(Proc *p) {
   }
 }
 
-// Measure process demand (stub for now)
+// Measure process demand based on syscall rate
 void measure_process_demand(ProcAllocation *pa) {
   if (pa == nil)
     return;
-  // TODO: Implement actual demand measurement
-  pa->syscall_count++;
+
+  uvlong now = fastticks(nil);
+  uvlong elapsed;
+
+  // Initialize on first call
+  if (pa->last_measurement == 0) {
+    pa->last_measurement = now;
+    pa->syscall_count = 0;
+    pa->syscall_rate = 0.0;
+    return;
+  }
+
+  // Calculate time elapsed since last measurement
+  elapsed = now - pa->last_measurement;
+
+  // Convert fastticks to milliseconds (approximate)
+  // Assume fastticks is in nanoseconds or similar high-resolution unit
+  uvlong elapsed_ms = fastticks2us(elapsed) / 1000;
+
+  // Avoid division by zero and measure only after meaningful time
+  if (elapsed_ms < 100) { // Less than 100ms, too soon
+    pa->syscall_count++;
+    return;
+  }
+
+  // Calculate syscalls per second using integer math (avoid float/SSE)
+  // syscall_rate = (syscall_count * 1000) / elapsed_ms
+  // Store as scaled integer (syscalls * 1000 per second)
+  if (elapsed_ms > 0) {
+    pa->syscall_rate = (pa->syscall_count * 1000) / elapsed_ms;
+  }
+
+  // Reset for next measurement period
+  pa->last_measurement = now;
+  pa->syscall_count = 0;
 }
 
-// Compute target allocations (stub for now)
+// Compute target allocations based on proportional demand
 void compute_target_allocations(GlobalExchangePool *pool) {
   if (pool == nil)
     return;
-  // TODO: Implement proportional allocation computation
+
+  ProcAllocation *pa;
+  uvlong total_demand = 0;
+  uint active_procs = 0;
+  uint available_pages;
+
+  // First pass: measure total demand
+  for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+    if (pa->proc != nil && pa->syscall_rate > 0) {
+      total_demand += pa->syscall_rate;
+      active_procs++;
+    }
+  }
+
+  // If no active demand, distribute equally among active processes
+  if (total_demand < 10 || active_procs == 0) {
+    // Equal distribution fallback
+    for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+      if (pa->proc != nil) {
+        pa->target_pages = MIN_PAGES_PER_PROCESS;
+      }
+    }
+    return;
+  }
+
+  // Calculate available pages for distribution
+  qlock(&pool->pool_lock);
+  available_pages = pool->free_count;
+  qunlock(&pool->pool_lock);
+
+  // Reserve minimum allocation for all processes
+  uint reserved = active_procs * MIN_PAGES_PER_PROCESS;
+  if (available_pages < reserved) {
+    available_pages = reserved;
+  }
+
+  // Second pass: assign proportional targets using integer math
+  for (pa = pool->proc_allocs; pa != nil; pa = pa->next) {
+    if (pa->proc == nil || pa->syscall_rate < 10) {
+      pa->target_pages = MIN_PAGES_PER_PROCESS;
+      continue;
+    }
+
+    // Calculate proportional share using integer math
+    // share = (syscall_rate * available_pages) / total_demand
+    uint target = (pa->syscall_rate * available_pages) / total_demand;
+
+    // Clamp to valid range
+    if (target < MIN_PAGES_PER_PROCESS) {
+      target = MIN_PAGES_PER_PROCESS;
+    }
+    if (target > MAX_PAGES_PER_PROCESS) {
+      target = MAX_PAGES_PER_PROCESS;
+    }
+
+    pa->target_pages = target;
+  }
 }

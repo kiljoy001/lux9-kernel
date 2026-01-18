@@ -20,6 +20,7 @@ typedef unsigned long u_long;
 #include <rump/rump.h>
 #include <rump/rump_syscalls.h>
 #include <rump/rumpdefs.h>
+#include <sys/poll.h>
 
 #define POSIX_FDSTAT_GET 1
 #define POSIX_PATHSTAT_GET 1
@@ -95,6 +96,14 @@ typedef unsigned int uint;
 typedef uint32_t u32int;
 typedef uint16_t u16int;
 typedef uint64_t u64int;
+typedef uint8_t u8int;
+
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
 
 struct P9Control {
   uint doorbell;
@@ -662,7 +671,7 @@ static u32int posix_write_sock_recv(RumpFid *f, const uchar *data,
 
   f->resp_off = 0;
   f->resp_len = 0;
-  put_u32(f->resp, 0); /* err */
+  put_u32(f->resp, 0);     /* err */
   put_u32(f->resp + 4, 0); /* ro_flags */
   put_u32(f->resp + 8, 0); /* count */
   f->resp_len = 12;
@@ -807,7 +816,7 @@ static u32int posix_write_path_readlink(RumpFid *f, const uchar *data,
 
   f->resp_off = 0;
   f->resp_len = 0;
-  put_u32(f->resp, 0); /* err */
+  put_u32(f->resp, 0);     /* err */
   put_u32(f->resp + 4, 0); /* count */
   f->resp_len = 8;
 
@@ -918,6 +927,336 @@ static u32int posix_write_readdir(RumpFid *f, const uchar *data, u32int count) {
   }
   put_u32(f->resp + 4, (u32int)n);
   f->resp_len = 8 + (u32int)n;
+  return f->resp_len;
+}
+
+/* WASI fd_set_times - Set file access/modification times via file descriptor
+ * Payload format:
+ *   offset 0-3:   u32 operation (POSIX_FD_SET_TIMES = 3)
+ *   offset 4-7:   u32 fd
+ *   offset 8-15:  u64 atim (nanoseconds since epoch, or special values)
+ *   offset 16-23: u64 mtim (nanoseconds since epoch, or special values)
+ *   offset 24-27: u32 fst_flags (WASI flags for NOW/OMIT)
+ * Response: u32 error code (0 = success)
+ */
+static u32int posix_write_fd_set_times(RumpFid *f, const uchar *data,
+                                       u32int count) {
+  if (count < 28)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int fd = get_u32(data + 4);
+  u64int atim = get_u64(data + 8);
+  u64int mtim = get_u64(data + 16);
+  u32int flags = get_u32(data + 24);
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0); /* error code */
+  f->resp_len = 4;
+
+  if (op != POSIX_FD_SET_TIMES) {
+    put_u32(f->resp, 38); /* ENOSYS */
+    return f->resp_len;
+  }
+
+  /* Convert WASI timestamps (nanoseconds) to struct timespec
+   * WASI flags: bit 0 = atim_now, bit 1 = atim_omit, bit 2 = mtim_now, bit 3 =
+   * mtim_omit */
+  struct timespec times[2];
+
+  /* Access time */
+  if (flags & (1 << 1)) { /* ATIM_OMIT */
+    times[0].tv_sec = 0;
+    times[0].tv_nsec = 1073741823; /* UTIME_OMIT (special value) */
+  } else if (flags & (1 << 0)) {   /* ATIM_NOW */
+    times[0].tv_sec = 0;
+    times[0].tv_nsec = 1073741822; /* UTIME_NOW (special value) */
+  } else {
+    times[0].tv_sec = (long)(atim / 1000000000ULL);
+    times[0].tv_nsec = (long)(atim % 1000000000ULL);
+  }
+
+  /* Modification time */
+  if (flags & (1 << 3)) { /* MTIM_OMIT */
+    times[1].tv_sec = 0;
+    times[1].tv_nsec = 1073741823; /* UTIME_OMIT */
+  } else if (flags & (1 << 2)) {   /* MTIM_NOW */
+    times[1].tv_sec = 0;
+    times[1].tv_nsec = 1073741822; /* UTIME_NOW */
+  } else {
+    times[1].tv_sec = (long)(mtim / 1000000000ULL);
+    times[1].tv_nsec = (long)(mtim % 1000000000ULL);
+  }
+
+  int ret = rump_sys_futimens(fd, times);
+  if (ret < 0) {
+    put_u32(f->resp, 5); /* EIO */
+    return f->resp_len;
+  }
+
+  return f->resp_len;
+}
+
+/* WASI path_set_times - Set file access/modification times via path
+ * Payload format:
+ *   offset 0-3:    u32 operation (POSIX_PATH_SET_TIMES = 1)
+ *   offset 4-7:    u32 dirfd
+ *   offset 8-11:   u32 path_len
+ *   offset 12-...: char path[path_len]
+ *   After path:
+ *   offset X+0-7:  u64 atim (nanoseconds)
+ *   offset X+8-15: u64 mtim (nanoseconds)
+ *   offset X+16-19: u32 fst_flags
+ *   offset X+20-23: u32 lookup_flags (SYMLINK_FOLLOW)
+ * Response: u32 error code
+ */
+static u32int posix_write_path_set_times(RumpFid *f, const uchar *data,
+                                         u32int count) {
+  if (count < 12)
+    return 0;
+
+  u32int op = get_u32(data);
+  u32int dirfd = get_u32(data + 4);
+  u32int path_len = get_u32(data + 8);
+
+  if (count < 12 + path_len + 24 || path_len >= MAX_PATH)
+    return 0;
+
+  f->resp_off = 0;
+  f->resp_len = 0;
+  put_u32(f->resp, 0);
+  f->resp_len = 4;
+
+  if (op != POSIX_PATH_SET_TIMES) {
+    put_u32(f->resp, 38); /* ENOSYS */
+    return f->resp_len;
+  }
+
+  char path_buf[MAX_PATH];
+  for (u32int i = 0; i < path_len; i++)
+    path_buf[i] = data[12 + i];
+  path_buf[path_len] = 0;
+
+  const uchar *time_data = data + 12 + path_len;
+  u64int atim = get_u64(time_data);
+  u64int mtim = get_u64(time_data + 8);
+  u32int flags = get_u32(time_data + 16);
+  u32int lookup_flags = get_u32(time_data + 20);
+
+  struct timespec times[2];
+
+  /* Access time */
+  if (flags & (1 << 1)) {
+    times[0].tv_sec = 0;
+    times[0].tv_nsec = 1073741823; /* UTIME_OMIT */
+  } else if (flags & (1 << 0)) {
+    times[0].tv_sec = 0;
+    times[0].tv_nsec = 1073741822; /* UTIME_NOW */
+  } else {
+    times[0].tv_sec = (long)(atim / 1000000000ULL);
+    times[0].tv_nsec = (long)(atim % 1000000000ULL);
+  }
+
+  /* Modification time */
+  if (flags & (1 << 3)) {
+    times[1].tv_sec = 0;
+    times[1].tv_nsec = 1073741823; /* UTIME_OMIT */
+  } else if (flags & (1 << 2)) {
+    times[1].tv_sec = 0;
+    times[1].tv_nsec = 1073741822; /* UTIME_NOW */
+  } else {
+    times[1].tv_sec = (long)(mtim / 1000000000ULL);
+    times[1].tv_nsec = (long)(mtim % 1000000000ULL);
+  }
+
+  /* AT_SYMLINK_NOFOLLOW = 0x200 (don't follow symlinks) */
+  int at_flags = (lookup_flags & 1) ? 0 : 0x200;
+
+  int ret = rump_sys_utimensat(dirfd, path_buf, times, at_flags);
+  if (ret < 0) {
+    put_u32(f->resp, 5); /* EIO */
+    return f->resp_len;
+  }
+
+  return f->resp_len;
+}
+
+/* WASI poll_oneoff structure definitions
+ * Based on WASI Snapshot Preview 1 specification
+ */
+#define WASI_EVENTTYPE_CLOCK 0
+#define WASI_EVENTTYPE_FD_READ 1
+#define WASI_EVENTTYPE_FD_WRITE 2
+#define WASI_EVENT_FD_READWRITE_HANGUP (1 << 0)
+
+/* WASI subscription structure layout (48 bytes total)
+ * Offset 0-7:   u64 userdata
+ * Offset 8:     u8 type (CLOCK=0, FD_READ=1, FD_WRITE=2)
+ * Offset 16-19: u32 fd (for FD_READ/FD_WRITE)
+ * Offset 24-31: u64 timeout (for CLOCK)
+ */
+
+/* WASI event structure layout (32 bytes total)
+ * Offset 0-7:   u64 userdata (echoed from subscription)
+ * Offset 8-9:   u16 error (WASI errno)
+ * Offset 10:    u8 type
+ * Offset 16-17: u16 nbytes (for FD events)
+ * Offset 18-19: u16 flags (HANGUP bit)
+ */
+
+static u32int posix_write_poll(RumpFid *f, const uchar *data, u32int count) {
+  u32int nsubscriptions;
+  u32int timeout_ms = -1; /* Infinite timeout by default */
+  int have_timeout = 0;
+  struct pollfd pfds[64]; /* Stack allocation, max 64 subscriptions */
+  int nfds = 0;
+  u64int userdata_map[64]; /* Track userdata for each pollfd */
+  u8int type_map[64];      /* Track subscription type */
+  int i;
+
+  /* Initialize response */
+  f->resp_off = 0;
+  f->resp_len = 0;
+
+  /* Parse request header */
+  if (count < 4) {
+    put_u32(f->resp, 28);    /* WASI_ERRNO_INVAL */
+    put_u32(f->resp + 4, 0); /* nevents = 0 */
+    f->resp_len = 8;
+    return f->resp_len;
+  }
+
+  nsubscriptions = get_u32(data);
+  if (nsubscriptions > 64 || count < 4 + (nsubscriptions * 48)) {
+    put_u32(f->resp, 28); /* WASI_ERRNO_INVAL */
+    put_u32(f->resp + 4, 0);
+    f->resp_len = 8;
+    return f->resp_len;
+  }
+
+  /* Parse subscriptions and convert to pollfd */
+  for (i = 0; i < (int)nsubscriptions; i++) {
+    const uchar *sub = data + 4 + (i * 48);
+    u64int userdata = get_u64(sub);
+    u8int type = sub[8];
+
+    if (type == WASI_EVENTTYPE_CLOCK) {
+      /* Extract timeout from clock subscription */
+      u64int timeout_ns = get_u64(sub + 24);
+      u32int timeout_candidate =
+          (u32int)(timeout_ns / 1000000ULL); /* ns to ms */
+      if (!have_timeout || timeout_candidate < timeout_ms) {
+        timeout_ms = timeout_candidate;
+        have_timeout = 1;
+      }
+      /* Don't add to pollfd array, just use for timeout */
+      continue;
+    }
+
+    if (type == WASI_EVENTTYPE_FD_READ || type == WASI_EVENTTYPE_FD_WRITE) {
+      u32int fd = get_u32(sub + 16);
+
+      if (nfds >= 64) {
+        /* Too many FD subscriptions */
+        put_u32(f->resp, 28); /* WASI_ERRNO_INVAL */
+        put_u32(f->resp + 4, 0);
+        f->resp_len = 8;
+        return f->resp_len;
+      }
+
+      /* Convert to pollfd */
+      pfds[nfds].fd = (int)fd;
+      pfds[nfds].events = 0;
+      pfds[nfds].revents = 0;
+
+      if (type == WASI_EVENTTYPE_FD_READ) {
+        pfds[nfds].events = POLLIN | POLLRDNORM;
+      } else {
+        pfds[nfds].events = POLLOUT | POLLWRNORM;
+      }
+
+      userdata_map[nfds] = userdata;
+      type_map[nfds] = type;
+      nfds++;
+    }
+  }
+
+  /* Call rump_sys_poll */
+  int ready = 0;
+  if (nfds > 0) {
+    ready = rump_sys_poll(pfds, (unsigned int)nfds,
+                          have_timeout ? (int)timeout_ms : -1);
+    if (ready < 0) {
+      /* Poll failed */
+      put_u32(f->resp, 29); /* WASI_ERRNO_IO */
+      put_u32(f->resp + 4, 0);
+      f->resp_len = 8;
+      return f->resp_len;
+    }
+  }
+
+  /* Build response */
+  put_u32(f->resp, 0); /* errno = SUCCESS */
+
+  u32int nevents = 0;
+  uchar *event_ptr = f->resp + 8;
+  u32int max_events = (sizeof(f->resp) - 8) / 32;
+
+  /* Convert pollfd results to WASI events */
+  for (i = 0; i < nfds && nevents < max_events; i++) {
+    if (pfds[i].revents == 0)
+      continue; /* No events for this FD */
+
+    /* Calculate event offset */
+    uchar *evt = event_ptr + (nevents * 32);
+
+    /* Write userdata */
+    put_u64(evt, userdata_map[i]);
+
+    /* Determine error code */
+    u16int error = 0;
+    if (pfds[i].revents & POLLNVAL) {
+      error = 8; /* WASI_ERRNO_BADF */
+    } else if (pfds[i].revents & POLLERR) {
+      error = 29; /* WASI_ERRNO_IO */
+    }
+    put_u16(evt + 8, error);
+
+    /* Write type */
+    evt[10] = type_map[i];
+
+    /* Write padding */
+    memset(evt + 11, 0, 5);
+
+    /* Write fd_readwrite union */
+    u16int nbytes = 0;
+    u16int flags = 0;
+
+    /* Estimate bytes available (conservative: assume some data) */
+    if (pfds[i].revents & (POLLIN | POLLRDNORM)) {
+      nbytes = 1; /* At least 1 byte readable */
+    } else if (pfds[i].revents & (POLLOUT | POLLWRNORM)) {
+      nbytes = 4096; /* Assume writable space */
+    }
+
+    if (pfds[i].revents & POLLHUP) {
+      flags |= WASI_EVENT_FD_READWRITE_HANGUP;
+    }
+
+    put_u16(evt + 16, nbytes);
+    put_u16(evt + 18, flags);
+
+    /* Zero remaining bytes */
+    memset(evt + 20, 0, 12);
+
+    nevents++;
+  }
+
+  /* Write nevents */
+  put_u32(f->resp + 4, nevents);
+  f->resp_len = 8 + (nevents * 32);
+
   return f->resp_len;
 }
 
@@ -1299,10 +1638,12 @@ static u32int handle_write(uchar *req, uchar *resp) {
       out_len = posix_write_readdir(f, data, count);
       break;
     case V_POSIX_PATH_CREATE_DIR:
-      out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_CREATE_DIR);
+      out_len =
+          posix_write_path_simple_op(f, data, count, POSIX_PATH_CREATE_DIR);
       break;
     case V_POSIX_PATH_REMOVE_DIR:
-      out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_REMOVE_DIR);
+      out_len =
+          posix_write_path_simple_op(f, data, count, POSIX_PATH_REMOVE_DIR);
       break;
     case V_POSIX_PATH_UNLINK:
       out_len = posix_write_path_simple_op(f, data, count, POSIX_PATH_UNLINK);
@@ -1335,10 +1676,16 @@ static u32int handle_write(uchar *req, uchar *resp) {
       out_len = posix_write_fd_set_size(f, data, count);
       break;
     case V_POSIX_FD_TELL:
-    case V_POSIX_FD_SET_TIMES:
-    case V_POSIX_PATH_SET_TIMES:
-    case V_POSIX_POLL:
       out_len = posix_write_stub(f);
+      break;
+    case V_POSIX_FD_SET_TIMES:
+      out_len = posix_write_fd_set_times(f, data, count);
+      break;
+    case V_POSIX_PATH_SET_TIMES:
+      out_len = posix_write_path_set_times(f, data, count);
+      break;
+    case V_POSIX_POLL:
+      out_len = posix_write_poll(f, data, count);
       break;
     default:
       out_len = 0;
@@ -1383,9 +1730,8 @@ static u32int handle_clunk(uchar *req, uchar *resp) {
   return 4 + 1 + 2;
 }
 
-
 static void srv_loop(void) {
-  exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  exchange = (volatile uchar *)exchange_base();
   ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
 
   print_str("Lux9 Rump Server: 9P Loop Active\n");

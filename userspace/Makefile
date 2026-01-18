@@ -11,6 +11,7 @@ INIT_DB := ../scripts/init_db.py
 TURBOCID_DIR := turbocid
 WASM_EXTENSIVE_DIR := wasm_extensive_test
 SRVCTL_DIR := srvctl
+HAL_DIR := hal
 
 KERNEL = ../kernel
 LIBLUX = lib/liblux
@@ -40,7 +41,7 @@ $(LIBLUX)/liblux.a:
 	$(MAKE) -C $(LIBLUX)
 
 # Build the C init binary
-$(C_INIT_DIR)/init: $(LIBLUX)/liblux.a
+$(C_INIT_DIR)/init: $(LIBLUX)/liblux.a $(C_INIT_DIR)/init.c $(C_INIT_DIR)/start.S $(C_INIT_DIR)/exit.c
 	$(MAKE) -C $(C_INIT_DIR)
 
 # Build the resurrection server
@@ -52,7 +53,11 @@ $(RUMP_DIR)/rump_server: $(LIBLUX)/liblux.a
 	$(MAKE) -C $(RUMP_DIR)
 
 # Build turbocid server
-$(TURBOCID_DIR)/turbocid: $(LIBLUX)/liblux.a
+$(TURBOCID_DIR)/turbocid: $(LIBLUX)/liblux.a $(C_INIT_DIR)/start.o $(C_INIT_DIR)/exit.o
+	$(MAKE) -C $(TURBOCID_DIR)
+
+# Build sophia server
+$(TURBOCID_DIR)/sophia: $(LIBLUX)/liblux.a $(TURBOCID_DIR)/sophia.c $(C_INIT_DIR)/start.o $(C_INIT_DIR)/exit.o
 	$(MAKE) -C $(TURBOCID_DIR)
 
 # Build extensive wasm test
@@ -62,6 +67,10 @@ $(WASM_EXTENSIVE_DIR)/wasm_test: $(LIBLUX)/liblux.a
 # Build srvctl helper
 $(SRVCTL_DIR)/srvctl: $(LIBLUX)/liblux.a
 	$(MAKE) -C $(SRVCTL_DIR)
+
+# Build HAL server
+$(HAL_DIR)/hal: $(LIBLUX)/liblux.a $(HAL_DIR)/hal.c $(C_INIT_DIR)/start.o $(C_INIT_DIR)/exit.o
+	$(MAKE) -C $(HAL_DIR)
 
 # Build the exec_wasm test
 $(BUILD_DIR)/exec_wasm: tests/exec_wasm.c $(LIBLUX)/liblux.a $(C_INIT_DIR)/start.o $(C_INIT_DIR)/exit.o
@@ -77,18 +86,20 @@ $(BUILD_DIR)/exec_wasm: tests/exec_wasm.c $(LIBLUX)/liblux.a $(C_INIT_DIR)/start
 #   boot/services.conf <- Resurrection config
 #   boot/wasm_test     <- Extensive WASM test runner
 #   boot/extensive_test.wasm <- Test module
-initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server $(TURBOCID_DIR)/turbocid $(TURBOCID_DIR)/sophia $(WASM_EXTENSIVE_DIR)/wasm_test $(SRVCTL_DIR)/srvctl $(BUILD_DIR)/exec_wasm
+initrd: $(C_INIT_DIR)/init $(RESURRECTION_DIR)/resurrection $(RUMP_DIR)/rump_server $(TURBOCID_DIR)/turbocid $(TURBOCID_DIR)/sophia $(WASM_EXTENSIVE_DIR)/wasm_test $(SRVCTL_DIR)/srvctl $(HAL_DIR)/hal $(BUILD_DIR)/exec_wasm
 	@mkdir -p $(INIT_BOOT_DIR)
 	@cp $(C_INIT_DIR)/init $(INIT_BOOT_DIR)/init
 	@cp $(RESURRECTION_DIR)/resurrection $(INIT_BOOT_DIR)/resurrection
 	@cp $(RUMP_DIR)/rump_server $(INIT_BOOT_DIR)/rump_server
 	@cp $(SRVCTL_DIR)/srvctl $(INIT_BOOT_DIR)/srvctl
+	@cp $(HAL_DIR)/hal $(INIT_BOOT_DIR)/hal
 	@cp $(TURBOCID_DIR)/sophia $(INIT_BOOT_DIR)/sophia
 	@cp $(WASM_EXTENSIVE_DIR)/wasm_test $(INIT_BOOT_DIR)/wasm_test
 	@cp $(WASM_EXTENSIVE_DIR)/extensive_test.wasm $(INIT_BOOT_DIR)/extensive_test.wasm
 	@cp hello.wasm $(INIT_BOOT_DIR)/hello.wasm
 	@cp $(BUILD_DIR)/exec_wasm $(INIT_BOOT_DIR)/exec_wasm
-	@mkdir -p $(INIT_BUILD_DIR)/srv
+	@rm -rf $(INIT_BUILD_DIR)/srv/ahci0
+	@mkdir -p $(INIT_BUILD_DIR)/srv/ahci0
 	@echo "Creating initrd.tar from $(INIT_BUILD_DIR)..."
 	@cd $(INIT_BUILD_DIR) && tar -cvf ../initrd.tar *
 	@ls -lh $(BUILD_DIR)/initrd.tar

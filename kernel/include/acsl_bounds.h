@@ -38,4 +38,17 @@
 #define ACSL_MAX_ALLOC (1ULL << 40) /* 1TB max allocation */
 #define ACSL_PAGE_SIZE 4096
 
+/*@
+  @ predicate valid_string(char *s) =
+  @   \exists integer n; 0 <= n < ACSL_MAXSTR &&
+  @     \valid_read(s + (0..n)) &&
+  @     s[n] == '\0' &&
+  @     (\forall integer i; 0 <= i < n ==> s[i] != '\0');
+  @*/
+
+/*@
+  @ predicate valid_string_or_null(char *s) =
+  @   s == \null || valid_string(s);
+  @*/
+
 #endif /* _ACSL_BOUNDS_H */

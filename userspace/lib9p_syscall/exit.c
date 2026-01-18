@@ -2,6 +2,13 @@
 
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 #define P9_CONTROL_OFFSET 0xF00
+
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
 #define Tsysexit 164
 
 typedef unsigned int uint;
@@ -32,7 +39,7 @@ static void put_u16(uchar *p, unsigned short val) {
  * This is called automatically when main() returns.
  */
 void _exit(int status) {
-  volatile uchar *exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  volatile uchar *exchange = (volatile uchar *)exchange_base();
   volatile struct P9Control *ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
   uchar *req = (uchar *)exchange;
   uint pos = 0;

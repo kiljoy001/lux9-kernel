@@ -27,6 +27,13 @@ typedef unsigned long long uvlong;
 typedef long long vlong;
 typedef unsigned int u32int;
 typedef unsigned long long u64int;
+
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
 typedef unsigned char u8int;
 
 /* 9P Definitions */
@@ -286,7 +293,7 @@ void main_loop(int fd) {
 }
 
 int main(void) {
-  exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  exchange = (volatile uchar *)exchange_base();
   ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
 
   print("TurboCID: Semantic Filesystem (Lite) Starting...\n");

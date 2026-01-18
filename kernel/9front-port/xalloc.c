@@ -215,14 +215,23 @@ void *xspanalloc(ulong size, int align, ulong span) {
 }
 
 /*@
-  requires size < 0x80000000;
-  assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
-  ensures \result != \null;
-/*@
-  requires size < 0x80000000;
-  ensures \result == \null || \valid((char*)\result + (0 .. size-1));
-  assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
-*/
+  @ requires size < 0x80000000;
+  @
+  @ behavior success:
+  @   assumes \exists Hole *h; h->size >= size;
+  @   ensures \result != \null;
+  @   ensures \valid((char*)\result + (0 .. size-1));
+  @   ensures ((uintptr)\result & 7) == 0;
+  @
+  @ behavior failure:
+  @   assumes \forall Hole *h; h->size < size;
+  @   ensures \result == \null;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
+  @ terminates \true;
+  @*/
 static void *xalloc_internal(ulong size, int zero, int raw) {
   Xhdr *p;
   Hole *h, **l;
@@ -361,6 +370,12 @@ void *xalloc(ulong size) { return xalloc_internal(size, 1, 0); }
 
 void *xalloc_raw(ulong size) { return xalloc_internal(size, 1, 1); }
 
+/*@
+  @ requires p != \null;
+  @ requires \valid((char*)p);
+  @ assigns xlists;
+  @ terminates \true;
+  @*/
 void xfree(void *p) {
   Xhdr *x;
 
@@ -403,6 +418,11 @@ int xmerge(void *vp, void *vq) {
   return 0;
 }
 
+/*@
+  @ requires size == 0 || addr + size > addr;
+  @ assigns xlists, xalloc_successes;
+  @ terminates \true;
+  @*/
 void xhole(uintptr addr, uintptr size) {
   Hole *h, *c, **l;
   uintptr top;

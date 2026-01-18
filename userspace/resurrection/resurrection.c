@@ -43,9 +43,15 @@
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 #define P9_CONTROL_OFFSET 0xF00
 
-/* Use a static const pointer in .rodata to avoid BSS corruption issues */
-static const unsigned char *const exchange_base =
-    (unsigned char *)EXCHANGE_PAGE_ADDR;
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base_addr(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
+static inline unsigned char *exchange_base_ptr(void) {
+  return (unsigned char *)exchange_base_addr();
+}
 
 /* 9P Message types */
 #define Tsyscall 130
@@ -321,8 +327,9 @@ static int do_write(int fd, const void *buf, int count);
 /* Syscall for time (needed by blind_cap.c) */
 #define SYS_NSEC 53
 
+#ifndef UNIT_TEST
 long long nsec(void) {
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -355,6 +362,7 @@ long long nsec(void) {
 
   return (long long)get_u64(req + pos);
 }
+#endif
 
 static u32int rng_state = 0xDEADBEEF;
 
@@ -1019,11 +1027,12 @@ uvlong get_u64(const uchar *p) {
 
 /* ========== Console Output ========== */
 
+#ifndef UNIT_TEST
 /* Simple print - ignores format args for now */
 int print(const char *fmt, ...) {
   const char *msg = fmt;
   int msg_len = strlen(msg);
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   uint sdata_size = 4 + 8 + 4 + msg_len;
   uint size = 4 + 1 + 2 + 4 + 4 + sdata_size;
   uint pos = 0;
@@ -1088,6 +1097,7 @@ static void print_num(const char *prefix, int num, const char *suffix) {
 
   print(buf);
 }
+#endif
 
 /* ========== Utility Functions ========== */
 
@@ -1278,7 +1288,7 @@ static void do_kill(u32int pid) {
  * Returns: fd on success, -1 on failure
  */
 static int do_open(const char *path, int mode) {
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   int pathlen = strlen(path);
   uint pos = 0;
 
@@ -1330,7 +1340,7 @@ static int do_open(const char *path, int mode) {
  * Returns: bytes read, -1 on error
  */
 static int do_read(int fd, char *buf, int count) {
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1390,7 +1400,7 @@ static int do_read(int fd, char *buf, int count) {
  * Close a file
  */
 static void do_close(int fd) {
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   uint pos = 0;
 
   memset(req, 0, 128);
@@ -1572,6 +1582,8 @@ int srv_create_entry(const char *name, int pid) {
   Service *s = &services[idx];
   memset(s, 0, sizeof(Service));
   strncpy(s->name, name, MAX_NAME_LEN - 1);
+  s->pid = pid;
+  s->state = (pid > 0) ? SRV_RUNNING : SRV_STOPPED;
   /* Generate a QID */
   s->qid.type = 0; /* File */
   s->qid.vers = 0;
@@ -1653,7 +1665,7 @@ static void monitor_services(void) {
 
 /* Helper for writing to fd */
 static int do_write(int fd, const void *buf, int count) {
-  uchar *req = (uchar *)exchange_base;
+  uchar *req = exchange_base_ptr();
   uint pos = 0;
 
   if (count > 4000)
@@ -1742,9 +1754,10 @@ static void srv_loop(int fd) {
 
 /* ========== Main Entry ========== */
 
+#ifndef UNIT_TEST
 int main(void) {
   /* Initialize exchange page pointers */
-  exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  exchange = (volatile uchar *)exchange_base_addr();
   ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
 
   /* Initialize keys */
@@ -1800,3 +1813,4 @@ int main(void) {
 
   /* ... shutdown ... */
 }
+#endif

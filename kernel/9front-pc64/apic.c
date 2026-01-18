@@ -406,3 +406,4 @@ void lapicintroff(void) { lapicw(LapicTPR, 0xFF); }
 void lapicnmienable(void) { lapicw(LapicPCINT, ApicNMI); }
 
 void lapicnmidisable(void) { lapicw(LapicPCINT, ApicIMASK); }
+

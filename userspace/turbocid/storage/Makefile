@@ -20,6 +20,17 @@ LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 SRCS = sart_journal.c sart_store.c sart_art.c sart_blkio.c
 OBJS = $(SRCS:.c=.o)
 
+# Delta compression sources (Phase 1)
+DELTA_SRCS = delta/xdelta3_simple.c delta/content_detect.c delta/delta_encode.c
+DELTA_OBJS = $(DELTA_SRCS:.c=.o)
+
+# Semantic clustering sources (Phase 2)
+SEMANTIC_SRCS = semantic/tlsh.c
+SEMANTIC_OBJS = $(SEMANTIC_SRCS:.c=.o)
+
+# All objects
+ALL_OBJS = $(OBJS) $(DELTA_OBJS) $(SEMANTIC_OBJS)
+
 # Monocypher object (we compile it locally)
 MONOCYPHER_SRC = $(MONOCYPHER)/monocypher.c
 MONOCYPHER_OBJ = monocypher.o
@@ -47,8 +58,8 @@ all: lib
 
 lib: $(LIB)
 
-$(LIB): $(OBJS) $(MONOCYPHER_OBJ)
-	$(AR) rcs $@ $(OBJS) $(MONOCYPHER_OBJ)
+$(LIB): $(ALL_OBJS) $(MONOCYPHER_OBJ)
+	$(AR) rcs $@ $(ALL_OBJS) $(MONOCYPHER_OBJ)
 	@echo "Built Sartfs library: $@"
 
 # Monocypher compilation (needs -Wno-unused-parameter for clean build)
@@ -75,7 +86,7 @@ $(LIBLUX_A):
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(OBJS) $(TEST_OBJ) $(MONOCYPHER_OBJ) $(LIB) $(TEST_BIN)
+	rm -f $(ALL_OBJS) $(TEST_OBJ) $(MONOCYPHER_OBJ) $(LIB) $(TEST_BIN)
 
 # Dependencies
 sart_journal.o: sart_journal.c dat.h hjfs_dat.h

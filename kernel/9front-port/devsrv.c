@@ -6,11 +6,11 @@
  * later lookup and mounting.
  */
 
-#include "u.h"
-#include "dat.h"
-#include "fns.h"
-#include "error.h"
 #include "9p_router.h"
+#include "dat.h"
+#include "error.h"
+#include "fns.h"
+#include "u.h"
 
 enum {
   Qdir = 0,
@@ -95,6 +95,7 @@ static long srvread(Chan *c, void *va, long n, vlong offset) {
 static long srvwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
   int fd;
+  char *name;
 
   if (c->qid.path == Qdir)
     error(Eperm);
@@ -107,10 +108,13 @@ static long srvwrite(Chan *c, void *va, long n, vlong) {
   buf[n] = 0;
   fd = (int)strtoul(buf, 0, 0);
 
-  // FIXME: Chan doesn't have name field
-  // if (srv_post_fd(up, c->name->s, fd) < 0)
-  //   error(Eio);
-  error("srv: post_fd not implemented");
+  /* Extract service name from channel path */
+  name = "unknown";
+  if (c->path && c->path->s)
+    name = c->path->s;
+
+  if (srv_post_fd(up, name, fd) < 0)
+    error(Eio);
   return n;
 }
 
@@ -124,18 +128,24 @@ static Chan *srvcreate(Chan *c, char *name, int omode, ulong perm) {
 }
 
 static void srvremove(Chan *c) {
+  char *name;
+
   if (c->qid.path == Qdir)
     error(Eperm);
-  // FIXME: Chan doesn't have name field
-  // if (srv_remove_entry(up, c->name->s) < 0)
-  //   error(Eperm);
-  error("srv: remove not implemented");
+
+  /* Extract service name from channel path */
+  name = "unknown";
+  if (c->path && c->path->s)
+    name = c->path->s;
+
+  if (srv_remove_entry(up, name) < 0)
+    error(Eperm);
 }
 
 Dev srvdevtab = {
-    's',       "srv",
+    's',      "srv",
 
-    devreset,  srvinit,   devshutdown, srvattach, srvwalk,
-    srvstat,   srvopen,   srvcreate,   srvclose,  srvread,
-    devbread,  srvwrite,  devbwrite,   srvremove, devwstat,
+    devreset, srvinit,  devshutdown, srvattach, srvwalk,
+    srvstat,  srvopen,  srvcreate,   srvclose,  srvread,
+    devbread, srvwrite, devbwrite,   srvremove, devwstat,
 };

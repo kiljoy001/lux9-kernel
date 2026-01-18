@@ -38,6 +38,12 @@ typedef struct Vctl Vctl;
 
 #include "lock.h"
 
+/* For Frama-C: don't alias bprint to print to avoid declaration conflicts */
+#ifndef __FRAMAC__
+#define bprint print
+#define bpanic panic
+#endif
+
 struct Label {
   uintptr sp;  /* offset 0 */
   uintptr pc;  /* offset 8 */
@@ -223,9 +229,9 @@ struct Mach {
   int fpstate; /* FPU state for interrupts */
   FPalloc *fpsave;
 
-  u64int *pml4; /* pml4 base for this processor (va) */
-  Tss *tss;     /* tss for this processor */
-  Segdesc *gdt; /* gdt for this processor */
+  uintptr *pml4; /* pml4 base for this processor (va) */
+  Tss *tss;      /* tss for this processor */
+  Segdesc *gdt;  /* gdt for this processor */
 
   u64int dr7; /* shadow copy of dr7 */
   u64int xcr0;

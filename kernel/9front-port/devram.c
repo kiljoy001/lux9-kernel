@@ -1,11 +1,11 @@
 #ifndef __FRAMAC__
 #include "dat.h"
 #include "fns.h"
+#include "libsec.h"
 #include "mem.h"
 #include "monocypher.h"
 #include "pebble.h"
 #include "portlib.h"
-#include "libsec.h"
 #include "u.h"
 #include <error.h>
 
@@ -39,7 +39,7 @@ static Dirtab ramdir[] = {
 
 /* Standard Ramdisk */
 static uchar *ramdisk_data;
-static ulong ramdisk_size = 64 * 1024 * 1024; /* 64MB default */
+static ulong ramdisk_size = 8 * 1024 * 1024; /* 8MB default */
 
 /* Secure Vault Structure - FIXED with locking and refcounting
  *
@@ -607,7 +607,8 @@ static Chan *ramopen(Chan *c, int omode) {
   @ behavior vault_close:
   @   assumes c->aux != \null;
   @   assigns ((ProcessVault *)c->aux)->refcount,
-  @           ((ProcessVault *)c->aux)->data[0..((ProcessVault *)c->aux)->size-1],
+  @           ((ProcessVault *)c->aux)->data[0..((ProcessVault
+  *)c->aux)->size-1],
   @           ((ProcessVault *)c->aux)->master_key[0..31];
   @ behavior other_close:
   @   assumes c->aux == \null;

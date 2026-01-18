@@ -9,9 +9,8 @@
  * 2. Capability-based access control via BlindLedger
  * 3. Proper resource tracking and cleanup on process exit
  *
- * The page is mapped at the fixed virtual address EXCHANGE_PAGE_ADDR
- * for userspace compatibility, but backed by a unique physical page
- * from the pool.
+ * The page is mapped at a per-process virtual address (p->p9uaddr) for
+ * userspace compatibility, backed by a unique physical page from the pool.
  */
 #include "9p_router.h"
 #include "dat.h"
@@ -21,7 +20,65 @@
 #include "pageown.h"
 #include "portlib.h"
 #include "u.h"
+#include "siphash.h"
 #include <error.h>
+
+static hsiphash_key_t p9va_key;
+static int p9va_key_init;
+
+static void p9va_init_key(void) {
+  extern int tpm_get_random(u8int *buf, int len);
+  extern u64int rdrand_u64(void);
+  extern int crypto_hw_rdrand_available(void);
+  extern u64int chacha20_csprng_u64(void);
+
+  if (p9va_key_init)
+    return;
+
+  if (tpm_get_random((u8int *)&p9va_key, sizeof(p9va_key)) ==
+      sizeof(p9va_key)) {
+    print("p9va: Using TPM random for VA key\n");
+  } else if (crypto_hw_rdrand_available()) {
+    p9va_key.key[0] = rdrand_u64();
+    p9va_key.key[1] = rdrand_u64();
+    print("p9va: Using RDRAND for VA key\n");
+  } else {
+    p9va_key.key[0] = chacha20_csprng_u64();
+    p9va_key.key[1] = chacha20_csprng_u64();
+    print("p9va: Using ChaCha20 CSPRNG for VA key (fallback)\n");
+  }
+  p9va_key_init = 1;
+}
+
+uintptr p9_pick_uaddr(Proc *p, const UserCapability *cap) {
+  u8int buf[BLIND_LEDGER_CAP_SIZE + 16];
+  int len = 0;
+
+  if (p == nil)
+    return EXCHANGE_PAGE_ADDR;
+
+  p9va_init_key();
+
+  memmove(buf, p->pid2.data, sizeof(p->pid2.data));
+  len = sizeof(p->pid2.data);
+
+  if (cap != nil) {
+    memmove(buf + len, cap->hash, BLIND_LEDGER_CAP_SIZE);
+    len += BLIND_LEDGER_CAP_SIZE;
+  }
+
+  u32int h = hsiphash(buf, len, &p9va_key);
+  for (u32int i = 0; i < P9_VA_REGION_PAGES; i++) {
+    uintptr slot = (h + i) % P9_VA_REGION_PAGES;
+    uintptr va = P9_VA_REGION_BASE + (slot * BY2PG);
+    if (va < UTZERO || va >= (USTKTOP - USTKSIZE))
+      continue;
+    if (isoverlap(va, BY2PG) == nil)
+      return va;
+  }
+
+  return EXCHANGE_PAGE_ADDR;
+}
 
 int proc_setup_p9page(Proc *p) {
   print("DEBUG:proc_setup_p9page ENTRY p=%p\n", p);
@@ -87,6 +144,15 @@ int proc_setup_p9page(Proc *p) {
           kva, (void *)pa);
   }
 
+  if (p->p9uaddr == 0) {
+    if (pa != 0)
+      p->p9uaddr = p9_pick_uaddr(p, &cap);
+    else
+      p->p9uaddr = p9_pick_uaddr(p, nil);
+  }
+  if (p->p9uaddr == 0)
+    p->p9uaddr = EXCHANGE_PAGE_ADDR;
+
   /* Zero the page to prevent information leakage (use KADDR) */
   memset(kva, 0, BY2PG);
 
@@ -94,7 +160,7 @@ int proc_setup_p9page(Proc *p) {
    * Create segment for the exchange page at fixed virtual address.
    * Physical page is already allocated (from pool or fallback).
    */
-  Segment *s = newseg(SG_PHYSICAL, EXCHANGE_PAGE_ADDR, 1);
+  Segment *s = newseg(SG_PHYSICAL, p->p9uaddr, 1);
   if (s == nil) {
     print("proc_setup_p9page: newseg failed\n");
     /* TODO: Return page to pool on failure */
@@ -124,7 +190,7 @@ int proc_setup_p9page(Proc *p) {
     Segment *oseg = p->seg[i];
     if (oseg == nil)
       continue;
-    if (EXCHANGE_PAGE_ADDR >= oseg->base && EXCHANGE_PAGE_ADDR < oseg->top) {
+    if (p->p9uaddr >= oseg->base && p->p9uaddr < oseg->top) {
       print("proc_setup_p9page: clearing conflicting seg[%d] at base=%#p\n", i,
             oseg->base);
       p->seg[i] = nil;
@@ -141,6 +207,7 @@ int proc_setup_p9page(Proc *p) {
 
   /* Store kernel virtual address for p9_handle_doorbell */
   p->p9page = kva;
+  p->p9page_phys = pa;
 
   print("proc_setup_p9page: pid=%lud seg=%p base=%#p pa=%#p kva=%p\n", p->pid,
         s, (void *)s->base, (void *)pa, p->p9page);

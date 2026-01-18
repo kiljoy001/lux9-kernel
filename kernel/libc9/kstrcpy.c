@@ -1,8 +1,9 @@
 #include "u.h"
+#include "acsl_bounds.h"
 #include "portlib.h"
 
 /*@
-  @ requires \valid_read(s2 + (0..));
+  @ requires valid_string(s2);
   @ requires \exists integer n; n >= 0 && s2[n] == '\0';
   @ requires \valid(s1 + (0 .. \strlen(s2)));
   @ requires \separated(s1 + (0 .. \strlen(s2)), s2 + (0 .. \strlen(s2)));

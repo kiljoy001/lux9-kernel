@@ -17,6 +17,8 @@ SRC = turbocid.c
 SOPHIA_SRC = sophia.c
 OBJ = $(SRC:.c=.o)
 SOPHIA_OBJ = $(SOPHIA_SRC:.c=.o)
+STORAGE_SRCS = $(wildcard storage/*.c storage/delta/*.c storage/semantic/*.c)
+STORAGE_HDRS = $(wildcard storage/*.h storage/delta/*.h storage/semantic/*.h)
 
 # Use same start.S as init/resurrection
 START_OBJ = ../lib9p_syscall/start.o
@@ -34,7 +36,7 @@ $(SOPHIA): $(START_OBJ) $(EXIT_OBJ) $(SOPHIA_OBJ) ../lib9p_syscall/linker.ld sto
 	@echo "Built Sophia: $@"
 	@ls -lh $@
 
-storage/libsart.a:
+storage/libsart.a: $(STORAGE_SRCS) $(STORAGE_HDRS)
 	$(MAKE) -C storage all
 
 $(START_OBJ):

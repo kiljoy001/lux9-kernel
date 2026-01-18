@@ -9,7 +9,7 @@
 #include "../include/u.h"
 
 #ifndef nil
-#define nil ((void*)0)
+#define nil ((void *)0)
 #endif
 
 /* ========== Capability Handle Table Management ========== */
@@ -54,32 +54,73 @@ wasm_cap_handle_t wasm_cap_table_insert(wasm_cap_table_t *table,
 
 clr_monotonic_capability_t *wasm_cap_table_lookup(wasm_cap_table_t *table,
                                                   wasm_cap_handle_t handle) {
-  if (!table || handle == WASM_CAP_INVALID_HANDLE || handle >= WASM_CAP_TABLE_SIZE)
+  if (!table || handle == WASM_CAP_INVALID_HANDLE ||
+      handle >= WASM_CAP_TABLE_SIZE)
     return nil;
 
   return table->caps[handle];
 }
 
 void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle) {
-  if (!table || handle == WASM_CAP_INVALID_HANDLE || handle >= WASM_CAP_TABLE_SIZE)
+  if (!table || handle == WASM_CAP_INVALID_HANDLE ||
+      handle >= WASM_CAP_TABLE_SIZE)
     return;
 
   table->caps[handle] = nil;
 }
 
+/* ========== WASM Linear Memory Access Helper ========== */
+
+/* Read string from WASM linear memory with bounds checking
+ *
+ * @param linear_mem: Pointer to WASM linear memory base
+ * @param mem_size: Size of linear memory in bytes
+ * @param ptr: Offset in linear memory where string starts
+ * @param len: Length of string to read
+ * @param buf: Output buffer for string (should include space for null
+ * terminator)
+ * @param buf_size: Size of output buffer
+ * @returns: 0 on success, -1 on error (out of bounds or buffer too small)
+ */
+static int wasm_read_string_from_memory(u8int *linear_mem, u32int mem_size,
+                                        u32int ptr, u32int len, char *buf,
+                                        u32int buf_size) {
+  if (!linear_mem || !buf)
+    return -1;
+
+  /* Check if string fits in WASM memory */
+  if (ptr >= mem_size || len > mem_size || ptr + len > mem_size)
+    return -1;
+
+  /* Check if output buffer is big enough (including null terminator) */
+  if (len >= buf_size)
+    return -1;
+
+  /* Copy string from WASM memory */
+  for (u32int i = 0; i < len; i++) {
+    buf[i] = (char)linear_mem[ptr + i];
+  }
+  buf[len] = '\0'; /* Null terminate */
+
+  return 0;
+}
+
 /* ========== WASM Import Functions ========== */
 
-wasm_cap_handle_t wasm_import_cap_create_module(wasm_cap_table_t *table,
-                                                capability_manager_t *manager,
-                                                u32int name_ptr,
-                                                u32int name_len) {
+wasm_cap_handle_t wasm_import_cap_create_module(
+    wasm_cap_table_t *table, capability_manager_t *manager, u8int *linear_mem,
+    u32int mem_size, u32int name_ptr, u32int name_len) {
+  char module_name[128];
+
   if (!table || !manager)
     return WASM_CAP_INVALID_HANDLE;
 
-  /* TODO: Access WASM linear memory to read name string */
-  /* For now, use a placeholder name */
-  /* This requires integration with WASM runtime to access linear memory */
-  const char *module_name = "wasm_module";
+  /* Read module name from WASM linear memory */
+  if (wasm_read_string_from_memory(linear_mem, mem_size, name_ptr, name_len,
+                                   module_name, sizeof(module_name)) < 0) {
+    print("wasm_cap: failed to read module name from WASM memory\n");
+    return WASM_CAP_INVALID_HANDLE;
+  }
 
   /* Create root capability via kernel API */
   clr_monotonic_capability_t *cap = cap_create_module(manager, module_name);
@@ -93,20 +134,26 @@ wasm_cap_handle_t wasm_import_cap_create_module(wasm_cap_table_t *table,
 wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
                                          capability_manager_t *manager,
                                          wasm_cap_handle_t parent_handle,
-                                         u32int perms,
-                                         u32int scope,
-                                         u32int name_ptr,
-                                         u32int name_len) {
+                                         u8int *linear_mem, u32int mem_size,
+                                         u32int perms, u32int scope,
+                                         u32int name_ptr, u32int name_len) {
+  char derived_name[128];
+
   if (!table || !manager)
     return WASM_CAP_INVALID_HANDLE;
 
   /* Lookup parent capability */
-  clr_monotonic_capability_t *parent = wasm_cap_table_lookup(table, parent_handle);
+  clr_monotonic_capability_t *parent =
+      wasm_cap_table_lookup(table, parent_handle);
   if (!parent)
     return WASM_CAP_INVALID_HANDLE;
 
-  /* TODO: Access WASM linear memory to read name string */
-  const char *derived_name = "derived_cap";
+  /* Read derived capability name from WASM linear memory */
+  if (wasm_read_string_from_memory(linear_mem, mem_size, name_ptr, name_len,
+                                   derived_name, sizeof(derived_name)) < 0) {
+    print("wasm_cap: failed to read derived name from WASM memory\n");
+    return WASM_CAP_INVALID_HANDLE;
+  }
 
   /* Derive capability based on scope */
   clr_monotonic_capability_t *derived = nil;
@@ -126,8 +173,7 @@ wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
   return wasm_cap_table_insert(table, derived);
 }
 
-u32int wasm_import_cap_check(wasm_cap_table_t *table,
-                             wasm_cap_handle_t handle,
+u32int wasm_import_cap_check(wasm_cap_table_t *table, wasm_cap_handle_t handle,
                              u32int required_perms) {
   if (!table)
     return 0;
@@ -185,8 +231,7 @@ u32int wasm_import_cap_revoke(wasm_cap_table_t *table,
 /* ========== IPC Integration ========== */
 
 u32int wasm_cap_serialize_for_ipc(wasm_cap_table_t *table,
-                                  wasm_cap_handle_t handle,
-                                  uuid_t *uuid_out) {
+                                  wasm_cap_handle_t handle, uuid_t *uuid_out) {
   if (!table || !uuid_out)
     return 0;
 

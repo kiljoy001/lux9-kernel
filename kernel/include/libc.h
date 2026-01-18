@@ -195,6 +195,7 @@ enum {
   FmtFlag = FmtByte << 1
 };
 
+/*@ assigns \result \from fmt; */
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);

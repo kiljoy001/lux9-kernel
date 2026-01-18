@@ -83,7 +83,7 @@ u32int srv_build_rclunk(buf, tag);
 ```c
 int main(void) {
   /* 1. Initialize exchange page */
-  exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  exchange = (volatile uchar *)lux_exchange_page();
   ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
 
   /* 2. Generate keypair for signing */

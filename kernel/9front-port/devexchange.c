@@ -150,6 +150,7 @@ struct Exchctl {
 };
 
 static Exchctl exchctl;
+extern void userpmap(uintptr, uintptr, int);
 
 typedef struct Dirtab Dirtab;
 Dirtab exchdir[] = {
@@ -1304,9 +1305,9 @@ void *kernel_setup_init_exchange(Proc *p) {
     return nil;
   }
 
-  /* Map exchange pages to userspace at EXCHANGE_PAGE_ADDR
-   * Page 1: Request buffer (0x7FFFFEEFF000)
-   * Page 2: Reply buffer (0x7FFFFEF00000)
+  /* Map exchange pages to userspace at per-process VA
+   * Page 1: Request buffer (base)
+   * Page 2: Reply buffer (base + BY2PG)
    *
    * Pages are now owned exclusively by userspace (init process).
    * Kernel CANNOT access until ownership is transferred via syscall doorbell.
@@ -1315,7 +1316,12 @@ void *kernel_setup_init_exchange(Proc *p) {
   /* We MUST create a segment so that rfork/dupseg treats it as SG_PHYSICAL
    * (shared/phys) instead of SG_DATA (COW), which would cause the parent to
    * lose connection to the kernel-mapped page after fork. */
-  Segment *s = newseg(SG_PHYSICAL, EXCHANGE_PAGE_ADDR, 2);
+  if (p->p9uaddr == 0)
+    p->p9uaddr = p9_pick_uaddr(p, nil);
+  if (p->p9uaddr == 0)
+    p->p9uaddr = EXCHANGE_PAGE_ADDR;
+  uintptr ubase = p9_user_base(p);
+  Segment *s = newseg(SG_PHYSICAL, ubase, 2);
   if (s == nil) {
     print("BOOT[kernel_setup_init_exchange]: newseg failed\n");
     borrow_release(p, req_pa);
@@ -1347,12 +1353,12 @@ void *kernel_setup_init_exchange(Proc *p) {
   p->seg[P9SEG] = s;
 
   /* Map using userpmap to ensure PTEs are present immediately */
-  userpmap(EXCHANGE_PAGE_ADDR, req_pa, PTEVALID | PTEUSER | PTEWRITE);
-  userpmap(EXCHANGE_PAGE_ADDR + BY2PG, rep_pa, PTEVALID | PTEUSER | PTEWRITE);
+  userpmap(ubase, req_pa, PTEVALID | PTEUSER | PTEWRITE);
+  userpmap(ubase + BY2PG, rep_pa, PTEVALID | PTEUSER | PTEWRITE);
 
   print("BOOT[kernel_setup_init_exchange]: userspace claimed exchange pages at "
         "%#p (PA req=%#p rep=%#p)\n",
-        EXCHANGE_PAGE_ADDR, req_pa, rep_pa);
+        ubase, req_pa, rep_pa);
 
   /* Map ring buffer control page to userspace (for future use)
    * The ring buffer provides batched message submission/completion */

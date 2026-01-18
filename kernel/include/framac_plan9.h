@@ -55,50 +55,50 @@ typedef unsigned char uuid_t[16];
 
 // Plan 9 formatted I/O types
 typedef struct Fmt {
-    unsigned char runes;
-    void *start;
-    void *to;
-    void *stop;
-    int (*flush)(struct Fmt *);
-    void *farg;
-    int nfmt;
-    void *args;
-    int r;
-    int width;
-    int prec;
-    unsigned long flags;
+  unsigned char runes;
+  void *start;
+  void *to;
+  void *stop;
+  int (*flush)(struct Fmt *);
+  void *farg;
+  int nfmt;
+  void *args;
+  int r;
+  int width;
+  int prec;
+  unsigned long flags;
 } Fmt;
 
 typedef int (*Fmts)(Fmt *);
 
 // Plan 9 locking primitives
 typedef struct QLock {
-    int locked;
-    void *head;
-    void *tail;
-    int use;
+  int locked;
+  void *head;
+  void *tail;
+  int use;
 } QLock;
 
 typedef struct Lock {
-    unsigned int key;
-    int isilock;
-    unsigned long pc;
-    void *p;
-    void *m;
-    uvlong lockcycles;
+  unsigned int key;
+  int isilock;
+  unsigned long pc;
+  void *p;
+  void *m;
+  uvlong lockcycles;
 } Lock;
 
 typedef struct RWlock {
-    Lock l;
-    int readers;
-    int writer;
-    void *head;
-    void *tail;
+  Lock l;
+  int readers;
+  int writer;
+  void *head;
+  void *tail;
 } RWlock;
 
 typedef struct Rendez {
-    Lock l;
-    void *p;
+  Lock l;
+  void *p;
 } Rendez;
 
 // Plan 9 process and channel types
@@ -114,49 +114,49 @@ typedef struct Mntcache Mntcache;
 
 // Stub definitions for opaque types
 struct Proc {
-    int pid;
-    int state;
-    char *text;
-    void *user;
-    uvlong time[6];
-    int insyscall;
-    QLock debug;
-    void *fpstate;
-    // ... other fields stubbed
+  int pid;
+  int state;
+  char *text;
+  void *user;
+  uvlong time[6];
+  int insyscall;
+  QLock debug;
+  void *fpstate;
+  // ... other fields stubbed
 };
 
 struct Chan {
-    Lock l;
-    int ref;
-    int flag;
-    int devno;
-    ushort mode;
-    ushort qid_type;
-    uint qid_vers;
-    uvlong qid_path;
-    uvlong offset;
-    void *aux;
-    Chan *next;
-    // ... other fields stubbed
+  Lock l;
+  int ref;
+  int flag;
+  int devno;
+  ushort mode;
+  ushort qid_type;
+  uint qid_vers;
+  uvlong qid_path;
+  uvlong offset;
+  void *aux;
+  Chan *next;
+  // ... other fields stubbed
 };
 
 struct Pgrp {
-    int ref;
-    RWlock ns;
-    QLock debug;
-    Chan *slash;
-    Chan *dot;
-    // ... other fields stubbed
+  int ref;
+  RWlock ns;
+  QLock debug;
+  Chan *slash;
+  Chan *dot;
+  // ... other fields stubbed
 };
 
 struct Segment {
-    int ref;
-    QLock lk;
-    ushort type;
-    ushort flags;
-    void *base;
-    usize size;
-    // ... other fields stubbed
+  int ref;
+  QLock lk;
+  ushort type;
+  ushort flags;
+  void *base;
+  usize size;
+  // ... other fields stubbed
 };
 
 // Plan 9 device driver types
@@ -167,16 +167,16 @@ typedef struct Walkqid Walkqid;
 typedef struct Dev Dev;
 
 struct Dirtab {
-    char *name;
-    uvlong qid;
-    vlong length;
-    long perm;
+  char *name;
+  uvlong qid;
+  vlong length;
+  long perm;
 };
 
 struct Walkqid {
-    Chan *clone;
-    int nqid;
-    void *qid[16];
+  Chan *clone;
+  int nqid;
+  void *qid[16];
 };
 
 // Plan 9 directory and file info
@@ -184,54 +184,54 @@ typedef struct Dir Dir;
 typedef struct Qid Qid;
 
 struct Qid {
-    uvlong path;
-    ulong vers;
-    uchar type;
+  uvlong path;
+  ulong vers;
+  uchar type;
 };
 
 struct Dir {
-    ushort type;
-    uint dev;
-    Qid qid;
-    ulong mode;
-    ulong atime;
-    ulong mtime;
-    vlong length;
-    char *name;
-    char *uid;
-    char *gid;
-    char *muid;
+  ushort type;
+  uint dev;
+  Qid qid;
+  ulong mode;
+  ulong atime;
+  ulong mtime;
+  vlong length;
+  char *name;
+  char *uid;
+  char *gid;
+  char *muid;
 };
 
 // Plan 9 network and 9P types
 typedef struct Fcall Fcall;
 struct Fcall {
-    uchar type;
-    u32int fid;
-    ushort tag;
-    union {
-        struct {
-            u32int msize;
-            char *version;
-        };
-        struct {
-            u32int afid;
-            char *uname;
-            char *aname;
-        };
-        // ... other message types stubbed
+  uchar type;
+  u32int fid;
+  ushort tag;
+  union {
+    struct {
+      u32int msize;
+      char *version;
     };
+    struct {
+      u32int afid;
+      char *uname;
+      char *aname;
+    };
+    // ... other message types stubbed
+  };
 };
 
 // Plan 9 authentication
 typedef struct Authinfo Authinfo;
 struct Authinfo {
-    char *cuid;
-    char *suid;
-    char *cap;
-    int ncap;
-    uchar *secret;
-    int nsecret;
+  char *cuid;
+  char *suid;
+  char *cap;
+  int ncap;
+  uchar *secret;
+  int nsecret;
 };
 
 // Plan 9 string functions - declare as extern to avoid conflicts
@@ -245,20 +245,28 @@ extern int utfnlen(char *s, long m);
 extern char *utfrune(char *s, long c);
 
 // varargs support
+// varargs support
 typedef __builtin_va_list va_list;
+
+#undef va_start
+#undef va_end
+#undef va_arg
+#undef va_copy
+
 #define va_start(ap, last) __builtin_va_start(ap, last)
 #define va_end(ap) __builtin_va_end(ap)
 #define va_arg(ap, type) __builtin_va_arg(ap, type)
 #define va_copy(dest, src) __builtin_va_copy(dest, src)
 
 // Plan 9 formatted I/O functions (stubs)
+/*@ assigns \result \from fmt; */
 extern int print(char *fmt, ...);
 extern int sprint(char *buf, char *fmt, ...);
 extern int snprint(char *buf, int len, char *fmt, ...);
 extern int vsnprint(char *buf, int len, char *fmt, va_list args);
 extern int fmtprint(Fmt *f, char *fmt, ...);
 extern int fmtstrcpy(Fmt *f, char *s);
-extern int fmtinstall(int c, int (*f)(Fmt*));
+extern int fmtinstall(int c, int (*f)(Fmt *));
 extern int fmtstrinit(Fmt *f);
 
 // Standard C memory/string functions are already declared
@@ -306,30 +314,30 @@ extern Chan *cclone(Chan *c);
 extern Chan *namec(char *name, int amode, int omode, ulong perm);
 
 // Error constants
-enum {
-    ERRMAX = 128,
-    KNAMELEN = 28
-};
+// Error constants
+#ifndef ERRMAX
+enum { ERRMAX = 128, KNAMELEN = 28 };
+#endif
 
 // Architecture-specific but needed
 typedef struct Ureg Ureg;
 struct Ureg {
-    u64int ax;
-    u64int bx;
-    u64int cx;
-    u64int dx;
-    u64int si;
-    u64int di;
-    u64int bp;
-    u64int r8;
-    u64int r9;
-    u64int r10;
-    u64int r11;
-    u64int r12;
-    u64int r13;
-    u64int r14;
-    u64int r15;
-    // ... other registers stubbed
+  u64int ax;
+  u64int bx;
+  u64int cx;
+  u64int dx;
+  u64int si;
+  u64int di;
+  u64int bp;
+  u64int r8;
+  u64int r9;
+  u64int r10;
+  u64int r11;
+  u64int r12;
+  u64int r13;
+  u64int r14;
+  u64int r15;
+  // ... other registers stubbed
 };
 
 #endif /* __FRAMAC__ */

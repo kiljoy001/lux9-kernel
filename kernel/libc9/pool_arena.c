@@ -10,13 +10,14 @@
  */
 
 #include "pool_internal.h"
+#include "acsl_bounds.h"
 #include "pool_types.h"
 #include <libc.h>
 #include <pool.h>
 #include <u.h>
 
 /*@
-  @ requires \valid_read(fmt + (0..));
+  @ requires valid_string(fmt);
   @ requires \exists integer k; k >= 0 && fmt[k] == '\0';
   @ assigns \nothing;
   @*/

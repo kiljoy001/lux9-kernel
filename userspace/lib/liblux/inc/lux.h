@@ -43,6 +43,13 @@ typedef u32int Rune; /* UTF-8 code point */
 #define P9_CONTROL_OFFSET 0xF00
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 
+extern uintptr lux_exchange_base;
+static inline uintptr lux_exchange_page(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
+
 /* Userspace compatible Qid structure */
 typedef struct Qid {
   uchar type;

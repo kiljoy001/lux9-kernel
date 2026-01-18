@@ -47,7 +47,7 @@ static int packstr(uchar *p, char *s) {
 }
 
 int lux_call(struct Fcall *tx, struct Fcall *rx) {
-  uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
+  uchar *page = (uchar *)lux_exchange_page();
 
   /* 1. Marshal Request */
   int n = convS2M(tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
@@ -79,6 +79,19 @@ int lux_call(struct Fcall *tx, struct Fcall *rx) {
 extern uint convS2M(Fcall *f, uchar *ap, uint n);
 extern uint convM2S(uchar *ap, uint n, Fcall *f);
 extern int vsnprint(char *, int, const char *, va_list);
+
+static uchar *rx_exchange_data(Fcall *rx) {
+  uintptr base = lux_exchange_page() + P9_MSG_OFFSET;
+  uintptr end = base + P9_MSG_SIZE;
+  uintptr p = (uintptr)rx->sdata;
+  if (p < base || p + rx->scount > end) {
+    uintptr fallback = base + (4 + 1 + 2 + 8 + 4);
+    if (fallback + rx->scount > end)
+      return nil;
+    return (uchar *)fallback;
+  }
+  return (uchar *)p;
+}
 
 /* Generic syscall wrapper with sdata buffer management */
 static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
@@ -170,12 +183,15 @@ long sys_read(int fd, void *buf, long n) {
     return -1;
 
   // Copy data from reply
-  if (rx.count > n)
-    rx.count = n;
-  if (rx.count > 0 && rx.sdata) {
-    memmove(buf, rx.sdata, rx.count);
+  if (rx.scount > n)
+    rx.scount = n;
+  if (rx.scount > 0) {
+    uchar *src = rx_exchange_data(&rx);
+    if (!src)
+      return -1;
+    memmove(buf, src, rx.scount);
   }
-  return rx.count;
+  return rx.scount;
 }
 
 long sys_write(int fd, void *buf, long n) {
@@ -302,7 +318,7 @@ int sys_rfork(int flags) {
   tx.tag = 1;
   tx.flags = flags;
 
-  uchar *page = (uchar *)EXCHANGE_PAGE_ADDR;
+  uchar *page = (uchar *)lux_exchange_page();
 
   /* 1. Marshal Request */
   int n = convS2M(&tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
@@ -408,8 +424,10 @@ int sys_pipe(int *fds) {
     return -1;
 
   // Response contains 8 bytes: [fd0:4][fd1:4]
-  if (rx.scount >= 8 && rx.sdata) {
-    uchar *p = rx.sdata;
+  if (rx.scount >= 8) {
+    uchar *p = rx_exchange_data(&rx);
+    if (!p)
+      return -1;
     fds[0] = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
     p += 4;
     fds[1] = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
@@ -468,12 +486,15 @@ long sys_pread(int fd, void *buf, long n, long offset) {
   if (lux_call(&tx, &rx) < 0)
     return -1;
 
-  if (rx.count > n)
-    rx.count = n;
-  if (rx.count > 0 && rx.sdata) {
-    memmove(buf, rx.sdata, rx.count);
+  if (rx.scount > n)
+    rx.scount = n;
+  if (rx.scount > 0) {
+    uchar *src = rx_exchange_data(&rx);
+    if (!src)
+      return -1;
+    memmove(buf, src, rx.scount);
   }
-  return rx.count;
+  return rx.scount;
 }
 
 uvlong sys_nsec(void) {

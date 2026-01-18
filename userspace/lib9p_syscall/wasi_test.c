@@ -4,6 +4,13 @@
 
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
 #define P9_CONTROL_OFFSET 0xF00
+
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
 #define Tsyscall 130
 #define Rsyscall 131
 #define SYS_WASM_COMPILE 160
@@ -161,7 +168,7 @@ static int send_tsyscall(volatile uchar *exchange,
 }
 
 void main(void) {
-  volatile uchar *exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  volatile uchar *exchange = (volatile uchar *)exchange_base();
   volatile struct P9Control *ctl =
       (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
   uchar reply_buf[256];

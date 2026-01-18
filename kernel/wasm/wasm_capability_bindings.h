@@ -72,21 +72,25 @@ void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle);
  *
  * @param table: Process capability table
  * @param manager: Global capability manager
+ * @param linear_mem: Pointer to WASM linear memory base
+ * @param mem_size: Size of WASM linear memory
  * @param name_ptr: Pointer to module name string in WASM memory
  * @param name_len: Length of module name
  * @returns: Capability handle, or WASM_CAP_INVALID_HANDLE on error
  *
  * WASM signature: (i32, i32) -> i32
  */
-wasm_cap_handle_t wasm_import_cap_create_module(wasm_cap_table_t *table,
-                                                capability_manager_t *manager,
-                                                u32int name_ptr, u32int name_len);
+wasm_cap_handle_t wasm_import_cap_create_module(
+    wasm_cap_table_t *table, capability_manager_t *manager, u8int *linear_mem,
+    u32int mem_size, u32int name_ptr, u32int name_len);
 
 /* Derive child capability with reduced permissions
  *
  * @param table: Process capability table
  * @param manager: Global capability manager
  * @param parent_handle: Handle to parent capability
+ * @param linear_mem: Pointer to WASM linear memory base
+ * @param mem_size: Size of WASM linear memory
  * @param perms: Requested permissions (must be subset of parent)
  * @param scope: New scope (CAP_SCOPE_CLASS or CAP_SCOPE_METHOD)
  * @param name_ptr: Pointer to derived capability name in WASM memory
@@ -98,10 +102,9 @@ wasm_cap_handle_t wasm_import_cap_create_module(wasm_cap_table_t *table,
 wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
                                          capability_manager_t *manager,
                                          wasm_cap_handle_t parent_handle,
-                                         u32int perms,
-                                         u32int scope,
-                                         u32int name_ptr,
-                                         u32int name_len);
+                                         u8int *linear_mem, u32int mem_size,
+                                         u32int perms, u32int scope,
+                                         u32int name_ptr, u32int name_len);
 
 /* Check if capability has required permissions
  *
@@ -112,8 +115,7 @@ wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
  *
  * WASM signature: (i32, i32) -> i32
  */
-u32int wasm_import_cap_check(wasm_cap_table_t *table,
-                             wasm_cap_handle_t handle,
+u32int wasm_import_cap_check(wasm_cap_table_t *table, wasm_cap_handle_t handle,
                              u32int required_perms);
 
 /* Validate capability derivation chain
@@ -167,8 +169,7 @@ u32int wasm_import_cap_revoke(wasm_cap_table_t *table,
  * @returns: 1 on success, 0 on error
  */
 u32int wasm_cap_serialize_for_ipc(wasm_cap_table_t *table,
-                                  wasm_cap_handle_t handle,
-                                  uuid_t *uuid_out);
+                                  wasm_cap_handle_t handle, uuid_t *uuid_out);
 
 /* Deserialize capability from UUID received via IPC
  *

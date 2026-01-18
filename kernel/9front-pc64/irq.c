@@ -71,6 +71,16 @@ int irqhandled(Ureg *ureg, int vno) {
     return 1;
   }
 
+  /* CRITICAL FIX: Send EOI for unhandled interrupts to prevent storm.
+   * Timer interrupt (vno=32) fires continuously if not acknowledged.
+   * This happens when timer is enabled but handler not registered yet. */
+  if (vno >= VectorPIC) {
+    /* Send EOI to local APIC */
+    extern void lapiceoi(int);
+    lapiceoi(vno);
+    return 1; /* Acknowledged, even if no handler */
+  }
+
   if (vno < VectorPIC || vno == VectorSYSCALL)
     return 0;
 

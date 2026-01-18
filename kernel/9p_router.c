@@ -25,10 +25,25 @@ typedef struct Waitmsg Waitmsg;
 #include "wasm/wasm_9p_integration.h"
 #include "wasm/wasm_fileserver.h"
 #include "wasm/wasm_runtime.h"
+#include "acsl_bounds.h"
+
+/* Forward declaration for kstrlen (strlen wrapper from libc9) */
+extern long kstrlen(char *);
 
 /* Process FSM integration - use real FSM from proc_fsm.c */
 extern int proc_event(Proc *p, int event);
 extern char *proc_state_names[PS_COUNT];
+
+/* ACSL specifications for error handling functions */
+/*@ assigns \nothing; exits \nothing; */
+extern void lux9_error(char *s);
+/*@ assigns \nothing; exits \nothing; */
+extern void nexterror(void);
+
+/*@ assigns \nothing; exits \nothing; */
+extern void panic(char *fmt, ...) __attribute__((noreturn));
+/*@ assigns \nothing; terminates \true; */
+extern int print(char *fmt, ...);
 
 /* Forward declarations for handlers */
 extern uvlong nsec(void); /* Fix implicit declaration */
@@ -49,6 +64,12 @@ static void rpipe_clone_notify(void *aux);
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 extern uintptr sysexec(void *list_void); /* System exec call */
+
+/*@ assigns \nothing; ensures \result == 0 || \result == -1; */
+int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r);
+
+/*@ assigns \nothing; ensures \result == 0 || \result == -1; */
+int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r);
 
 /*@
   @ requires p == \null || ep == \null || p + 4 <= ep ==> \valid_read(p +
@@ -92,14 +113,14 @@ static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
  * Path matching for routing
  */
 /*@
-  @ requires \valid_read(path);
-  @ requires \valid_read(pattern);
+  @ requires valid_string(path);
+  @ requires valid_string(pattern);
   @ assigns \nothing;
   @ ensures \result == 0 || \result == 1;
   @ terminates \true;
   @*/
 static int path_match(char *path, char *pattern) {
-  int plen = strlen(pattern);
+  int plen = kstrlen(pattern);
   if (pattern[plen - 1] == '*') {
     return strncmp(path, pattern, plen - 1) == 0;
   }
@@ -337,10 +358,10 @@ static void dump_bytes(const char *label, const uchar *buf, uint n) {
   if (buf == nil || n == 0)
     return;
 
-  print("%s", label);
+  bprint("%s", label);
   for (i = 0; i < n; i++)
-    print(" %02x", buf[i]);
-  print("\n");
+    bprint(" %02x", buf[i]);
+  bprint("\n");
 }
 /* Forward declaration of generic device handler */
 
@@ -382,7 +403,7 @@ static int get_session_pebble(Proc *p, PebbleToken *tok) {
  */
 /*@
   @ requires \valid(tok) && \valid(owner);
-  @ requires \valid_read(path);
+  @ requires valid_string(path);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result == 0 || \result == 1;
@@ -589,7 +610,7 @@ static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
   memmove(path, t->data + 2, pathlen);
   path[pathlen] = '\0';
 
-  print("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
+  bprint("p9_dispatch: Texec for '%s' (pid %lud)\n", path, p->pid);
 
   /* Sysexec requires User Virtual Addresses for both path and argv.
    * We must calculate the user address of the path existing in the
@@ -599,7 +620,7 @@ static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
   kpage = (uintptr)p->p9page;
   kpath = (uintptr)t->data + 2;
   path_offset = kpath - kpage;
-  upath = EXCHANGE_PAGE_ADDR + path_offset;
+  upath = p9_user_base(p) + path_offset;
 
   /* 2. Ensure null-termination in the user buffer
    * We can safely write \0 because validaddr/namec expects it.
@@ -629,7 +650,7 @@ static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
 
   /* Calculate User Address of argv */
   uintptr argv_offset = kargv_start - kpage;
-  uintptr uargv = EXCHANGE_PAGE_ADDR + argv_offset;
+  uintptr uargv = p9_user_base(p) + argv_offset;
 
   /* Prepare arguments for sysexec */
   ulong args[2];
@@ -638,7 +659,7 @@ static int p9_handle_texec(Proc *p, Fcall *t, Fcall *r) {
 
   /* Call sysexec - never returns on success */
   if (waserror()) {
-    print("p9_dispatch: Texec failed: %s\n", up->errstr);
+    bprint("p9_dispatch: Texec failed: %s\n", up->errstr);
     xfree(path);
     r->type = Rerror;
     r->ename = up->errstr;
@@ -674,7 +695,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
   snprint(buf, sizeof(buf), "CONSOLE: p9_dispatch: ENTRY type=%d tag=%d\n",
           t->type, t->tag);
-  uartputs(buf, strlen(buf));
+  uartputs(buf, kstrlen(buf));
 
   /* Initialize reply data buffer to exchange page message area.
    * Handlers that generate read responses (Rread) will write to r->data. */
@@ -722,7 +743,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
     }
 
-    print("p9_dispatch: Tsyscall scallnr=%d\n", t->scallnr);
+    bprint("p9_dispatch: Tsyscall scallnr=%d\n", t->scallnr);
 
     switch (t->scallnr) {
     case SYS_OPEN: {
@@ -751,7 +772,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int mode = GBIT8(p);
       p += 1;
 
-      print("p9_dispatch: Tsyscall SYS_OPEN ptr '%s' mode=%d\n", path, mode);
+      bprint("p9_dispatch: Tsyscall SYS_OPEN ptr '%s' mode=%d\n", path, mode);
 
       int fd;
       Chan *c = 0;
@@ -811,8 +832,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int perm = GBIT32(p);
       p += 4;
 
-      print("p9_dispatch: Tsyscall SYS_CREATE '%s' mode=%d perm=%o\n", path,
-            mode, perm);
+      bprint("p9_dispatch: Tsyscall SYS_CREATE '%s' mode=%d perm=%o\n", path,
+             mode, perm);
 
       Chan *c = nil;
       int fd;
@@ -843,7 +864,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_RFORK: {
       extern uintptr sysrfork(void *list_void);
 
-      print("p9_dispatch: SYS_RFORK case entered, kp=%d\n", up ? up->kp : -1);
+      bprint("p9_dispatch: SYS_RFORK case entered, kp=%d\n", up ? up->kp : -1);
 
       /* Two-Level Spawn Capability Check (userspace only).
        * Level 1: Namespace (Pgrp) limit - shared by all procs in namespace
@@ -854,7 +875,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
         /* Check spawn capability exists */
         if (uuid_is_null(&up->spawn_cap)) {
-          print("p9_dispatch: SYS_RFORK FAILED - spawn_cap is null\n");
+          bprint("p9_dispatch: SYS_RFORK FAILED - spawn_cap is null\n");
           r->type = Rerror;
           snprint(up->errstr, ERRMAX, "no spawn capability");
           r->ename = up->errstr;
@@ -865,8 +886,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         if (pg != nil) {
           lock(&pg->spawn_lock);
           if (pg->spawn_count >= pg->spawn_limit) {
-            print("p9_dispatch: SYS_RFORK FAILED - namespace limit %d/%d\n",
-                  pg->spawn_count, pg->spawn_limit);
+            bprint("p9_dispatch: SYS_RFORK FAILED - namespace limit %d/%d\n",
+                   pg->spawn_count, pg->spawn_limit);
             unlock(&pg->spawn_lock);
             r->type = Rerror;
             snprint(up->errstr, ERRMAX, "namespace spawn limit (%d/%d)",
@@ -881,7 +902,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
           u8int cap_hash[16];
           uuid_get_pa_hash_bits(&up->spawn_cap, cap_hash);
           if (memcmp(cap_hash, pg->identity_hash, 6) != 0) {
-            print("p9_dispatch: SYS_RFORK FAILED - spawn cap not bound\n");
+            bprint("p9_dispatch: SYS_RFORK FAILED - spawn cap not bound\n");
             unlock(&pg->spawn_lock);
             r->type = Rerror;
             snprint(up->errstr, ERRMAX, "spawn cap not bound to namespace");
@@ -893,8 +914,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
         /* Level 2: Process child limit check */
         if (up->spawn_children >= up->spawn_max_children) {
-          print("p9_dispatch: SYS_RFORK FAILED - process limit %d/%d\n",
-                up->spawn_children, up->spawn_max_children);
+          bprint("p9_dispatch: SYS_RFORK FAILED - process limit %d/%d\n",
+                 up->spawn_children, up->spawn_max_children);
           r->type = Rerror;
           snprint(up->errstr, ERRMAX, "process spawn limit (%d/%d)",
                   up->spawn_children, up->spawn_max_children);
@@ -911,7 +932,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
       ulong flags = GBIT32(p);
 
-      print("p9_dispatch: Tsyscall SYS_RFORK flags=0x%lx\n", flags);
+      bprint("p9_dispatch: Tsyscall SYS_RFORK flags=0x%lx\n", flags);
 
       ulong args[1] = {flags};
       uintptr ret;
@@ -922,7 +943,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
       ret = sysrfork(args);
-      print("DEBUG: sysrfork returned ret=%#p\n", ret);
+      bprint("DEBUG: sysrfork returned ret=%#p\n", ret);
       poperror();
 
       r->type = Rsyscall;
@@ -943,7 +964,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
       uintptr addr = (uintptr)GBIT64(p); // Use 64-bit for addr
 
-      print("p9_dispatch: Tsyscall SYS_BRK addr=0x%p\n", (void *)addr);
+      bprint("p9_dispatch: Tsyscall SYS_BRK addr=0x%p\n", (void *)addr);
 
       uintptr ret;
       if (waserror()) {
@@ -995,7 +1016,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         }
       }
 
-      print("p9_dispatch: Tsyscall SYS_EXIT '%s'\n", ename ? ename : "");
+      bprint("p9_dispatch: Tsyscall SYS_EXIT '%s'\n", ename ? ename : "");
       pexit(ename ? ename : "", 1);
       return 0;
     }
@@ -1012,7 +1033,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int fd = GBIT32(p);
       p += 4;
 
-      print("p9_dispatch: SYS_CLOSE fd=%d\n", fd);
+      bprint("p9_dispatch: SYS_CLOSE fd=%d\n", fd);
 
       if (waserror()) {
         r->type = Rerror;
@@ -1053,8 +1074,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int whence = GBIT32(p);
       p += 4;
 
-      print("p9_dispatch: SYS_SEEK fd=%d offset=%lld whence=%d\n", fd, offset,
-            whence);
+      bprint("p9_dispatch: SYS_SEEK fd=%d offset=%lld whence=%d\n", fd, offset,
+             whence);
 
       vlong newpos;
       if (waserror()) {
@@ -1075,7 +1096,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_NSEC: {
       /* Returns u64int time */
-      print("p9_dispatch: SYS_NSEC\n");
+      bprint("p9_dispatch: SYS_NSEC\n");
       uvlong t_now = nsec();
 
       r->type = Rsyscall;
@@ -1104,8 +1125,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
 
-      print("p9_dispatch: SYS_WRITE fd=%d count=%d off=%lld\n", fid, count,
-            offset);
+      bprint("p9_dispatch: SYS_WRITE fd=%d count=%d off=%lld\n", fid, count,
+             offset);
 
       extern Chan *fdtochan(int, int, int, int);
       Chan *c;
@@ -1154,8 +1175,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
 
-      print("p9_dispatch: SYS_PWRITE fd=%d count=%d off=%lld\n", fid, count,
-            offset);
+      bprint("p9_dispatch: SYS_PWRITE fd=%d count=%d off=%lld\n", fid, count,
+             offset);
 
       extern Chan *fdtochan(int, int, int, int);
       Chan *c;
@@ -1201,9 +1222,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       int count = GBIT32(p);
       p += 4;
 
-      print("p9_dispatch: %s fd=%d count=%d off=%lld\n",
-            t->scallnr == SYS_READ ? "SYS_READ" : "SYS_PREAD", fid, count,
-            offset);
+      bprint("p9_dispatch: %s fd=%d count=%d off=%lld\n",
+             t->scallnr == SYS_READ ? "SYS_READ" : "SYS_PREAD", fid, count,
+             offset);
 
       extern Chan *fdtochan(int, int, int, int);
       Chan *c;
@@ -1264,7 +1285,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
           path[len] = 0;
           p += len;
 
-          print("p9_dispatch: SYS_STAT '%s'\n", path);
+          bprint("p9_dispatch: SYS_STAT '%s'\n", path);
 
           if (waserror()) {
             if (c)
@@ -1279,7 +1300,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
           int fid = GBIT32(p);
           p += 4;
 
-          print("p9_dispatch: SYS_STAT fd=%d\n", fid);
+          bprint("p9_dispatch: SYS_STAT fd=%d\n", fid);
 
           if (waserror()) {
             if (c)
@@ -1343,7 +1364,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
 
-      print("p9_dispatch: SYS_WSTAT '%s' nstat=%d\n", path, nstat);
+      bprint("p9_dispatch: SYS_WSTAT '%s' nstat=%d\n", path, nstat);
 
       extern void validstat(uchar * s, int n);
       Chan *c = nil;
@@ -1372,7 +1393,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
 
     case SYS_WASM_COMPILE: {
-      print("p9_dispatch: Tsyscall SYS_WASM_COMPILE\n");
+      bprint("p9_dispatch: Tsyscall SYS_WASM_COMPILE\n");
 
       /* Call Layer 1 wasm3 runtime handler */
       if (sys_wasm_compile(t, r) != 0) {
@@ -1384,7 +1405,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
 
     case SYS_WASM_EXECUTE: {
-      print("p9_dispatch: Tsyscall SYS_WASM_EXECUTE\n");
+      bprint("p9_dispatch: Tsyscall SYS_WASM_EXECUTE\n");
 
       /* Call Layer 1 wasm3 runtime handler */
       if (sys_wasm_execute(t, r) != 0) {
@@ -1396,7 +1417,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
 
     case SYS_WASM_DESTROY: {
-      print("p9_dispatch: Tsyscall SYS_WASM_DESTROY\n");
+      bprint("p9_dispatch: Tsyscall SYS_WASM_DESTROY\n");
 
       /* Call Layer 1 wasm3 runtime handler */
       if (sys_wasm_destroy(t, r) != 0) {
@@ -1428,7 +1449,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       p = tsyscall_skip_argc(p, ep, 1);
 
       int *fd = (int *)((uchar *)proc->p9page + P9_MSG_OFFSET + 64);
-      int *ufd = (int *)(EXCHANGE_PAGE_ADDR + P9_MSG_OFFSET + 64);
+      int *ufd = (int *)(p9_user_base(p) + P9_MSG_OFFSET + 64);
       fd[0] = -1;
       fd[1] = -1;
       ulong args[1] = {(ulong)ufd};
@@ -1530,8 +1551,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
 
       uintptr kpage = (uintptr)proc->p9page;
-      uintptr uold = EXCHANGE_PAGE_ADDR + ((uintptr)oldk - kpage);
-      uintptr uaname = EXCHANGE_PAGE_ADDR + ((uintptr)anamek - kpage);
+      uintptr uold = p9_user_base(p) + ((uintptr)oldk - kpage);
+      uintptr uaname = p9_user_base(p) + ((uintptr)anamek - kpage);
 
       args[0] = fd;
       args[1] = afd;
@@ -1573,7 +1594,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       r->type = Rsyscall;
       r->tag = t->tag;
       r->retval = pid;
-      r->scount = strlen(msg) + 1;
+      r->scount = kstrlen(msg) + 1;
       r->sdata = (uchar *)msg;
       return 0;
     }
@@ -1581,7 +1602,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     /* Exchange Pool IPC Syscalls */
     case SYS_EXCHANGE_ALLOC: {
       extern uintptr sys_exchange_alloc(void *);
-      print("p9_dispatch: SYS_EXCHANGE_ALLOC\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_ALLOC\n");
 
       if (waserror()) {
         r->type = Rerror;
@@ -1601,7 +1622,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXCHANGE_FREE: {
       extern uintptr sys_exchange_free(void *);
-      print("p9_dispatch: SYS_EXCHANGE_FREE\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_FREE\n");
 
       /* Format: [cap_ptr 8] */
       p = tsyscall_skip_argc(p, ep, 1);
@@ -1631,7 +1652,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXCHANGE_PUBLISH: {
       extern uintptr sys_exchange_publish(void *);
-      print("p9_dispatch: SYS_EXCHANGE_PUBLISH\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_PUBLISH\n");
 
       /* Format: [topic_name s] [data_ptr 8] [len 8] */
       /* But sdata already contains the packed data from userspace */
@@ -1680,7 +1701,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXCHANGE_SUBSCRIBE: {
       extern uintptr sys_exchange_subscribe(void *);
-      print("p9_dispatch: SYS_EXCHANGE_SUBSCRIBE\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_SUBSCRIBE\n");
 
       /* sdata contains topic name as null-terminated string */
       if (waserror()) {
@@ -1704,7 +1725,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXCHANGE_UNSUBSCRIBE: {
       extern uintptr sys_exchange_unsubscribe(void *);
-      print("p9_dispatch: SYS_EXCHANGE_UNSUBSCRIBE\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_UNSUBSCRIBE\n");
 
       /* sdata contains topic name as null-terminated string */
       if (waserror()) {
@@ -1728,7 +1749,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXCHANGE_RECEIVE: {
       extern uintptr sys_exchange_receive(void *);
-      print("p9_dispatch: SYS_EXCHANGE_RECEIVE\n");
+      bprint("p9_dispatch: SYS_EXCHANGE_RECEIVE\n");
 
       if (waserror()) {
         r->type = Rerror;
@@ -1784,7 +1805,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->qid = c->qid;
     r->iounit = c->iounit;
 
-    print("p9_dispatch: Tsysopen '%s' -> fd=%d\n", t->name, fd);
+    bprint("p9_dispatch: Tsysopen '%s' -> fd=%d\n", t->name, fd);
     return 0;
   }
 
@@ -1816,8 +1837,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->qid = c->qid;
     r->iounit = c->iounit;
 
-    print("p9_dispatch: Tsyscreate '%s' perm=0%o -> fd=%d\n", t->name, t->perm,
-          fd);
+    bprint("p9_dispatch: Tsyscreate '%s' perm=0%o -> fd=%d\n", t->name, t->perm,
+           fd);
     return 0;
   }
 
@@ -1860,9 +1881,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->count = n;
     /* r->data now contains the data */
 
-    print("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
-          t->type == Tsysread ? "Tsysread" : "Tsyspread", t->fid, t->count,
-          t->offset, n);
+    bprint("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
+           t->type == Tsysread ? "Tsysread" : "Tsyspread", t->fid, t->count,
+           t->offset, n);
     return 0;
   }
 
@@ -1896,9 +1917,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->tag = t->tag;
     r->count = n;
 
-    print("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
-          t->type == Tsyswrite ? "Tsyswrite" : "Tsyspwrite", t->fid, t->count,
-          t->offset, n);
+    bprint("p9_dispatch: %s fd=%d count=%d offset=%lld -> %ld bytes\n",
+           t->type == Tsyswrite ? "Tsyswrite" : "Tsyspwrite", t->fid, t->count,
+           t->offset, n);
     return 0;
   }
 
@@ -1922,7 +1943,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = Rsysclose;
     r->tag = t->tag;
 
-    print("p9_dispatch: Tsysclose fd=%d\n", t->fid);
+    bprint("p9_dispatch: Tsysclose fd=%d\n", t->fid);
     return 0;
   }
 
@@ -1944,7 +1965,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = Rsysremove;
     r->tag = t->tag;
 
-    print("p9_dispatch: Tsysremove '%s'\n", t->name);
+    bprint("p9_dispatch: Tsysremove '%s'\n", t->name);
     return 0;
   }
 
@@ -1952,7 +1973,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   if (t->type == Tsysexit) {
     extern void pexit(char *, int);
 
-    print("p9_dispatch: Tsysexit '%s'\n", t->ename ? t->ename : "");
+    bprint("p9_dispatch: Tsysexit '%s'\n", t->ename ? t->ename : "");
 
     /* pexit never returns */
     pexit(t->ename ? t->ename : "", 1);
@@ -1980,7 +2001,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->tag = t->tag;
     r->addr = ret;
 
-    print("p9_dispatch: Tsysbrk addr=0x%llx -> 0x%llx\n", t->addr, (u64int)ret);
+    bprint("p9_dispatch: Tsysbrk addr=0x%llx -> 0x%llx\n", t->addr,
+           (u64int)ret);
     return 0;
   }
 
@@ -2005,7 +2027,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = Rsyschdir;
     r->tag = t->tag;
 
-    print("p9_dispatch: Tsyschdir '%s'\n", t->name);
+    bprint("p9_dispatch: Tsyschdir '%s'\n", t->name);
     return 0;
   }
 
@@ -2049,8 +2071,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->tag = t->tag;
     r->fid = nfd;
 
-    print("p9_dispatch: Tsysdup oldfd=%d newfd=%d -> %d\n", t->fid, t->newfid,
-          nfd);
+    bprint("p9_dispatch: Tsysdup oldfd=%d newfd=%d -> %d\n", t->fid, t->newfid,
+           nfd);
     return 0;
   }
 
@@ -2175,11 +2197,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     char **argv;
     uintptr kpage, kpath, path_offset, upath, argv_offset, uargv;
 
-    print("p9_dispatch: Tsysexec received name='%s' argc=%d\n",
-          t->path ? t->path : "nil", t->argc);
+    bprint("p9_dispatch: Tsysexec received name='%s' argc=%d\n",
+           t->path ? t->path : "nil", t->argc);
 
     if (t->argc > 1) {
-      print("p9_dispatch: Tsysexec error: argc > 1\n");
+      bprint("p9_dispatch: Tsysexec error: argc > 1\n");
       r->type = Rerror;
       r->ename = "argv not supported in Tsysexec";
       return -1;
@@ -2191,16 +2213,16 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Ensure kpath is within the page */
     if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
-      print("p9_dispatch: Tsysexec error: path outside page (kpath=%p "
-            "kpage=%p)\n",
-            (void *)kpath, (void *)kpage);
+      bprint("p9_dispatch: Tsysexec error: path outside page (kpath=%p "
+             "kpage=%p)\n",
+             (void *)kpath, (void *)kpage);
       r->type = Rerror;
       r->ename = "Tsysexec: path outside exchange page";
       return -1;
     }
 
     path_offset = kpath - kpage;
-    upath = EXCHANGE_PAGE_ADDR + path_offset;
+    upath = p9_user_base(p) + path_offset;
 
     /* Construct argv array in buffer (after message) */
     argvp =
@@ -2216,7 +2238,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Check bounds for argv */
     if (argvp + 2 * sizeof(char *) >= kpage + P9_PAGE_SIZE) {
-      print("p9_dispatch: Tsysexec error: no room for argv\n");
+      bprint("p9_dispatch: Tsysexec error: no room for argv\n");
       r->type = Rerror;
       r->ename = "Tsysexec: no room for argv";
       return -1;
@@ -2227,13 +2249,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     /* Calculate User Address of argv */
     argv_offset = argvp - kpage;
-    uargv = EXCHANGE_PAGE_ADDR + argv_offset;
+    uargv = p9_user_base(p) + argv_offset;
 
     args[0] = (ulong)upath;
     args[1] = (ulong)uargv;
 
     if (waserror()) {
-      print("p9_dispatch: Tsysexec error: waserror trip: %s\n", up->errstr);
+      bprint("p9_dispatch: Tsysexec error: waserror trip: %s\n", up->errstr);
       r->type = Rerror;
       r->ename = up->errstr;
       return -1;
@@ -2251,7 +2273,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     r->type = Rerror;
     r->ename = "exec returned unexpectedly";
-    print("p9_dispatch: Tsysexec error: exec returned unexpectedly\n");
+    bprint("p9_dispatch: Tsysexec error: exec returned unexpectedly\n");
     return -1;
   }
 
@@ -2369,7 +2391,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     int *ufd;
 
     fd = (int *)((uchar *)p->p9page + P9_MSG_OFFSET + 64);
-    ufd = (int *)(EXCHANGE_PAGE_ADDR + P9_MSG_OFFSET + 64);
+    ufd = (int *)(p9_user_base(p) + P9_MSG_OFFSET + 64);
     fd[0] = fd[1] = -1;
     args[0] = (ulong)ufd;
 
@@ -2524,7 +2546,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     PBIT64(r->data, local_machine_bank->available[tok_type]);
     r->count = 8;
 
-    print("9p_router: Ttoken received %llu tokens type %d\n", amount, tok_type);
+    bprint("9p_router: Ttoken received %llu tokens type %d\n", amount,
+           tok_type);
     return 0;
   }
 
@@ -2560,8 +2583,8 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
             sizeof(BlindLedgerHash));
     r->count = 16 + sizeof(BlindLedgerHash);
 
-    print("9p_router: Tbudget query type=%d balance=%llu\n", tok_type,
-          local_machine_bank->available[tok_type]);
+    bprint("9p_router: Tbudget query type=%d balance=%llu\n", tok_type,
+           local_machine_bank->available[tok_type]);
     return 0;
   }
 
@@ -2573,7 +2596,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       UserCapability pebble_cap;
       if (wasm_9p_validate_capability(&cap_uuid, CAP_PERM_READ, &pebble_cap)) {
         type = TYPE_WASM;
-        print("9p_router: WASM attach with validated capability\n");
+        bprint("9p_router: WASM attach with validated capability\n");
       } else {
         r->type = Rerror;
         r->ename = "invalid or insufficient capability";
@@ -2646,8 +2669,11 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
             subtype = get_fid_subtype(t->fid);
         } else {
           /* Walk: Use last Qid's version from reply as subtype */
-          if (r->nwqid > 0)
+          if (type == TYPE_WASM) {
+            subtype = get_fid_subtype(t->fid);
+          } else if (r->nwqid > 0) {
             subtype = r->wqid[r->nwqid - 1].vers;
+          }
         }
 
         install_fid_with_subtype(t->newfid, type, subtype);
@@ -2859,7 +2885,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     p->p9page = (void *)kaddr(p->seg[P9SEG]->pseg->pa);
   }
   if (p->p9page == nil) {
-    print("p9_handle_doorbell: no exchange page for pid %lud\n", p->pid);
+    bprint("p9_handle_doorbell: no exchange page for pid %lud\n", p->pid);
     return -1;
   }
 
@@ -2871,10 +2897,11 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     page_pa = PADDR(p->p9page);
 
   /* Ensure exchange page is mapped into userspace */
-  uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
+  uintptr *pte = mmuwalk(m->pml4, p9_user_base(p), 0, 0);
   if (pte == nil || (*pte & PTEVALID) == 0) {
-    print("p9_handle_doorbell: remapping exchange page for pid %lud\n", p->pid);
-    userpmap(EXCHANGE_PAGE_ADDR, page_pa, PTEVALID | PTEUSER | PTEWRITE);
+    bprint("p9_handle_doorbell: remapping exchange page for pid %lud\n",
+           p->pid);
+    userpmap(p9_user_base(p), page_pa, PTEVALID | PTEUSER | PTEWRITE);
   }
 
   /*
@@ -2887,13 +2914,14 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   berr = borrow_transfer(p, up, page_pa);
   if (berr != BORROW_OK) {
     /* First syscall after boot - process may not have formal ownership yet */
-    print("p9_handle_doorbell: borrow_transfer failed (berr=%d), acquiring "
-          "directly\n",
-          berr);
+    bprint("p9_handle_doorbell: borrow_transfer failed (berr=%d), acquiring "
+           "directly\n",
+           berr);
     berr = borrow_acquire(up, page_pa);
     if (berr != BORROW_OK && berr != BORROW_EALREADY) {
-      print("p9_handle_doorbell: FATAL - kernel can't acquire page (berr=%d)\n",
-            berr);
+      bprint(
+          "p9_handle_doorbell: FATAL - kernel can't acquire page (berr=%d)\n",
+          berr);
       splx(s);
       return -1;
     }
@@ -2938,17 +2966,17 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   memset(&t, 0, sizeof(t));
 
   /* Memory barrier to ensure user writes are visible to kernel.
-   * User writes to EXCHANGE_PAGE_ADDR, kernel reads via HHDM at p->p9page.
+   * User writes to p9_user_base(p), kernel reads via HHDM at p->p9page.
    * The mfence ensures cache coherency between different VA mappings. */
   __asm__ volatile("mfence" ::: "memory");
 
   /* Get message size from 9P header (first 4 bytes) */
   msg_size = GBIT32(msg_buf);
   if (msg_size < 7 || msg_size > P9_MSG_SIZE) {
-    print("p9_handle_doorbell: invalid message size %ud\n", msg_size);
-    print("p9_handle_doorbell: ctl req_head=%ud req_tail=%ud rep_head=%ud "
-          "rep_tail=%ud\n",
-          ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
+    bprint("p9_handle_doorbell: invalid message size %ud\n", msg_size);
+    bprint("p9_handle_doorbell: ctl req_head=%ud req_tail=%ud rep_head=%ud "
+           "rep_tail=%ud\n",
+           ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
     dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     result = -1;
@@ -2957,11 +2985,12 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   }
 
   if (convM2S(msg_buf, msg_size, &t) == 0) {
-    print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
-          msg_buf[0]);
-    print("p9_handle_doorbell: msg_size=%ud ctl req_head=%ud req_tail=%ud "
-          "rep_head=%ud rep_tail=%ud\n",
-          msg_size, ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
+    bprint("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
+           msg_buf[0]);
+    bprint("p9_handle_doorbell: msg_size=%ud ctl req_head=%ud req_tail=%ud "
+           "rep_head=%ud rep_tail=%ud\n",
+           msg_size, ctl->req_head, ctl->req_tail, ctl->rep_head,
+           ctl->rep_tail);
     dump_bytes("p9_handle_doorbell: msg[0..31]:", msg_buf, 32);
     splx(s); /* Restore interrupts */
     goto cleanup_ownership;
@@ -2976,8 +3005,8 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   uchar reply_copy[P9_MSG_SIZE];
   uint rep_size = convS2M(&r, reply_copy, P9_MSG_SIZE);
   if (rep_size == 0) {
-    print("p9_handle_doorbell: failed to serialize reply (r.type=%d)\n",
-          r.type);
+    bprint("p9_handle_doorbell: failed to serialize reply (r.type=%d)\n",
+           r.type);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     result = -1;
     goto cleanup_ownership;
@@ -3014,16 +3043,16 @@ cleanup_ownership:
    */
   berr = borrow_transfer(up, p, page_pa);
   if (berr != BORROW_OK) {
-    print(
+    bprint(
         "p9_handle_doorbell: WARNING - borrow_transfer back failed (berr=%d)\n",
         berr);
     /* Fall back to release/acquire */
     borrow_release(up, page_pa);
     berr = borrow_acquire(p, page_pa);
     if (berr != BORROW_OK) {
-      print("p9_handle_doorbell: FATAL - can't return page to process "
-            "(berr=%d)\n",
-            berr);
+      bprint("p9_handle_doorbell: FATAL - can't return page to process "
+             "(berr=%d)\n",
+             berr);
       panic("p9_handle_doorbell: ownership violation - cannot return page");
     }
   }
@@ -3044,7 +3073,7 @@ static void kspawn_entry(void *arg) {
   char *argv[2];
   ulong args[2];
 
-  print("kspawn_entry: executing '%s'\n", path);
+  bprint("kspawn_entry: executing '%s'\n", path);
 
   /*
    * Build arguments for sysexec:
@@ -3063,7 +3092,7 @@ static void kspawn_entry(void *arg) {
    * On error, we exit.
    */
   if (waserror()) {
-    print("kspawn_entry: exec failed: %s\n", up->errstr);
+    bprint("kspawn_entry: exec failed: %s\n", up->errstr);
     free(path);
     pexit(up->errstr, 1);
     return;
@@ -3074,7 +3103,7 @@ static void kspawn_entry(void *arg) {
   poperror();
 
   /* If we get here, exec failed somehow without error */
-  print("kspawn_entry: sysexec returned unexpectedly\n");
+  bprint("kspawn_entry: sysexec returned unexpectedly\n");
   free(path);
   pexit("exec failed", 1);
 }
@@ -3292,14 +3321,14 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
      * then execs the specified binary.
      */
     char *path = args[1];
-    print("9P SPAWN: forking to exec '%s'\n", path);
+    bprint("9P SPAWN: forking to exec '%s'\n", path);
 
     /*
      * Create argument string for the new process.
      * In Plan 9 style, we pass arguments via /proc/n/args after exec.
      * For now, we just store the command name.
      */
-    char *file = smalloc((ulong)strlen(path) + 1);
+    char *file = smalloc((ulong)kstrlen(path) + 1);
     if (file == nil) {
       error("spawn: no memory");
       return -1;
@@ -3313,7 +3342,7 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
      */
     kproc(path, kspawn_entry, file);
 
-    print("9P SPAWN: spawned process for '%s'\n", path);
+    bprint("9P SPAWN: spawned process for '%s'\n", path);
     return len;
   }
 
@@ -4368,7 +4397,7 @@ void srv_init(void) {
 
 /* Find entry by name */
 /*@
-  @ requires name != \null && \valid_read(name);
+  @ requires name != \null && valid_string(name);
   @ terminates \true;
   @ assigns \nothing;
   @*/
@@ -4396,13 +4425,13 @@ static SrvEntry *srv_alloc(void) {
 }
 
 /*@
-  @ requires name != \null && \valid_read(name);
+  @ requires name != \null && valid_string((char *)name);
   @ terminates \true;
   @*/
 int srv_create_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 
-  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
+  if (!name || name[0] == 0 || kstrlen((char *)name) >= SRV_NAME_SIZE)
     return -1;
 
   srv_init();
@@ -4428,14 +4457,14 @@ int srv_create_entry(Proc *caller, const char *name) {
 }
 
 /*@
-  @ requires name != \null && \valid_read(name);
+  @ requires name != \null && valid_string((char *)name);
   @ terminates \true;
   @*/
 int srv_post_fd(Proc *caller, const char *name, int fd) {
   SrvEntry *e;
   Chan *c;
 
-  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
+  if (!name || name[0] == 0 || kstrlen((char *)name) >= SRV_NAME_SIZE)
     return -1;
 
   if (waserror())
@@ -4478,7 +4507,7 @@ int srv_post_fd(Proc *caller, const char *name, int fd) {
 }
 
 /*@
-  @ requires name != \null && \valid_read(name);
+  @ requires name != \null && valid_string((char *)name);
   @ terminates \true;
   @*/
 Chan *srv_clone_chan(const char *name) {
@@ -4498,7 +4527,7 @@ Chan *srv_clone_chan(const char *name) {
 }
 
 /*@
-  @ requires name != \null && \valid_read(name);
+  @ requires name != \null && valid_string((char *)name);
   @ terminates \true;
   @*/
 int srv_remove_entry(Proc *caller, const char *name) {
@@ -4644,7 +4673,7 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
     name = t->aname + 5;
-    if (strlen(name) == 0 || strlen(name) >= SRV_NAME_SIZE) {
+    if (kstrlen(name) == 0 || kstrlen(name) >= SRV_NAME_SIZE) {
       r->type = Rerror;
       r->ename = "invalid service name";
       return -1;
@@ -4658,7 +4687,7 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
 
-    print("srv: posted '%s' by pid %ld\n", name, caller->pid);
+    bprint("srv: posted '%s' by pid %ld\n", name, caller->pid);
 
     r->type = Rwrite;
     r->count = t->count;
@@ -4749,7 +4778,7 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
 
-    print("srv: removed '%s'\n", name);
+    bprint("srv: removed '%s'\n", name);
 
     r->type = Rremove;
     return 0;
@@ -5614,28 +5643,240 @@ int fd_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 
 /* ========== WASM 9P Handler ========== */
 
-/* TODO: Proper server lookup - for now just stub */
-static wasm_fileserver_t *global_wasm_server = nil;
+/* WASM Server Registry - tracks multiple WASM file servers */
+#define MAX_WASM_SERVERS 64
+
+typedef struct WasmServerEntry {
+  wasm_fileserver_t *server;
+  char name[64];          /* Server identifier (e.g., "/boot/server.wasm") */
+  uuid_t capability_uuid; /* Capability UUID for this server */
+  int active;             /* 1 if entry is in use, 0 if free */
+  ulong last_access;      /* Last access time (for LRU eviction) */
+} WasmServerEntry;
+
+static struct {
+  WasmServerEntry entries[MAX_WASM_SERVERS];
+  Lock lock;
+  int initialized;
+} wasm_server_registry;
+
+/* Initialize the WASM server registry */
+static void wasm_registry_init(void) {
+  if (wasm_server_registry.initialized)
+    return;
+
+  memset(&wasm_server_registry, 0, sizeof(wasm_server_registry));
+  wasm_server_registry.initialized = 1;
+}
+
+/* Register a WASM server in the registry. Returns index on success, -1 on
+ * error. */
+static int wasm_register_server(wasm_fileserver_t *server, const char *name,
+                                const uuid_t *cap_uuid) {
+  int i, free_slot = -1;
+
+  if (!server || !name)
+    return -1;
+
+  wasm_registry_init();
+
+  lock(&wasm_server_registry.lock);
+
+  /* Find free slot */
+  for (i = 0; i < MAX_WASM_SERVERS; i++) {
+    if (!wasm_server_registry.entries[i].active) {
+      free_slot = i;
+      break;
+    }
+  }
+
+  if (free_slot < 0) {
+    unlock(&wasm_server_registry.lock);
+    return -1; /* Registry full */
+  }
+
+  /* Register the server */
+  WasmServerEntry *entry = &wasm_server_registry.entries[free_slot];
+  entry->server = server;
+  strncpy(entry->name, name, sizeof(entry->name) - 1);
+  entry->name[sizeof(entry->name) - 1] = '\0';
+
+  if (cap_uuid)
+    entry->capability_uuid = *cap_uuid;
+  else
+    memset(&entry->capability_uuid, 0, sizeof(uuid_t));
+
+  entry->active = 1;
+  entry->last_access = fastticks(nil);
+
+  unlock(&wasm_server_registry.lock);
+  return free_slot;
+}
+
+/* Lookup WASM server index by name. Returns index or -1 if not found. */
+static int wasm_lookup_server_index(const char *name) {
+  int i;
+  int result = -1;
+
+  if (!name)
+    return -1;
+
+  wasm_registry_init();
+
+  lock(&wasm_server_registry.lock);
+
+  for (i = 0; i < MAX_WASM_SERVERS; i++) {
+    if (wasm_server_registry.entries[i].active &&
+        strcmp(wasm_server_registry.entries[i].name, name) == 0) {
+      result = i;
+      wasm_server_registry.entries[i].last_access = fastticks(nil);
+      break;
+    }
+  }
+
+  unlock(&wasm_server_registry.lock);
+  return result;
+}
+
+/* Lookup WASM server by name */
+static wasm_fileserver_t *wasm_lookup_server(const char *name) {
+  int i;
+  wasm_fileserver_t *result = nil;
+
+  if (!name)
+    return nil;
+
+  wasm_registry_init();
+
+  lock(&wasm_server_registry.lock);
+
+  for (i = 0; i < MAX_WASM_SERVERS; i++) {
+    if (wasm_server_registry.entries[i].active &&
+        strcmp(wasm_server_registry.entries[i].name, name) == 0) {
+      result = wasm_server_registry.entries[i].server;
+      wasm_server_registry.entries[i].last_access = fastticks(nil);
+      break;
+    }
+  }
+
+  unlock(&wasm_server_registry.lock);
+  return result;
+}
+
+/* Lookup WASM server by capability UUID */
+static wasm_fileserver_t *wasm_lookup_by_cap(const uuid_t *cap_uuid) {
+  int i;
+  wasm_fileserver_t *result = nil;
+
+  if (!cap_uuid)
+    return nil;
+
+  wasm_registry_init();
+
+  lock(&wasm_server_registry.lock);
+
+  for (i = 0; i < MAX_WASM_SERVERS; i++) {
+    if (wasm_server_registry.entries[i].active &&
+        memcmp(&wasm_server_registry.entries[i].capability_uuid, cap_uuid,
+               sizeof(uuid_t)) == 0) {
+      result = wasm_server_registry.entries[i].server;
+      wasm_server_registry.entries[i].last_access = fastticks(nil);
+      break;
+    }
+  }
+
+  unlock(&wasm_server_registry.lock);
+  return result;
+}
+
+/* Unregister a WASM server */
+static int wasm_unregister_server(const char *name) {
+  int i;
+
+  if (!name)
+    return -1;
+
+  lock(&wasm_server_registry.lock);
+
+  for (i = 0; i < MAX_WASM_SERVERS; i++) {
+    if (wasm_server_registry.entries[i].active &&
+        strcmp(wasm_server_registry.entries[i].name, name) == 0) {
+      wasm_server_registry.entries[i].active = 0;
+      wasm_server_registry.entries[i].server = nil;
+      unlock(&wasm_server_registry.lock);
+      return 0;
+    }
+  }
+
+  unlock(&wasm_server_registry.lock);
+  return -1; /* Not found */
+}
 
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
+  wasm_fileserver_t *server = nil;
+  const char *server_name = "/boot/server.wasm"; /* Default server */
+  int server_idx = -1;
+
   USED(caller);
   r->tag = t->tag;
 
+  /* For non-attach calls, lookup server by fid subtype */
+  if (t->type != Tattach) {
+    server_idx = get_fid_subtype((int)t->fid);
+    if (server_idx > 0 && server_idx <= MAX_WASM_SERVERS) {
+      server_idx -= 1; /* 1-based to 0-based */
+      lock(&wasm_server_registry.lock);
+      if (wasm_server_registry.entries[server_idx].active) {
+        server = wasm_server_registry.entries[server_idx].server;
+        wasm_server_registry.entries[server_idx].last_access = fastticks(nil);
+      }
+      unlock(&wasm_server_registry.lock);
+    }
+  }
+
   switch (t->type) {
   case Tattach:
-    /* Capability already validated in router - just attach to root */
-    if (!global_wasm_server) {
-      global_wasm_server = wasm_fileserver_load("/boot/server.wasm", 0);
-      if (!global_wasm_server) {
+    /* Lookup or load server based on aname */
+    if (t->aname && t->aname[0] != '\0') {
+      server_name = t->aname; /* Use aname as server path */
+    }
+
+    server_idx = wasm_lookup_server_index(server_name);
+    if (server_idx < 0) {
+      /* Server not found, try to load it */
+      server = wasm_fileserver_load(server_name, 16); /* 16 pages default */
+      if (!server) {
         r->type = Rerror;
         r->ename = "failed to load wasm server";
         return -1;
       }
+
+      /* Register the new server */
+      server_idx = wasm_register_server(server, server_name, nil);
+      if (server_idx < 0) {
+        wasm_fileserver_destroy(server);
+        r->type = Rerror;
+        r->ename = "failed to register wasm server";
+        return -1;
+      }
+    } else {
+      /* Existing server found */
+      lock(&wasm_server_registry.lock);
+      server = wasm_server_registry.entries[server_idx].server;
+      unlock(&wasm_server_registry.lock);
     }
+
+    /* Update fid subtype to registry index (1-based) */
+    lock(&caller->fgrp->lock);
+    if (caller->fgrp->fd[t->fid]) {
+      caller->fgrp->fd[t->fid]->qid.vers = (u32int)(server_idx + 1);
+    }
+    unlock(&caller->fgrp->lock);
+
     r->type = Rattach;
     r->qid.type = QTDIR;
     r->qid.path = 0;
-    r->qid.vers = 0;
+    r->qid.vers = (u32int)(server_idx + 1);
     r->iounit = 0;
     return 0;
 
@@ -5647,14 +5888,18 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   case Tstat:
   case Twstat:
   case Tremove: {
-    /* Handle synchronously in WASM server */
-    if (!global_wasm_server) {
+    /* If no server found via FID, fall back to default */
+    if (!server) {
+      server = wasm_lookup_server(server_name);
+    }
+
+    if (!server) {
       r->type = Rerror;
       r->ename = "no wasm server loaded";
       return -1;
     }
 
-    if (wasm_fs_handle_fcall(global_wasm_server, t, r) < 0) {
+    if (wasm_fs_handle_fcall(server, t, r) < 0) {
       r->type = Rerror;
       r->ename = "wasm handler failed";
       return -1;

@@ -172,10 +172,11 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     page_pa = PADDR(p->p9page);
 
   /* Ensure exchange page is mapped into userspace */
-  uintptr *pte = mmuwalk(m->pml4, EXCHANGE_PAGE_ADDR, 0, 0);
+  uintptr ubase = p9_user_base(p);
+  uintptr *pte = mmuwalk(m->pml4, ubase, 0, 0);
   if (pte == nil || (*pte & PTEVALID) == 0) {
     print("p9_handle_doorbell: remapping exchange page for pid %lud\n", p->pid);
-    userpmap(EXCHANGE_PAGE_ADDR, page_pa, PTEVALID | PTEUSER | PTEWRITE);
+    userpmap(ubase, page_pa, PTEVALID | PTEUSER | PTEWRITE);
   }
 
   /*

@@ -1,6 +1,8 @@
 #ifndef _LIB_H_
 #define _LIB_H_
 
+#include "acsl_bounds.h"
+
 /* If portlib.h was already included (via GNUmakefile -include), skip lib.h */
 #ifdef _PORTLIB_H_
 /* portlib.h provides all the same definitions - no need to duplicate */
@@ -39,8 +41,8 @@ extern void *memchr(void *, int, usize);
 extern char *strcat(char *, char *);
 extern char *strchr(char *, int);
 extern char *strrchr(char *, int);
-/*@ requires s1 == \null || \valid(s1);
-  @ requires s2 == \null || \valid(s2);
+/*@ requires s1 == \null || valid_string(s1);
+  @ requires s2 == \null || valid_string(s2);
   @ assigns \nothing;
   @ terminates \true;
   */
@@ -50,8 +52,7 @@ extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
-/*@ assigns \nothing; */
-/*@ requires s == \null || \valid(s);
+/*@ requires s == \null || valid_string(s);
   @ assigns \nothing;
   @ ensures \result >= 0;
   @ terminates \true;

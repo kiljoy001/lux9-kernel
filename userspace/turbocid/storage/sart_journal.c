@@ -9,12 +9,15 @@
 #include "dat.h"
 
 /* liblux syscall wrappers */
-extern long sys_pread(int fd, void *buf, long n, long offset);
-extern long sys_pwrite(int fd, void *buf, long n, long offset);
+extern long sys_read(int fd, void *buf, long n);
+extern long sys_write(int fd, void *buf, long n);
+extern long sys_seek(int fd, long offset, int whence);
 extern uvlong sys_nsec(void);
 extern void *memset(void *dst, int c, unsigned long n);
 extern void *memmove(void *dst, const void *src, unsigned long n);
 extern int memcmp(const void *s1, const void *s2, unsigned long n);
+
+#define P9_IO_CHUNK 3584
 
 /* Forward declarations */
 static u64int compute_checksum(JournalEntry *entry);
@@ -23,6 +26,51 @@ static int write_header(int fd, JournalHeader *hdr);
 
 /* Global journal state */
 static SartStore *g_store = nil;
+
+static void journal_log(const char *msg) {
+  long len = 0;
+  while (msg[len])
+    len++;
+  sys_write(2, (void *)msg, len);
+}
+
+static long journal_pread_full(int fd, void *buf, long n, long offset) {
+  u64int base = g_store ? g_store->journal_base : 0;
+  if (sys_seek(fd, base + offset, 0) < 0)
+    return -1;
+  long total = 0;
+  while (n > 0) {
+    long chunk = n > P9_IO_CHUNK ? P9_IO_CHUNK : n;
+    long r = sys_read(fd, buf, chunk);
+    if (r < 0)
+      return r;
+    total += r;
+    if (r != chunk)
+      break;
+    buf = (u8int *)buf + r;
+    n -= r;
+  }
+  return total;
+}
+
+static long journal_pwrite_full(int fd, const void *buf, long n, long offset) {
+  u64int base = g_store ? g_store->journal_base : 0;
+  if (sys_seek(fd, base + offset, 0) < 0)
+    return -1;
+  long total = 0;
+  while (n > 0) {
+    long chunk = n > P9_IO_CHUNK ? P9_IO_CHUNK : n;
+    long r = sys_write(fd, (void *)buf, chunk);
+    if (r < 0)
+      return r;
+    total += r;
+    if (r != chunk)
+      break;
+    buf = (const u8int *)buf + r;
+    n -= r;
+  }
+  return total;
+}
 
 /*
  * journal_init - Initialize the journal subsystem
@@ -39,8 +87,10 @@ int journal_init(SartStore *store) {
 
   g_store = store;
 
+  journal_log("journal_init: reading header\n");
   /* Try to read existing header */
-  n = sys_pread(store->journal_fd, &hdr, sizeof(hdr), 0);
+  n = journal_pread_full(store->journal_fd, &hdr, sizeof(hdr), 0);
+  journal_log("journal_init: header read complete\n");
 
   if (n == sizeof(hdr) && hdr.magic == SART_JOURNAL_MAGIC) {
     /* Existing journal - validate and use */
@@ -51,6 +101,9 @@ int journal_init(SartStore *store) {
     store->entry_count = hdr.entry_count;
     return SART_OK;
   }
+  if (n < 0) {
+    journal_log("journal_init: pread failed\n");
+  }
 
   /* New journal - initialize header */
   memset(&hdr, 0, sizeof(hdr));
@@ -60,9 +113,11 @@ int journal_init(SartStore *store) {
   hdr.first_entry = sizeof(JournalHeader);
   hdr.last_entry = sizeof(JournalHeader);
 
-  n = sys_pwrite(store->journal_fd, &hdr, sizeof(hdr), 0);
-  if (n != sizeof(hdr))
+  n = journal_pwrite_full(store->journal_fd, &hdr, sizeof(hdr), 0);
+  if (n != sizeof(hdr)) {
+    journal_log("journal_init: pwrite failed\n");
     return SART_ERR_IO;
+  }
 
   store->journal_pos = sizeof(JournalHeader);
   store->entry_count = 0;
@@ -80,7 +135,6 @@ int journal_append_blob(UUIDv8 *id, RecordData *rec) {
 
   if (g_store == nil || id == nil || rec == nil)
     return SART_ERR_IO;
-
   memset(&entry, 0, sizeof(entry));
   entry.magic = SART_ENTRY_MAGIC;
   entry.type = JENT_BLOB;
@@ -91,12 +145,10 @@ int journal_append_blob(UUIDv8 *id, RecordData *rec) {
 
   entry.checksum = compute_checksum(&entry);
   offset = g_store->journal_pos;
-  n = sys_pwrite(g_store->journal_fd, &entry, sizeof(entry), offset);
+  n = journal_pwrite_full(g_store->journal_fd, &entry, sizeof(entry), offset);
   if (n != sizeof(entry))
     return SART_ERR_IO;
 
-  /* Header update simplified for brevity - in production use atomic rename or
-   * double-buffered header */
   g_store->journal_pos += sizeof(entry);
   g_store->entry_count++;
 
@@ -113,7 +165,6 @@ int journal_append_edge(UUIDv8 *parent, const char *name, UUIDv8 *child) {
 
   if (g_store == nil || parent == nil || name == nil || child == nil)
     return SART_ERR_IO;
-
   memset(&entry, 0, sizeof(entry));
   entry.magic = SART_ENTRY_MAGIC;
   entry.type = JENT_EDGE;
@@ -126,7 +177,7 @@ int journal_append_edge(UUIDv8 *parent, const char *name, UUIDv8 *child) {
 
   entry.checksum = compute_checksum(&entry);
   offset = g_store->journal_pos;
-  n = sys_pwrite(g_store->journal_fd, &entry, sizeof(entry), offset);
+  n = journal_pwrite_full(g_store->journal_fd, &entry, sizeof(entry), offset);
   if (n != sizeof(entry))
     return SART_ERR_IO;
 
@@ -153,19 +204,22 @@ int journal_replay(void (*on_blob)(UUIDv8 *id, RecordData *rec, void *ctx),
   if (g_store == nil)
     return SART_ERR_IO;
 
-  n = sys_pread(g_store->journal_fd, &hdr, sizeof(hdr), 0);
+  n = journal_pread_full(g_store->journal_fd, &hdr, sizeof(hdr), 0);
   if (n != sizeof(hdr) || hdr.magic != SART_JOURNAL_MAGIC)
     return SART_ERR_CORRUPT;
 
   offset = hdr.first_entry;
-  while (offset < hdr.last_entry) {
-    n = sys_pread(g_store->journal_fd, &entry, sizeof(entry), offset);
+  while (1) {
+    n = journal_pread_full(g_store->journal_fd, &entry, sizeof(entry), offset);
+    /* Stop at partial read or EOF */
     if (n != sizeof(entry))
       break;
 
+    /* Stop at invalid magic (unwritten space) */
     if (entry.magic != SART_ENTRY_MAGIC)
       break;
 
+    /* Stop at corruption */
     checksum = entry.checksum;
     entry.checksum = 0;
     if (compute_checksum(&entry) != checksum)
@@ -183,6 +237,10 @@ int journal_replay(void (*on_blob)(UUIDv8 *id, RecordData *rec, void *ctx),
     offset += sizeof(entry);
   }
 
+  /* Update in-memory state to reflect what we actually found */
+  g_store->journal_pos = offset;
+  g_store->entry_count = count;
+
   return count;
 }
 
@@ -193,8 +251,20 @@ int journal_replay(void (*on_blob)(UUIDv8 *id, RecordData *rec, void *ctx),
  * but provided for API completeness.
  */
 int journal_sync(void) {
-  /* In synchronous mode, writes are already persisted */
-  return SART_OK;
+  JournalHeader hdr;
+  
+  if (g_store == nil) return SART_ERR_IO;
+
+  /* Read current header template */
+  if (read_header(g_store->journal_fd, &hdr) != SART_OK)
+      return SART_ERR_IO;
+
+  /* Update with current state */
+  hdr.entry_count = g_store->entry_count;
+  hdr.last_entry = g_store->journal_pos;
+
+  /* Write back */
+  return write_header(g_store->journal_fd, &hdr);
 }
 
 /*
@@ -231,7 +301,7 @@ static u64int compute_checksum(JournalEntry *entry) {
  * Helper: read journal header
  */
 static int read_header(int fd, JournalHeader *hdr) {
-  long n = sys_pread(fd, hdr, sizeof(*hdr), 0);
+  long n = journal_pread_full(fd, hdr, sizeof(*hdr), 0);
   if (n != sizeof(*hdr))
     return SART_ERR_IO;
   if (hdr->magic != SART_JOURNAL_MAGIC)
@@ -243,7 +313,7 @@ static int read_header(int fd, JournalHeader *hdr) {
  * Helper: write journal header
  */
 static int write_header(int fd, JournalHeader *hdr) {
-  long n = sys_pwrite(fd, hdr, sizeof(*hdr), 0);
+  long n = journal_pwrite_full(fd, hdr, sizeof(*hdr), 0);
   if (n != sizeof(*hdr))
     return SART_ERR_IO;
   return SART_OK;

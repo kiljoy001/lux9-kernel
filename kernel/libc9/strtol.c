@@ -1,12 +1,13 @@
 #ifndef __FRAMAC__
 #include <u.h>
+#include "acsl_bounds.h"
 #include <libc.h>
 
 #define LONG_MAX	2147483647L
 #define LONG_MIN	-2147483648L
 
 /*@
-  @ requires \valid_read(nptr + (0..));
+  @ requires valid_string(nptr);
   @ requires \exists integer k; k >= 0 && nptr[k] == '\0';
   @ requires endptr == \null || \valid(endptr);
   @ requires -36 <= base <= 36;

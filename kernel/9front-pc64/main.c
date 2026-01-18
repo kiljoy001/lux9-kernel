@@ -1,4 +1,5 @@
 #include "../../limine.h"
+#include "9p_router.h"
 #include "borrowchecker.h"
 #include "dat.h"
 #include "exchange.h"
@@ -481,6 +482,14 @@ void main_after_cr3(void) {
    * proc0 */
   splhi();
   timersinit();
+
+  /* CRITICAL FIX: Register the timer interrupt handler
+   * timersinit() sets up the timer hardware but doesn't register the handler.
+   * Without this, vno=32 has no handler and causes interrupt storm. */
+  extern void lapicclock(Ureg *, void *);
+  intrenable(IrqTIMER, lapicclock, nil, BUSUNKNOWN, "clock");
+  boot_log("DEBUG: Timer handler registered at vno=%d\n", VectorPIC + IrqTIMER);
+
   spllo(); /* Re-enable interrupts for scheduler - CRITICAL */
   boot_log("DEBUG: timersinit complete, interrupts enabled\n");
   set_boot_state(BOOT_SCHED);
@@ -541,10 +550,21 @@ void init0(void) {
   uartputs("init0: calling kproc(alarm)\n", 26);
   kproc("alarm", alarmkproc, 0);
 
-  sp = (char **)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0]) * 4);
-  sp[3] = sp[2] = nil;
-  strcpy(sp[1] = (char *)&sp[4], "boot");
-  sp[0] = nil;
+  uintptr *stack = (uintptr *)(USTKTOP - sizeof(Tos) - 16 - sizeof(sp[0]) * 4);
+  print("BOOT[init0]: using prebuilt user stack at %#p (p9uaddr=%#p)\n", stack,
+        (void *)p9_user_base(up));
+  {
+    uintptr *pte = mmuwalk(m->pml4, (uintptr)stack, 0, 0);
+    if (pte && (*pte & PTEVALID)) {
+      uintptr pa = PPN(*pte) | ((uintptr)stack & (BY2PG - 1));
+      uintptr *kva = (uintptr *)KADDR(pa & ~(BY2PG - 1));
+      uintptr off = ((uintptr)stack & (BY2PG - 1)) / sizeof(uintptr);
+      print("BOOT[init0]: ustack[0]=%#p ustack[1]=%#p ustack[2]=%#p\n",
+            (void *)kva[off], (void *)kva[off + 1], (void *)kva[off + 2]);
+    } else {
+      print("BOOT[init0]: ustack PTE missing\n");
+    }
+  }
 
   splhi();
   fpukexit(nil);
@@ -561,7 +581,7 @@ void init0(void) {
     /* NOTREACHED */
   }
 
-  touser(sp, up->entry_point);
+  touser((void *)stack, up->entry_point, p9_user_base(up));
 }
 
 void main(void) {

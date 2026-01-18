@@ -1,14 +1,14 @@
 // === IPC Pub-Sub Implementation ===
 
 /* Standard kernel includes - ORDER MATTERS! u.h first for Plan 9 types */
-#include "u.h"
 #include "../port/lib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
-#include "uuid.h"
 #include "blind_ledger.h"
+#include "dat.h"
 #include "exchange_pool.h"
+#include "fns.h"
+#include "mem.h"
+#include "u.h"
+#include "uuid.h"
 
 // Utility function to pack topic UUIDv8 using process identity patterns
 void uuid_pack_topic(uuid_t *topic_uuid, const char *namespace_str,
@@ -67,19 +67,81 @@ static Topic *rbtree_search(Topic *root, const uuid_t *topic_uuid) {
 static void rbtree_rotate_left(Topic **root, Topic *x) {
   Topic *y = x->right;
   x->right = y->left;
-  y->left = x;
-
-  if (*root == x)
+  if (y->left != nil)
+    y->left->parent = x;
+  y->parent = x->parent;
+  if (x->parent == nil)
     *root = y;
+  else if (x == x->parent->left)
+    x->parent->left = y;
+  else
+    x->parent->right = y;
+  y->left = x;
+  x->parent = y;
 }
 
 static void rbtree_rotate_right(Topic **root, Topic *x) {
   Topic *y = x->left;
   x->left = y->right;
-  y->right = x;
-
-  if (*root == x)
+  if (y->right != nil)
+    y->right->parent = x;
+  y->parent = x->parent;
+  if (x->parent == nil)
     *root = y;
+  else if (x == x->parent->right)
+    x->parent->right = y;
+  else
+    x->parent->left = y;
+  y->right = x;
+  x->parent = y;
+}
+
+// RBTree insertion fixup - restore Red-Black properties after insertion
+static void rbtree_insert_fixup(Topic **root, Topic *z) {
+  while (z->parent != nil && z->parent->red) {
+    Topic *grandparent = z->parent->parent;
+    if (grandparent == nil)
+      break;
+
+    if (z->parent == grandparent->left) {
+      Topic *uncle = grandparent->right;
+      if (uncle != nil && uncle->red) {
+        // Case 1: Uncle is red - recolor
+        z->parent->red = 0;
+        uncle->red = 0;
+        grandparent->red = 1;
+        z = grandparent;
+      } else {
+        if (z == z->parent->right) {
+          // Case 2: z is right child - left rotate
+          z = z->parent;
+          rbtree_rotate_left(root, z);
+        }
+        // Case 3: z is left child - right rotate and recolor
+        z->parent->red = 0;
+        z->parent->parent->red = 1;
+        rbtree_rotate_right(root, z->parent->parent);
+      }
+    } else {
+      // Mirror cases for right subtree
+      Topic *uncle = grandparent->left;
+      if (uncle != nil && uncle->red) {
+        z->parent->red = 0;
+        uncle->red = 0;
+        grandparent->red = 1;
+        z = grandparent;
+      } else {
+        if (z == z->parent->left) {
+          z = z->parent;
+          rbtree_rotate_right(root, z);
+        }
+        z->parent->red = 0;
+        z->parent->parent->red = 1;
+        rbtree_rotate_left(root, z->parent->parent);
+      }
+    }
+  }
+  (*root)->red = 0; // Root is always black
 }
 
 // Create a new topic
@@ -130,9 +192,37 @@ Topic *find_or_create_topic(const char *topic_name) {
     return nil;
   }
 
-  // TODO: Add proper RBTree insertion here
-  // For now, simple linked list approach
-  // In a real implementation, we'd insert into the RBTree
+  // Insert into RBTree
+  if (global_pool->topics_root == nil) {
+    // First topic - becomes black root
+    global_pool->topics_root = topic;
+    topic->red = 0;
+    qunlock(&global_pool->topics_lock);
+    return topic;
+  }
+
+  // Find insertion point
+  Topic *parent = nil;
+  Topic *current = global_pool->topics_root;
+  while (current != nil) {
+    parent = current;
+    int cmp = memcmp(&topic_uuid, &current->topic_uuid, sizeof(uuid_t));
+    if (cmp < 0)
+      current = current->left;
+    else
+      current = current->right;
+  }
+
+  // Insert as red node
+  topic->parent = parent;
+  int cmp = memcmp(&topic_uuid, &parent->topic_uuid, sizeof(uuid_t));
+  if (cmp < 0)
+    parent->left = topic;
+  else
+    parent->right = topic;
+
+  // Fix Red-Black properties
+  rbtree_insert_fixup(&global_pool->topics_root, topic);
 
   qunlock(&global_pool->topics_lock);
   return topic;
@@ -313,47 +403,51 @@ Notification *dequeue_notification(Proc *p) {
   for (int i = 0; i < global_pool->notification_count; i++) {
     if (global_pool->notifications[i].subscriber == p) {
       Notification *notif = &global_pool->notifications[i];
-      
-      // We found a notification for this process. 
-      // Since we need to return a pointer to it, but we are about to shift the array,
-      // we must copy it to a safe location or handle the return value carefully.
-      // However, the caller likely expects a pointer to a struct that persists or is copied.
-      // In this specific codebase style, 'Notification' seems to be a transient struct 
-      // passed by value or pointer to stack. But wait, the function returns 'Notification *'.
-      // If we return a pointer to the array slot, and then shift the array, the pointer becomes invalid/points to wrong data.
-      
-      // Let's allocate a new Notification struct to return, or change return type to value.
-      // Looking at userspace/lib/liblux/src/syscalls.c (from investigation), it returns a pointer.
-      // But the syscall usually returns data by copy.
-      // Let's check sys_exchange.c.
-      // Ah, I can't check sys_exchange.c right now without reading it again.
-      // But usually, these kernel functions returning pointers are dangerous if the underlying storage moves.
-      
-      // IMPORTANT: The original code returned `&global_pool->notifications[0]` then shifted. 
-      // This means the original code was ALREADY BUGGY because `notif` would point to the *next* notification after shift!
-      // Actually, `notif = &global_pool->notifications[0]` gets the address.
-      // Then `global_pool->notifications[0] = global_pool->notifications[1]`.
-      // The data at `notif` (which is `&...[0]`) is OVERWRITTEN.
-      // So the caller gets the *next* notification's data, or garbage.
-      
-      // To fix this properly, we should probably allocate a Notification to return, 
-      // OR (more likely for this kernel style) the syscall wrapper copies it to userspace immediately.
-      // The safest way here without `malloc` (which might sleep) inside qlock 
-      // is to use a static buffer or expect the caller to copy it.
-      // But wait, `xalloc` is used elsewhere.
-      
+
+      // We found a notification for this process.
+      // Since we need to return a pointer to it, but we are about to shift the
+      // array, we must copy it to a safe location or handle the return value
+      // carefully. However, the caller likely expects a pointer to a struct
+      // that persists or is copied. In this specific codebase style,
+      // 'Notification' seems to be a transient struct passed by value or
+      // pointer to stack. But wait, the function returns 'Notification *'. If
+      // we return a pointer to the array slot, and then shift the array, the
+      // pointer becomes invalid/points to wrong data.
+
+      // Let's allocate a new Notification struct to return, or change return
+      // type to value. Looking at userspace/lib/liblux/src/syscalls.c (from
+      // investigation), it returns a pointer. But the syscall usually returns
+      // data by copy. Let's check sys_exchange.c. Ah, I can't check
+      // sys_exchange.c right now without reading it again. But usually, these
+      // kernel functions returning pointers are dangerous if the underlying
+      // storage moves.
+
+      // IMPORTANT: The original code returned `&global_pool->notifications[0]`
+      // then shifted. This means the original code was ALREADY BUGGY because
+      // `notif` would point to the *next* notification after shift! Actually,
+      // `notif = &global_pool->notifications[0]` gets the address. Then
+      // `global_pool->notifications[0] = global_pool->notifications[1]`. The
+      // data at `notif` (which is `&...[0]`) is OVERWRITTEN. So the caller gets
+      // the *next* notification's data, or garbage.
+
+      // To fix this properly, we should probably allocate a Notification to
+      // return, OR (more likely for this kernel style) the syscall wrapper
+      // copies it to userspace immediately. The safest way here without
+      // `malloc` (which might sleep) inside qlock is to use a static buffer or
+      // expect the caller to copy it. But wait, `xalloc` is used elsewhere.
+
       // Let's allocate a copy to return.
       Notification *ret = xalloc(sizeof(Notification));
       if (ret) {
         *ret = global_pool->notifications[i];
       }
-      
+
       // Shift remaining notifications down
       for (int j = i; j < global_pool->notification_count - 1; j++) {
         global_pool->notifications[j] = global_pool->notifications[j + 1];
       }
       global_pool->notification_count--;
-      
+
       qunlock(&global_pool->notifications_lock);
       return ret;
     }

@@ -57,31 +57,47 @@ int sart_add_edge(UUIDv8 *parent, const char *name, UUIDv8 *child);
 extern void crypto_blake2b(u8int *hash, unsigned long hash_size,
                            const u8int *message, unsigned long message_size);
 
-/*
- * TLSH approximation using BLAKE2b
- *
- * Real TLSH requires complex locality-sensitive hashing.
- * As a reasonable approximation, we use BLAKE2b with a
- * domain-separated key to produce similarity-friendly output.
- */
-static void tlsh_from_blake2b(const void *data, u64int len, u8int *out) {
-  u8int full_hash[64];
-
-  /* Hash the data */
-  crypto_blake2b(full_hash, 64, (const u8int *)data, len);
-
-  /* Format as TLSH: 3 bytes header + 32 bytes body */
-  out[0] = (len >> 16) & 0xFF; /* Length indicator */
-  out[1] = (len >> 8) & 0xFF;
-  out[2] = len & 0xFF;
-
-  /* Use first 32 bytes of hash as body */
-  memmove(&out[3], full_hash, 32);
-}
+extern int tlsh_hash(const u8int *data, u64int len, u8int tlsh_out[35]);
 
 /* Global store instance */
 static SartStore g_store_instance;
 static int g_initialized = 0;
+static volatile int g_store_lock = 0;
+static u64int g_disk_base_override = 0;
+static u64int g_journal_base_override = 0;
+static int g_base_override_set = 0;
+
+void sart_set_backing_offsets(u64int disk_base, u64int journal_base) {
+  g_disk_base_override = disk_base;
+  g_journal_base_override = journal_base;
+  g_base_override_set = 1;
+}
+
+/* Simple spinlock */
+static void acquire_lock(volatile int *lock) {
+  while (__sync_lock_test_and_set(lock, 1)) {
+    // busy wait
+    while (*lock)
+      ;
+  }
+}
+
+static void release_lock(volatile int *lock) { __sync_lock_release(lock); }
+
+/* Debug helper */
+extern long sys_write(int fd, void *buf, long n);
+static void debug_print(const char *msg) {
+  // long len = 0;
+  // while(msg[len]) len++;
+  // sys_write(1, (void*)msg, len);
+}
+
+static void init_log(const char *msg) {
+  long len = 0;
+  while (msg[len])
+    len++;
+  sys_write(2, (void *)msg, len);
+}
 
 /*
  * Content hash table for deduplication
@@ -143,7 +159,7 @@ static void dedup_insert(const u8int *content_hash, const UUIDv8 *uuid) {
   /* Table full - silently ignore (dedup is optimization, not required) */
 }
 
-extern int blkio_init(int fd, u64int size);
+extern int blkio_init(int fd, u64int size, u64int base);
 extern int blkio_getfree(u64int *r);
 extern int blkio_putfree(u64int r);
 extern void *blkio_getbuf(u64int blkno, int type, int nodata);
@@ -257,28 +273,43 @@ int sart_init(int disk_fd, int journal_fd, u64int total_blocks) {
   g_store_instance.journal_fd = journal_fd;
   g_store_instance.total_blocks = total_blocks;
   g_store_instance.next_block = 1; /* Block 0 reserved */
+  if (g_base_override_set) {
+    g_store_instance.disk_base = g_disk_base_override;
+    g_store_instance.journal_base = g_journal_base_override;
+  }
 
   /* Initialize block I/O layer */
-  rc = blkio_init(disk_fd, total_blocks);
-  if (rc != 0)
+  init_log("sart_init: blkio_init start\n");
+  rc = blkio_init(disk_fd, total_blocks, g_store_instance.disk_base);
+  if (rc != 0) {
+    init_log("sart_init: blkio_init failed\n");
     return SART_ERR_IO;
+  }
+  init_log("sart_init: blkio_init ok\n");
 
   /* Initialize ART index */
   art_init();
+  init_log("sart_init: art_init ok\n");
 
   /* Initialize dedup table */
   memset(g_dedup_table, 0, sizeof(g_dedup_table));
 
   /* Initialize journal */
+  init_log("sart_init: journal_init start\n");
   rc = journal_init(&g_store_instance);
-  if (rc != SART_OK)
+  if (rc != SART_OK) {
+    init_log("sart_init: journal_init failed\n");
     return rc;
+  }
+  init_log("sart_init: journal_init ok\n");
 
   /* Rebuild index from journal if entries exist */
   if (g_store_instance.entry_count > 0) {
     rc = sart_rebuild_index();
-    if (rc < 0)
+    if (rc < 0) {
+      init_log("sart_init: rebuild_index failed\n");
       return rc;
+    }
   }
 
   g_initialized = 1;
@@ -293,18 +324,24 @@ int sart_init(int disk_fd, int journal_fd, u64int total_blocks) {
  */
 static void generate_uuid_from_record(RecordData *rec, UUIDv8 *id) {
   u8int hash[32];
+  char msg[128];
 
+  debug_print("DEBUG: generate_uuid_from_record: crypto_blake2b\n");
   /* Hash the entire RecordData structure with BLAKE2b */
   crypto_blake2b(hash, 32, (const u8int *)rec, sizeof(RecordData));
+
+  debug_print(msg);
 
   /* Use first 16 bytes as UUID, setting version/variant bits */
   memmove(id->data, hash, 16);
 
+  debug_print("DEBUG: generate_uuid_from_record: setting bits\n");
   /* Set UUIDv8 version (bits 48-51 = 0b1000) */
   id->data[6] = (id->data[6] & 0x0F) | 0x80;
 
   /* Set variant (bits 64-65 = 0b10) */
   id->data[8] = (id->data[8] & 0x3F) | 0x80;
+  debug_print("DEBUG: generate_uuid_from_record: done\n");
 }
 
 /*
@@ -318,11 +355,17 @@ int sart_write_immutable(void *data, u64int len, u32int perms, UUIDv8 *id_out) {
   u64int blocks_needed;
   int rc;
 
-  if (!g_initialized || id_out == nil)
+  acquire_lock(&g_store_lock);
+  debug_print("DEBUG: sart_write_immutable enter\n");
+
+  if (!g_initialized || id_out == nil) {
+    release_lock(&g_store_lock);
     return SART_ERR_IO;
+  }
 
   /* Step 1: Hash content for deduplication */
   if (data && len > 0) {
+    debug_print("DEBUG: hashing content\n");
     crypto_blake2b(content_hash, 32, (const u8int *)data, len);
   } else {
     /* Empty content hash */
@@ -332,56 +375,91 @@ int sart_write_immutable(void *data, u64int len, u32int perms, UUIDv8 *id_out) {
 
   /* Step 2: Check dedup table (only for files with content) */
   if (len > 0) {
+    debug_print("DEBUG: dedup lookup\n");
     existing = dedup_lookup(content_hash);
     if (existing != nil) {
       memmove(id_out, existing, sizeof(UUIDv8));
+      release_lock(&g_store_lock);
       return SART_OK;
     }
   }
 
   /* Step 3: Allocate blocks */
   if (len > 0) {
+    debug_print("DEBUG: allocating blocks\n");
     blocks_needed = (len + SART_BLOCK_SIZE - 1) / SART_BLOCK_SIZE;
     rc = hjfs_alloc_block(&block_addr);
-    if (rc != SART_OK)
+    if (rc != SART_OK) {
+      release_lock(&g_store_lock);
       return rc;
+    }
     g_store_instance.next_block += (blocks_needed - 1);
 
     /* Step 4: Write data to disk */
+    debug_print("DEBUG: writing blocks\n");
     rc = hjfs_write_block(block_addr, data, len);
-    if (rc != SART_OK)
+    if (rc != SART_OK) {
+      release_lock(&g_store_lock);
       return rc;
+    }
   } else {
     block_addr = (u64int)-1; /* Sentinel for no data */
   }
 
   /* Step 5: Build RecordData */
+  debug_print("DEBUG: building record\n");
   memset(&rec, 0, sizeof(rec));
-  rec.size = len;
   rec.block_addr = block_addr;
+  rec.size = len;
   rec.perms = perms;
-  rec.uid = 0;
-  rec.gid = 0;
-  rec.atime = rec.mtime = sys_nsec();
-  memmove(rec.data_hash, content_hash, 32);
+  rec.atime = sys_nsec();
+  rec.mtime = sys_nsec();
+
+  /* Initialize delta fields as FULL (not delta-compressed) */
+  rec.type = 0;         /* FULL */
+  rec.delta_format = 0; /* No delta */
+  rec.delta_size = 0;
+  rec.version = 1; /* First version */
+  rec.chain_depth = 0;
+  rec.write_timestamp = (u32int)(sys_nsec() / 1000000000ULL); /* Seconds */
+
+  /* Compute content hash (BLAKE2b) */
+  crypto_blake2b(rec.data_hash, 32, (const u8int *)data, len);
 
   if (len > 0 && data) {
-    tlsh_from_blake2b(data, len, rec.tlsh);
+    debug_print("DEBUG: tlsh hashing\n");
+    if (tlsh_hash((const u8int *)data, len, rec.tlsh) != 0) {
+      memset(rec.tlsh, 0, sizeof(rec.tlsh));
+    }
   }
 
   /* Step 6: Generate UUID */
+  debug_print("DEBUG: generating uuid\n");
   generate_uuid_from_record(&rec, id_out);
 
+  char uuid_dbg[128];
+  debug_print(uuid_dbg);
+  for (int k = 0; k < 16; k++) {
+    debug_print(uuid_dbg);
+  }
+  debug_print("\n");
+
   /* Step 7: Persist */
+  debug_print("DEBUG: journal append\n");
   rc = journal_append_blob(id_out, &rec);
-  if (rc != SART_OK)
+  if (rc != SART_OK) {
+    release_lock(&g_store_lock);
     return rc;
+  }
 
   /* Step 8: Index */
+  debug_print("DEBUG: art insert\n");
   art_insert(id_out, &rec);
   if (len > 0)
     dedup_insert(content_hash, id_out);
 
+  debug_print("DEBUG: sart_write_immutable success\n");
+  release_lock(&g_store_lock);
   return SART_OK;
 }
 
@@ -410,19 +488,28 @@ long sart_read(UUIDv8 *id, void *buf, u64int len) {
   RecordData *rec;
   u64int read_len;
 
-  if (!g_initialized || id == nil || buf == nil)
+  acquire_lock(&g_store_lock);
+
+  if (!g_initialized || id == nil || buf == nil) {
+    release_lock(&g_store_lock);
     return SART_ERR_IO;
+  }
 
   /* Look up in ART index - O(k) */
   rec = art_search(id);
-  if (rec == nil)
+  if (rec == nil) {
+    release_lock(&g_store_lock);
     return SART_ERR_NOTFOUND;
+  }
 
   /* Determine read length */
   read_len = (len < rec->size) ? len : rec->size;
 
   /* Read from disk via HJFS */
-  return hjfs_read_block(rec->block_addr, buf, read_len);
+  long ret = hjfs_read_block(rec->block_addr, buf, read_len);
+
+  release_lock(&g_store_lock);
+  return ret;
 }
 
 /*

@@ -34,6 +34,27 @@ mkdir -p "$INITRD_SOURCE/boot"
 cp "$INIT_BINARY" "$INITRD_SOURCE/boot/init"
 chmod 755 "$INITRD_SOURCE/boot/init"
 
+# Copy rump_server if it exists
+if [ -f "$REPO_ROOT/userspace/rump/rump_server" ]; then
+    echo "Adding rump_server to initrd..."
+    cp "$REPO_ROOT/userspace/rump/rump_server" "$INITRD_SOURCE/boot/rump_server"
+    chmod 755 "$INITRD_SOURCE/boot/rump_server"
+fi
+
+# Copy resurrection if it exists
+if [ -f "$REPO_ROOT/userspace/resurrection/resurrection" ]; then
+    echo "Adding resurrection to initrd..."
+    cp "$REPO_ROOT/userspace/resurrection/resurrection" "$INITRD_SOURCE/boot/resurrection"
+    chmod 755 "$INITRD_SOURCE/boot/resurrection"
+fi
+
+# Copy hal if it exists
+if [ -f "$REPO_ROOT/userspace/hal/hal" ]; then
+    echo "Adding hal to initrd..."
+    cp "$REPO_ROOT/userspace/hal/hal" "$INITRD_SOURCE/boot/hal"
+    chmod 755 "$INITRD_SOURCE/boot/hal"
+fi
+
 # Build initrd.tar (UNCOMPRESSED!)
 echo "Building initrd.tar..."
 mkdir -p "$BUILD_DIR"

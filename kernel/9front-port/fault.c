@@ -322,7 +322,7 @@ int fixfault(Segment *s, uintptr addr, int read) {
    * This ensures syscallentry reads arguments from the CORRECT page (child's),
    * not the stale parent page.
    */
-  if (addr == EXCHANGE_PAGE_ADDR && up != nil) {
+  if (up != nil && addr == p9_user_base(up)) {
     up->p9page = (uchar *)KADDR((*pg)->pa);
     up->p9page_phys = (*pg)->pa;
     /* print("fixfault: updated p->p9page for pid %lud to pa %#llx\n", up->pid,
@@ -416,7 +416,7 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
    * Without this, up->p9page remains nil or points to the wrong page,
    * causing syscalls to be silently ignored.
    */
-  if (addr == EXCHANGE_PAGE_ADDR && up != nil) {
+  if (up != nil && addr == p9_user_base(up)) {
     up->p9page = (uchar *)KADDR(pg.pa);
     up->p9page_phys = pg.pa;
     print("mapphys: updated up->p9page for pid %lud to pa %#llx kva %p\n",

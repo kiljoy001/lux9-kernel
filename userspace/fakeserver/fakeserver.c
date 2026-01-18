@@ -16,6 +16,13 @@ typedef unsigned char uchar;
 typedef unsigned long long uvlong;
 typedef unsigned long long u64int;
 
+extern unsigned long long lux_exchange_base;
+static inline unsigned long long exchange_base(void) {
+  if (lux_exchange_base != 0)
+    return lux_exchange_base;
+  return EXCHANGE_PAGE_ADDR;
+}
+
 struct P9Control {
   uint doorbell;
   uint status;
@@ -123,7 +130,7 @@ static void sys_exit(void) {
 }
 
 void main(void) {
-  exchange = (volatile uchar *)EXCHANGE_PAGE_ADDR;
+  exchange = (volatile uchar *)exchange_base();
   ctl = (volatile struct P9Control *)(exchange + P9_CONTROL_OFFSET);
 
   print("FakeServer: I am alive! Will crash in 5 ticks.\n");

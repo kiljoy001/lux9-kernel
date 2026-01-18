@@ -26,6 +26,7 @@
 /* Forward declarations */
 static struct PCIChannel *lookup_pci_channel(struct FamilyExchangePage *family,
                                              uint64_t channel_id);
+extern struct PCIFamilyOps pci_family_ops;
 
 /* Global PCI family context */
 struct PCIFamilyContext *global_pci_ctx = NULL;
@@ -386,7 +387,7 @@ int pcifamily_init(void) {
   print("PCI: found %d devices on primary domain\n", devices_found);
 
   /* Register PCI family with family system */
-  if (family_register(FAMILY_PCI, NULL, "PCI") != 0) {
+  if (family_register(FAMILY_PCI, &pci_family_ops.base, "PCI") != 0) {
     print("PCI: failed to register PCI family\n");
     xfree(global_pci_ctx);
     global_pci_ctx = NULL;
@@ -416,9 +417,12 @@ static int pci_family_init(struct FamilyExchangePage *family) {
   /* Initialize family-specific contexts */
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
-  if (!ctx) {
-    return -1;
+  if (!ctx && global_pci_ctx) {
+    family->family_specific_ctx = global_pci_ctx;
+    ctx = global_pci_ctx;
   }
+  if (!ctx)
+    return -1;
 
   /* Set family type and capabilities */
   family->family_type = FAMILY_PCI;

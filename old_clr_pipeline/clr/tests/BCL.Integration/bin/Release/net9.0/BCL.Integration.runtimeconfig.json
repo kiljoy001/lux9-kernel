@@ -1,9 +1,0 @@
-{
-  "runtimeOptions": {
-    "tfm": "net9.0",
-    "configProperties": {
-      "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
-      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false
-    }
-  }
-}

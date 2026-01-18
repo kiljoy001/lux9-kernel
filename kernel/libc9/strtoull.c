@@ -1,10 +1,11 @@
 #include <u.h>
+#include "acsl_bounds.h"
 #include <libc.h>
 
 #define UVLONG_MAX	(~0ULL)
 
 /*@
-  @ requires \valid_read(nptr + (0..));
+  @ requires valid_string(nptr);
   @ requires \exists integer k; k >= 0 && nptr[k] == '\0';
   @ requires endptr == \null || \valid(endptr);
   @ requires -36 <= base <= 36;

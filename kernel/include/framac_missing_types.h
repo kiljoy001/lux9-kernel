@@ -43,4 +43,13 @@ struct Dev;
 struct Cmdbuf;
 struct Cmdtab;
 
+/* Override standard library types for Plan 9 compatibility */
+#ifndef FRAMAC_OVERRIDES
+#define FRAMAC_OVERRIDES
+extern long strlen(char *s);
+extern int memcmp(void *s1, void *s2, long n);
+extern void *memmove(void *dst, void *src, long n);
+extern void *memset(void *dst, int c, long n);
+#endif
+
 #endif /* FRAMAC_MISSING_TYPES_H */

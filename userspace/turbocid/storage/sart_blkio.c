@@ -12,8 +12,9 @@
 #include "dat.h"
 
 /* liblux syscall wrappers */
-extern long sys_pread(int fd, void *buf, long n, long offset);
-extern long sys_pwrite(int fd, void *buf, long n, long offset);
+extern long sys_read(int fd, void *buf, long n);
+extern long sys_write(int fd, void *buf, long n);
+extern long sys_seek(int fd, long offset, int whence);
 extern void *memset(void *dst, int c, unsigned long n);
 extern void *memmove(void *dst, const void *src, unsigned long n);
 
@@ -27,6 +28,7 @@ extern void *memmove(void *dst, const void *src, unsigned long n);
 #define BLK_FREE 0x01  /* Block is in free list */
 #define BLK_DIRTY 0x02 /* Block needs to be written back */
 #define BLK_VALID 0x04 /* Block contains valid data */
+#define P9_IO_CHUNK 3584
 
 typedef struct BlkBuf {
   u8int data[BLOCK]; /* Block data - 4KB */
@@ -40,6 +42,7 @@ typedef struct BlkBuf {
 typedef struct BlkDev {
   int fd;             /* File descriptor */
   u64int size;        /* Total blocks */
+  u64int base;        /* Base offset for block region */
   u64int fstart;      /* Start of freelist blocks */
   u64int fend;        /* End of freelist blocks */
   u64int next_scan;   /* Next block to scan for free */
@@ -50,6 +53,42 @@ typedef struct BlkDev {
 static BlkDev g_dev;
 static int g_dev_initialized = 0;
 
+static long blkio_pread_full(int fd, void *buf, long n, long offset) {
+  if (sys_seek(fd, offset, 0) < 0)
+    return -1;
+  long total = 0;
+  while (n > 0) {
+    long chunk = n > P9_IO_CHUNK ? P9_IO_CHUNK : n;
+    long r = sys_read(fd, buf, chunk);
+    if (r < 0)
+      return r;
+    total += r;
+    if (r != chunk)
+      break;
+    buf = (u8int *)buf + r;
+    n -= r;
+  }
+  return total;
+}
+
+static long blkio_pwrite_full(int fd, const void *buf, long n, long offset) {
+  if (sys_seek(fd, offset, 0) < 0)
+    return -1;
+  long total = 0;
+  while (n > 0) {
+    long chunk = n > P9_IO_CHUNK ? P9_IO_CHUNK : n;
+    long r = sys_write(fd, (void *)buf, chunk);
+    if (r < 0)
+      return r;
+    total += r;
+    if (r != chunk)
+      break;
+    buf = (const u8int *)buf + r;
+    n -= r;
+  }
+  return total;
+}
+
 /*
  * blkio_init - Initialize block I/O layer
  *
@@ -59,13 +98,14 @@ static int g_dev_initialized = 0;
  * Block 0 is reserved for superblock.
  * Returns 0 on success, -1 on error.
  */
-int blkio_init(int fd, u64int size) {
+int blkio_init(int fd, u64int size, u64int base) {
   if (g_dev_initialized)
     return 0;
 
   memset(&g_dev, 0, sizeof(g_dev));
   g_dev.fd = fd;
   g_dev.size = size;
+  g_dev.base = base;
   g_dev.fstart = 1; /* Block 0 is superblock */
   g_dev.fend = size;
   g_dev.next_scan = 1;
@@ -99,8 +139,8 @@ static BlkBuf *find_buf(u64int blkno) {
     if (g_dev.cache[i].refcnt == 0) {
       /* Write back if dirty */
       if (g_dev.cache[i].flags & BLK_DIRTY) {
-        sys_pwrite(g_dev.fd, g_dev.cache[i].data, BLOCK,
-                   g_dev.cache[i].blkno * BLOCK);
+        blkio_pwrite_full(g_dev.fd, g_dev.cache[i].data, BLOCK,
+                          g_dev.base + g_dev.cache[i].blkno * BLOCK);
         g_dev.cache[i].flags &= ~BLK_DIRTY;
       }
       oldest = i;
@@ -111,7 +151,8 @@ static BlkBuf *find_buf(u64int blkno) {
   /* Evict and reuse */
   BlkBuf *b = &g_dev.cache[oldest];
   if (b->flags & BLK_DIRTY) {
-    sys_pwrite(g_dev.fd, b->data, BLOCK, b->blkno * BLOCK);
+    blkio_pwrite_full(g_dev.fd, b->data, BLOCK,
+                      g_dev.base + b->blkno * BLOCK);
   }
 
   b->blkno = blkno;
@@ -146,7 +187,8 @@ BlkBuf *blkio_getbuf(u64int blkno, int type, int nodata) {
 
   /* Read from disk if needed */
   if (!(b->flags & BLK_VALID) && !nodata) {
-    n = sys_pread(g_dev.fd, b->data, BLOCK, blkno * BLOCK);
+    n = blkio_pread_full(g_dev.fd, b->data, BLOCK,
+                         g_dev.base + blkno * BLOCK);
     if (n != BLOCK) {
       b->flags = 0;
       b->blkno = ~0ULL;
@@ -179,7 +221,8 @@ void blkio_putbuf(BlkBuf *b) {
 
   /* Write back if dirty and unreferenced */
   if (b->refcnt == 0 && (b->flags & BLK_DIRTY)) {
-    sys_pwrite(g_dev.fd, b->data, BLOCK, b->blkno * BLOCK);
+    blkio_pwrite_full(g_dev.fd, b->data, BLOCK,
+                      g_dev.base + b->blkno * BLOCK);
     b->flags &= ~BLK_DIRTY;
   }
 }
@@ -213,7 +256,8 @@ static int load_bitmap(void) {
 
   /* Bitmap stored at blocks 1..BITMAP_BLOCKS */
   for (int i = 0; i < BITMAP_BLOCKS; i++) {
-    n = sys_pread(g_dev.fd, &g_alloc_bitmap[i * BLOCK], BLOCK, (1 + i) * BLOCK);
+    n = blkio_pread_full(g_dev.fd, &g_alloc_bitmap[i * BLOCK], BLOCK,
+                         g_dev.base + (1 + i) * BLOCK);
     if (n != BLOCK) {
       /* New disk - zero initialize */
       memset(&g_alloc_bitmap[i * BLOCK], 0, BLOCK);
@@ -234,7 +278,8 @@ static int load_bitmap(void) {
  */
 static int save_bitmap(void) {
   for (int i = 0; i < BITMAP_BLOCKS; i++) {
-    sys_pwrite(g_dev.fd, &g_alloc_bitmap[i * BLOCK], BLOCK, (1 + i) * BLOCK);
+    blkio_pwrite_full(g_dev.fd, &g_alloc_bitmap[i * BLOCK], BLOCK,
+                      g_dev.base + (1 + i) * BLOCK);
   }
   return 0;
 }
@@ -315,8 +360,8 @@ int blkio_putfree(u64int r) {
 void blkio_sync(void) {
   for (int i = 0; i < NBUF; i++) {
     if (g_dev.cache[i].flags & BLK_DIRTY) {
-      sys_pwrite(g_dev.fd, g_dev.cache[i].data, BLOCK,
-                 g_dev.cache[i].blkno * BLOCK);
+      blkio_pwrite_full(g_dev.fd, g_dev.cache[i].data, BLOCK,
+                        g_dev.base + g_dev.cache[i].blkno * BLOCK);
       g_dev.cache[i].flags &= ~BLK_DIRTY;
     }
   }
@@ -334,7 +379,7 @@ long blkio_read_block(u64int blkno, void *buf, u64int len) {
   if (!g_dev_initialized || blkno >= g_dev.size)
     return -1;
 
-  return sys_pread(g_dev.fd, buf, len, blkno * BLOCK);
+  return blkio_pread_full(g_dev.fd, buf, len, g_dev.base + blkno * BLOCK);
 }
 
 /*
@@ -346,7 +391,7 @@ long blkio_write_block(u64int blkno, const void *buf, u64int len) {
   if (!g_dev_initialized || blkno >= g_dev.size)
     return -1;
 
-  return sys_pwrite(g_dev.fd, (void *)buf, len, blkno * BLOCK);
+  return blkio_pwrite_full(g_dev.fd, buf, len, g_dev.base + blkno * BLOCK);
 }
 
 /*

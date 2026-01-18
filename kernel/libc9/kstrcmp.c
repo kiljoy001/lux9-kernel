@@ -1,9 +1,10 @@
 #include "u.h"
+#include "acsl_bounds.h"
 #include "portlib.h"
 
 /*@
-  @ requires \valid_read(s1 + (0..));
-  @ requires \valid_read(s2 + (0..));
+  @ requires valid_string(s1);
+  @ requires valid_string(s2);
   @ requires \exists integer n1; n1 >= 0 && s1[n1] == '\0';
   @ requires \exists integer n2; n2 >= 0 && s2[n2] == '\0';
   @ assigns \nothing;

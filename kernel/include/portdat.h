@@ -730,6 +730,7 @@ struct Proc {
                        * Kept for backwards compatibility with existing doorbell code.
                        */
   uvlong p9page_phys; /* physical address of p9page */
+  uintptr p9uaddr;    /* user VA for exchange page (per-process slot) */
 
   void *exchange_channel; /* ExchangeChannel from #X device (devexchange.c)
                            * Provides: ring buffer, page pool, capabilities */

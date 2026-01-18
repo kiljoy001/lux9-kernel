@@ -3,6 +3,11 @@
 #ifndef _EXCHANGE_POOL_H_
 #define _EXCHANGE_POOL_H_
 
+#include "blind_ledger.h"
+#include "portdat.h" /* For QLock definition */
+#include "types_fwd.h"
+#include "uuid.h"
+
 /* Error codes */
 typedef enum {
   POOL_OK = 0,
@@ -23,6 +28,7 @@ typedef enum {
 
 /* Forward declarations */
 struct Proc;
+typedef struct QLock QLock;
 
 /* Subscription - tracks who is subscribed to a topic */
 typedef struct Subscription {
@@ -41,6 +47,7 @@ typedef struct Topic {
   u32int sequence_counter; /* For generating sequence numbers */
   struct Topic *left;      /* RBTree left child */
   struct Topic *right;     /* RBTree right child */
+  struct Topic *parent;    /* RBTree parent (for insertion/balancing) */
   int red;                 /* RBTree color */
 } Topic;
 
@@ -59,7 +66,7 @@ typedef struct ProcAllocation {
   struct Proc *proc;
   UserCapability pages[MAX_PAGES_PER_PROCESS];
   uint num_pages;
-  float syscall_rate;
+  uvlong syscall_rate; /* Syscalls per second (scaled by 1000) to avoid float */
   uint target_pages;
   uint syscall_count;
   uvlong last_measurement;

@@ -1,5 +1,11 @@
 #include "router.h"
 
+uintptr p9_user_base(Proc *p) {
+  if (p && p->p9uaddr)
+    return p->p9uaddr;
+  return EXCHANGE_PAGE_ADDR;
+}
+
 /*@
   @ requires \valid_read(p + (0..3)) && p <= ep;
   @ terminates \true;
@@ -40,10 +46,28 @@ int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
 }
 
 /*@
+  @
+  //============================================================================
+  @ // MAIN 9P DISPATCHER - Routes messages to subsystem handlers
+  @
+  //============================================================================
+  @
   @ requires \valid(p) && \valid(t) && \valid(r);
-  @ terminates \true;
-  @ assigns *r;
+  @ requires p->p9page == \null || \valid((uchar*)p->p9page +
+  (0..P9_PAGE_SIZE-1));
+  @
+  @ // Return value semantics
   @ ensures \result == 0 || \result == -1;
+  @ ensures \result == 0 ==> r->type == Rsyscall;
+  @ ensures \result == -1 ==> r->type == Rerror;
+  @
+  @ // Protocol correctness: Tag preservation
+  @ ensures r->tag == t->tag;
+  @
+  @ // Memory safety
+  @ assigns *r;
+  @
+  @ terminates \true;
   @*/
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   if (p->wasm.initialized) {

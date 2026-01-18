@@ -705,11 +705,14 @@ uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
 
   sp = (uintptr *)(USTKTOP - ssize);
   *--sp = nargs;
+  *--sp = p9_user_base(up);
   ureg = up->dbgreg;
   ureg->sp = (uintptr)sp;
   ureg->pc = entry;
   ureg->cs = UESEL;
   ureg->ss = UD64SEL;
+  ureg->ax = p9_user_base(up);
+  ureg->di = p9_user_base(up);
   ureg->r14 = ureg->r15 = 0; /* extern user registers */
 
   print("execregs: entry=%#p sp=%#p cs=%#x ss=%#x flags=%#llux\n", entry,

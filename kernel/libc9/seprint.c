@@ -1,10 +1,11 @@
 #include <u.h>
+#include "acsl_bounds.h"
 #include <libc.h>
 
 /*@
   @ requires buf <= e;
   @ requires e - buf > 0 ==> \valid(buf + (0 .. (e - buf) - 1));
-  @ requires \valid_read(fmt + (0..));
+  @ requires valid_string(fmt);
   @ requires \exists integer k; k >= 0 && fmt[k] == '\0';
   @ assigns e - buf > 0 ? buf[0 .. (e - buf) - 1] : \nothing;
   @ ensures \result >= buf && \result < e;

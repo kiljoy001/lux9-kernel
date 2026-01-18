@@ -3,6 +3,7 @@
 
 /* Include base types */
 #include "u.h"
+#include "acsl_bounds.h"
 
 /*
  * functions (possibly) linked in, complete, from libc.
@@ -45,8 +46,8 @@ extern void *memchr(const void *, int, usize);
 extern char *strcat(char *, char *);
 extern char *strchr(char *, int);
 extern char *strrchr(char *, int);
-/*@ requires s1 == \null || \valid(s1);
-  @ requires s2 == \null || \valid(s2);
+/*@ requires s1 == \null || valid_string(s1);
+  @ requires s2 == \null || valid_string(s2);
   @ terminates \true;
   @ assigns \nothing;
   */
@@ -56,7 +57,7 @@ extern char *strecpy(char *, char *, char *);
 extern char *strncat(char *, char *, long);
 extern char *strncpy(char *, char *, long);
 extern int strncmp(char *, char *, long);
-/*@ requires s == \null || \valid(s);
+/*@ requires s == \null || valid_string(s);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= 0;
@@ -123,6 +124,7 @@ struct Fmt {
 };
 #endif
 typedef int (*Fmts)(Fmt *);
+/*@ assigns \result \from fmt; */
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);

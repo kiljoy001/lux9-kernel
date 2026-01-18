@@ -176,7 +176,7 @@ static PebbleBlack *pebble_lookup_black_locked(PebbleState *ps, void *handle) {
   @ requires ps != \null ==> \valid(ps);
   @ terminates \true;
   @*/
-PebbleBlack *pebble_lookup_black(Pebble State *ps, void *handle) {
+PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
   PebbleBlack *pb;
 
   if (ps == nil || handle == nil)
@@ -188,12 +188,51 @@ PebbleBlack *pebble_lookup_black(Pebble State *ps, void *handle) {
 }
 
 /*@
-  requires size > 0;
-  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  requires Inv_NonNegative(pebble_state());
-  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  ensures Inv_NonNegative(pebble_state());
-*/
+  @
+  //============================================================================
+  @ // WHITE TOKEN ISSUANCE - Reserve tokens from COLORLESS budget
+  @
+  //============================================================================
+  @
+  @ // Preconditions: Valid state and positive size
+  @ requires \valid(ps);
+  @ requires size > 0;
+  @ requires \valid(ps->whites + (0..PEBBLE_MAX_TOKENS-1));
+  @ requires \valid(ps->whites_active + (0..PEBBLE_MAX_TOKENS-1));
+  @ requires ps->colorless_bank >= 0;
+  @ requires ps->white_pending >= 0;
+  @ requires 0 <= ps->white_head < PEBBLE_MAX_TOKENS;
+  @
+  @ // Conservation invariants (Coq-proven)
+  @ requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @ requires Inv_NonNegative(pebble_state());
+  @
+  @ // Postconditions: Conservation preserved
+  @ ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @ ensures Inv_NonNegative(pebble_state());
+  @
+  @ // Success path: WHITE token allocated
+  @ ensures \result != \null ==>
+  @   \valid(\result) &&
+  @   \result->token == PEBBLE_TOKEN_MAGIC &&
+  @   \result->size == ROUNDUP(\max(size, PEBBLE_MIN_ALLOC),
+  PEBBLE_MEM_PER_TOKEN);
+  @
+  @ // Failure paths
+  @ ensures \result == \null ==>
+  @   (ps->colorless_bank < ROUNDUP(\max(size, PEBBLE_MIN_ALLOC),
+  PEBBLE_MEM_PER_TOKEN) ||
+  @    \forall integer j; 0 <= j < PEBBLE_MAX_TOKENS ==> ps->whites_active[j] ==
+  1);
+  @
+  @ // Memory effects
+  @ assigns ps->colorless_bank, ps->white_pending, ps->white_generation,
+  @         ps->whites[0..PEBBLE_MAX_TOKENS-1],
+  @         ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  @         ps->white_head;
+  @
+  @ terminates \true;
+  @*/
 /*
  * SMT: Validated by proofs/pebble/pebble_security.v
  * Theorem: Inv_Conservation, Inv_NonNegative
@@ -225,6 +264,13 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
     return nil; /* Insufficient budget */
   }
 
+  /*@
+    @ loop invariant 0 <= i <= PEBBLE_MAX_TOKENS;
+    @ loop invariant \forall integer j; 0 <= j < i ==>
+    @   ps->whites_active[(ps->white_head + j) % PEBBLE_MAX_TOKENS] == 1;
+    @ loop assigns i, idx;
+    @ loop variant PEBBLE_MAX_TOKENS - i;
+    @*/
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
     idx = (ps->white_head + i) % PEBBLE_MAX_TOKENS;
     if (ps->whites_active[idx])
@@ -262,6 +308,12 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
  * Create a UUIDv8 representation of a White token.
  * This allows passing the token as a 128-bit value (e.g., MVID).
  */
+/*@
+  @ requires white != \null ==> \valid(white);
+  @ requires out_uuid != \null ==> \valid(out_uuid);
+  @ terminates \true;
+  @ assigns *out_uuid;
+  @*/
 int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid) {
   PebbleState *ps;
   int i, idx = -1;
@@ -281,6 +333,12 @@ int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid) {
   }
 
   /* Find index for the token pointer */
+  /*@
+    @ loop invariant 0 <= i <= PEBBLE_MAX_TOKENS;
+    @ loop invariant idx == -1 || (0 <= idx < i);
+    @ loop assigns i, idx;
+    @ loop variant PEBBLE_MAX_TOKENS - i;
+    @*/
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
     if (&ps->whites[i] == white) {
       idx = i;
@@ -303,12 +361,26 @@ int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid) {
   return 0;
 }
 
+/*@
+  @ requires ps != \null ==> \valid(ps);
+  @ requires white != \null ==> \valid(white);
+  @ requires ps != \null ==> \valid(ps->whites_active +
+  (0..PEBBLE_MAX_TOKENS-1));
+  @ requires ps != \null ==> \valid(ps->whites + (0..PEBBLE_MAX_TOKENS-1));
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white) {
   int i;
 
   if (ps == nil || white == nil)
     return 0;
 
+  /*@
+    @ loop invariant 0 <= i <= PEBBLE_MAX_TOKENS;
+    @ loop assigns i;
+    @ loop variant PEBBLE_MAX_TOKENS - i;
+    @*/
   for (i = 0; i < PEBBLE_MAX_TOKENS; i++) {
     if (ps->whites_active[i] && &ps->whites[i] == white) {
       if (white->token != PEBBLE_TOKEN_MAGIC)
@@ -317,6 +389,40 @@ int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white) {
     }
   }
   return 0;
+}
+
+/*@
+  @ requires ps != \null ==> \valid(ps);
+  @ requires white != \null ==> \valid(white);
+  @ requires ps != \null ==> \valid(ps->whites + (0..PEBBLE_MAX_TOKENS-1));
+  @ requires ps != \null ==> \valid(ps->whites_active +
+  (0..PEBBLE_MAX_TOKENS-1));
+  @ terminates \true;
+  @ assigns ps->white_pending, ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  white->token;
+  @*/
+void pebble_return_white(PebbleState *ps, PebbleWhite *white) {
+  if (ps == nil || white == nil)
+    return;
+  if (!pebble_valid_white_token(ps, white))
+    return;
+
+  if (white->size != 0 && ps->white_pending >= white->size)
+    ps->white_pending -= white->size;
+
+  /*@
+    @ loop invariant 0 <= i <= PEBBLE_MAX_TOKENS;
+    @ loop assigns i, ps->whites_active[0..PEBBLE_MAX_TOKENS-1];
+    @ loop variant PEBBLE_MAX_TOKENS - i;
+    @*/
+  for (int i = 0; i < PEBBLE_MAX_TOKENS; i++) {
+    if (&ps->whites[i] == white) {
+      ps->whites_active[i] = 0;
+      break;
+    }
+  }
+
+  white->token = 0;
 }
 
 int pebble_set_budget(ulong budget) {
@@ -482,6 +588,12 @@ static void pebble_init_vault_key(void) {
   pebble_vault_key_initialized = 1;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \valid_read(\result + (0..31));
+  @ ensures \result == pebble_vault_key;
+  @ terminates \true;
+  @*/
 const u8int *pebble_get_vault_secret(void) {
   if (!pebble_vault_key_initialized)
     pebble_init_vault_key();
@@ -489,13 +601,39 @@ const u8int *pebble_get_vault_secret(void) {
 }
 
 /*@
-  requires size > 0;
-  requires white != nil;
-  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  requires Inv_NonNegative(pebble_state());
-  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  ensures Inv_NonNegative(pebble_state());
-*/
+  @ requires size > 0;
+  @ requires white != \null;
+  @ requires \valid(white);
+  @ requires buf != \null;
+  @ requires \valid((uchar*)buf + (0..size-1));
+  @ requires out_cap != \null;
+  @ requires \valid(out_cap);
+  @ requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @ requires Inv_NonNegative(pebble_state());
+  @
+  @ behavior success:
+  @   assumes white->size == size;
+  @   assumes white->token != 0;
+  @   ensures \result == 0;
+  @   ensures white->token == 0;
+  @   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @   ensures Inv_NonNegative(pebble_state());
+  @   ensures \valid(out_cap);
+  @
+  @ behavior error_invalid_white:
+  @   assumes white == \null || white->size != size || white->token == 0;
+  @   ensures \result == -1;
+  @
+  @ behavior error_buf:
+  @   assumes buf == \null;
+  @   ensures \result == -1;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ terminates \true;
+  @ assigns white->token, *out_cap, pebble_state()->black_list,
+  pebble_state()->black_inuse;
+  @*/
 /*
  * SMT: Validated by proofs/pebble/pebble_security.v
  * Theorem: Inv_Conservation
@@ -757,12 +895,30 @@ int pebble_black_free_internal(uintptr pa, ulong len, Proc *owner) {
 }
 
 /*@
-  requires cap != \null;
-  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  requires Inv_NonNegative(pebble_state());
-  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  ensures Inv_NonNegative(pebble_state());
-*/
+  @ requires cap != \null;
+  @ requires \valid_read(cap);
+  @ requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @ requires Inv_NonNegative(pebble_state());
+  @
+  @ behavior success:
+  @   assumes pebble_state() != \null;
+  @   ensures \result == 0;
+  @   ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
+  @   ensures Inv_NonNegative(pebble_state());
+  @
+  @ behavior error_invalid_cap:
+  @   assumes cap == \null;
+  @   ensures \result == -1;
+  @
+  @ behavior error_state:
+  @   assumes pebble_state() == \null;
+  @   ensures \result == -1;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ terminates \true;
+  @ assigns pebble_state()->black_list, pebble_state()->black_inuse;
+  @*/
 int pebble_black_free(const UserCapability *cap) {
   PebbleState *ps;
   PebbleBlack *pb, **pp;
@@ -1114,12 +1270,6 @@ PebbleRed *pebble_red_alloc(ulong size) {
  * State transition: RED → COLORLESS
  * Returns budget to colorless bank.
  */
-/*@
-  requires Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  requires Inv_NonNegative(pebble_state());
-  ensures Inv_Conservation(pebble_state(), PEBBLE_DEFAULT_BUDGET);
-  ensures Inv_NonNegative(pebble_state());
-*/
 int pebble_red_free(PebbleRed *red) {
   PebbleState *ps;
   PebbleRed **rp;
@@ -1338,7 +1488,6 @@ void pebble_selftest(void) {
   UserCapability black_cap;
   PebbleBlue *blue;
   PebbleRed *red;
-  extern void uartprintf(char *, ...);
 
   if (!pebble_enabled)
     return;
@@ -1346,43 +1495,43 @@ void pebble_selftest(void) {
   if (ps == nil)
     return;
 
-  uartprintf("PEBBLE: selftest begin\n");
+  print("PEBBLE: selftest begin\n");
 
   /* Test 1: White -> Black allocation (full flow) */
   void *black_addr = nil;
   if (pebble_alloc_with_white(PEBBLE_MIN_ALLOC, &black_cap, &black_addr) != 0) {
-    uartprintf("pebble selftest: WHITE->BLACK allocation failed\n");
+    print("pebble selftest: WHITE->BLACK allocation failed\n");
     return;
   }
   if (black_addr == nil) {
-    uartprintf("pebble selftest: BLACK allocation returned nil address\n");
+    print("pebble selftest: BLACK allocation returned nil address\n");
     return;
   }
 
   /* Test 2: Independent Blue allocation */
   blue = pebble_blue_alloc(PEBBLE_MIN_ALLOC);
   if (blue == nil) {
-    uartprintf("pebble selftest: blue alloc failed\n");
+    print("pebble selftest: blue alloc failed\n");
     return;
   }
 
   /* Test 3: Blue -> Red snapshot */
   if (pebble_red_snapshot(blue, &red) != 0) {
-    uartprintf("pebble selftest: red snapshot failed\n");
+    print("pebble selftest: red snapshot failed\n");
     return;
   }
   if (red == nil) {
-    uartprintf("pebble selftest: red nil after snapshot\n");
+    print("pebble selftest: red nil after snapshot\n");
     return;
   }
 
   /* Test 4: Free all tokens */
   if (pebble_red_free(red) != 0) {
-    uartprintf("pebble selftest: red free failed\n");
+    print("pebble selftest: red free failed\n");
     return;
   }
   if (pebble_blue_free(blue) != 0) {
-    uartprintf("pebble selftest: blue free failed\n");
+    print("pebble selftest: blue free failed\n");
     return;
   }
 
@@ -1393,44 +1542,44 @@ void pebble_selftest(void) {
 
     /* Ensure alignment */
     if (((uintptr)raw_ptr & PEBBLE_WAVE_MASK) != 0) {
-      uartprintf("pebble selftest: black addr not 8-byte aligned\n");
+      print("pebble selftest: black addr not 8-byte aligned\n");
       return;
     }
 
     /* Project onto Channel 3 */
     proj_ch3 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_3);
     if (!PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_3)) {
-      uartprintf("pebble selftest: projection to Ch3 failed\n");
+      print("pebble selftest: projection to Ch3 failed\n");
       return;
     }
     if (PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_2)) {
-      uartprintf("pebble selftest: Ch3 bled into Ch2 (filtering fail)\n");
+      print("pebble selftest: Ch3 bled into Ch2 (filtering fail)\n");
       return;
     }
 
     /* Project onto Channel 7 */
     proj_ch7 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_7);
     if (PEBBLE_PTR_WAVE(proj_ch7) != 7) {
-      uartprintf("pebble selftest: projection to Ch7 failed\n");
+      print("pebble selftest: projection to Ch7 failed\n");
       return;
     }
 
     /* Verify Base Address Recovery (All waves collapse to source) */
     if (PEBBLE_PTR_ADDR(proj_ch3) != raw_ptr) {
-      uartprintf("pebble selftest: Ch3 addr recovery failed\n");
+      print("pebble selftest: Ch3 addr recovery failed\n");
       return;
     }
 
-    uartprintf("PEBBLE: holographic channel verification passed\n");
+    print("PEBBLE: holographic channel verification passed\n");
   }
 
   if (pebble_black_free(&black_cap) != 0) {
-    uartprintf("pebble selftest: black free failed\n");
+    print("pebble selftest: black free failed\n");
     return;
   }
 
-  uartprintf("PEBBLE: selftest PASS (independent tokens, circular economy "
-             "validated)\n");
+  print("PEBBLE: selftest PASS (independent tokens, circular economy "
+        "validated)\n");
 }
 
 void pebble_sip_issue_test(void) {

@@ -194,8 +194,14 @@ typedef struct rump_stat {
 static int wasi_rump_rpc(const char *path, const void *req, uint32_t req_len,
                          void *resp, uint32_t resp_len) {
   int fd = kopen((char *)path, ORDWR);
-  if (fd < 0)
+  if (fd < 0) {
+    if (resp && resp_len >= sizeof(uint32_t)) {
+      memset(resp, 0, resp_len);
+      *(uint32_t *)resp = 38;
+      return (int)resp_len;
+    }
     return -1;
+  }
   long w = kwrite(fd, (void *)req, req_len);
   if (w < 0) {
     fdclose(fd, 0);
@@ -296,8 +302,14 @@ static uint32_t wasi_rump_simple_errno(const char *path) {
 static int wasi_rump_rpc_read(const char *path, const void *req,
                               uint32_t req_len, void *resp, uint32_t resp_len) {
   int fd = kopen((char *)path, ORDWR);
-  if (fd < 0)
+  if (fd < 0) {
+    if (resp && resp_len >= sizeof(uint32_t)) {
+      memset(resp, 0, resp_len);
+      *(uint32_t *)resp = 38;
+      return (int)resp_len;
+    }
     return -1;
+  }
   if (req_len > 0) {
     long w = kwrite(fd, (void *)req, req_len);
     if (w < 0) {
@@ -451,13 +463,9 @@ static int wasi_path_safe(const char *path, uint32_t path_len) {
 }
 
 static void wasi_fill_random(uint8_t *buf, uint32_t len) {
-  u64int state = (u64int)fastticks(nil) ^ ((u64int)up->pid << 32) ^ len;
-  for (uint32_t i = 0; i < len; i++) {
-    state ^= state << 13;
-    state ^= state >> 7;
-    state ^= state << 17;
-    buf[i] = (uint8_t)state;
-  }
+  /* Use kernel CSPRNG (ChaCha20) for WASI random_get */
+  extern void genrandom(uchar *buf, int nbytes);
+  genrandom((uchar *)buf, (int)len);
 }
 
 static const char *wasi_posix_path(const char *full, uint32_t *out_len) {
@@ -1175,8 +1183,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
   } else {
     kfd = kopen(fullpath, kmode);
   }
-  free(fullpath);
   if (kfd < 0) {
+    free(fullpath);
     m3ApiReturn(WASI_ERRNO_NOENT);
   }
 
@@ -1193,6 +1201,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
       cclose(c);
     fdclose(kfd, 0);
     ctx->fds[new_fd].is_open = 0;
+    if (fullpath)
+      free(fullpath);
     m3ApiReturn(WASI_ERRNO_IO);
   }
   c = fdtochan(kfd, -1, 0, 1);
@@ -1211,6 +1221,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
       ctx->fds[new_fd].base_path = dup;
     }
   }
+  free(fullpath);
 
   if ((oflags & WASI_O_DIRECTORY) && !ctx->fds[new_fd].is_dir) {
     fdclose(kfd, 0);
@@ -1290,7 +1301,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
 
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX) {
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
     vlong saved = kseek(ctx->fds[fd].lux9_fid, 0, 1);
     if (saved < 0)
       m3ApiReturn(WASI_ERRNO_IO);
@@ -1391,7 +1402,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
 
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX) {
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
     vlong saved = kseek(ctx->fds[fd].lux9_fid, 0, 1);
     if (saved < 0)
       m3ApiReturn(WASI_ERRNO_IO);
@@ -1608,7 +1619,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_seek) {
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
 
-  uint32_t cap = wasi_require_fd(ctx, fd, 0);
+  uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_SEEK);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
 
@@ -1776,7 +1787,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_sync) {
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_SYNC);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX)
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE)
     m3ApiReturn(WASI_ERRNO_SUCCESS);
   m3ApiReturn(wasi_rump_simple_errno("/srv/rump/posix/fd_sync"));
 }
@@ -1790,7 +1801,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_datasync) {
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_DATASYNC);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX)
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE)
     m3ApiReturn(WASI_ERRNO_SUCCESS);
   m3ApiReturn(wasi_rump_simple_errno("/srv/rump/posix/fd_datasync"));
 }
@@ -1806,7 +1817,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_tell) {
   uint32_t cap = wasi_require_fd(ctx, fd, WASI_RIGHT_FD_TELL);
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_POSIX) {
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
     vlong pos = kseek(ctx->fds[fd].lux9_fid, 0, 1);
     if (pos < 0)
       m3ApiReturn(WASI_ERRNO_IO);

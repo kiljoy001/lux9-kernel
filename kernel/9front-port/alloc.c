@@ -73,7 +73,9 @@ static void *pebble_arena_alloc(ulong size) {
   white->data_ptr = addr;
   void *black_handle;
   if (pebble_white_verify(white, &black_handle) != 0) {
-    /* FIXME: leak raw addr if verify fails */
+    /* Verification failed - cleanup resources */
+    xfree(addr);
+    pebble_return_white(ps, white);
     return nil;
   }
 

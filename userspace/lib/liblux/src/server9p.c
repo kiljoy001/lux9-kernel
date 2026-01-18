@@ -34,7 +34,7 @@ static Fid *get_fid(Srv *s, u32int fid) {
 }
 
 /* Internal: Add FID to hash */
-/* static Fid *alloc_fid(Srv *s, u32int fid) {
+static Fid *alloc_fid(Srv *s, u32int fid) {
     Fid *f = srv_malloc(sizeof(Fid));
     if (!f) return nil;
     memset(f, 0, sizeof(Fid));
@@ -45,10 +45,10 @@ static Fid *get_fid(Srv *s, u32int fid) {
     f->next = s->fidhash[bucket];
     s->fidhash[bucket] = f;
     return f;
-} */
+}
 
 /* Internal: Remove FID from hash */
-/* static void free_fid(Srv *s, Fid *f) {
+static void free_fid(Srv *s, Fid *f) {
     int bucket = f->fid % s->fidhashsize;
     Fid **prev = &s->fidhash[bucket];
     while (*prev) {
@@ -59,7 +59,7 @@ static Fid *get_fid(Srv *s, u32int fid) {
         }
         prev = &(*prev)->next;
     }
-} */
+}
 
 /* Respond to a request */
 void srv_respond(Req *r, char *error) {
@@ -71,8 +71,8 @@ void srv_respond(Req *r, char *error) {
         r->ofcall.ename = error;
     } else {
         r->ofcall.type = r->ifcall.type + 1;
-        r->ofcall.tag = r->ifcall.tag;
     }
+    r->ofcall.tag = r->ifcall.tag;
     
     /* Marshall the response */
     n = convS2M(&r->ofcall, buf, sizeof(buf));
@@ -92,6 +92,7 @@ void srv_loop(Srv *s, int fd_in, int fd_out) {
     }
 
     uchar buf[8192];
+    uchar read_storage[8192];
     uint n;
     
     while (1) {
@@ -116,7 +117,9 @@ void srv_loop(Srv *s, int fd_in, int fd_out) {
         
         /* 4. Dispatch */
         r.fid = get_fid(s, r.ifcall.fid);
-        
+        r.newfid = nil;
+        int must_free_fid = 0;
+
         switch (r.ifcall.type) {
             case Tversion:
                 if (r.ifcall.msize > 8192) r.ofcall.msize = 8192;
@@ -128,22 +131,146 @@ void srv_loop(Srv *s, int fd_in, int fd_out) {
                 srv_respond(&r, "authentication not required");
                 break;
             case Tattach:
+                if (r.fid) {
+                    srv_respond(&r, "fid already in use");
+                    break;
+                }
+                r.fid = alloc_fid(s, r.ifcall.fid);
+                if (!r.fid) {
+                    srv_respond(&r, "no fids");
+                    break;
+                }
+                must_free_fid = 1;
                 if (s->attach) s->attach(&r);
                 else srv_respond(&r, "not implemented");
                 break;
-            /* ... Add other cases ... */
+            case Twalk: {
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (r.ifcall.newfid != r.ifcall.fid) {
+                    if (get_fid(s, r.ifcall.newfid)) {
+                        srv_respond(&r, "fid already in use");
+                        break;
+                    }
+                    r.newfid = alloc_fid(s, r.ifcall.newfid);
+                    if (!r.newfid) {
+                        srv_respond(&r, "no fids");
+                        break;
+                    }
+                    must_free_fid = 1;
+                } else {
+                    r.newfid = r.fid;
+                }
+                if (s->walk) s->walk(&r);
+                else srv_respond(&r, "not implemented");
+                break;
+            }
+            case Topen:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->open) s->open(&r);
+                else srv_respond(&r, "not implemented");
+                if (r.responding && r.ofcall.type != Rerror)
+                    r.fid->omode = r.ifcall.mode;
+                break;
+            case Tcreate:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->create) s->create(&r);
+                else srv_respond(&r, "not implemented");
+                if (r.responding && r.ofcall.type != Rerror)
+                    r.fid->omode = r.ifcall.mode;
+                break;
+            case Tread:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (r.ifcall.count > sizeof(read_storage)) {
+                    srv_respond(&r, "read too large");
+                    break;
+                }
+                if (r.ifcall.count > 0) {
+                    r.ofcall.data = (char *)read_storage;
+                }
+                if (s->read) s->read(&r);
+                else srv_respond(&r, "not implemented");
+                break;
+            case Twrite:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->write) s->write(&r);
+                else srv_respond(&r, "not implemented");
+                break;
+            case Tclunk:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->clunk) s->clunk(&r);
+                else srv_respond(&r, nil);
+                if (r.responding && r.ofcall.type != Rerror)
+                    free_fid(s, r.fid);
+                break;
+            case Tremove:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->remove) s->remove(&r);
+                else srv_respond(&r, "not implemented");
+                if (r.responding && r.ofcall.type != Rerror)
+                    free_fid(s, r.fid);
+                break;
+            case Tstat:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->stat) s->stat(&r);
+                else srv_respond(&r, "not implemented");
+                break;
+            case Twstat:
+                if (!r.fid) {
+                    srv_respond(&r, "unknown fid");
+                    break;
+                }
+                if (s->wstat) s->wstat(&r);
+                else srv_respond(&r, "not implemented");
+                break;
+            case Tflush:
+                if (s->flush) s->flush(&r);
+                else srv_respond(&r, nil);
+                break;
             default:
                 srv_respond(&r, "unknown message");
         }
-        
+        if (must_free_fid && r.responding && r.ofcall.type == Rerror) {
+            if (r.newfid && r.newfid != r.fid)
+                free_fid(s, r.newfid);
+            else if (r.fid)
+                free_fid(s, r.fid);
+        }
+
         /* 5. Write Response */
         if (r.responding) {
             n = convS2M(&r.ofcall, buf, sizeof(buf));
             sys_write(fd_out, buf, n);
         }
+        if (r.ofcall.type == Rstat && r.ofcall.stat)
+            srv_free(r.ofcall.stat);
     }
 }
 
 void srv_init(Srv *s) {
-    memset(s, 0, sizeof(Srv));
+    s->fidhash = nil;
+    s->fidhashsize = 0;
 }

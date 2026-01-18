@@ -457,8 +457,9 @@ int router_dispatch_fs(Proc *p, Fcall *t, Fcall *r) {
       }
 
       uintptr kpage = (uintptr)p->p9page;
-      uintptr uold = EXCHANGE_PAGE_ADDR + ((uintptr)oldk - kpage);
-      uintptr uaname = EXCHANGE_PAGE_ADDR + ((uintptr)anamek - kpage);
+      uintptr ubase = p9_user_base(p);
+      uintptr uold = ubase + ((uintptr)oldk - kpage);
+      uintptr uaname = ubase + ((uintptr)anamek - kpage);
 
       args[0] = fd;
       args[1] = afd;
