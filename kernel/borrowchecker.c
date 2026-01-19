@@ -16,13 +16,13 @@ extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
 extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
+#include "acsl_bounds.h"
 #include "borrowchecker.h"
 #include "fns.h"
 #include "hhdm.h"
 #include "lock_dag.h"
 #include "pebble.h"
 #include "siphash.h" /* For DoS-resistant hash table hashing */
-#include "acsl_bounds.h"
 
 /* ACSL specifications for error handling functions */
 /*@ requires valid_string(s);
@@ -96,7 +96,8 @@ static ulong borrow_bloom_bits_target(void) {
 static void borrow_bloom_add(uintptr key) {
   if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
     return;
-  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  /*@ assert \valid_read(&borrow_hash_key); */
+  u32int h1 = hsiphash((u8int *)&key, sizeof(key), &borrow_hash_key);
   u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
   if (h2 == 0)
     h2 = 0x9e3779b9u;
@@ -146,6 +147,7 @@ static int borrow_bloom_maybe(uintptr key) {
 /* Borrow FSM events: enforce state transitions centrally (hard FSM). */
 /*@
   @ requires \valid(owner);
+  @ requires valid_string(ctx);
   @ terminates \true;
   @*/
 static void borrow_check_invariants(struct BorrowOwner *owner,
@@ -351,8 +353,10 @@ void borrowinit(void) {
 /* SipHash-based hash function for uintptr keys (DoS-resistant) */
 /*@
   @ requires \valid_read(&borrow_hash_key);
+  @ requires borrowpool.nbuckets > 0;
   @ terminates \true;
   @ assigns \nothing;
+  @ ensures \result < borrowpool.nbuckets;
   @*/
 ulong borrow_hash(uintptr key) {
   if (borrowpool.nbuckets == 0 || borrowpool.owners == nil)
@@ -363,6 +367,8 @@ ulong borrow_hash(uintptr key) {
 
 /* Find BorrowOwner for a key */
 /*@
+  @ requires borrowpool.nbuckets > 0;
+  @ requires \valid(borrowpool.owners + (0..borrowpool.nbuckets-1));
   @ terminates \true;
   @ assigns \nothing;
   @*/

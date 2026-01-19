@@ -27,8 +27,9 @@ typedef unsigned int Rune;
  * mem routines
  */
 extern void *memccpy(void *, const void *, int, usize);
-/*@ terminates \true;
-  @ assigns \result \from s;
+/*@ requires \valid((char*)s + (0..n-1));
+  @ terminates \true;
+  @ assigns ((char*)s)[0..n-1];
   @ ensures \result == s;
   */
 extern void *memset(void *s, int c, usize n);
@@ -191,6 +192,11 @@ extern char *fmtstrflush(Fmt *);
 extern char *cleanname(char *);
 extern uintptr getcallerpc(void *);
 
+extern double strtod(char *, char **);
+/*@
+  @ assigns \result, *endptr;
+  @ ensures \valid(endptr) ==> \valid(*endptr);
+  @*/
 extern long strtol(char *, char **, int);
 extern ulong strtoul(char *, char **, int);
 extern vlong strtoll(char *, char **, int);

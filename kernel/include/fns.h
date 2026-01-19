@@ -178,6 +178,11 @@ void getcolor(ulong, ulong *, ulong *, ulong *);
 uintptr getmalloctag(void *);
 uintptr getrealloctag(void *);
 _Noreturn void gotolabel(Label *);
+/*@ requires name == \null || valid_string(name);
+  @ assigns \result \from name[0..];
+  @ ensures \result == \null || valid_string(\result);
+  @*/
+char *getconf(char *name);
 char *getconfenv(void);
 void growbp(Bpool *, int);
 long hostdomainwrite(char *, int);
@@ -187,9 +192,17 @@ void hzsched(void);
 Block *iallocb(int);
 Block *iallocbp(Bpool *);
 uintptr ibrk(uintptr, int);
-void ilock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void ilock(Lock *l);
 _Noreturn void interrupted(void);
-void iunlock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void iunlock(Lock *l);
 ulong imagecached(void);
 ulong imagereclaim(ulong);
 long incref(Ref *);
@@ -221,7 +234,11 @@ void ksetenv(char *, char *, int);
 int kopen(char *, int);
 void kstrcpy(char *, char *, int);
 void kstrdup(char **, char *);
-void lock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void lock(Lock *l);
 void logopen(Log *);
 void logclose(Log *);
 char *logctl(Log *, int, char **, Logflag *);
@@ -344,7 +361,8 @@ ulong pidalloc(Proc *);
 #define poperror() up->nerrlab--
 void portcountpagerefs(ulong *, int);
 char *popnote(Ureg *);
-int postnote(Proc *, int, char *, int);
+/*@ requires s == \null || valid_string(s); */
+int postnote(Proc *, int, char *s, int);
 void postnotepg(ulong, char *, int);
 int pprint(char *, ...);
 void preempted(int);
@@ -533,7 +551,11 @@ int uartstageoutput(Uart *);
 void unbreak(Proc *);
 void uncachepage(Page *);
 long unionread(Chan *, void *, long);
-void unlock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void unlock(Lock *l);
 uvlong us2fastticks(uvlong);
 void userinit(void);
 uintptr userpc(void);
@@ -576,9 +598,27 @@ void *xallocz_raw(ulong size, int zero);
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
 void *xalloc_driver(ulong size);
+
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size, zero;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
 void *xallocz_driver(ulong size, int zero);
+
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
 void *smalloc_driver(ulong size);
+
 void xfree_driver(void *p);
 /*@ terminates \true;
   @ assigns \nothing;

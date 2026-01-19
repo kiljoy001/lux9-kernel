@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types_fwd.h"
+#include "u.h"
 
 /*
  * Pebble Primitives - Core Kernel Feature

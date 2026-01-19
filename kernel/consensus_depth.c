@@ -16,6 +16,16 @@ typedef struct Waitmsg Waitmsg;
 #include "fns.h"
 #include "mem.h"
 #include "msgord.h"
+#include "portlib.h"
+#include "siphash.h"
+#include <error.h>
+
+/* Local forward declaration for verification stability */
+/*@ requires name == \null || valid_string(name);
+  @ assigns \result \from name[0..];
+  @ ensures \result == \null || valid_string(\result);
+  @*/
+extern char *getconf(char *name);
 
 /* Global rollback registry */
 RollbackRegistry *global_rollback_registry = nil;
@@ -492,7 +502,7 @@ int rollback_execute(OpRollbackEntry *entry) {
     return -1;
 
   if (entry->caller != nil) {
-    if(getconf("debug.consensus"))
+    if (getconf("debug.consensus"))
       print("consensus_depth: KILLING pid %lud due to consensus failure\n",
             entry->caller->pid);
 
@@ -607,7 +617,7 @@ void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
       uvlong now = (uvlong)seconds();
       if (now > entry->submit_time + 30) { /* 30 second timeout */
         unlock(&registry_lock);
-        if(getconf("debug.consensus"))
+        if (getconf("debug.consensus"))
           print("consensus_depth: op %ud timed out (depth=%d conf=%d), "
                 "triggering rollback\n",
                 entry->op_id, entry->required_depth, confidence);
@@ -641,7 +651,8 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
     reg = global_rollback_registry;
 
   /* Submit to MSGORD with optimistic execution */
-  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id, chacha20_csprng_u64());
+  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id,
+                                     chacha20_csprng_u64());
   if (result < 0)
     return result;
 
@@ -661,7 +672,7 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
   @*/
 void consensus_depth_init(void) {
   rollback_registry_init(&_global_registry, 256);
-  if(getconf("debug.consensus"))
+  if (getconf("debug.consensus"))
     print("consensus_depth: initialized with max_entries=%ud\n",
           _global_registry.max_entries);
 }

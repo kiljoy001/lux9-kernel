@@ -112,7 +112,7 @@ def scan_repository(conn):
                 try:
                     with open(full_path, 'r', errors='ignore') as f:
                         content = f.read()
-                        if "/*@" in content:
+                        if "/*@" in content or "//@" in content:
                             found_paths.add(rel_path)
                             cursor.execute('''
                                 INSERT OR IGNORE INTO tracked_files (path, file_type, last_seen)
@@ -297,6 +297,10 @@ def main():
     print(f"{Colors.HEADER}   Lux9 Integrity Verification Manager (SQLite Backed){Colors.ENDC}")
     print(f"{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
 
+    parser = argparse.ArgumentParser(description="Lux9 Verification Manager")
+    parser.add_argument("--target", help="Verify only specific file (relative path from repo root)")
+    args = parser.parse_args()
+
     conn = init_db()
     run_start = now_ts()
     scan_repository(conn)
@@ -305,8 +309,13 @@ def main():
     cursor.execute("SELECT id, path, file_type FROM tracked_files")
     all_files = cursor.fetchall()
     
-    coq_files = [f for f in all_files if f[2] == 'coq']
-    acsl_files = [f for f in all_files if f[2].startswith('acsl')]
+    if args.target:
+        print(f"{Colors.OKCYAN}Targeting specific file: {args.target}{Colors.ENDC}")
+        coq_files = [f for f in all_files if f[2] == 'coq' and f[1] == args.target]
+        acsl_files = [f for f in all_files if f[2].startswith('acsl') and f[1] == args.target]
+    else:
+        coq_files = [f for f in all_files if f[2] == 'coq']
+        acsl_files = [f for f in all_files if f[2].startswith('acsl')]
     
     print(f"\n{Colors.OKBLUE}[Running Verification on {len(all_files)} Files]{Colors.ENDC}")
     

@@ -694,7 +694,9 @@ uintptr sysexec(void *list_void) {
   /* Set up error handler BEFORE any code that can call error() */
   bprint("CONSOLE: sysexec about to call waserror()\n");
   if (waserror()) {
+    /*@ assert valid_string(up->errstr); */
     bprint("CONSOLE: sysexec ERROR PATH: %s\n", up->errstr);
+    /*@ assert valid_string(up->errstr); */
     bprint("sysexec: error at %s: %s\n", stage_desc, up->errstr);
     if (tc) {
       bprint("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
@@ -850,7 +852,7 @@ uintptr sysexec(void *list_void) {
       bprint("EXEC: detected WASM binary '%s'\n", file);
 
       /* Compile WASM module into current process */
-      if (wasm_exec_compile(tc, &start_func) < 0) {
+      if (wasm_exec_compile(tc, (struct M3Function **)&start_func) < 0) {
         if (tc->ref > 0) {
           cclose(tc);
         } else {
@@ -1654,6 +1656,11 @@ int donotify(Ureg *ureg) {
 #endif
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ assigns up->notified, up->noteureg, up->lastnote->flag;
+  @ ensures \result == 0;
+  @*/
 uintptr sysnoted(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   Ureg *nureg;
@@ -1706,6 +1713,11 @@ uintptr sysnoted(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @*/
 uintptr syssegbrk(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int i;
@@ -1732,6 +1744,11 @@ uintptr syssegbrk(void *list_void) {
   error(Ebadarg);
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @*/
 uintptr syssegattach(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int attr;
@@ -1755,6 +1772,11 @@ uintptr syssegattach(void *list_void) {
   return va;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr syssegdetach(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int i;

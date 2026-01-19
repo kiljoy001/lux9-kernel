@@ -110,7 +110,7 @@ int irqhandled(Ureg *ureg, int vno) {
 /*@
     requires vno >= 0 && vno < VectorPIC;
     // Security: Access Control - Cannot overwrite critical vectors outside this
-   range requires f != \null; requires \valid(name);
+   range requires f != \null; requires valid_string(name);
     // Security: Integrity - Ensures we are writing to a valid slot in the
    global table requires \valid(&vctl[vno]); assigns vctl[vno];
 */
@@ -167,7 +167,7 @@ static Vctl *delayfree(Vctl *v) {
 
 /*@
     requires f != \null;
-    requires \valid(name);
+    requires valid_string(name);
     requires \valid(vctl + (0..255)); // Entire table must be valid
     assigns vctllock; // abstract assignment to lock state
     assigns vctl[0..255]; // May modify any slot based on arch assignment

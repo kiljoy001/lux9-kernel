@@ -99,9 +99,11 @@ static struct FamilyOps tpm_family_ops = {
  * Initialize TPM Secure Element Family
  */
 /*@
-  @ requires family == \null || \valid(family);
+  @ requires \valid(family);
   @ assigns family->family_specific_ctx;
-  @*/static int tpm_family_init(struct FamilyExchangePage *family) {
+  @ ensures \result >= 0 || \result == FAMILY_ENOMEM;
+  @*/
+static int tpm_family_init(struct FamilyExchangePage *family) {
   TPMFamilyContext *ctx;
   int ret;
 
@@ -174,9 +176,11 @@ static struct FamilyOps tpm_family_ops = {
  * Scan for TPM devices
  */
 /*@
-  @ requires family == \null || \valid(family);
-  @ assigns *ctx;
-  @*/static int tpm_family_scan_devices(struct FamilyExchangePage *family) {
+  @ requires \valid(family);
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @*/
+static int tpm_family_scan_devices(struct FamilyExchangePage *family) {
   TPMFamilyContext *ctx = family->family_specific_ctx;
 
   print("TPM Family: Scanning for TPM devices...\n");
@@ -307,9 +311,10 @@ static int tpm_family_device_get_info(struct FamilyExchangePage *family,
  * Get TPM family capabilities
  */
 /*@
-  @ requires family == \null || \valid(family);
-  @ assigns *ctx;
-  @*/static uint32_t tpm_family_get_capabilities(struct FamilyExchangePage *family) {
+  @ requires \valid(family);
+  @ assigns \nothing;
+  @*/
+static uint32_t tpm_family_get_capabilities(struct FamilyExchangePage *family) {
   TPMFamilyContext *ctx = family->family_specific_ctx;
   return ctx->capabilities;
 }
@@ -336,9 +341,11 @@ static int tpm_family_commit_transaction(struct FamilyExchangePage *family,
  * TPM Family Shutdown
  */
 /*@
-  @ requires family == \null || \valid(family);
-  @ assigns *ctx, family->family_specific_ctx, family->state;
-  @*/static int tpm_family_shutdown(struct FamilyExchangePage *family) {
+  @ requires \valid(family);
+  @ assigns family->family_specific_ctx, family->state;
+  @ ensures \result == FAMILY_OK;
+  @*/
+static int tpm_family_shutdown(struct FamilyExchangePage *family) {
   TPMFamilyContext *ctx = family->family_specific_ctx;
   int i;
 
@@ -360,7 +367,10 @@ static int tpm_family_commit_transaction(struct FamilyExchangePage *family,
 /*
  * Register TPM Secure Element Family
  */
-/*@@*/int tpm_family_register(void) {
+/*@
+  @ ensures \result == FAMILY_OK || \result < 0;
+  @*/
+int tpm_family_register(void) {
   int ret;
 
   print("TPM Family: Registering TPM Secure Element Family...\n");
@@ -379,7 +389,10 @@ static int tpm_family_commit_transaction(struct FamilyExchangePage *family,
 /*
  * Unregister TPM Family
  */
-/*@@*/int tpm_family_unregister(void) {
+/*@
+  @ assigns \nothing;
+  @*/
+int tpm_family_unregister(void) {
   print("TPM Family: Unregistering...\n");
   return family_unregister(FAMILY_SECURE_ELEMENT);
 }
@@ -426,7 +439,10 @@ struct FamilyExchangePage *secure_element_family_get(void) {
  * This function initializes and registers the Secure Element family (TPM, etc.)
  * Called from the kernel boot sequence.
  */
-/*@@*/void secure_element_init(void) {
+/*@
+  @ assigns \nothing;
+  @*/
+void secure_element_init(void) {
   int ret;
 
   print("Secure Element: Initializing Secure Element family system...\n");

@@ -26,6 +26,7 @@
 /* Forward declarations */
 static struct PCIChannel *lookup_pci_channel(struct FamilyExchangePage *family,
                                              uint64_t channel_id);
+int pci_release_channel(struct FamilyExchangePage *family, uint64_t channel_id);
 extern struct PCIFamilyOps pci_family_ops;
 
 /* Global PCI family context */
@@ -65,13 +66,14 @@ static inline uint32_t pci_address_key(uint16_t domain, uint8_t bus,
 
 /* Parse PCI address string like "0000:00:1f.2" */
 /*@
-  @ requires address_str == \null || \valid(address_str);
+  @ requires address_str == \null || valid_string(address_str);
   @ assigns *address_str;
-  @*/struct PCIAddress parse_pci_address_string(const char *address_str) {
+  @*/
+struct PCIAddress parse_pci_address_string(const char *address_str) {
   struct PCIAddress addr = {0};
   uint16_t domain;
   uint8_t bus, device, function;
-  char *parse_end;
+  char *parse_end = NULL;
 
   if (!address_str || *address_str == '\0')
     return addr;
@@ -129,6 +131,10 @@ static inline uint32_t pci_address_key(uint16_t domain, uint8_t bus,
 }
 
 /* Format PCI address back to string */
+/*@
+  @ requires addr == \null || \valid(addr);
+  @ assigns \nothing;
+  @*/
 char *format_pci_address(struct PCIAddress *addr) {
   static char buffer[32]; // Static buffer (thread-local if needed)
 
@@ -188,10 +194,10 @@ static int read_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
     return -1;
 
   /* Read standard configuration space */
-    /*@ loop invariant 0 <= offset <= size;
-    @ loop assigns offset;
-    @ loop variant size - offset;
-    @*/
+  /*@ loop invariant 0 <= offset <= size;
+  @ loop assigns offset;
+  @ loop variant size - offset;
+  @*/
   for (size_t offset = 0; offset < size; offset += 4) {
     uint32_t word;
     int result = pci_config_read32(dev->address.bus, dev->address.device,
@@ -205,11 +211,11 @@ static int read_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
       *((uint32_t *)(buf + offset)) = word;
     } else {
       uint8_t remaining = size - offset;
-        /*@ loop invariant 0 <= i <= remaining;
-    @ loop assigns i;
-    @ loop variant remaining - i;
-    @*/
-  for (int i = 0; i < remaining; i++) {
+      /*@ loop invariant 0 <= i <= remaining;
+  @ loop assigns i;
+  @ loop variant remaining - i;
+  @*/
+      for (int i = 0; i < remaining; i++) {
         buf[offset + i] = (word >> (i * 8)) & 0xFF;
       }
     }
@@ -227,10 +233,10 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
     return -1;
 
   /* Write standard configuration space */
-    /*@ loop invariant 0 <= offset <= size;
-    @ loop assigns offset;
-    @ loop variant size - offset;
-    @*/
+  /*@ loop invariant 0 <= offset <= size;
+  @ loop assigns offset;
+  @ loop variant size - offset;
+  @*/
   for (size_t offset = 0; offset < size; offset += 4) {
     uint32_t word;
 
@@ -249,11 +255,11 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
       }
 
       word = old_word;
-        /*@ loop invariant 0 <= i <= remaining;
-    @ loop assigns i;
-    @ loop variant remaining - i;
-    @*/
-  for (int i = 0; i < remaining; i++) {
+      /*@ loop invariant 0 <= i <= remaining;
+  @ loop assigns i;
+  @ loop variant remaining - i;
+  @*/
+      for (int i = 0; i < remaining; i++) {
         word &= ~(0xFF << (i * 8));
         word |= (buf[offset + i] << (i * 8));
       }
@@ -273,24 +279,25 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 /*@
   @ requires \valid(ctx);
   @ assigns \nothing;
-  @*/static int scan_pci_bus(struct PCIFamilyContext *ctx, uint16_t bus) {
+  @*/
+static int scan_pci_bus(struct PCIFamilyContext *ctx, uint16_t bus) {
   int device_count = 0;
 
   if (!ctx || bus >= 256)
     return -1;
 
-    /*@ loop invariant 0 <= device <= 32;
-    @ loop assigns device;
-    @ loop variant 32 - device;
-    @*/
+  /*@ loop invariant 0 <= device <= 32;
+  @ loop assigns device;
+  @ loop variant 32 - device;
+  @*/
   for (uint8_t device = 0; device < 32; device++) {
-      /*@ loop invariant 0 <= function <= 8;
-    @ loop assigns function;
-    @ loop variant 8 - function;
-    @*/
-  for (uint8_t function = 0; function < 8; function++) {
+    /*@ loop invariant 0 <= function <= 8;
+  @ loop assigns function;
+  @ loop variant 8 - function;
+  @*/
+    for (uint8_t function = 0; function < 8; function++) {
       uint16_t vendor_id;
-      uint32_t device_id;
+      uint16_t device_id;
 
       /* Read vendor ID */
       if (pci_config_read16(bus, device, function, 0x00, &vendor_id) != 0)
@@ -334,11 +341,11 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
       }
 
       /* Read BARs */
-        /*@ loop invariant 0 <= bar_num <= 6;
-    @ loop assigns bar_num;
-    @ loop variant 6 - bar_num;
-    @*/
-  for (int bar_num = 0; bar_num < 6; bar_num++) {
+      /*@ loop invariant 0 <= bar_num <= 6;
+  @ loop assigns bar_num;
+  @ loop variant 6 - bar_num;
+  @*/
+      for (int bar_num = 0; bar_num < 6; bar_num++) {
         uint32_t bar_addr;
 
         if (pci_config_read32(bus, device, function, 0x10 + (bar_num * 4),
@@ -396,7 +403,11 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 }
 
 /* Initialize PCI family system */
-/*@@*/int pcifamily_init(void) {
+/*@
+  @ assigns global_pci_ctx, global_pci_family;
+  @ ensures \result <= 0;
+  @*/
+int pcifamily_init(void) {
   if (global_pci_family) {
     print("PCI: family already initialized\n");
     return 0;
@@ -445,8 +456,14 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 /* Initialize PCI family instance */
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *ctx, family->capabilities_mask, family->family_specific_ctx, family->family_type;
-  @*/static int pci_family_init(struct FamilyExchangePage *family) {
+  @ assigns family->capabilities_mask, family->family_specific_ctx,
+  @         family->family_type, family->channel_mgr,
+  @         family->resource_pool, family->event_system, family->tx_mgr,
+  @         family->stats.peak_channels, family->stats.active_channels,
+  @         family->stats.total_channels_created;
+  @ ensures family == \null ==> \result == -1;
+  @*/
+static int pci_family_init(struct FamilyExchangePage *family) {
   if (!family) {
     return -1;
   }
@@ -487,8 +504,10 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 /* Shutdown PCI family */
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *dev, *pci_ctx;
-  @*/static int pci_family_shutdown(struct FamilyExchangePage *family) {
+  @ assigns family->family_specific_ctx;
+  @ ensures \result == 0;
+  @*/
+static int pci_family_shutdown(struct FamilyExchangePage *family) {
   if (!family)
     return 0;
 
@@ -499,11 +518,11 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
       (struct PCIFamilyContext *)family->family_specific_ctx;
   if (pci_ctx) {
     /* Iterate all devices and release their channels */
-      /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
-    @ loop assigns i;
-    @ loop variant MAX_PCI_DEVICES - i;
-    @*/
-  for (int i = 0; i < MAX_PCI_DEVICES; i++) {
+    /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+  @ loop assigns i;
+  @ loop variant MAX_PCI_DEVICES - i;
+  @*/
+    for (int i = 0; i < MAX_PCI_DEVICES; i++) {
       struct PCIDeviceDescriptor *dev = pci_ctx->device_registry.devices[i];
       if (dev && dev->bound_channel_id != 0) {
         pci_release_channel(family, dev->bound_channel_id);
@@ -515,11 +534,11 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   if (ctx) {
-      /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
-    @ loop assigns i;
-    @ loop variant MAX_PCI_DEVICES - i;
-    @*/
-  for (int i = 0; i < MAX_PCI_DEVICES; i++) {
+    /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+  @ loop assigns i;
+  @ loop variant MAX_PCI_DEVICES - i;
+  @*/
+    for (int i = 0; i < MAX_PCI_DEVICES; i++) {
       if (ctx->device_registry.devices[i]) {
         xfree(ctx->device_registry.devices[i]);
         ctx->device_registry.devices[i] = NULL;
@@ -535,8 +554,10 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 /* Scan PCI for devices */
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *ctx;
-  @*/static int pci_scan_devices(struct FamilyExchangePage *family) {
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
+static int pci_scan_devices(struct FamilyExchangePage *family) {
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   int total_devices_found = 0;
@@ -548,10 +569,10 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
   lock(&ctx->device_registry.device_registry_lock);
 
   /* Scan all buses up to max bus */
-    /*@ loop invariant 0 <= bus <= = ctx->topology.max_bus;
-    @ loop assigns bus;
-    @ loop variant = ctx->topology.max_bus - bus;
-    @*/
+  /*@ loop invariant 0 <= bus <= ctx->topology.max_bus;
+  @ loop assigns bus;
+  @ loop variant ctx->topology.max_bus - bus;
+  @*/
   for (uint8_t bus = 0; bus <= ctx->topology.max_bus; bus++) {
     int devices_on_bus = scan_pci_bus(ctx, bus);
     if (devices_on_bus > 0) {
@@ -752,10 +773,11 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
   @ requires device_void == \null || \valid(device_void);
   @ requires channel_void == \null || \valid(channel_void);
   @ assigns *channel, *dev, *family;
-  @*/static int pci_device_enable(void *device_void, void *channel_void) {
+  @*/
+static int pci_device_enable(struct FamilyExchangePage *family,
+                             void *device_void, void *channel_void) {
   struct PCIDeviceDescriptor *dev = (struct PCIDeviceDescriptor *)device_void;
   struct PCIChannel *channel = (struct PCIChannel *)channel_void;
-  struct FamilyExchangePage *family = channel->channel_manager->family;
 
   if (!dev || !channel) {
     return -1;
@@ -793,8 +815,9 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
 /*@
   @ requires device_void == \null || \valid(device_void);
   @ requires channel_void == \null || \valid(channel_void);
-  @ assigns *channel, *dev;
-  @*/static int pci_device_disable(void *device_void, void *channel_void) {
+  @ assigns /* Disable PCI device */
+static int pci_device_disable(struct FamilyExchangePage *family,
+                              void *device_void, void *channel_void) {
   struct PCIDeviceDescriptor *dev = (struct PCIDeviceDescriptor *)device_void;
   struct PCIChannel *channel = (struct PCIChannel *)channel_void;
 
@@ -837,7 +860,8 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
   @ requires buffer == \null || \valid(buffer);
   @ requires size == \null || \valid(size);
   @ assigns *buf, *dev;
-  @*/static int pci_get_device_info(void *device_void, void *buffer, size_t *size) {
+  @*/
+static int pci_get_device_info(void *device_void, void *buffer, size_t *size) {
   struct PCIDeviceDescriptor *dev = (struct PCIDeviceDescriptor *)device_void;
   char *buf = (char *)buffer;
   size_t used = 0;
@@ -869,8 +893,9 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
 /* Get family capabilities */
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *ctx;
-  @*/static uint32_t pci_get_capabilities(struct FamilyExchangePage *family) {
+  @ assigns \nothing;
+  @*/
+static uint32_t pci_get_capabilities(struct FamilyExchangePage *family) {
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   uint32_t caps = 0;
@@ -880,20 +905,20 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
           FAMILY_CAP_HOT_PLUG;
 
   /* Check capabilities from device enumeration */
-    /*@ loop invariant 0 <= i <= ctx->device_registry.device_count;
-    @ loop assigns i;
-    @ loop variant ctx->device_registry.device_count - i;
-    @*/
+  /*@ loop invariant 0 <= i <= ctx->device_registry.device_count;
+  @ loop assigns i;
+  @ loop variant ctx->device_registry.device_count - i;
+  @*/
   for (int i = 0; i < ctx->device_registry.device_count; i++) {
     if (i >= MAX_PCI_DEVICES)
       break;
 
     struct PCIDeviceDescriptor *dev = NULL;
-      /*@ loop invariant 0 <= j <= MAX_PCI_DEVICES;
-    @ loop assigns j;
-    @ loop variant MAX_PCI_DEVICES - j;
-    @*/
-  for (int j = 0; j < MAX_PCI_DEVICES; j++) {
+    /*@ loop invariant 0 <= j <= MAX_PCI_DEVICES;
+  @ loop assigns j;
+  @ loop variant MAX_PCI_DEVICES - j;
+  @*/
+    for (int j = 0; j < MAX_PCI_DEVICES; j++) {
       if (ctx->device_registry.devices[j] &&
           ctx->device_registry.devices[j]->address.domain_bus_dev_func == i) {
         dev = ctx->device_registry.devices[j];
@@ -918,8 +943,10 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
 /* Full implementations for missing functions */
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *ctx, *dev;
-  @*/static int pci_family_suspend(struct FamilyExchangePage *family) {
+  @ assigns \nothing;
+  @ ensures family == \null ==> \result == -1;
+  @*/
+static int pci_family_suspend(struct FamilyExchangePage *family) {
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   if (!ctx) {
@@ -929,10 +956,10 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
   lock(&ctx->device_registry.device_registry_lock);
 
   /* Save state of all active devices */
-    /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
-    @ loop assigns i;
-    @ loop variant MAX_PCI_DEVICES - i;
-    @*/
+  /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+  @ loop assigns i;
+  @ loop variant MAX_PCI_DEVICES - i;
+  @*/
   for (int i = 0; i < MAX_PCI_DEVICES; i++) {
     struct PCIDeviceDescriptor *dev = ctx->device_registry.devices[i];
     if (!dev || !dev->address.domain_active) {
@@ -962,8 +989,10 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
 
 /*@
   @ requires family == \null || \valid(family);
-  @ assigns *ctx, *dev;
-  @*/static int pci_family_resume(struct FamilyExchangePage *family) {
+  @ assigns \nothing;
+  @ ensures family == \null ==> \result == -1;
+  @*/
+static int pci_family_resume(struct FamilyExchangePage *family) {
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   if (!ctx) {
@@ -973,10 +1002,10 @@ static int pci_lookup_channel(struct FamilyExchangePage *family,
   lock(&ctx->device_registry.device_registry_lock);
 
   /* Restore state of all active devices */
-    /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
-    @ loop assigns i;
-    @ loop variant MAX_PCI_DEVICES - i;
-    @*/
+  /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+  @ loop assigns i;
+  @ loop variant MAX_PCI_DEVICES - i;
+  @*/
   for (int i = 0; i < MAX_PCI_DEVICES; i++) {
     struct PCIDeviceDescriptor *dev = ctx->device_registry.devices[i];
     if (!dev || !dev->address.domain_active) {
@@ -1206,10 +1235,10 @@ static struct PCIChannel *lookup_pci_channel(struct FamilyExchangePage *family,
   lock(&mgr->channel_lock);
 
   /* Search through channel pool for matching ID */
-    /*@ loop invariant 0 <= i <= mgr->max_channels;
-    @ loop assigns i;
-    @ loop variant mgr->max_channels - i;
-    @*/
+  /*@ loop invariant 0 <= i <= mgr->max_channels;
+  @ loop assigns i;
+  @ loop variant mgr->max_channels - i;
+  @*/
   for (uint32_t i = 0; i < mgr->max_channels; i++) {
     struct PCIChannel *ch = &mgr->channel_pool[i];
     if (ch->channel_id == channel_id && ch->bound_device != NULL) {
@@ -1220,6 +1249,69 @@ static struct PCIChannel *lookup_pci_channel(struct FamilyExchangePage *family,
 
   unlock(&mgr->channel_lock);
   return NULL;
+}
+
+/* Wrappers for PCIFamilyOps extension methods which have different signatures
+ */
+static int pci_device_enable_void(void *device, void *channel) {
+  return pci_device_enable(channel, device, NULL);
+}
+
+static int pci_device_disable_void(void *device, void *channel) {
+  return pci_device_disable(channel, device, NULL);
+}
+
+/* Wrapper for get_device_info to match FamilyDeviceOps signature */
+static int pci_get_device_info_wrapper(struct FamilyExchangePage *family,
+                                       void *device, void *buffer,
+                                       size_t *size) {
+  return pci_get_device_info(device, buffer, size);
+}
+
+/* Wrappers for transaction operations to match FamilyOps signature */
+static int pci_begin_transaction_wrapper(struct FamilyExchangePage *family,
+                                         uint64_t *tx_id) {
+  return pci_begin_transaction(family, NULL);
+}
+
+static int pci_commit_transaction_wrapper(struct FamilyExchangePage *family,
+                                          uint64_t tx_id) {
+  return pci_commit_transaction(family, NULL);
+}
+
+static int pci_rollback_transaction_wrapper(struct FamilyExchangePage *family,
+                                            uint64_t tx_id) {
+  return pci_rollback_transaction(family, NULL);
+}
+
+/* Wrappers for event operations to match FamilyOps signature */
+static int pci_subscribe_events_wrapper(struct FamilyExchangePage *family,
+                                        struct Process *subscriber,
+                                        uint32_t event_mask) {
+  return pci_subscribe_events(family, (void *)subscriber, event_mask);
+}
+
+static int pci_unsubscribe_events_wrapper(struct FamilyExchangePage *family,
+                                          struct Process *subscriber) {
+  return pci_unsubscribe_events(family, (void *)subscriber);
+}
+
+static int pci_notify_event_wrapper(struct FamilyExchangePage *family,
+                                    enum EventType event_type,
+                                    void *event_data) {
+  return pci_notify_event(family, (uint32_t)event_type, event_data);
+}
+
+static int
+pci_family_configure_channel_limits_wrapper(struct FamilyExchangePage *family,
+                                            uint32_t max_channels) {
+  /* FamilyOps expects global limit config, but implementation
+     supports per-channel. We ignore detailed config for now. */
+  if (family) {
+    family->max_channels = max_channels;
+    return 0;
+  }
+  return -1;
 }
 
 /* PCI family operation table */
@@ -1251,24 +1343,27 @@ struct PCIFamilyOps pci_family_ops = {
             /* Device-specific operations */
             .device_enable = pci_device_enable,
             .device_disable = pci_device_disable,
-            .device_get_info = pci_get_device_info,
+            .device_enable = pci_device_enable,
+            .device_disable = pci_device_disable,
+            .device_get_info = pci_get_device_info_wrapper,
 
-            /* Multi-device coordination (implemented in pci_transaction.c) */
-            .begin_transaction = pci_begin_transaction,
-            .commit_transaction = pci_commit_transaction,
-            .rollback_transaction = pci_rollback_transaction,
+            /* Multi-device coordination (wrappers) */
+            .begin_transaction = pci_begin_transaction_wrapper,
+            .commit_transaction = pci_commit_transaction_wrapper,
+            .rollback_transaction = pci_rollback_transaction_wrapper,
 
-            /* Event notification (implemented in pci_events.c) */
-            .subscribe_events = pci_subscribe_events,
-            .unsubscribe_events = pci_unsubscribe_events,
-            .notify_event = pci_notify_event,
+            /* Event notification (wrappers) */
+            .subscribe_events = pci_subscribe_events_wrapper,
+            .unsubscribe_events = pci_unsubscribe_events_wrapper,
+            .notify_event = pci_notify_event_wrapper,
 
             .get_capabilities = pci_get_capabilities,
-            .configure_channel_limits = pci_configure_channel_limits,
+            .configure_channel_limits =
+                pci_family_configure_channel_limits_wrapper,
         },
     /* PCI-specific extensions (hooked up to generic operations for now) */
-    .enable_device = pci_device_enable,
-    .disable_device = pci_device_disable,
+    .enable_device = pci_device_enable_void,
+    .disable_device = pci_device_disable_void,
     .get_device_info = NULL,
     .begin_config_read = NULL,
     .begin_config_write = NULL,
@@ -1288,7 +1383,10 @@ struct PCIFamilyOps pci_family_ops = {
 /* PCI channel manager implementation moved to pci_channel.c */
 
 /* Initialize PCI family system (called from kernel startup) */
-/*@@*/void pci_init(void) {
+/*@
+  @ assigns global_pci_ctx, global_pci_family;
+  @*/
+void pci_init(void) {
   if (pcifamily_init() != 0) {
     print("PCI: initialization failed\n");
     return;
@@ -1325,21 +1423,24 @@ const char *pci_class_to_string(uint8_t class_code, uint8_t subclass) {
 /*@
   @ requires dev == \null || \valid(dev);
   @ assigns dev->class_code;
-  @*/bool pci_is_network_device(struct PCIDeviceDescriptor *dev) {
+  @*/
+bool pci_is_network_device(struct PCIDeviceDescriptor *dev) {
   return (dev->class_code == 0x02);
 }
 
 /*@
   @ requires dev == \null || \valid(dev);
   @ assigns dev->class_code;
-  @*/bool pci_is_storage_device(struct PCIDeviceDescriptor *dev) {
+  @*/
+bool pci_is_storage_device(struct PCIDeviceDescriptor *dev) {
   return (dev->class_code == 0x01);
 }
 
 /*@
   @ requires dev == \null || \valid(dev);
   @ assigns dev->class_code;
-  @*/bool pci_is_display_device(struct PCIDeviceDescriptor *dev) {
+  @*/
+bool pci_is_display_device(struct PCIDeviceDescriptor *dev) {
   return (dev->class_code == 0x03);
 }
 

@@ -1,9 +1,9 @@
 #include "dat.h"
 #include "fns.h"
 #include "io.h"
+#include "lib.h"
 #include "mem.h"
 #include "u.h"
-#include <lib.h>
 
 #include "mp.h"
 
@@ -221,10 +221,17 @@ void lapicinit(Apic *apic) {
    * These don't really matter in Physical mode;
    * set the defaults anyway.
    */
-  if (strncmp(m->cpuidid, "AuthenticAMD", 12) == 0)
-    dfr = 0xf0000000;
-  else
-    dfr = 0xffffffff;
+  {
+    /* Use local buffer for verification safety */
+    char id[17];
+    strncpy(id, m->cpuidid, 16);
+    id[16] = 0;
+    if (strncmp(id, "AuthenticAMD", 12) == 0)
+      dfr = 0xf0000000;
+    else
+      dfr = 0xffffffff;
+  }
+  ldr = 0x00000000;
   ldr = 0x00000000;
 
   lapicw(LapicDFR, dfr);
