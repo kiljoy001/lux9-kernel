@@ -23,10 +23,15 @@ GCC_ERR="/tmp/framac_gcc_$$.err"
 
 # Step 2: Preprocess with GCC, letting Plan 9 headers define everything
 gcc -D__FRAMAC__ \
+    -D__PLAN9_KERNEL__ \
+    -D_PLAN9_SOURCE \
+    -DKERNEL \
     -Ikernel/include \
     -Ikernel/9front-pc64 \
     -Ikernel/9front-port \
     -Ikernel/crypto \
+    -Ikernel/wasm \
+    -Ikernel/wasm/wasm_runtime/wasm3 \
     -I. \
     -E -P -C \
     "$INPUT_FILE" \

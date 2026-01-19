@@ -55,6 +55,13 @@ if [ -f "$REPO_ROOT/userspace/hal/hal" ]; then
     chmod 755 "$INITRD_SOURCE/boot/hal"
 fi
 
+# Copy lish if it exists
+if [ -f "$REPO_ROOT/userspace/lish/lish" ]; then
+    echo "Adding lish to initrd..."
+    cp "$REPO_ROOT/userspace/lish/lish" "$INITRD_SOURCE/boot/lish"
+    chmod 755 "$INITRD_SOURCE/boot/lish"
+fi
+
 # Build initrd.tar (UNCOMPRESSED!)
 echo "Building initrd.tar..."
 mkdir -p "$BUILD_DIR"
