@@ -1,39 +1,41 @@
-# Makefile for HAL server
+# HAL - Hardware Abstraction Layer Server
+# Manages device families and resource allocation
 
 KERNEL = ../../kernel
+LIBLUX = ../lib/liblux
 
 CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
          -mno-red-zone -mcmodel=small -fPIC -O2 -Wall \
          -fcf-protection=none \
          -I$(KERNEL)/include \
-         -I../lib/liblux/inc
+         -I$(LIBLUX)/inc \
+         -I.
 
 LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 
-TARGET = hal
-SRC = hal.c
-OBJ = $(SRC:.c=.o)
+OBJS = start.o exit.o hal.o family_registry.o channel_manager.o resource_pool.o \
+       family_pci.o family_tpm.o transaction.o rump_integration.o
 
-START_OBJ = ../lib9p_syscall/start.o
 EXIT_OBJ = ../lib9p_syscall/exit.o
 
-all: $(START_OBJ) $(EXIT_OBJ) $(TARGET)
+all: $(EXIT_OBJ) hal
 
-$(TARGET): $(START_OBJ) $(EXIT_OBJ) $(OBJ) ../lib9p_syscall/linker.ld
-	$(LD) $(LDFLAGS) -T ../lib9p_syscall/linker.ld $(START_OBJ) $(EXIT_OBJ) $(OBJ) -L../lib/liblux -llux -o $@
-	@echo "Built HAL: $@"
-	@ls -lh $@
+hal: $(OBJS) $(LIBLUX)/liblux.a linker.ld
+	$(LD) $(LDFLAGS) -T linker.ld $(OBJS) $(LIBLUX)/liblux.a -o hal
 
-$(START_OBJ):
-	$(MAKE) -C ../lib9p_syscall start.o
+start.o: start.S
+	$(AS) -o $@ $<
 
 $(EXIT_OBJ):
 	$(MAKE) -C ../lib9p_syscall exit.o
+
+exit.o: $(EXIT_OBJ)
+	cp $(EXIT_OBJ) exit.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(TARGET) $(OBJ)
+	rm -f *.o hal
 
 .PHONY: all clean

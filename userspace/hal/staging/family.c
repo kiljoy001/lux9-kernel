@@ -56,7 +56,7 @@ void init_transaction_manager(struct FamilyExchangePage *family) {
 
 /*@
   @ requires \valid(family);
-  @ assigns family->security_ctx;
+  @ assigns family->resource_pool, family->event_system, family->tx_mgr;
   @*/
 void cleanup_family_resources(struct FamilyExchangePage *family) {
   /* Cleanup handled by family-specific shutdown */
@@ -69,8 +69,15 @@ void cleanup_family_resources(struct FamilyExchangePage *family) {
 
 /* Initialize family system */
 /*@
-  @ assigns families[0..];
-  @*/void family_init(void) {
+  @ assigns family_registry.registry_lock,
+  @         family_registry.families[0..FAMILY_MAX-1],
+  @         family_registry.family_count,
+  @         global_channel_id_lock,
+  @         global_stats_lock,
+  @         global_channel_stats,
+  @         global_next_channel_id;
+  @*/
+void family_init(void) {
   memset(&family_registry.registry_lock, 0, sizeof(Lock));
   memset(&global_channel_id_lock, 0, sizeof(Lock));
   memset(&global_stats_lock, 0, sizeof(Lock));
@@ -79,10 +86,10 @@ void cleanup_family_resources(struct FamilyExchangePage *family) {
 
   lock(&family_registry.registry_lock);
   // Initialize all family slots as NULL
-    /*@ loop invariant 0 <= i <= FAMILY_MAX;
-    @ loop assigns i;
-    @ loop variant FAMILY_MAX - i;
-    @*/
+  /*@ loop invariant 0 <= i <= FAMILY_MAX;
+  @ loop assigns i, family_registry.families[0..i-1];
+  @ loop variant FAMILY_MAX - i;
+  @*/
   for (int i = 0; i < FAMILY_MAX; i++) {
     family_registry.families[i] = NULL;
   }
@@ -97,6 +104,14 @@ void cleanup_family_resources(struct FamilyExchangePage *family) {
 }
 
 /* Register a new family with the system */
+/*@
+  @ requires family_type < FAMILY_MAX;
+  @ requires \valid(ops);
+  @ requires \valid_read(name);
+  @ assigns family_registry.families[family_type],
+  @         family_registry.family_count;
+  @ ensures \result <= 0;
+  @*/
 int family_register(enum DeviceFamily family_type, struct FamilyOps *ops,
                     char *name) {
   if (family_type >= FAMILY_MAX || !name || !ops) {
@@ -178,8 +193,12 @@ int family_register(enum DeviceFamily family_type, struct FamilyOps *ops,
 
 /* Unregister a family */
 /*@
-  @ assigns *family;
-  @*/int family_unregister(enum DeviceFamily family_type) {
+  @ requires family_type < FAMILY_MAX;
+  @ assigns family_registry.families[family_type],
+  @         family_registry.family_count;
+  @ ensures \result <= 0;
+  @*/
+int family_unregister(enum DeviceFamily family_type) {
   if (family_type >= FAMILY_MAX) {
     return -1; // Invalid family type
   }
@@ -213,6 +232,10 @@ int family_register(enum DeviceFamily family_type, struct FamilyOps *ops,
 }
 
 /* Look up a family by type */
+/*@
+  @ assigns \nothing;
+  @ ensures family_type >= FAMILY_MAX ==> \result == \null;
+  @*/
 struct FamilyExchangePage *family_lookup(enum DeviceFamily family_type) {
   if (family_type >= FAMILY_MAX) {
     return NULL; // Invalid family type
@@ -228,7 +251,11 @@ struct FamilyExchangePage *family_lookup(enum DeviceFamily family_type) {
 }
 
 /* Generate 64-bit channel ID for system-wide uniqueness */
-/*@@*/uint64_t generate_channel_id(void) {
+/*@
+  @ assigns global_next_channel_id;
+  @ ensures \result > 0;
+  @*/
+uint64_t generate_channel_id(void) {
   uint64_t id;
 
   lock(&global_channel_id_lock);
@@ -254,9 +281,12 @@ int validate_channel_permissions(uint32_t requested, uint32_t granted) {
 
 /* Update system-wide channel statistics */
 /*@
-  @ requires \valid(family);
-  @ assigns *stats, stats->peak_channels;
-  @*/void update_channel_stats(struct FamilyExchangePage *family) {
+  @ requires family == \null || \valid(family);
+  @ assigns global_channel_stats.total_channels_allocated,
+  @         global_channel_stats.peak_channels,
+  @         global_channel_stats.total_memory_usage;
+  @*/
+void update_channel_stats(struct FamilyExchangePage *family) {
   /* Update total system statistics */
   struct ChannelStats *stats = &global_channel_stats;
 
@@ -276,8 +306,9 @@ int validate_channel_permissions(uint32_t requested, uint32_t granted) {
 
 /* Debugging and statistics */
 /*@
-  @ assigns *family;
-  @*/void family_stats(enum DeviceFamily family_type) {
+  @ assigns \nothing;
+  @*/
+void family_stats(enum DeviceFamily family_type) {
   struct FamilyExchangePage *family = family_lookup(family_type);
 
   print("Family Statistics - %s:\n", family_type_to_string(family_type));
@@ -296,7 +327,10 @@ int validate_channel_permissions(uint32_t requested, uint32_t granted) {
 }
 
 /* Helper function to handle global channel statistics */
-/*@@*/void setup_global_channel_stats(void) {
+/*@
+  @ assigns global_channel_stats;
+  @*/
+void setup_global_channel_stats(void) {
   memset(&global_channel_stats, 0, sizeof(global_channel_stats));
   global_channel_stats.total_channels_allocated = 0;
   global_channel_stats.peak_channels = 0;
@@ -307,6 +341,10 @@ int validate_channel_permissions(uint32_t requested, uint32_t granted) {
 }
 
 /* Convert family type to string */
+/*@
+  @ assigns \nothing;
+  @ ensures \valid_read(\result);
+  @*/
 const char *family_type_to_string(enum DeviceFamily type) {
   switch (type) {
   case FAMILY_NONE:
@@ -330,9 +368,11 @@ const char *family_type_to_string(enum DeviceFamily type) {
 
 /* Convert string to family type */
 /*@
-  @ requires \valid(name);
+  @ requires \valid_read(name) || name == \null;
   @ assigns \nothing;
-  @*/enum DeviceFamily string_to_family_type(const char *name) {
+  @ ensures name == \null ==> \result == FAMILY_NONE;
+  @*/
+enum DeviceFamily string_to_family_type(const char *name) {
   if (!name)
     return FAMILY_NONE;
   if (strcmp(name, "PCI") == 0)

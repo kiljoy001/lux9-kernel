@@ -30,6 +30,12 @@ enum {
 };
 
 /* Generator for PCI filesystem */
+/*@
+  @ requires \valid(c);
+  @ requires \valid(dp);
+  @ assigns *dp;
+  @ ensures \result == 1 || \result == -1;
+  @*/
 static int pcigen(Chan *c, char *name, Dirtab *tab, int ntab, int pos,
                   Dir *dp) {
   Qid qid;
@@ -112,6 +118,12 @@ static int pcigen(Chan *c, char *name, Dirtab *tab, int ntab, int pos,
   return -1;
 }
 
+/*@
+  @ requires \valid(c);
+  @ requires \valid(nc);
+  @ requires nname > 0 ==> \valid(name + (0..nname-1));
+  @ assigns *nc;
+  @*/
 Walkqid *pci_9p_walk(struct FamilyExchangePage *family, Chan *c, Chan *nc,
                      char **name, int nname) {
   USED(family);
@@ -119,15 +131,20 @@ Walkqid *pci_9p_walk(struct FamilyExchangePage *family, Chan *c, Chan *nc,
 }
 
 /*@
-  @ requires \valid(family);
   @ requires \valid(c);
-  @ requires \valid(dp);
-  @ assigns \nothing;
-  @*/int pci_9p_stat(struct FamilyExchangePage *family, Chan *c, uchar *dp, int n) {
+  @ requires n > 0 ==> \valid(dp + (0..n-1));
+  @ assigns dp[0..n-1];
+  @ ensures \result >= -1;
+  @*/
+int pci_9p_stat(struct FamilyExchangePage *family, Chan *c, uchar *dp, int n) {
   USED(family);
   return devstat(c, dp, n, nil, 0, pcigen);
 }
 
+/*@
+  @ requires \valid(c);
+  @ assigns *c;
+  @*/
 Chan *pci_9p_open(struct FamilyExchangePage *family, Chan *c, int omode) {
   USED(family);
   return devopen(c, omode, nil, 0, pcigen);
@@ -142,6 +159,13 @@ Chan *pci_9p_open(struct FamilyExchangePage *family, Chan *c, int omode) {
   USED(c);
 }
 
+/*@
+  @ requires \valid(c);
+  @ requires n > 0 ==> \valid((char *)buf + (0..n-1));
+  @ assigns ((char *)buf)[0..n-1];
+  @ ensures \result >= 0;
+  @ ensures \result <= n;
+  @*/
 long pci_9p_read(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
                  vlong off) {
   struct PCIFamilyContext *ctx = global_pci_ctx;
@@ -253,6 +277,10 @@ long pci_9p_read(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
 long pci_9p_write(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
                   vlong off) {
   USED(family);

@@ -100,7 +100,7 @@ static struct FamilyOps tpm_family_ops = {
  */
 /*@
   @ requires \valid(family);
-  @ assigns family->family_specific_ctx;
+  @ assigns *family;
   @ ensures \result >= 0 || \result == FAMILY_ENOMEM;
   @*/
 static int tpm_family_init(struct FamilyExchangePage *family) {
@@ -410,7 +410,8 @@ struct FamilyExchangePage *secure_element_family_get(void) {
 /*@
   @ requires channel_id == \null || \valid(channel_id);
   @ assigns *family;
-  @*/int secure_element_create_channel(uint32_t permissions, uint64_t *channel_id) {
+  @*/
+int secure_element_create_channel(uint32_t permissions, uint64_t *channel_id) {
   struct FamilyExchangePage *family = secure_element_family_get();
   if (family == nil) {
     return FAMILY_EINVAL;
@@ -424,7 +425,8 @@ struct FamilyExchangePage *secure_element_family_get(void) {
  */
 /*@
   @ assigns *family;
-  @*/uint32_t secure_element_get_capabilities(void) {
+  @*/
+uint32_t secure_element_get_capabilities(void) {
   struct FamilyExchangePage *family = secure_element_family_get();
   if (family == nil) {
     return 0;
@@ -465,7 +467,8 @@ void secure_element_init(void) {
 /*@
   @ requires buffer == \null || \valid(buffer);
   @ assigns *family, family->family_specific_ctx, tmp[0..];
-  @*/int secure_element_get_random(uint8_t *buffer, int len) {
+  @*/
+int secure_element_get_random(uint8_t *buffer, int len) {
   TPMFamilyContext *ctx;
   struct FamilyExchangePage *family = secure_element_family_get();
 

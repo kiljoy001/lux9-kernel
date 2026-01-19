@@ -37,7 +37,7 @@ PEBBLE_KERNEL_C := ../kernel/pebble_kernel.c
 CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
-FAMILY_C := family/family.c family/pci_family.c family/pci_family_extended.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
+
 CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/fruity/fruity_interp.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/qbe/fruity_sljit.c clr/qbe/qbe_exec.c clr/clr_runtime.c clr/lux_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
 SYMBOLIC_C := ../kernel/symbolic/minigmp_kernel.c
 
@@ -52,7 +52,7 @@ PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
 PEBBLE_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_KERNEL_C))
 CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%.o,$(CRYPTO_S))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
-FAMILY_O := family.o pci_family.o pci_family_extended.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
+
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o fruity_interp.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
@@ -70,7 +70,7 @@ WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wa
            wasm/wasm_runtime/wasm3/m3_info.o wasm/wasm_runtime/wasm3/lux9_math.o
 CAP_O := capability/lux_capability.o
 
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O) $(ROUTER_O) $(WASM_O) $(WASM3_O) $(CAP_O) $(SYMBOLIC_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(MISC_KERNEL_O) $(ROUTER_O) $(WASM_O) $(WASM3_O) $(CAP_O) $(SYMBOLIC_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -151,13 +151,6 @@ $(KERNEL_BINARY): $(ALL_O)
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-pebble_family.o: family/pebble.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: family/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
 
 # WASM compilation
 %.o: wasm/%.c
@@ -312,9 +305,6 @@ borrow_enforce.o: ../kernel/borrow_enforce.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-pci_family_extended.o: family/pci_family_extended.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
 
 # Testing targets (placeholder)
 

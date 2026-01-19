@@ -67,7 +67,7 @@ static inline uint32_t pci_address_key(uint16_t domain, uint8_t bus,
 /* Parse PCI address string like "0000:00:1f.2" */
 /*@
   @ requires address_str == \null || valid_string(address_str);
-  @ assigns *address_str;
+  @ assigns \nothing;
   @*/
 struct PCIAddress parse_pci_address_string(const char *address_str) {
   struct PCIAddress addr = {0};
@@ -278,7 +278,7 @@ static int write_pci_config_space(struct PCIDeviceDescriptor *dev, void *buffer,
 /* Scan a single PCI bus */
 /*@
   @ requires \valid(ctx);
-  @ assigns \nothing;
+  @ assigns *ctx;
   @*/
 static int scan_pci_bus(struct PCIFamilyContext *ctx, uint16_t bus) {
   int device_count = 0;

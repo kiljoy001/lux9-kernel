@@ -102,21 +102,24 @@ static int validate_channel_operation_permission(Proc *proc,
 /*@
   @ requires \valid(res);
   @ assigns \nothing;
-  @*/static void cleanup_pci_bar_resource(struct PCIChannelBarResource *res) {
+  @*/
+static void cleanup_pci_bar_resource(struct PCIChannelBarResource *res) {
   if (res) { /* cleanup */
   }
 }
 /*@
   @ requires \valid(res);
   @ assigns \nothing;
-  @*/static void cleanup_pci_irq_resource(struct PCIChannelIrqResource *res) {
+  @*/
+static void cleanup_pci_irq_resource(struct PCIChannelIrqResource *res) {
   if (res) { /* cleanup */
   }
 }
 /*@
   @ requires \valid(res);
   @ assigns \nothing;
-  @*/static void cleanup_pci_dma_resource(struct PCIChannelDmaResource *res) {
+  @*/
+static void cleanup_pci_dma_resource(struct PCIChannelDmaResource *res) {
   if (res) { /* cleanup */
   }
 }
@@ -139,7 +142,10 @@ static int exchange_prepare_pages(uintptr vaddr, size_t size,
   return 0;
 }
 /*@
-  @ requires handle == \null || \valid(handle);@*/static void exchange_unmap(ExchangeHandle *handle) {
+  @ requires handle == \null || \valid(handle);
+  @ assigns *handle;
+  @*/
+static void exchange_unmap(ExchangeHandle *handle) {
   /* Unmap exchange page - mark as unused */
   if (handle != nil)
     memset(handle, 0, sizeof(*handle));
@@ -212,7 +218,10 @@ struct PersistentName {
 };
 
 /* Generate 64-bit channel ID */
-/*@@*/static uint64_t generate_pci_channel_id(void) {
+/*@
+  @ ensures \result > 0;
+  @*/
+static uint64_t generate_pci_channel_id(void) {
   static uint64_t next_id = 1; /* IDs start from 1 */
   uint64_t new_id;
 
@@ -316,9 +325,11 @@ struct PCIChannel *allocate_pci_channel_struct(
 
 /* Release PCI channel structure */
 /*@
-  @ requires channel == \null || \valid(channel);
-  @ assigns *mgr, bound_device->bound_channel, bound_device->bound_channel_id, channel_ids[0..];
-  @*/void free_pci_channel_struct(struct PCIChannel *channel) {
+  @ requires \valid(channel);
+  @ requires \valid(channel->family);
+  @ assigns *channel;
+  @*/
+void free_pci_channel_struct(struct PCIChannel *channel) {
   struct PCIEChannelManager *mgr =
       (struct PCIEChannelManager *)channel->family->channel_mgr;
 
@@ -371,7 +382,8 @@ static int validate_pci_channel_permissions(uint32_t req_perms,
 /*@
   @ requires \valid(dev);
   @ assigns \nothing;
-  @*/uint32_t device_can_access_flags(struct PCIDeviceDescriptor *dev) {
+  @*/
+uint32_t device_can_access_flags(struct PCIDeviceDescriptor *dev) {
   uint32_t flags = 0;
 
   if (!dev) {
@@ -387,10 +399,10 @@ static int validate_pci_channel_permissions(uint32_t req_perms,
   }
 
   /* Check if device has BARs for memory mapping */
-    /*@ loop invariant 0 <= i <= 6;
-    @ loop assigns i;
-    @ loop variant 6 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 6;
+  @ loop assigns i;
+  @ loop variant 6 - i;
+  @*/
   for (int i = 0; i < 6; i++) {
     if (dev->bars[i].is_valid && dev->bars[i].type == 0) { // Memory BAR
       flags |= CHANNEL_PERM_MAP_BAR;
@@ -446,10 +458,10 @@ static int pci_allocate_channel_by_name(struct FamilyExchangePage *family,
 
   /* Look up device by name */
   struct PersistentName *name_entry = NULL;
-    /*@ loop invariant 0 <= i <= mgr->name_registry.name_count;
-    @ loop assigns i;
-    @ loop variant mgr->name_registry.name_count - i;
-    @*/
+  /*@ loop invariant 0 <= i <= mgr->name_registry.name_count;
+  @ loop assigns i;
+  @ loop variant mgr->name_registry.name_count - i;
+  @*/
   for (int i = 0; i < mgr->name_registry.name_count; i++) {
     if (strcmp(mgr->name_registry.names[i]->name, device_name) == 0) {
       name_entry = mgr->name_registry.names[i];
@@ -510,19 +522,19 @@ static int pci_allocate_channel_auto(struct FamilyExchangePage *family,
   int best_score = -1;
 
   /* Scan all devices and find best match */
-    /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
-    @ loop assigns i;
-    @ loop variant MAX_PCI_DEVICES - i;
-    @*/
+  /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+  @ loop assigns i;
+  @ loop variant MAX_PCI_DEVICES - i;
+  @*/
   for (int i = 0; i < MAX_PCI_DEVICES; i++) {
     struct PCIDeviceDescriptor *dev = NULL;
 
     /* Find device in registry */
-      /*@ loop invariant 0 <= j <= MAX_PCI_DEVICES;
-    @ loop assigns j;
-    @ loop variant MAX_PCI_DEVICES - j;
-    @*/
-  for (int j = 0; j < MAX_PCI_DEVICES; j++) {
+    /*@ loop invariant 0 <= j <= MAX_PCI_DEVICES;
+  @ loop assigns j;
+  @ loop variant MAX_PCI_DEVICES - j;
+  @*/
+    for (int j = 0; j < MAX_PCI_DEVICES; j++) {
       if (mgr->family_ctx->device_registry.devices[j] &&
           mgr->family_ctx->device_registry.devices[j]
                   ->address.domain_bus_dev_func == i) {
@@ -588,9 +600,10 @@ static int pci_allocate_channel_auto(struct FamilyExchangePage *family,
 
 /* Initialize PCI channel manager */
 /*@
-  @ requires family == \null || \valid(family);
-  @ assigns *mgr, mgr->channel_ids, mgr->channels, mgr->max_channels, mgr->next_channel_id;
-  @*/void setup_pci_channel_manager(struct FamilyExchangePage *family) {
+  @ requires \valid(family);
+  @ assigns family->channel_mgr;
+  @*/
+void setup_pci_channel_manager(struct FamilyExchangePage *family) {
   struct PCIEChannelManager *mgr =
       xalloc_driver(sizeof(struct PCIEChannelManager));
   if (!mgr) {
@@ -634,9 +647,11 @@ static int pci_allocate_channel_auto(struct FamilyExchangePage *family,
 
 /* Configure channel limits */
 /*@
-  @ requires family == \null || \valid(family);
-  @ assigns *mgr;
-  @*/static int pci_configure_channel_limits(struct FamilyExchangePage *family) {
+  @ requires \valid(family);
+  @ assigns family->channel_mgr;
+  @ ensures \result <= 0;
+  @*/
+static int pci_configure_channel_limits(struct FamilyExchangePage *family) {
   struct PCIEChannelManager *mgr =
       (struct PCIEChannelManager *)family->channel_mgr;
 
@@ -823,7 +838,8 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
 /*@
   @ requires mgr == \null || \valid(mgr);
   @ assigns mgr->allocate_auto, mgr->allocate_by_address, mgr->allocate_by_name;
-  @*/void setup_pci_channel_allocators(struct PCIEChannelManager *mgr) {
+  @*/
+void setup_pci_channel_allocators(struct PCIEChannelManager *mgr) {
   /* Initialize all allocation strategies */
   mgr->allocate_by_address = pci_allocate_channel_by_address;
   mgr->allocate_by_name = pci_allocate_channel_by_name;
@@ -833,8 +849,9 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
 /* Update channel statistics */
 /*@
   @ requires channel == \null || \valid(channel);
-  @ assigns channel->last_operation;
-  @*/static void update_pci_channel_stats(struct PCIChannel *channel) {
+  @ assigns channel->operation_count, channel->last_operation;
+  @*/
+static void update_pci_channel_stats(struct PCIChannel *channel) {
   if (!channel) {
     return;
   }
@@ -845,8 +862,9 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
 
 /* Channel statistics and debugging */
 /*@
-  @ assigns *channel, *family;
-  @*/void pci_print_channel_info(uint64_t channel_id) {
+  @ assigns \nothing;
+  @*/
+void pci_print_channel_info(uint64_t channel_id) {
   struct FamilyExchangePage *family = global_pci_family;
   if (!family) {
     print("PCI: PCI family not available\n");
@@ -874,10 +892,10 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
         channel->owner_process ? channel->owner_process->pid : 0);
 
   print("  Resources:\n");
-    /*@ loop invariant 0 <= i <= 6;
-    @ loop assigns i;
-    @ loop variant 6 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 6;
+  @ loop assigns i;
+  @ loop variant 6 - i;
+  @*/
   for (int i = 0; i < 6; i++) {
     if (channel->resources.bars[i]) {
       print("    BAR%d: %p -> %p (size=%d)\n", i,
@@ -887,20 +905,20 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
     }
   }
 
-    /*@ loop invariant 0 <= i <= 8;
-    @ loop assigns i;
-    @ loop variant 8 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 8;
+  @ loop assigns i;
+  @ loop variant 8 - i;
+  @*/
   for (int i = 0; i < 8; i++) {
     if (channel->resources.irqs[i]) {
       print("    IRQ%d: line %d\n", i, channel->resources.irqs[i]->irq_number);
     }
   }
 
-    /*@ loop invariant 0 <= i <= 4;
-    @ loop assigns i;
-    @ loop variant 4 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 4;
+  @ loop assigns i;
+  @ loop variant 4 - i;
+  @*/
   for (int i = 0; i < 4; i++) {
     if (channel->resources.dmas[i]) {
       print("    DMA%d: %p (size=%d)\n", i,
@@ -923,15 +941,17 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
 /* Cleanup resources helper */
 /*@
   @ requires channel == \null || \valid(channel);
-  @ assigns bars[0..];
-  @*/void cleanup_pci_channel_resources(struct PCIChannel *channel) {
+  @ assigns channel->resources.bars[0..5],
+  @         channel->resources.irqs[0..7];
+  @*/
+void cleanup_pci_channel_resources(struct PCIChannel *channel) {
   if (!channel)
     return;
 
-    /*@ loop invariant 0 <= i <= 6;
-    @ loop assigns i;
-    @ loop variant 6 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 6;
+  @ loop assigns i;
+  @ loop variant 6 - i;
+  @*/
   for (int i = 0; i < 6; i++) {
     if (channel->resources.bars[i]) {
       cleanup_pci_bar_resource(channel->resources.bars[i]);
@@ -940,10 +960,10 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
     }
   }
 
-    /*@ loop invariant 0 <= i <= 8;
-    @ loop assigns i;
-    @ loop variant 8 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 8;
+  @ loop assigns i;
+  @ loop variant 8 - i;
+  @*/
   for (int i = 0; i < 8; i++) {
     if (channel->resources.irqs[i]) {
       cleanup_pci_irq_resource(channel->resources.irqs[i]);
@@ -952,10 +972,10 @@ static int pci_channel_get_bar_info(struct PCIChannel *channel, uint8_t bar_num,
     }
   }
 
-    /*@ loop invariant 0 <= i <= 4;
-    @ loop assigns i;
-    @ loop variant 4 - i;
-    @*/
+  /*@ loop invariant 0 <= i <= 4;
+  @ loop assigns i;
+  @ loop variant 4 - i;
+  @*/
   for (int i = 0; i < 4; i++) {
     if (channel->resources.dmas[i]) {
       cleanup_pci_dma_resource(channel->resources.dmas[i]);

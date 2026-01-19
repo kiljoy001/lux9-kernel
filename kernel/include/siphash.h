@@ -57,8 +57,7 @@ u32int hsiphash_2u32(u32int a, u32int b, const hsiphash_key_t *key);
  * Implementation verified separately (3/3 goals in siphash.c). */
 /*@
   @ requires len <= 8192;
-  @ requires len > 0 ==> \valid_read((unsigned char*)data + (0 .. (integer)len -
-  1));
+  @ requires len > 0 ==> \valid_read(((unsigned char*)data) + (0 .. len - 1));
   @ requires \valid_read(key);
   @ assigns \nothing;
   @ terminates \true;
@@ -66,8 +65,8 @@ u32int hsiphash_2u32(u32int a, u32int b, const hsiphash_key_t *key);
 u32int hsiphash(const void *data, usize len, const hsiphash_key_t *key);
 
 /* Secure RNG functions for key generation */
-/*@ requires len >= 0 && \valid(((unsigned char*)buffer) + (0..(integer)len-1));
-  @ assigns ((unsigned char*)buffer)[0..(integer)len-1];
+/*@ requires len >= 0 && \valid(((unsigned char*)buffer) + (0 .. len-1));
+  @ assigns ((unsigned char*)buffer)[0 .. len-1];
   @ terminates \true;
   @*/
 extern int tpm_get_random(unsigned char *buffer, int len);

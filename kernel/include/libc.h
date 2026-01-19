@@ -19,6 +19,7 @@ typedef long jmp_buf[16];
 #include <setjmp.h>
 #endif
 #endif
+#include "acsl_bounds.h"
 #include "u.h"
 #include <stdarg.h>
 
@@ -56,7 +57,14 @@ extern int strncmp(char *, char *, long);
 extern char *strpbrk(char *, char *);
 extern char *strrchr(char *, int);
 extern char *strtok(char *, char *);
-extern long strlen(char *);
+/*@
+  @ requires valid_string(s);
+  @ assigns \result \from indirect:s[0..];
+  @ ensures \result >= 0;
+  @ ensures \result <= ACSL_MAXSTR;
+  @ ensures s[\result] == '\0';
+  @*/
+extern long strlen(char *s);
 extern long strspn(char *, char *);
 extern long strcspn(char *, char *);
 extern char *strstr(char *, char *);
@@ -292,7 +300,6 @@ extern Rune *runefmtstrflush(Fmt *);
 #endif
 
 extern int fmtinstall(int, int (*)(Fmt *));
-#include "acsl_bounds.h"
 
 /*@
   @ requires \valid(f);
