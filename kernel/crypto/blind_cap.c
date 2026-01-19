@@ -39,6 +39,10 @@ extern void randombytes(u8int *buf, usize len);
 /*
  * cap_current_epoch - Get the current monotonic epoch
  */
+/*@
+  @ requires epoch_type == EPOCH_HOUR || epoch_type == EPOCH_DAY || epoch_type == EPOCH_SESSION;
+  @ ensures \result >= 0;
+  @*/
 u64int cap_current_epoch(int epoch_type) {
   vlong ns = nsec();
 
@@ -57,6 +61,11 @@ u64int cap_current_epoch(int epoch_type) {
 /*
  * cap_epoch_valid - Check if a token's epoch is within grace window
  */
+/*@
+  @ requires grace >= 0;
+  @ ensures \result == 0 || \result == 1;
+  @ assigns \nothing;
+  @*/
 int cap_epoch_valid(u64int token_epoch, u64int current_epoch, int grace) {
   if (token_epoch > current_epoch)
     return 0; /* Future epoch - reject */
@@ -68,6 +77,11 @@ int cap_epoch_valid(u64int token_epoch, u64int current_epoch, int grace) {
 /*
  * cap_hash_service - Hash a service name for token binding
  */
+/*@
+  @ requires \valid(out + (0..CAP_HASH_SIZE-1));
+  @ requires \valid_read(service_name);
+  @ assigns out[0..CAP_HASH_SIZE-1];
+  @*/
 void cap_hash_service(u8int *out, const char *service_name) {
   crypto_blake2b(out, CAP_HASH_SIZE, (const u8int *)service_name,
                  strlen(service_name));
@@ -76,6 +90,12 @@ void cap_hash_service(u8int *out, const char *service_name) {
 /*
  * cap_hash_client - Hash client identity with nonce
  */
+/*@
+  @ requires \valid(out + (0..CAP_HASH_SIZE-1));
+  @ requires \valid_read(client_id + (0..31));
+  @ requires \valid_read(nonce + (0..15));
+  @ assigns out[0..CAP_HASH_SIZE-1];
+  @*/
 void cap_hash_client(u8int *out, const u8int *client_id, const u8int *nonce) {
   u8int buf[48]; /* 32 byte client_id + 16 byte nonce */
   memcpy(buf, client_id, 32);
@@ -112,6 +132,12 @@ int cap_token_init(CapToken *tok, const char *service, const u8int *client_id,
  * The client calls this to create a blinded version of their token
  * that can be signed without the signer seeing the contents.
  */
+/*@
+  @ requires \valid(req);
+  @ requires \valid_read(tok);
+  @ ensures \result == 0;
+  @ assigns req->blinding_factor[0..31], req->blinded_data[0..63];
+  @*/
 int cap_blind_prepare(CapBlindRequest *req, const CapToken *tok) {
   u8int message[80]; /* service_hash + client_commit + epoch + flags */
   u8int msg_hash[32];
@@ -267,6 +293,12 @@ int cap_derive_epoch_keys(CapEpochKeys *out, const CapMasterKey *master,
 static CapEpochKeys cached_keys;
 static int cached_keys_valid = 0;
 
+/*@
+  @ requires \valid(out);
+  @ requires \valid_read(master);
+  @ ensures \result == 0 || \result == -1;
+  @ assigns *out, cached_keys, cached_keys_valid;
+  @*/
 int cap_get_current_keys(CapEpochKeys *out, const CapMasterKey *master) {
   u64int current = cap_current_epoch(EPOCH_HOUR);
 
@@ -288,6 +320,11 @@ int cap_get_current_keys(CapEpochKeys *out, const CapMasterKey *master) {
 /*
  * cap_keys_valid_for_epoch - Check if keys can verify tokens from given epoch
  */
+/*@
+  @ requires \valid_read(keys);
+  @ ensures \result == 0 || \result == 1;
+  @ assigns \nothing;
+  @*/
 int cap_keys_valid_for_epoch(const CapEpochKeys *keys, u64int current_epoch) {
   /* Keys can verify tokens from their epoch and previous epoch (grace) */
   if (keys->epoch > current_epoch)

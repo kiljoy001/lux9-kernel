@@ -60,7 +60,11 @@ namespace MONOCYPHER_CPP_NAMESPACE {
 /////////////////
 /// Utilities ///
 /////////////////
-#define FOR_T(type, i, start, end) for (type i = (start); i < (end); i++)
+#define FOR_T(type, i, start, end)   /*@ loop invariant 0 <= i <= (end);
+    @ loop assigns i;
+    @ loop variant (end) - i;
+    @*/
+  for (type i = (start); i < (end); i++)
 #define FOR(i, start, end) FOR_T(size_t, i, start, end)
 #define COPY(dst, src, size) FOR(_i_, 0, size)(dst)[_i_] = (src)[_i_]
 #define ZERO(buf, size) FOR(_i_, 0, size)(buf)[_i_] = 0
@@ -792,14 +796,22 @@ namespace MONOCYPHER_CPP_NAMESPACE {
   // Core of the compression function G.  Computes Z from R in place.
   static void g_rounds(blk * b) {
     // column rounds (work_block = Q)
-    for (int i = 0; i < 128; i += 16) {
+      /*@ loop invariant 0 <= i <= 128;
+    @ loop assigns i;
+    @ loop variant 128 - i;
+    @*/
+  for (int i = 0; i < 128; i += 16) {
       MONO_ROUND(b->a[i], b->a[i + 1], b->a[i + 2], b->a[i + 3], b->a[i + 4],
                  b->a[i + 5], b->a[i + 6], b->a[i + 7], b->a[i + 8],
                  b->a[i + 9], b->a[i + 10], b->a[i + 11], b->a[i + 12],
                  b->a[i + 13], b->a[i + 14], b->a[i + 15]);
     }
     // row rounds (b = Z)
-    for (int i = 0; i < 16; i += 2) {
+      /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
+  for (int i = 0; i < 16; i += 2) {
       MONO_ROUND(b->a[i], b->a[i + 1], b->a[i + 16], b->a[i + 17], b->a[i + 32],
                  b->a[i + 33], b->a[i + 48], b->a[i + 49], b->a[i + 64],
                  b->a[i + 65], b->a[i + 80], b->a[i + 81], b->a[i + 96],

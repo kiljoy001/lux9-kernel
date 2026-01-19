@@ -119,7 +119,7 @@ void pebbleinit(void) {
   boot_tokens = PEBBLE_BOOT_BUDGET / PEBBLE_BYTES_PER_TOKEN;
   if (pebble_global_colorless_bank >= boot_tokens)
     pebble_global_colorless_bank -= boot_tokens;
-  boot_pstate.colorless_bank = boot_tokens;
+  boot_pstate.colorless_bank = PEBBLE_BOOT_BUDGET;
   boot_pstate.white_generation = 1;
 
   /* Reserve init budget from global pool */
@@ -129,7 +129,7 @@ void pebbleinit(void) {
   /* init_tokens will be granted to proc0 at proc0() entry */
 
   if (pebble_debug)
-    print(
+    bprint(
         "PEBBLE: global pool=%lu tokens (%luMB), boot=%lu, reserved_init=%lu\n",
         pebble_global_colorless_bank,
         (pebble_global_colorless_bank * PEBBLE_BYTES_PER_TOKEN) / (1024 * 1024),
@@ -151,8 +151,8 @@ void pebbleprocinit(Proc *p) {
   if (p->pid == 1) {
     p->pebble.colorless_bank = PEBBLE_INIT_BUDGET;
     if (pebble_debug)
-      print("PEBBLE: granted %dMB init budget to pid 1\n",
-            PEBBLE_INIT_BUDGET / (1024 * 1024));
+      bprint("PEBBLE: granted %lldMB init budget to pid 1\n",
+             (vlong)PEBBLE_INIT_BUDGET / (1024 * 1024));
   }
 }
 
@@ -185,6 +185,28 @@ PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle) {
   pb = pebble_lookup_black_locked(ps, handle);
   unlock(&pebble_global_lock);
   return pb;
+}
+
+/*@
+  @ requires ps != \null ==> \valid(ps);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+PebbleBlack *pebble_lookup_black_by_addr(PebbleState *ps, void *addr) {
+  PebbleBlack *pb;
+
+  if (ps == nil || addr == nil)
+    return nil;
+
+  lock(&pebble_global_lock);
+  for (pb = ps->black_list; pb != nil; pb = pb->next) {
+    if (pb->physical_addr == addr) {
+      unlock(&pebble_global_lock);
+      return pb;
+    }
+  }
+  unlock(&pebble_global_lock);
+  return nil;
 }
 
 /*@
@@ -258,9 +280,9 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
   if (ps->colorless_bank < pegged_size) {
     unlock(&pebble_global_lock);
     if (pebble_debug)
-      print("PEBBLE: insufficient budget for WHITE pid=%lud need=%lud "
-            "have=%lud\n",
-            up ? up->pid : 0, pegged_size, ps->colorless_bank);
+      bprint("PEBBLE: insufficient budget for WHITE pid=%lud need=%lud "
+             "have=%lud\n",
+             up ? up->pid : 0, pegged_size, ps->colorless_bank);
     return nil; /* Insufficient budget */
   }
 
@@ -296,10 +318,10 @@ PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size) {
     for (i = 0; i < PEBBLE_MAX_TOKENS; i++)
       if (ps->whites_active[i])
         active++;
-    print("PEBBLE: no free white tokens pid=%lud active=%d max=%d "
-          "head=%d gen=%lud\n",
-          up ? up->pid : 0, active, PEBBLE_MAX_TOKENS, ps->white_head,
-          ps->white_generation);
+    bprint("PEBBLE: no free white tokens pid=%lud active=%d max=%d "
+           "head=%d gen=%lud\n",
+           up ? up->pid : 0, active, PEBBLE_MAX_TOKENS, ps->white_head,
+           ps->white_generation);
   }
   return nil;
 }
@@ -494,7 +516,7 @@ int pebble_increase_budget(ulong size, u64int nonce) {
   if (pebble_global_colorless_bank < tokens_requested) {
     unlock(&pebble_bank_lock);
     if (pebble_debug)
-      print(
+      bprint(
           "PEBBLE: out of global tokens pid=%lud requested=%lu available=%lu\n",
           up->pid, tokens_requested, pebble_global_colorless_bank);
     return -1; /* System out of tokens */
@@ -516,9 +538,10 @@ int pebble_increase_budget(ulong size, u64int nonce) {
   /* Verify the provided nonce against the process PID */
   if (!pow_verify(nonce, (u64int)up->pid, diff)) {
     if (pebble_debug)
-      print("PEBBLE: budget PoW failure pid=%lud size=%lud diff=%d nonce=%llud "
-            "scarcity=%lu%%\n",
-            up->pid, size, diff, nonce, scarcity_factor);
+      bprint(
+          "PEBBLE: budget PoW failure pid=%lud size=%lud diff=%d nonce=%llud "
+          "scarcity=%lu%%\n",
+          up->pid, size, diff, nonce, scarcity_factor);
     return -1;
   }
 
@@ -533,10 +556,10 @@ int pebble_increase_budget(ulong size, u64int nonce) {
   unlock(&pebble_bank_lock);
 
   if (pebble_debug)
-    print("PEBBLE: budget transferred pid=%lud tokens=%lu total=%lu "
-          "global_remaining=%lu\n",
-          up->pid, tokens_requested, ps->colorless_bank,
-          pebble_global_colorless_bank);
+    bprint("PEBBLE: budget transferred pid=%lud tokens=%lu total=%lu "
+           "global_remaining=%lu\n",
+           up->pid, tokens_requested, ps->colorless_bank,
+           pebble_global_colorless_bank);
 
   return 0;
 }
@@ -561,7 +584,7 @@ static void pebble_init_vault_key(void) {
 
   /* Try TPM first (strongest source) */
   if (tpm_get_random(pebble_vault_key, 32) == 32) {
-    print("PEBBLE: Vault secret from TPM\\n");
+    bprint("PEBBLE: Vault secret from TPM\\n");
     pebble_vault_key_initialized = 1;
     return;
   }
@@ -573,7 +596,7 @@ static void pebble_init_vault_key(void) {
     key64[1] = rdrand_u64();
     key64[2] = rdrand_u64();
     key64[3] = rdrand_u64();
-    print("PEBBLE: Vault secret from RDRAND\\n");
+    bprint("PEBBLE: Vault secret from RDRAND\\n");
     pebble_vault_key_initialized = 1;
     return;
   }
@@ -584,7 +607,7 @@ static void pebble_init_vault_key(void) {
   key64[1] = chacha20_csprng_u64();
   key64[2] = chacha20_csprng_u64();
   key64[3] = chacha20_csprng_u64();
-  print("PEBBLE: Vault secret from ChaCha20 CSPRNG (software fallback)\\n");
+  bprint("PEBBLE: Vault secret from ChaCha20 CSPRNG (software fallback)\\n");
   pebble_vault_key_initialized = 1;
 }
 
@@ -653,13 +676,13 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
    * Verify WHITE token was provided (WHITE → BLACK conversion required)
    */
   if (white == nil) {
-    print("pebble_black_alloc: ERROR - WHITE token required!\n");
-    print("  Must issue WHITE token first via pebble_issue_white()\n");
+    bprint("pebble_black_alloc: ERROR - WHITE token required!\n");
+    bprint("  Must issue WHITE token first via pebble_issue_white()\n");
     return -1;
   }
 
   if (buf == nil) {
-    print("pebble_black_alloc: ERROR - buffer address required!\n");
+    bprint("pebble_black_alloc: ERROR - buffer address required!\n");
     return -1;
   }
 
@@ -682,9 +705,9 @@ int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
 
   /* Verify WHITE token matches the size */
   if (white->size != size) {
-    print("pebble_black_alloc: WHITE token size mismatch (white=%lud, "
-          "requested=%lud)\n",
-          white->size, size);
+    bprint("pebble_black_alloc: WHITE token size mismatch (white=%lud, "
+           "requested=%lud)\n",
+           white->size, size);
     return -1;
   }
 
@@ -791,7 +814,7 @@ int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
   /* Step 1: Issue WHITE token (reservation from COLORLESS budget) */
   white = pebble_issue_white(ps, nil, size);
   if (white == nil) {
-    print("pebble_alloc_with_white: WHITE issue failed (no budget?)\n");
+    bprint("pebble_alloc_with_white: WHITE issue failed (no budget?)\n");
     return -1;
   }
 
@@ -814,7 +837,7 @@ int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
       }
     }
     unlock(&pebble_global_lock);
-    print("pebble_alloc_with_white: xallocz failed\n");
+    bprint("pebble_alloc_with_white: xallocz failed\n");
     return -1;
   }
 
@@ -824,14 +847,14 @@ int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
   /* Step 4: Verify WHITE (consumes it) */
   if (pebble_white_verify(white, &black_handle) != 0) {
     xfree(buf);
-    print("pebble_alloc_with_white: WHITE verify failed\n");
+    bprint("pebble_alloc_with_white: WHITE verify failed\n");
     return -1;
   }
 
   /* Step 5: Convert to BLACK token */
   if (pebble_black_alloc(white, buf, size, out_cap) != 0) {
     xfree(buf);
-    print("pebble_alloc_with_white: BLACK alloc failed\n");
+    bprint("pebble_alloc_with_white: BLACK alloc failed\n");
     return -1;
   }
 
@@ -879,17 +902,17 @@ int pebble_black_free_internal(uintptr pa, ulong len, Proc *owner) {
     borrow_err = borrow_release_system(pa, OWNER_KERNEL);
   if (borrow_err != BORROW_OK) {
     // CRITICAL: Borrow checker state inconsistent
-    panic("pebble_black_free_internal: FATAL - borrow_release failed for "
-          "pa=%#p: error=%d\n",
-          pa, borrow_err);
+    bpanic("pebble_black_free_internal: FATAL - borrow_release failed for "
+           "pa=%#p: error=%d\n",
+           pa, borrow_err);
   }
 
   // --- Free physical memory ---
   xfree((void *)pa);
 
   if (pebble_debug)
-    print("PEBBLE: internal free pid=%lud pa=%#p size=%lud\n",
-          owner ? owner->pid : 0, pa, len);
+    bprint("PEBBLE: internal free pid=%lud pa=%#p size=%lud\n",
+           owner ? owner->pid : 0, pa, len);
 
   return 0;
 }
@@ -968,7 +991,7 @@ int pebble_black_free(const UserCapability *cap) {
   if (ledger_err != BLIND_LEDGER_OK) {
     // CRITICAL: Blind Ledger state inconsistent with Pebble state
     // We already removed it from Pebble list, so we CANNOT recover.
-    panic(
+    bpanic(
         "pebble_black_free: FATAL - ledger_burn failed for cap=%H: error=%d\n"
         "This indicates critical state corruption (double-burn/invalid cap).\n"
         "Blind Ledger and Pebble system out of sync.",
@@ -980,8 +1003,8 @@ int pebble_black_free(const UserCapability *cap) {
   pebble_meta_free(pb);
 
   if (pebble_debug)
-    print("PEBBLE: black free pid=%lud cap=%H size=%lud\n", up->pid, cap->hash,
-          size);
+    bprint("PEBBLE: black free pid=%lud cap=%H size=%lud\n", up->pid, cap->hash,
+           size);
   return 0;
 }
 
@@ -1026,7 +1049,7 @@ int pebble_white_verify(PebbleWhite *white_cap, void **black_cap) {
 
   *black_cap = ret;
   if (pebble_debug)
-    print("PEBBLE: white verify pid=%lud -> %#p\n", up->pid, ret);
+    bprint("PEBBLE: white verify pid=%lud -> %#p\n", up->pid, ret);
   return 0;
 }
 
@@ -1132,7 +1155,7 @@ PebbleBlue *pebble_blue_alloc(ulong size) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: blue_alloc pid=%lud size=%lud\n", up->pid, size);
+    bprint("PEBBLE: blue_alloc pid=%lud size=%lud\n", up->pid, size);
 
   return blue;
 }
@@ -1186,7 +1209,7 @@ int pebble_blue_free(PebbleBlue *blue) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: blue_free pid=%lud size=%lud\n", up->pid, size);
+    bprint("PEBBLE: blue_free pid=%lud size=%lud\n", up->pid, size);
 
   return 0;
 }
@@ -1259,7 +1282,7 @@ PebbleRed *pebble_red_alloc(ulong size) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: red_alloc pid=%lud size=%lud\n", up->pid, size);
+    bprint("PEBBLE: red_alloc pid=%lud size=%lud\n", up->pid, size);
 
   return red;
 }
@@ -1307,7 +1330,7 @@ int pebble_red_free(PebbleRed *red) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: red_free pid=%lud size=%lud\n", up->pid, size);
+    bprint("PEBBLE: red_free pid=%lud size=%lud\n", up->pid, size);
 
   return 0;
 }
@@ -1446,8 +1469,8 @@ void pebble_cleanup(Proc *p) {
   unlock(&pebble_bank_lock);
 
   if (pebble_debug && return_tokens > 0)
-    print("PEBBLE: pid %lud exit, returned %lud tokens to global pool\n",
-          p->pid, return_tokens);
+    bprint("PEBBLE: pid %lud exit, returned %lud tokens to global pool\n",
+           p->pid, return_tokens);
 
   pb = ps->black_list;
   ps->black_list = nil;
@@ -1495,43 +1518,43 @@ void pebble_selftest(void) {
   if (ps == nil)
     return;
 
-  print("PEBBLE: selftest begin\n");
+  bprint("PEBBLE: selftest begin\n");
 
   /* Test 1: White -> Black allocation (full flow) */
   void *black_addr = nil;
   if (pebble_alloc_with_white(PEBBLE_MIN_ALLOC, &black_cap, &black_addr) != 0) {
-    print("pebble selftest: WHITE->BLACK allocation failed\n");
+    bprint("pebble selftest: WHITE->BLACK allocation failed\n");
     return;
   }
   if (black_addr == nil) {
-    print("pebble selftest: BLACK allocation returned nil address\n");
+    bprint("pebble selftest: BLACK allocation returned nil address\n");
     return;
   }
 
   /* Test 2: Independent Blue allocation */
   blue = pebble_blue_alloc(PEBBLE_MIN_ALLOC);
   if (blue == nil) {
-    print("pebble selftest: blue alloc failed\n");
+    bprint("pebble selftest: blue alloc failed\n");
     return;
   }
 
   /* Test 3: Blue -> Red snapshot */
   if (pebble_red_snapshot(blue, &red) != 0) {
-    print("pebble selftest: red snapshot failed\n");
+    bprint("pebble selftest: red snapshot failed\n");
     return;
   }
   if (red == nil) {
-    print("pebble selftest: red nil after snapshot\n");
+    bprint("pebble selftest: red nil after snapshot\n");
     return;
   }
 
   /* Test 4: Free all tokens */
   if (pebble_red_free(red) != 0) {
-    print("pebble selftest: red free failed\n");
+    bprint("pebble selftest: red free failed\n");
     return;
   }
   if (pebble_blue_free(blue) != 0) {
-    print("pebble selftest: blue free failed\n");
+    bprint("pebble selftest: blue free failed\n");
     return;
   }
 
@@ -1542,44 +1565,44 @@ void pebble_selftest(void) {
 
     /* Ensure alignment */
     if (((uintptr)raw_ptr & PEBBLE_WAVE_MASK) != 0) {
-      print("pebble selftest: black addr not 8-byte aligned\n");
+      bprint("pebble selftest: black addr not 8-byte aligned\n");
       return;
     }
 
     /* Project onto Channel 3 */
     proj_ch3 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_3);
     if (!PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_3)) {
-      print("pebble selftest: projection to Ch3 failed\n");
+      bprint("pebble selftest: projection to Ch3 failed\n");
       return;
     }
     if (PEBBLE_TUNED(proj_ch3, PEBBLE_WAVE_2)) {
-      print("pebble selftest: Ch3 bled into Ch2 (filtering fail)\n");
+      bprint("pebble selftest: Ch3 bled into Ch2 (filtering fail)\n");
       return;
     }
 
     /* Project onto Channel 7 */
     proj_ch7 = PEBBLE_PROJECT(raw_ptr, PEBBLE_WAVE_7);
     if (PEBBLE_PTR_WAVE(proj_ch7) != 7) {
-      print("pebble selftest: projection to Ch7 failed\n");
+      bprint("pebble selftest: projection to Ch7 failed\n");
       return;
     }
 
     /* Verify Base Address Recovery (All waves collapse to source) */
     if (PEBBLE_PTR_ADDR(proj_ch3) != raw_ptr) {
-      print("pebble selftest: Ch3 addr recovery failed\n");
+      bprint("pebble selftest: Ch3 addr recovery failed\n");
       return;
     }
 
-    print("PEBBLE: holographic channel verification passed\n");
+    bprint("PEBBLE: holographic channel verification passed\n");
   }
 
   if (pebble_black_free(&black_cap) != 0) {
-    print("pebble selftest: black free failed\n");
+    bprint("pebble selftest: black free failed\n");
     return;
   }
 
-  print("PEBBLE: selftest PASS (independent tokens, circular economy "
-        "validated)\n");
+  bprint("PEBBLE: selftest PASS (independent tokens, circular economy "
+         "validated)\n");
 }
 
 void pebble_sip_issue_test(void) {
@@ -1594,9 +1617,9 @@ void pebble_sip_issue_test(void) {
   ps = pebble_state();
   if (ps == nil)
     return;
-  print("PEBBLE: /dev/sip/issue test begin\n");
+  bprint("PEBBLE: /dev/sip/issue test begin\n");
   if (waserror()) {
-    print("PEBBLE: /dev/sip/issue test FAIL: %s\n", up->errstr);
+    bprint("PEBBLE: /dev/sip/issue test FAIL: %s\n", up->errstr);
     poperror();
     return;
   }
@@ -1631,7 +1654,7 @@ void pebble_sip_issue_test(void) {
   pebble_black_free(&black_cap);
 
   poperror();
-  print("PEBBLE: /dev/sip/issue test PASS (circular economy validated)\n");
+  bprint("PEBBLE: /dev/sip/issue test PASS (circular economy validated)\n");
 }
 
 /* ========== Arena Branch Banks ==========
@@ -1678,12 +1701,12 @@ void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
   unlock(&pebble_global_lock);
 
   if (pebble_debug) {
-    print("PEBBLE: arena_branch_init ps->colorless_bank=%lud "
-          "initial_request=%lud\n",
-          ps->colorless_bank, initial_budget);
-    print("PEBBLE: arena_branch_init provisioned %lud tokens (low=%lud "
-          "high=%lud)\n",
-          branch->local_colorless, branch->low_water, branch->high_water);
+    bprint("PEBBLE: arena_branch_init ps->colorless_bank=%lud "
+           "initial_request=%lud\n",
+           ps->colorless_bank, initial_budget);
+    bprint("PEBBLE: arena_branch_init provisioned %lud tokens (low=%lud "
+           "high=%lud)\n",
+           branch->local_colorless, branch->low_water, branch->high_water);
   }
 }
 
@@ -1709,13 +1732,13 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
   tokens_needed = ROUNDUP(size, PEBBLE_MEM_PER_TOKEN);
 
   if (pebble_debug)
-    print("arena_branch_alloc: size=%lud tokens_needed=%lud local=%lud "
-          "max=%lud\n",
-          size, tokens_needed, branch->local_colorless, branch->max_tokens);
+    bprint("arena_branch_alloc: size=%lud tokens_needed=%lud local=%lud "
+           "max=%lud\n",
+           size, tokens_needed, branch->local_colorless, branch->max_tokens);
 
   if (branch->max_tokens > 0 && tokens_needed > branch->max_tokens) {
     if (pebble_debug)
-      print("arena_branch_alloc: failed max_tokens check\n");
+      bprint("arena_branch_alloc: failed max_tokens check\n");
     return -1;
   }
 
@@ -1727,7 +1750,7 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
     /* Try refill from process bank */
     if (arena_branch_refill(branch) != 0) {
       if (pebble_debug)
-        print("arena_branch_alloc: failed refill\n");
+        bprint("arena_branch_alloc: failed refill\n");
       return -1;
     }
     /* Retry after refill */
@@ -1735,7 +1758,7 @@ int arena_branch_alloc(arena_branch_t *branch, ulong size) {
     if (branch->local_colorless < tokens_needed) {
       unlock(&branch->lock);
       if (pebble_debug)
-        print("arena_branch_alloc: failed after refill\n");
+        bprint("arena_branch_alloc: failed after refill\n");
       return -1; /* Still not enough after refill */
     }
   }
@@ -1847,8 +1870,8 @@ int arena_branch_refill(arena_branch_t *branch) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: arena_branch_refill added %lu tokens (now %lu)\n",
-          refill_amount, branch->local_colorless);
+    bprint("PEBBLE: arena_branch_refill added %lu tokens (now %lu)\n",
+           refill_amount, branch->local_colorless);
 
   return 0;
 }
@@ -1878,7 +1901,7 @@ void arena_branch_drain(arena_branch_t *branch) {
   unlock(&pebble_global_lock);
 
   if (pebble_debug)
-    print("PEBBLE: arena_branch_drain returned %lu tokens to process "
-          "(alloc=%lu freed=%lu)\n",
-          drained, branch->total_allocated, branch->total_freed);
+    bprint("PEBBLE: arena_branch_drain returned %lu tokens to process "
+           "(alloc=%lu freed=%lu)\n",
+           drained, branch->total_allocated, branch->total_freed);
 }

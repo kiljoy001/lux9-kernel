@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Process flow colors -->
+    <linearGradient id="kernel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24"/>
+      <stop offset="100%" style="stop-color:#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="user" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#86efac"/>
+      <stop offset="100%" style="stop-color:#22c55e"/>
+    </linearGradient>
+    <linearGradient id="memory" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#374151"/>
+    </marker>
+    <marker id="kernelArrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#f59e0b"/>
+    </marker>
+    <marker id="userArrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#22c55e"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#1f2937">
+    First Process Creation
+  </text>
+  <text x="500" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">
+    From userinit() to Userspace Execution
+  </text>
+
+  <!-- userinit() call -->
+  <g transform="translate(50, 120)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="url(#kernel)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">userinit()</text>
+    <text x="100" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Called from main_after_cr3()</text>
+    <text x="100" y="65" text-anchor="middle" font-family="Arial" font-size="10" fill="white">BOOT_USERINIT state</text>
+  </g>
+
+  <!-- Process allocation -->
+  <g transform="translate(50, 250)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#kernel)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">1. newproc()</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Allocate Proc structure</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">16KB kernel stack</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Process state: Dead→New</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">Procalloc.free list</text>
+  </g>
+
+  <!-- ELF loading from initrd -->
+  <g transform="translate(300, 250)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#kernel)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">2. Load init binary</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Parse ELF64 headers</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Extract program headers</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Get entry point address</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">From embedded initrd</text>
+  </g>
+
+  <!-- Memory segment setup -->
+  <g transform="translate(550, 250)">
+    <rect x="0" y="0" width="200" height="120" rx="8" fill="url(#memory)" stroke="#2563eb" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">3. Setup segments</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">TSEG: Text (0x400000, 16MB)</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">DSEG: Data (0x400000+16MB, 64MB)</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="10" fill="white">SSEG: Stack (USTKTOP-32MB, 32MB)</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Map ELF sections</text>
+    <text x="100" y="100" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">Page table entries</text>
+    <text x="100" y="115" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">User access permissions</text>
+  </g>
+
+  <!-- Exchange page -->
+  <g transform="translate(50, 420)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="url(#memory)" stroke="#2563eb" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">4. Exchange page</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">p9_alloc_page()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">9P IPC communication</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">Shared with kernel</text>
+  </g>
+
+  <!-- Process ready -->
+  <g transform="translate(300, 420)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="url(#kernel)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">5. Ready process</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Set state: PRUNNING</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">ready(p) → scheduler</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">Add to ready queue</text>
+  </g>
+
+  <!-- Scheduler -->
+  <g transform="translate(550, 420)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="url(#kernel)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">6. Scheduler</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="10" fill="white">runproc() selects init</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Context switch to init</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">Switch CR3, stack</text>
+  </g>
+
+  <!-- Userspace transition -->
+  <g transform="translate(300, 550)">
+    <rect x="0" y="0" width="400" height="120" rx="8" fill="url(#user)" stroke="#16a34a" stroke-width="2"/>
+    <text x="200" y="25" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">touser() - Enter Userspace</text>
+    
+    <!-- IRETQ frame -->
+    <g transform="translate(20, 45)">
+      <rect x="0" y="0" width="360" height="65" rx="4" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>
+      <text x="180" y="20" text-anchor="middle" font-family="Arial" font-size="11" font-weight="bold" fill="#15803d">IRETQ Frame (Kernel Stack):</text>
+      <text x="10" y="35" font-family="monospace" font-size="9" fill="#166534">SS    - User data segment (0x2B)</text>
+      <text x="10" y="47" font-family="monospace" font-size="9" fill="#166534">RSP   - User stack pointer</text>
+      <text x="10" y="59" font-family="monospace" font-size="9" fill="#166534">RFLAGS- Interrupts disabled (0x002)</text>
+      <text x="200" y="35" font-family="monospace" font-size="9" fill="#166534">CS    - User code segment (0x33)</text>
+      <text x="200" y="47" font-family="monospace" font-size="9" fill="#166534">RIP   - Entry point (from ELF)</text>
+    </g>
+  </g>
+
+  <!-- Flow arrows -->
+  <!-- userinit to newproc -->
+  <path d="M 150 200 L 150 250" stroke="#f59e0b" stroke-width="3" marker-end="url(#kernelArrow)"/>
+  
+  <!-- newproc to load -->
+  <path d="M 250 300 L 300 300" stroke="#f59e0b" stroke-width="3" marker-end="url(#kernelArrow)"/>
+  
+  <!-- load to segments -->
+  <path d="M 500 300 L 550 300" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow)"/>
+  
+  <!-- segments to exchange -->
+  <path d="M 650 370 L 250 420" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow)"/>
+  
+  <!-- exchange to ready -->
+  <path d="M 250 500 L 300 500" stroke="#f59e0b" stroke-width="3" marker-end="url(#kernelArrow)"/>
+  
+  <!-- ready to scheduler -->
+  <path d="M 500 460 L 550 460" stroke="#f59e0b" stroke-width="3" marker-end="url(#kernelArrow)"/>
+  
+  <!-- scheduler to touser -->
+  <path d="M 650 500 L 500 550" stroke="#16a34a" stroke-width="3" marker-end="url(#userArrow)"/>
+
+  <!-- Address Space Layout -->
+  <g transform="translate(50, 580)">
+    <rect x="0" y="0" width="900" height="100" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#334155">Process Address Space Layout</text>
+    
+    <!-- TSEG -->
+    <rect x="20" y="40" width="120" height="50" rx="4" fill="#dbeafe" stroke="#3b82f6" stroke-width="1"/>
+    <text x="80" y="60" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#1e40af">TSEG</text>
+    <text x="80" y="75" text-anchor="middle" font-family="Arial" font-size="9" fill="#1e40af">0x400000</text>
+    <text x="80" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#1e40af">16MB - Code</text>
+    
+    <!-- DSEG -->
+    <rect x="160" y="40" width="200" height="50" rx="4" fill="#dbeafe" stroke="#3b82f6" stroke-width="1"/>
+    <text x="260" y="60" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#1e40af">DSEG</text>
+    <text x="260" y="75" text-anchor="middle" font-family="Arial" font-size="9" fill="#1e40af">0x400000 + 16MB</text>
+    <text x="260" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#1e40af">64MB - Data/Heap</text>
+    
+    <!-- SSEG -->
+    <rect x="380" y="40" width="150" height="50" rx="4" fill="#dbeafe" stroke="#3b82f6" stroke-width="1"/>
+    <text x="455" y="60" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#1e40af">SSEG</text>
+    <text x="455" y="75" text-anchor="middle" font-family="Arial" font-size="9" fill="#1e40af">USTKTOP-32MB</text>
+    <text x="455" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#1e40af">32MB - Stack</text>
+    
+    <!-- Exchange -->
+    <rect x="550" y="40" width="120" height="50" rx="4" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+    <text x="610" y="60" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#15803d">P9SEG</text>
+    <text x="610" y="75" text-anchor="middle" font-family="Arial" font-size="9" fill="#15803d">4KB</text>
+    <text x="610" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#15803d">9P Exchange</text>
+    
+    <!-- User space -->
+    <rect x="690" y="40" width="180" height="50" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+    <text x="780" y="60" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#92400e">USER SPACE</text>
+    <text x="780" y="75" text-anchor="middle" font-family="Arial" font-size="9" fill="#92400e">Full user address space</text>
+    <text x="780" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#92400e">128TB virtual address</text>
+  </g>
+
+</svg>

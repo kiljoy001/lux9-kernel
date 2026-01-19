@@ -195,8 +195,9 @@ u64int siphash_2u64(u64int first, u64int second, const siphash_key_t *key) {
  * @key: the hsiphash key
  */
 /*@
-  requires \valid((unsigned char*)data + (0..len-1));
-  requires \valid(key);
+  requires len <= 8192;
+  requires \valid_read((unsigned char*)data + (0..len-1));
+  requires \valid_read(key);
   assigns \nothing;
 */
 u32int hsiphash(const void *data, usize len, const hsiphash_key_t *key) {

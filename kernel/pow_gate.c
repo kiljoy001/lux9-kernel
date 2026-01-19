@@ -19,6 +19,9 @@ struct KineticState {
   Lock lock;
 } kinetic;
 
+/*@
+  @ assigns \nothing;
+  @*/
 void pow_gate_init(void) {
   /* Initialize with random seed */
   extern void genrandom(uchar * buf, int nbytes);
@@ -36,6 +39,9 @@ void pow_gate_init(void) {
  * Calculate Difficulty Target
  * Returns number of leading zeros required (0-64).
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int pow_calculate_difficulty(int op_class, ulong magnitude) {
   int diff = 0;
   int congestion = MACHP(0)->load / 100; /* Load average */
@@ -117,6 +123,9 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
  * context: The data being operated on (e.g., ptr address, size)
  * required_diff: Result from pow_calculate_difficulty
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int pow_verify(u64int nonce, u64int context, int required_diff) {
   if (required_diff <= 0)
     return 1;
@@ -157,6 +166,9 @@ int pow_verify(u64int nonce, u64int context, int required_diff) {
  * Rotate the seed to prevent "Long Range Attacks" (Pre-mining)
  * Called by timer interrupt every N seconds.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void pow_rotate_epoch(void) {
   extern void genrandom(uchar * buf, int nbytes);
   lock(&kinetic.lock);

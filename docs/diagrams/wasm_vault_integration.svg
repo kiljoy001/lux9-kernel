@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <style>
+      .exec { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; rx: 10; }
+      .vault { fill: #333; stroke: #000; stroke-width: 2; rx: 10; }
+      .link { stroke: #333; stroke-width: 3; stroke-dasharray: 5,5; marker-end: url(#arrowhead); }
+      .text { font-family: sans-serif; font-size: 14px; fill: #333; text-anchor: middle; }
+      .text-light { font-family: sans-serif; font-size: 14px; fill: #fff; text-anchor: middle; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .label { font-family: sans-serif; font-size: 12px; fill: #666; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="400" y="30" class="title" text-anchor="middle">WASM and Process Vault Integration</text>
+
+  <!-- Execution Plane (WASM) -->
+  <g transform="translate(50, 100)">
+    <rect x="0" y="0" width="300" height="350" class="exec" />
+    <text x="150" y="30" class="title">WASM Linear Memory</text>
+    <text x="150" y="50" class="label">(Execution Scratchpad)</text>
+    
+    <!-- Components -->
+    <rect x="50" y="80" width="200" height="40" fill="#bbdefb" stroke="#1976d2" />
+    <text x="150" y="105" class="text">Stack / Globals</text>
+
+    <rect x="50" y="140" width="200" height="150" fill="#bbdefb" stroke="#1976d2" />
+    <text x="150" y="215" class="text">General Heap</text>
+    
+    <text x="150" y="320" class="text" font-weight="bold" fill="#c62828">Safe Limit: 4GB</text>
+  </g>
+
+  <!-- Process Vault -->
+  <g transform="translate(450, 100)">
+    <rect x="0" y="0" width="300" height="350" class="vault" />
+    <text x="150" y="30" class="text-light" font-weight="bold">Process Vault</text>
+    <text x="150" y="50" class="text-light" font-size="12">(Optional Secure Storage)</text>
+
+    <!-- Components -->
+    <rect x="50" y="80" width="200" height="200" fill="#424242" stroke="#666" />
+    <text x="150" y="150" class="text-light">Encrypted Secrets</text>
+    <text x="150" y="170" class="text-light">(Keys, Certs, PII)</text>
+    <text x="150" y="190" class="text-light">XChaCha20 Protected</text>
+    
+    <text x="150" y="320" class="text-light">Steganographically Hidden</text>
+  </g>
+
+  <!-- Interaction -->
+  <line x1="350" y1="200" x2="450" y2="200" class="link" />
+  <rect x="360" y="180" width="80" height="40" fill="#fff" stroke="#333" rx: 5; />
+  <text x="400" y="205" class="label">Handle Access</text>
+
+</svg>

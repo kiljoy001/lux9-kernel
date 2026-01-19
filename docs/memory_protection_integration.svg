@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- System colors -->
+    <linearGradient id="borrow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#dc2626"/>
+    </linearGradient>
+    <linearGradient id="pebble" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    <linearGradient id="ledger" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+    <linearGradient id="enforcement" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#374151"/>
+    </marker>
+    <marker id="processArrow" markerWidth="14" markerHeight="14" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L0,10 L12,5 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="600" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#1f2937">
+    Memory Protection Integration
+  </text>
+  <text x="600" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">
+    Defense-in-Depth Architecture
+  </text>
+
+  <!-- Top Level: User Process -->
+  <g transform="translate(500, 120)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="#374151" stroke="#111827" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">User Process</text>
+    <text x="100" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Request: Memory Access</text>
+    <text x="100" y="60" text-anchor="middle" font-family="monospace" font-size="10" fill="white">UserCapability cap</text>
+  </g>
+
+  <!-- Level 1: Blind Ledger -->
+  <g transform="translate(50, 250)">
+    <rect x="0" y="0" width="250" height="150" rx="8" fill="url(#ledger)" stroke="#047857" stroke-width="2"/>
+    <text x="125" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">Blind Ledger</text>
+    <text x="125" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Cryptographic Access Control</text>
+    <text x="125" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="white">ledger_verify(cap)</text>
+    <text x="125" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1fae5">• Validate capability hash</text>
+    <text x="125" y="95" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1fae5">• Check permissions</text>
+    <text x="125" y="110" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1fae5">• Verify epoch</text>
+    <text x="125" y="125" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1fae5">• Return entry</text>
+    <text x="125" y="140" text-anchor="middle" font-family="Arial" font-size="8" fill="#ecfdf5">BLAKE2b-256 validation</text>
+  </g>
+
+  <!-- Level 2: Pebble Accounting -->
+  <g transform="translate(475, 250)">
+    <rect x="0" y="0" width="250" height="150" rx="8" fill="url(#pebble)" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="125" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">Pebble Accounting</text>
+    <text x="125" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Token Economics</text>
+    <text x="125" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="white">pebble_check_budget()</text>
+    <text x="125" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">• Check token availability</text>
+    <text x="125" y="95" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">• Calculate PoW difficulty</text>
+    <text x="125" y="110" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">• Verify work completed</text>
+    <text x="125" y="125" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">• Consume tokens</text>
+    <text x="125" y="140" text-anchor="middle" font-family="Arial" font-size="8" fill="#e0f2fe">Economic throttling</text>
+  </g>
+
+  <!-- Level 3: Borrow Checker -->
+  <g transform="translate(900, 250)">
+    <rect x="0" y="0" width="250" height="150" rx="8" fill="url(#borrow)" stroke="#b91c1c" stroke-width="2"/>
+    <text x="125" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">Borrow Checker</text>
+    <text x="125" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Ownership Tracking</text>
+    <text x="125" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="white">borrow_check_ownership()</text>
+    <text x="125" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#fecaca">• Validate ownership</text>
+    <text x="125" y="95" text-anchor="middle" font-family="Arial" font-size="9" fill="#fecaca">• Check borrowing rules</text>
+    <text x="125" y="110" text-anchor="middle" font-family="Arial" font-size="9" fill="#fecaca">• Verify no conflicts</text>
+    <text x="125" y="125" text-anchor="middle" font-family="Arial" font-size="9" fill="#fecaca">• Grant access</text>
+    <text x="125" y="140" text-anchor="middle" font-family="Arial" font-size="8" fill="#fef2f2">Rust semantics</text>
+  </g>
+
+  <!-- Level 4: Runtime Enforcement -->
+  <g transform="translate(475, 450)">
+    <rect x="0" y="0" width="250" height="150" rx="8" fill="url(#enforcement)" stroke="#d97706" stroke-width="2"/>
+    <text x="125" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">Runtime Enforcement</text>
+    <text x="125" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Active Validation</text>
+    <text x="125" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="white">borrow_checked_memmove()</text>
+    <text x="125" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">• Validate actual access</text>
+    <text x="125" y="95" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">• Check ownership again</text>
+    <text x="125" y="110" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">• Monitor operations</text>
+    <text x="125" y="125" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">• Panic on violation</text>
+    <text x="125" y="140" text-anchor="middle" font-family="Arial" font-size="8" fill="#fffbeb">Active protection</text>
+  </g>
+
+  <!-- Physical Memory -->
+  <g transform="translate(475, 650)">
+    <rect x="0" y="0" width="250" height="100" rx="8" fill="#374151" stroke="#111827" stroke-width="2"/>
+    <text x="125" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">Physical Memory</text>
+    <text x="125" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="white">Actual 4KB Pages</text>
+    <text x="125" y="65" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Hardware memory access</text>
+    <text x="125" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1d5db">Protected by all layers above</text>
+  </g>
+
+  <!-- Flow arrows -->
+  <!-- User -> Blind Ledger -->
+  <path d="M 600 200 L 175 250" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="350" y="220" text-anchor="middle" font-family="monospace" font-size="9" fill="#374151">Present capability</text>
+  
+  <!-- Blind Ledger -> Pebble -->
+  <path d="M 300 350 L 475 350" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="387" y="340" text-anchor="middle" font-family="monospace" font-size="9" fill="#374151">Check budget</text>
+  
+  <!-- Pebble -> Borrow Checker -->
+  <path d="M 725 350 L 900 350" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="812" y="340" text-anchor="middle" font-family="monospace" font-size="9" fill="#374151">Validate ownership</text>
+  
+  <!-- Borrow Checker -> Enforcement -->
+  <path d="M 1025 400 L 725 450" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="875" y="420" text-anchor="middle" font-family="monospace" font-size="9" fill="#374151">Enforce access</text>
+  
+  <!-- Enforcement -> Memory -->
+  <path d="M 600 600 L 600 650" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="620" y="630" text-anchor="middle" font-family="monospace" font-size="9" fill="#374151">Perform access</text>
+
+  <!-- Defense-in-Depth Box -->
+  <g transform="translate(50, 50)">
+    <rect x="0" y="0" width="400" height="60" rx="8" fill="#f0f9ff" stroke="#0ea5e9" stroke-width="2"/>
+    <text x="200" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#0c4a6e">Defense-in-Depth Architecture</text>
+    <text x="20" y="45" font-family="Arial" font-size="11" fill="#0c4a6e">• Independent guarantees from each layer</text>
+    <text x="250" y="45" font-family="Arial" font-size="11" fill="#0c4a6e">• Failure of any layer doesn't compromise security</text>
+  </g>
+
+  <!-- Integration Benefits -->
+  <g transform="translate(750, 50)">
+    <rect x="0" y="0" width="400" height="60" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+    <text x="200" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#15803d">Combined Security</text>
+    <text x="20" y="45" font-family="Arial" font-size="11" fill="#15803d">• Cryptographic + Economic + Language + Runtime</text>
+    <text x="250" y="45" font-family="Arial" font-size="11" fill="#15803d">• Multi-layered attack resistance</text>
+  </g>
+
+  <!-- Performance Arrow showing fast path -->
+  <g transform="translate(850, 700)">
+    <rect x="0" y="0" width="300" height="80" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1"/>
+    <text x="150" y="25" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="#334155">Fast Path Performance</text>
+    <text x="20" y="45" font-family="Arial" font-size="10" fill="#475569">• Hash table lookup: O(1)</text>
+    <text x="180" y="45" font-family="Arial" font-size="10" fill="#475569">• Bloom filter: O(1)</text>
+    <text x="20" y="60" font-family="Arial" font-size="10" fill="#475569">• Token validation: O(1)</text>
+    <text x="180" y="60" font-family="Arial" font-size="10" fill="#475569">• Runtime check: ~10ns overhead</text>
+  </g>
+
+</svg>

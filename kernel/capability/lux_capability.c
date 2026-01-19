@@ -1,8 +1,8 @@
 #ifndef __FRAMAC__
-/* clr_capability.c - Capability-Based Security Implementation
+/* lux_capability.c - Capability-Based Security Implementation
  *
  * Implements monotonic capability derivation with properties proven in Coq.
- * See clr_capability.h for detailed documentation and Coq proof references.
+ * See lux_capability.h for detailed documentation and Coq proof references.
  *
  * Key invariants maintained:
  *   1. Permissions can only decrease during derivation
@@ -11,7 +11,7 @@
  *   4. Parent references form valid chains to root
  */
 
-#include "clr_capability.h"
+#include "lux_capability.h"
 
 /* Kernel includes or userspace stubs */
 #ifdef USERSPACE_TEST
@@ -33,7 +33,10 @@
 #define nil NULL
 #else
 /* Kernel mode - use Pebble for tracked allocations */
+#include "../include/dat.h"
+#include "../include/fns.h"
 #include "../include/pebble.h"
+#include "../include/portlib.h"
 #include "../include/u.h"
 
 /* Capability allocations use Pebble for resource tracking */
@@ -59,7 +62,7 @@ static void *pebble_alloc_wrapper(unsigned long size) {
 #endif
 
 /* Global capability manager instance - initialized during kernel boot */
-capability_manager_t *global_cap_manager = nil;
+lux_capability_manager_t *global_cap_manager = nil;
 
 /* ========== Permission Utilities ========== */
 
@@ -70,9 +73,9 @@ capability_manager_t *global_cap_manager = nil;
 /*@
   @ ensures \result == 1 <==> ((a & b) == a);
   @*/
-int cap_perms_subset(u32int a, u32int b) { return (a & b) == a; }
+int lux_cap_perms_subset(u32int a, u32int b) { return (a & b) == a; }
 
-void cap_perms_to_string(u32int perms, char *buf, u32int buflen) {
+void lux_cap_perms_to_string(u32int perms, char *buf, u32int buflen) {
   if (buflen == 0)
     return;
   buf[0] = '\0';
@@ -80,23 +83,23 @@ void cap_perms_to_string(u32int perms, char *buf, u32int buflen) {
   char *p = buf;
   char *end = buf + buflen - 1;
 
-  if (perms & CAP_PERM_READ) {
+  if (perms & LUX_CAP_PERM_READ) {
     int n = snprint(p, end - p, "R");
     p += n;
   }
-  if (perms & CAP_PERM_WRITE) {
+  if (perms & LUX_CAP_PERM_WRITE) {
     int n = snprint(p, end - p, "W");
     p += n;
   }
-  if (perms & CAP_PERM_EXEC) {
+  if (perms & LUX_CAP_PERM_EXEC) {
     int n = snprint(p, end - p, "X");
     p += n;
   }
-  if (perms & CAP_PERM_TRANSFER) {
+  if (perms & LUX_CAP_PERM_TRANSFER) {
     int n = snprint(p, end - p, "T");
     p += n;
   }
-  if (perms & CAP_PERM_GRANT) {
+  if (perms & LUX_CAP_PERM_GRANT) {
     int n = snprint(p, end - p, "G");
     p += n;
   }
@@ -107,19 +110,19 @@ void cap_perms_to_string(u32int perms, char *buf, u32int buflen) {
 
 /* ========== Capability Manager Lifecycle ========== */
 
-capability_manager_t *cap_manager_create(void) {
-  capability_manager_t *mgr = xalloc(sizeof(capability_manager_t));
+lux_capability_manager_t *lux_cap_manager_create(void) {
+  lux_capability_manager_t *mgr = xalloc(sizeof(lux_capability_manager_t));
   if (!mgr)
     return nil;
 
   mgr->capabilities =
-      xalloc(sizeof(clr_monotonic_capability_t) * CAP_TABLE_INITIAL_SIZE);
+      xalloc(sizeof(lux_capability_t) * LUX_CAP_TABLE_INITIAL_SIZE);
   if (!mgr->capabilities) {
     xfree(mgr);
     return nil;
   }
 
-  mgr->capacity = CAP_TABLE_INITIAL_SIZE;
+  mgr->capacity = LUX_CAP_TABLE_INITIAL_SIZE;
   mgr->count = 0;
   mgr->monotonic_time = 1; /* Start at 1, 0 reserved for "no time" */
   mgr->next_cap_id = 1;    /* Start at 1, 0 reserved for "no parent" */
@@ -130,7 +133,7 @@ capability_manager_t *cap_manager_create(void) {
   return mgr;
 }
 
-void cap_manager_destroy(capability_manager_t *manager) {
+void lux_cap_manager_destroy(lux_capability_manager_t *manager) {
   if (!manager)
     return;
 
@@ -151,21 +154,20 @@ void cap_manager_destroy(capability_manager_t *manager) {
 /* ========== Internal Helpers ========== */
 
 /* Grow capability table if needed */
-static int cap_ensure_capacity(capability_manager_t *manager) {
+static int lux_cap_ensure_capacity(lux_capability_manager_t *manager) {
   if (manager->count < manager->capacity)
     return 0;
 
-  if (manager->capacity >= CAP_TABLE_MAX_SIZE) {
-    print("cap: table full, max %d capabilities\n", CAP_TABLE_MAX_SIZE);
+  if (manager->capacity >= LUX_CAP_TABLE_MAX_SIZE) {
+    print("cap: table full, max %d capabilities\n", LUX_CAP_TABLE_MAX_SIZE);
     return -1;
   }
 
   u32int new_cap = manager->capacity * 2;
-  if (new_cap > CAP_TABLE_MAX_SIZE)
-    new_cap = CAP_TABLE_MAX_SIZE;
+  if (new_cap > LUX_CAP_TABLE_MAX_SIZE)
+    new_cap = LUX_CAP_TABLE_MAX_SIZE;
 
-  clr_monotonic_capability_t *new_caps =
-      xalloc(sizeof(clr_monotonic_capability_t) * new_cap);
+  lux_capability_t *new_caps = xalloc(sizeof(lux_capability_t) * new_cap);
   if (!new_caps)
     return -1;
 
@@ -182,12 +184,11 @@ static int cap_ensure_capacity(capability_manager_t *manager) {
 }
 
 /* Allocate a new capability slot */
-static clr_monotonic_capability_t *
-cap_alloc_slot(capability_manager_t *manager) {
-  if (cap_ensure_capacity(manager) != 0)
+static lux_capability_t *lux_cap_alloc_slot(lux_capability_manager_t *manager) {
+  if (lux_cap_ensure_capacity(manager) != 0)
     return nil;
 
-  clr_monotonic_capability_t *cap = &manager->capabilities[manager->count];
+  lux_capability_t *cap = &manager->capabilities[manager->count];
   manager->count++;
 
   /* Initialize with zeros */
@@ -200,7 +201,7 @@ cap_alloc_slot(capability_manager_t *manager) {
   cap->max_permissions = 0;
   cap->creation_time = 0;
   cap->expiration_time = 0;
-  cap->scope = CAP_SCOPE_MODULE;
+  cap->scope = LUX_CAP_SCOPE_MODULE;
   cap->bound_metadata = nil;
   cap->is_validated = 0;
   cap->is_revoked = 0;
@@ -218,34 +219,29 @@ cap_alloc_slot(capability_manager_t *manager) {
  * ACSL Contract:
  *   requires \valid(manager) && \valid(assembly_name);
  *   ensures \result != NULL ==>
- *           \result->scope == CAP_SCOPE_MODULE &&
+ *           \result->scope == LUX_CAP_SCOPE_MODULE &&
  *           \result->parent_id == 0 &&
- *           \result->permissions == CAP_PERM_ALL &&
+ *           \result->permissions == LUX_CAP_PERM_ALL &&
  *           \result->derivation_depth == 0;
  */
 /*@
   @ requires manager != \null && assembly_name != \null;
   @ ensures \result != \null ==>
-  @         \result->scope == CAP_SCOPE_MODULE &&
+  @         \result->scope == LUX_CAP_SCOPE_MODULE &&
   @         \result->parent_id == 0 &&
-  @         \result->permissions == CAP_PERM_ALL &&
+  @         \result->permissions == LUX_CAP_PERM_ALL &&
   @         \result->derivation_depth == 0;
   @*/
-clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
-                                              const char *assembly_name) {
-  print("CAP: create_module ENTER\n");
+lux_capability_t *lux_cap_create_module(lux_capability_manager_t *manager,
+                                        const char *assembly_name) {
   if (!manager || !assembly_name) {
-    print("CAP: create_module NULL args\n");
     return nil;
   }
 
-  print("CAP: calling cap_alloc_slot\n");
-  clr_monotonic_capability_t *cap = cap_alloc_slot(manager);
-  print("CAP: cap_alloc_slot returned %p\n", cap);
+  lux_capability_t *cap = lux_cap_alloc_slot(manager);
   if (!cap)
     return nil;
 
-  print("CAP: calling uuid_new_v8\n");
   /* Generate unique UUID */
   uuid_new_v8(&cap->uuid);
 
@@ -258,15 +254,15 @@ clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
   cap->derivation_depth = 0;
 
   /* Full permissions for root */
-  cap->permissions = CAP_PERM_ALL;
-  cap->max_permissions = CAP_PERM_ALL;
+  cap->permissions = LUX_CAP_PERM_ALL;
+  cap->max_permissions = LUX_CAP_PERM_ALL;
 
   /* Timing */
   cap->creation_time = manager->monotonic_time++;
   cap->expiration_time = 0; /* No expiry */
 
   /* Scope and metadata */
-  cap->scope = CAP_SCOPE_MODULE;
+  cap->scope = LUX_CAP_SCOPE_MODULE;
   cap->bound_metadata = smprint("module:%s", assembly_name);
   cap->is_validated = 1; /* Root is always valid */
   cap->is_revoked = 0;
@@ -282,33 +278,33 @@ clr_monotonic_capability_t *cap_create_module(capability_manager_t *manager,
  *
  * ACSL Contract:
  *   requires \valid(manager) && \valid(parent) && \valid(class_name);
- *   requires cap_perms_subset(permission_mask, parent->permissions);
+ *   requires lux_cap_perms_subset(permission_mask, parent->permissions);
  *   ensures \result != NULL ==>
- *           \result->scope == CAP_SCOPE_CLASS &&
+ *           \result->scope == LUX_CAP_SCOPE_CLASS &&
  *           \result->parent_id == parent->cap_id &&
  *           \result->permissions == permission_mask &&
  *           \result->derivation_depth == parent->derivation_depth + 1 &&
- *           cap_perms_subset(\result->permissions, parent->permissions);
+ *           lux_cap_perms_subset(\result->permissions, parent->permissions);
  */
 /*@
   @ requires manager != \null && parent != \null && class_name != \null;
-  @ requires cap_perms_subset(permission_mask, parent->permissions);
+  @ requires lux_cap_perms_subset(permission_mask, parent->permissions);
   @ ensures \result != \null ==>
-  @         \result->scope == CAP_SCOPE_CLASS &&
+  @         \result->scope == LUX_CAP_SCOPE_CLASS &&
   @         \result->parent_id == parent->cap_id &&
   @         \result->permissions == permission_mask &&
   @         \result->derivation_depth == parent->derivation_depth + 1;
   @*/
-clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
-                                             clr_monotonic_capability_t *parent,
-                                             const char *class_name,
-                                             u32int permission_mask) {
+lux_capability_t *lux_cap_derive_class(lux_capability_manager_t *manager,
+                                       lux_capability_t *parent,
+                                       const char *class_name,
+                                       u32int permission_mask) {
   if (!manager || !parent || !class_name)
     return nil;
 
   /* CRITICAL: Enforce monotonic permission decrease */
   /* This is the key security property proven in DerivationChain.v */
-  if (!cap_perms_subset(permission_mask, parent->permissions)) {
+  if (!lux_cap_perms_subset(permission_mask, parent->permissions)) {
     manager->rejections++;
     print("cap: SECURITY: rejected derivation - requested perms 0x%x "
           "exceed parent perms 0x%x\n",
@@ -324,13 +320,13 @@ clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
   }
 
   /* Parent must have GRANT permission to derive */
-  if (!(parent->permissions & CAP_PERM_GRANT)) {
+  if (!(parent->permissions & LUX_CAP_PERM_GRANT)) {
     manager->rejections++;
     print("cap: rejected derivation - parent lacks GRANT permission\n");
     return nil;
   }
 
-  clr_monotonic_capability_t *cap = cap_alloc_slot(manager);
+  lux_capability_t *cap = lux_cap_alloc_slot(manager);
   if (!cap)
     return nil;
 
@@ -354,7 +350,7 @@ clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
   cap->expiration_time = 0;
 
   /* Scope and metadata */
-  cap->scope = CAP_SCOPE_CLASS;
+  cap->scope = LUX_CAP_SCOPE_CLASS;
   cap->bound_metadata = smprint("class:%s", class_name);
   cap->is_validated = 0; /* Needs explicit validation */
   cap->is_revoked = 0;
@@ -379,20 +375,19 @@ clr_monotonic_capability_t *cap_derive_class(capability_manager_t *manager,
   @ requires manager != \null && child != \null;
   @ ensures \result == 1 ==> child->is_validated == 1;
   @*/
-int cap_validate_chain(capability_manager_t *manager,
-                       clr_monotonic_capability_t *child) {
+int lux_cap_validate_chain(lux_capability_manager_t *manager,
+                           lux_capability_t *child) {
   if (!manager || !child)
     return 0;
 
   manager->validations++;
 
-  clr_monotonic_capability_t *current = child;
-  u32int max_depth = CAP_TABLE_MAX_SIZE; /* Prevent infinite loops */
+  lux_capability_t *current = child;
+  u32int max_depth = LUX_CAP_TABLE_MAX_SIZE; /* Prevent infinite loops */
 
   while (current->parent_id != 0 && max_depth > 0) {
     /* Find parent */
-    clr_monotonic_capability_t *parent =
-        cap_find_by_id(manager, current->parent_id);
+    lux_capability_t *parent = lux_cap_find_by_id(manager, current->parent_id);
     if (!parent) {
       print("cap: chain validation failed - parent %d not found\n",
             current->parent_id);
@@ -406,7 +401,7 @@ int cap_validate_chain(capability_manager_t *manager,
     }
 
     /* Check permission monotonicity */
-    if (!cap_perms_subset(current->permissions, parent->permissions)) {
+    if (!lux_cap_perms_subset(current->permissions, parent->permissions)) {
       print("cap: chain validation failed - permission violation\n");
       return 0;
     }
@@ -422,7 +417,7 @@ int cap_validate_chain(capability_manager_t *manager,
   }
 
   /* Reached root successfully */
-  if (current->scope == CAP_SCOPE_MODULE && current->parent_id == 0) {
+  if (current->scope == LUX_CAP_SCOPE_MODULE && current->parent_id == 0) {
     child->is_validated = 1;
     return 1;
   }
@@ -440,9 +435,10 @@ int cap_validate_chain(capability_manager_t *manager,
 /*@
   @ requires cap == \null || \valid(cap);
   @ ensures cap == \null ==> \result == 0;
-  @ ensures cap != \null ==> (\result == 1 ==> ((cap->permissions & required) == required));
+  @ ensures cap != \null ==> (\result == 1 ==> ((cap->permissions & required) ==
+  required));
   @*/
-int cap_check_permission(clr_monotonic_capability_t *cap, u32int required) {
+int lux_cap_check_permission(lux_capability_t *cap, u32int required) {
   if (!cap)
     return 0;
   if (cap->is_revoked)
@@ -452,8 +448,8 @@ int cap_check_permission(clr_monotonic_capability_t *cap, u32int required) {
 
 /* ========== Lookup Functions ========== */
 
-clr_monotonic_capability_t *cap_find_by_uuid(capability_manager_t *manager,
-                                             const uuid_t *uuid) {
+lux_capability_t *lux_cap_find_by_uuid(lux_capability_manager_t *manager,
+                                       const uuid_t *uuid) {
   if (!manager || !uuid)
     return nil;
 
@@ -466,8 +462,8 @@ clr_monotonic_capability_t *cap_find_by_uuid(capability_manager_t *manager,
   return nil;
 }
 
-clr_monotonic_capability_t *cap_find_by_id(capability_manager_t *manager,
-                                           u32int cap_id) {
+lux_capability_t *lux_cap_find_by_id(lux_capability_manager_t *manager,
+                                     u32int cap_id) {
   if (!manager || cap_id == 0)
     return nil;
 
@@ -482,7 +478,7 @@ clr_monotonic_capability_t *cap_find_by_id(capability_manager_t *manager,
 
 /* ========== Debug Functions ========== */
 
-void cap_dump(clr_monotonic_capability_t *cap) {
+void lux_cap_dump(lux_capability_t *cap) {
   if (!cap) {
     print("cap: (null)\n");
     return;
@@ -492,17 +488,17 @@ void cap_dump(clr_monotonic_capability_t *cap) {
   uuid_unparse(&cap->uuid, uuid_str);
 
   char perms_str[16];
-  cap_perms_to_string(cap->permissions, perms_str, sizeof(perms_str));
+  lux_cap_perms_to_string(cap->permissions, perms_str, sizeof(perms_str));
 
   const char *scope_str = "?";
   switch (cap->scope) {
-  case CAP_SCOPE_MODULE:
+  case LUX_CAP_SCOPE_MODULE:
     scope_str = "MODULE";
     break;
-  case CAP_SCOPE_CLASS:
+  case LUX_CAP_SCOPE_CLASS:
     scope_str = "CLASS";
     break;
-  case CAP_SCOPE_METHOD:
+  case LUX_CAP_SCOPE_METHOD:
     scope_str = "METHOD";
     break;
   }
@@ -513,7 +509,7 @@ void cap_dump(clr_monotonic_capability_t *cap) {
         cap->is_revoked ? " [REVOKED]" : "");
 }
 
-void cap_manager_dump_stats(capability_manager_t *manager) {
+void lux_cap_manager_dump_stats(lux_capability_manager_t *manager) {
   if (!manager) {
     print("cap_manager: (null)\n");
     return;

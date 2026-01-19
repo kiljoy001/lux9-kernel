@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Process colors -->
+    <linearGradient id="running_proc" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+    <linearGradient id="next_proc" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    <linearGradient id="scheduler" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#374151"/>
+    </marker>
+    <marker id="processArrow" markerWidth="14" markerHeight="14" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L0,10 L12,5 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#1f2937">
+    Context Switch Flow
+  </text>
+  <text x="500" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">
+    From Running Process to Scheduler to Next Process
+  </text>
+
+  <!-- Current Running Process -->
+  <g transform="translate(50, 150)">
+    <rect x="0" y="0" width="200" height="150" rx="8" fill="url(#running_proc)" stroke="#047857" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">Running Process</text>
+    
+    <!-- Process state -->
+    <rect x="10" y="40" width="180" height="30" rx="4" fill="#ffffff" stroke="#047857" stroke-width="1"/>
+    <text x="100" y="60" text-anchor="middle" font-family="monospace" font-size="12" fill="#047857">STATE: RUNNING</text>
+    
+    <!-- CPU context -->
+    <rect x="10" y="80" width="180" height="40" rx="4" fill="#ecfdf5" stroke="#047857" stroke-width="1"/>
+    <text x="100" y="95" text-anchor="middle" font-family="Arial" font-size="11" fill="#047857">Register State:</text>
+    <text x="100" y="110" text-anchor="middle" font-family="monospace" font-size="10" fill="#047857">RSP, RFLAGS, etc.</text>
+    
+    <!-- Process info -->
+    <text x="100" y="130" text-anchor="middle" font-family="Arial" font-size="10" fill="white">PID: 1234</text>
+    <text x="100" y="145" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Priority: 5</text>
+  </g>
+
+  <!-- Scheduler -->
+  <g transform="translate(400, 150)">
+    <rect x="0" y="0" width="200" height="150" rx="8" fill="url(#scheduler)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">Scheduler</text>
+    
+    <!-- Scheduler state -->
+    <rect x="10" y="40" width="180" height="30" rx="4" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+    <text x="100" y="60" text-anchor="middle" font-family="monospace" font-size="12" fill="#d97706">SCHEDULING</text>
+    
+    <!-- Selection logic -->
+    <rect x="10" y="80" width="180" height="40" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1"/>
+    <text x="100" y="95" text-anchor="middle" font-family="Arial" font-size="11" fill="#d97706">runproc() selects next</text>
+    <text x="100" y="110" text-anchor="middle" font-family="monospace" font-size="10" fill="#d97706">Based on priority</text>
+    
+    <!-- Selection criteria -->
+    <text x="100" y="130" text-anchor="middle" font-family="Arial" font-size="10" fill="white">CPU affinity</text>
+    <text x="100" y="145" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Load balancing</text>
+  </g>
+
+  <!-- Next Process -->
+  <g transform="translate(750, 150)">
+    <rect x="0" y="0" width="200" height="150" rx="8" fill="url(#next_proc)" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">Next Process</text>
+    
+    <!-- Process state -->
+    <rect x="10" y="40" width="180" height="30" rx="4" fill="#ffffff" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="100" y="60" text-anchor="middle" font-family="monospace" font-size="12" fill="#1d4ed8">STATE: READY</text>
+    
+    <!-- CPU context -->
+    <rect x="10" y="80" width="180" height="40" rx="4" fill="#eff6ff" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="100" y="95" text-anchor="middle" font-family="Arial" font-size="11" fill="#1d4ed8">Register State:</text>
+    <text x="100" y="110" text-anchor="middle" font-family="monospace" font-size="10" fill="#1d4ed8">Saved from last run</text>
+    
+    <!-- Process info -->
+    <text x="100" y="130" text-anchor="middle" font-family="Arial" font-size="10" fill="white">PID: 5678</text>
+    <text x="100" y="145" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Priority: 7</text>
+  </g>
+
+  <!-- Context Switch Flow Arrows -->
+  
+  <!-- Running -> Scheduler (yield) -->
+  <path d="M 250 225 L 400 225" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="325" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#374151">sched()</text>
+  <text x="325" y="225" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Voluntary yield</text>
+  
+  <!-- Scheduler selection -->
+  <path d="M 500 225 L 750 225" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="625" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#374151">runproc()</text>
+  <text x="625" y="225" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Select next process</text>
+  
+  <!-- Scheduler -> Next (context switch) -->
+  <path d="M 750 300 L 750 350" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="770" y="330" text-anchor="start" font-family="monospace" font-size="11" fill="#374151">switch()</text>
+  <text x="770" y="345" text-anchor="start" font-family="Arial" font-size="9" fill="#6b7280">Context switch</text>
+
+  <!-- Detailed Context Switch Steps -->
+  <g transform="translate(50, 350)">
+    <rect x="0" y="0" width="900" height="120" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#334155">Context Switch Steps</text>
+    
+    <!-- Step 1 -->
+    <rect x="20" y="45" width="180" height="65" rx="4" fill="#ffffff" stroke="#64748b" stroke-width="1"/>
+    <text x="110" y="65" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="#334155">1. Save State</text>
+    <text x="110" y="82" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">Save current process</text>
+    <text x="110" y="97" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">registers to Proc</text>
+    
+    <!-- Step 2 -->
+    <rect x="240" y="45" width="180" height="65" rx="4" fill="#ffffff" stroke="#64748b" stroke-width="1"/>
+    <text x="330" y="65" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="#334155">2. Select Next</text>
+    <text x="330" y="82" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">runproc() chooses</text>
+    <text x="330" y="97" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">highest priority</text>
+    
+    <!-- Step 3 -->
+    <rect x="460" y="45" width="180" height="65" rx="4" fill="#ffffff" stroke="#64748b" stroke-width="1"/>
+    <text x="550" y="65" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="#334155">3. Load State</text>
+    <text x="550" y="82" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">Load next process</text>
+    <text x="550" y="97" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">registers from Proc</text>
+    
+    <!-- Step 4 -->
+    <rect x="680" y="45" width="180" height="65" rx="4" fill="#ffffff" stroke="#64748b" stroke-width="1"/>
+    <text x="770" y="65" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="#334155">4. Update State</text>
+    <text x="770" y="82" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">Switch CR3, Mach</text>
+    <text x="770" y="97" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">Begin execution</text>
+  </g>
+
+  <!-- Register State Details -->
+  <g transform="translate(50, 500)">
+    <rect x="0" y="0" width="900" height="100" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#15803d">Register State Saved/Restored</text>
+    
+    <text x="20" y="50" font-family="monospace" font-size="11" fill="#15803d">• General purpose: RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP</text>
+    <text x="20" y="70" font-family="monospace" font-size="11" fill="#15803d">• Instruction pointer: RIP, Flags: RFLAGS</text>
+    <text x="20" y="90" font-family="monospace" font-size="11" fill="#15803d">• Segment registers: CS, SS, DS, ES, FS, GS</text>
+    
+    <text x="450" y="50" font-family="monospace" font-size="11" fill="#15803d">• Control registers: CR3 (page table root)</text>
+    <text x="450" y="70" font-family="monospace" font-size="11" fill="#15803d">• Debug registers: DR0-DR7</text>
+    <text x="450" y="90" font-family="monospace" font-size="11" fill="#15803d">• FPU/SSE state: XMM, YMM registers</text>
+  </g>
+
+  <!-- Performance Notes -->
+  <g transform="translate(50, 630)">
+    <rect x="0" y="0" width="900" height="50" rx="8" fill="#fef2f2" stroke="#f87171" stroke-width="1"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#dc2626">Context Switch Overhead</text>
+    <text x="20" y="45" font-family="Arial" font-size="11" fill="#dc2626">• ~1-2 microseconds on modern x86_64 CPUs</text>
+    <text x="450" y="45" font-family="Arial" font-size="11" fill="#dc2626">• TLB flush required when switching CR3</text>
+  </g>
+
+</svg>

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <defs>
+    <style>
+      .kernel { fill: #fff3e0; stroke: #e65100; stroke-width: 2; rx: 10; }
+      .guard { fill: #ffebee; stroke: #c62828; stroke-width: 1; stroke-dasharray: 5,5; }
+      .linear { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; }
+      .module { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; }
+      .shim { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 2; rx: 5; }
+      .arrow { stroke: #333; stroke-width: 2; marker-end: url(#arrowhead); }
+      .text { font-family: monospace; font-size: 14px; fill: #333; text-anchor: middle; }
+      .label { font-family: sans-serif; font-size: 12px; fill: #666; text-anchor: middle; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="400" y="30" class="title" text-anchor="middle">WASM Layer 1 Isolation Architecture</text>
+
+  <!-- Kernel Host Environment -->
+  <rect x="50" y="50" width="700" height="500" class="kernel" />
+  <text x="400" y="80" class="title">Kernel Host Space (Ring 0)</text>
+
+  <!-- Isolation Sandbox -->
+  <g transform="translate(200, 120)">
+    <!-- Lower Guard Page -->
+    <rect x="0" y="0" width="400" height="30" class="guard" />
+    <text x="200" y="20" class="label">Guard Page (8KB) - Catch Underflow</text>
+
+    <!-- Linear Memory -->
+    <rect x="0" y="30" width="400" height="200" class="linear" />
+    <text x="200" y="50" class="text" font-weight="bold">Linear Memory (Max 4GB)</text>
+    <text x="200" y="70" class="label">WASM Heap / Stack</text>
+    <text x="200" y="100" class="label">Isolated from Kernel Allocator</text>
+
+    <!-- Module Code -->
+    <rect x="50" y="130" width="300" height="80" class="module" />
+    <text x="200" y="160" class="text">WASM Module Bytecode</text>
+    <text x="200" y="180" class="label">(ReadOnly)</text>
+
+    <!-- Upper Guard Page -->
+    <rect x="0" y="230" width="400" height="30" class="guard" />
+    <text x="200" y="250" class="label">Guard Page (8KB) - Catch Overflow</text>
+  </g>
+
+  <!-- WASI Shim Interface -->
+  <g transform="translate(100, 420)">
+    <rect x="0" y="0" width="600" height="100" class="shim" />
+    <text x="300" y="30" class="text" font-weight="bold">WASI Lux9 Shim (wasi_lux9_shim.c)</text>
+    
+    <!-- Translation Flow -->
+    <text x="100" y="60" class="text">wasi_fd_read</text>
+    <text x="200" y="60" class="arrow">→</text>
+    <text x="300" y="60" class="text">Map FD to FID</text>
+    <text x="400" y="60" class="arrow">→</text>
+    <text x="500" y="60" class="text">9P Tread</text>
+  </g>
+
+  <!-- Connection Arrows -->
+  <line x1="400" y1="380" x2="400" y2="420" class="arrow" />
+  <text x="450" y="400" class="label">WASI Imports</text>
+
+</svg>

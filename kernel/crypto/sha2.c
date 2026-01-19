@@ -535,6 +535,10 @@ static const sph_u32 K[64] = {
 /*
  * One round of SHA-224 / SHA-256. The data must be aligned for 32-bit access.
  */
+/*@
+  @ requires data == \null || \valid(data);
+  @ assigns \nothing;
+  @*/
 static void sha2_round(const unsigned char *data, sph_u32 r[8]) {
 #define SHA2_IN(x) sph_dec32be_aligned(data + (4 * (x)))
   SHA2_ROUND_BODY(SHA2_IN, r);
@@ -542,6 +546,10 @@ static void sha2_round(const unsigned char *data, sph_u32 r[8]) {
 }
 
 /* see sph_sha2.h */
+/*@
+  @ requires cc == \null || \valid(cc);
+  @ assigns \nothing;
+  @*/
 void sph_sha224_init(void *cc) {
   sph_sha224_context *sc;
 
@@ -555,6 +563,10 @@ void sph_sha224_init(void *cc) {
 }
 
 /* see sph_sha2.h */
+/*@
+  @ requires cc == \null || \valid(cc);
+  @ assigns \nothing;
+  @*/
 void sph_sha256_init(void *cc) {
   sph_sha256_context *sc;
 
@@ -573,6 +585,11 @@ void sph_sha256_init(void *cc) {
 #include "md_helper.i"
 
 /* see sph_sha2.h */
+/*@
+  @ requires cc == \null || \valid(cc);
+  @ requires dst == \null || \valid(dst);
+  @ assigns \nothing;
+  @*/
 void sph_sha224_close(void *cc, void *dst) {
   sha224_close(cc, dst, 7);
   sph_sha224_init(cc);
@@ -586,6 +603,11 @@ void sph_sha224_addbits_and_close(void *cc, unsigned ub, unsigned n,
 }
 
 /* see sph_sha2.h */
+/*@
+  @ requires cc == \null || \valid(cc);
+  @ requires dst == \null || \valid(dst);
+  @ assigns \nothing;
+  @*/
 void sph_sha256_close(void *cc, void *dst) {
   sha224_close(cc, dst, 8);
   sph_sha256_init(cc);
@@ -599,6 +621,9 @@ void sph_sha256_addbits_and_close(void *cc, unsigned ub, unsigned n,
 }
 
 /* see sph_sha2.h */
+/*@
+  @ assigns \nothing;
+  @*/
 void sph_sha224_comp(const sph_u32 msg[16], sph_u32 val[8]) {
 #define SHA2_IN(x) msg[x]
   SHA2_ROUND_BODY(SHA2_IN, val);

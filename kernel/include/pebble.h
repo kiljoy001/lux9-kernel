@@ -15,7 +15,7 @@
 #define PEBBLE_DEFAULT_BUDGET 0 /* per-process starts at 0 (caller-managed) */
 #define PEBBLE_BOOT_BUDGET (256 * 1024 * 1024) /* 256 MiB for boot kernel */
 #define PEBBLE_INIT_BUDGET                                                     \
-  (64 * 1024 * 1024) /* 64 MiB for init/proc0 bootstrap */
+  (256 * 1024 * 1024) /* 256MB initial budget for init/proc0 */
 #define PEBBLE_MAX_TOKENS 4096
 #define PEBBLE_DEBUG 1 /* Enable debug output for arena testing */
 
@@ -176,6 +176,14 @@ typedef struct PebbleState {
   int white_head;
 } PebbleState;
 
+/*@
+  @ predicate pebble_state_valid(PebbleState *ps) =
+  @   \valid(ps) &&
+  @   ps->colorless_bank + ps->black_inuse + ps->blue_inuse + ps->red_inuse <=
+  pebble_total_system_tokens &&
+  @   ps->white_pending <= ps->colorless_bank;
+  @*/
+
 /*
  * Arena Branch Bank - Per-Container Resource Management
  *
@@ -247,20 +255,21 @@ void pebble_red_blue_exit(void);
 
 /*@ requires ps != \null;
   @ requires \valid(ps);
-  @ requires data == \null || \valid((uchar*)data + (0..(integer)size-1));
-  @ requires size > 0;
+  @ requires white != \null && \valid(white);
+  @ requires white->data_ptr == \null || \valid((uchar*)white->data_ptr +
+  (0..(integer)white->size-1));
+  @ requires white->size > 0;
   @ terminates \true;
-  @ assigns ps->whites[0..PEBBLE_MAX_TOKENS-1],
-  ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  @ assigns ps->whites[0..4095],
+  @         ps->whites_active[0..4095],
   @         ps->white_generation, ps->white_head, ps->white_pending;
-  @ ensures \result != \null ==> \valid(\result);
-  @ ensures \result != \null ==> \result->size == size;
+  @ ensures \result != 0 ==> \result == 1;
   @ behavior success:
-  @   assumes ps->white_pending + size <= ps->colorless_bank;
-  @   ensures \result != \null;
+  @   assumes ps->white_pending + white->size <= ps->colorless_bank;
+  @   ensures \result == 1;
   @ behavior failure:
-  @   assumes ps->white_pending + size > ps->colorless_bank;
-  @   ensures \result == \null;
+  @   assumes ps->white_pending + white->size > ps->colorless_bank;
+  @   ensures \result == 0;
   @ complete behaviors;
   @ disjoint behaviors;
   */
@@ -270,22 +279,22 @@ int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white);
   @ requires data == \null || \valid((uchar*)data + (0..(integer)size-1));
   @ requires size > 0 && size <= ps->colorless_bank;
   @ terminates \true;
-  @ assigns ps->whites[0..PEBBLE_MAX_TOKENS-1],
-  ps->whites_active[0..PEBBLE_MAX_TOKENS-1],
+  @ assigns ps->whites[0..4095],
+  ps->whites_active[0..4095],
   @         ps->white_generation, ps->white_head, ps->white_pending;
   @ ensures \result != \null ==> \valid(\result);
   @ ensures \result != \null ==> \result->data_ptr == data;
   @ ensures \result != \null ==> \result->size == size;
-  @ ensures \result == \null || (\result->token < PEBBLE_MAX_TOKENS &&
+  @ ensures \result == \null || (\result->token < 4096 &&
   ps->whites_active[\result->token] != 0);
   */
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size);
 
 /*@ requires ps != \null && \valid(ps);
   @ requires white != \null ==> \valid(white);
-  @ requires white != \null ==> white->token < PEBBLE_MAX_TOKENS;
+  @ requires white != \null ==> white->token < 4096;
   @ terminates \true;
-  @ assigns ps->whites_active[0..PEBBLE_MAX_TOKENS-1], ps->white_pending;
+  @ assigns ps->whites_active[0..4095], ps->white_pending;
   */
 void pebble_return_white(PebbleState *ps, PebbleWhite *white);
 
@@ -296,6 +305,12 @@ void pebble_return_white(PebbleState *ps, PebbleWhite *white);
   @ ensures \result == \null || \valid(\result);
   */
 PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle);
+/*@ requires ps != \null && \valid(ps);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  */
+PebbleBlack *pebble_lookup_black_by_addr(PebbleState *ps, void *addr);
 int pebble_blue_exists(PebbleState *ps, PebbleBlue *blue);
 int pebble_has_matching_red(PebbleState *ps, PebbleBlue *blue);
 PebbleRed *pebble_duplicate_blue(PebbleState *ps, PebbleBlue *blue);
@@ -308,7 +323,7 @@ void pebble_sip_issue_test(void);
 
 /* Debug support */
 #if PEBBLE_DEBUG
-#define pebble_dprint(fmt, ...) print("PEBBLE: " fmt "\n", ##__VA_ARGS__)
+#define pebble_dprint(fmt, ...) bprint("PEBBLE: " fmt "\n", ##__VA_ARGS__)
 #else
 #define pebble_dprint(fmt, ...)
 #endif

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Token colors -->
+    <linearGradient id="colorless" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e5e7eb"/>
+      <stop offset="100%" style="stop-color:#9ca3af"/>
+    </linearGradient>
+    <linearGradient id="white" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#f3f4f6"/>
+    </linearGradient>
+    <linearGradient id="black" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1f2937"/>
+      <stop offset="100%" style="stop-color:#111827"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#dc2626"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#374151"/>
+    </marker>
+    <marker id="processArrow" markerWidth="14" markerHeight="14" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L0,10 L12,5 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#1f2937">
+    Pebble Token Flow
+  </text>
+  <text x="500" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">
+    Token Lifecycle and State Transitions
+  </text>
+
+  <!-- Central Bank -->
+  <g transform="translate(450, 350)">
+    <circle cx="50" cy="50" r="60" fill="url(#colorless)" stroke="#6b7280" stroke-width="3"/>
+    <text x="50" y="45" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#374151">COLORLESS</text>
+    <text x="50" y="65" text-anchor="middle" font-family="Arial" font-size="11" fill="#374151">Global Bank</text>
+    <text x="50" y="80" text-anchor="middle" font-family="Arial" font-size="9" fill="#374151">Free Pool</text>
+  </g>
+
+  <!-- WHITE Token - Top Right -->
+  <g transform="translate(650, 200)">
+    <circle cx="50" cy="50" r="45" fill="url(#white)" stroke="#d1d5db" stroke-width="2"/>
+    <text x="50" y="45" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="#374151">WHITE</text>
+    <text x="50" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Reserved</text>
+    <text x="50" y="75" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">issue_white()</text>
+  </g>
+
+  <!-- BLACK Token - Bottom Right -->
+  <g transform="translate(650, 500)">
+    <circle cx="50" cy="50" r="45" fill="url(#black)" stroke="#374151" stroke-width="2"/>
+    <text x="50" y="45" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">BLACK</text>
+    <text x="50" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#d1d5db">Owned</text>
+    <text x="50" y="75" text-anchor="middle" font-family="monospace" font-size="8" fill="#d1d5db">verify()</text>
+  </g>
+
+  <!-- RED Token - Top Left -->
+  <g transform="translate(250, 200)">
+    <circle cx="50" cy="50" r="45" fill="url(#red)" stroke="#b91c1c" stroke-width="2"/>
+    <text x="50" y="45" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">RED</text>
+    <text x="50" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#fecaca">Snapshot</text>
+    <text x="50" y="75" text-anchor="middle" font-family="monospace" font-size="8" fill="#fecaca">red_alloc()</text>
+  </g>
+
+  <!-- BLUE Token - Bottom Left -->
+  <g transform="translate(250, 500)">
+    <circle cx="50" cy="50" r="45" fill="url(#blue)" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="50" y="45" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">BLUE</text>
+    <text x="50" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">I/O Buffer</text>
+    <text x="50" y="75" text-anchor="middle" font-family="monospace" font-size="8" fill="#dbeafe">blue_alloc()</text>
+  </g>
+
+  <!-- Main Flow Arrows -->
+  <!-- COLORLESS -> WHITE (issue) -->
+  <path d="M 510 350 L 650 230" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="580" y="280" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">issue_white()</text>
+  <text x="580" y="295" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Reserve tokens</text>
+  
+  <!-- WHITE -> BLACK (verify) -->
+  <path d="M 700 250 L 700 450" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="720" y="350" text-anchor="start" font-family="monospace" font-size="10" fill="#374151">verify()</text>
+  <text x="720" y="365" text-anchor="start" font-family="Arial" font-size="9" fill="#6b7280">Convert to usable</text>
+  
+  <!-- BLACK -> COLORLESS (free) -->
+  <path d="M 650 500 L 510 410" stroke="#374151" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <text x="580" y="470" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">black_free()</text>
+  <text x="580" y="485" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Return to pool</text>
+
+  <!-- BLUE flow -->
+  <!-- COLORLESS -> BLUE -->
+  <path d="M 400 350 L 250 470" stroke="#3b82f6" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="320" y="410" text-anchor="middle" font-family="monospace" font-size="10" fill="#1d4ed8">blue_alloc()</text>
+  <text x="320" y="425" text-anchor="middle" font-family="Arial" font-size="9" fill="#1d4ed8">I/O allocation</text>
+  
+  <!-- BLUE -> COLORLESS -->
+  <path d="M 250 470 L 400 350" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <text x="320" y="420" text-anchor="middle" font-family="monospace" font-size="10" fill="#1d4ed8">blue_free()</text>
+  
+  <!-- RED flow -->
+  <!-- COLORLESS -> RED -->
+  <path d="M 400 350 L 250 230" stroke="#ef4444" stroke-width="3" marker-end="url(#processArrow)"/>
+  <text x="320" y="290" text-anchor="middle" font-family="monospace" font-size="10" fill="#dc2626">red_alloc()</text>
+  <text x="320" y="305" text-anchor="middle" font-family="Arial" font-size="9" fill="#dc2626">Snapshot allocation</text>
+  
+  <!-- RED -> COLORLESS -->
+  <path d="M 250 230 L 400 350" stroke="#ef4444" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <text x="320" y="300" text-anchor="middle" font-family="monospace" font-size="10" fill="#dc2626">red_free()</text>
+
+  <!-- Special: BLUE -> RED (snapshot) -->
+  <path d="M 300 500 L 300 250" stroke="#f59e0b" stroke-width="3" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
+  <text x="320" y="380" text-anchor="start" font-family="monospace" font-size="11" font-weight="bold" fill="#d97706">snapshot()</text>
+  <text x="320" y="395" text-anchor="start" font-family="Arial" font-size="9" fill="#d97706">Copy-on-write</text>
+
+  <!-- Process Box -->
+  <g transform="translate(50, 650)">
+    <rect x="0" y="0" width="900" height="120" rx="8" fill="#f0f9ff" stroke="#0ea5e9" stroke-width="2"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="#0c4a6e">Token Economics</text>
+    
+    <text x="20" y="50" font-family="Arial" font-size="11" fill="#0c4a6e">• 1 Token = 8 bytes of authorization</text>
+    <text x="280" y="50" font-family="Arial" font-size="11" fill="#0c4a6e">• WHITE tokens are fungible budget</text>
+    <text x="560" y="50" font-family="Arial" font-size="11" fill="#0c4a6e">• BLACK tokens are reified identity</text>
+    
+    <text x="20" y="75" font-family="Arial" font-size="11" fill="#0c4a6e">• PoW required for expensive operations</text>
+    <text x="280" y="75" font-family="Arial" font-size="11" fill="#0c4a6e">• Difficulty adjusts with system load</text>
+    <text x="560" y="75" font-family="Arial" font-size="11" fill="#0c4a6e">• Token scarcity creates natural backpressure</text>
+    
+    <text x="20" y="100" font-family="Arial" font-size="11" fill="#0c4a6e">• Anti-spam: Expensive operations require work</text>
+    <text x="280" y="100" font-family="Arial" font-size="11" fill="#0c4a6e">• Fairness: Limited resources to willing workers</text>
+    <text x="560" y="100" font-family="Arial" font-size="11" fill="#0c4a6e">• Scarcity: Global bank throttles abuse</text>
+  </g>
+
+</svg>

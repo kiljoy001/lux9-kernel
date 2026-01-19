@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="1600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradients for different state types -->
+    <linearGradient id="initialGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ade80"/>
+      <stop offset="100%" style="stop-color:#22c55e"/>
+    </linearGradient>
+    <linearGradient id="stateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="finalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f87171"/>
+      <stop offset="100%" style="stop-color:#ef4444"/>
+    </linearGradient>
+    
+    <!-- Arrow marker -->
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#374151"/>
+    </marker>
+    
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="600" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1f2937">
+    Lux9 Boot State Machine
+  </text>
+  <text x="600" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#6b7280">
+    20-State Sequential Boot Process (Actual Implementation)
+  </text>
+
+  <!-- Boot States -->
+  <!-- Initial State -->
+  <g transform="translate(520, 100)">
+    <circle cx="80" cy="40" r="40" fill="url(#initialGrad)" stroke="#059669" stroke-width="3" filter="url(#shadow)"/>
+    <text x="80" y="35" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">entry()</text>
+    <text x="80" y="50" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Assembly Entry</text>
+  </g>
+
+  <!-- main() Early C Init -->
+  <g transform="translate(520, 200)">
+    <rect x="0" y="0" width="160" height="80" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="80" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">main()</text>
+    <text x="80" y="45" text-anchor="middle" font-family="Arial" font-size="10" fill="white">Early C Init</text>
+    <text x="80" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">mach0init, UART, IDT</text>
+  </g>
+
+  <!-- CR3 Switch -->
+  <g transform="translate(520, 320)">
+    <rect x="0" y="0" width="160" height="80" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="80" y="25" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">CR3 Switch</text>
+    <text x="80" y="45" text-anchor="middle" font-family="Arial" font-size="10" fill="white">setuppagetables()</text>
+    <text x="80" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Page Table Transition</text>
+  </g>
+
+  <!-- BOOT_XINIT -->
+  <g transform="translate(50, 450)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_XINIT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">xinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Bootstrap Allocator</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Hole-based allocation</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Xhdr headers</text>
+  </g>
+
+  <!-- BOOT_MEM_COORD -->
+  <g transform="translate(300, 450)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_MEM_COORD</text>
+    <text x="100" y="40" text-anchor="middle" font-family="Arial" font-size="9" fill="white">establish_memory_ownership</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="white">_zones_dynamic()</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#e0e7ff">Dynamic Memory Zones</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#e0e7ff">Boot Coordination</text>
+  </g>
+
+  <!-- BOOT_PAGES_OWN -->
+  <g transform="translate(550, 450)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_PAGES_OWN</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">pageowninit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Page Ownership Tracking</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Borrow Checker Integration</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Plan 9 Compatibility</text>
+  </g>
+
+  <!-- BOOT_EXCHANGE -->
+  <g transform="translate(800, 450)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_EXCHANGE</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">exchangeinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Exchange Page Infrastructure</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">64-page pool allocation</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">9P IPC ready</text>
+  </g>
+
+  <!-- BOOT_TRAP -->
+  <g transform="translate(50, 600)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_TRAP</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">trapinit()</text>
+    <text x="100" y="50" text-anchor="middle" font-family="monospace" font-size="10" fill="white">mathinit()</text>
+    <text x="100" y="65" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Full IDT Setup</text>
+    <text x="100" y="80" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">256 interrupt vectors</text>
+  </g>
+
+  <!-- BOOT_ARCH -->
+  <g transform="translate(300, 600)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_ARCH</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">intrinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Architecture-specific</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">ACPI, LAPIC, IOAPIC</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">CPU enumeration</text>
+  </g>
+
+  <!-- BOOT_PROC_INIT -->
+  <g transform="translate(550, 600)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_PROC_INIT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">procinit0()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Process Table</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">NPROC array allocation</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Process state machine</text>
+  </g>
+
+  <!-- BOOT_SEG_INIT -->
+  <g transform="translate(800, 600)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_SEG_INIT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">initseg()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Segment Allocator</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">TSEG, DSEG, SSEG</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Memory segmentation</text>
+  </g>
+
+  <!-- BOOT_LINKS -->
+  <g transform="translate(50, 750)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_LINKS</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">links()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Device Links</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Character devices</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Block devices</text>
+  </g>
+
+  <!-- BOOT_IO -->
+  <g transform="translate(300, 750)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_IO</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">iomapinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">I/O Port Allocator</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">0x0000-0xFFFF ports</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Port allocation bitmap</text>
+  </g>
+
+  <!-- BOOT_CHANDEV_RESET -->
+  <g transform="translate(550, 750)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_CHANDEV_RESET</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">chandevreset()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Device Reset</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Reset all char devices</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Before initialization</text>
+  </g>
+
+  <!-- BOOT_PAGEK -->
+  <g transform="translate(800, 750)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_PAGEK</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">pageinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Page Allocator</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Physical page tracking</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Free list management</text>
+  </g>
+
+  <!-- BOOT_PRINT -->
+  <g transform="translate(50, 900)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_PRINT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">printinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Print Buffer</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Kernel message buffer</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Deferred printing</text>
+  </g>
+
+  <!-- BOOT_TPM -->
+  <g transform="translate(300, 900)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_TPM</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">tpminit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">TPM 2.0 Driver</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Hardware security</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Key generation</text>
+  </g>
+
+  <!-- BOOT_MSGORD -->
+  <g transform="translate(550, 900)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_MSGORD</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">msgord_init()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Consensus Subsystem</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">k=3 parameter</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Message ordering</text>
+  </g>
+
+  <!-- BOOT_CRYPTO -->
+  <g transform="translate(800, 900)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_CRYPTO</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">crypto_tpm_key_init()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Crypto Subsystem</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">TPM-backed keys</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Cryptographic ops</text>
+  </g>
+
+  <!-- BOOT_CHANDEV_INIT -->
+  <g transform="translate(300, 1050)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_CHANDEV_INIT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">chandevinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">Character Devices</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">/dev/cons, /dev/mem</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Device initialization</text>
+  </g>
+
+  <!-- BOOT_USERINIT -->
+  <g transform="translate(550, 1050)">
+    <rect x="0" y="0" width="200" height="100" rx="8" fill="url(#stateGrad)" stroke="#1d4ed8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="100" y="20" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="white">BOOT_USERINIT</text>
+    <text x="100" y="40" text-anchor="middle" font-family="monospace" font-size="10" fill="white">userinit()</text>
+    <text x="100" y="55" text-anchor="middle" font-family="Arial" font-size="9" fill="#e0e7ff">First Process</text>
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">Init binary from initrd</text>
+    <text x="100" y="85" text-anchor="middle" font-family="Arial" font-size="8" fill="#cbd5e1">ELF loading</text>
+  </g>
+
+  <!-- Final State -->
+  <g transform="translate(550, 1200)">
+    <circle cx="80" cy="40" r="40" fill="url(#finalGrad)" stroke="#dc2626" stroke-width="3" filter="url(#shadow)"/>
+    <text x="80" y="35" text-anchor="middle" font-family="monospace" font-size="12" font-weight="bold" fill="white">BOOT_SCHED</text>
+    <text x="80" y="50" text-anchor="middle" font-family="Arial" font-size="10" fill="white">schedinit()</text>
+    <text x="80" y="65" text-anchor="middle" font-family="Arial" font-size="9" fill="#fee2e2">Never Returns</text>
+  </g>
+
+  <!-- Arrows showing flow -->
+  <!-- Entry to main -->
+  <path d="M 600 140 L 600 200" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- main to CR3 -->
+  <path d="M 600 280 L 600 320" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- CR3 to XINIT -->
+  <path d="M 520 360 L 150 450" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- XINIT to MEM_COORD -->
+  <path d="M 250 500 L 300 500" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- MEM_COORD to PAGES_OWN -->
+  <path d="M 500 500 L 550 500" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- PAGES_OWN to EXCHANGE -->
+  <path d="M 750 500 L 800 500" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- EXCHANGE to TRAP -->
+  <path d="M 900 550 L 150 600" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- TRAP to ARCH -->
+  <path d="M 250 650 L 300 650" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- ARCH to PROC_INIT -->
+  <path d="M 500 650 L 550 650" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- PROC_INIT to SEG_INIT -->
+  <path d="M 750 650 L 800 650" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- SEG_INIT to LINKS -->
+  <path d="M 900 700 L 150 750" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- LINKS to IO -->
+  <path d="M 250 800 L 300 800" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- IO to CHANDEV_RESET -->
+  <path d="M 500 800 L 550 800" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- CHANDEV_RESET to PAGEK -->
+  <path d="M 750 800 L 800 800" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- PAGEK to PRINT -->
+  <path d="M 900 850 L 150 900" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- PRINT to TPM -->
+  <path d="M 250 950 L 300 950" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- TPM to MSGORD -->
+  <path d="M 500 950 L 550 950" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- MSGORD to CRYPTO -->
+  <path d="M 750 950 L 800 950" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- CRYPTO to CHANDEV_INIT -->
+  <path d="M 900 1000 L 400 1050" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- CHANDEV_INIT to USERINIT -->
+  <path d="M 500 1100 L 550 1100" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  
+  <!-- USERINIT to SCHED -->
+  <path d="M 650 1150 L 630 1150" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+  <path d="M 630 1150 L 630 1240" stroke="#374151" stroke-width="3" marker-end="url(#arrowhead)"/>
+
+  <!-- Error handling -->
+  <g transform="translate(100, 1400)">
+    <rect x="0" y="0" width="1000" height="120" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+    <text x="500" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#dc2626">Error Handling</text>
+    <text x="500" y="45" text-anchor="middle" font-family="Arial" font-size="11" fill="#7f1d1d">Each state includes comprehensive error checking</text>
+    <text x="500" y="65" text-anchor="middle" font-family="Arial" font-size="11" fill="#7f1d1d">Any failure results in immediate kernel panic</text>
+    <text x="500" y="85" text-anchor="middle" font-family="Arial" font-size="11" fill="#7f1d1d">Boot log provides detailed state tracking via set_boot_state()</text>
+    <text x="500" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#7f1d1d">State validation prevents invalid transitions</text>
+  </g>
+
+  <!-- Critical dependencies note -->
+  <g transform="translate(100, 1550)">
+    <rect x="0" y="0" width="1000" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <text x="500" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#1e40af">Critical Dependencies</text>
+    <text x="500" y="45" text-anchor="middle" font-family="Arial" font-size="10" fill="#1e3a8a">CR3 Switch → Memory Allocation | Console Ready → print() | Timer Setup → schedinit() | Security Hardware → Crypto</text>
+    <text x="500" y="65" text-anchor="middle" font-family="Arial" font-size="10" fill="#1e3a8a">Each transition validates prerequisites to prevent undefined behavior during critical boot sequence</text>
+  </g>
+
+</svg>
