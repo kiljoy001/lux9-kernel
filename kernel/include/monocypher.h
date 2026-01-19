@@ -51,6 +51,7 @@
 // with this software.  If not, see
 // <https://creativecommons.org/publicdomain/zero/1.0/>
 
+// Explicit type definitions replaced by stdint.h usage
 #ifndef MONOCYPHER_H
 #define MONOCYPHER_H
 

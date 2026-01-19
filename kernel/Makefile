@@ -147,6 +147,10 @@ $(KERNEL_BINARY): $(ALL_O)
 	@echo "AS $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+crypto/%.o: crypto/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 %.o: ../real_drivers/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
