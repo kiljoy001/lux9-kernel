@@ -13,6 +13,10 @@ static char *qidtype(char *, uchar);
 #define QIDFMT "(%.16llux %lud %s)"
 
 /* ACSL removed */
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 int fcallfmt(Fmt *fmt) {
   Fcall *f;
   int fid, type, tag, i;
@@ -178,6 +182,10 @@ static char *qidtype(char *s, uchar t) {
   return s;
 }
 
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 int dirfmt(Fmt *fmt) {
   char buf[160];
 
@@ -185,6 +193,12 @@ int dirfmt(Fmt *fmt) {
   return fmtstrcpy(fmt, buf);
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ requires e == \null || \valid(e);
+  @ requires d == \null || \valid(d);
+  @ assigns \nothing;
+  @*/
 static void fdirconv(char *buf, char *e, Dir *d) {
   char tmp[16];
 
@@ -205,6 +219,12 @@ static void fdirconv(char *buf, char *e, Dir *d) {
  */
 #define DUMPL 64
 
+/*@
+  @ requires ans == \null || \valid(ans);
+  @ requires e == \null || \valid(e);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static uint dumpsome(char *ans, char *e, char *buf, long count) {
   int i, printable;
   char *p;

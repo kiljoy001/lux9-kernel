@@ -96,6 +96,11 @@ static int findfreefd(Fgrp *f, int start) {
   return fd;
 }
 
+/*@
+  @ requires c != \null;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 int newfd(Chan *c, int mode) {
   int fd, flag;
   Fgrp *f;
@@ -167,6 +172,10 @@ static int newfd2(int fd[2], Chan *c[2]) {
   return 0;
 }
 
+/*@
+  @ requires fd >= -1;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 Chan *fdtochan(int fd, int mode, int chkmnt, int iref) {
   Chan *c;
   Fgrp *f;
@@ -231,6 +240,12 @@ uintptr sysfd2path(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr syspipe(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   static char *datastr[] = {"data", "data1"};
@@ -265,6 +280,12 @@ uintptr syspipe(void *list_void) {
   return 0;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysdup(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -307,6 +328,12 @@ uintptr sysdup(void *list_void) {
   return (uintptr)fd;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysopen(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -349,6 +376,12 @@ void fdclose(int fd, int flag) {
   cclose(c);
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr sysclose(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -716,6 +749,12 @@ static long read(int fd, uchar *p, long n, vlong *offp) {
   return nnn;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sys_read(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -799,6 +838,12 @@ static long write(int fd, void *buf, long len, vlong *offp, int check) {
   return m;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sys_write(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;

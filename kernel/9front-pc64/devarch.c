@@ -9,6 +9,10 @@
 #include <error.h>
 
 /* Helper for formatted UART output (used before print buffer is ready) */
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 void uartprintf(char *fmt, ...) {
   char buf[256];
   va_list arg;
@@ -110,6 +114,9 @@ Dirtab *addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn) {
   return dp;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void ioinit(void) {
   char *excluded;
 
@@ -147,6 +154,9 @@ void ioinit(void) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void checkport(ulong start, ulong end) {
   if (end < start || end > 0x10000)
     error(Ebadarg);
@@ -168,6 +178,11 @@ Walkqid *archwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, archdir, narchdir, devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int archstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, archdir, narchdir, devgen);
 }
@@ -178,6 +193,11 @@ static Chan *archopen(Chan *c, int omode) {
 
 static void archclose(Chan *) {}
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long archread(Chan *c, void *a, long n, vlong offset) {
   ulong port, end;
   uchar *cp;
@@ -232,6 +252,11 @@ static long archread(Chan *c, void *a, long n, vlong offset) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long archwrite(Chan *c, void *a, long n, vlong offset) {
   ulong port, end;
   uchar *cp;
@@ -305,6 +330,10 @@ static void nop(void) {}
  * 386 has no compare-and-swap instruction.
  * Run it with interrupts turned off instead.
  */
+/*@
+  @ requires addr == \null || \valid(addr);
+  @ assigns \nothing;
+  @*/
 static int cmpswap386(long *addr, long old, long new) {
   int r, s;
 
@@ -778,6 +807,9 @@ void _cycles(uvlong *); /* in l.s */
 
 static void simplecycles(uvlong *x) { *x = m->ticks; }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void cpuidprint(void) {
   print("cpu%d: %dMHz %s %s (AX %8.8uX CX %8.8uX DX %8.8uX)\n", m->machno,
         m->cpumhz, m->cpuidid, m->cpuidtype, m->cpuidax, m->cpuidcx,
@@ -802,6 +834,9 @@ int cpuidentify_done;
  *	- detect watchpoint support
  *	- detect FPU features and enable the FPU
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int cpuidentify(void) {
   int family, model, i;
   X86type *t, *tab;
@@ -1195,6 +1230,11 @@ int cpuidentify(void) {
   return t->family;
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long cputyperead(Chan *, void *a, long n, vlong offset) {
   char str[32];
 
@@ -1202,6 +1242,11 @@ static long cputyperead(Chan *, void *a, long n, vlong offset) {
   return readstr(offset, a, n, str);
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long archctlread(Chan *, void *a, long nn, vlong offset) {
   int n;
   char *buf, *p, *ep;
@@ -1249,6 +1294,11 @@ static Cmdtab archctlmsg[] = {
     CMpge, "pge", 2, CMcoherence, "coherence", 2, CMcache, "cache", 4,
 };
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long archctlwrite(Chan *, void *a, long n, vlong) {
   uvlong base, size;
   Cmdbuf *cb;
@@ -1308,6 +1358,10 @@ static long archctlwrite(Chan *, void *a, long n, vlong) {
   return n;
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long rmemrw(int isr, void *a, long n, vlong off) {
   uintptr addr = off;
 
@@ -1329,14 +1383,27 @@ static long rmemrw(int isr, void *a, long n, vlong off) {
   return n;
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long rmemread(Chan *, void *a, long n, vlong off) {
   return rmemrw(1, a, n, off);
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static long rmemwrite(Chan *, void *a, long n, vlong off) {
   return rmemrw(0, a, n, off);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void archinit(void) {
   PCArch **p;
   int found = 0;
@@ -1350,6 +1417,11 @@ void archinit(void) {
 /*
  *  call either the pcmcia or pccard device setup
  */
+/*@
+  @ requires idstr == \null || \valid(idstr);
+  @ requires isa == \null || \valid(isa);
+  @ assigns \nothing;
+  @*/
 int pcmspecial(char *idstr, ISAConf *isa) {
   return (_pcmspecial != nil) ? _pcmspecial(idstr, isa) : -1;
 }
@@ -1357,6 +1429,9 @@ int pcmspecial(char *idstr, ISAConf *isa) {
 /*
  *  call either the pcmcia or pccard device teardown
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void pcmspecialclose(int a) {
   if (_pcmspecialclose != nil)
     _pcmspecialclose(a);
@@ -1365,6 +1440,9 @@ void pcmspecialclose(int a) {
 /*
  *  set next timer interrupt
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void timerset(Tval x) {
   /* Debug prints disabled - can cause QEMU iothread issues from interrupt
    * context */
@@ -1392,6 +1470,9 @@ void timerset(Tval x) {
  *  and it reduces lock contention (thus system time and real time)
  *  on many-core systems with large values of NPROC.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void idlehands(void) {
   extern int nrdy, idle_spin;
 
@@ -1403,6 +1484,11 @@ void idlehands(void) {
     halt();
 }
 
+/*@
+  @ requires class == \null || \valid(class);
+  @ requires isa == \null || \valid(isa);
+  @ assigns \nothing;
+  @*/
 int isaconfig(char *class, int ctlrno, ISAConf *isa) {
   char cc[32], *p, *x;
   int i;
@@ -1438,6 +1524,9 @@ int isaconfig(char *class, int ctlrno, ISAConf *isa) {
   return 1;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void dumpmcregs(void) {
   vlong v, w;
   int bank;
@@ -1474,12 +1563,20 @@ void dumpmcregs(void) {
   }
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void nmihandler(Ureg *ureg, void *) {
   iprint("cpu%d: nmi PC %#p, status %ux\n", m->machno, ureg->pc, inb(0x61));
   while (m->machno != 0)
     ;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void nmienable(void) {
   int x;
 
@@ -1496,6 +1593,11 @@ void nmienable(void) {
   outb(0x61, x);
 }
 
+/*@
+  @ requires pr == \null || \valid(pr);
+  @ requires wp == \null || \valid(wp);
+  @ assigns \nothing;
+  @*/
 void setupwatchpts(Proc *pr, Watchpt *wp, int nwp) {
   int i;
   u8int cfg;

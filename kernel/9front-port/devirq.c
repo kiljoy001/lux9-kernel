@@ -70,6 +70,9 @@ enum {
   CapInterrupt = 1 << 4, /* Must match SIP capability */
 };
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void checkcap(ulong required) {
   if (up == nil)
     return; /* kernel processes have full access */
@@ -82,6 +85,11 @@ static void checkcap(ulong required) {
  * IRQ handler called from kernel interrupt dispatch
  * This is registered via intrenable() and called at interrupt time
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static void irq_userspace_handler(Ureg *ureg, void *arg) {
   IrqState *is = arg;
 
@@ -109,6 +117,10 @@ static void irq_userspace_handler(Ureg *ureg, void *arg) {
 /*
  * Check if interrupt is available for read
  */
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static int irq_available(void *arg) {
   IrqState *is = arg;
   return is->pending > 0;
@@ -152,6 +164,9 @@ static int irqgen(Chan *c, char *name, Dirtab *tab, int ntab, int pos,
   return 1;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void irqreset(void) {
   int i;
 
@@ -173,6 +188,11 @@ static Walkqid *irqwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, nil, 0, irqgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int irqstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, nil, 0, irqgen);
 }
@@ -218,6 +238,11 @@ static Chan *irqopen(Chan *c, int omode) {
 
 static void irqclose(Chan *c) { USED(c); }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long irqread(Chan *c, void *va, long n, vlong off) {
   IrqState *is;
   int irq;
@@ -293,6 +318,11 @@ static long irqread(Chan *c, void *va, long n, vlong off) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long irqwrite(Chan *c, void *va, long n, vlong off) {
   char *buf, *fields[4];
   int nf, irq;

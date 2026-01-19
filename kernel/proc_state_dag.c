@@ -20,6 +20,11 @@ static struct {
 } procstate_dag;
 
 /* Precondition: p->r must be nil */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires reason == \null || \valid(reason);
+  @ assigns \nothing;
+  @*/
 static int check_rendezvous_cleared(Proc *p, const char **reason) {
   if (p->r != nil) {
     *reason = "p->r must be nil before transition";
@@ -29,6 +34,11 @@ static int check_rendezvous_cleared(Proc *p, const char **reason) {
 }
 
 /* Precondition: p->mach must be nil */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires reason == \null || \valid(reason);
+  @ assigns \nothing;
+  @*/
 static int check_mach_cleared(Proc *p, const char **reason) {
   if (p->mach != nil) {
     *reason = "p->mach must be nil before transition";
@@ -38,6 +48,11 @@ static int check_mach_cleared(Proc *p, const char **reason) {
 }
 
 /* Precondition: p->mach must be set */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires reason == \null || \valid(reason);
+  @ assigns \nothing;
+  @*/
 static int check_mach_set(Proc *p, const char **reason) {
   if (p->mach == nil) {
     *reason = "p->mach must be set before transition to Running";
@@ -47,6 +62,11 @@ static int check_mach_set(Proc *p, const char **reason) {
 }
 
 /* Precondition: p->r must be set for sleeping */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires reason == \null || \valid(reason);
+  @ assigns \nothing;
+  @*/
 static int check_rendezvous_set(Proc *p, const char **reason) {
   if (p->r == nil) {
     *reason = "p->r must be set before transition to Wakeme";
@@ -55,6 +75,9 @@ static int check_rendezvous_set(Proc *p, const char **reason) {
   return 1;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void procstate_dag_init(void) {
   if (procstate_dag.initialized)
     return;
@@ -112,6 +135,9 @@ void procstate_dag_init(void) {
   print("procstate_dag: initialized with %d states\n", dag_PROC_STATE_COUNT);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void procstate_allow_edge(int from_state, int to_state) {
   if (from_state < 0 || from_state >= dag_PROC_STATE_COUNT || to_state < 0 ||
       to_state >= dag_PROC_STATE_COUNT)
@@ -164,6 +190,10 @@ ProcStateCheck procstate_validate_transition(Proc *p, int from_state,
   return result;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void procstate_transition(Proc *p, int from_state, int to_state) {
   ProcStateCheck check;
   extern char *statename[]; /* From proc.c */

@@ -29,19 +29,34 @@ enum {
 /* Forward decls */
 static int familygen(Chan *c, char *name, Dirtab *tab, int ntab, int pos, Dir *dp);
 
+/*@
+  @ assigns \nothing; // Initializes global state managed by family.c
+  @ terminates \true;
+  @*/
 static void
 familyinit(void)
 {
 	family_init();
 }
 
-static Chan*
+/*@
+  @ requires valid_string(spec);
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @ terminates \true;
+  @*/static Chan*
 familyattach(char *spec)
 {
 	return devattach('F', spec);
 }
 
-static Walkqid*
+/*@
+  @ requires \valid(c) && \valid(nc);
+  @ requires name != \null;
+  @ requires nname >= 0;
+  @ assigns *family;
+  @ ensures \result == \null || \valid(\result);
+  @*/static Walkqid*
 familywalk(Chan *c, Chan *nc, char **name, int nname)
 {
 	int type = (c->qid.path & FAMILY_MASK) >> FAMILY_SHIFT;
@@ -61,6 +76,12 @@ familywalk(Chan *c, Chan *nc, char **name, int nname)
 	return nil;
 }
 
+/*@
+  @ requires \valid(c);
+  @ requires \valid(dp + (0 .. n-1));
+  @ assigns dp[0 .. n-1];
+  @ ensures \result == -1 || \result > 0;
+  @*/
 static int
 familystat(Chan *c, uchar *dp, int n)
 {
@@ -79,6 +100,11 @@ familystat(Chan *c, uchar *dp, int n)
 	return -1;
 }
 
+/*@
+  @ requires \valid(c);
+  @ assigns c->mode, c->offset, c->flag;
+  @ ensures \result == \null || \result == c;
+  @*/
 static Chan*
 familyopen(Chan *c, int omode)
 {
@@ -97,7 +123,10 @@ familyopen(Chan *c, int omode)
 	return nil;
 }
 
-static void
+/*@
+  @ requires \valid(c);
+  @ assigns *family;
+  @*/static void
 familyclose(Chan *c)
 {
 	int type = (c->qid.path & FAMILY_MASK) >> FAMILY_SHIFT;
@@ -110,6 +139,12 @@ familyclose(Chan *c)
 	}
 }
 
+/*@
+  @ requires \valid(c);
+  @ requires \valid((char*)va + (0 .. n-1));
+  @ assigns ((char*)va)[0 .. n-1];
+  @ ensures \result == -1 || \result >= 0;
+  @*/
 static long
 familyread(Chan *c, void *va, long n, vlong off)
 {
@@ -128,7 +163,12 @@ familyread(Chan *c, void *va, long n, vlong off)
 	return -1;
 }
 
-static long
+/*@
+  @ requires \valid(c);
+  @ requires \valid_read((char*)va + (0 .. n-1));
+  @ assigns *family;
+  @ ensures \result == -1 || \result >= 0;
+  @*/static long
 familywrite(Chan *c, void *va, long n, vlong off)
 {
 	int type = (c->qid.path & FAMILY_MASK) >> FAMILY_SHIFT;

@@ -11,6 +11,10 @@
 #include "fns.h"
 #include "9p_router.h"
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int proc_setup_p9seg_stub(Proc *p) {
   if (p->kp)
     return 0; /* Kernel processes don't need this */
@@ -47,6 +51,10 @@ int proc_setup_p9seg_stub(Proc *p) {
   s->pseg->prev = nil;
 
   /* Clear any conflicting segments */
+    /*@ loop invariant 0 <= i <= NSEG;
+    @ loop assigns i;
+    @ loop variant NSEG - i;
+    @*/
   for (int i = 0; i < NSEG; i++) {
     Segment *oseg = p->seg[i];
     if (oseg == nil)

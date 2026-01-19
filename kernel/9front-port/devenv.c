@@ -526,8 +526,8 @@ void ksetenv(char *ename, char *eval, int conf) {
   print("ksetenv: calling namec('%s', Acreate, OWRITE, 0666)\n", buf);
   c = namec(buf, Acreate, OWRITE, 0666);
   print("ksetenv: namec returned, calling write\n");
-  devtab[c->type]->write(c, eval, strlen(eval), 0);
-  print("ksetenv: write complete, calling cclose\n");
+  long n = devtab[c->type]->write(c, eval, strlen(eval), 0);
+  print("ksetenv: write complete (n=%ld), calling cclose\n", n);
   cclose(c);
   print("ksetenv: exit\n");
 }

@@ -33,6 +33,9 @@ int (*pcicfgrw8)(int, int, int, int) = pcicfgrw8raw;
 int (*pcicfgrw16)(int, int, int, int) = pcicfgrw16raw;
 int (*pcicfgrw32)(int, int, int, int) = pcicfgrw32raw;
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int pcicfgrw8raw(int tbdf, int rno, int data, int read) {
   int o;
 
@@ -63,6 +66,9 @@ static int pcicfgrw8raw(int tbdf, int rno, int data, int read) {
   return data;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int pcicfgrw16raw(int tbdf, int rno, int data, int read) {
   int o;
 
@@ -93,6 +99,9 @@ static int pcicfgrw16raw(int tbdf, int rno, int data, int read) {
   return data;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int pcicfgrw32raw(int tbdf, int rno, int data, int read) {
   switch (pcicfgmode) {
   case 1:
@@ -120,6 +129,10 @@ static int pcicfgrw32raw(int tbdf, int rno, int data, int read) {
   return data;
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static uchar pIIxget(Pcidev *router, uchar link) {
   uchar pirq;
 
@@ -128,10 +141,18 @@ static uchar pIIxget(Pcidev *router, uchar link) {
   return (pirq < 16) ? pirq : 0;
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static void pIIxset(Pcidev *router, uchar link, uchar irq) {
   pcicfgw8(router, link, irq);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static uchar viaget(Pcidev *router, uchar link) {
   uchar pirq;
 
@@ -141,6 +162,10 @@ static uchar viaget(Pcidev *router, uchar link) {
   return (link & 1) ? (pirq >> 4) : (pirq & 15);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static void viaset(Pcidev *router, uchar link, uchar irq) {
   uchar pirq;
 
@@ -150,6 +175,10 @@ static void viaset(Pcidev *router, uchar link, uchar irq) {
   pcicfgw8(router, 0x55 + (link >> 1), pirq);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static uchar optiget(Pcidev *router, uchar link) {
   uchar pirq = 0;
 
@@ -159,6 +188,10 @@ static uchar optiget(Pcidev *router, uchar link) {
   return (link & 0x10) ? (pirq >> 4) : (pirq & 15);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static void optiset(Pcidev *router, uchar link, uchar irq) {
   uchar pirq;
 
@@ -168,6 +201,10 @@ static void optiset(Pcidev *router, uchar link, uchar irq) {
   pcicfgw8(router, 0xb8 + (link >> 5), pirq);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static uchar aliget(Pcidev *router, uchar link) {
   /* No, you're not dreaming */
   static const uchar map[] = {0, 9,  3, 10, 4, 5,  7, 6,
@@ -179,6 +216,10 @@ static uchar aliget(Pcidev *router, uchar link) {
   return (link & 1) ? map[pirq & 15] : map[pirq >> 4];
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static void aliset(Pcidev *router, uchar link, uchar irq) {
   /* Inverse of map in aliget */
   static const uchar map[] = {0, 8, 0, 2, 4,  5, 7,  6,
@@ -191,6 +232,10 @@ static void aliset(Pcidev *router, uchar link, uchar irq) {
   pcicfgw8(router, 0x48 + ((link - 1) >> 1), pirq);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static uchar cyrixget(Pcidev *router, uchar link) {
   uchar pirq;
 
@@ -199,6 +244,10 @@ static uchar cyrixget(Pcidev *router, uchar link) {
   return ((link & 1) ? pirq >> 4 : pirq & 15);
 }
 
+/*@
+  @ requires router == \null || \valid(router);
+  @ assigns \nothing;
+  @*/
 static void cyrixset(Pcidev *router, uchar link, uchar irq) {
   uchar pirq;
 
@@ -322,6 +371,9 @@ struct Router {
 static ushort pciirqs;      /* Exclusive PCI irqs */
 static Bridge *southbridge; /* Which southbridge to use. */
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void pcirouting(void) {
   Slot *e;
   Router *r;
@@ -410,6 +462,9 @@ static void pcirouting(void) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void pcireserve(void) {
   char tag[64];
   Pcidev *p;
@@ -490,6 +545,9 @@ static void pcireserve(void) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void pcicfginit(void) {
   char *p;
   Pcidev **list;

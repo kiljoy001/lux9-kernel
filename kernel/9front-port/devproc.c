@@ -234,6 +234,13 @@ void (*proctrace)(Proc *, int, vlong);
 
 static int lenwatchpt(Proc *);
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires name == \null || \valid(name);
+  @ requires tab == \null || \valid(tab);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int procgen(Chan *c, char *name, Dirtab *tab, int, int s, Dir *dp) {
   Qid qid;
   Proc *p;
@@ -326,6 +333,10 @@ static int procgen(Chan *c, char *name, Dirtab *tab, int, int s, Dir *dp) {
   return 1;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void _proctrace(Proc *p, Tevent etype, vlong ts) {
   Traceevent *te;
 
@@ -342,6 +353,9 @@ static void _proctrace(Proc *p, Tevent etype, vlong ts) {
   tproduced++;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void procinit(void) {
   /* slot masks: lets see how big we can go */
   if (conf.nproc > SLOTMAX)
@@ -354,6 +368,11 @@ static Walkqid *procwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, 0, 0, procgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ assigns \nothing;
+  @*/
 static int procstat(Chan *c, uchar *db, int n) {
   return devstat(c, db, n, 0, 0, procgen);
 }
@@ -364,6 +383,10 @@ static int procstat(Chan *c, uchar *db, int n) {
  *  servers running as none should they be
  *  subverted by, for example, a stack attack.
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void nonone(Proc *p) {
   if (p == up)
     return;
@@ -374,6 +397,10 @@ static void nonone(Proc *p) {
   error(Eperm);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void changenoteid(Proc *p, ulong noteid) {
   Proc *pp;
   int i;
@@ -533,6 +560,11 @@ static Chan *procopen(Chan *c, int omode0) {
   return tc;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ assigns \nothing;
+  @*/
 static int procwstat(Chan *c, uchar *db, int n) {
   Dir *d;
   Proc *p;
@@ -585,6 +617,10 @@ static int procwstat(Chan *c, uchar *db, int n) {
   return n;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void procclose(Chan *c) {
   Segio *sio;
 
@@ -611,6 +647,11 @@ static void procclose(Chan *c) {
   }
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int procargs(Proc *p, char *buf, int nbuf) {
   int j, k, m;
   char *a;
@@ -635,6 +676,10 @@ static int procargs(Proc *p, char *buf, int nbuf) {
 
 static int eventsavailable(void *) { return tproduced > tconsumed; }
 
+/*@
+  @ requires x == \null || \valid(x);
+  @ assigns \nothing;
+  @*/
 static int prochaswaitq(void *x) {
   Chan *c;
   Proc *p;
@@ -644,6 +689,10 @@ static int prochaswaitq(void *x) {
   return p->pid != PID(c->qid) || p->waitq != nil;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static void int2flag(int flag, char *s) {
   if (flag == 0) {
     *s = '\0';
@@ -661,6 +710,12 @@ static void int2flag(int flag, char *s) {
   *s = '\0';
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires p == \null || \valid(p);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int readns1(Chan *c, Proc *p, char *buf, int nbuf) {
   Pgrp *pg;
   Mount *t, *cm;
@@ -721,6 +776,11 @@ static int readns1(Chan *c, Proc *p, char *buf, int nbuf) {
   return i;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 int procfdprint(Chan *c, int fd, char *s, int ns) {
   return snprint(s, ns,
                  "%3d %.2s %C %4ld (%.16llux %lud %.2ux) %5ld %8lld %s\n", fd,
@@ -729,6 +789,12 @@ int procfdprint(Chan *c, int fd, char *s, int ns) {
                  c->path->s);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires p == \null || \valid(p);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int readfd1(Chan *c, Proc *p, char *buf, int nbuf) {
   Fgrp *fg;
   int n, i;
@@ -767,6 +833,10 @@ static int readfd1(Chan *c, Proc *p, char *buf, int nbuf) {
  * watchpt don't touch the existing watchpoints.
  */
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void clearwatchpt(Proc *p) {
   setupwatchpts(p, nil, 0);
   free(p->watchpt);
@@ -774,11 +844,20 @@ static void clearwatchpt(Proc *p) {
   p->nwatchpt = 0;
 }
 
+/*@
+  @ requires pr == \null || \valid(pr);
+  @ assigns \nothing;
+  @*/
 static int lenwatchpt(Proc *pr) {
   /* careful, not holding debug lock */
   return pr->nwatchpt * (10 + 4 * sizeof(uintptr));
 }
 
+/*@
+  @ requires pr == \null || \valid(pr);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int readwatchpt(Proc *pr, char *buf, int nbuf) {
   char *p, *e;
   Watchpt *w;
@@ -797,6 +876,11 @@ static int readwatchpt(Proc *pr, char *buf, int nbuf) {
   return p - buf;
 }
 
+/*@
+  @ requires pr == \null || \valid(pr);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int writewatchpt(Proc *pr, char *buf, int nbuf, uvlong offset) {
   char *p, *q, *e;
   char line[256], *f[4];
@@ -893,12 +977,20 @@ static int writewatchpt(Proc *pr, char *buf, int nbuf, uvlong offset) {
  * 64 bit kernel address, so we use 63 bit and sign
  * extend to 64 bit.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 static uintptr off2addr(vlong off) {
   off <<= 1;
   off >>= 1;
   return off;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long procread(Chan *c, void *va, long n, vlong off) {
   char statbuf[1024], *sps;
   ulong offset;
@@ -1209,6 +1301,11 @@ static long procread(Chan *c, void *va, long n, vlong off) {
   return n;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long procwrite(Chan *c, void *va, long n, vlong off) {
   char buf[ERRMAX];
   ulong offset;
@@ -1361,6 +1458,10 @@ static Chan *proctext(Chan *c, Proc *p) {
   return tc;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void procstopwait(Proc *p, int ctl) {
   char *state;
   int pid;
@@ -1395,6 +1496,10 @@ static void procstopwait(Proc *p, int ctl) {
     error(Eprocdied);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void procctlclosefiles(Proc *p, int all, int fd) {
   Fgrp *f;
   Chan *c;
@@ -1457,6 +1562,11 @@ static char *parsetime(vlong *rt, char *s) {
   return nil;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static void procctlreq(Proc *p, char *va, int n) {
   Segment *s;
   uintptr npc;

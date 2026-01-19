@@ -64,24 +64,36 @@ static struct {
 } tpm_state;
 
 /* Helper: Read TPM register */
+/*@
+  @ assigns \nothing;
+  @*/
 static u8int tpm_read8(uintptr offset) {
   volatile u8int *reg = (volatile u8int *)(tpm_state.base + offset);
   return *reg;
 }
 
 /* Helper: Write TPM register */
+/*@
+  @ assigns \nothing;
+  @*/
 static void tpm_write8(uintptr offset, u8int val) {
   volatile u8int *reg = (volatile u8int *)(tpm_state.base + offset);
   *reg = val;
 }
 
 /* Helper: Read 32-bit TPM register */
+/*@
+  @ assigns \nothing;
+  @*/
 static u32int tpm_read32(uintptr offset) {
   volatile u32int *reg = (volatile u32int *)(tpm_state.base + offset);
   return *reg;
 }
 
 /* Helper: Write 32-bit TPM register */
+/*@
+  @ assigns \nothing;
+  @*/
 static void tpm_write32(uintptr offset, u32int val) {
   volatile u32int *reg = (volatile u32int *)(tpm_state.base + offset);
   *reg = val;
@@ -106,6 +118,9 @@ static int tpm_wait_status(uintptr reg_offset, u8int mask, u8int expected,
 }
 
 /* Request TPM locality */
+/*@
+  @ assigns \nothing;
+  @*/
 static int tpm_request_locality(void) {
   u8int access;
 
@@ -131,12 +146,18 @@ static int tpm_request_locality(void) {
 }
 
 /* Release TPM locality */
+/*@
+  @ assigns \nothing;
+  @*/
 static void tpm_release_locality(void) {
   u8int access = TPM_ACCESS_ACTIVE_LOCALITY;
   tpm_write8(TPM_ACCESS_0, access);
 }
 
 /* Get burst count (how many bytes can be written to FIFO) */
+/*@
+  @ assigns \nothing;
+  @*/
 static int tpm_get_burst_count(void) {
   u32int status;
   int burst;
@@ -270,6 +291,9 @@ int tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp,
 /*
  * Detect and initialize TPM hardware
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void tpminit(void) {
   u32int did_vid;
   uintptr phys_base = 0xFED40000; /* Standard TPM base address */
@@ -331,6 +355,10 @@ void tpminit(void) {
  * this function returns -1 immediately to prevent deadlock.
  * Callers should use RDRAND or ChaCha20 fallback in that case.
  */
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 int tpm_get_random(u8int *buffer, int len) {
   u8int cmd[12];
   u8int resp[256];
@@ -379,6 +407,10 @@ int tpm_get_random(u8int *buffer, int len) {
 /*
  * TPM2_PCR_Extend - Extend PCR with hash
  */
+/*@
+  @ requires hash == \null || \valid(hash);
+  @ assigns \nothing;
+  @*/
 int tpm20_pcr_extend(u32int pcr_handle, u8int *hash, usize hash_len) {
   u8int cmd[64];
   u8int resp[128];
@@ -426,6 +458,11 @@ int tpm20_pcr_extend(u32int pcr_handle, u8int *hash, usize hash_len) {
 /*
  * TPM2_PCR_Read - Read PCR value
  */
+/*@
+  @ requires pcr_value == \null || \valid(pcr_value);
+  @ requires pcr_len == \null || \valid(pcr_len);
+  @ assigns \nothing;
+  @*/
 int tpm20_pcr_read(u32int pcr_handle, u8int *pcr_value, usize *pcr_len) {
   u8int cmd[20];
   u8int resp[256];
@@ -469,6 +506,9 @@ int tpm20_pcr_read(u32int pcr_handle, u8int *pcr_value, usize *pcr_len) {
 /*
  * tpm_init - Stub for compatibility (tpminit is the real init)
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int tpm_init(void) {
   /* Already initialized in tpminit() */
   return tpm_state.initialized ? 0 : -1;

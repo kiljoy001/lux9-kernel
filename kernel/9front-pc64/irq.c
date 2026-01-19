@@ -92,6 +92,10 @@ int irqhandled(Ureg *ureg, int vno) {
          m->lastintr);
 
   /* call all non-local interrupt routines, just in case */
+  /*@
+      loop invariant VectorPIC <= i <= nelem(vctl);
+      loop assigns i, ctl, v; // Iteration state
+  */
   for (i = VectorPIC; i < nelem(vctl); i++) {
     ctl = vctl[i];
     if (ctl == nil || ctl == vclock || ctl->local)
@@ -103,6 +107,13 @@ int irqhandled(Ureg *ureg, int vno) {
   return -1;
 }
 
+/*@
+    requires vno >= 0 && vno < VectorPIC;
+    // Security: Access Control - Cannot overwrite critical vectors outside this
+   range requires f != \null; requires \valid(name);
+    // Security: Integrity - Ensures we are writing to a valid slot in the
+   global table requires \valid(&vctl[vno]); assigns vctl[vno];
+*/
 void trapenable(int vno, void (*f)(Ureg *, void *), void *a, char *name) {
   Vctl *v;
 
@@ -154,6 +165,13 @@ static Vctl *delayfree(Vctl *v) {
   return r;
 }
 
+/*@
+    requires f != \null;
+    requires \valid(name);
+    requires \valid(vctl + (0..255)); // Entire table must be valid
+    assigns vctllock; // abstract assignment to lock state
+    assigns vctl[0..255]; // May modify any slot based on arch assignment
+*/
 void intrenable(int irq, void (*f)(Ureg *, void *), void *a, int tbdf,
                 char *name) {
   Vctl **pv, *v;

@@ -18,6 +18,7 @@ typedef struct Dir Dir;
 typedef struct Waitmsg Waitmsg;
 
 #include "9p_router.h"
+#include "acsl_bounds.h"
 #include "fns.h"
 #include "include/distributed_pebble.h"
 #include "mem.h"
@@ -25,7 +26,6 @@ typedef struct Waitmsg Waitmsg;
 #include "wasm/wasm_9p_integration.h"
 #include "wasm/wasm_fileserver.h"
 #include "wasm/wasm_runtime.h"
-#include "acsl_bounds.h"
 
 /* Forward declaration for kstrlen (strlen wrapper from libc9) */
 extern long kstrlen(char *);
@@ -2677,6 +2677,9 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         }
 
         install_fid_with_subtype(t->newfid, type, subtype);
+        if (type == TYPE_WASM && subtype > 0) {
+          wasm_9p_session_ref(subtype);
+        }
 
         /* Handle state cloning for devices */
         if ((type == TYPE_DEV && subtype == DEV_PIPE) ||
@@ -3688,7 +3691,7 @@ static int handle_device_stat(Fcall *t, Fcall *r, char *name, uchar qid_path,
   @           ctl->rep_head < P9_RING_SLOTS && ctl->rep_tail < P9_RING_SLOTS;
   @   ensures \result == 0 || \result == -1;
   @*/
-static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
+int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
   u32int head = ctl->req_head;
   u32int tail = ctl->req_tail;
   u32int rep_head = ctl->rep_head;
@@ -5813,45 +5816,44 @@ static int wasm_unregister_server(const char *name) {
 }
 
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
-  wasm_fileserver_t *server = nil;
+  wasm_9p_session_t *session = nil;
+  u32int session_id = 0;
   const char *server_name = "/boot/server.wasm"; /* Default server */
-  int server_idx = -1;
 
-  USED(caller);
   r->tag = t->tag;
 
-  /* For non-attach calls, lookup server by fid subtype */
+  /* For non-attach calls, lookup session by fid subtype (session_id) */
   if (t->type != Tattach) {
-    server_idx = get_fid_subtype((int)t->fid);
-    if (server_idx > 0 && server_idx <= MAX_WASM_SERVERS) {
-      server_idx -= 1; /* 1-based to 0-based */
-      lock(&wasm_server_registry.lock);
-      if (wasm_server_registry.entries[server_idx].active) {
-        server = wasm_server_registry.entries[server_idx].server;
-        wasm_server_registry.entries[server_idx].last_access = fastticks(nil);
-      }
-      unlock(&wasm_server_registry.lock);
+    session_id = (u32int)get_fid_subtype((int)t->fid);
+    if (session_id > 0) {
+      session = wasm_9p_get_session(session_id);
     }
   }
 
   switch (t->type) {
-  case Tattach:
-    /* Lookup or load server based on aname */
-    if (t->aname && t->aname[0] != '\0') {
-      server_name = t->aname; /* Use aname as server path */
+  case Tattach: {
+    uuid_t cap_uuid;
+    wasm_fileserver_t *server = nil;
+    int server_idx = -1;
+
+    /* Extract capability from aname */
+    if (wasm_9p_extract_cap_uuid(t->aname, &cap_uuid) < 0) {
+      r->type = Rerror;
+      r->ename = "no valid capability provided for wasm attach";
+      return -1;
     }
 
+    /* For now, we still need to know WHICH wasm server to target.
+     * We'll use a default or some metadata from the capability.
+     * Future: Capability could specify the server binary path. */
     server_idx = wasm_lookup_server_index(server_name);
     if (server_idx < 0) {
-      /* Server not found, try to load it */
-      server = wasm_fileserver_load(server_name, 16); /* 16 pages default */
+      server = wasm_fileserver_load(server_name, 16);
       if (!server) {
         r->type = Rerror;
         r->ename = "failed to load wasm server";
         return -1;
       }
-
-      /* Register the new server */
       server_idx = wasm_register_server(server, server_name, nil);
       if (server_idx < 0) {
         wasm_fileserver_destroy(server);
@@ -5860,25 +5862,34 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
         return -1;
       }
     } else {
-      /* Existing server found */
       lock(&wasm_server_registry.lock);
       server = wasm_server_registry.entries[server_idx].server;
       unlock(&wasm_server_registry.lock);
     }
 
-    /* Update fid subtype to registry index (1-based) */
+    /* Create session with validated capability */
+    session = wasm_9p_create_session(&cap_uuid, server);
+    if (!session) {
+      r->type = Rerror;
+      r->ename =
+          "failed to create wasm session (invalid or revoked capability)";
+      return -1;
+    }
+
+    /* Update fid subtype to session_id */
     lock(&caller->fgrp->lock);
     if (caller->fgrp->fd[t->fid]) {
-      caller->fgrp->fd[t->fid]->qid.vers = (u32int)(server_idx + 1);
+      caller->fgrp->fd[t->fid]->qid.vers = session->session_id;
     }
     unlock(&caller->fgrp->lock);
 
     r->type = Rattach;
     r->qid.type = QTDIR;
     r->qid.path = 0;
-    r->qid.vers = (u32int)(server_idx + 1);
+    r->qid.vers = session->session_id;
     r->iounit = 0;
     return 0;
+  }
 
   case Twalk:
   case Topen:
@@ -5888,27 +5899,27 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   case Tstat:
   case Twstat:
   case Tremove: {
-    /* If no server found via FID, fall back to default */
-    if (!server) {
-      server = wasm_lookup_server(server_name);
-    }
-
-    if (!server) {
+    if (!session) {
       r->type = Rerror;
-      r->ename = "no wasm server loaded";
+      r->ename = "no active wasm session for fid";
       return -1;
     }
 
-    if (wasm_fs_handle_fcall(server, t, r) < 0) {
-      r->type = Rerror;
-      r->ename = "wasm handler failed";
+    /* Route to WASM via integration layer (performs permission checks) */
+    if (wasm_9p_route_to_wasm(t, r, session) < 0) {
+      if (r->type != Rerror) {
+        r->type = Rerror;
+        r->ename = "wasm routing failed";
+      }
       return -1;
     }
-    r->tag = t->tag;
     return 0;
   }
 
   case Tclunk:
+    if (session_id > 0) {
+      wasm_9p_session_unref(session_id);
+    }
     r->type = Rclunk;
     return 0;
 

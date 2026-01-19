@@ -179,18 +179,32 @@ Dirtab chandir[] = {
 };
 
 /* Helper: compare two UserCapability structs */
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 static int capability_equal(const ExchangeHandle *a, const ExchangeHandle *b) {
   return memcmp(a->hash, b->hash, BLIND_LEDGER_CAP_SIZE) == 0 &&
          a->size == b->size && a->type == b->type && a->perms == b->perms;
 }
 
 /* Helper: check if UserCapability is zero/invalid */
+/*@
+  @ requires cap == \null || \valid(cap);
+  @ assigns \nothing;
+  @*/
 static int capability_is_zero(const ExchangeHandle *cap) {
   static const u8int zero_hash[BLIND_LEDGER_CAP_SIZE] = {0};
   return memcmp(cap->hash, zero_hash, BLIND_LEDGER_CAP_SIZE) == 0 &&
          cap->size == 0 && cap->type == 0 && cap->perms == 0;
 }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ requires ename == \null || \valid(ename);
+  @ assigns \nothing;
+  @*/
 static void build_error_reply(Fcall *r, ushort tag, char *ename) {
   memset(r, 0, sizeof(*r));
   r->type = Rerror;
@@ -359,6 +373,10 @@ static ExchangeChannel *channel_alloc(Proc *owner) {
   return nil;
 }
 
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ assigns \nothing;
+  @*/
 static void channel_free(ExchangeChannel *ch) {
   if (ch == nil)
     return;
@@ -388,6 +406,10 @@ static ExchangeChannel *channel_get(int chan_id) {
   return ch;
 }
 
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ assigns \nothing;
+  @*/
 static void channel_put(ExchangeChannel *ch) {
   if (ch == nil)
     return;
@@ -397,6 +419,11 @@ static void channel_put(ExchangeChannel *ch) {
 }
 
 /* Pool Management */
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ requires out_cap == \null || \valid(out_cap);
+  @ assigns \nothing;
+  @*/
 static int pool_alloc_page(ExchangeChannel *ch, UserCapability *out_cap) {
   void *pa;
   BlindLedgerError err;
@@ -440,6 +467,11 @@ static int pool_alloc_page(ExchangeChannel *ch, UserCapability *out_cap) {
   return 0;
 }
 
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ requires out_cap == \null || \valid(out_cap);
+  @ assigns \nothing;
+  @*/
 static int pool_get_page(ExchangeChannel *ch, UserCapability *out_cap) {
   if (ch == nil || out_cap == nil)
     return -1;
@@ -460,6 +492,11 @@ static int pool_get_page(ExchangeChannel *ch, UserCapability *out_cap) {
   return 0;
 }
 
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ requires cap == \null || \valid(cap);
+  @ assigns \nothing;
+  @*/
 static int pool_return_page(ExchangeChannel *ch, const UserCapability *cap) {
   if (ch == nil || cap == nil)
     return -1;
@@ -476,17 +513,69 @@ static int pool_return_page(ExchangeChannel *ch, const UserCapability *cap) {
   ch->pool_caps[ch->pool_tail] = *cap;
   ch->pool_tail = (ch->pool_tail + 1) & (ch->pool_size - 1);
   ch->pool_frees++;
-
   unlock(&ch->pool_lock);
   return 0;
 }
 
+static void scrub_exchange_page(uchar *msg_buf, P9Control *ctl, uint rep_size,
+                                int ring_mode) {
+  if (msg_buf == nil)
+    return;
+
+  if (ctl == nil) {
+    /* Full scrub for fresh allocations or error states */
+    memset(msg_buf, 0, P9_CONTROL_OFFSET);
+    return;
+  }
+
+  if (ring_mode) {
+    u32int i;
+    u32int head = ctl->rep_head;
+    u32int tail = ctl->rep_tail;
+
+    for (i = 0; i < P9_RING_SLOTS; i++) {
+      int active = 0;
+      /* Check if slot i is in the active [head, tail) range (handling wrap) */
+      if (head <= tail) {
+        if (i >= head && i < tail)
+          active = 1;
+      } else {
+        if (i >= head || i < tail)
+          active = 1;
+      }
+
+      if (!active) {
+        memset(msg_buf + (i * P9_RING_SLOT_SIZE), 0, P9_RING_SLOT_SIZE);
+      } else {
+        /* Slot is active, but we should still zero the tail of the reply */
+        uchar *slot = msg_buf + (i * P9_RING_SLOT_SIZE);
+        u32int slot_rep_size = GBIT32(slot + 4);
+        if (slot_rep_size < P9_RING_DATA_SIZE) {
+          memset(slot + P9_RING_HEADER_SIZE + slot_rep_size, 0,
+                 P9_RING_DATA_SIZE - slot_rep_size);
+        }
+      }
+    }
+  } else {
+    /* Large message mode: zero everything after the reply */
+    if (rep_size < P9_CONTROL_OFFSET) {
+      memset(msg_buf + rep_size, 0, P9_CONTROL_OFFSET - rep_size);
+    }
+  }
+}
+
+/*@
+  @ requires ch == \null || \valid(ch);
+  @ assigns \nothing;
+  @*/
 static int exchange_ipc_process(ExchangeChannel *ch) {
-  struct IpcChannel *chan;
+  struct IpcPageRing *submission;
+  struct IpcPageRing *completion;
   u32int head, tail;
   u64int page_handle;
   uintptr page_phys, user_vaddr;
-  struct BatchHeader *batch;
+  P9Control *ctl;
+  uchar *msg_buf;
   u64int *pte;
 
   if (ch == nil || ch->ipc_kaddr == nil)
@@ -494,22 +583,17 @@ static int exchange_ipc_process(ExchangeChannel *ch) {
   if (ch->owner != up)
     return -1;
 
-  chan = ch->ipc_kaddr;
-  head = chan->submission.head;
-  tail = chan->submission.tail;
+  submission = &ch->ipc_kaddr->submission;
+  completion = &ch->ipc_kaddr->completion;
+  head = submission->head;
+  tail = submission->tail;
 
   while (head != tail) {
-    page_handle = chan->submission.pages[head & RING_MASK];
+    page_handle = submission->pages[head & RING_MASK];
     user_vaddr = (uintptr)page_handle;
 
     if ((user_vaddr & (BY2PG - 1)) != 0) {
       print("exchange: ipc invalid page alignment: %#p\n", user_vaddr);
-      goto skip_page;
-    }
-
-    if (ch->owner != up) {
-      print("exchange: ipc process mismatch: owner %p != up %p\n", ch->owner,
-            up);
       goto skip_page;
     }
 
@@ -531,62 +615,77 @@ static int exchange_ipc_process(ExchangeChannel *ch) {
       goto skip_page;
     }
 
-    if (!pageown_can_borrow_shared(page_phys)) {
-      print("exchange: ipc page has active mutable borrow: pa=%#p\n",
-            page_phys);
+    // Borrow page from process
+    if (borrow_transfer(ch->owner, up, page_phys) != BORROW_OK) {
+      print("exchange: ipc borrow failed: pa=%#p\n", page_phys);
       goto skip_page;
     }
 
+    // Temporarily unmap from user to prevent TOCTOU
     u64int saved_pte = *pte;
     *pte = 0;
     putcr3(getcr3());
 
-    batch = (struct BatchHeader *)hhdm_virt(page_phys);
+    // Access page via HHDM
+    ctl = (P9Control *)((uintptr)hhdm_virt(page_phys) + P9_CONTROL_OFFSET);
+    msg_buf = (uchar *)hhdm_virt(page_phys);
 
-    u32int batch_magic = batch->magic;
-    u16int batch_num_messages = batch->num_messages;
-    u16int batch_used_bytes = batch->used_bytes;
-    u64int batch_seqno = batch->nonce;
+    u32int rep_size = 0;
 
-    if (batch_magic != BATCH_PAGE_MAGIC) {
-      print("exchange: ipc invalid batch magic: %#ux\n", batch_magic);
-      goto restore_page;
-    }
-    if (batch_num_messages > 256) {
-      print("exchange: ipc too many messages: %ud\n", batch_num_messages);
-      goto restore_page;
-    }
-    if (batch_used_bytes < BATCH_DATA_START || batch_used_bytes > 4096) {
-      print("exchange: ipc invalid used_bytes: %ud\n", batch_used_bytes);
-      goto restore_page;
-    }
-    if (batch_seqno <= ch->ipc_last_seqno) {
-      print("exchange: ipc replay detected: seqno %llud <= last %llud\n",
-            batch_seqno, ch->ipc_last_seqno);
-      goto restore_page;
-    }
-    ch->ipc_last_seqno = batch_seqno;
+    // Hybrid Detection: Check if it's a RING buffer
+    if (ctl->req_tail != ctl->req_head) {
+      // Memory barrier
+      __asm__ volatile("mfence" ::: "memory");
+      if (p9_handle_ring(up, ctl, msg_buf) < 0) {
+        print("exchange: ipc ring processing failed: pa=%#p\n", page_phys);
+        atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+      } else {
+        atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+      }
+    } else {
+      // Single message mode (LARGE)
+      Fcall t, r;
+      u32int msg_size = GBIT32(msg_buf);
+      if (msg_size >= 7 && msg_size <= P9_MSG_SIZE) {
+        __asm__ volatile("mfence" ::: "memory");
+        if (convM2S(msg_buf, msg_size, &t) != 0) {
+          if (p9_dispatch(up, &t, &r) < 0)
+            build_error_reply(&r, t.tag, "dispatch failed");
 
-    if (p9_build_reply_batch(up, batch, batch_num_messages, batch_used_bytes,
-                             batch_seqno) < 0)
-      print("exchange: ipc failed to build reply batch\n");
+          rep_size = convS2M(&r, msg_buf, P9_MSG_SIZE);
+          if (rep_size > 0) {
+            atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+          } else {
+            atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+          }
+        }
+      }
+    }
 
-  restore_page:
+    // Scrub for security: preserve replies
+    int is_ring = (ctl->req_tail != ctl->req_head);
+    scrub_exchange_page(msg_buf, ctl, rep_size, is_ring);
+
+    // Restore page to process
     *pte = saved_pte;
     putcr3(getcr3());
+    borrow_transfer(up, ch->owner, page_phys);
 
   skip_page:
-    u32int c_tail = chan->completion.tail;
-    chan->completion.pages[c_tail & RING_MASK] = page_handle;
-    chan->completion.tail++;
+    u32int c_tail = completion->tail;
+    completion->pages[c_tail & RING_MASK] = page_handle;
+    completion->tail++;
 
     head++;
   }
 
-  chan->submission.head = head;
+  submission->head = head;
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void exchinit(void) {
   int i;
 
@@ -651,6 +750,11 @@ static Walkqid *exchwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, exchdir, nelem(exchdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int exchstat(Chan *c, uchar *dp, int n) {
   int subfile;
 
@@ -722,6 +826,11 @@ static Chan *exchopen(Chan *c, int omode) {
   return c;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 static void exchcreate(Chan *c, char *name, int omode, ulong perm) {
   (void)c;
   (void)name;
@@ -730,6 +839,10 @@ static void exchcreate(Chan *c, char *name, int omode, ulong perm) {
   error(Eperm);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void exchclose(Chan *c) {
   ExchangeChannel *ch;
 
@@ -741,6 +854,11 @@ static void exchclose(Chan *c) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static long exchread(Chan *c, void *buf, long n, vlong off) {
   char *p, *e;
   int i, chan_id;
@@ -943,6 +1061,11 @@ static long exchread(Chan *c, void *buf, long n, vlong off) {
   return 0;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires vp == \null || \valid(vp);
+  @ assigns \nothing;
+  @*/
 static long exchwrite(Chan *c, void *vp, long n, vlong off) {
   char *buf;
   char *fields[4];
@@ -1123,7 +1246,11 @@ static long exchwrite(Chan *c, void *vp, long n, vlong off) {
       }
 
       /* Remove from prepared tracking */
-      for (int j = cap_idx; j < exchctl.nprepared - 1; j++) {
+        /*@ loop invariant 0 <= j <= exchctl.nprepared - 1;
+    @ loop assigns j;
+    @ loop variant exchctl.nprepared - 1 - j;
+    @*/
+  for (int j = cap_idx; j < exchctl.nprepared - 1; j++) {
         exchctl.prepared[j] = exchctl.prepared[j + 1];
       }
       exchctl.nprepared--;
@@ -1151,7 +1278,11 @@ static long exchwrite(Chan *c, void *vp, long n, vlong off) {
       }
 
       /* Remove from prepared tracking */
-      for (int j = cap_idx; j < exchctl.nprepared - 1; j++) {
+        /*@ loop invariant 0 <= j <= exchctl.nprepared - 1;
+    @ loop assigns j;
+    @ loop variant exchctl.nprepared - 1 - j;
+    @*/
+  for (int j = cap_idx; j < exchctl.nprepared - 1; j++) {
         exchctl.prepared[j] = exchctl.prepared[j + 1];
       }
       exchctl.nprepared--;
@@ -1178,11 +1309,20 @@ static long exchwrite(Chan *c, void *vp, long n, vlong off) {
  * and userspace will use those capabilities to map memory
  */
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void exchremove(Chan *c) {
   (void)c;
   error(Eperm);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int exchwstat(Chan *c, uchar *dp, int n) {
   (void)c;
   (void)dp;
@@ -1215,6 +1355,9 @@ Dev exchdevtab = {
     .config = nil,
 };
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void exchreset(void) {
   /* Nothing to prime yet; hook exists to satisfy chandevreset(). */
 }

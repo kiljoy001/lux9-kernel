@@ -86,6 +86,11 @@ static void addlist(Dirlist *l, char *name, uchar *contents, ulong len,
 /*
  *  add a root file
  */
+/*@
+  @ requires name == \null || \valid(name);
+  @ requires contents == \null || \valid(contents);
+  @ assigns \nothing;
+  @*/
 void addbootfile(char *name, uchar *contents, ulong len) {
   print("addbootfile: adding '%s' len=%lud to bootlist (ndir=%d)\n", name, len,
         bootlist.ndir);
@@ -96,12 +101,19 @@ void addbootfile(char *name, uchar *contents, ulong len) {
 /*
  *  add a root directory
  */
+/*@
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 static void addrootdir(char *name) {
   addlist(&rootlist, name, nil, 0, DMDIR | 0555);
 }
 
 /* Implementation of rootreset - called directly to avoid function pointer
  * issues */
+/*@
+  @ assigns \nothing;
+  @*/
 void rootreset_impl(void) {
   /* Directories are pre-initialized in rootdir array */
 }
@@ -111,6 +123,13 @@ static void rootreset(void) { rootreset_impl(); }
 
 static Chan *rootattach(char *spec) { return devattach('/', spec); }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires name == \null || \valid(name);
+  @ requires  == \null || \valid();
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int rootgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
   int t;
   Dirtab *d;
@@ -162,6 +181,11 @@ static Walkqid *rootwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, nil, 0, rootgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int rootstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, nil, 0, rootgen);
 }
@@ -175,6 +199,11 @@ static Chan *rootopen(Chan *c, int omode) {
  */
 static void rootclose(Chan *) {}
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static long rootread(Chan *c, void *buf, long n, vlong off) {
   ulong t;
   Dirtab *d;

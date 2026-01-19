@@ -17,6 +17,11 @@ static Timers timers[MAXMACH];
 ulong intrcount[MAXMACH];
 ulong fcallcount[MAXMACH];
 
+/*@
+  @ requires tt == \null || \valid(tt);
+  @ requires nt == \null || \valid(nt);
+  @ assigns \nothing;
+  @*/
 static vlong tadd(Timers *tt, Timer *nt) {
   Timer *t, **last;
 
@@ -60,6 +65,10 @@ static vlong tadd(Timers *tt, Timer *nt) {
   return 0;
 }
 
+/*@
+  @ requires dt == \null || \valid(dt);
+  @ assigns \nothing;
+  @*/
 static uvlong tdel(Timer *dt) {
 
   Timer *t, **last;
@@ -82,6 +91,10 @@ static uvlong tdel(Timer *dt) {
 }
 
 /* add or modify a timer */
+/*@
+  @ requires nt == \null || \valid(nt);
+  @ assigns \nothing;
+  @*/
 void timeradd(Timer *nt) {
   Timers *tt;
   vlong when;
@@ -102,6 +115,10 @@ void timeradd(Timer *nt) {
   iunlock(&nt->lock);
 }
 
+/*@
+  @ requires dt == \null || \valid(dt);
+  @ assigns \nothing;
+  @*/
 void timerdel(Timer *dt) {
   Mach *mp;
   Timers *tt;
@@ -131,6 +148,10 @@ void timerdel(Timer *dt) {
       sched();
 }
 
+/*@
+  @ requires ur == \null || \valid(ur);
+  @ assigns \nothing;
+  @*/
 void hzclock(Ureg *ur) {
   m->ticks++;
   if (m->proc)
@@ -170,6 +191,10 @@ void hzclock(Ureg *ur) {
   }
 }
 
+/*@
+  @ requires u == \null || \valid(u);
+  @ assigns \nothing;
+  @*/
 void timerintr(Ureg *u, Tval) {
   Timer *t;
   Timers *tt;
@@ -214,6 +239,9 @@ void timerintr(Ureg *u, Tval) {
   iunlock(&tt->lk);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void timersinit(void) {
   Timer *t;
 
@@ -293,6 +321,9 @@ Timer *addclock0link(void (*f)(void), int ms) {
  *  It is a LOT slower so shouldn't be used if you're just converting
  *  a delta.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 ulong tk2ms(ulong ticks) {
   uvlong t, hz;
 
@@ -304,6 +335,9 @@ ulong tk2ms(ulong ticks) {
   return ticks;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 ulong ms2tk(ulong ms) {
   /* avoid overflows at the cost of precision */
   if (ms >= 1000000000 / HZ)

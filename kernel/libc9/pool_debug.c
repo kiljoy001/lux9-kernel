@@ -17,6 +17,11 @@
 /*
  * dumpblock: Print block's vital stats
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 static void dumpblock(Pool *p, Bhdr *b) {
 	ulong *dp;
 	ulong dsize;
@@ -49,6 +54,12 @@ static void dumpblock(Pool *p, Bhdr *b) {
 /*
  * printblock: Print a block with a message
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires b == \null || \valid(b);
+  @ requires msg == \null || \valid(msg);
+  @ assigns \nothing;
+  @*/
 static void printblock(Pool *p, Bhdr *b, char *msg) {
 	p->print(p, "%s\n", msg);
 	dumpblock(p, b);
@@ -57,6 +68,12 @@ static void printblock(Pool *p, Bhdr *b, char *msg) {
 /*
  * panicblock: Print a block and panic
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires b == \null || \valid(b);
+  @ requires msg == \null || \valid(msg);
+  @ assigns \nothing;
+  @*/
 static void panicblock(Pool *p, Bhdr *b, char *msg) {
 	p->print(p, "%s\n", msg);
 	dumpblock(p, b);
@@ -67,6 +84,11 @@ static void panicblock(Pool *p, Bhdr *b, char *msg) {
  * blockcheck: Ensure a block is consistent with our expectations
  * Should only be called when holding pool lock
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 void blockcheck(Pool *p, Bhdr *b) {
 	Alloc *a;
 	Btail *t;
@@ -149,6 +171,10 @@ void blockcheck(Pool *p, Bhdr *b) {
 /*
  * poolcheckl: Validate entire pool (assumes lock held)
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void poolcheckl(Pool *p) {
 	Arena *a;
 
@@ -161,6 +187,10 @@ void poolcheckl(Pool *p) {
 /*
  * pooldumpl: Dump pool state (assumes lock held)
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pooldumpl(Pool *p) {
 	Arena *a;
 
@@ -172,6 +202,10 @@ void pooldumpl(Pool *p) {
 /*
  * logstack: Log stack trace (placeholder)
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void logstack(Pool *p) {
 	if (p->logstack)
 		p->logstack(p);

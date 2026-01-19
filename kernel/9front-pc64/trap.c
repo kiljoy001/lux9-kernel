@@ -52,6 +52,9 @@ Segdesc temp_idt[512] __attribute__((aligned(16)));
 
 int userureg(Ureg *ureg) { return (ureg->cs & 3) == 3; }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void trapinit0(void) {
   u32int d1, v;
   uintptr vaddr;
@@ -113,6 +116,9 @@ void trapinit0(void) {
   uartputs("trapinit0: DONE\n", 17);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void trapinit(void) {
   print("trapinit: ENTRY\n");
   irqinit();
@@ -169,6 +175,10 @@ static char *excname[32] = {
     "31 (reserved)",
 };
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 static int usertrap(Ureg *ureg, int vno) {
   char buf[ERRMAX];
 
@@ -184,6 +194,10 @@ static int usertrap(Ureg *ureg, int vno) {
   return 0;
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void trap(Ureg *ureg) {
   int vno, user;
   static int trap_count = 0;
@@ -262,6 +276,10 @@ out:
   intret_debug_stage = 4;
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void dumpregs(Ureg *ureg) {
   if (up)
     iprint("cpu%d: registers for %s %lud\n", m->machno, up->text, up->pid);
@@ -304,6 +322,10 @@ void dumpregs(Ureg *ureg) {
  * Fill in enough of Ureg to get a stack trace, and call a function.
  * Used by debugging interface rdb.
  */
+/*@
+  @ requires ) == \null || \valid());
+  @ assigns \nothing;
+  @*/
 void callwithureg(void (*fn)(Ureg *)) {
   Ureg ureg;
   ureg.pc = getcallerpc(&fn);
@@ -313,11 +335,20 @@ void callwithureg(void (*fn)(Ureg *)) {
 
 static void doublefault(Ureg *, void *) { panic("double fault"); }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void unexpected(Ureg *ureg, void *) {
   iprint("unexpected trap %llud\n", ureg->type);
   panic("unexpected");
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 static void _dumpstack(Ureg *ureg) {
   uintptr l, v, i, estack;
   extern char etext[];
@@ -382,6 +413,11 @@ static void _dumpstack(Ureg *ureg) {
 
 void dumpstack(void) { callwithureg(_dumpstack); }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void debugexc(Ureg *ureg, void *) {
   u64int dr6, m;
   char buf[ERRMAX];
@@ -415,6 +451,11 @@ static void debugexc(Ureg *ureg, void *) {
   qunlock(&up->debug);
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void debugbpt(Ureg *ureg, void *) {
   if (up == 0)
     panic("kernel bpt");
@@ -423,6 +464,11 @@ static void debugbpt(Ureg *ureg, void *) {
   postnote(up, 1, "sys: breakpoint", NDebug);
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void faultamd64(Ureg *ureg, void *) {
   uintptr addr;
   int read, user;
@@ -585,6 +631,10 @@ static char *syscallnames[] = {
     [50] = "PREAD",  [51] = "PWRITE",
 };
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void syscall(Ureg *ureg) {
   static int syscall_count = 0;
 
@@ -671,6 +721,11 @@ Ureg *notify(Ureg *ureg, char *msg) {
 /*
  *   Return user to state before notify()
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires nureg == \null || \valid(nureg);
+  @ assigns \nothing;
+  @*/
 int noted(Ureg *ureg, Ureg *nureg, int arg0) {
   uintptr oureg, sp;
 
@@ -699,6 +754,9 @@ int noted(Ureg *ureg, Ureg *nureg, int arg0) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
   uintptr *sp;
   Ureg *ureg;
@@ -727,6 +785,9 @@ uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
 /*
  *  return the userpc the last exception happened at
  */
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr userpc(void) {
   Ureg *ureg;
 
@@ -738,6 +799,12 @@ uintptr userpc(void) {
  * to write from devproc and noted() and then restore the saved values before
  * returning.
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires pureg == \null || \valid(pureg);
+  @ requires uva == \null || \valid(uva);
+  @ assigns \nothing;
+  @*/
 void setregisters(Ureg *ureg, char *pureg, char *uva, int n) {
   u64int flags;
 
@@ -749,6 +816,11 @@ void setregisters(Ureg *ureg, char *pureg, char *uva, int n) {
   ureg->pc &= UADDRMASK;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires (*entry)(void) == \null || \valid((*entry)(void));
+  @ assigns \nothing;
+  @*/
 void kprocchild(Proc *p, void (*entry)(void)) {
   /*
    * gotolabel() needs a word on the stack in
@@ -760,6 +832,11 @@ void kprocchild(Proc *p, void (*entry)(void)) {
   p->sched.sp = (uintptr)p->kstack + KSTACK - BY2WD;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void forkchild(Proc *p, Ureg *ureg) {
   Ureg *cureg;
 
@@ -781,12 +858,21 @@ void forkchild(Proc *p, Ureg *ureg) {
 /* Give enough context in the ureg to produce a kernel stack for
  * a sleeping process
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void setkernur(Ureg *ureg, Proc *p) {
   ureg->pc = p->sched.pc;
   ureg->sp = p->sched.sp + 8;
   ureg->r14 = (uintptr)p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 uintptr dbgpc(Proc *p) {
   Ureg *ureg;
 

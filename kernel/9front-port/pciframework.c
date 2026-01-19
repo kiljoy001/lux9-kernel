@@ -65,6 +65,9 @@ static PCIClass pci_classes[] = {
     {0xFF, 0xFF, 0xFF, "Unknown", "Unknown"}};
 
 /* Initialize PCI framework */
+/*@
+  @ assigns \nothing;
+  @*/
 void pci_framework_init(void) {
   memset(&pci_framework, 0, sizeof(pci_framework));
 
@@ -213,6 +216,9 @@ Device *pci_framework_register_device(Pcidev *pcidev) {
 }
 
 /* Enumerate all PCI devices */
+/*@
+  @ assigns \nothing;
+  @*/
 int pci_framework_enumerate(void) {
   Pcidev *pcidev = nil;
   int count = 0;
@@ -235,6 +241,10 @@ int pci_framework_enumerate(void) {
 }
 
 /* Register a PCI driver */
+/*@
+  @ requires driver == \null || \valid(driver);
+  @ assigns \nothing;
+  @*/
 int pci_framework_register_driver(PCIDriver *driver) {
   if (driver == nil) {
     return -1;
@@ -253,6 +263,10 @@ int pci_framework_register_driver(PCIDriver *driver) {
 }
 
 /* Unregister a PCI driver */
+/*@
+  @ requires driver == \null || \valid(driver);
+  @ assigns \nothing;
+  @*/
 int pci_framework_unregister_driver(PCIDriver *driver) {
   if (driver == nil) {
     return -1;
@@ -285,6 +299,10 @@ int pci_framework_unregister_driver(PCIDriver *driver) {
 }
 
 /* List registered drivers */
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 void pci_framework_list_drivers(void (*print_func)(char *, ...)) {
   PCIDriver *driver;
 
@@ -308,6 +326,10 @@ void pci_framework_list_drivers(void (*print_func)(char *, ...)) {
 }
 
 /* List PCI devices */
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 void pci_framework_list_devices(void (*print_func)(char *, ...)) {
   if (print_func == nil) {
     print_func = print;
@@ -318,6 +340,10 @@ void pci_framework_list_devices(void (*print_func)(char *, ...)) {
   print_func("----------------------------------------\n");
 
   lock(&pci_framework.lock);
+    /*@ loop invariant 0 <= i <= pci_framework.pci_device_count;
+    @ loop assigns i;
+    @ loop variant pci_framework.pci_device_count - i;
+    @*/
   for (int i = 0; i < pci_framework.pci_device_count; i++) {
     Device *dev = pci_framework.pci_devices[i];
     if (dev != nil) {
@@ -329,7 +355,11 @@ void pci_framework_list_devices(void (*print_func)(char *, ...)) {
                  dev->driver_name[0] ? dev->driver_name : "No driver");
 
       /* Print BAR information */
-      for (int j = 0; j < 6; j++) {
+        /*@ loop invariant 0 <= j <= 6;
+    @ loop assigns j;
+    @ loop variant 6 - j;
+    @*/
+  for (int j = 0; j < 6; j++) {
         if (dev->location.pci.pcidev->mem[j].size > 0) {
           print_func("  BAR%d: %p (size %lld)\n", j,
                      dev->location.pci.pcidev->mem[j].bar,
@@ -344,6 +374,10 @@ void pci_framework_list_devices(void (*print_func)(char *, ...)) {
 }
 
 /* Example PCI drivers */
+/*@
+  @ requires pcidev == \null || \valid(pcidev);
+  @ assigns \nothing;
+  @*/
 static int ahci_probe(Pcidev *pcidev) {
   /* Match AHCI controllers */
   if (pcidev->ccrb == 0x01 && pcidev->ccru == 0x06) {
@@ -352,6 +386,10 @@ static int ahci_probe(Pcidev *pcidev) {
   return -1; /* No match */
 }
 
+/*@
+  @ requires pcidev == \null || \valid(pcidev);
+  @ assigns \nothing;
+  @*/
 static int ide_probe(Pcidev *pcidev) {
   /* Match IDE controllers */
   if (pcidev->ccrb == 0x01 && pcidev->ccru == 0x01) {
@@ -360,6 +398,10 @@ static int ide_probe(Pcidev *pcidev) {
   return -1; /* No match */
 }
 
+/*@
+  @ requires pcidev == \null || \valid(pcidev);
+  @ assigns \nothing;
+  @*/
 static int usb_probe(Pcidev *pcidev) {
   /* Match USB controllers */
   if (pcidev->ccrb == 0x0C && pcidev->ccru == 0x03) {
@@ -368,6 +410,10 @@ static int usb_probe(Pcidev *pcidev) {
   return -1; /* No match */
 }
 
+/*@
+  @ requires pcidev == \null || \valid(pcidev);
+  @ assigns \nothing;
+  @*/
 static int ethernet_probe(Pcidev *pcidev) {
   /* Match Ethernet controllers */
   if (pcidev->ccrb == 0x02 && pcidev->ccru == 0x00) {

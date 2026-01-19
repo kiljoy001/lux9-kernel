@@ -39,10 +39,6 @@ typedef struct Vctl Vctl;
 #include "lock.h"
 
 /* For Frama-C: don't alias bprint to print to avoid declaration conflicts */
-#ifndef __FRAMAC__
-#define bprint print
-#define bpanic panic
-#endif
 
 struct Label {
   uintptr sp;  /* offset 0 */

@@ -4,7 +4,7 @@
 #define _EXCHANGE_POOL_H_
 
 #include "blind_ledger.h"
-#include "portdat.h" /* For QLock definition */
+#include "dat.h" /* Includes portdat.h, mem.h, u.h, etc. */
 #include "types_fwd.h"
 #include "uuid.h"
 
@@ -19,7 +19,8 @@ typedef enum {
 /* Pool configuration */
 #define POOL_SIZE 512 /* Fixed size for now */
 #define MIN_PAGES_PER_PROCESS 1
-#define MAX_PAGES_PER_PROCESS 32
+#define MAX_PAGES_PER_PROCESS 128
+#define MAX_ACTIVE_RINGS 4
 
 /* IPC Pub-Sub configuration */
 #define MAX_TOPIC_LENGTH 64
@@ -61,6 +62,13 @@ typedef struct Notification {
   struct Proc *subscriber;    /* The target subscriber process (Kernel only) */
 } Notification;
 
+/* ActiveRingPage - tracks an active ring page bound to a destination */
+typedef struct {
+  char path[KNAMELEN];
+  UserCapability cap;
+  int active;
+} ActiveRingPage;
+
 /* Per-process allocation tracking */
 typedef struct ProcAllocation {
   struct Proc *proc;
@@ -70,6 +78,7 @@ typedef struct ProcAllocation {
   uint target_pages;
   uint syscall_count;
   uvlong last_measurement;
+  ActiveRingPage rings[MAX_ACTIVE_RINGS];
   struct ProcAllocation *next;
 } ProcAllocation;
 
@@ -101,6 +110,11 @@ void exchange_pool_shutdown(void);
 /* Global page allocation (called by devexchange.c per-channel pool) */
 PoolError global_pool_alloc_page(struct Proc *p, UserCapability *out);
 PoolError global_pool_free_page(struct Proc *p, const UserCapability *cap);
+
+/* Hybrid IPC */
+#include "exchange.h"
+PoolError pool_prepare_hybrid(struct Proc *p, ExchangeRequest *req,
+                              ExchangeHandle *out);
 
 /* Process tracking */
 ProcAllocation *get_proc_allocation(struct Proc *p);

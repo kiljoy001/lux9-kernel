@@ -3,10 +3,18 @@
 #include "fns.h"
 #include "uuid.h"
 
+/*@
+  @ requires pid2 == \null || \valid(pid2);
+  @ assigns \nothing;
+  @*/
 static u16int pid2_data_b(const uuid_t *pid2) {
   return (u16int)(((pid2->data[6] & 0x0F) << 8) | pid2->data[7]);
 }
 
+/*@
+  @ requires hash == \null || \valid(hash);
+  @ assigns \nothing;
+  @*/
 static u64int hash_extract_u64(const u8int *hash) {
   u64int v = 0;
   v |= (u64int)hash[0] << 56;
@@ -20,6 +28,9 @@ static u64int hash_extract_u64(const u8int *hash) {
   return v;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void pid2_selftest(void) {
   uuid_t parent;
   uuid_t pid2;
@@ -34,8 +45,16 @@ void pid2_selftest(void) {
   u16int parent_sig;
   u64int data_a;
 
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++)
     parent.data[i] = (u8int)(0xA0 + i);
+    /*@ loop invariant 0 <= i <= 32;
+    @ loop assigns i;
+    @ loop variant 32 - i;
+    @*/
   for (int i = 0; i < 32; i++) {
     ns_cid[i] = (u8int)(i + 1);
     code_hash[i] = (u8int)(0xFF - i);
@@ -59,7 +78,11 @@ void pid2_selftest(void) {
   } else {
     u16int got_b = pid2_data_b(&pid2);
     u64int got_c = (u64int)(pid2.data[8] & 0x3F);
-    for (int i = 9; i < 16; i++)
+      /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
+  for (int i = 9; i < 16; i++)
       got_c = (got_c << 8) | pid2.data[i];
     if (got_b != data_b || got_c != data_c)
       print("PID2 selftest: pack mismatch\n");

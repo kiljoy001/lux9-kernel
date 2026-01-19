@@ -4,7 +4,6 @@
 #include "router.h"
 
 /* Forward declarations */
-static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 extern uint convM2S(uchar *, uint, Fcall *);
 extern uint convS2M(Fcall *, uchar *, uint);
 
@@ -86,7 +85,7 @@ static /*@
   @ terminates \true;
   @ assigns *ctl, msg_buf[0..P9_MSG_SIZE-1];
   @*/
-static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
+int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
   u32int head = ctl->req_head;
   u32int tail = ctl->req_tail;
   u32int rep_head = ctl->rep_head;
@@ -119,6 +118,9 @@ static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
     if (rep_size == 0)
       return -1;
     PBIT32(slot + 4, rep_size);
+    /* Zero out the remainder of the slot data for security */
+    memset(slot + P9_RING_HEADER_SIZE + rep_size, 0,
+           P9_RING_DATA_SIZE - rep_size);
 
     u32int next_rep = (rep_tail + 1) % P9_RING_SLOTS;
     if (next_rep == rep_head)

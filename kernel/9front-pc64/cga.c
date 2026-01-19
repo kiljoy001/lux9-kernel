@@ -68,22 +68,34 @@ static Rune cp437[256] = {
     0x207F, 0x00B2, 0x25A0, 0x00A0,
 };
 
+/*@
+  @ assigns \nothing;
+  @*/
 static uchar cgaregr(int index) {
   outb(0x3D4, index);
   return inb(0x3D4 + 1) & 0xFF;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void cgaregw(int index, int data) {
   outb(0x3D4, index);
   outb(0x3D4 + 1, data);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void movecursor(void) {
   cgaregw(0x0E, (cgapos / 2 >> 8) & 0xFF);
   cgaregw(0x0F, cgapos / 2 & 0xFF);
   CGASCREENBASE[cgapos + 1] = Attr;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void cgascreenputc(Rune c) {
   int i;
   uchar *p;
@@ -123,6 +135,10 @@ static void cgascreenputc(Rune c) {
   movecursor();
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static void cgascreenputs(char *s, int n) {
   static char rb[UTFmax];
   static int nrb;
@@ -154,6 +170,9 @@ static void cgascreenputs(char *s, int n) {
   unlock(&cgascreenlock);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void cgatokmesg(void) {
   /* TODO: Skip this for now - CGA screen memory not mapped yet */
   /* This function copies CGA screen contents to kernel message buffer */
@@ -186,6 +205,9 @@ static void cgatokmesg(void) {
   */
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void screeninit(void) {
   /* CGA legacy text mode is disabled.
    * Modern display output uses:

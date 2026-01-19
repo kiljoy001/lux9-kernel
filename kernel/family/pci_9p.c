@@ -118,7 +118,12 @@ Walkqid *pci_9p_walk(struct FamilyExchangePage *family, Chan *c, Chan *nc,
   return devwalk(c, nc, name, nname, nil, 0, pcigen);
 }
 
-int pci_9p_stat(struct FamilyExchangePage *family, Chan *c, uchar *dp, int n) {
+/*@
+  @ requires \valid(family);
+  @ requires \valid(c);
+  @ requires \valid(dp);
+  @ assigns \nothing;
+  @*/int pci_9p_stat(struct FamilyExchangePage *family, Chan *c, uchar *dp, int n) {
   USED(family);
   return devstat(c, dp, n, nil, 0, pcigen);
 }
@@ -128,7 +133,11 @@ Chan *pci_9p_open(struct FamilyExchangePage *family, Chan *c, int omode) {
   return devopen(c, omode, nil, 0, pcigen);
 }
 
-void pci_9p_close(struct FamilyExchangePage *family, Chan *c) {
+/*@
+  @ requires \valid(family);
+  @ requires \valid(c);
+  @ assigns \nothing;
+  @*/void pci_9p_close(struct FamilyExchangePage *family, Chan *c) {
   USED(family);
   USED(c);
 }
@@ -148,7 +157,7 @@ long pci_9p_read(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
 
   if (c->qid.path == Qbus) {
     /* List all PCI buses with devices */
-    char *p = smalloc(4096);
+    char *p = smalloc_driver(4096);
     int len = 0;
     int i;
 
@@ -174,13 +183,13 @@ long pci_9p_read(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
         len = snprint(p, 4096, "no devices\n");
     }
     n = readstr(off, buf, n, p);
-    free(p);
+    xfree_driver(p);
     return n;
   }
 
   if (c->qid.path == Qctl) {
     /* Return PCI subsystem info */
-    char *p = smalloc(512);
+    char *p = smalloc_driver(512);
     int len = 0;
 
     if (!p)
@@ -190,14 +199,18 @@ long pci_9p_read(struct FamilyExchangePage *family, Chan *c, void *buf, long n,
     } else {
       lock(&ctx->device_registry.device_registry_lock);
       int count = 0;
-      for (int i = 0; i < MAX_PCI_DEVICES; i++)
+        /*@ loop invariant 0 <= i <= MAX_PCI_DEVICES;
+    @ loop assigns i;
+    @ loop variant MAX_PCI_DEVICES - i;
+    @*/
+  for (int i = 0; i < MAX_PCI_DEVICES; i++)
         if (ctx->device_registry.devices[i])
           count++;
       unlock(&ctx->device_registry.device_registry_lock);
       len = snprint(p, 512, "devices %d\nmax %d\n", count, MAX_PCI_DEVICES);
     }
     n = readstr(off, buf, n, p);
-    free(p);
+    xfree_driver(p);
     return n;
   }
 

@@ -36,6 +36,9 @@ uintptr dbg_getpte(uintptr);
 /*
  * The first process kernel process starts here.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 static void uartprint_hex(uvlong v) {
   char hex[17];
   int i;
@@ -48,6 +51,11 @@ static void uartprint_hex(uvlong v) {
   uartputs(hex, 16);
 }
 
+/*@
+  @ requires spec == \null || \valid(spec);
+  @ requires label == \null || \valid(label);
+  @ assigns \nothing;
+  @*/
 static void mount_wasm_device(char *spec, char *label) {
   if (waserror()) {
     print("BOOT[proc0]: WARNING - failed to mount %s on /wasm\n", label);
@@ -80,6 +88,11 @@ static void mount_wasm_device(char *spec, char *label) {
  * Returns 1 on success, 0 on failure
  * Sets up TSEG with all PT_LOAD segments
  */
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires out_entry == \null || \valid(out_entry);
+  @ assigns \nothing;
+  @*/
 static int load_elf64(Chan *c, uintptr *out_entry) {
   Elf64_Ehdr ehdr;
   Elf64_Phdr *phdrs = nil;
@@ -186,6 +199,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   uintptr aligned_max = (max_addr + BY2PG - 1) & ~(BY2PG - 1);
 
   /* Allocate guard pages BEFORE program */
+    /*@ loop invariant 0 <= addr <= aligned_min;
+    @ loop assigns addr;
+    @ loop variant aligned_min - addr;
+    @*/
   for (uintptr addr = guard_min; addr < aligned_min; addr += BY2PG) {
     Page *p =
         newpage(addr, nil); /* Charges process Pebble budget as system tax */
@@ -197,6 +214,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   }
 
   /* Allocate guard pages AFTER program */
+    /*@ loop invariant 0 <= addr <= guard_max;
+    @ loop assigns addr;
+    @ loop variant guard_max - addr;
+    @*/
   for (uintptr addr = aligned_max; addr < guard_max; addr += BY2PG) {
     Page *p =
         newpage(addr, nil); /* Charges process Pebble budget as system tax */
@@ -275,6 +296,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   return 1;
 }
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static void proc0(void *arg) {
   Proc *proc;
   int i;
@@ -588,7 +613,11 @@ static void proc0(void *arg) {
               ulong virt_addr = UTZERO;
               ulong remaining = exec.text + exec.data;
 
-              for (int i = 0; i < total_pages; i++) {
+                /*@ loop invariant 0 <= i <= total_pages;
+    @ loop assigns i;
+    @ loop variant total_pages - i;
+    @*/
+  for (int i = 0; i < total_pages; i++) {
                 Page *p = newpage(virt_addr, nil);
                 KMap *k = kmap(p);
 
@@ -845,6 +874,9 @@ static void proc0(void *arg) {
   panic("init0");
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void userinit(void) {
   extern void uartputs(char *, int);
   uartputs("userinit: ENTRY\n", 17);

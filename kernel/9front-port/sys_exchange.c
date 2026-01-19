@@ -27,6 +27,10 @@ typedef ulong *syscall_va_list;
  * Removes page from current process and prepares it for transfer.
  * Returns a capability that can be passed to exchange_accept.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_prepare(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   uintptr vaddr;
@@ -68,6 +72,10 @@ uintptr sys_exchange_prepare(void *list_void) {
  *
  * Accepts a page capability and maps it into the current process.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_accept(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   UserCapability *cap;
@@ -107,6 +115,10 @@ uintptr sys_exchange_accept(void *list_void) {
  *
  * Cancels a prepared exchange and returns the page to original owner.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_cancel(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   UserCapability *cap;
@@ -142,6 +154,10 @@ uintptr sys_exchange_cancel(void *list_void) {
  *
  * Prepares a range of pages for exchange.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_prepare_range(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   uintptr vaddr;
@@ -175,7 +191,11 @@ uintptr sys_exchange_prepare_range(void *list_void) {
     
     if(err != BLIND_LEDGER_OK) {
       /* On error, cancel any previously prepared pages */
-      for(int i = 0; i < count; i++) {
+        /*@ loop invariant 0 <= i <= count;
+    @ loop assigns i;
+    @ loop variant count - i;
+    @*/
+  for(int i = 0; i < count; i++) {
         exchange_cancel(&handles[i]);
       }
       
@@ -208,6 +228,10 @@ uintptr sys_exchange_prepare_range(void *list_void) {
  *
  * Allocates a page from the global exchange pool and returns a capability.
  */
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_alloc(void *a) {
   UserCapability *cap;
   Proc *p = up; // Current process
@@ -234,6 +258,10 @@ uintptr sys_exchange_alloc(void *a) {
  *
  * Returns a previously allocated page to the global exchange pool.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_free(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   UserCapability *cap;
@@ -269,6 +297,10 @@ uintptr sys_exchange_free(void *list_void) {
  *
  * Publishes a message to a named topic and returns a capability for the published page.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_publish(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *topic_name;
@@ -311,6 +343,10 @@ uintptr sys_exchange_publish(void *list_void) {
  *
  * Subscribes the current process to receive messages from a named topic.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_subscribe(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *topic_name;
@@ -341,6 +377,10 @@ uintptr sys_exchange_subscribe(void *list_void) {
  *
  * Unsubscribes the current process from a named topic.
  */
+/*@
+  @ requires list_void == \null || \valid(list_void);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_unsubscribe(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *topic_name;
@@ -371,6 +411,10 @@ uintptr sys_exchange_unsubscribe(void *list_void) {
  *
  * Receives the next notification for messages published to subscribed topics.
  */
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sys_exchange_receive(void *a) {
   Proc *p = up; // Current process
   
@@ -384,18 +428,34 @@ uintptr sys_exchange_receive(void *a) {
 }
 
 /* Syscall table wrappers (names without underscores) */
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sysexchangepublish(void *a) {
   return sys_exchange_publish(a);
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sysexchangesubscribe(void *a) {
   return sys_exchange_subscribe(a);
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sysexchangeunsubscribe(void *a) {
   return sys_exchange_unsubscribe(a);
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 uintptr sysexchangereceive(void *a) {
   return sys_exchange_receive(a);
 }

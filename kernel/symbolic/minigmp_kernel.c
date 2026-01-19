@@ -48,13 +48,22 @@ typedef ulong size_t;
   } while (0)
 
 /* ctype.h functions */
+/*@
+  @ assigns \nothing;
+  @*/
 static inline int gmp_isspace(int c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 static inline int gmp_isdigit(int c) { return c >= '0' && c <= '9'; }
+/*@
+  @ assigns \nothing;
+  @*/
 static inline int gmp_isalpha(int c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
+/*@
+  @ assigns \nothing;
+  @*/
 static inline int gmp_isalnum(int c) {
   return gmp_isdigit(c) || gmp_isalpha(c);
 }
@@ -122,6 +131,10 @@ static void *gmp_kernel_realloc(void *old, size_t old_size, size_t new_size) {
   return p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void gmp_kernel_free(void *p, size_t size) {
   USED(size);
   free(p);
@@ -131,6 +144,9 @@ static void gmp_kernel_free(void *p, size_t size) {
 #include "mini-gmp.c"
 
 /* Initialize mini-GMP with kernel allocator */
+/*@
+  @ assigns \nothing;
+  @*/
 void minigmp_init(void) {
   mp_set_memory_functions(gmp_kernel_alloc, gmp_kernel_realloc,
                           gmp_kernel_free);

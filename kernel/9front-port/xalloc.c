@@ -6,12 +6,16 @@
 
 #include "borrow_enforce.h"
 
+#ifdef __FRAMAC__
+#include "acsl_bounds.h"
+#endif
+
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
 extern uintptr saved_limine_hhdm_offset;
 int xinit_done = 0;
 
 /* Bootstrap allocation for early boot systems */
-static uchar bootstrap_pool[8192]; /* Simple 8KB bootstrap pool */
+static uchar bootstrap_pool[131072]; /* Increased to 128KB for dynamic hole allocation */
 static ulong bootstrap_offset = 0;
 
 /**
@@ -94,10 +98,10 @@ static void xtrace(const char *fmt, ...) {
  * -------------------------------------------------------------------------
  */
 enum {
-  INITIAL_NHOLE = 128,
-  DYNAMIC_NHOLE = 256,
-  Nhole = INITIAL_NHOLE,  /* static hole descriptor count */
-  Magichole = 0x484F4C45, /* HOLE */
+  INITIAL_NHOLE = 2048,    /* Increased from 512 to handle high page fault load */
+  DYNAMIC_NHOLE = 1024,    /* Increased from 512 for larger batches */
+  Nhole = INITIAL_NHOLE,   /* static hole descriptor count */
+  Magichole = 0x484F4C45,  /* HOLE */
 };
 
 typedef struct Hole Hole;
@@ -215,18 +219,16 @@ void *xspanalloc(ulong size, int align, ulong span) {
 }
 
 /*@
-  @ requires size < 0x80000000;
+  @ requires size < ACSL_MAX_ALLOC;
   @
   @ behavior success:
   @   assumes \exists Hole *h; h->size >= size;
   @   ensures \result != \null;
-  @   ensures \valid((char*)\result + (0 .. size-1));
-  @   ensures ((uintptr)\result & 7) == 0;
-  @
+  @   ensures \valid((char *)\result + (0 ..size - 1));
+  @   ensures((uintptr)\result & 7) == 0;
   @ behavior failure:
   @   assumes \forall Hole *h; h->size < size;
   @   ensures \result == \null;
-  @
   @ complete behaviors;
   @ disjoint behaviors;
   @ assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
@@ -372,7 +374,8 @@ void *xalloc_raw(ulong size) { return xalloc_internal(size, 1, 1); }
 
 /*@
   @ requires p != \null;
-  @ requires \valid((char*)p);
+  @ requires \valid((char *)p - offsetof(Xhdr, data[0]) + (0 ..sizeof(Xhdr) -
+  1));
   @ assigns xlists;
   @ terminates \true;
   @*/

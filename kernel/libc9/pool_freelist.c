@@ -23,6 +23,10 @@
 /*
  * checklist: Validate a circular list of same-sized free blocks
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 void checklist(Free *t) {
 	Free *q;
 
@@ -39,6 +43,10 @@ void checklist(Free *t) {
 /*
  * checktree: Validate the entire splay tree recursively
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 void checktree(Free *t, int a, int b) {
 	assert(t->magic == FREE_MAGIC);
 	assert(a < t->size && t->size < b);

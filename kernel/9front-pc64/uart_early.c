@@ -17,17 +17,26 @@
 static int early_uart_initialized = 0;
 
 /* Use existing kernel I/O functions */
+/*@
+  @ assigns \nothing;
+  @*/
 static inline void early_outb(int port, uchar data)
 {
 	outb(port, data);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static inline uchar early_inb(int port)
 {
 	return inb(port);
 }
 
 /* Early UART character output */
+/*@
+  @ assigns \nothing;
+  @*/
 static void early_uart_putc(int c)
 {
 	/* Wait for transmitter to be ready */
@@ -38,6 +47,9 @@ static void early_uart_putc(int c)
 }
 
 /* Initialize early UART console */
+/*@
+  @ assigns \nothing;
+  @*/
 void early_i8250console(void)
 {
 	/* Disable interrupts */
@@ -63,6 +75,10 @@ void early_i8250console(void)
 }
 
 /* Early print function - direct hardware access, no allocation */
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 void early_iprint(char *fmt, ...)
 {
 	char buf[256];

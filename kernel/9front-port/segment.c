@@ -74,6 +74,9 @@ Image *newimage(ulong pages) {
   return i;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void initseg(void) {
   int i;
   Physseg *ps, *prev_ps;
@@ -171,6 +174,10 @@ Segment *newseg(int type, uintptr base, ulong size) {
   return s;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void putseg(Segment *s) {
   Image *i;
 
@@ -422,6 +429,10 @@ sameseg:
   return s;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static int user_perms(Segment *s) {
   int flags = PTEVALID | PTEUSER;
   if (s->type & SG_STACK)
@@ -437,6 +448,11 @@ static int user_perms(Segment *s) {
  *  segpage inserts Page p into Segmnet s.
  *  on error, calls putpage() on p.
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void segpage(Segment *s, Page *p) {
   Pte **pte, *etp;
   uintptr soff;
@@ -475,6 +491,10 @@ void segpage(Segment *s, Page *p) {
   userpmap(p->va, p->pa, user_perms(s));
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void relocateseg(Segment *s, uintptr offset) {
   Pte **pte, **emap;
   Page **pg, **pe;
@@ -554,6 +574,10 @@ found:
 }
 
 /* remove from idle list */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 static void busyimage(Image *i) {
   /* not on idle list? */
   if (i->link == nil)
@@ -570,6 +594,10 @@ static void busyimage(Image *i) {
 }
 
 /* insert into idle list */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 static void idleimage(Image *i) {
   Image **l, *j;
 
@@ -599,6 +627,10 @@ static void idleimage(Image *i) {
 }
 
 /* putimage(): called with image locked and unlocks */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 void putimage(Image *i) {
   Chan *c;
   long r;
@@ -649,6 +681,9 @@ void putimage(Image *i) {
 
 ulong imagecached(void) { return imagealloc.pgidle; }
 
+/*@
+  @ assigns \nothing;
+  @*/
 ulong imagereclaim(ulong pages) {
   ulong np;
   Image *i;
@@ -681,6 +716,9 @@ ulong imagereclaim(ulong pages) {
   return np;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr ibrk(uintptr addr, int seg) {
   Segment *s, *ns;
   uintptr newtop, oldtop;
@@ -789,6 +827,10 @@ uintptr ibrk(uintptr addr, int seg) {
  *  flushing its own TBL by calling flushmmu()
  *  afterwards.
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void mfreeseg(Segment *s, uintptr start, ulong pages) {
   uintptr off;
   Pte **pte, **emap;
@@ -922,6 +964,10 @@ Physseg *findphysseg(char *name) {
  * Remove a Physseg entry from the doubly-linked list
  * Note: This doesn't free the entry itself - caller must do that
  */
+/*@
+  @ requires entry == \null || \valid(entry);
+  @ assigns \nothing;
+  @*/
 static void removephysseg(Physseg *entry) {
   if (entry == nil)
     return;
@@ -940,6 +986,10 @@ static void removephysseg(Physseg *entry) {
   entry->next = nil;
 }
 
+/*@
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
   int sno;
   Segment *s, *os;
@@ -1047,6 +1097,10 @@ done:
   return va;
 }
 
+/*@
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static void segflush(void *va, uintptr len) {
   uintptr from, to, off;
   Segment *s;
@@ -1092,6 +1146,9 @@ static void segflush(void *va, uintptr len) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr syssegflush(va_list list) {
   void *va;
   ulong len;
@@ -1103,6 +1160,9 @@ uintptr syssegflush(va_list list) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void segclock(uintptr pc) {
   Segment *s;
 
@@ -1167,12 +1227,20 @@ enum {
   Cdie,
 };
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static int cmddone(void *arg) {
   Segio *sio = arg;
 
   return sio->cmd == Cnone;
 }
 
+/*@
+  @ requires sio == \null || \valid(sio);
+  @ assigns \nothing;
+  @*/
 static void docmd(Segio *sio, int cmd) {
   sio->err = nil;
   sio->cmd = cmd;
@@ -1185,12 +1253,20 @@ static void docmd(Segio *sio, int cmd) {
     error(sio->err);
 }
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static int cmdready(void *arg) {
   Segio *sio = arg;
 
   return sio->cmd != Cnone;
 }
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static void segmentioproc(void *arg) {
   Segio *sio = arg;
   int done;
@@ -1246,6 +1322,12 @@ static void segmentioproc(void *arg) {
   pexit("done", 1);
 }
 
+/*@
+  @ requires sio == \null || \valid(sio);
+  @ requires s == \null || \valid(s);
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 long segio(Segio *sio, Segment *s, void *a, long n, vlong off, int read) {
   uintptr m;
   void *b;

@@ -20,6 +20,13 @@ static void srvinit(void) { srv_init(); }
 
 static Chan *srvattach(char *spec) { return devattach('s', spec); }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires name == \null || \valid(name);
+  @ requires  == \null || \valid();
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int srvgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
   Qid qid;
   char nbuf[64];
@@ -54,6 +61,11 @@ static Walkqid *srvwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, nil, 0, srvgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ assigns \nothing;
+  @*/
 static int srvstat(Chan *c, uchar *db, int n) {
   return devstat(c, db, n, nil, 0, srvgen);
 }
@@ -86,12 +98,22 @@ Return:
 
 static void srvclose(Chan *) {}
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long srvread(Chan *c, void *va, long n, vlong offset) {
   if (c->qid.path == Qdir)
     return devdirread(c, va, n, nil, 0, srvgen);
   return 0;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long srvwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
   int fd;
@@ -127,6 +149,10 @@ static Chan *srvcreate(Chan *c, char *name, int omode, ulong perm) {
   return devopen(c, omode, nil, 0, srvgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void srvremove(Chan *c) {
   char *name;
 

@@ -10,6 +10,7 @@
 #ifndef _MSGORD_KERNEL_H_
 #define _MSGORD_KERNEL_H_
 
+#include "exchange.h"
 #include "types_fwd.h"
 
 /*
@@ -40,6 +41,7 @@
  */
 #define MSGORD_MSG_9P 0
 #define MSGORD_MSG_RAW 1
+#define MSGORD_MSG_EXCHANGE 2
 
 /*
  * MSGORD Message Payload
@@ -52,6 +54,11 @@ typedef struct OrdPayload {
       void *data;
       ulong len;
     } raw;
+    struct {
+      ExchangeHandle handle;
+      ulong offset;
+      ulong len;
+    } exchange;
   };
 } OrdPayload;
 
@@ -146,10 +153,14 @@ void msgord_destroy_instance(MsgOrd *dag);
 MsgOrd *msgord_get(int id);
 
 /* Submit 9P message for ordering - REPLACES p9_route() */
-int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path, u64int nonce);
+int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
+                  u64int nonce);
 
 /* Submit raw data for ordering */
-int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len, u64int nonce);
+int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len,
+                      u64int nonce);
+uint msgord_submit_exchange(MsgOrd *dag, Proc *caller, ExchangeHandle handle,
+                            ulong offset, ulong len, char *path, u64int nonce);
 
 /* Get next ordered message ready for delivery */
 OrdMsg *msgord_next(MsgOrd *dag);
@@ -240,7 +251,8 @@ int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
  * consensus_depth.c)
  * t and r are Fcall* but declared as void* for header independence */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                              char *path, int depth, uint *msg_id_out, u64int nonce);
+                              char *path, int depth, uint *msg_id_out,
+                              u64int nonce);
 
 /* Macro alias for backwards compatibility */
 #define msgord_submit_async_ex msgord_submit_async_depth

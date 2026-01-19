@@ -1,12 +1,11 @@
 // === IPC Pub-Sub Implementation ===
 
-/* Standard kernel includes - ORDER MATTERS! u.h first for Plan 9 types */
-#include "../port/lib.h"
 #include "blind_ledger.h"
 #include "dat.h"
 #include "exchange_pool.h"
 #include "fns.h"
 #include "mem.h"
+#include "portlib.h"
 #include "u.h"
 #include "uuid.h"
 
@@ -32,8 +31,8 @@ void uuid_pack_topic(uuid_t *topic_uuid, const char *namespace_str,
   }
 
   // Use UUIDv8 packing function with derived entropy
-  uuid_pack_v8(topic_uuid, (uvlong)hash, (ushort)(hash >> 16),
-               (uvlong)(hash >> 32));
+  // hash is 32-bit, so >> 32 is undefined. Use 0 for high bits.
+  uuid_pack_v8(topic_uuid, (uvlong)hash, (ushort)(hash >> 16), (uvlong)0);
 }
 
 // Utility function to verify topic UUID matches expected values
@@ -64,6 +63,11 @@ static Topic *rbtree_search(Topic *root, const uuid_t *topic_uuid) {
   return nil;
 }
 
+/*@
+  @ requires root == \null || \valid(root);
+  @ requires x == \null || \valid(x);
+  @ assigns \nothing;
+  @*/
 static void rbtree_rotate_left(Topic **root, Topic *x) {
   Topic *y = x->right;
   x->right = y->left;
@@ -80,6 +84,11 @@ static void rbtree_rotate_left(Topic **root, Topic *x) {
   x->parent = y;
 }
 
+/*@
+  @ requires root == \null || \valid(root);
+  @ requires x == \null || \valid(x);
+  @ assigns \nothing;
+  @*/
 static void rbtree_rotate_right(Topic **root, Topic *x) {
   Topic *y = x->left;
   x->left = y->right;
@@ -97,6 +106,11 @@ static void rbtree_rotate_right(Topic **root, Topic *x) {
 }
 
 // RBTree insertion fixup - restore Red-Black properties after insertion
+/*@
+  @ requires root == \null || \valid(root);
+  @ requires z == \null || \valid(z);
+  @ assigns \nothing;
+  @*/
 static void rbtree_insert_fixup(Topic **root, Topic *z) {
   while (z->parent != nil && z->parent->red) {
     Topic *grandparent = z->parent->parent;
@@ -149,7 +163,7 @@ Topic *create_topic(const char *topic_name) {
   if (!topic_name)
     return nil;
 
-  Topic *topic = xalloc(sizeof(Topic));
+  Topic *topic = xalloc_driver(sizeof(Topic));
   if (!topic)
     return nil;
 
@@ -229,6 +243,11 @@ Topic *find_or_create_topic(const char *topic_name) {
 }
 
 // Subscribe to a topic
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires topic_name == \null || \valid(topic_name);
+  @ assigns \nothing;
+  @*/
 int subscribe_to_topic(Proc *p, const char *topic_name) {
   if (!global_pool || !p || !topic_name)
     return -1;
@@ -257,6 +276,11 @@ int subscribe_to_topic(Proc *p, const char *topic_name) {
 }
 
 // Unsubscribe from a topic
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires topic_name == \null || \valid(topic_name);
+  @ assigns \nothing;
+  @*/
 int unsubscribe_from_topic(Proc *p, const char *topic_name) {
   if (!global_pool || !p || !topic_name)
     return -1;
@@ -273,6 +297,10 @@ int unsubscribe_from_topic(Proc *p, const char *topic_name) {
   }
 
   // Find subscriber and mark inactive
+    /*@ loop invariant 0 <= i <= topic->subscriber_count;
+    @ loop assigns i;
+    @ loop variant topic->subscriber_count - i;
+    @*/
   for (int i = 0; i < topic->subscriber_count; i++) {
     if (topic->subscribers[i].subscriber == p) {
       topic->subscribers[i].active = 0;
@@ -287,6 +315,11 @@ int unsubscribe_from_topic(Proc *p, const char *topic_name) {
 }
 
 // Notify subscribers of a published message
+/*@
+  @ requires topic == \null || \valid(topic);
+  @ requires published_page == \null || \valid(published_page);
+  @ assigns \nothing;
+  @*/
 int notify_subscribers(Topic *topic, UserCapability *published_page) {
   if (!global_pool || !topic || !published_page)
     return -1;
@@ -297,6 +330,10 @@ int notify_subscribers(Topic *topic, UserCapability *published_page) {
   qlock(&global_pool->notifications_lock);
 
   // Add notification for each active subscriber
+    /*@ loop invariant 0 <= i <= topic->subscriber_count;
+    @ loop assigns i;
+    @ loop variant topic->subscriber_count - i;
+    @*/
   for (int i = 0; i < topic->subscriber_count; i++) {
     if (topic->subscribers[i].active) {
       if (global_pool->notification_count >= MAX_PENDING_NOTIFICATIONS) {
@@ -329,14 +366,14 @@ UserCapability *publish_message(Proc *p, const char *topic_name, void *data,
     return nil;   // Message too large for single page
 
   // Allocate capability structure (must be heap-allocated to return to caller)
-  UserCapability *cap = xalloc(sizeof(UserCapability));
+  UserCapability *cap = xalloc_driver(sizeof(UserCapability));
   if (!cap)
     return nil;
 
   // Allocate a page for the message
   PoolError err = global_pool_alloc_page(p, cap);
   if (err != POOL_OK) {
-    free(cap);
+    xfree_driver(cap);
     return nil;
   }
 
@@ -348,7 +385,7 @@ UserCapability *publish_message(Proc *p, const char *topic_name, void *data,
   Topic *topic = find_or_create_topic(topic_name);
   if (!topic) {
     global_pool_free_page(p, cap);
-    free(cap);
+    xfree_driver(cap);
     return nil;
   }
 
@@ -368,13 +405,13 @@ UserCapability *publish_message_chunk_start(Proc *p, const char *topic_name,
   uuid_new_v8(msg_id);
 
   // Allocate first page for message metadata
-  UserCapability *cap = xalloc(sizeof(UserCapability));
+  UserCapability *cap = xalloc_driver(sizeof(UserCapability));
   if (!cap)
     return nil;
 
   PoolError err = global_pool_alloc_page(p, cap);
   if (err != POOL_OK) {
-    free(cap);
+    xfree_driver(cap);
     return nil;
   }
 
@@ -400,6 +437,10 @@ Notification *dequeue_notification(Proc *p) {
   qlock(&global_pool->notifications_lock);
 
   // Look for notifications destined for this process
+    /*@ loop invariant 0 <= i <= global_pool->notification_count;
+    @ loop assigns i;
+    @ loop variant global_pool->notification_count - i;
+    @*/
   for (int i = 0; i < global_pool->notification_count; i++) {
     if (global_pool->notifications[i].subscriber == p) {
       Notification *notif = &global_pool->notifications[i];
@@ -437,13 +478,17 @@ Notification *dequeue_notification(Proc *p) {
       // expect the caller to copy it. But wait, `xalloc` is used elsewhere.
 
       // Let's allocate a copy to return.
-      Notification *ret = xalloc(sizeof(Notification));
+      Notification *ret = xalloc_driver(sizeof(Notification));
       if (ret) {
         *ret = global_pool->notifications[i];
       }
 
       // Shift remaining notifications down
-      for (int j = i; j < global_pool->notification_count - 1; j++) {
+        /*@ loop invariant 0 <= j <= global_pool->notification_count - 1;
+    @ loop assigns j;
+    @ loop variant global_pool->notification_count - 1 - j;
+    @*/
+  for (int j = i; j < global_pool->notification_count - 1; j++) {
         global_pool->notifications[j] = global_pool->notifications[j + 1];
       }
       global_pool->notification_count--;

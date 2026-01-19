@@ -104,6 +104,7 @@ void p9_free_page(Proc *p);
 int p9_handle_doorbell(Proc *p, Ureg *ureg);
 int p9_route(Proc *p, Fcall *t, Fcall *r);
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r);
+int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 
 /* Pebble validation */
 int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out);

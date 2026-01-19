@@ -59,16 +59,16 @@ CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_iee
 CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o clr_vtable.o
 # fruity_sljit.o and qbe_exec.o temporarily disabled due to sljit/kernel header conflicts
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
-MISC_KERNEL_O := msgord.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o exchange_pool.o exchange_pool_ipc.o
+MISC_KERNEL_O := msgord.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o exchange_pool.o exchange_pool_ipc.o bprint.o test_hybrid_ipc.o
 ROUTER_O := router/core.o router/doorbell.o router/fs.o router/ipc.o router/proc.o router/srv.o router/wasm.o
 SYMBOLIC_O := $(patsubst ../kernel/%.c,%.o,$(SYMBOLIC_C))
 WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c wasm/wasi_lux9_shim.c
-WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o wasm_arena_test.o wasi_lux9_shim.o wasm_host_lux9.o
+WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o wasm_arena_test.o wasi_lux9_shim.o wasm_host_lux9.o wasm_host_fruity.o wasm/fruity_ir.o
 WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wasm/wasm_runtime/wasm3/m3_code.o \
            wasm/wasm_runtime/wasm3/m3_compile.o wasm/wasm_runtime/wasm3/m3_parse.o wasm/wasm_runtime/wasm3/m3_bind.o \
            wasm/wasm_runtime/wasm3/m3_function.o wasm/wasm_runtime/wasm3/m3_module.o wasm/wasm_runtime/wasm3/m3_exec.o \
-           wasm/wasm_runtime/wasm3/m3_info.o
-CAP_O := capability/clr_capability.o
+           wasm/wasm_runtime/wasm3/m3_info.o wasm/wasm_runtime/wasm3/lux9_math.o
+CAP_O := capability/lux_capability.o
 
 ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(MISC_KERNEL_O) $(ROUTER_O) $(WASM_O) $(WASM3_O) $(CAP_O) $(SYMBOLIC_O)
 # AML_O removed temporarily to fix build
@@ -163,6 +163,12 @@ pebble_family.o: family/pebble.c
 %.o: wasm/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -Iwasm/wasm_runtime -c $< -o $@
+
+# WASM3 interpreter with SSE enabled (WASMv1 requires float)
+wasm/wasm_runtime/wasm3/%.o: wasm/wasm_runtime/wasm3/%.c
+	@echo "CC (WASM3) $<"
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -mno-80387 -mno-mmx,$(CFLAGS)) -Dd_m3HasFloat=1 -c $< -o $@
+
 
 # CLR Fruity IR compilation
 fruity_ir.o: clr/fruity/fruity_ir.c
@@ -272,6 +278,10 @@ clr_vtable.o: clr/clr-kernel/clr_vtable.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clr_exchange_ops.o: clr/clr_exchange_ops.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+test_hybrid_ipc.o: clr/qbe/test_hybrid_ipc.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 

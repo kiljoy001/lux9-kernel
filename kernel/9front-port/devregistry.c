@@ -362,7 +362,11 @@ devregistry_list(void (*print_func)(char*, ...))
     
     print_func("----------------------------------------\n");
     print_func("By type: ");
-    for (int i = 0; i < DEVTYPE_MAX; i++) {
+      /*@ loop invariant 0 <= i <= DEVTYPE_MAX;
+    @ loop assigns i;
+    @ loop variant DEVTYPE_MAX - i;
+    @*/
+  for (int i = 0; i < DEVTYPE_MAX; i++) {
         if (devregistry.type_count[i] > 0) {
             print_func("%s=%d ", 
                       i < DEVTYPE_MAX ? type_names[i] : "Invalid",
@@ -372,7 +376,11 @@ devregistry_list(void (*print_func)(char*, ...))
     print_func("\n");
     
     print_func("By state: ");
-    for (int i = 0; i < DEVSTATE_MAX; i++) {
+      /*@ loop invariant 0 <= i <= DEVSTATE_MAX;
+    @ loop assigns i;
+    @ loop variant DEVSTATE_MAX - i;
+    @*/
+  for (int i = 0; i < DEVSTATE_MAX; i++) {
         if (devregistry.state_count[i] > 0) {
             print_func("%s=%d ", 
                       i < DEVSTATE_MAX ? state_names[i] : "Invalid",

@@ -80,6 +80,10 @@ Pcidev *(*sd_pcimatch)(Pcidev *prev, int vid, int did) = pcimatch;
 void (*sd_microdelay)(int) = nil;
 
 /* libc9 formatting support */
+/*@
+  @ requires f == \null || \valid(f);
+  @ assigns \nothing;
+  @*/
 int _fmtFdFlush(Fmt *f) {
   /* Write buffered format output to file descriptor */
   if (f == nil || f->start == nil)
@@ -103,6 +107,10 @@ int _fmtFdFlush(Fmt *f) {
 }
 
 /* Get return address of caller */
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 uintptr getcallerpc(void *v) {
   (void)v;
   return (uintptr)__builtin_return_address(1);
@@ -112,16 +120,30 @@ uintptr getcallerpc(void *v) {
 char Etoolong[] = "name too long";
 
 /* Utility stubs */
+/*@
+  @ requires old == \null || \valid(old);
+  @ requires new == \null || \valid(new);
+  @ assigns \nothing;
+  @*/
 void srvrenameuser(char *old, char *new) {
   (void)old;
   (void)new;
 }
 
+/*@
+  @ requires old == \null || \valid(old);
+  @ requires new == \null || \valid(new);
+  @ assigns \nothing;
+  @*/
 void shrrenameuser(char *old, char *new) {
   (void)old;
   (void)new;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 int needpages(void *v) {
   (void)v;
   return 0;
@@ -232,6 +254,9 @@ extern char end[]; /* End of kernel - defined by linker */
 /* Swap system stubs */
 Image *swapimage = nil; /* Global variable, not function */
 void putswap(Page *p) { (void)p; }
+/*@
+  @ assigns \nothing;
+  @*/
 int swapcount(uintptr pa) {
   (void)pa;
   return 0;
@@ -239,6 +264,9 @@ int swapcount(uintptr pa) {
 void kickpager(void) { wakeup(&swapalloc.r); }
 
 /* Random number - must match portlib.h signature */
+/*@
+  @ assigns \nothing;
+  @*/
 int nrand(int n) {
   /* Simple LCG */
   static ulong seed = 1;
@@ -255,6 +283,11 @@ void SET(void *x) { (void)x; }
 /* qsort implementation */
 static int (*qsort_cmp)(void *, void *);
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 static void qsort_swap(char *a, char *b, ulong n) {
   char t;
   while (n--) {
@@ -264,6 +297,10 @@ static void qsort_swap(char *a, char *b, ulong n) {
   }
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 static void qsort_r(char *a, ulong n, ulong es) {
   char *i, *j;
   if (n < 2)
@@ -287,6 +324,12 @@ static void qsort_r(char *a, ulong n, ulong es) {
   qsort_r(j + es, n - (j - a) / es - 1, es);
 }
 
+/*@
+  @ requires va == \null || \valid(va);
+  @ requires  == \null || \valid();
+  @ requires ) == \null || \valid());
+  @ assigns \nothing;
+  @*/
 void qsort(void *va, ulong n, ulong es, int (*cmp)(void *, void *)) {
   qsort_cmp = cmp;
   qsort_r(va, n, es);
@@ -310,10 +353,16 @@ char *conffile = "";
 /* Clock synchronization provided by mp.c */
 
 /* NVRAM access */
+/*@
+  @ assigns \nothing;
+  @*/
 uchar nvramread(int addr) {
   (void)addr;
   return 0;
 }
+/*@
+  @ assigns \nothing;
+  @*/
 void nvramwrite(int addr, uchar val) {
   (void)addr;
   (void)val;
@@ -369,11 +418,20 @@ void dupswap(Page *p) { (void)p; }
 /* Signal search provided by memory_9front.c */
 
 /* System call table - global array of syscall name strings */
+/*@
+  @ requires args == \null || \valid(args);
+  @ assigns \nothing;
+  @*/
 int nosyscall(Sargs *args) {
   (void)args;
   return -1;
 }
 char *sysctab[] = {nil};
+/*@
+  @ requires args == \null || \valid(args);
+  @ requires ret == \null || \valid(ret);
+  @ assigns \nothing;
+  @*/
 void sysexit(Sargs *args, uintptr *ret) {
   (void)args;
   (void)ret;
@@ -385,12 +443,18 @@ void dtracytick(Ureg *u) { (void)u; }
 /* UART console - global pointer */
 Uart *consuart = nil;
 
+/*@
+  @ assigns \nothing;
+  @*/
 int uartgetc(void) {
   if (consuart == nil || consuart->phys == nil || consuart->phys->getc == nil)
     return -1;
   return consuart->phys->getc(consuart);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void uartputc(int c) {
   if (consuart == nil || consuart->phys == nil || consuart->phys->putc == nil)
     return;
@@ -404,6 +468,11 @@ void delayloop(int ms) { (void)ms; }
 
 /* Format functions */
 /* Crypto */
+/*@
+  @ requires data == \null || \valid(data);
+  @ requires digest == \null || \valid(digest);
+  @ assigns \nothing;
+  @*/
 void sha2_512(uchar *data, ulong len, uchar *digest) {
   (void)data;
   (void)len;
@@ -417,6 +486,11 @@ void setupChachastate(void *state, uchar *key, ulong keylen, uchar *iv,
   (void)iv;
   (void)ivlen;
 }
+/*@
+  @ requires data == \null || \valid(data);
+  @ requires state == \null || \valid(state);
+  @ assigns \nothing;
+  @*/
 void chacha_encrypt(uchar *data, ulong len, void *state) {
   (void)data;
   (void)len;
@@ -448,12 +522,20 @@ void vmxshutdown(void) {}
 void vmxprocrestore(Proc *p) { (void)p; }
 
 /* Console output stub */
+/*@
+  @ requires str == \null || \valid(str);
+  @ assigns \nothing;
+  @*/
 void putstrn(char *str, int n) {
   if (screenputs)
     screenputs(str, n);
 }
 
 /* 9P routing - stub for lux9_api.c */
+/*@
+  @ requires msg == \null || \valid(msg);
+  @ assigns \nothing;
+  @*/
 long p9_route_message(int pid, void *msg, ulong len) {
   (void)pid;
   (void)msg;

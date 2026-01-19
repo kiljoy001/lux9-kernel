@@ -29,6 +29,11 @@ struct Seedbuf {
   SHA2_512state ds;
 };
 
+/*@
+  @ requires  == \null || \valid();
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 static void randomsample(Ureg *, Timer *t) {
   Seedbuf *s = t->ta;
 
@@ -40,8 +45,14 @@ static void randomsample(Ureg *, Timer *t) {
     return;
   s->next = 0;
   s->buf[s->nbuf++] ^= s->bits;
+  if (s->nbuf % 8 == 0)
+    print("randomsample: nbuf=%d\n", s->nbuf);
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void randomseed(void *) {
   Seedbuf *s;
 
@@ -57,11 +68,12 @@ static void randomseed(void *) {
   up->ta = s;
   up->tf = randomsample;
   timeradd(&up->timer);
-  while (s->nbuf < sizeof(s->buf)) {
-    if (++s->randomcount <= 100000)
+  print("randomseed: starting jitter loop, HZ=%d\n", HZ);
+  while (*(volatile uchar *)&s->nbuf < 8) {
+    if (++s->randomcount <= 10000)
       continue;
-    if (anyhigher())
-      sched();
+    sched();
+    s->randomcount = 0;
   }
   timerdel(&up->timer);
 
@@ -74,6 +86,9 @@ static void randomseed(void *) {
   pexit("", 1);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void randominit(void) {
   if (random_initialized) {
     print("randominit: already initialized\n");
@@ -85,6 +100,10 @@ void randominit(void) {
   kproc("randomseed", randomseed, nil);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 ulong randomread(void *p, ulong n) {
   Chachastate c;
 
@@ -113,6 +132,10 @@ ulong randomread(void *p, ulong n) {
 }
 
 /* used by fastrand() */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void genrandom(uchar *p, int n) {
   /* Early boot fallback: use ChaCha20 CSPRNG if random subsystem not
    * initialized */
@@ -125,6 +148,9 @@ void genrandom(uchar *p, int n) {
 }
 
 /* used by rand(),nrand() */
+/*@
+  @ assigns \nothing;
+  @*/
 long lrand(void) {
   /* xoroshiro128+ algorithm */
   static int seeded = 0;

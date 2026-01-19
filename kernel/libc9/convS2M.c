@@ -36,6 +36,10 @@ static uchar *pqid(uchar *p, Qid *q) {
   return p;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static uint stringsz(char *s) {
   if (s == nil)
     return BIT16SZ;
@@ -43,6 +47,10 @@ static uint stringsz(char *s) {
   return BIT16SZ + strlen(s);
 }
 
+/*@
+  @ requires f == \null || \valid(f);
+  @ assigns \nothing;
+  @*/
 uint sizeS2M(Fcall *f) {
   uint n;
   int i;
@@ -367,6 +375,11 @@ uint sizeS2M(Fcall *f) {
   return n;
 }
 
+/*@
+  @ requires f == \null || \valid(f);
+  @ requires ap == \null || \valid(ap);
+  @ assigns \nothing;
+  @*/
 uint convS2M(Fcall *f, uchar *ap, uint nap) {
   uchar *p;
   uint i, size;

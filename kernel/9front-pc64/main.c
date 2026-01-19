@@ -230,6 +230,15 @@ void machinit(void) {
   m->loopconst = 100000;
 }
 
+/*@
+    requires \true;
+    assigns m, *MACHP(0), conf.nmach, active.machs[0], active.exiting;
+    ensures m == MACHP(0);
+    ensures m->machno == 0;
+    ensures conf.nmach == 1;
+    ensures active.machs[0] == 1;
+    ensures active.exiting == 0;
+*/
 void mach0init(void) {
   extern Mach *m; /* Define m as extern - it should be in globals or bss */
 
@@ -257,6 +266,14 @@ void mach0init(void) {
 
 /* Main boot continuation after CR3 switch
  * Called directly by setuppagetables() after page table switch is complete */
+/*@
+    requires current_boot_state == BOOT_START || current_boot_state ==
+   BOOT_XINIT; assigns current_boot_state;
+    // We cannot easily specify all the state changes in the kernel global state
+   here
+    // as it touches almost everything.
+    ensures current_boot_state == BOOT_SCHED;
+*/
 void main_after_cr3(void) {
   char *p;
 
@@ -506,6 +523,10 @@ void main_after_cr3(void) {
  * calling touser() with the prepared stack frame.
  */
 void init0(void) {
+  /* Run hybrid IPC batching tests */
+  extern void test_hybrid_batching(void);
+  test_hybrid_batching();
+
   char buf[2 * KNAMELEN], **sp;
 
   /*
@@ -637,6 +658,11 @@ void main(void) {
   vm_detect();
   vm_apply_workarounds();
 
+  /*@
+      requires m->machno == 0;
+      assigns m->cpuhz, m->havetsc, m->cpuidax, m->cpuidbx, m->cpuidcx,
+     m->cpuiddx; assigns m->cpuiddx; ensures m->cpuidax != 0;
+  */
   cpuidentify();
   if (boot_verbose)
     uartprintf("main: cpuidentify() returned\n");

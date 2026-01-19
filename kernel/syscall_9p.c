@@ -52,6 +52,10 @@ enum {
  *
  * Returns: result in ureg->ax, -1 on error
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void syscall_to_9p(Ureg *ureg) {
   Fcall t, r;
   ulong scallnr;

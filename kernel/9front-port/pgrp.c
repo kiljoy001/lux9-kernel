@@ -21,6 +21,9 @@ static BorrowLock nextmount_lock = {
 void namespace_cid_update(Pgrp *pgrp);
 void namespace_cid_update_locked(Pgrp *pgrp);
 
+/*@
+  @ assigns \nothing;
+  @*/
 uvlong nextmount(void) {
   static uvlong next = 0;
   uvlong n;
@@ -64,11 +67,19 @@ Rgrp *newrgrp(void) {
   return r;
 }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ assigns \nothing;
+  @*/
 void closergrp(Rgrp *r) {
   if (decref(r) == 0)
     free(r);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void closepgrp(Pgrp *p) {
   Mhead **h, **e, *f;
   Mount *m;
@@ -91,6 +102,11 @@ void closepgrp(Pgrp *p) {
   free(p);
 }
 
+/*@
+  @ requires order == \null || \valid(order);
+  @ requires m == \null || \valid(m);
+  @ assigns \nothing;
+  @*/
 static void pgrpinsert(Mount **order, Mount *m) {
   Mount *f;
 
@@ -109,6 +125,11 @@ static void pgrpinsert(Mount **order, Mount *m) {
 /*
  * pgrpcpy MUST preserve the mountid allocation order of the parent group
  */
+/*@
+  @ requires to == \null || \valid(to);
+  @ requires from == \null || \valid(from);
+  @ assigns \nothing;
+  @*/
 void pgrpcpy(Pgrp *to, Pgrp *from) {
   Mount *n, *m, **link, *order;
   Mhead *f, **l, *mh;
@@ -172,6 +193,10 @@ struct NsMountEntry {
   Mount *mount;
 };
 
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 static void ns_hash_u32(crypto_blake2b_ctx *ctx, u32int v) {
   u8int buf[4];
   buf[0] = (u8int)(v >> 24);
@@ -181,6 +206,10 @@ static void ns_hash_u32(crypto_blake2b_ctx *ctx, u32int v) {
   crypto_blake2b_update(ctx, buf, sizeof(buf));
 }
 
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 static void ns_hash_u64(crypto_blake2b_ctx *ctx, u64int v) {
   u8int buf[8];
   buf[0] = (u8int)(v >> 56);
@@ -227,6 +256,11 @@ static void namespace_cid_hash_mount(crypto_blake2b_ctx *ctx, Mhead *mh,
     crypto_blake2b_update(ctx, (const u8int *)m->spec, spec_len);
 }
 
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ requires pgrp == \null || \valid(pgrp);
+  @ assigns \nothing;
+  @*/
 static void namespace_cid_hash_unsorted(crypto_blake2b_ctx *ctx, Pgrp *pgrp) {
   Mhead *mh;
   Mount *m;
@@ -240,6 +274,10 @@ static void namespace_cid_hash_unsorted(crypto_blake2b_ctx *ctx, Pgrp *pgrp) {
   }
 }
 
+/*@
+  @ requires pgrp == \null || \valid(pgrp);
+  @ assigns \nothing;
+  @*/
 void namespace_cid_update_locked(Pgrp *pgrp) {
   crypto_blake2b_ctx ctx;
   Mhead *mh;
@@ -302,6 +340,10 @@ void namespace_cid_update_locked(Pgrp *pgrp) {
   crypto_blake2b_final(&ctx, pgrp->namespace_cid);
 }
 
+/*@
+  @ requires pgrp == \null || \valid(pgrp);
+  @ assigns \nothing;
+  @*/
 void namespace_cid_update(Pgrp *pgrp) {
   if (!pgrp)
     return;
@@ -361,6 +403,10 @@ Fgrp *dupfgrp(Fgrp *f) {
   return new;
 }
 
+/*@
+  @ requires f == \null || \valid(f);
+  @ assigns \nothing;
+  @*/
 void closefgrp(Fgrp *f) {
   int i;
   Chan *c;
@@ -395,6 +441,9 @@ void closefgrp(Fgrp *f) {
  * are finished, the blocked cclose that we've
  * interrupted will finish by itself.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void forceclosefgrp(void) {
   int i;
   Chan *c;
@@ -430,6 +479,10 @@ Mount *newmount(Chan *to, int flag, char *spec) {
   return m;
 }
 
+/*@
+  @ requires m == \null || \valid(m);
+  @ assigns \nothing;
+  @*/
 void mountfree(Mount *m) {
   Mount *f;
 
@@ -440,6 +493,10 @@ void mountfree(Mount *m) {
   }
 }
 
+/*@
+  @ requires reason == \null || \valid(reason);
+  @ assigns \nothing;
+  @*/
 void resrcwait(char *reason) {
   static ulong lastwhine;
   ulong now;

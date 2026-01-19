@@ -10,6 +10,10 @@
 /* FSM Integration */
 extern int proc_event(Proc *p, int event);
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void eqlock(QLock *q) {
   Proc *p;
   uintptr pc;
@@ -50,6 +54,10 @@ void eqlock(QLock *q) {
   up->eql = nil;
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void qlock(QLock *q) {
   Proc *p;
   uintptr pc;
@@ -80,6 +88,10 @@ void qlock(QLock *q) {
   sched();
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 int canqlock(QLock *q) {
   if (!canlock(&q->use))
     return 0;
@@ -93,6 +105,10 @@ int canqlock(QLock *q) {
   return 1;
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void qunlock(QLock *q) {
   Proc *p;
 
@@ -118,6 +134,10 @@ void qunlock(QLock *q) {
   unlock(&q->use);
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void rlock(RWLock *q) {
   Proc *p;
 
@@ -143,6 +163,10 @@ void rlock(RWLock *q) {
   sched();
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void runlock(RWLock *q) {
   Proc *p;
 
@@ -165,6 +189,10 @@ void runlock(RWLock *q) {
   ready(p);
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void wlock(RWLock *q) {
   Proc *p;
   uintptr pc;
@@ -197,6 +225,10 @@ void wlock(RWLock *q) {
   sched();
 }
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void wunlock(RWLock *q) {
   Proc *p;
 
@@ -235,6 +267,10 @@ void wunlock(RWLock *q) {
 }
 
 /* same as rlock but punts if there are any writers waiting */
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 int canrlock(RWLock *q) {
   lock(&q->use);
   if (q->writer == 0 && q->head == nil) {

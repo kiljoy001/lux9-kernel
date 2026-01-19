@@ -26,6 +26,9 @@
 static hsiphash_key_t p9va_key;
 static int p9va_key_init;
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void p9va_init_key(void) {
   extern int tpm_get_random(u8int *buf, int len);
   extern u64int rdrand_u64(void);
@@ -50,6 +53,11 @@ static void p9va_init_key(void) {
   p9va_key_init = 1;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires cap == \null || \valid(cap);
+  @ assigns \nothing;
+  @*/
 uintptr p9_pick_uaddr(Proc *p, const UserCapability *cap) {
   u8int buf[BLIND_LEDGER_CAP_SIZE + 16];
   int len = 0;
@@ -68,6 +76,10 @@ uintptr p9_pick_uaddr(Proc *p, const UserCapability *cap) {
   }
 
   u32int h = hsiphash(buf, len, &p9va_key);
+    /*@ loop invariant 0 <= i <= P9_VA_REGION_PAGES;
+    @ loop assigns i;
+    @ loop variant P9_VA_REGION_PAGES - i;
+    @*/
   for (u32int i = 0; i < P9_VA_REGION_PAGES; i++) {
     uintptr slot = (h + i) % P9_VA_REGION_PAGES;
     uintptr va = P9_VA_REGION_BASE + (slot * BY2PG);
@@ -80,6 +92,10 @@ uintptr p9_pick_uaddr(Proc *p, const UserCapability *cap) {
   return EXCHANGE_PAGE_ADDR;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int proc_setup_p9page(Proc *p) {
   print("DEBUG:proc_setup_p9page ENTRY p=%p\n", p);
   print("DEBUG:proc_setup_p9page reading p->kp...\n");
@@ -186,6 +202,10 @@ int proc_setup_p9page(Proc *p) {
   s->pseg->prev = nil;
 
   /* Clear any conflicting segments in the user's address space */
+    /*@ loop invariant 0 <= i <= NSEG;
+    @ loop assigns i;
+    @ loop variant NSEG - i;
+    @*/
   for (int i = 0; i < NSEG; i++) {
     Segment *oseg = p->seg[i];
     if (oseg == nil)

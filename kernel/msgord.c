@@ -5,11 +5,11 @@
  * All 9P messages flow through MSGORD for total ordering.
  */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 
 /* Manual typedefs */
 typedef struct Qid Qid;
@@ -269,9 +269,12 @@ int msgord_color(MsgOrd *dag, OrdMsg *msg) {
   /*@
     @ requires dag != \null && msg != \null;
     @ ensures \result == msg->gm_color;
-    @ ensures \result == MSGORD_COLOR_BLUE ==> msg->gm_anticone_size <= dag->gd_k_param;
-    @ ensures \result == MSGORD_COLOR_RED ==> msg->gm_anticone_size > dag->gd_k_param;
-    @ assigns msg->gm_color, msg->gm_anticone_size, dag->gd_blue_msgs, dag->gd_red_msgs;
+    @ ensures \result == MSGORD_COLOR_BLUE ==> msg->gm_anticone_size <=
+    dag->gd_k_param;
+    @ ensures \result == MSGORD_COLOR_RED ==> msg->gm_anticone_size >
+    dag->gd_k_param;
+    @ assigns msg->gm_color, msg->gm_anticone_size, dag->gd_blue_msgs,
+    dag->gd_red_msgs;
     @*/
   int anticone = msgord_anticone(dag, msg);
 
@@ -303,7 +306,8 @@ int msgord_can_deliver(MsgOrd *dag, OrdMsg *msg) {
 
   /*
     // Enforces causal DAG ordering per proofs/msgord/msgord_correctness.v
-    // All parents must be in DELIVERED state before this message can be delivered.
+    // All parents must be in DELIVERED state before this message can be
+    delivered.
    */
   for (i = 0; i < msg->gm_parent_count; i++) {
     for (gm = dag->gd_head; gm != nil; gm = gm->gm_next) {
@@ -323,11 +327,13 @@ int msgord_can_deliver(MsgOrd *dag, OrdMsg *msg) {
  */
 static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
                           char *path, u64int nonce) {
+  uint id;
   /*@
     @ requires dag != \null;
     @ ensures \result == 0 ==> dag->gd_total_msgs >= \old(dag->gd_total_msgs);
     @ assigns dag->gd_head, dag->gd_tail, dag->gd_count, dag->gd_total_msgs,
-    @         dag->gd_blue_msgs, dag->gd_red_msgs, dag->gd_global_seq, dag->gd_next_id;
+    @         dag->gd_blue_msgs, dag->gd_red_msgs, dag->gd_global_seq,
+    dag->gd_next_id;
     @*/
   OrdMsg *msg;
   OrdMsg *tail;
@@ -365,7 +371,8 @@ static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
   }
 
   /*
-    // Establishes total order (timestamp, id) per proofs/msgord/msgord_correctness.v
+    // Establishes total order (timestamp, id) per
+    proofs/msgord/msgord_correctness.v
     // msg->gm_id is monotonic; msg->gm_timestamp is monotonic.
    */
   msg->gm_payload = payload;
@@ -397,14 +404,16 @@ static int _msgord_submit(MsgOrd *dag, Proc *caller, OrdPayload payload,
     return -1;
   }
 
+  id = msg->gm_id;
   unlock_dag(dag);
-  return 0;
+  return (int)id;
 }
 
 /*
  * Submit 9P message for MSGORD ordering
  */
-int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path, u64int nonce) {
+int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
+                  u64int nonce) {
   /*@
     @ requires t != \null;
     @ ensures \result == 0 || \result == -1;
@@ -442,9 +451,29 @@ int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path, u64int nonce)
 }
 
 /*
+ * Submit message using exchange page
+ */
+uint msgord_submit_exchange(MsgOrd *dag, Proc *caller, ExchangeHandle handle,
+                            ulong offset, ulong len, char *path, u64int nonce) {
+  OrdPayload p;
+
+  p.type = MSGORD_MSG_EXCHANGE;
+  p.exchange.handle = handle;
+  p.exchange.offset = offset;
+  p.exchange.len = len;
+
+  if (dag == nil)
+    dag = msgord;
+
+  int ret = _msgord_submit(dag, caller, p, path, nonce);
+  return (ret < 0) ? 0 : (uint)ret;
+}
+
+/*
  * Submit generic data
  */
-int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len, u64int nonce) {
+int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len,
+                      u64int nonce) {
   /*@
     @ ensures \result == 0 || \result == -1;
     @*/
@@ -818,7 +847,8 @@ int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
  * consensus_depth.c) Returns: 0 on success, -1 on error
  */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                              char *path, int depth, uint *msg_id_out, u64int nonce) {
+                              char *path, int depth, uint *msg_id_out,
+                              u64int nonce) {
   Fcall *fcall_t = (Fcall *)t;
   uint msg_id;
 

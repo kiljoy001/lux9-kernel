@@ -141,6 +141,11 @@ void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
 /*
  * Standard Insert (Compatibility wrapper)
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 void rb_insert_color(struct rb_node *node, struct rb_root *root) {
   rb_insert_augmented(node, root, nil, nil);
 }
@@ -302,6 +307,11 @@ color_fixup:
 /*
  * Standard Erase (Compatibility wrapper)
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 void rb_erase(struct rb_node *node, struct rb_root *root) {
   rb_erase_augmented(node, root, nil, nil);
 }

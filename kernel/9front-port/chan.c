@@ -52,6 +52,10 @@ char *chanpath(Chan *c) {
 
 int isdotdot(char *p) { return p[0] == '.' && p[1] == '.' && p[2] == '\0'; }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ assigns \nothing;
+  @*/
 long incref(Ref *r) {
   long old, new;
 
@@ -67,6 +71,10 @@ long incref(Ref *r) {
   return new;
 }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ assigns \nothing;
+  @*/
 long decref(Ref *r) {
   long old, new;
 
@@ -108,6 +116,11 @@ Path *pathincref(Path *p) {
  * and puts ... at the end of the string if it's too long.  Usually used to
  * save a string in up->genbuf;
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 void kstrcpy(char *s, char *t, int ns) {
   int nt;
 
@@ -131,6 +144,10 @@ void kstrcpy(char *s, char *t, int ns) {
   strcpy(s + ns, "...");
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 int emptystr(char *s) {
   if (s == nil)
     return 1;
@@ -142,6 +159,11 @@ int emptystr(char *s) {
 /*
  * Atomically replace *p with copy of s
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void kstrdup(char **p, char *s) {
   int n;
   char *t, *prev;
@@ -163,6 +185,9 @@ void kstrdup(char **p, char *s) {
   free(prev);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevreset(void) {
   int i;
 
@@ -192,6 +217,9 @@ void chandevreset(void) {
 
 static void closeproc(void *);
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevinit(void) {
   int i;
 
@@ -204,6 +232,9 @@ void chandevinit(void) {
   kproc("closeproc", closeproc, nil);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevshutdown(void) {
   int i;
 
@@ -314,6 +345,10 @@ static Path *copypath(Path *p) {
   return pp;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pathclose(Path *p) {
   int i;
 
@@ -346,6 +381,10 @@ void pathclose(Path *p) {
  * (Really only called to remove a trailing .. that has been added.
  * Otherwise would need to update n->mtpt as well.)
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void fixdotdotname(Path *p) {
   char *r;
 
@@ -424,6 +463,10 @@ static Path *addelem(Path *p, char *s, Chan *from) {
   return p;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void chanfree(Chan *c) {
   c->flag = CFREE;
 
@@ -481,6 +524,10 @@ struct {
 
 static int clunkwork(void *) { return clunkq.head != nil; }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void closechanq(Chan *c) {
   lock(&clunkq.l);
   clunkq.nqueued++;
@@ -507,6 +554,10 @@ static Chan *closechandeq(void) {
   return c;
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void closeproc(void *) {
   Chan *c;
 
@@ -543,6 +594,10 @@ static void closeproc(void *) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void cclose(Chan *c) {
   if (c == nil)
     panic("cclose %#p", getcallerpc(&c));
@@ -569,6 +624,10 @@ void cclose(Chan *c) {
   chanfree(c);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void ccloseq(Chan *c) {
   if (c == nil || c->ref < 1 || c->flag & CFREE)
     panic("ccloseq %#p", getcallerpc(&c));
@@ -600,6 +659,11 @@ Chan *cunique(Chan *c) {
 
 int eqqid(Qid a, Qid b) { return a.path == b.path && a.vers == b.vers; }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 int eqchan(Chan *a, Chan *b, int skipvers) {
   if (a->qid.path != b->qid.path)
     return 0;
@@ -612,6 +676,10 @@ int eqchan(Chan *a, Chan *b, int skipvers) {
   return 1;
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 int eqchantdqid(Chan *a, int type, int dev, Qid qid, int skipvers) {
   if (a->qid.path != qid.path)
     return 0;
@@ -657,6 +725,10 @@ Mhead *newmhead(Chan *from) {
  *
  * This comment might belong somewhere else.
  */
+/*@
+  @ requires m == \null || \valid(m);
+  @ assigns \nothing;
+  @*/
 void putmhead(Mhead *m) {
   if (m == nil)
     return;
@@ -667,6 +739,12 @@ void putmhead(Mhead *m) {
   free(m);
 }
 
+/*@
+  @ requires new == \null || \valid(new);
+  @ requires old == \null || \valid(old);
+  @ requires spec == \null || \valid(spec);
+  @ assigns \nothing;
+  @*/
 int cmount(Chan *new, Chan *old, int flag, char *spec) {
   int order;
   Mhead *m, **l, *mh;
@@ -795,6 +873,11 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
   return 0;
 }
 
+/*@
+  @ requires mnt == \null || \valid(mnt);
+  @ requires mounted == \null || \valid(mounted);
+  @ assigns \nothing;
+  @*/
 void cunmount(Chan *mnt, Chan *mounted) {
   Pgrp *pg;
   Mhead *m, **l;
@@ -908,6 +991,11 @@ Chan *cclone(Chan *c) {
 }
 
 /* also used by sysfile.c:/^mountfix */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires mp == \null || \valid(mp);
+  @ assigns \nothing;
+  @*/
 int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
   Chan *to;
   Pgrp *pg;
@@ -941,6 +1029,12 @@ int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
 /*
  * Calls findmount but also updates path.
  */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires mp == \null || \valid(mp);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 static int domount(Chan **cp, Mhead **mp, Path **path) {
   Chan **lc, *from;
   Path *p;
@@ -1003,6 +1097,12 @@ static Walkqid *ewalk(Chan *c, Chan *nc, char **name, int nname) {
  * Either walks all the way or not at all.  No partial results in *cp.
  * *nerror is the number of names to display in an error message.
  */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires names == \null || \valid(names);
+  @ requires nerror == \null || \valid(nerror);
+  @ assigns \nothing;
+  @*/
 int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   int dev, didmount, dotdot, i, n, nhave, ntry, type;
   Chan *c, *nc, *mtpt;
@@ -1202,6 +1302,10 @@ Chan *createdir(Chan *c, Mhead *m) {
 
 void saveregisters(void) {}
 
+/*@
+  @ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @*/
 static void growparse(Elemlist *e) {
   char **new;
   int *inew;
@@ -1230,6 +1334,11 @@ static void growparse(Elemlist *e) {
  */
 extern void uartputs(char *, int);
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @*/
 static void parsename(char *aname, Elemlist *e) {
   char *name, *slash;
 
@@ -1281,6 +1390,11 @@ static void parsename(char *aname, Elemlist *e) {
   }
 }
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ requires err == \null || \valid(err);
+  @ assigns \nothing;
+  @*/
 _Noreturn void namelenerror(char *aname, int len, char *err) {
   char *ename, *name, *next;
   int i, errlen;
@@ -1827,6 +1941,10 @@ static char *validname0(char *aname, int slashok, int dup, uintptr pc) {
   return s;
 }
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ assigns \nothing;
+  @*/
 void validname(char *aname, int slashok) {
   validname0(aname, slashok, 0, getcallerpc(&aname));
 }
@@ -1835,6 +1953,10 @@ char *validnamedup(char *aname, int slashok) {
   return validname0(aname, slashok, 1, getcallerpc(&aname));
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void isdir(Chan *c) {
   if (c->qid.type & QTDIR)
     return;

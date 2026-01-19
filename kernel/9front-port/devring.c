@@ -45,6 +45,11 @@ static Walkqid *ringwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, ringdir, nelem(ringdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ assigns \nothing;
+  @*/
 static int ringstat(Chan *c, uchar *db, int n) {
   return devstat(c, db, n, ringdir, nelem(ringdir), devgen);
 }
@@ -53,18 +58,32 @@ static Chan *ringopen(Chan *c, int omode) {
   return devopen(c, omode, ringdir, nelem(ringdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void ringclose(Chan *c) {
   if (c->aux) {
     // Cleanup logic
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long ringread(Chan *c, void *va, long n, vlong offset) {
   if ((ulong)c->qid.path == Qctl)
     return readstr(offset, va, n, "ring 0: page-flip mode active\n");
   return devdirread(c, va, n, ringdir, nelem(ringdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long ringwrite(Chan *c, void *va, long n, vlong offset) {
   struct ChannelState *cs;
 
@@ -117,6 +136,11 @@ static void *ringmmap(Chan *c, void *addr, long len, ulong offset) {
   return channels[0]->kmap_addr;
 }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ requires ename == \null || \valid(ename);
+  @ assigns \nothing;
+  @*/
 static void build_error_reply(Fcall *r, ushort tag, char *ename) {
   memset(r, 0, sizeof(*r));
   r->type = Rerror;
@@ -195,6 +219,10 @@ static int p9_build_reply_batch(Proc *caller, BatchHeader *batch,
  * 3. Iterates Messages.
  * 4. Returns Page to Completion Ring.
  */
+/*@
+  @ requires cs == \null || \valid(cs);
+  @ assigns \nothing;
+  @*/
 static void ring_process_batch(struct ChannelState *cs) {
   struct IpcChannel *chan = cs->kmap_addr;
   u32int head, tail;

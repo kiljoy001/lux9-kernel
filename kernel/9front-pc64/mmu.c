@@ -120,6 +120,8 @@ static void loadptr(u16int lim, uintptr off, void (*load)(void *)) {
   (*load)(s);
 }
 
+static u64int virt2phys(void *virt);
+
 static void
 taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc
                                      // (address of Proc struct)
@@ -146,9 +148,12 @@ taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc
     tss->rsp2[0] = (u32int)kstack_top;
     tss->rsp2[1] = kstack_top >> 32;
   }
-  /* For now, skip TLB flush during first process switch - we're using same page
-   * tables */
-  /* mmuflushtlb(PADDR(m->pml4)); */
+  /* Ensure TLB is flushed to see new mappings */
+  if (m->machno == 0) {
+    /* print("taskswitch: m->pml4=%p PADDR=%#p - Skipping flush to check
+       loop\n", m->pml4, PADDR(m->pml4)); */
+  }
+  putcr3(virt2phys(m->pml4));
 }
 
 static void kernelro(void);
@@ -604,13 +609,14 @@ void mmuinit(void) {
   vlong v;
   int i;
 
-  if (m->machno == 0)
+  static int kernelro_done = 0;
+  if (m->machno == 0 && !kernelro_done) {
+    kernelro_done = 1;
     kernelro();
+  }
 
   m->tss = mallocz(sizeof(Tss), 1);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: TSS allocated at %p\n", m->tss);
-  */
   if (m->tss == nil)
     panic("mmuinit: no memory for Tss");
   m->tss->iomap = 0xDFFF;
@@ -642,23 +648,14 @@ void mmuinit(void) {
   m->gdt[TSSSEG + 1].d0 = x >> 32;
   m->gdt[TSSSEG + 1].d1 = 0;
 
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Loading GDT\n");
-  */
   loadptr(sizeof(gdt) - 1, (uintptr)m->gdt, lgdt);
   /* IDT already set up by trapinit0() - don't reload from uninitialized IDT */
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Setting up task switch\n");
-  */
   taskswitch((uintptr)m + MACHSIZE);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Loading TSS\n");
-  */
   ltr(TSSSEL);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Setting up MSRs\n");
-  print("DEBUG: Setting up MSRs\n");
-  */
   /* KernelGSBase must always point at the per-CPU Mach* so swapgs works. */
   wrmsr(FSbase, 0ull); /* user TLS set later on EXEC */
   wrmsr(GSbase, 0ull); /* user GS unused; leave clear */
@@ -681,7 +678,8 @@ void mmuinit(void) {
   v = 0;
   rdmsr(Efer, &v);
 
-  v |= 1ull; /* Enable SCE */
+  v |= 1ull;  /* Enable SCE */
+  v |= 0x800; /* Enable NXE (Bit 11) */
   wrmsr(Efer, v);
 
   /* We use IRETQ for all returns instead of the faster SYSRET instruction.

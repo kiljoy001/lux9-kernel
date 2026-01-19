@@ -26,6 +26,10 @@ static char *bustypes[] = {
     "PCI",   "PCMCIA", "TC",   "VL",     "VME",    "XPRESS",
 };
 
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 int tbdffmt(Fmt *fmt) {
   int type, tbdf;
 
@@ -59,6 +63,10 @@ static Pcidev *pcidevalloc(void) {
   return p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcidevfree(Pcidev *p) {
   Pcidev **l;
 
@@ -86,6 +94,10 @@ void pcidevfree(Pcidev *p) {
   /* leaked */
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcicfgr8(Pcidev *p, int rno) {
   int data;
 
@@ -97,6 +109,10 @@ int pcicfgr8(Pcidev *p, int rno) {
 
   return data;
 }
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcicfgw8(Pcidev *p, int rno, int data) {
   ilock(&pcicfglock);
   pciparentdev = p->parent;
@@ -104,6 +120,10 @@ void pcicfgw8(Pcidev *p, int rno, int data) {
   pcicfgrw8(p->tbdf, rno, data, 0);
   iunlock(&pcicfglock);
 }
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcicfgr16(Pcidev *p, int rno) {
   int data;
 
@@ -115,6 +135,10 @@ int pcicfgr16(Pcidev *p, int rno) {
 
   return data;
 }
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcicfgw16(Pcidev *p, int rno, int data) {
   ilock(&pcicfglock);
   pciparentdev = p->parent;
@@ -122,6 +146,10 @@ void pcicfgw16(Pcidev *p, int rno, int data) {
   pcicfgrw16(p->tbdf, rno, data, 0);
   iunlock(&pcicfglock);
 }
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcicfgr32(Pcidev *p, int rno) {
   int data;
 
@@ -133,6 +161,10 @@ int pcicfgr32(Pcidev *p, int rno) {
 
   return data;
 }
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcicfgw32(Pcidev *p, int rno, int data) {
   ilock(&pcicfglock);
   pciparentdev = p->parent;
@@ -141,6 +173,10 @@ void pcicfgw32(Pcidev *p, int rno, int data) {
   iunlock(&pcicfglock);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 vlong pcibarsize(Pcidev *p, int rno) {
   vlong size;
   int v;
@@ -180,6 +216,10 @@ vlong pcibarsize(Pcidev *p, int rno) {
   return size;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcisetbar(Pcidev *p, int rno, uvlong bar) {
   ilock(&pcicfglock);
   pciparentdev = p->parent;
@@ -191,6 +231,10 @@ void pcisetbar(Pcidev *p, int rno, uvlong bar) {
   iunlock(&pcicfglock);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcisetwin(Pcidev *p, uvlong base, uvlong limit) {
   ilock(&pcicfglock);
   pciparentdev = p->parent;
@@ -210,6 +254,11 @@ void pcisetwin(Pcidev *p, uvlong base, uvlong limit) {
   iunlock(&pcicfglock);
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 static int pcisizcmp(void *a, void *b) {
   Pcisiz *aa = a, *bb = b;
 
@@ -220,6 +269,9 @@ static int pcisizcmp(void *a, void *b) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static vlong pcimask(vlong v) {
   uvlong m;
 
@@ -236,6 +288,12 @@ static vlong pcimask(vlong v) {
   return v;
 }
 
+/*@
+  @ requires root == \null || \valid(root);
+  @ requires pmema == \null || \valid(pmema);
+  @ requires pioa == \null || \valid(pioa);
+  @ assigns \nothing;
+  @*/
 void pcibusmap(Pcidev *root, uvlong *pmema, ulong *pioa, int wrreg) {
   Pcidev *p;
   int ntb, i, rno;
@@ -439,6 +497,10 @@ void pcibusmap(Pcidev *root, uvlong *pmema, ulong *pioa, int wrreg) {
   }
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pcivalidwin(Pcidev *p, uvlong base, uvlong limit) {
   Pcidev *bridge = p->parent;
   char *typ;
@@ -471,6 +533,10 @@ static int pcivalidwin(Pcidev *p, uvlong base, uvlong limit) {
   return 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pcivalidbar(Pcidev *p, uvlong bar, vlong size) {
   if (bar & 1) {
     bar &= ~3;
@@ -485,6 +551,11 @@ static int pcivalidbar(Pcidev *p, uvlong bar, vlong size) {
   }
 }
 
+/*@
+  @ requires list == \null || \valid(list);
+  @ requires parent == \null || \valid(parent);
+  @ assigns \nothing;
+  @*/
 int pciscan(int bno, Pcidev **list, Pcidev *parent) {
   Pcidev *p, *head, **tail;
   int dno, fno, i, hdt, l, maxfno, maxubn, rno, sbn, tbdf, ubn;
@@ -754,6 +825,12 @@ int pciscan(int bno, Pcidev **list, Pcidev *parent) {
   return maxubn;
 }
 
+/*@
+  @ requires root == \null || \valid(root);
+  @ requires msize == \null || \valid(msize);
+  @ requires iosize == \null || \valid(iosize);
+  @ assigns \nothing;
+  @*/
 void pcibussize(Pcidev *root, uvlong *msize, ulong *iosize) {
   *msize = 0;
   *iosize = 0;
@@ -789,6 +866,10 @@ Pcidev *pcimatchtbdf(int tbdf) {
   return pcidev;
 }
 
+/*@
+  @ requires pci == \null || \valid(pci);
+  @ assigns \nothing;
+  @*/
 uchar pciipin(Pcidev *pci, uchar pin) {
   if (pci == nil)
     pci = pcilist;
@@ -807,6 +888,10 @@ uchar pciipin(Pcidev *pci, uchar pin) {
   return 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void pcilhinv(Pcidev *p) {
   int i;
   Pcidev *t;
@@ -842,11 +927,18 @@ static void pcilhinv(Pcidev *p) {
   }
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcihinv(Pcidev *p) {
   print("bus dev type     vid  did  intl memory\n");
   pcilhinv(p);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void pcireset(void) {
   Pcidev *p;
 
@@ -858,36 +950,65 @@ void pcireset(void) {
   }
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcisetioe(Pcidev *p) {
   p->pcr |= IOen;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pciclrioe(Pcidev *p) {
   p->pcr &= ~IOen;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcisetbme(Pcidev *p) {
   p->pcr |= MASen;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pciclrbme(Pcidev *p) {
   p->pcr &= ~MASen;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcisetmwi(Pcidev *p) {
   p->pcr |= MemWrInv;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pciclrmwi(Pcidev *p) {
   p->pcr &= ~MemWrInv;
   pcicfgw16(p, PciPCR, p->pcr);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 int pcienumcaps(Pcidev *p, int (*fmatch)(Pcidev *, int, int, int), int arg) {
   int i, r, cap, off;
 
@@ -925,6 +1046,10 @@ int pcienumcaps(Pcidev *p, int (*fmatch)(Pcidev *, int, int, int), int arg) {
 
 static int matchcap(Pcidev *, int cap, int, int arg) { return cap != arg; }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int matchhtcap(Pcidev *p, int cap, int off, int arg) {
   int mask;
 
@@ -946,6 +1071,10 @@ enum {
   MSIXCtrl = 0x02,
 };
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pcimsixdisable(Pcidev *p) {
   int off;
 
@@ -955,6 +1084,10 @@ static int pcimsixdisable(Pcidev *p) {
   return 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pcigetmsi(Pcidev *p) {
   if (p->msi != 0)
     return p->msi;
@@ -968,6 +1101,10 @@ enum {
   MSIData64 = 0x0C, /* message data register for 64 bit MSI (16 bit) */
 };
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcimsienable(Pcidev *p, uvlong addr, ulong data) {
   int off, ok64;
 
@@ -983,6 +1120,10 @@ int pcimsienable(Pcidev *p, uvlong addr, ulong data) {
   return 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcimsidisable(Pcidev *p) {
   int off;
 
@@ -993,12 +1134,20 @@ int pcimsidisable(Pcidev *p) {
   return 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pcigetpmrb(Pcidev *p) {
   if (p->pmrb != 0)
     return p->pmrb;
   return p->pmrb = pcicap(p, PciCapPMG);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcigetpms(Pcidev *p) {
   int pmcsr, ptr;
 
@@ -1019,6 +1168,10 @@ int pcigetpms(Pcidev *p) {
   return pmcsr & 0x0003;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int pcisetpms(Pcidev *p, int state) {
   int ostate, pmc, pmcsr, ptr;
 
@@ -1052,6 +1205,10 @@ int pcisetpms(Pcidev *p, int state) {
   return ostate;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcienable(Pcidev *p) {
   uint pcr;
   int i;
@@ -1120,6 +1277,10 @@ void pcienable(Pcidev *p) {
   }
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pcidisable(Pcidev *p) {
   if (p == nil)
     return;

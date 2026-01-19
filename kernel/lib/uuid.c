@@ -6,6 +6,9 @@
 
 /* Helper for hex conversion (Plan 9 / Kernel env usually has library functions,
  * but implementing minimal self-contained) */
+/*@
+  @ assigns \nothing;
+  @*/
 static int hex_val(char c) {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -16,6 +19,9 @@ static int hex_val(char c) {
   return -1;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static char hex_char(int v) {
   if (v >= 0 && v <= 9)
     return '0' + v;
@@ -24,16 +30,33 @@ static char hex_char(int v) {
   return '0';
 }
 
+/*@
+  @ requires u == \null || \valid(u);
+  @ assigns \nothing;
+  @*/
 void uuid_clear(uuid_t *u) {
   if (!u)
     return;
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++)
     u->data[i] = 0;
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 int uuid_compare(const uuid_t *a, const uuid_t *b) {
   if (!a || !b)
     return 0; // Undefined safe
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++) {
     if (a->data[i] < b->data[i])
       return -1;
@@ -43,14 +66,28 @@ int uuid_compare(const uuid_t *a, const uuid_t *b) {
   return 0;
 }
 
+/*@
+  @ requires dst == \null || \valid(dst);
+  @ requires src == \null || \valid(src);
+  @ assigns \nothing;
+  @*/
 void uuid_copy(uuid_t *dst, const uuid_t *src) {
   if (!dst || !src)
     return;
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++)
     dst->data[i] = src->data[i];
 }
 
 /* Parse standard UUID string: 8-4-4-4-12 */
+/*@
+  @ requires in == \null || \valid(in);
+  @ requires uu == \null || \valid(uu);
+  @ assigns \nothing;
+  @*/
 int uuid_parse(const char *in, uuid_t *uu) {
   int i = 0;
   const char *p = in;
@@ -73,12 +110,21 @@ int uuid_parse(const char *in, uuid_t *uu) {
 }
 
 /* Format: 36 bytes + null */
+/*@
+  @ requires uu == \null || \valid(uu);
+  @ requires out == \null || \valid(out);
+  @ assigns \nothing;
+  @*/
 void uuid_unparse(const uuid_t *uu, char *out) {
   if (!uu || !out)
     return;
   const unsigned char *d = uu->data;
   char *p = out;
 
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++) {
     if (i == 4 || i == 6 || i == 8 || i == 10) {
       *p++ = '-';
@@ -89,9 +135,17 @@ void uuid_unparse(const uuid_t *uu, char *out) {
   *p = 0;
 }
 
+/*@
+  @ requires uu == \null || \valid(uu);
+  @ assigns \nothing;
+  @*/
 int uuid_is_null(const uuid_t *uu) {
   if (!uu)
     return 1;
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 0; i < 16; i++) {
     if (uu->data[i] != 0)
       return 0;
@@ -100,6 +154,10 @@ int uuid_is_null(const uuid_t *uu) {
 }
 
 /* Generate UUIDv8 (Custom/Experimental) per RFC 9562 */
+/*@
+  @ requires u == \null || \valid(u);
+  @ assigns \nothing;
+  @*/
 void uuid_new_v8(uuid_t *u) {
   /* Use non-blocking ChaCha20 CSPRNG to avoid qlock hang in early exec */
   extern void chacha20_csprng_fill(u8int * buf, ulong len);
@@ -246,6 +304,10 @@ int uuid_unpack_pebble(const uuid_t *u, unsigned int *token,
 
   /* Data A: Bytes 0-5 (48 bits) */
   unsigned long long data_a = 0;
+    /*@ loop invariant 0 <= i <= 6;
+    @ loop assigns i;
+    @ loop variant 6 - i;
+    @*/
   for (int i = 0; i < 6; i++) {
     data_a = (data_a << 8) | d[i];
   }
@@ -261,6 +323,10 @@ int uuid_unpack_pebble(const uuid_t *u, unsigned int *token,
 
   /* Data C: Byte 8 (low 6) | Bytes 9-15 (56) = 62 bits */
   unsigned long long data_c = (unsigned long long)(d[8] & 0x3F);
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 9; i < 16; i++) {
     data_c = (data_c << 8) | d[i];
   }
@@ -297,6 +363,10 @@ void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
 
   /* data_a: PA hash high 48 bits (bytes 0-5) */
   unsigned long long data_a = 0;
+    /*@ loop invariant 0 <= i <= 6;
+    @ loop assigns i;
+    @ loop variant 6 - i;
+    @*/
   for (int i = 0; i < 6; i++) {
     data_a = (data_a << 8) | pa_hash[i];
   }
@@ -309,6 +379,10 @@ void uuid_pack_capability(uuid_t *u, const unsigned char *pa_hash,
    * So: bytes 6-11 = 48 bits, take upper 46 bits (shift right 2)
    */
   unsigned long long pa_low = 0;
+    /*@ loop invariant 0 <= i <= 12;
+    @ loop assigns i;
+    @ loop variant 12 - i;
+    @*/
   for (int i = 6; i < 12; i++) {
     pa_low = (pa_low << 8) | pa_hash[i];
   }
@@ -348,6 +422,10 @@ int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
    * Epoch (16 bits) in high, PA low (46 bits) in low
    */
   unsigned long long data_c = (unsigned long long)(d[8] & 0x3F);
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 9; i < 16; i++) {
     data_c = (data_c << 8) | d[i];
   }
@@ -358,6 +436,11 @@ int uuid_unpack_capability(const uuid_t *u, unsigned short *epoch,
   return 0;
 }
 
+/*@
+  @ requires u == \null || \valid(u);
+  @ requires pa_hash_out == \null || \valid(pa_hash_out);
+  @ assigns \nothing;
+  @*/
 void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
   if (!u || !pa_hash_out)
     return;
@@ -370,6 +453,10 @@ void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
    */
 
   /* High 48 bits: bytes 0-5 → pa_hash_out[0-5] */
+    /*@ loop invariant 0 <= i <= 6;
+    @ loop assigns i;
+    @ loop variant 6 - i;
+    @*/
   for (int i = 0; i < 6; i++) {
     pa_hash_out[i] = d[i];
   }
@@ -379,6 +466,10 @@ void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
    * Epoch is high 16 bits, PA low is low 46 bits
    */
   unsigned long long data_c = (unsigned long long)(d[8] & 0x3F);
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 9; i < 16; i++) {
     data_c = (data_c << 8) | d[i];
   }
@@ -397,6 +488,10 @@ void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
 
   /* Zero out remaining bytes (94 bits = 11.75 bytes, so bytes 12-31 are zero)
    */
+    /*@ loop invariant 0 <= i <= 32;
+    @ loop assigns i;
+    @ loop variant 32 - i;
+    @*/
   for (int i = 12; i < 32; i++) {
     pa_hash_out[i] = 0;
   }
@@ -413,6 +508,10 @@ void uuid_get_pa_hash_bits(const uuid_t *u, unsigned char *pa_hash_out) {
  */
 
 /* Helper: extract high 64-bits of a hash array */
+/*@
+  @ requires hash == \null || \valid(hash);
+  @ assigns \nothing;
+  @*/
 static u64int hash_extract_u64(const u8int *hash) {
   u64int v = 0;
   if (!hash)
@@ -526,6 +625,10 @@ int uuid_verify_pid_lux9(const uuid_t *pid2, const uuid_t *parent_uuid,
   const u8int *d = pid2->data;
   u16int data_b_pack = ((d[6] & 0x0F) << 8) | d[7];
   u64int data_c_pack = (u64int)(d[8] & 0x3F);
+    /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
   for (int i = 9; i < 16; i++)
     data_c_pack = (data_c_pack << 8) | d[i];
 
@@ -555,7 +658,11 @@ int uuid_verify_pid_lux9(const uuid_t *pid2, const uuid_t *parent_uuid,
   // data_a[16..0] should match parent_uuid[0..1]
   if (parent_uuid) {
     u64int data_a = 0;
-    for (int i = 0; i < 6; i++)
+      /*@ loop invariant 0 <= i <= 6;
+    @ loop assigns i;
+    @ loop variant 6 - i;
+    @*/
+  for (int i = 0; i < 6; i++)
       data_a = (data_a << 8) | d[i];
 
     u16int stored_parent_sig = data_a & 0xFFFF;

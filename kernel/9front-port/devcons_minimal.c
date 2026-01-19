@@ -56,6 +56,9 @@ static void devcons_screenputs(char *s, int n);
  * Device Operations
  */
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void consinit(void) {
   kprintinit();
   screenputs = devcons_screenputs; /* Assign our screen output function */
@@ -68,6 +71,11 @@ static Walkqid *conswalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, consdir, nelem(consdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int consstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, consdir, nelem(consdir), devgen);
 }
@@ -98,6 +106,10 @@ static Chan *consopen(Chan *c, int omode) {
   return c;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void consclose(Chan *c) {
   switch ((ulong)c->qid.path) {
   case Qkprint:
@@ -113,6 +125,11 @@ static void consclose(Chan *c) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long consread(Chan *c, void *va, long n, vlong offset) {
   char *p = va;
 
@@ -152,6 +169,11 @@ static long consread(Chan *c, void *va, long n, vlong offset) {
   return -1;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long conswrite(Chan *c, void *va, long n, vlong offset) {
   char *p = va;
 
@@ -228,6 +250,9 @@ Dev consdevtab = {
 /*
  * Kernel Message Buffer Implementation
  */
+/*@
+  @ assigns \nothing;
+  @*/
 static void kprintinit(void) {
   /* Initialize the kernel message buffer lock */
   /* kmesg.buf is zeroed by bss */
@@ -237,12 +262,20 @@ static void kprintinit(void) {
  * Core kernel print hooks
  * Called by print() in libc9/print.c via screenputs function pointer
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static void devcons_screenputs(char *s, int n) {
   /* 1. Write to UART (Hardware Output) */
   /* Check if uart is available globally */
   extern Uart *consuart;
   if (consuart && consuart->phys && consuart->phys->putc) {
-    for (int i = 0; i < n; i++)
+      /*@ loop invariant 0 <= i <= n;
+    @ loop assigns i;
+    @ loop variant n - i;
+    @*/
+  for (int i = 0; i < n; i++)
       consuart->phys->putc(consuart, s[i]);
   }
 

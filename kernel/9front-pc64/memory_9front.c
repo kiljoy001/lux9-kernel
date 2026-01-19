@@ -41,6 +41,9 @@ void *rampage(void) {
   return KADDR(pa);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void mapkzero(uintptr base, uintptr len, int type) {
   uintptr flags, n;
 
@@ -76,6 +79,9 @@ static void mapkzero(uintptr base, uintptr len, int type) {
   pmap(base | flags, base + KZERO, len);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static uintptr ebdaseg(void) {
   uchar *bda;
 
@@ -85,6 +91,9 @@ static uintptr ebdaseg(void) {
   return ((bda[0x0f] << 8) | bda[0x0e]) << 4;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static uintptr convmemsize(void) {
   uintptr top;
   uchar *bda;
@@ -101,6 +110,9 @@ static uintptr convmemsize(void) {
   return top;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void lowraminit(void) {
   uintptr base, pa, len;
   uchar *p;
@@ -150,6 +162,10 @@ static void lowraminit(void) {
   memmapadd(0xF0000, 64 * KB, MemReserved);
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 int checksum(void *v, int n) {
   uchar *p, s;
 
@@ -254,10 +270,16 @@ void *rsdsearch(void) {
  * does not map the physical address into virtual memory.
  * Call vmap to do that.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 uvlong upaalloc(uvlong pa, uvlong size, uvlong align) {
   return memmapalloc(pa, size, align, MemUPA);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uvlong upaallocwin(uvlong pa, uvlong win, uvlong size, uvlong align) {
   uvlong a, base, top = pa + win;
 
@@ -280,6 +302,9 @@ void upafree(uvlong pa, uvlong size) { memmapfree(pa, size, MemUPA); }
 /*
  * Allocate memory from the upper memory blocks.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 ulong umballoc(ulong pa, ulong size, ulong align) {
   return (ulong)memmapalloc(pa == -1UL ? -1ULL : (uvlong)pa, size, align,
                             MemUMB);
@@ -287,6 +312,9 @@ ulong umballoc(ulong pa, ulong size, ulong align) {
 
 void umbfree(ulong pa, ulong size) { memmapfree(pa, size, MemUMB); }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void umbexclude(void) {
   ulong pa, size;
   char *op, *p, *rptr;
@@ -316,6 +344,10 @@ static void umbexclude(void) {
   }
 }
 
+/*@
+  @ requires expect == \null || \valid(expect);
+  @ assigns \nothing;
+  @*/
 static void mtrrexclude(int type, char *expect) {
   uvlong base, top, next, pa;
   char *attr;
@@ -335,6 +367,9 @@ static void mtrrexclude(int type, char *expect) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int liminescan(void) {
   extern struct limine_memmap_request *limine_memmap;
   struct limine_memmap_response *memmap_response;
@@ -403,6 +438,9 @@ static int liminescan(void) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int e820scan(void) {
   uvlong base, top, size;
   int type;
@@ -457,6 +495,9 @@ static int e820scan(void) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void ramscan(uintptr pa, uintptr top, uintptr chunk) {
   ulong save, pat, seed, *v, *k0;
   int i, n, w;
@@ -529,6 +570,9 @@ static void ramscan(uintptr pa, uintptr top, uintptr chunk) {
 /*
  * Sort out initial memory map and discover RAM.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void meminit0(void) {
   extern char end[];
   extern char cpu0data_end[];
@@ -607,6 +651,9 @@ void meminit0(void) {
  * This is due to the UEFI and BIOS memory map being
  * unreliable and sometimes marking these ranges as RAM.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void memreserve(uintptr pa, uintptr size) {
   assert(conf.mem[0].npage == 0);
 
@@ -626,6 +673,9 @@ void memreserve(uintptr pa, uintptr size) {
  * alignment if alignment fails. Upper Memory Block (UMB) mapping is not
  * performed here; UMB exclusions are applied before populating conf.mem[].
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void meminit(void) {
   uintptr base, size;
   Confmem *cm;
@@ -686,6 +736,10 @@ void meminit(void) {
   }
 
   print("meminit: populated %d conf.mem[] entries\n", cmidx);
+    /*@ loop invariant 0 <= i <= cmidx && i;
+    @ loop assigns i;
+    @ loop variant cmidx && i - i;
+    @*/
   for (int i = 0; i < cmidx && i < nelem(conf.mem); i++) {
     if (boot_verbose)
       print("meminit: conf.mem[%d]: base=%#p npage=%lu\n", i, conf.mem[i].base,

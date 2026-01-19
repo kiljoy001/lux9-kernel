@@ -46,6 +46,9 @@ lookup_prepared_page_by_cap_locked(const UserCapability *cap) {
 /*
  * Initialize exchange page system
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void exchangeinit(void) {
   blind_ledger_init(); // Initialize Blind Ledger
   borrow_lock_init(&prepared_lock, (uintptr)&prepared_lock,
@@ -58,6 +61,11 @@ void exchangeinit(void) {
  * Returns an exchange handle (physical address) that can be passed to another
  * process
  */
+/*@
+  @ requires out_cap == \null || \valid(out_cap);
+  @ ensures \result >= 0;
+  @ assigns \nothing;
+  @*/
 BlindLedgerError exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap) {
   u64int *pte;
   uintptr pa;
@@ -300,6 +308,10 @@ int exchange_accept(const ExchangeHandle *handle, uintptr dest_vaddr,
  * Cancel an exchange and return page to original owner
  * This undoes a prepare operation
  */
+/*@
+  @ requires handle == \null || \valid(handle);
+  @ assigns \nothing;
+  @*/
 int exchange_cancel(const ExchangeHandle *handle) {
   uintptr pa;
   struct PreparedPage *pp;
@@ -454,6 +466,10 @@ int exchange_transfer(Proc *from, Proc *to, const ExchangeHandle *handle,
 /*
  * Query if an exchange handle is valid
  */
+/*@
+  @ requires handle == \null || \valid(handle);
+  @ assigns \nothing;
+  @*/
 int exchange_is_valid(const ExchangeHandle *handle) {
   BlindLedgerEntry entry;
   BlindLedgerError ledger_err;
@@ -489,6 +505,10 @@ Proc *exchange_get_owner(const ExchangeHandle *handle) {
  * Prepare a range of pages for exchange
  * Returns the number of pages prepared, or negative on error
  */
+/*@
+  @ requires handles == \null || \valid(handles);
+  @ assigns \nothing;
+  @*/
 int exchange_prepare_range(uintptr vaddr, ulong len, ExchangeHandle *handles) {
   ulong offset;
   int npages = 0;

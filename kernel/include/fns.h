@@ -78,14 +78,14 @@ Chan *devcreate(Chan *, char *, int, ulong);
   @ requires name == \null || \valid(name);
   @ requires user == \null || \valid(user);
   @ requires dp != \null;
-  @ assigns *dp;
   @ terminates \true;
+  @ assigns *dp;
   */
 void devdir(Chan *c, Qid qid, char *name, vlong length, char *user, long perm,
             Dir *dp);
 /*@ requires c != \null;
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 long devdirread(Chan *c, char *va, long n, Dirtab *tab, int ntab, Devgen *gen);
 Devgen devgen;
@@ -98,13 +98,13 @@ void devremove(Chan *);
 void devreset(void);
 void devshutdown(void);
 /*@ requires c != \null;
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 int devstat(Chan *c, uchar *dp, int n, Dirtab *tab, int ntab, Devgen *gen);
 /*@ requires c != \null;
-  @ assigns \result \from \nothing;
   @ terminates \true;
+  @ assigns \result \from \nothing;
   */
 Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
                  int ntab, Devgen *gen);
@@ -138,10 +138,10 @@ int eqqid(Qid, Qid);
 void lux9_error(char *e);
 #define error(e) lux9_error(e)
 #else
-/*@ requires e == \null || \valid(e);
+/*@ requires e != \null;
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
-  @ terminates \true;
   */
 _Noreturn void error(char *e);
 #endif
@@ -164,8 +164,8 @@ void forkchild(Proc *, Ureg *);
 void forkret(void);
 void fpunotify(Proc *);
 void fpunoted(Proc *);
-/*@ assigns \nothing;
-  @ terminates \true;
+/*@ terminates \true;
+  @ assigns \nothing;
   */
 void free(void *p);
 void freeb(Block *);
@@ -232,7 +232,8 @@ Cmdtab *lookupcmd(Cmdbuf *, Cmdtab *, int);
 Page *lookpage(Image *, uintptr);
 #define MS2NS(n) (((vlong)(n)) * 1000000LL)
 void machinit(void);
-/*@ behavior zero:
+/*@ terminates \true;
+  @ behavior zero:
   @   assumes size == 0;
   @   assigns \result \from \nothing;
   @   ensures \result == \null || \valid((char *)\result);
@@ -243,10 +244,10 @@ void machinit(void);
   - 1));
   @ complete behaviors;
   @ disjoint behaviors;
-  @ terminates \true;
   */
 void *mallocz(ulong size, int clr);
-/*@ behavior zero:
+/*@ terminates \true;
+  @ behavior zero:
   @   assumes size == 0;
   @   assigns \result \from \nothing;
   @   ensures \result == \null || \valid((char *)\result);
@@ -257,10 +258,10 @@ void *mallocz(ulong size, int clr);
   - 1));
   @ complete behaviors;
   @ disjoint behaviors;
-  @ terminates \true;
   */
 void *malloc(ulong size);
-/*@ behavior zero:
+/*@ terminates \true;
+  @ behavior zero:
   @   assumes size == 0;
   @   assigns \result \from \nothing;
   @   ensures \result == \null || \valid((char *)\result);
@@ -271,7 +272,6 @@ void *malloc(ulong size);
   - 1));
   @ complete behaviors;
   @ disjoint behaviors;
-  @ terminates \true;
   */
 void *mallocalign(ulong size, ulong align, long offset, ulong span);
 void mallocsummary(void);
@@ -326,10 +326,10 @@ Block *packblock(Block *);
 Block *padblock(Block *, int);
 void pageinit(void);
 ulong pagereclaim(Image *);
-/*@ requires fmt == \null || \valid(fmt);
+/*@ requires fmt != \null;
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
-  @ terminates \true;
   */
 _Noreturn void panic(char *fmt, ...);
 Cmdbuf *parsecmd(char *a, int n);
@@ -393,8 +393,8 @@ long qbwrite(Queue *, Block *);
 Queue *qbypass(void (*)(void *, Block *), void *);
 int qcanread(Queue *);
 /*@ requires q != \null;
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 void qclose(Queue *q);
 int qconsume(Queue *, void *, int);
@@ -402,8 +402,8 @@ Block *qcopy(Queue *, int, ulong);
 int qdiscard(Queue *, int);
 void qflush(Queue *);
 /*@ requires q != \null;
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 void qfree(Queue *q);
 int qfull(Queue *);
@@ -412,18 +412,18 @@ void qhangup(Queue *, char *);
 int qisclosed(Queue *);
 int qiwrite(Queue *, void *, int);
 /*@ requires q != \null;
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 int qlen(Queue *q);
 /*@ requires l != \null;
-  @ assigns *l;
   @ terminates \true;
+  @ assigns *l;
   */
 void qlock(QLock *l);
-/*@ assigns \result \from \nothing;
+/*@ terminates \true;
+  @ assigns \result \from \nothing;
   @ ensures \result == \null || \valid(\result);
-  @ terminates \true;
   */
 Queue *qopen(int, int, void (*)(void *), void *);
 int qpass(Queue *, Block *);
@@ -432,22 +432,22 @@ int qproduce(Queue *, void *, int);
 void qputback(Queue *, Block *);
 /*@ requires q != \null;
   @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
-  @ assigns ((char *)buf)[0..n-1];
   @ terminates \true;
+  @ assigns ((char *)buf)[0..n-1];
   */
 long qread(Queue *q, void *buf, int n);
 Block *qremove(Queue *);
 void qreopen(Queue *);
 void qsetlimit(Queue *, int);
 /*@ requires l != \null;
-  @ assigns *l;
   @ terminates \true;
+  @ assigns *l;
   */
 void qunlock(QLock *l);
 /*@ requires q != \null;
   @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   */
 int qwrite(Queue *q, void *buf, int n);
 void qnoblock(Queue *, int);
@@ -547,32 +547,41 @@ Proc *wakeup(Rendez *);
 int walk(Chan **, char **, int, int, int *);
 void wlock(RWLock *);
 void wunlock(RWLock *);
-/*@ allocates \result;
+/*@ terminates \true;
+    allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
-    terminates \true;
 */
 void *xalloc(ulong size);
-/*@ allocates \result;
+/*@ terminates \true;
+    allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
-    terminates \true;
 */
 void *xalloc_raw(ulong size);
-/*@ allocates \result;
+/*@ terminates \true;
+    allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
-    terminates \true;
 */
 void *xallocz(ulong size, int zero);
-/*@ allocates \result;
+/*@ terminates \true;
+    allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
-    terminates \true;
 */
 void *xallocz_raw(ulong size, int zero);
-/*@ assigns \nothing;
-  @ terminates \true;
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xalloc_driver(ulong size);
+void *xallocz_driver(ulong size, int zero);
+void *smalloc_driver(ulong size);
+void xfree_driver(void *p);
+/*@ terminates \true;
+  @ assigns \nothing;
 */
 void xfree(void *p);
 void xhole(uintptr, uintptr);
@@ -737,5 +746,13 @@ void wasm_runtime_cleanup_process(Proc *);
 extern int boot_verbose;
 
 /* Bounded print for formal verification */
+/*@ requires \valid_read(fmt);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int bprint(const char *fmt, ...);
+
+/*@ requires \valid_read(fmt);
+  @ terminates \false;
+  @*/
 void bpanic(const char *fmt, ...) __attribute__((noreturn));

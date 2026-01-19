@@ -33,8 +33,9 @@
 
 #define MAXMACH 128 /* max # cpus system can run */
 
-#define KSTACK (256 * KiB) /* Size of Proc kernel stack - increased for WASM3  \
-                            */
+#define KSTACK                                                                 \
+  (256 * KiB) /* Size of Proc kernel stack - increased for WASM3               \
+               */
 
 /*
  * Time
@@ -60,6 +61,7 @@
  *  Address spaces. Kernel, sorted by address.
  */
 #define KZERO (0xffffffff80000000ull)
+#define PADDR(a) ((uintptr)(a) - KZERO)
 #ifndef KTZERO
 #define KTZERO (KZERO + 1 * MiB + 64 * KiB)
 #endif

@@ -32,21 +32,23 @@ static int exchange_prepare_pci_bar(uint64_t channel_id, uint8_t bar_num,
   memset(handle, 0, sizeof(*handle));
   return 0;
 }
-static void exchange_cleanup(ExchangeHandle *handle) {
+/*@
+  @ requires handle == \null || \valid(handle);@*/static void exchange_cleanup(ExchangeHandle *handle) {
   /* Clean up exchange page handle - mark as unused */
   if (handle != nil)
     memset(handle, 0, sizeof(*handle));
 }
-static PebbleHandle *pebble_create_white(void *ctx, char *desc, size_t size) {
+static PebbleHandle *pebble_create_white(int ctx, char *desc, size_t size) {
   return nil;
 }
 static struct PCIChannel *lookup_pci_channel(struct FamilyExchangePage *family,
                                              uint64_t channel_id) {
   return nil;
 }
-static void *upamalloc(uintptr addr, size_t size, size_t align) {
-  return xspanalloc(size, (int)align, 0);
+static void *upamalloc(size_t size, size_t align, int zero) {
+  return xalloc_driver(size);
 }
+static void upafree(uintptr addr, size_t size) { xfree_driver((void *)addr); }
 static int exchange_prepare_pci_dma(uint64_t channel_id, uintptr paddr,
                                     size_t size, PebbleHandle *token,
                                     ExchangeHandle *handle) {
@@ -191,7 +193,10 @@ struct PCIResourcePool {
 };
 
 /* Initialize PCI resource pool */
-void setup_pci_resource_pool(struct FamilyExchangePage *family) {
+/*@
+  @ requires family == \null || \valid(family);
+  @ assigns *ctx, *pool, pool->max_bars;
+  @*/void setup_pci_resource_pool(struct FamilyExchangePage *family) {
   if (!family) {
     return;
   }
@@ -203,7 +208,7 @@ void setup_pci_resource_pool(struct FamilyExchangePage *family) {
   }
 
   /* Allocate resource pool structure */
-  struct PCIResourcePool *pool = xalloc(sizeof(struct PCIResourcePool));
+  struct PCIResourcePool *pool = xalloc_driver(sizeof(struct PCIResourcePool));
   if (!pool) {
     print("PCI: failed to allocate resource pool\n");
     return;
@@ -216,19 +221,22 @@ void setup_pci_resource_pool(struct FamilyExchangePage *family) {
   pool->max_irqs = MAX_PCI_DEVICES * 8; // Up to 8 IRQs per device
   pool->max_dmas = MAX_PCI_DEVICES * 4; // Up to 4 DMA regions per device
 
-  pool->bar_resources = xalloc(sizeof(struct PCIBarResource) * pool->max_bars);
-  pool->irq_resources = xalloc(sizeof(struct PCIIrqResource) * pool->max_irqs);
-  pool->dma_resources = xalloc(sizeof(struct PCIDmaResource) * pool->max_dmas);
+  pool->bar_resources =
+      xalloc_driver(sizeof(struct PCIBarResource) * pool->max_bars);
+  pool->irq_resources =
+      xalloc_driver(sizeof(struct PCIIrqResource) * pool->max_irqs);
+  pool->dma_resources =
+      xalloc_driver(sizeof(struct PCIDmaResource) * pool->max_dmas);
 
   if (!pool->bar_resources || !pool->irq_resources || !pool->dma_resources) {
     print("PCI: failed to allocate resource arrays\n");
     if (pool->bar_resources)
-      xfree(pool->bar_resources);
+      xfree_driver(pool->bar_resources);
     if (pool->irq_resources)
-      xfree(pool->irq_resources);
+      xfree_driver(pool->irq_resources);
     if (pool->dma_resources)
-      xfree(pool->dma_resources);
-    xfree(pool);
+      xfree_driver(pool->dma_resources);
+    xfree_driver(pool);
     return;
   }
 
@@ -282,6 +290,10 @@ int allocate_pci_bar_resource(struct FamilyExchangePage *family,
 
   /* Find free BAR slot */
   int free_slot = -1;
+    /*@ loop invariant 0 <= i <= pool->max_bars;
+    @ loop assigns i;
+    @ loop variant pool->max_bars - i;
+    @*/
   for (int i = 0; i < pool->max_bars; i++) {
     if (!pool->bar_resources[i].is_active) {
       free_slot = i;
@@ -414,6 +426,10 @@ int allocate_pci_irq_resource(struct FamilyExchangePage *family,
 
   /* Find free IRQ slot */
   int free_slot = -1;
+    /*@ loop invariant 0 <= i <= pool->max_irqs;
+    @ loop assigns i;
+    @ loop variant pool->max_irqs - i;
+    @*/
   for (int i = 0; i < pool->max_irqs; i++) {
     if (!pool->irq_resources[i].is_active) {
       free_slot = i;
@@ -514,6 +530,10 @@ int allocate_pci_dma_resource(struct FamilyExchangePage *family,
 
   /* Find free DMA slot */
   int free_slot = -1;
+    /*@ loop invariant 0 <= i <= pool->max_dmas;
+    @ loop assigns i;
+    @ loop variant pool->max_dmas - i;
+    @*/
   for (int i = 0; i < pool->max_dmas; i++) {
     if (!pool->dma_resources[i].is_active) {
       free_slot = i;
@@ -538,7 +558,7 @@ int allocate_pci_dma_resource(struct FamilyExchangePage *family,
   dma->is_active = 1;
 
   /* Allocate physical memory for DMA */
-  uintptr dma_phys = upamalloc(size, alignment, 0);
+  uintptr dma_phys = (uintptr)upamalloc(size, alignment, 0);
   if (dma_phys == 0) {
     unlock(&pool->resource_lock);
     pool->stats.allocation_failures++;
@@ -653,6 +673,10 @@ int cleanup_channel_resources(struct FamilyExchangePage *family,
   lock(&pool->resource_lock);
 
   /* Clean up all BAR resources for this channel */
+    /*@ loop invariant 0 <= i <= pool->max_bars;
+    @ loop assigns i;
+    @ loop variant pool->max_bars - i;
+    @*/
   for (int i = 0; i < pool->max_bars; i++) {
     struct PCIBarResource *bar = &pool->bar_resources[i];
     if (bar->is_active && bar->bound_channel_id == channel_id) {
@@ -661,6 +685,10 @@ int cleanup_channel_resources(struct FamilyExchangePage *family,
   }
 
   /* Clean up all IRQ resources for this channel */
+    /*@ loop invariant 0 <= i <= pool->max_irqs;
+    @ loop assigns i;
+    @ loop variant pool->max_irqs - i;
+    @*/
   for (int i = 0; i < pool->max_irqs; i++) {
     struct PCIIrqResource *irq = &pool->irq_resources[i];
     if (irq->is_active && irq->bound_channel_id == channel_id) {
@@ -669,6 +697,10 @@ int cleanup_channel_resources(struct FamilyExchangePage *family,
   }
 
   /* Clean up all DMA resources for this channel */
+    /*@ loop invariant 0 <= i <= pool->max_dmas;
+    @ loop assigns i;
+    @ loop variant pool->max_dmas - i;
+    @*/
   for (int i = 0; i < pool->max_dmas; i++) {
     struct PCIDmaResource *dma = &pool->dma_resources[i];
     if (dma->is_active && dma->bound_channel_id == channel_id) {
@@ -717,7 +749,10 @@ void get_pci_resource_pool_stats(struct FamilyExchangePage *family,
 }
 
 /* Shutdown resource pool */
-int shutdown_pci_resource_pool(struct FamilyExchangePage *family) {
+/*@
+  @ requires family == \null || \valid(family);
+  @ assigns *ctx, *pool;
+  @*/int shutdown_pci_resource_pool(struct FamilyExchangePage *family) {
   struct PCIFamilyContext *ctx =
       (struct PCIFamilyContext *)family->family_specific_ctx;
   struct PCIResourcePool *pool = ctx->resource_pool;
@@ -731,18 +766,30 @@ int shutdown_pci_resource_pool(struct FamilyExchangePage *family) {
   lock(&pool->resource_lock);
 
   /* Clean up all active resources */
+    /*@ loop invariant 0 <= i <= pool->max_bars;
+    @ loop assigns i;
+    @ loop variant pool->max_bars - i;
+    @*/
   for (int i = 0; i < pool->max_bars; i++) {
     if (pool->bar_resources[i].is_active) {
       release_pci_bar_resource(family, &pool->bar_resources[i]);
     }
   }
 
+    /*@ loop invariant 0 <= i <= pool->max_irqs;
+    @ loop assigns i;
+    @ loop variant pool->max_irqs - i;
+    @*/
   for (int i = 0; i < pool->max_irqs; i++) {
     if (pool->irq_resources[i].is_active) {
       release_pci_irq_resource(family, &pool->irq_resources[i]);
     }
   }
 
+    /*@ loop invariant 0 <= i <= pool->max_dmas;
+    @ loop assigns i;
+    @ loop variant pool->max_dmas - i;
+    @*/
   for (int i = 0; i < pool->max_dmas; i++) {
     if (pool->dma_resources[i].is_active) {
       release_pci_dma_resource(family, &pool->dma_resources[i]);
@@ -756,14 +803,14 @@ int shutdown_pci_resource_pool(struct FamilyExchangePage *family) {
   }
 
   /* Free resource arrays */
-  xfree(pool->bar_resources);
-  xfree(pool->irq_resources);
-  xfree(pool->dma_resources);
+  xfree_driver(pool->bar_resources);
+  xfree_driver(pool->irq_resources);
+  xfree_driver(pool->dma_resources);
 
   unlock(&pool->resource_lock);
 
   /* Free pool structure */
-  xfree(pool);
+  xfree_driver(pool);
   ctx->resource_pool = NULL;
 
   print("PCI: resource pool shutdown complete\n");

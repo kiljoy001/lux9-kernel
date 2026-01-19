@@ -540,7 +540,7 @@ BlindLedgerError
 ledger_transfer_reversible(const UserCapability *cap, Proc *from_owner,
                            Proc *to_owner,
                            LedgerRollbackToken *rollback_token) {
-  if (cap == nil || from_owner == nil || to_owner == nil) {
+  if (cap == nil) {
     return BLIND_LEDGER_EINVAL;
   }
 

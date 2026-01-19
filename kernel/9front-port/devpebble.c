@@ -43,6 +43,11 @@ static Walkqid *pebwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, pebbledir, nelem(pebbledir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int pebstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, pebbledir, nelem(pebbledir), devgen);
 }
@@ -62,6 +67,10 @@ static Chan *pebopen(Chan *c, int omode) {
   return c;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void pebclose(Chan *c) {
   PebbleChanState *st;
 
@@ -73,6 +82,9 @@ static void pebclose(Chan *c) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int pebhexval(int c) {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -83,6 +95,11 @@ static int pebhexval(int c) {
   return -1;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires out == \null || \valid(out);
+  @ assigns \nothing;
+  @*/
 static int pebparse_hex_bytes(const char *p, uchar *out, int outlen) {
   int i, hi, lo;
 
@@ -96,6 +113,11 @@ static int pebparse_hex_bytes(const char *p, uchar *out, int outlen) {
   return 0;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ requires cap == \null || \valid(cap);
+  @ assigns \nothing;
+  @*/
 static int pebparse_cap_hash(const char *buf, UserCapability *cap) {
   const char *p = buf;
 
@@ -119,6 +141,11 @@ static int pebparse_cap_hash(const char *buf, UserCapability *cap) {
   return 0;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ requires out == \null || \valid(out);
+  @ assigns \nothing;
+  @*/
 static int pebparse_uintptr(const char *buf, uintptr *out) {
   char *end;
   uvlong v;
@@ -138,6 +165,11 @@ static int pebparse_uintptr(const char *buf, uintptr *out) {
   return 0;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires msg == \null || \valid(msg);
+  @ assigns \nothing;
+  @*/
 static void pebsetresp(Chan *c, const char *msg) {
   PebbleChanState *st;
   ulong len;
@@ -154,6 +186,11 @@ static void pebsetresp(Chan *c, const char *msg) {
   st->resp_len = len;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long pebread(Chan *c, void *va, long n, vlong off) {
   char *buf;
   long rv = 0;
@@ -194,6 +231,11 @@ static long pebread(Chan *c, void *va, long n, vlong off) {
   return 0;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long pebwrite(Chan *c, void *va, long n, vlong off) {
   char *buf;
   char tmp[256];

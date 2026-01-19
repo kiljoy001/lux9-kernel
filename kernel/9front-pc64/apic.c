@@ -101,8 +101,20 @@ struct Apictimer {
 
 static Apictimer lapictimer[MAXMACH];
 
+/*@
+    requires lapicbase != \null;
+    // We assume r is a valid offset.
+    assigns \nothing;
+*/
 static ulong lapicr(int r) { return *(lapicbase + (r / sizeof(*lapicbase))); }
 
+/*@
+    requires lapicbase != \null;
+    // Security: Ensure we are writing to the mapped APIC page
+    requires \valid(lapicbase + (r / sizeof(*lapicbase)));
+    requires \valid(lapicbase + (LapicID / sizeof(*lapicbase))); // For the
+   read-back assigns *(lapicbase + (r / sizeof(*lapicbase)));
+*/
 static void lapicw(int r, ulong data) {
   *(lapicbase + (r / sizeof(*lapicbase))) = data;
   data = *(lapicbase + (LapicID / sizeof(*lapicbase)));
@@ -193,6 +205,12 @@ Retry:
   print("cpu%d: lapic clock at %lludMHz\n", m->machno, v);
 }
 
+/*@
+    requires apic != \null;
+    requires \valid(apic);
+    assigns lapicbase;
+    assigns *apic->addr; // imprecise, writes to APIC registers
+*/
 void lapicinit(Apic *apic) {
   ulong dfr, ldr, lvt;
 
@@ -351,6 +369,14 @@ void ioapicrdtw(Apic *apic, int sel, int hi, int lo) {
   unlock(&apic->lock);
 }
 
+/*@
+    requires apic != \null;
+    requires \valid(apic);
+    requires apic->addr != \null;
+    // Security: Ensure generic implementation doesn't touch bad memory
+    requires \valid(apic->addr + (0..1)); // Minimal range check for register
+   index/data assigns *apic->addr; // imprecise assigns apic->mre;
+*/
 void ioapicinit(Apic *apic, int apicno) {
   int hi, lo, v;
   ulong *iowin;
@@ -406,4 +432,3 @@ void lapicintroff(void) { lapicw(LapicTPR, 0xFF); }
 void lapicnmienable(void) { lapicw(LapicPCINT, ApicNMI); }
 
 void lapicnmidisable(void) { lapicw(LapicPCINT, ApicIMASK); }
-

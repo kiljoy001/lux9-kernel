@@ -85,7 +85,7 @@ typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
 #pragma incomplete Queue
 #pragma incomplete Timers
 
-#include <fcall.h>
+#include "fcall.h"
 
 struct Ref {
   long ref;
@@ -918,6 +918,8 @@ struct Proc {
     void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
     void *module_bytes;    /* Persistent WASM module bytecode */
     u32int module_bytes_len;
+    u32int permissions; /* Active WASM capability permissions bitmask */
+    void *cap_table;    /* Capability handle table (wasm_cap_table_t) */
   } wasm;
 
   /* Spawn Capability - UUIDv8-based process creation control.

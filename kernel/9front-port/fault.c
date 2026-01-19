@@ -1,6 +1,7 @@
 #include "9p_router.h"
 #include "dat.h"
 #include "fns.h"
+#include "hhdm.h"
 #include "mem.h"
 #include "pageown.h"
 #include "portlib.h"
@@ -28,6 +29,11 @@ struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {
   return nil;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 _Noreturn static void faulterror(char *s, Chan *c) {
   char buf[ERRMAX];
 
@@ -46,6 +52,11 @@ _Noreturn static void faulterror(char *s, Chan *c) {
   pexit(s, 1);
 }
 
+/*@
+  @ requires type == \null || \valid(type);
+  @ requires access == \null || \valid(access);
+  @ assigns \nothing;
+  @*/
 void faultnote(char *type, char *access, uintptr addr) {
   char buf[ERRMAX];
 
@@ -54,6 +65,11 @@ void faultnote(char *type, char *access, uintptr addr) {
   postnote(up, 1, buf, NDebug);
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pio(Segment *s, uintptr addr, uintptr soff, Page **p) {
   KMap *k;
   Chan *c;
@@ -190,6 +206,10 @@ retry:
   goto retry;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 int fixfault(Segment *s, uintptr addr, int read) {
   Pte **pte, *etp;
   uintptr soff, mmuphys;
@@ -332,6 +352,10 @@ int fixfault(Segment *s, uintptr addr, int read) {
   return 0;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static void mapphys(Segment *s, uintptr addr, int attr) {
   uintptr mmuphys;
   Page pg = {0};
@@ -357,7 +381,23 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
     memset(kva, 0, BY2PG);
 
     /* Store physical address in pseg */
-    s->pseg->pa = PADDR(kva);
+    extern u64int limine_kernel_phys_base;
+    uintptr kva_addr = (uintptr)kva;
+    extern uintptr hhdm_base;
+
+    print("DEBUG: mapphys kva=%p is_hhdm=%d hhdm_base=%p KZERO=%#llx\n", kva,
+          is_hhdm_virt(kva), hhdm_base, (unsigned long long)KZERO);
+
+    if (is_hhdm_virt(kva)) {
+      s->pseg->pa = hhdm_phys(kva);
+      print("mapphys: HHDM translation kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    } else if (kva_addr >= KZERO) {
+      s->pseg->pa = (kva_addr - KZERO) + limine_kernel_phys_base;
+      print("mapphys: KZERO translation kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    } else {
+      s->pseg->pa = PADDR(kva); /* Fallback to macro */
+      print("mapphys: PADDR fallback kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    }
 
     print("mapphys: LAZY ALLOC exchange page pid=%lud kva=%p pa=%#p\n", up->pid,
           kva, s->pseg->pa);
@@ -427,12 +467,19 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
     uchar *data = (uchar *)kaddr(pg.pa);
     print("mapphys: VERIFY after putmmu, reading PA=0x%p first 16: ", pg.pa);
-    for (int i = 0; i < 16; i++)
+      /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
+  for (int i = 0; i < 16; i++)
       print("%02x ", data[i]);
     print("\n");
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 int fault(uintptr addr, uintptr pc, int read) {
   Segment *s;
   char *sps;
@@ -535,6 +582,9 @@ int fault(uintptr addr, uintptr pc, int read) {
 /*
  * Called only in a system call
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int okaddr(uintptr addr, ulong len, int write) {
   Segment *s;
   int iterations = 0;
@@ -586,6 +636,9 @@ int okaddr(uintptr addr, ulong len, int write) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void validaddr(uintptr addr, ulong len, int write) {
   if (!okaddr(addr, len, write)) {
     pprint("suicide: invalid address %#p/%lud in sys call pc=%#p\n", addr, len,
@@ -624,6 +677,9 @@ void *vmemchr(void *s, int c, ulong n) {
 
 extern void checkmmu(uintptr, uintptr);
 
+/*@
+  @ assigns \nothing;
+  @*/
 void checkpages(void) {
   uintptr addr, off;
   Pte *p;

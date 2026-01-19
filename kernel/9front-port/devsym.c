@@ -37,6 +37,9 @@ static char sym_help[] =
     "     abs neg cmp and or xor not shl shr popcount\n"
     "numbers are base-10 integers\n";
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void syminit(void) {
   if (sym_ready)
     return;
@@ -50,6 +53,11 @@ static Walkqid *symwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, symdir, nelem(symdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int symstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, symdir, nelem(symdir), devgen);
 }
@@ -69,6 +77,10 @@ static Chan *symopen(Chan *c, int omode) {
   return c;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void symclose(Chan *c) {
   SymChanState *st;
 
@@ -80,10 +92,17 @@ static void symclose(Chan *c) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int sym_is_space(int c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ assigns \nothing;
+  @*/
 static void sym_skipws(char **pp) {
   char *p = *pp;
   while (*p && sym_is_space((uchar)*p))
@@ -91,6 +110,11 @@ static void sym_skipws(char **pp) {
   *pp = p;
 }
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ requires out == \null || \valid(out);
+  @ assigns \nothing;
+  @*/
 static int sym_parse_token(char **pp, char **out) {
   char *p;
   char *tok;
@@ -115,6 +139,10 @@ static int sym_parse_token(char **pp, char **out) {
 
 static int sym_parse_expr(char **pp, mpz_t out);
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ assigns \nothing;
+  @*/
 static int sym_expect_rparen(char **pp) {
   sym_skipws(pp);
   if (**pp != ')')
@@ -123,6 +151,10 @@ static int sym_expect_rparen(char **pp) {
   return 0;
 }
 
+/*@
+  @ requires out == \null || \valid(out);
+  @ assigns \nothing;
+  @*/
 static int sym_mpz_to_ulong(const mpz_t v, unsigned long *out) {
   if (mpz_sgn(v) < 0 || !mpz_fits_ulong_p(v))
     return -1;
@@ -130,6 +162,10 @@ static int sym_mpz_to_ulong(const mpz_t v, unsigned long *out) {
   return 0;
 }
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ assigns \nothing;
+  @*/
 static int sym_parse_list(char **pp, mpz_t out) {
   char *op;
   mpz_t a, b, c;
@@ -273,6 +309,10 @@ bad3:
   return -1;
 }
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ assigns \nothing;
+  @*/
 static int sym_parse_number(char **pp, mpz_t out) {
   char *tok;
   int rc;
@@ -284,6 +324,10 @@ static int sym_parse_number(char **pp, mpz_t out) {
   return (rc == 0) ? 0 : -1;
 }
 
+/*@
+  @ requires pp == \null || \valid(pp);
+  @ assigns \nothing;
+  @*/
 static int sym_parse_expr(char **pp, mpz_t out) {
   sym_skipws(pp);
   if (**pp == '(')
@@ -291,6 +335,11 @@ static int sym_parse_expr(char **pp, mpz_t out) {
   return sym_parse_number(pp, out);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long symread(Chan *c, void *va, long n, vlong offset) {
   SymChanState *st;
 
@@ -312,6 +361,11 @@ static long symread(Chan *c, void *va, long n, vlong offset) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long symwrite(Chan *c, void *va, long n, vlong offset) {
   char *buf;
   mpz_t r;

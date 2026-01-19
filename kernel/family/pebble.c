@@ -49,7 +49,8 @@ static int family_pebble_initialized = 0;
 /*
  * Initialize pebble support for a family
  */
-int family_pebble_init(struct FamilyExchangePage *family) {
+/*@
+  @ requires family == \null || \valid(family);@*/int family_pebble_init(struct FamilyExchangePage *family) {
   FamilyPebbleState *state;
   int i;
 
@@ -94,7 +95,10 @@ int family_pebble_init(struct FamilyExchangePage *family) {
 /*
  * Cleanup pebble support for a family
  */
-void family_pebble_cleanup(struct FamilyExchangePage *family) {
+/*@
+  @ requires family == \null || \valid(family);
+  @ assigns tokens[0..];
+  @*/void family_pebble_cleanup(struct FamilyExchangePage *family) {
   FamilyPebbleState *state;
   int i;
 
@@ -258,7 +262,8 @@ int family_pebble_validate_access(struct FamilyExchangePage *family,
 /*
  * Get statistics for family pebble usage
  */
-void family_pebble_stats(struct FamilyExchangePage *family) {
+/*@
+  @ requires family == \null || \valid(family);@*/void family_pebble_stats(struct FamilyExchangePage *family) {
   FamilyPebbleState *state;
 
   if (!family || family->family_type >= FAMILY_MAX) {

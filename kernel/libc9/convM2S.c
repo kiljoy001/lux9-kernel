@@ -45,6 +45,11 @@ static uchar *gqid(uchar *p, uchar *ep, Qid *q) {
  * main switch statement checks range and also can fall through
  * to test at end of routine.
  */
+/*@
+  @ requires ap == \null || \valid(ap);
+  @ requires f == \null || \valid(f);
+  @ assigns \nothing;
+  @*/
 uint convM2S(uchar *ap, uint nap, Fcall *f) {
   uchar *p, *ep;
   uint i, size;
@@ -371,7 +376,11 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     p += BIT32SZ;
     if (f->argc > MAXWELEM)
       return 0;
-    for (u32int i = 0; i < f->argc; i++) {
+      /*@ loop invariant 0 <= i <= f->argc;
+    @ loop assigns i;
+    @ loop variant f->argc - i;
+    @*/
+  for (u32int i = 0; i < f->argc; i++) {
       p = gstring(p, ep, &f->args[i]);
       if (p == nil)
         return 0;

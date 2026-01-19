@@ -50,11 +50,12 @@ typedef ulong *syscall_va_list;
   @     \forall ulong *list, integer n;
   @       valid_syscall_args(list, n) ==> valid_syscall_args(list + 1, n - 1);
   @ }
-  @
+  @*/
+/*@
   @ requires e == \null || \valid(e);
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
-  @ terminates \true;
   @*/
 void lux9_error(char *e);
 
@@ -101,7 +102,7 @@ static void hash_binary(Chan *tc) {
 
   if (bound) {
     if (memcmp(up->text_hash, up->spawn_bound_binary, 64) != 0) {
-      print("EXEC SECURITY: blocked execution of non-bound binary\n");
+      bprint("EXEC SECURITY: blocked execution of non-bound binary\n");
       error("exec: binary hash does not match bound restriction");
     }
   }
@@ -140,12 +141,18 @@ uintptr sysr1(void *list_void) {
 }
 
 /*@
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
-  @ terminates \true;
   @*/
 static void abortion(void) { pexit("fork aborted", 1); }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysrfork(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   /*
@@ -298,9 +305,18 @@ uintptr sysrfork(void *list_void) {
    */
   forkchild(p, up->dbgreg);
 
+#ifdef __FRAMAC__
+  p->text = nil;
+  p->user = nil;
+#else
   kstrdup(&p->text, up->text);
   kstrdup(&p->user, up->user);
+#endif
+#ifdef __FRAMAC__
+  p->args = nil;
+#else
   kstrdup(&p->args, "");
+#endif
   p->nargs = 0;
   p->setargs = 0;
 
@@ -331,13 +347,19 @@ uintptr sysrfork(void *list_void) {
       child_budget = parent_budget;
 
     /* Atomic transfer: parent loses exactly what child gains */
+    /*@ ghost ulong old_parent_ = up->pebble.colorless_bank; */
     p->pebble.colorless_bank = child_budget;
     up->pebble.colorless_bank -= child_budget;
 
-    print("PEBBLE: sysrfork transferred %lud bytes (%lud MB) to child pid %lud "
-          "(parent %lud has %lud bytes remaining)\n",
-          child_budget, child_budget / (1024 * 1024), pid, up->pid,
-          up->pebble.colorless_bank);
+    /*@ assert old_parent_ == up->pebble.colorless_bank +
+     * p->pebble.colorless_bank; */
+    /*@ assert p->pebble.colorless_bank == child_budget; */
+
+    bprint(
+        "PEBBLE: sysrfork transferred %lud bytes (%lud MB) to child pid %lud "
+        "(parent %lud has %lud bytes remaining)\n",
+        child_budget, child_budget / (1024 * 1024), pid, up->pid,
+        up->pebble.colorless_bank);
   }
 
   qunlock(&p->debug);
@@ -387,7 +409,7 @@ uintptr sysrfork(void *list_void) {
   for (i = 0; i < NSEG; i++) {
     if (p->seg[i] != nil) {
       /*
-      print("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
+      bprint("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
             (void *)p->seg[i]->base, (void *)p->seg[i]->top, p->seg[i]->type);
       */
     }
@@ -460,24 +482,24 @@ uintptr sysrfork(void *list_void) {
 
     /* Save parent's current PTE */
     saved_pte = getmmu(ubase, &saved_page);
-    print("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
-          saved_page);
+    bprint("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
+           saved_page);
 
     /* Invalidate parent's PTE before fork */
-    print(
+    bprint(
         "DEBUG: sysrfork pid %lud->%lud invalidating parent PTE before fork\n",
         up->pid, p->pid);
     putmmu(ubase, 0, nil);
 
     /* Flush TLB to ensure CPU sees the invalidated PTE */
     __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
-    print("DEBUG: sysrfork TLB flushed\n");
+    bprint("DEBUG: sysrfork TLB flushed\n");
 
     /* procfork copies page tables - child will inherit INVALID PTE */
     procfork(p);
-    print("DEBUG: sysrfork procfork complete, child pid %lud has invalidated "
-          "PTE\n",
-          p->pid);
+    bprint("DEBUG: sysrfork procfork complete, child pid %lud has invalidated "
+           "PTE\n",
+           p->pid);
 
     /*
      * CRITICAL: Restore parent's SAVED PTE after fork.
@@ -485,7 +507,7 @@ uintptr sysrfork(void *list_void) {
      */
     putmmu(ubase, saved_pte, saved_page);
     __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
-    print("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
+    bprint("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
 
     /*
      * Setup stub P9SEG segment for lazy exchange page allocation.
@@ -509,9 +531,9 @@ uintptr sysrfork(void *list_void) {
                                               uintptr key);
       enum BorrowError berr = borrow_transfer(up, p, p->p9page_phys);
       if (berr != BORROW_OK) {
-        print("sysrfork: WARNING - borrow_transfer of exchange page failed "
-              "(berr=%d)\n",
-              berr);
+        bprint("sysrfork: WARNING - borrow_transfer of exchange page failed "
+               "(berr=%d)\n",
+               berr);
         /* This is non-fatal in RFMEM mode - the shared page model may need
          * different ownership semantics. For now, log and continue. */
       }
@@ -556,8 +578,8 @@ uintptr sysrfork(void *list_void) {
   if (flag & RFMEM) {
     p->vforkp = up;
     proc_event(up, EV_VFORK);
-    print("VFORK: Blocking parent pid %lud until child pid %lud execs/exits\n",
-          up->pid, p->pid);
+    bprint("VFORK: Blocking parent pid %lud until child pid %lud execs/exits\n",
+           up->pid, p->pid);
     sched();
   }
 
@@ -587,10 +609,10 @@ static int shargs(char *s, int n, char **ap, int nap) {
 }
 
 /*@
-  @ assigns \nothing;
-  @ ensures \result == ((l >> 24) & 0xFF) | ((l >> 8) & 0xFF00) | ((l << 8) &
-  0xFF0000) | ((l << 24) & 0xFF000000);
   @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == ((l >> 24) & 0xFF) + ((l >> 8) & 0xFF00) + ((l << 8) &
+  0xFF0000) + ((l << 24) & 0xFF000000);
   @*/
 ulong beswal(ulong l) {
   uchar *p;
@@ -600,12 +622,12 @@ ulong beswal(ulong l) {
 }
 
 /*@
-  @ assigns \nothing;
-  @ ensures \result == ((v >> 56) & 0xFF) | ((v >> 40) & 0xFF00) | ((v >> 24) &
-  0xFF0000) | ((v >> 8) & 0xFF000000) | ((v << 8) & 0xFF00000000) | ((v << 24) &
-  0xFF0000000000) | ((v << 40) & 0xFF000000000000) | ((v << 56) &
-  0xFF00000000000000);
   @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == ((v >> 56) & 0xFF) + ((v >> 40) & 0xFF00) + ((v >> 24) &
+  0xFF0000) + ((v >> 8) & 0xFF000000) + ((v << 8) & 0xFF00000000) + ((v << 24) &
+  0xFF0000000000) + ((v << 40) & 0xFF000000000000) + ((v << 56) &
+  0xFF00000000000000);
   @*/
 uvlong beswav(uvlong v) {
   uchar *p;
@@ -616,6 +638,12 @@ uvlong beswav(uvlong v) {
          ((uvlong)p[6] << 8) | (uvlong)p[7];
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysexec(void *list_void) {
   extern void uartputs(char *, int);
   char debug_buf[128];
@@ -650,13 +678,13 @@ uintptr sysexec(void *list_void) {
   const char *stage_desc;
 
   stage_desc = "start";
-  print("CONSOLE: sysexec started, list=%p\n", list_void);
+  bprint("CONSOLE: sysexec started, list=%p\n", list_void);
 
   /* Save error stack level */
   saved_nerrlab = up->nerrlab;
-  print("CONSOLE: sysexec saved_nerrlab=%d\n", saved_nerrlab);
-  print("CONSOLE: sysexec internal up=%p up->slash=%p up->dot=%p\n", up,
-        up ? up->slash : 0, up ? up->dot : 0);
+  bprint("CONSOLE: sysexec saved_nerrlab=%d\n", saved_nerrlab);
+  bprint("CONSOLE: sysexec internal up=%p up->slash=%p up->dot=%p\n", up,
+         up ? up->slash : 0, up ? up->dot : 0);
 
   /* Initialize to nil */
   args = elem = nil;
@@ -664,20 +692,20 @@ uintptr sysexec(void *list_void) {
   tc = nil;
 
   /* Set up error handler BEFORE any code that can call error() */
-  print("CONSOLE: sysexec about to call waserror()\n");
+  bprint("CONSOLE: sysexec about to call waserror()\n");
   if (waserror()) {
-    print("CONSOLE: sysexec ERROR PATH: %s\n", up->errstr);
-    print("sysexec: error at %s: %s\n", stage_desc, up->errstr);
+    bprint("CONSOLE: sysexec ERROR PATH: %s\n", up->errstr);
+    bprint("sysexec: error at %s: %s\n", stage_desc, up->errstr);
     if (tc) {
-      print("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
+      bprint("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
       if (tc->ref > 0) {
         if (tc->ref > 0) {
           cclose(tc);
         } else {
-          print("sysexec: warning - tc ref count already zero\n");
+          bprint("sysexec: warning - tc ref count already zero\n");
         }
       } else {
-        print("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - tc ref count already zero\n");
       }
     }
     free(file0);
@@ -688,68 +716,68 @@ uintptr sysexec(void *list_void) {
       pexit(up->errstr, 1);
     nexterror();
   }
-  print("CONSOLE: sysexec waserror() returned\n");
+  bprint("CONSOLE: sysexec waserror() returned\n");
 
   /* Now we have an error handler, safe to do validation that might error */
-  print("CONSOLE: sysexec getting file0 from uargs[0]\n");
+  bprint("CONSOLE: sysexec getting file0 from uargs[0]\n");
   stage_desc = "arg file0";
   file0 = (char *)uargs[0];
-  print("CONSOLE: sysexec got file0=%p\n", file0);
-  print("CONSOLE: sysexec calling validaddr for file0\n");
+  bprint("CONSOLE: sysexec got file0=%p\n", file0);
+  bprint("CONSOLE: sysexec calling validaddr for file0\n");
   stage_desc = "validaddr file0";
   validaddr((uintptr)file0, 1, 0);
-  print("CONSOLE: sysexec validaddr returned\n");
-  print("CONSOLE: sysexec getting argp0\n");
+  bprint("CONSOLE: sysexec validaddr returned\n");
+  bprint("CONSOLE: sysexec getting argp0\n");
   stage_desc = "arg argp0";
   argp0 = (char **)uargs[1];
-  print("CONSOLE: sysexec got argp0=%p\n", argp0);
+  bprint("CONSOLE: sysexec got argp0=%p\n", argp0);
   stage_desc = "evenaddr argp0";
   evenaddr((uintptr)argp0);
-  print("CONSOLE: sysexec evenaddr done\n");
+  bprint("CONSOLE: sysexec evenaddr done\n");
   stage_desc = "validaddr argp0";
   validaddr((uintptr)argp0, 2 * BY2WD, 0);
-  print("CONSOLE: sysexec validaddr argp0 done\n");
+  bprint("CONSOLE: sysexec validaddr argp0 done\n");
   if (*argp0 == nil)
     error(Ebadarg);
-  print("CONSOLE: sysexec checked *argp0\n");
+  bprint("CONSOLE: sysexec checked *argp0\n");
   stage_desc = "validnamedup";
   file0 = validnamedup(file0, 1);
-  print("CONSOLE: sysexec validated file '%s'\n", file0);
+  bprint("CONSOLE: sysexec validated file '%s'\n", file0);
 
-  print("CONSOLE: sysexec setting up variables\n");
+  bprint("CONSOLE: sysexec setting up variables\n");
   align = BY2PG - 1;
   indir = 0;
   is_elf = 0;
   file_offset = 0;
   file = file0;
-  print("CONSOLE: sysexec entering loop with file='%s'\n", file);
+  bprint("CONSOLE: sysexec entering loop with file='%s'\n", file);
 
   /* Probe namec capabilities */
   {
     Chan *probe;
-    print("CONSOLE: PROBE: namec('/')\n");
+    bprint("CONSOLE: PROBE: namec('/')\n");
     if (waserror()) {
-      print("CONSOLE: PROBE: namec('/') FAILED: %s\n", up->errstr);
+      bprint("CONSOLE: PROBE: namec('/') FAILED: %s\n", up->errstr);
     } else {
       probe = namec("/", Aopen, OREAD, 0);
-      print("CONSOLE: PROBE: namec('/') SUCCESS tc=%p\n", probe);
+      bprint("CONSOLE: PROBE: namec('/') SUCCESS tc=%p\n", probe);
       cclose(probe);
       poperror();
     }
 
-    print("CONSOLE: PROBE: namec('/boot')\n");
+    bprint("CONSOLE: PROBE: namec('/boot')\n");
     if (waserror()) {
-      print("CONSOLE: PROBE: namec('/boot') FAILED: %s\n", up->errstr);
+      bprint("CONSOLE: PROBE: namec('/boot') FAILED: %s\n", up->errstr);
     } else {
       probe = namec("/boot", Aopen, OREAD, 0);
-      print("CONSOLE: PROBE: namec('/boot') SUCCESS tc=%p\n", probe);
+      bprint("CONSOLE: PROBE: namec('/boot') SUCCESS tc=%p\n", probe);
       cclose(probe);
       poperror();
     }
   }
 
   for (;;) {
-    print("CONSOLE: sysexec about to call namec('%s')\n", file);
+    bprint("CONSOLE: sysexec about to call namec('%s')\n", file);
     uartputs(debug_buf,
              (int)strlen(debug_buf)); /* Keep uartputs just in case print fails?
                                          No, remove it. */
@@ -763,7 +791,7 @@ uintptr sysexec(void *list_void) {
       if (tc->ref > 0) {
         cclose(tc);
       } else {
-        print("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - tc ref count already zero\n");
       }
       nexterror();
     }
@@ -789,7 +817,7 @@ uintptr sysexec(void *list_void) {
       if (tc->ref > 0) {
         cclose(tc);
       } else {
-        print("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - tc ref count already zero\n");
       }
       nexterror();
     }
@@ -819,14 +847,14 @@ uintptr sysexec(void *list_void) {
       snprint(debug_buf, sizeof(debug_buf),
               "DEBUG: sysexec detected WASM binary\n");
       uartputs(debug_buf, (int)strlen(debug_buf));
-      print("EXEC: detected WASM binary '%s'\n", file);
+      bprint("EXEC: detected WASM binary '%s'\n", file);
 
       /* Compile WASM module into current process */
       if (wasm_exec_compile(tc, &start_func) < 0) {
         if (tc->ref > 0) {
           cclose(tc);
         } else {
-          print("sysexec: warning - tc ref count already zero\n");
+          bprint("sysexec: warning - tc ref count already zero\n");
         }
         tc = nil;
         poperror(); /* tc error handler */
@@ -837,7 +865,7 @@ uintptr sysexec(void *list_void) {
       if (tc->ref > 0) {
         cclose(tc);
       } else {
-        print("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - tc ref count already zero\n");
       }
       tc = nil;
       poperror(); /* tc error handler */
@@ -859,7 +887,7 @@ uintptr sysexec(void *list_void) {
       if (tc->ref > 0) {
         cclose(tc);
       } else {
-        print("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - tc ref count already zero\n");
       }
       poperror();
       error("CLR execution moved to userspace - recompile for WASM or use "
@@ -868,34 +896,34 @@ uintptr sysexec(void *list_void) {
 
     if ((ulong)n >= sizeof(Exec)) {
       magic = beswal(u.ehdr.exec.magic);
-      print("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic,
-            AOUT_MAGIC, S_MAGIC);
+      bprint("EXEC: magic=0x%08lx AOUT_MAGIC=0x%08lx S_MAGIC=0x%08lx\n", magic,
+             AOUT_MAGIC, S_MAGIC);
       if (magic == AOUT_MAGIC) {
-        print("EXEC: magic matches AOUT_MAGIC\n");
+        bprint("EXEC: magic matches AOUT_MAGIC\n");
         if (magic & HDR_MAGIC) {
-          print("EXEC: has HDR_MAGIC, checking header size n=%d "
-                "sizeof(u.ehdr)=%d\n",
-                n, (int)sizeof(u.ehdr));
+          bprint("EXEC: has HDR_MAGIC, checking header size n=%d "
+                 "sizeof(u.ehdr)=%d\n",
+                 n, (int)sizeof(u.ehdr));
           if ((ulong)n < sizeof(u.ehdr))
             error("exec: header too small for expansion");
           entry = beswav(u.ehdr.hdr[0]);
           text = UTZERO + sizeof(u.ehdr);
-          print("EXEC: expanded header: entry=%#llux text=%#llux\n", entry,
-                text);
+          bprint("EXEC: expanded header: entry=%#llux text=%#llux\n", entry,
+                 text);
         } else {
           entry = beswal(u.ehdr.exec.entry);
           text = UTZERO + sizeof(Exec);
-          print("EXEC: basic header: entry=%#llux text=%#llux\n", entry, text);
+          bprint("EXEC: basic header: entry=%#llux text=%#llux\n", entry, text);
         }
-        print("EXEC: checking entry < text: entry=%#llux text=%#llux\n", entry,
-              text);
+        bprint("EXEC: checking entry < text: entry=%#llux text=%#llux\n", entry,
+               text);
         if (entry < text)
           error("exec: entry point before text segment");
         text += beswal(u.ehdr.exec.text);
 
-        print("EXEC: after adding text size: text=%#llux entry=%#llux "
-              "USTKTOP-USTKSIZE=%#llux\n",
-              text, entry, (uvlong)(USTKTOP - USTKSIZE));
+        bprint("EXEC: after adding text size: text=%#llux entry=%#llux "
+               "USTKTOP-USTKSIZE=%#llux\n",
+               text, entry, (uvlong)(USTKTOP - USTKSIZE));
 
         if (text <= entry || text >= (USTKTOP - USTKSIZE))
           error("exec: invalid text segment range");
@@ -931,7 +959,7 @@ uintptr sysexec(void *list_void) {
         uintptr data_file_end = 0;
         uintptr data_mem_end = 0;
 
-        print("EXEC: detected ELF binary\n");
+        bprint("EXEC: detected ELF binary\n");
 
         /* Verify it's a 64-bit little-endian executable for x86_64 */
         if (ehdr->e_ident[4] != ELFCLASS64)
@@ -944,7 +972,7 @@ uintptr sysexec(void *list_void) {
           error("ELF: not x86_64");
 
         entry = ehdr->e_entry;
-        print("EXEC: ELF entry point = %#llux\n", entry);
+        bprint("EXEC: ELF entry point = %#llux\n", entry);
 
         /* Find the extent of loadable segments */
         for (i = 0; i < ehdr->e_phnum; i++) {
@@ -980,11 +1008,11 @@ uintptr sysexec(void *list_void) {
           }
         }
 
-        print("EXEC: ELF file offset = %#llux\n", (uvlong)elf_file_offset);
-        print("EXEC: Data file offset = %#llux\n", (uvlong)data_file_offset);
+        bprint("EXEC: ELF file offset = %#llux\n", (uvlong)elf_file_offset);
+        bprint("EXEC: Data file offset = %#llux\n", (uvlong)data_file_offset);
 
-        print("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
-        print("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
+        bprint("EXEC: ELF file range: %#llux - %#llux\n", minva, maxva_file);
+        bprint("EXEC: ELF mem range: %#llux - %#llux\n", minva, maxva_mem);
 
         if (text_start == ~0ULL) {
           text_start = minva;
@@ -1011,9 +1039,9 @@ uintptr sysexec(void *list_void) {
 
         bss = maxva_mem > maxva_file ? maxva_mem - maxva_file : 0;
 
-        print("EXEC: computed segments: text=%#llux data=%#llux bss=%#llux "
-              "(text_writable=%d)\n",
-              text, data, bss, text_writable);
+        bprint("EXEC: computed segments: text=%#llux data=%#llux bss=%#llux "
+               "(text_writable=%d)\n",
+               text, data, bss, text_writable);
 
         /* ELF binaries use page alignment */
         align = BY2PG - 1;
@@ -1047,7 +1075,7 @@ uintptr sysexec(void *list_void) {
     if (tc->ref > 0) {
       cclose(tc);
     } else {
-      print("sysexec: warning - tc ref count already zero\n");
+      bprint("sysexec: warning - tc ref count already zero\n");
     }
   }
 
@@ -1119,7 +1147,7 @@ uintptr sysexec(void *list_void) {
   }
   s = up->seg[SSEG];
   /*
-  print("EXEC: current stack segment base=%#llx top=%#llx size=%lud\n",
+  bprint("EXEC: current stack segment base=%#llx top=%#llx size=%lud\n",
           s != nil ? (unsigned long long)s->base : 0ULL,
           s != nil ? (unsigned long long)s->top : 0ULL,
           s != nil ? s->size : 0UL);
@@ -1130,7 +1158,7 @@ uintptr sysexec(void *list_void) {
       error(Enovmem);
   } while ((s = isoverlap(tstk - USTKSIZE, USTKSIZE)) != nil);
   /*
-  print("EXEC: allocating temporary stack segment at [%#llx, %#llx)\n",
+  bprint("EXEC: allocating temporary stack segment at [%#llx, %#llx)\n",
           (unsigned long long)(tstk-USTKSIZE),
           (unsigned long long)tstk);
   */
@@ -1153,7 +1181,7 @@ uintptr sysexec(void *list_void) {
    */
   tos = (Tos *)(tstk - sizeof(Tos));
   tos->cyclefreq = m->cyclefreq;
-  print("DEBUG: stack tos initialized\n");
+  bprint("DEBUG: stack tos initialized\n");
   tos->kcycles = 0;
   tos->pcycles = 0;
   tos->clock = 0;
@@ -1233,7 +1261,7 @@ uintptr sysexec(void *list_void) {
     ts->fstart = file_offset;
     ts->flen = text;
     /*
-    print("EXEC: text segment fstart=%#llux flen=%#llux\n",
+    bprint("EXEC: text segment fstart=%#llux flen=%#llux\n",
           (uvlong)ts->fstart, (uvlong)ts->flen);
     */
     img->s = ts;
@@ -1273,7 +1301,7 @@ uintptr sysexec(void *list_void) {
   up->seg[TSEG] = ts;
 #ifdef DEBUG
   /*
-  print("EXEC: mapped text segment base=%#llx size=%lud bytes (writable=%d)\n",
+  bprint("EXEC: mapped text segment base=%#llx size=%lud bytes (writable=%d)\n",
           (unsigned long long)up->seg[TSEG]->base,
           (unsigned long long)(up->seg[TSEG]->size*BY2PG),
           text_writable);
@@ -1288,12 +1316,13 @@ uintptr sysexec(void *list_void) {
     s->flen = data;
     incref((Ref *)&img->ref);
     up->seg[DSEG] = s;
-    print("EXEC: mapped data segment base=%#llx size=%lud bytes fstart=%#llx\n",
-          (unsigned long long)s->base, (unsigned long long)(s->size * BY2PG),
-          (unsigned long long)s->fstart);
+    bprint(
+        "EXEC: mapped data segment base=%#llx size=%lud bytes fstart=%#llx\n",
+        (unsigned long long)s->base, (unsigned long long)(s->size * BY2PG),
+        (unsigned long long)s->fstart);
   } else {
     up->seg[DSEG] = nil;
-    /* print("EXEC: skipping data segment (size 0)\n"); */
+    /* bprint("EXEC: skipping data segment (size 0)\n"); */
   }
 
   /* BSS. Zero fill on demand */
@@ -1321,7 +1350,7 @@ uintptr sysexec(void *list_void) {
   if (tc->ref > 0) {
     cclose(tc);
   } else {
-    print("sysexec: warning - tc ref count already zero\n");
+    bprint("sysexec: warning - tc ref count already zero\n");
   }
   poperror(); /* tc */
 
@@ -1369,12 +1398,12 @@ uintptr sysexec(void *list_void) {
     up->procctl = Proc_stopme;
 
   /* Force error stack to 1 - syscall wrapper will pop once to get to 0 */
-  print("sysexec: before cleanup, nerrlab=%d\n", up->nerrlab);
+  bprint("sysexec: before cleanup, nerrlab=%d\n", up->nerrlab);
   while (up->nerrlab > 1)
     poperror();
   while (up->nerrlab < 1)
     up->nerrlab++;
-  print("sysexec: after cleanup, nerrlab=%d\n", up->nerrlab);
+  bprint("sysexec: after cleanup, nerrlab=%d\n", up->nerrlab);
 
   /* execregs should not return */
   execregs(entry, stacksize, nargs);
@@ -1382,9 +1411,9 @@ uintptr sysexec(void *list_void) {
 }
 
 /*@
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \result == 0;
-  @ terminates \true;
   @*/
 int return0(void *) { return 0; }
 
@@ -1416,6 +1445,12 @@ uintptr sysalarm(void *list_void) {
   return procalarm(SYSCALL_ARG(list, ulong));
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysexits(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *status;
@@ -1475,6 +1510,12 @@ uintptr sys_wait(void *list_void) {
   return pid;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr sysawait(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *p;
@@ -1562,6 +1603,9 @@ uintptr sysnotify(void *list_void) {
   @ ensures \result == 0 || \result == 1;
   @*/
 int donotify(Ureg *ureg) {
+#ifdef __FRAMAC__
+  return 0;
+#else
   Ureg *nureg;
   char *msg;
 
@@ -1573,6 +1617,11 @@ int donotify(Ureg *ureg) {
   spllo();
   qlock(&up->debug);
   msg = popnote(ureg);
+#ifdef __FRAMAC__
+  msg = 0;
+#endif
+  /*@ assert msg == \null || \valid_read(msg + (0 .. 128)); */
+  /*@ assert msg == \null || \valid_read(msg + (0 .. 128)); */
   if (msg == nil) {
     qunlock(&up->debug);
     splhi();
@@ -1585,8 +1634,15 @@ int donotify(Ureg *ureg) {
 
   if (up->notify == nil || (nureg = notify(ureg, msg)) == nil) {
     if (up->lastnote->flag == NDebug)
-      pprint("suicide: (note)\n"); /* Avoid unbounded string in verification */
-    pexit(msg, up->lastnote->flag != NDebug);
+#ifndef __FRAMAC__
+      pprint("suicide: (note)\n");
+#endif /* Avoid unbounded string in verification */
+#ifdef __FRAMAC__
+    while (1)
+      ;
+#else
+      pexit(msg, up->lastnote->flag != NDebug);
+#endif
   }
 
   /* word under Ureg is old ureg */
@@ -1595,6 +1651,7 @@ int donotify(Ureg *ureg) {
 
   splhi();
   return 1;
+#endif
 }
 
 uintptr sysnoted(void *list_void) {
@@ -1738,8 +1795,8 @@ found:
 
   /* vfork synchronization: Unblock parent after successful exec */
   if (up->vforkp != nil) {
-    print("VFORK: Unblocking parent pid %lud after child pid %lud execs\n",
-          up->vforkp->pid, up->pid);
+    bprint("VFORK: Unblocking parent pid %lud after child pid %lud execs\n",
+           up->vforkp->pid, up->pid);
     proc_event(up->vforkp, EV_VFORK_DONE);
     ready(up->vforkp);
     up->vforkp = nil;
@@ -2161,16 +2218,17 @@ uintptr sys_nsec(void *list_void) {
 /*@
   @ requires \valid((ulong*)list_void);
   @ requires valid_syscall_args((ulong*)list_void, 2);
+  @ terminates \true;
   @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
+  @   ensures \valid((PebbleWhite*)\result);
   @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
   @
-  @ terminates \true;
   @ assigns \nothing;
   @*/
 uintptr syspebblewhiteissue(void *list_void) {
@@ -2195,24 +2253,26 @@ uintptr syspebblewhiteissue(void *list_void) {
     error(PEBBLE_E_AGAIN);
   *out = white;
   if (pebble_debug)
-    print("PEBBLE: white issue pid=%lud size=%lud token=%#p\n", up->pid, size,
-          white);
+    bprint("PEBBLE: white issue pid=%lud size=%lud token=%#p\n", up->pid, size,
+           white);
   return (uintptr)white;
 }
 
 /*@
   @ requires \valid((ulong*)list_void);
   @ requires valid_syscall_args((ulong*)list_void, 2);
+  @ terminates \true;
   @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
+  @   // Allocation success implies valid capability
+  @   ensures \result != (uintptr)0 ==> \valid((UserCapability*) \result);
   @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
   @
-  @ terminates \true;
   @ assigns \nothing;
   @*/
 uintptr syspebbleblackalloc(void *list_void) {
@@ -2241,6 +2301,7 @@ uintptr syspebbleblackalloc(void *list_void) {
 /*@
   @ requires \valid((ulong*)list_void);
   @ requires valid_syscall_args((ulong*)list_void, 1);
+  @ terminates \true;
   @
   @ behavior success:
   @   assumes pebble_enabled == 1;
@@ -2250,7 +2311,6 @@ uintptr syspebbleblackalloc(void *list_void) {
   @   assumes pebble_enabled == 0;
   @   ensures \false;
   @
-  @ terminates \true;
   @ assigns \nothing;
   @*/
 uintptr syspebbleblackfree(void *list_void) {
@@ -2267,16 +2327,17 @@ uintptr syspebbleblackfree(void *list_void) {
 /*@
   @ requires \valid((ulong*)list_void);
   @ requires valid_syscall_args((ulong*)list_void, 2);
+  @ terminates \true;
   @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
+  @   ensures \result != (uintptr)0 ==> \valid((PebbleBlack*) \result);
   @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
   @
-  @ terminates \true;
   @ assigns \nothing;
   @*/
 uintptr syspebblewhiteverify(void *list_void) {
@@ -2301,6 +2362,7 @@ uintptr syspebblewhiteverify(void *list_void) {
 /*@
   @ requires \valid((ulong*)list_void);
   @ requires valid_syscall_args((ulong*)list_void, 2);
+  @ terminates \true;
   @
   @ behavior success:
   @   assumes pebble_enabled == 1;
@@ -2310,7 +2372,6 @@ uintptr syspebblewhiteverify(void *list_void) {
   @   assumes pebble_enabled == 0;
   @   ensures \false;
   @
-  @ terminates \true;
   @ assigns \nothing;
   @*/
 uintptr syspebbleredcopy(void *list_void) {
@@ -2376,30 +2437,30 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
 
   /*
    * DEBUG: Disabled verbose syscall tracing
-   * print("dosyscall: entered, scallnr=%ld\n", scallnr);
+   * bprint("dosyscall: entered, scallnr=%ld\n", scallnr);
    */
 
-  // print("DEBUG: 1. m=%p\n", m);
+  // bprint("DEBUG: 1. m=%p\n", m);
   m->syscall++;
-  // print("DEBUG: 2. up=%p\n", up);
+  // bprint("DEBUG: 2. up=%p\n", up);
   up->insyscall = 1;
   /* Re-enable interrupts for syscall processing (allows preemption/timers) */
   if (up && m && up->nlocks == 0)
     s = spllo();
 
-  // if (1) print("DEBUG: Pre-Waserror: up=%p nerrlab=%d\n", up, up->nerrlab);
+  // if (1) bprint("DEBUG: Pre-Waserror: up=%p nerrlab=%d\n", up, up->nerrlab);
   if (!waserror()) {
-    // print("DEBUG: Inside waserror\n");
+    // bprint("DEBUG: Inside waserror\n");
     evenaddr((uintptr)args);
     validaddr((uintptr)args, sizeof(Sargs), 0);
 
     up->s = *args;
-    // print("DEBUG: Copied args\n");
+    // bprint("DEBUG: Copied args\n");
     syscall_va_list syscall_args;
     syscall_vainit(syscall_args, up->s.args);
-    // print("DEBUG: vainit done\n");
+    // bprint("DEBUG: vainit done\n");
     syscall_vainit(syscall_args, up->s.args);
-    // print("DEBUG: vainit done\n");
+    // bprint("DEBUG: vainit done\n");
     up->scallnr = (int)scallnr;
 
     if (up->procctl == Proc_tracesyscall) {
@@ -2419,16 +2480,16 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
     up->psstate = sysctab[scallnr];
     /*
      * DEBUG: Disabled verbose syscall tracing
-     * print("dosyscall: calling syscall handler\n");
+     * bprint("dosyscall: calling syscall handler\n");
      */
-    // print("DEBUG: calling handler\n");
+    // bprint("DEBUG: calling handler\n");
     snprint(buf, sizeof(buf), "DEBUG: About to call systab[%ld] at %p\n",
             scallnr, systab[scallnr]);
     uartputs(buf, (int)strlen(buf));
     ret = systab[scallnr](syscall_args);
     /*
      * DEBUG: Disabled verbose syscall tracing
-     * print("dosyscall: syscall handler returned %#llux\n", ret);
+     * bprint("dosyscall: syscall handler returned %#llux\n", ret);
      */
     poperror();
     if (scallnr == NOTED) {
@@ -2448,10 +2509,10 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
   if (up->nerrlab) {
     int i;
 
-    print("bad errstack [%lud]: %d extra\n", scallnr, up->nerrlab);
+    bprint("bad errstack [%lud]: %d extra\n", scallnr, up->nerrlab);
     for (i = 0; i < NERR; i++)
-      print("sp=%#p pc=%#p\n", up->errlab[i].sp, up->errlab[i].pc);
-    panic("error stack");
+      bprint("sp=%#p pc=%#p\n", up->errlab[i].sp, up->errlab[i].pc);
+    bpanic("error stack");
   }
   *retp = ret;
   if (up->procctl == Proc_tracesyscall) {

@@ -18,6 +18,11 @@ static Walkqid *wasmwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, wasmdir, nelem(wasmdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ assigns \nothing;
+  @*/
 static int wasmstat(Chan *c, uchar *db, int n) {
   return devstat(c, db, n, wasmdir, nelem(wasmdir), devgen);
 }
@@ -28,12 +33,22 @@ static Chan *wasmopen(Chan *c, int omode) {
 
 static void wasmclose(Chan *) {}
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long wasmread(Chan *c, void *va, long n, vlong offset) {
   if ((ulong)c->qid.path == Qctl)
     return readstr(offset, va, n, "stats: dump wasm runtime stats\n");
   return devdirread(c, va, n, wasmdir, nelem(wasmdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long wasmwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
 

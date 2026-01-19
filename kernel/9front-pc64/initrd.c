@@ -16,6 +16,10 @@ usize initrd_size = 0;
 uintptr initrd_physaddr = 0;
 
 /* Parse octal number from TAR header */
+/*@
+  @ requires str == \null || \valid(str);
+  @ assigns \nothing;
+  @*/
 static usize parse_octal(const char *str, int len) {
   usize val = 0;
   int i;
@@ -29,6 +33,10 @@ static usize parse_octal(const char *str, int len) {
 }
 
 /* Check if TAR header is valid */
+/*@
+  @ requires hdr == \null || \valid(hdr);
+  @ assigns \nothing;
+  @*/
 static int is_valid_tar(struct tar_header *hdr) {
   /* Check magic */
   if (memcmp(hdr->magic, "ustar", 5) != 0) {
@@ -64,6 +72,10 @@ static int is_valid_tar(struct tar_header *hdr) {
 /* Initialize initrd from memory */
 extern void uartputs(char *, int);
 
+/*@
+  @ requires label == \null || \valid(label);
+  @ assigns \nothing;
+  @*/
 static void printhex(char *label, uvlong value) {
   static char hex[] = "0123456789abcdef";
   char buf[2 + sizeof(uvlong) * 2 + 2];
@@ -81,6 +93,10 @@ static void printhex(char *label, uvlong value) {
   uartputs(buf, p - buf);
 }
 
+/*@
+  @ requires addr == \null || \valid(addr);
+  @ assigns \nothing;
+  @*/
 void initrd_init(void *addr, usize len) {
   struct tar_header *hdr;
   struct initrd_file *file, *last = nil;
@@ -272,6 +288,9 @@ void initrd_init(void *addr, usize len) {
 }
 
 /* Register initrd files with devroot - call AFTER chandevreset() */
+/*@
+  @ assigns \nothing;
+  @*/
 void initrd_register(void) {
   struct initrd_file *f;
   struct initrd_file *s;
@@ -360,6 +379,10 @@ void *initrd_find(const char *path) {
 }
 
 /* Get file size */
+/*@
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 usize initrd_filesize(const char *path) {
   struct initrd_file *f;
 
@@ -376,6 +399,11 @@ usize initrd_filesize(const char *path) {
 }
 
 /* Read from file */
+/*@
+  @ requires path == \null || \valid(path);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 int initrd_read(const char *path, void *buf, usize offset, usize len) {
   struct initrd_file *f;
 
@@ -400,6 +428,9 @@ int initrd_read(const char *path, void *buf, usize offset, usize len) {
 }
 
 /* List all files in initrd */
+/*@
+  @ assigns \nothing;
+  @*/
 void initrd_list(void) {
   struct initrd_file *f;
 

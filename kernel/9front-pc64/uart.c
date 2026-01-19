@@ -21,6 +21,10 @@
 static int uart_base = COM1;
 static int uart_initialized = 0;
 
+/*@
+    requires \true;
+    assigns \nothing; // Hardware state change
+*/
 static void uart_putc(int c) {
   int i;
 
@@ -65,6 +69,11 @@ static Uart i8250uart = {
     .phys = &i8250phys,
 };
 
+/*@
+    requires \true;
+    assigns uart_base, uart_initialized, consuart, screenputs;
+    ensures uart_initialized == 1;
+*/
 void i8250console(void) {
   /* Ensure IOPL is 3 to allow I/O instructions without TSS bitmap check */
   asm volatile("pushfq; popq %%rax; orq $0x3000, %%rax; pushq %%rax; popfq" ::

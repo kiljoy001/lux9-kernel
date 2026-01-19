@@ -7,6 +7,10 @@
 
 extern uintptr saved_limine_hhdm_offset;
 
+/*@
+  @ requires pml4 == \null || \valid(pml4);
+  @ assigns \nothing;
+  @*/
 void mmu_map(uintptr *pml4, uintptr va, uintptr pa, uintptr size, uintptr flags)
 {
     uintptr *pte;

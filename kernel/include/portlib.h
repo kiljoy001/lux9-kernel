@@ -2,8 +2,8 @@
 #define _PORTLIB_H_
 
 /* Include base types */
-#include "u.h"
 #include "acsl_bounds.h"
+#include "u.h"
 
 /*
  * functions (possibly) linked in, complete, from libc.
@@ -125,7 +125,7 @@ struct Fmt {
 #endif
 typedef int (*Fmts)(Fmt *);
 /*@ assigns \result \from fmt; */
-extern int print(char *, ...);
+extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
 extern int snprint(char *, int, char *, ...);

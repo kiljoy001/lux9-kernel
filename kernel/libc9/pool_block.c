@@ -49,6 +49,10 @@ Alloc *D2B(Pool *p, void *v) {
  * dsize2bsize: Convert user data size to block size
  * Accounts for header, tail, minimum sizes, and quantum alignment
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 ulong dsize2bsize(Pool *p, ulong sz) {
 	sz += sizeof(Bhdr) + sizeof(Btail);
 	if (sz < p->minblock)
@@ -62,6 +66,10 @@ ulong dsize2bsize(Pool *p, ulong sz) {
 /*
  * bsize2asize: Convert block size to arena size
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 ulong bsize2asize(Pool *p, ulong sz) {
 	sz += sizeof(Arena) + sizeof(Btail);
 	if (sz < p->minarena)
@@ -121,6 +129,10 @@ Bhdr *blocksetsize(Bhdr *b, ulong bsize) {
 /*
  * getdsize: Return the requested data size for an allocated block
  */
+/*@
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 ulong getdsize(Alloc *b) {
 	Btail *t;
 	t = B2T(b);
@@ -182,6 +194,10 @@ Alloc *trim(Pool *p, Alloc *b, ulong dsize) {
  * memmark: Mark memory with a signature pattern for debugging
  * Pattern includes the signature byte and offset from start
  */
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void memmark(void *v, int sig, ulong size) {
 	uchar *p, *ep;
 	ulong *lp, *elp;
