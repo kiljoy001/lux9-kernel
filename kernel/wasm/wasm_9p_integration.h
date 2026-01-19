@@ -20,9 +20,9 @@
 #ifndef WASM_9P_INTEGRATION_H
 #define WASM_9P_INTEGRATION_H
 
-#include "../include/uuid.h"
+#include "../capability/lux_capability.h"
 #include "../include/blind_ledger.h"
-#include "../capability/clr_capability.h"
+#include "../include/uuid.h"
 
 /* Forward declarations for 9P types (from Plan 9 headers) */
 typedef struct Fcall Fcall;
@@ -58,11 +58,12 @@ typedef struct Chan Chan;
  * The session carries the Pebble capability that grants access to resources.
  */
 typedef struct wasm_9p_session {
-  uuid_t cap_uuid;              /* Capability UUID from attach */
-  UserCapability pebble_cap;    /* Validated Pebble capability */
-  u32int permissions;           /* Effective permissions */
-  u64int session_id;            /* Unique session identifier */
-  void *wasm_server;            /* WASM server handling this session */
+  uuid_t cap_uuid;           /* Capability UUID from attach */
+  UserCapability pebble_cap; /* Validated Pebble capability */
+  u32int permissions;        /* Effective permissions */
+  u32int session_id;         /* Unique session identifier */
+  int ref;                   /* Reference count */
+  void *wasm_server;         /* WASM server handling this session */
 } wasm_9p_session_t;
 
 /* ========== 9P Message Validation ========== */
@@ -82,12 +83,12 @@ int wasm_9p_extract_cap_uuid(const char *aname, uuid_t *uuid_out);
  * Unpacks UUID to Pebble (token, gen, index), validates against ledger.
  *
  * @param uuid: Capability UUID from message
- * @param required_perms: Required permissions for operation (CAP_PERM_READ, etc.)
+ * @param required_perms: Required permissions for operation (CAP_PERM_READ,
+ * etc.)
  * @param pebble_cap_out: Output validated Pebble capability
  * @returns: 1 if valid, 0 if invalid/insufficient permissions
  */
-int wasm_9p_validate_capability(const uuid_t *uuid,
-                                u32int required_perms,
+int wasm_9p_validate_capability(const uuid_t *uuid, u32int required_perms,
                                 UserCapability *pebble_cap_out);
 
 /*
@@ -97,7 +98,8 @@ int wasm_9p_validate_capability(const uuid_t *uuid,
  * @param wasm_server: WASM server instance
  * @returns: Session pointer, or NULL on error
  */
-wasm_9p_session_t *wasm_9p_create_session(const uuid_t *uuid, void *wasm_server);
+wasm_9p_session_t *wasm_9p_create_session(const uuid_t *uuid,
+                                          void *wasm_server);
 
 /*
  * Destroy 9P session and clean up resources.
@@ -113,16 +115,16 @@ void wasm_9p_destroy_session(wasm_9p_session_t *session);
  * These are checked on every operation before routing to WASM.
  */
 typedef enum {
-  WASM_9P_OP_ATTACH,   /* Requires: CAP_PERM_READ (base access) */
-  WASM_9P_OP_WALK,     /* Requires: CAP_PERM_READ */
-  WASM_9P_OP_OPEN,     /* Requires: CAP_PERM_READ or WRITE depending on mode */
-  WASM_9P_OP_CREATE,   /* Requires: CAP_PERM_WRITE */
-  WASM_9P_OP_READ,     /* Requires: CAP_PERM_READ */
-  WASM_9P_OP_WRITE,    /* Requires: CAP_PERM_WRITE */
-  WASM_9P_OP_CLUNK,    /* Requires: (none, cleanup) */
-  WASM_9P_OP_REMOVE,   /* Requires: CAP_PERM_WRITE */
-  WASM_9P_OP_STAT,     /* Requires: CAP_PERM_READ */
-  WASM_9P_OP_WSTAT,    /* Requires: CAP_PERM_WRITE */
+  WASM_9P_OP_ATTACH, /* Requires: CAP_PERM_READ (base access) */
+  WASM_9P_OP_WALK,   /* Requires: CAP_PERM_READ */
+  WASM_9P_OP_OPEN,   /* Requires: CAP_PERM_READ or WRITE depending on mode */
+  WASM_9P_OP_CREATE, /* Requires: CAP_PERM_WRITE */
+  WASM_9P_OP_READ,   /* Requires: CAP_PERM_READ */
+  WASM_9P_OP_WRITE,  /* Requires: CAP_PERM_WRITE */
+  WASM_9P_OP_CLUNK,  /* Requires: (none, cleanup) */
+  WASM_9P_OP_REMOVE, /* Requires: CAP_PERM_WRITE */
+  WASM_9P_OP_STAT,   /* Requires: CAP_PERM_READ */
+  WASM_9P_OP_WSTAT,  /* Requires: CAP_PERM_WRITE */
 } wasm_9p_operation_t;
 
 /*
@@ -134,16 +136,23 @@ typedef enum {
  */
 u32int wasm_9p_required_perms(wasm_9p_operation_t op, u32int mode);
 
+#define MAX_WASM_SESSIONS 1024
+
+wasm_9p_session_t *wasm_9p_get_session(u32int session_id);
+void wasm_9p_session_ref(u32int session_id);
+void wasm_9p_session_unref(u32int session_id);
+
 /* ========== 9P → WASM Routing ========== */
 
 /*
  * Route validated 9P message to WASM server.
  * This is the main entry point: validates capability, then dispatches to WASM.
  *
- * @param fcall: 9P message (Fcall structure)
+ * @param t: 9P request
+ * @param r: 9P reply
  * @param session: Active session with capability
  * @returns: 0 on success, error code otherwise
  */
-int wasm_9p_route_to_wasm(Fcall *fcall, wasm_9p_session_t *session);
+int wasm_9p_route_to_wasm(Fcall *t, Fcall *r, wasm_9p_session_t *session);
 
 #endif /* WASM_9P_INTEGRATION_H */

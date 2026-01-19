@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include "../include/u.h"
 #include "../include/fcall.h" // For Fcall and SYS_WASM_* defines
+#include "../include/u.h"
 typedef struct Proc Proc;
 
 /* Capability permissions for WASM */
@@ -15,6 +15,7 @@ typedef struct Proc Proc;
 #define PERM_WASM_EXECUTE (1 << 17) /* Can execute WASM functions */
 #define PERM_WASM_NET (1 << 18)     /* Allow WASI sockets/poll */
 #define PERM_WASM_POSIX (1 << 19)   /* Allow /wasm/posix preopen */
+#define PERM_WASM_FRUITY (1 << 20)  /* Allow Fruity IR generation */
 
 /* Runtime initialization (called at boot) */
 void wasm_runtime_init(void);

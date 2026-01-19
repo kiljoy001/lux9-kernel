@@ -10,6 +10,9 @@
 #include "m3_info.h"
 
 
+/*@
+  @ assigns \nothing;
+  @*/
 u8  ConvertTypeCharToTypeId (char i_code)
 {
     switch (i_code) {
@@ -24,6 +27,10 @@ u8  ConvertTypeCharToTypeId (char i_code)
 }
 
 
+/*@
+  @ requires o_functionType == \null || \valid(o_functionType);
+  @ assigns \nothing;
+  @*/
 M3Result  SignatureToFuncType  (IM3FuncType * o_functionType, ccstr_t i_signature)
 {
     IM3FuncType funcType = NULL;
@@ -98,6 +105,9 @@ _   (AllocFuncType (& funcType, (u32) maxNumTypes));
 
 
 static
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result  ValidateSignature  (IM3Function i_function, ccstr_t i_linkingSignature)
 {
     M3Result result = m3Err_none;
@@ -109,14 +119,22 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
     {
         static const char *type_names[] = { "none", "i32", "i64", "f32", "f64" };
         print ("m3_bind: expected (");
-        for (u32 i = 0; i < ftype->numArgs; ++i)
+          /*@ loop invariant 0 <= i <= ftype->numArgs;
+    @ loop assigns i;
+    @ loop variant ftype->numArgs - i;
+    @*/
+  for (u32 i = 0; i < ftype->numArgs; ++i)
         {
             if (i != 0) print (", ");
             u8 t = d_FuncArgType (ftype, i);
             print ("%s", (t <= 4) ? type_names[t] : "?");
         }
         print (") -> ");
-        for (u32 i = 0; i < ftype->numRets; ++i)
+          /*@ loop invariant 0 <= i <= ftype->numRets;
+    @ loop assigns i;
+    @ loop variant ftype->numRets - i;
+    @*/
+  for (u32 i = 0; i < ftype->numRets; ++i)
         {
             if (i != 0) print (", ");
             u8 t = d_FuncRetType (ftype, i);
@@ -125,14 +143,22 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
         print ("\n");
 
         print ("m3_bind: found    (");
-        for (u32 i = 0; i < i_function->funcType->numArgs; ++i)
+          /*@ loop invariant 0 <= i <= i_function->funcType->numArgs;
+    @ loop assigns i;
+    @ loop variant i_function->funcType->numArgs - i;
+    @*/
+  for (u32 i = 0; i < i_function->funcType->numArgs; ++i)
         {
             if (i != 0) print (", ");
             u8 t = d_FuncArgType (i_function->funcType, i);
             print ("%s", (t <= 4) ? type_names[t] : "?");
         }
         print (") -> ");
-        for (u32 i = 0; i < i_function->funcType->numRets; ++i)
+          /*@ loop invariant 0 <= i <= i_function->funcType->numRets;
+    @ loop assigns i;
+    @ loop variant i_function->funcType->numRets - i;
+    @*/
+  for (u32 i = 0; i < i_function->funcType->numRets; ++i)
         {
             if (i != 0) print (", ");
             u8 t = d_FuncRetType (i_function->funcType, i);
@@ -165,7 +191,11 @@ _try {
 
     result = m3Err_functionLookupFailed;
 
-    for (u32 i = 0; i < io_module->numFunctions; ++i)
+      /*@ loop invariant 0 <= i <= io_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant io_module->numFunctions - i;
+    @*/
+  for (u32 i = 0; i < io_module->numFunctions; ++i)
     {
         const IM3Function f = & io_module->functions [i];
 

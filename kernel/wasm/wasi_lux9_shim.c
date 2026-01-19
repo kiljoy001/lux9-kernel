@@ -33,30 +33,98 @@ extern vlong nsec(void);
  * We rely on wasm3 macros.
  */
 
+/*@
+  axiomatic WasmMemory {
+    axiom wasm_memory_axiom:
+      \forall char *mem, integer size;
+        \valid(mem + (0 .. size-1));
+
+    predicate valid_wasm_ptr{L}(void *mem, integer size, integer offset,
+    integer len) = offset + len <= size && \valid((char *)mem + (offset ..
+    offset + len - 1));
+
+    predicate valid_iovs{L}(void *mem, integer size, integer iovs_ptr,
+    integer iovs_len) = valid_wasm_ptr(mem, size, iovs_ptr, iovs_len * 8);
+
+    logic integer get_mem_size(IM3Runtime runtime);
+  }
+*/
+
+/*@
+  assigns \nothing;
+  ensures \result == (uint32_t)get_mem_size(runtime);
+*/
+extern uint32_t m3_GetMemorySize(IM3Runtime runtime);
+
+/*@ assigns \nothing; ensures \result >= -1; */
+long kwrite(int fd, void *buf, long n);
+
+/*@ assigns \nothing; ensures \result >= -1; */
+long kread(int fd, void *buf, long n);
+
+/*@ assigns \nothing; ensures \result >= -1; */
+long kpread(int fd, void *buf, long n, int64_t off);
+
+/*@ assigns \nothing; ensures \result >= -1; */
+long kpwrite(int fd, void *buf, long n, int64_t off);
+
 /* ========== WASI Constants ========== */
 #define WASI_ERRNO_SUCCESS 0
-#define WASI_ERRNO_PERM 63
+#define WASI_ERRNO_2BIG 1
 #define WASI_ERRNO_ACCES 2
+#define WASI_ERRNO_ADDRINUSE 3
+#define WASI_ERRNO_ADDRNOTAVAIL 4
+#define WASI_ERRNO_AFNOSUPPORT 5
+#define WASI_ERRNO_AGAIN 6
+#define WASI_ERRNO_ALREADY 7
 #define WASI_ERRNO_BADF 8
+#define WASI_ERRNO_BUSY 10
+#define WASI_ERRNO_CONNABORTED 13
+#define WASI_ERRNO_CONNREFUSED 14
+#define WASI_ERRNO_CONNRESET 15
+#define WASI_ERRNO_DESTADDRREQ 17
 #define WASI_ERRNO_EXIST 20
-#define WASI_ERRNO_ISDIR 31
-#define WASI_ERRNO_NOMEM 48
+#define WASI_ERRNO_FAULT 21
+#define WASI_ERRNO_FBIG 22
+#define WASI_ERRNO_HOSTUNREACH 23
+#define WASI_ERRNO_INTR 27
 #define WASI_ERRNO_INVAL 28
 #define WASI_ERRNO_IO 29
-#define WASI_ERRNO_NOENT 44
-#define WASI_ERRNO_NOTDIR 54
-#define WASI_ERRNO_NAMETOOLONG 37
-#define WASI_ERRNO_NOTCAPABLE 76
+#define WASI_ERRNO_ISCONN 30
+#define WASI_ERRNO_ISDIR 31
+#define WASI_ERRNO_LOOP 32
 #define WASI_ERRNO_MFILE 33
+#define WASI_ERRNO_MLINK 34
+#define WASI_ERRNO_MSGSIZE 35
+#define WASI_ERRNO_NAMETOOLONG 37
+#define WASI_ERRNO_NETDOWN 38
+#define WASI_ERRNO_NETRESET 39
+#define WASI_ERRNO_NETUNREACH 40
 #define WASI_ERRNO_NFILE 41
+#define WASI_ERRNO_NOBUFS 42
+#define WASI_ERRNO_NOENT 44
+#define WASI_ERRNO_NOMEM 48
+#define WASI_ERRNO_NOPROTOOPT 50
 #define WASI_ERRNO_NOSPC 51
-#define WASI_ERRNO_NOTEMPTY 55
-#define WASI_ERRNO_ROFS 69
-#define WASI_ERRNO_PIPE 64
-#define WASI_ERRNO_AGAIN 6
-#define WASI_ERRNO_INTR 27
-#define WASI_ERRNO_NOTSUP 58
 #define WASI_ERRNO_NOSYS 52
+#define WASI_ERRNO_NOTCONN 53
+#define WASI_ERRNO_NOTDIR 54
+#define WASI_ERRNO_NOTEMPTY 55
+#define WASI_ERRNO_NOTSOCK 57
+#define WASI_ERRNO_NOTSUP 58
+#define WASI_ERRNO_PERM 63
+#define WASI_ERRNO_PIPE 64
+#define WASI_ERRNO_PROTO 65
+#define WASI_ERRNO_PROTONOSUPPORT 66
+#define WASI_ERRNO_PROTOTYPE 67
+#define WASI_ERRNO_ROFS 69
+#define WASI_ERRNO_TIMEDOUT 73
+#define WASI_ERRNO_NOTCAPABLE 76
+
+#define WASI_CLOCK_REALTIME 0
+#define WASI_CLOCK_MONOTONIC 1
+#define WASI_CLOCK_PROCESS_CPUTIME 2
+#define WASI_CLOCK_THREAD_CPUTIME 3
 
 #define WASI_FILETYPE_UNKNOWN 0
 #define WASI_FILETYPE_BLOCK_DEVICE 1
@@ -195,7 +263,7 @@ static int wasi_rump_rpc(const char *path, const void *req, uint32_t req_len,
                          void *resp, uint32_t resp_len) {
   int fd = kopen((char *)path, ORDWR);
   if (fd < 0) {
-    if (resp && resp_len >= sizeof(uint32_t)) {
+    if (resp && resp_len >= (uint32_t)sizeof(uint32_t)) {
       memset(resp, 0, resp_len);
       *(uint32_t *)resp = 38;
       return (int)resp_len;
@@ -218,6 +286,10 @@ static int wasi_rump_rpc(const char *path, const void *req, uint32_t req_len,
   return 0;
 }
 
+/*@
+  assigns \nothing;
+  ensures \result == WASI_ERRNO_SUCCESS || \result > 0;
+*/
 static uint32_t wasi_errno_from_posix(uint32_t err) {
   switch (err) {
   case 0:
@@ -226,46 +298,110 @@ static uint32_t wasi_errno_from_posix(uint32_t err) {
     return WASI_ERRNO_PERM;
   case 2:
     return WASI_ERRNO_NOENT;
+  case 3:
+    return WASI_ERRNO_TIMEDOUT; /* ESCAN? No ESRCH */
   case 4:
     return WASI_ERRNO_INTR;
   case 5:
     return WASI_ERRNO_IO;
+  case 6:
+    return WASI_ERRNO_IO; /* ENXIO */
+  case 7:
+    return WASI_ERRNO_2BIG;
+  case 9:
+    return WASI_ERRNO_BADF;
+  case 10:
+    return WASI_ERRNO_IO; /* CHILD */
   case 11:
-    return WASI_ERRNO_AGAIN;
+    return WASI_ERRNO_AGAIN; /* DEADLK? NetBSD 11 is EAGAIN usually? No 11 is
+                                EDEADLK in some, EAGAIN in others. NetBSD: 11
+                                EDEADLK, 35 EAGAIN. Linux: 11 EAGAIN. We use
+                                NetBSD values for Rump. */
+    /* NetBSD specific mappings */
+  case 12:
+    return WASI_ERRNO_NOMEM;
   case 13:
     return WASI_ERRNO_ACCES;
+  case 14:
+    return WASI_ERRNO_FAULT;
+  case 16:
+    return WASI_ERRNO_BUSY;
   case 17:
     return WASI_ERRNO_EXIST;
   case 20:
     return WASI_ERRNO_NOTDIR;
   case 21:
     return WASI_ERRNO_ISDIR;
-  case 9:
-    return WASI_ERRNO_BADF;
-  case 12:
-    return WASI_ERRNO_NOMEM;
   case 22:
     return WASI_ERRNO_INVAL;
   case 23:
     return WASI_ERRNO_NFILE;
   case 24:
     return WASI_ERRNO_MFILE;
+  case 27:
+    return WASI_ERRNO_FBIG;
   case 28:
     return WASI_ERRNO_NOSPC;
   case 30:
     return WASI_ERRNO_ROFS;
+  case 31:
+    return WASI_ERRNO_MLINK;
   case 32:
     return WASI_ERRNO_PIPE;
-  case 36:
-    return WASI_ERRNO_NAMETOOLONG;
-  case 38:
-  case 78:
-    return WASI_ERRNO_NOSYS;
-  case 39:
-  case 66:
-    return WASI_ERRNO_NOTEMPTY;
   case 35:
     return WASI_ERRNO_AGAIN;
+  case 36:
+    return WASI_ERRNO_AGAIN; /* INPROGRESS */
+  case 37:
+    return WASI_ERRNO_ALREADY;
+  case 38:
+    return WASI_ERRNO_NOTSOCK;
+  case 39:
+    return WASI_ERRNO_DESTADDRREQ;
+  case 40:
+    return WASI_ERRNO_MSGSIZE;
+  case 41:
+    return WASI_ERRNO_PROTOTYPE;
+  case 42:
+    return WASI_ERRNO_NOPROTOOPT;
+  case 43:
+    return WASI_ERRNO_PROTONOSUPPORT;
+  case 47:
+    return WASI_ERRNO_AFNOSUPPORT;
+  case 48:
+    return WASI_ERRNO_ADDRINUSE;
+  case 49:
+    return WASI_ERRNO_ADDRNOTAVAIL;
+  case 50:
+    return WASI_ERRNO_NETDOWN;
+  case 51:
+    return WASI_ERRNO_NETUNREACH;
+  case 52:
+    return WASI_ERRNO_NETRESET;
+  case 53:
+    return WASI_ERRNO_CONNABORTED;
+  case 54:
+    return WASI_ERRNO_CONNRESET;
+  case 55:
+    return WASI_ERRNO_NOBUFS;
+  case 56:
+    return WASI_ERRNO_ISCONN;
+  case 57:
+    return WASI_ERRNO_NOTCONN;
+  case 60:
+    return WASI_ERRNO_TIMEDOUT;
+  case 61:
+    return WASI_ERRNO_CONNREFUSED;
+  case 62:
+    return WASI_ERRNO_LOOP;
+  case 63:
+    return WASI_ERRNO_NAMETOOLONG;
+  case 65:
+    return WASI_ERRNO_HOSTUNREACH;
+  case 66:
+    return WASI_ERRNO_NOTEMPTY;
+  case 78:
+    return WASI_ERRNO_NOSYS;
   case 95:
     return WASI_ERRNO_NOTSUP;
   default:
@@ -273,6 +409,14 @@ static uint32_t wasi_errno_from_posix(uint32_t err) {
   }
 }
 
+/*@
+  requires \valid(p + (0 .. 3));
+  assigns p[0 .. 3];
+  ensures p[0] == (uint8_t)(v & 0xff);
+  ensures p[1] == (uint8_t)((v >> 8) & 0xff);
+  ensures p[2] == (uint8_t)((v >> 16) & 0xff);
+  ensures p[3] == (uint8_t)((v >> 24) & 0xff);
+*/
 static void wasi_write_le32(uint8_t *p, uint32_t v) {
   p[0] = (uint8_t)(v & 0xff);
   p[1] = (uint8_t)((v >> 8) & 0xff);
@@ -280,6 +424,12 @@ static void wasi_write_le32(uint8_t *p, uint32_t v) {
   p[3] = (uint8_t)((v >> 24) & 0xff);
 }
 
+/*@
+  requires \valid(p + (0 .. 7));
+  assigns p[0 .. 7];
+  ensures p[0] == (uint8_t)(v & 0xff);
+  ensures p[7] == (uint8_t)((v >> 56) & 0xff);
+*/
 static void wasi_write_le64(uint8_t *p, uint64_t v) {
   p[0] = (uint8_t)(v & 0xff);
   p[1] = (uint8_t)((v >> 8) & 0xff);
@@ -293,8 +443,8 @@ static void wasi_write_le64(uint8_t *p, uint64_t v) {
 
 static uint32_t wasi_rump_simple_errno(const char *path) {
   uint32_t err = 0;
-  int r = wasi_rump_rpc(path, nil, 0, &err, sizeof(err));
-  if (r < (int)sizeof(err))
+  int r = wasi_rump_rpc(path, nil, 0, &err, (uint32_t)sizeof(err));
+  if (r < (int)(uint32_t)sizeof(err))
     return WASI_ERRNO_NOSYS;
   return wasi_errno_from_posix(err);
 }
@@ -303,7 +453,7 @@ static int wasi_rump_rpc_read(const char *path, const void *req,
                               uint32_t req_len, void *resp, uint32_t resp_len) {
   int fd = kopen((char *)path, ORDWR);
   if (fd < 0) {
-    if (resp && resp_len >= sizeof(uint32_t)) {
+    if (resp && resp_len >= (uint32_t)sizeof(uint32_t)) {
       memset(resp, 0, resp_len);
       *(uint32_t *)resp = 38;
       return (int)resp_len;
@@ -347,6 +497,14 @@ static uint64_t wasi_timespec_to_ns(const struct rump_timespec *ts) {
   return sec * 1000000000ULL + nsec;
 }
 
+/*@
+  requires ctx != \null;
+  requires fd >= 0 && fd < WASI_MAX_FDS;
+  assigns \nothing;
+  ensures \result == WASI_ERRNO_SUCCESS ==>
+          (ctx->fds[fd].is_open && (ctx->fds[fd].rights & rights) == rights);
+  ensures \result != WASI_ERRNO_SUCCESS ==> \result > 0;
+*/
 static uint32_t wasi_require_fd(wasi_context_t *ctx, int fd, uint64_t rights) {
   if (fd < 0 || fd >= WASI_MAX_FDS || !ctx->fds[fd].is_open)
     return WASI_ERRNO_BADF;
@@ -355,6 +513,19 @@ static uint32_t wasi_require_fd(wasi_context_t *ctx, int fd, uint64_t rights) {
   return WASI_ERRNO_SUCCESS;
 }
 
+/*@
+  requires \valid(out_size);
+  assigns *out_size;
+  behavior valid:
+    assumes count <= 0xffffffffu / 8;
+    ensures *out_size == count * 8;
+    ensures \result == 0;
+  behavior overflow:
+    assumes count > 0xffffffffu / 8;
+    ensures \result == -1;
+  complete behaviors;
+  disjoint behaviors;
+*/
 static int wasi_iovecs_size(uint32_t count, uint32_t *out_size) {
   if (count > (0xffffffffu / 8)) {
     return -1;
@@ -441,20 +612,27 @@ static uint32_t wasi_dirents_from_plan9(Proc *p, int fd, uint8_t *out,
 }
 
 static int wasi_is_posix_path(const char *path, uint32_t path_len) {
-  if (path_len < sizeof(wasi_posix_root_path) - 1)
+  if (path_len < (uint32_t)sizeof(wasi_posix_root_path) - 1)
     return 0;
-  return memcmp(path, wasi_posix_root_path, sizeof(wasi_posix_root_path) - 1) ==
-         0;
+  return memcmp(path, wasi_posix_root_path,
+                (uint32_t)sizeof(wasi_posix_root_path) - 1) == 0;
 }
 
+/*@
+  requires \valid_read(path + (0..path_len-1));
+  assigns \nothing;
+*/
 static int wasi_path_safe(const char *path, uint32_t path_len) {
   uint32_t i = 0;
   while (i < path_len) {
     while (i < path_len && path[i] == '/')
       i++;
     uint32_t start = i;
-    while (i < path_len && path[i] != '/')
+    while (i < path_len && path[i] != '/') {
+      if (path[i] == 0)
+        return 0;
       i++;
+    }
     uint32_t seg_len = i - start;
     if (seg_len == 2 && path[start] == '.' && path[start + 1] == '.')
       return 0;
@@ -464,15 +642,18 @@ static int wasi_path_safe(const char *path, uint32_t path_len) {
 
 static void wasi_fill_random(uint8_t *buf, uint32_t len) {
   /* Use kernel CSPRNG (ChaCha20) for WASI random_get */
-  extern void genrandom(uchar *buf, int nbytes);
+  extern void genrandom(uchar * buf, int nbytes);
   genrandom((uchar *)buf, (int)len);
 }
 
+/*@ requires \valid(out_len);
+  @ assigns *out_len;
+  @*/
 static const char *wasi_posix_path(const char *full, uint32_t *out_len) {
   static const char posix_root[] = "/";
 
   if (wasi_is_posix_path(full, (uint32_t)strlen(full))) {
-    const char *p = full + (sizeof(wasi_posix_root_path) - 1);
+    const char *p = full + ((uint32_t)sizeof(wasi_posix_root_path) - 1);
     if (*p == '\0') {
       *out_len = 1;
       return posix_root;
@@ -488,6 +669,10 @@ static const char *wasi_posix_path(const char *full, uint32_t *out_len) {
   return full;
 }
 
+/*@ requires \valid(ctx) && \valid_read(path + (0..path_len-1)) &&
+  \valid(out_path);
+  @ assigns *out_path;
+  @*/
 static uint32_t wasi_build_path(wasi_context_t *ctx, int dirfd,
                                 const char *path, uint32_t path_len,
                                 char **out_path) {
@@ -703,7 +888,7 @@ done:
 void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
   if (!ctx)
     return;
-  memset(ctx, 0, sizeof(wasi_context_t));
+  memset(ctx, 0, (uint32_t)sizeof(wasi_context_t));
 
   /* Pre-populate stdio (0, 1, 2) */
   ctx->fds[0].is_open = 1;
@@ -786,6 +971,13 @@ void wasi_lux9_destroy_context(wasi_context_t *ctx) {
 /* ========== Implementations ========== */
 
 /* wasi_fd_write(fd, iovs, iovs_len, nwritten) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // Arguments on stack
+  requires valid_iovs(_mem, get_mem_size(runtime),
+                      *((uint32_t*)(_sp-3)), *((uint32_t*)(_sp-2)));
+  assigns *((uint32_t*)(_sp-1)); // nwritten
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
   DPRINT("FD_WRITE: runtime=%p mem=%p\n", runtime, _mem);
 
@@ -794,8 +986,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
           m3ApiGetArg(uint32_t, nwritten_ptr)
 
               uint32_t mem_size = m3_GetMemorySize(runtime);
-  DPRINT("FD_WRITE_ARGS: fd=%d iovs=%ud len=%ud ret=%ud mem_size=%ud\n", (int)fd,
-        (uint)iovs_ptr, (uint)iovs_len, (uint)nwritten_ptr, mem_size);
+  DPRINT("FD_WRITE_ARGS: fd=%d iovs=%ud len=%ud ret=%ud mem_size=%ud\n",
+         (int)fd, (uint)iovs_ptr, (uint)iovs_len, (uint)nwritten_ptr, mem_size);
 
   uint32_t iov_size = 0;
   if (wasi_iovecs_size(iovs_len, &iov_size) < 0) {
@@ -803,9 +995,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
     m3ApiReturn(WASI_ERRNO_INVAL);
   }
   DPRINT("FD_WRITE: iov_size=%ud\n", iov_size);
+  /*@ assert iovs_len <= 0x1FFFFFFF; */
 
   m3ApiCheckMem(m3ApiOffsetToPtr(iovs_ptr), iov_size);
-  m3ApiCheckMem(m3ApiOffsetToPtr(nwritten_ptr), sizeof(uint32_t));
+  m3ApiCheckMem(m3ApiOffsetToPtr(nwritten_ptr), (uint32_t)sizeof(uint32_t));
 
   /* Get Process Context */
   Proc *p = up; // Current process
@@ -826,7 +1019,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
 
   // Iterate over IO vectors
   DPRINT("FD_WRITE: iterating %ud iovecs\n", iovs_len);
+  /*@
+    loop invariant 0 <= i <= iovs_len;
+    loop assigns total_written, i;
+    loop variant iovs_len - i;
+  */
   for (int32_t i = 0; i < (int32_t)iovs_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = iovs_ptr + (i * 8);
 
     uint32_t buf_ptr = m3ApiReadMem32(m3ApiOffsetToPtr(iov_addr));
@@ -844,6 +1043,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
       DPRINT("FD_WRITE: printing content: '%.*s'\n", buf_len, (char *)buf);
       DPRINT("%.*s", buf_len, (char *)buf);
       if (ctx->fds[fd].lux9_fid >= 0) {
+        /*@ assert buf_len < 0x80000000; */
         kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
       }
       total_written += buf_len;
@@ -861,6 +1061,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
 
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
+/* wasi_proc_exit(rval) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 1); // Arguments on stack
+  assigns \nothing;
+  ensures \false; // Should not return
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
   m3ApiGetArg(int32_t, rval)
 
@@ -873,16 +1079,25 @@ m3ApiRawFunction(wasi_snapshot_preview1_proc_exit) {
 }
 
 /* wasi_proc_raise(sig) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 1); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_proc_raise) {
   m3ApiReturnType(uint32_t);
   m3ApiGetArg(uint32_t, sig);
   char note[64];
-  snprint(note, sizeof(note), "wasm signal %ud", sig);
+  snprint(note, (uint32_t)sizeof(note), "wasm signal %ud", sig);
   postnote(up, 1, note, NUser);
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
 /* wasi_sched_yield() */
+/*@
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_sched_yield) {
   m3ApiReturnType(uint32_t);
   yield();
@@ -890,12 +1105,20 @@ m3ApiRawFunction(wasi_snapshot_preview1_sched_yield) {
 }
 
 /* wasi_args_sizes_get(argc, argv_buf_size) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)), (uint32_t)sizeof(uint32_t)); //
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint32_t)); //
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_args_sizes_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, argc_ptr)
       m3ApiGetArg(uint32_t, argv_buf_size_ptr)
 
-          m3ApiCheckMem(argc_ptr, sizeof(uint32_t));
-  m3ApiCheckMem(argv_buf_size_ptr, sizeof(uint32_t));
+          m3ApiCheckMem(argc_ptr, (uint32_t)sizeof(uint32_t));
+  m3ApiCheckMem(argv_buf_size_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -912,6 +1135,15 @@ m3ApiRawFunction(wasi_snapshot_preview1_args_sizes_get) {
 }
 
 /* wasi_args_get(argv, argv_buf) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires \valid(up) && \valid_read((wasi_context_t*)up->wasm.wasi_ctx);
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)),
+  (uint32_t)(((wasi_context_t*)up->wasm.wasi_ctx)->argc * 4)); // argv
+  // Note: argv_buf size is dynamic, but we assume the caller provided enough
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_args_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, argv_ptr)
       m3ApiGetArg(uint32_t, argv_buf_ptr)
@@ -926,7 +1158,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_args_get) {
     if (ctx->argv[i])
       total += (uint32_t)strlen(ctx->argv[i]) + 1;
   }
-  m3ApiCheckMem(argv_ptr, ctx->argc * sizeof(uint32_t));
+  m3ApiCheckMem(argv_ptr, ctx->argc * (uint32_t)sizeof(uint32_t));
   m3ApiCheckMem(argv_buf_ptr, total);
 
   uint32_t cur = 0;
@@ -941,12 +1173,20 @@ m3ApiRawFunction(wasi_snapshot_preview1_args_get) {
 }
 
 /* wasi_environ_sizes_get(env_count, env_buf_size) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)), (uint32_t)sizeof(uint32_t)); //
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint32_t)); //
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_environ_sizes_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, env_count_ptr)
       m3ApiGetArg(uint32_t, env_buf_size_ptr)
 
-          m3ApiCheckMem(env_count_ptr, sizeof(uint32_t));
-  m3ApiCheckMem(env_buf_size_ptr, sizeof(uint32_t));
+          m3ApiCheckMem(env_count_ptr, (uint32_t)sizeof(uint32_t));
+  m3ApiCheckMem(env_buf_size_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -963,6 +1203,15 @@ m3ApiRawFunction(wasi_snapshot_preview1_environ_sizes_get) {
 }
 
 /* wasi_environ_get(environ, environ_buf) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires \valid(up) && \valid_read((wasi_context_t*)up->wasm.wasi_ctx);
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)),
+  (uint32_t)(((wasi_context_t*)up->wasm.wasi_ctx)->envc * 4)); // environ
+  // Note: environ_buf size is dynamic, but we assume the caller provided enough
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_environ_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, environ_ptr)
       m3ApiGetArg(uint32_t, environ_buf_ptr)
@@ -977,7 +1226,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_environ_get) {
     if (ctx->envv[i])
       total += (uint32_t)strlen(ctx->envv[i]) + 1;
   }
-  m3ApiCheckMem(environ_ptr, ctx->envc * sizeof(uint32_t));
+  m3ApiCheckMem(environ_ptr, ctx->envc * (uint32_t)sizeof(uint32_t));
   m3ApiCheckMem(environ_buf_ptr, total);
 
   uint32_t cur = 0;
@@ -992,11 +1241,18 @@ m3ApiRawFunction(wasi_snapshot_preview1_environ_get) {
 }
 
 /* wasi_fd_prestat_get(fd, prestat) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)),
+  (uint32_t)sizeof(wasi_prestat_t)); ensures \result == m3Err_none || \result !=
+  \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_prestat_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, prestat_ptr)
 
-          m3ApiCheckMem(prestat_ptr, sizeof(wasi_prestat_t));
+          m3ApiCheckMem(prestat_ptr, (uint32_t)sizeof(wasi_prestat_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1008,9 +1264,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_prestat_get) {
   }
 
   m3ApiWriteMem8(prestat_ptr + 0, 0);
-  m3ApiWriteMem32(prestat_ptr + 4, (fd == 4)
-                                       ? (sizeof(wasi_posix_root_path) - 1)
-                                       : (sizeof(wasi_root_path) - 1));
+  m3ApiWriteMem32(prestat_ptr + 4,
+                  (fd == 4) ? ((uint32_t)sizeof(wasi_posix_root_path) - 1)
+                            : ((uint32_t)sizeof(wasi_root_path) - 1));
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
@@ -1029,8 +1285,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_prestat_dir_name) {
   if ((fd != 3 && fd != 4) || !ctx->fds[fd].is_open || !ctx->fds[fd].is_dir) {
     m3ApiReturn(WASI_ERRNO_BADF);
   }
-  uint32_t want = (fd == 4) ? (sizeof(wasi_posix_root_path) - 1)
-                            : (sizeof(wasi_root_path) - 1);
+  uint32_t want = (fd == 4) ? ((uint32_t)sizeof(wasi_posix_root_path) - 1)
+                            : ((uint32_t)sizeof(wasi_root_path) - 1);
   if (path_len < want) {
     m3ApiReturn(WASI_ERRNO_NAMETOOLONG);
   }
@@ -1044,6 +1300,14 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_prestat_dir_name) {
 }
 
 /* wasi_random_get(buf, buf_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)), *((uint32_t*)(_sp-1)));
+  assigns ((uint8_t*)_mem)[*((uint32_t*)(_sp-2)) .. (*((uint32_t*)(_sp-2)) +
+  *((uint32_t*)(_sp-1)) - 1)]; ensures \result == m3Err_none || \result !=
+  \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_random_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, buf_ptr)
       m3ApiGetArg(uint32_t, buf_len)
@@ -1055,29 +1319,72 @@ m3ApiRawFunction(wasi_snapshot_preview1_random_get) {
 }
 
 /* wasi_clock_res_get(clock_id, resolution) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint64_t));
+  assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1)));
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_clock_res_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, clock_id)
       m3ApiGetArg(uint32_t, resolution_ptr)
 
-          m3ApiCheckMem(resolution_ptr, sizeof(uint64_t));
-  (void)clock_id;
-  m3ApiWriteMem64(resolution_ptr, 1);
-  m3ApiReturn(WASI_ERRNO_SUCCESS);
+          m3ApiCheckMem(resolution_ptr, (uint32_t)sizeof(uint64_t));
+
+  switch (clock_id) {
+  case WASI_CLOCK_REALTIME:
+  case WASI_CLOCK_MONOTONIC:
+  case WASI_CLOCK_PROCESS_CPUTIME:
+  case WASI_CLOCK_THREAD_CPUTIME:
+    m3ApiWriteMem64(resolution_ptr, 1); /* 1ns resolution */
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  default:
+    m3ApiReturn(WASI_ERRNO_INVAL);
+  }
 }
 
 /* wasi_clock_time_get(clock_id, precision, time) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint64_t));
+  assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1)));
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_clock_time_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, clock_id)
       m3ApiGetArg(uint64_t, precision) m3ApiGetArg(uint32_t, time_ptr)
 
-          m3ApiCheckMem(time_ptr, sizeof(uint64_t));
-  (void)clock_id;
+          m3ApiCheckMem(time_ptr, (uint32_t)sizeof(uint64_t));
   (void)precision;
-  m3ApiWriteMem64(time_ptr, (uint64_t)nsec());
-  m3ApiReturn(WASI_ERRNO_SUCCESS);
+
+  switch (clock_id) {
+  case WASI_CLOCK_REALTIME:
+    m3ApiWriteMem64(time_ptr, (uint64_t)seconds() * 1000000000ULL);
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  case WASI_CLOCK_MONOTONIC:
+    m3ApiWriteMem64(time_ptr, (uint64_t)nsec());
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  case WASI_CLOCK_PROCESS_CPUTIME:
+  case WASI_CLOCK_THREAD_CPUTIME:
+    /* Fallback to monotonic for now, could use up->time if needed */
+    m3ApiWriteMem64(time_ptr, (uint64_t)nsec());
+    m3ApiReturn(WASI_ERRNO_SUCCESS);
+  default:
+    m3ApiReturn(WASI_ERRNO_INVAL);
+  }
 }
 
 /* wasi_path_open(...) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 9); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-7)), *((uint32_t*)(_sp-6))); // path
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint32_t)); //
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, dirflags) m3ApiGetArg(uint32_t, path_ptr)
@@ -1089,7 +1396,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
 
       /* Check memory for path */
       m3ApiCheckMem(path_ptr, path_len);
-  m3ApiCheckMem(fd_out_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(fd_out_ptr, (uint32_t)sizeof(uint32_t));
 
   char *path = (char *)m3ApiOffsetToPtr(path_ptr);
   /* Safe copy/null-terminate not strictly needed if we obey len,
@@ -1235,6 +1542,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
 }
 
 /* wasi_fd_read(fd, iovs, iovs_len, nread) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // Arguments on stack
+  requires valid_iovs(_mem, get_mem_size(runtime),
+                      *((uint32_t*)(_sp-3)), *((uint32_t*)(_sp-2)));
+  assigns *((uint32_t*)(_sp-1)); // nread
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_read) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
@@ -1245,7 +1559,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_read) {
     m3ApiReturn(WASI_ERRNO_INVAL);
   }
   m3ApiCheckMem(iovs_ptr, iov_size);
-  m3ApiCheckMem(nread_ptr, sizeof(uint32_t));
+  /*@ assert iovs_len <= 0x1FFFFFFF; */
+  m3ApiCheckMem(nread_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1258,6 +1573,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_read) {
 
   uint32_t total_read = 0;
   for (int32_t i = 0; i < (int32_t)iovs_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = iovs_ptr + (i * 8);
     uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
     uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -1281,6 +1597,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_read) {
 }
 
 /* wasi_fd_pread(fd, iovs, iovs_len, offset, nread) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  requires valid_iovs(_mem, get_mem_size(runtime),
+                      *((uint32_t*)(_sp-4)), *((uint32_t*)(_sp-3)));
+  assigns *((uint32_t*)(_sp-1)); // nread
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
@@ -1289,8 +1612,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
               uint32_t iov_size = 0;
   if (wasi_iovecs_size(iovs_len, &iov_size) < 0)
     m3ApiReturn(WASI_ERRNO_INVAL);
+  /*@ assert iovs_len <= 0x1FFFFFFF; */
   m3ApiCheckMem(iovs_ptr, iov_size);
-  m3ApiCheckMem(nread_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(nread_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1309,6 +1633,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
       m3ApiReturn(WASI_ERRNO_IO);
     uint32_t total_read = 0;
     for (int32_t i = 0; i < (int32_t)iovs_len; i++) {
+      /*@ assert i * 8 <= 0xFFFFFFFF; */
       uint32_t iov_addr = iovs_ptr + (i * 8);
       uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
       uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -1347,8 +1672,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
   req[3] = (uint32_t)(offset >> 32);
   req[4] = total;
 
-  int r = wasi_rump_rpc_read("/srv/rump/posix/pread", req, sizeof(req), resp,
-                             8 + total);
+  int r = wasi_rump_rpc_read("/srv/rump/posix/pread", req,
+                             (uint32_t)sizeof(req), resp, 8 + total);
   if (r < 8)
     m3ApiReturn(WASI_ERRNO_IO);
 
@@ -1363,6 +1688,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
   uint32_t remaining = count;
   uint32_t off = 8;
   for (uint32_t i = 0; i < iovs_len && remaining > 0; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = iovs_ptr + (i * 8);
     uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
     uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -1382,6 +1708,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pread) {
 }
 
 /* wasi_fd_pwrite(fd, iovs, iovs_len, offset, nwritten) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  requires valid_iovs(_mem, get_mem_size(runtime),
+                      *((uint32_t*)(_sp-4)), *((uint32_t*)(_sp-3)));
+  assigns *((uint32_t*)(_sp-1)); // nwritten
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, iovs_ptr) m3ApiGetArg(uint32_t, iovs_len)
@@ -1390,8 +1723,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
               uint32_t iov_size = 0;
   if (wasi_iovecs_size(iovs_len, &iov_size) < 0)
     m3ApiReturn(WASI_ERRNO_INVAL);
+  /*@ assert iovs_len <= 0x1FFFFFFF; */
   m3ApiCheckMem(iovs_ptr, iov_size);
-  m3ApiCheckMem(nwritten_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(nwritten_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1410,6 +1744,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
       m3ApiReturn(WASI_ERRNO_IO);
     uint32_t total_written = 0;
     for (int32_t i = 0; i < (int32_t)iovs_len; i++) {
+      /*@ assert i * 8 <= 0xFFFFFFFF; */
       uint32_t iov_addr = iovs_ptr + (i * 8);
       uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
       uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -1453,6 +1788,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
 
   uint32_t off = 20;
   for (uint32_t i = 0; i < iovs_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = iovs_ptr + (i * 8);
     uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
     uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -1465,9 +1801,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
 
   uint32_t resp[2];
   int r = wasi_rump_rpc_read("/srv/rump/posix/pwrite", req, req_size, resp,
-                             sizeof(resp));
+                             (uint32_t)sizeof(resp));
   free(req);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   uint32_t err = resp[0];
@@ -1479,6 +1815,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
 }
 
 /* wasi_fd_advise(fd, offset, len, advice) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_advise) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint64_t, offset) m3ApiGetArg(uint64_t, len)
@@ -1504,9 +1845,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_advise) {
   req.advice = advice;
 
   uint32_t resp = 0;
-  int r = wasi_rump_rpc_read("/srv/rump/posix/fd_advise", &req, sizeof(req),
-                             &resp, sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r =
+      wasi_rump_rpc_read("/srv/rump/posix/fd_advise", &req,
+                         (uint32_t)sizeof(req), &resp, (uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -1514,6 +1856,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_advise) {
 }
 
 /* wasi_fd_allocate(fd, offset, len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_allocate) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint64_t, offset) m3ApiGetArg(uint64_t, len) Proc *p = up;
@@ -1534,9 +1881,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_allocate) {
   req.len = len;
 
   uint32_t resp = 0;
-  int r = wasi_rump_rpc_read("/srv/rump/posix/fd_allocate", &req, sizeof(req),
-                             &resp, sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r =
+      wasi_rump_rpc_read("/srv/rump/posix/fd_allocate", &req,
+                         (uint32_t)sizeof(req), &resp, (uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -1544,6 +1892,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_allocate) {
 }
 
 /* wasi_fd_close(fd) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires \valid(up) && \valid_read((wasi_context_t*)up->wasm.wasi_ctx);
+  assigns ((wasi_context_t*)up->wasm.wasi_ctx)->fds[0 .. WASI_MAX_FDS-1]; //
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_close) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
 
@@ -1568,6 +1922,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_close) {
 }
 
 /* wasi_fd_renumber(from, to) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires \valid(up) && \valid_read((wasi_context_t*)up->wasm.wasi_ctx);
+  assigns ((wasi_context_t*)up->wasm.wasi_ctx)->fds[0 .. WASI_MAX_FDS-1]; //
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_renumber) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, from) m3ApiGetArg(int32_t, to)
 
@@ -1605,6 +1965,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_renumber) {
 }
 
 /* wasi_fd_seek(fd, offset, whence, newoffset) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint64_t));
+  assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1)));
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_seek) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(int64_t, offset) m3ApiGetArg(int32_t, whence)
@@ -1623,7 +1990,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_seek) {
   if (cap != WASI_ERRNO_SUCCESS)
     m3ApiReturn(cap);
 
-  m3ApiCheckMem(newoffset_ptr, sizeof(uint64_t));
+  m3ApiCheckMem(newoffset_ptr, (uint32_t)sizeof(uint64_t));
   vlong res = kseek(ctx->fds[fd].lux9_fid, offset, whence);
   if (res < 0) {
     m3ApiReturn(WASI_ERRNO_INVAL);
@@ -1634,11 +2001,20 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_seek) {
 }
 
 /* wasi_fd_fdstat_get(fd, buf) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)),
+  sizeof(wasi_fdstat_t));
+  assigns ((uint8_t*)_mem)[*((uint32_t*)(_sp-1)) .. (*((uint32_t*)(_sp-1)) +
+  (uint32_t)sizeof(wasi_fdstat_t) - 1)]; ensures \result == m3Err_none ||
+  \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, buf_ptr)
 
-          m3ApiCheckMem(buf_ptr, sizeof(wasi_fdstat_t));
+          m3ApiCheckMem(buf_ptr, (uint32_t)sizeof(wasi_fdstat_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1682,6 +2058,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_get) {
 }
 
 /* wasi_fd_fdstat_set_flags(fd, flags) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_set_flags) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, flags)
@@ -1702,9 +2083,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_set_flags) {
   req.flags = flags;
 
   uint32_t resp = 0;
-  int r = wasi_rump_rpc_read("/srv/rump/posix/fd_set_flags", &req, sizeof(req),
-                             &resp, sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r =
+      wasi_rump_rpc_read("/srv/rump/posix/fd_set_flags", &req,
+                         (uint32_t)sizeof(req), &resp, (uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -1712,6 +2094,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_set_flags) {
 }
 
 /* wasi_fd_fdstat_set_rights(fd, rights_base, rights_inheriting) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires \valid(up) && \valid_read((wasi_context_t*)up->wasm.wasi_ctx);
+  assigns ((wasi_context_t*)up->wasm.wasi_ctx)->fds[0 .. WASI_MAX_FDS-1];
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_set_rights) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint64_t, rights_base)
@@ -1736,13 +2124,22 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_fdstat_set_rights) {
 }
 
 /* wasi_fd_readdir(fd, buf, buf_len, cookie, bufused) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-4)), *((uint32_t*)(_sp-3)));
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint32_t));
+  assigns *((uint32_t*)(_sp-1)); // bufused
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_readdir) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, buf_ptr) m3ApiGetArg(uint32_t, buf_len)
           m3ApiGetArg(uint64_t, cookie) m3ApiGetArg(uint32_t, bufused_ptr)
 
               m3ApiCheckMem(buf_ptr, buf_len);
-  m3ApiCheckMem(bufused_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(bufused_ptr, (uint32_t)sizeof(uint32_t));
 
   Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1779,6 +2176,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_readdir) {
 }
 
 /* wasi_fd_sync(fd) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 1); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_sync) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd) Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1793,6 +2195,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_sync) {
 }
 
 /* wasi_fd_datasync(fd) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 1); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_datasync) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd) Proc *p = up;
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
@@ -1807,10 +2214,17 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_datasync) {
 }
 
 /* wasi_fd_tell(fd, offset) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint64_t));
+  assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1)));
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_tell) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, offset_ptr) Proc *p = up;
-  m3ApiCheckMem(offset_ptr, sizeof(uint64_t));
+  m3ApiCheckMem(offset_ptr, (uint32_t)sizeof(uint64_t));
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
@@ -1828,6 +2242,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_tell) {
 }
 
 /* wasi_fd_filestat_set_size(fd, size) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_set_size) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd) m3ApiGetArg(uint64_t, size)
       Proc *p = up;
@@ -1842,6 +2261,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_set_size) {
 }
 
 /* wasi_fd_filestat_set_times(fd, atim, mtim, flags) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_set_times) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd) m3ApiGetArg(uint64_t, atim)
       m3ApiGetArg(uint64_t, mtim) m3ApiGetArg(uint32_t, flags) Proc *p = up;
@@ -1857,8 +2281,14 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_set_times) {
   m3ApiReturn(wasi_rump_simple_errno("/srv/rump/posix/fd_set_times"));
 }
 
-/* wasi_path_filestat_set_times(dirfd, dirflags, path, path_len, atim, mtim,
- * flags) */
+/* wasi_path_filestat_set_times(...) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 7); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-5)), *((uint32_t*)(_sp-4))); // path
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_set_times) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, dirflags) m3ApiGetArg(uint32_t, path_ptr)
@@ -1902,18 +2332,25 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_set_times) {
   extra[4] = flags;
 
   uint32_t resp = 0;
-  int r = wasi_rump_path_req("/srv/rump/posix/path_set_times",
-                             POSIX_PATH_SET_TIMES, posix_path, full_len, extra,
-                             sizeof(extra), &resp, sizeof(resp));
+  int r = wasi_rump_path_req(
+      "/srv/rump/posix/path_set_times", POSIX_PATH_SET_TIMES, posix_path,
+      full_len, extra, (uint32_t)sizeof(extra), &resp, (uint32_t)sizeof(resp));
   free(fullpath);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 
-/* wasi_path_filestat_set_size(dirfd, dirflags, path, path_len, size) */
+/* wasi_path_filestat_set_size(...) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-3)), *((uint32_t*)(_sp-2))); // path
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_set_size) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, dirflags) m3ApiGetArg(uint32_t, path_ptr)
@@ -1950,11 +2387,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_set_size) {
   extra[1] = (uint32_t)(size >> 32);
 
   uint32_t resp = 0;
-  int r = wasi_rump_path_req("/srv/rump/posix/path_set_size",
-                             POSIX_PATH_SET_SIZE, posix_path, full_len, extra,
-                             sizeof(extra), &resp, sizeof(resp));
+  int r = wasi_rump_path_req(
+      "/srv/rump/posix/path_set_size", POSIX_PATH_SET_SIZE, posix_path,
+      full_len, extra, (uint32_t)sizeof(extra), &resp, (uint32_t)sizeof(resp));
   free(fullpath);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -1962,6 +2399,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_set_size) {
 }
 
 /* wasi_path_create_directory(dirfd, path, path_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-2)), *((uint32_t*)(_sp-1))); // path
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_create_directory) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, path_ptr) m3ApiGetArg(uint32_t, path_len) Proc *p =
@@ -1993,9 +2437,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_create_directory) {
   uint32_t resp = 0;
   int r = wasi_rump_path_req("/srv/rump/posix/path_create_directory",
                              POSIX_PATH_CREATE_DIRECTORY, posix_path, full_len,
-                             nil, 0, &resp, sizeof(resp));
+                             nil, 0, &resp, (uint32_t)sizeof(resp));
   free(fullpath);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2003,6 +2447,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_create_directory) {
 }
 
 /* wasi_path_remove_directory(dirfd, path, path_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-2)),
+  *((uint32_t*)(_sp-1))); ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_remove_directory) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, path_ptr) m3ApiGetArg(uint32_t, path_len) Proc *p =
@@ -2040,9 +2489,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_remove_directory) {
 
     uint32_t resp = 0;
     int r = wasi_rump_rpc_read("/srv/rump/posix/path_remove_directory", req,
-                               req_size, &resp, sizeof(resp));
+                               req_size, &resp, (uint32_t)sizeof(resp));
     free(req);
-    if (r < (int)sizeof(resp))
+    if (r < (int)(uint32_t)sizeof(resp))
       m3ApiReturn(WASI_ERRNO_IO);
     if (resp != 0)
       m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2062,6 +2511,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_remove_directory) {
 }
 
 /* wasi_path_unlink_file(dirfd, path, path_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 3); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-2)),
+  *((uint32_t*)(_sp-1))); ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_unlink_file) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, path_ptr) m3ApiGetArg(uint32_t, path_len) Proc *p =
@@ -2099,9 +2553,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_unlink_file) {
 
     uint32_t resp = 0;
     int r = wasi_rump_rpc_read("/srv/rump/posix/path_unlink_file", req,
-                               req_size, &resp, sizeof(resp));
+                               req_size, &resp, (uint32_t)sizeof(resp));
     free(req);
-    if (r < (int)sizeof(resp))
+    if (r < (int)(uint32_t)sizeof(resp))
       m3ApiReturn(WASI_ERRNO_IO);
     if (resp != 0)
       m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2121,6 +2575,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_unlink_file) {
 }
 
 /* wasi_path_rename(old_fd, old_path, old_len, new_fd, new_path, new_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 6); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-5)),
+  *((uint32_t*)(_sp-4))); // old requires valid_wasm_ptr(_mem,
+  get_mem_size(runtime), *((uint32_t*)(_sp-2)), *((uint32_t*)(_sp-1))); // new
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_rename) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, old_fd)
       m3ApiGetArg(uint32_t, old_path) m3ApiGetArg(uint32_t, old_len)
@@ -2173,11 +2634,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_rename) {
 
     uint32_t resp = 0;
     int r = wasi_rump_rpc_read("/srv/rump/posix/path_rename", req, req_size,
-                               &resp, sizeof(resp));
+                               &resp, (uint32_t)sizeof(resp));
     free(req);
     free(old_full);
     free(new_full);
-    if (r < (int)sizeof(resp))
+    if (r < (int)(uint32_t)sizeof(resp))
       m3ApiReturn(WASI_ERRNO_IO);
     if (resp != 0)
       m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2213,8 +2674,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_rename) {
       strcpy(d->name, new_name);
       uchar buf[256]; /* Should be enough for header + string */
       /* Proper sizing? */
-      uint n = convD2M(d, buf, sizeof(buf));
-      if (n <= sizeof(buf)) {
+      uint n = convD2M(d, buf, (uint32_t)sizeof(buf));
+      if (n <= (uint32_t)sizeof(buf)) {
         devwstat(c, buf, n);
       }
     }
@@ -2235,6 +2696,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_rename) {
 }
 
 /* wasi_path_link(old_fd, old_path, old_len, new_fd, new_path, new_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 6); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-5)),
+  *((uint32_t*)(_sp-4))); // old requires valid_wasm_ptr(_mem,
+  get_mem_size(runtime), *((uint32_t*)(_sp-2)), *((uint32_t*)(_sp-1))); // new
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_link) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, old_fd)
       m3ApiGetArg(uint32_t, old_path) m3ApiGetArg(uint32_t, old_len)
@@ -2288,11 +2756,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_link) {
 
     uint32_t resp = 0;
     int r = wasi_rump_rpc_read("/srv/rump/posix/path_link", req, req_size,
-                               &resp, sizeof(resp));
+                               &resp, (uint32_t)sizeof(resp));
     free(req);
     free(old_full);
     free(new_full);
-    if (r < (int)sizeof(resp))
+    if (r < (int)(uint32_t)sizeof(resp))
       m3ApiReturn(WASI_ERRNO_IO);
     if (resp != 0)
       m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2313,11 +2781,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_link) {
 
   uint32_t resp = 0;
   int r = wasi_rump_rpc_read("/srv/rump/posix/path_link", req, req_size, &resp,
-                             sizeof(resp));
+                             (uint32_t)sizeof(resp));
   free(req);
   free(old_full);
   free(new_full);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2325,6 +2793,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_link) {
 }
 
 /* wasi_path_symlink(old_path, old_len, dirfd, new_path, new_len) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-5)),
+  *((uint32_t*)(_sp-4))); // old requires valid_wasm_ptr(_mem,
+  get_mem_size(runtime), *((uint32_t*)(_sp-2)), *((uint32_t*)(_sp-1))); // new
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_symlink) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, old_path)
       m3ApiGetArg(uint32_t, old_len) m3ApiGetArg(int32_t, dirfd)
@@ -2356,7 +2831,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_symlink) {
   uint32_t new_len_full = (uint32_t)strlen(new_full);
   if (backend == WASI_BACKEND_POSIX) {
     if (wasi_is_posix_path(oldp, old_len)) {
-      uint32_t skip = (uint32_t)(sizeof(wasi_posix_root_path) - 1);
+      uint32_t skip = (uint32_t)((uint32_t)sizeof(wasi_posix_root_path) - 1);
       if (old_len > skip) {
         old_use = oldp + skip;
         old_len_full = old_len - skip;
@@ -2381,10 +2856,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_symlink) {
 
   uint32_t resp = 0;
   int r = wasi_rump_rpc_read("/srv/rump/posix/path_symlink", req, req_size,
-                             &resp, sizeof(resp));
+                             &resp, (uint32_t)sizeof(resp));
   free(req);
   free(new_full);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
   if (resp != 0)
     m3ApiReturn(wasi_errno_from_posix(resp));
@@ -2392,6 +2867,14 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_symlink) {
 }
 
 /* wasi_path_readlink(dirfd, path, path_len, buf, buf_len, bufused) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 6); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-5)),
+  *((uint32_t*)(_sp-4))); // path requires valid_wasm_ptr(_mem,
+  get_mem_size(runtime), *((uint32_t*)(_sp-3)), *((uint32_t*)(_sp-2))); // buf
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-1)),
+  4); // bufused ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_path_readlink) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, dirfd)
       m3ApiGetArg(uint32_t, path_ptr) m3ApiGetArg(uint32_t, path_len)
@@ -2401,7 +2884,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_readlink) {
   (void)path_len;
   (void)buf_ptr;
   (void)buf_len;
-  m3ApiCheckMem(bufused_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(bufused_ptr, (uint32_t)sizeof(uint32_t));
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
@@ -2433,7 +2916,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_readlink) {
   }
   int r = wasi_rump_path_req("/srv/rump/posix/path_readlink",
                              POSIX_PATH_READLINK, posix_path, full_len, &extra,
-                             sizeof(extra), resp, resp_len);
+                             (uint32_t)sizeof(extra), resp, resp_len);
   free(fullpath);
   if (r < 8) {
     free(resp);
@@ -2454,12 +2937,21 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_readlink) {
 }
 
 /* wasi_poll_oneoff(in, out, nsubscriptions, nevents) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // Arguments on stack
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-4)),
+  (uint32_t)(*((uint32_t*)(_sp-2)) * (uint32_t)sizeof(wasi_subscription_t)));
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-3)),
+  (uint32_t)(*((uint32_t*)(_sp-2)) * (uint32_t)sizeof(wasi_event_t))); requires
+  valid_wasm_ptr(_mem, get_mem_size(runtime), *((uint32_t*)(_sp-1)), 4); ensures
+  \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_poll_oneoff) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, in_ptr)
       m3ApiGetArg(uint32_t, out_ptr) m3ApiGetArg(uint32_t, nsubscriptions)
           m3ApiGetArg(uint32_t, nevents_ptr)
 
-              m3ApiCheckMem(nevents_ptr, sizeof(uint32_t));
+              m3ApiCheckMem(nevents_ptr, (uint32_t)sizeof(uint32_t));
   if (nsubscriptions > (0xffffffffu / WASI_SUBSCRIPTION_SIZE))
     m3ApiReturn(WASI_ERRNO_INVAL);
   uint32_t in_len = nsubscriptions * WASI_SUBSCRIPTION_SIZE;
@@ -2512,7 +3004,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_accept) {
       m3ApiGetArg(uint32_t, flags) m3ApiGetArg(uint32_t, newfd_ptr) Proc *p =
           up;
   (void)flags;
-  m3ApiCheckMem(newfd_ptr, sizeof(uint32_t));
+  m3ApiCheckMem(newfd_ptr, (uint32_t)sizeof(uint32_t));
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
@@ -2529,9 +3021,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_accept) {
   req[1] = (uint32_t)fd;
   req[2] = flags;
 
-  int r = wasi_rump_rpc_read("/srv/rump/posix/sock_accept", req, sizeof(req),
-                             resp, sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r =
+      wasi_rump_rpc_read("/srv/rump/posix/sock_accept", req,
+                         (uint32_t)sizeof(req), resp, (uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   if (resp[0] != 0)
@@ -2547,8 +3040,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
       m3ApiGetArg(uint32_t, ri_data) m3ApiGetArg(uint32_t, ri_data_len)
           m3ApiGetArg(uint32_t, ri_flags) m3ApiGetArg(uint32_t, ro_datalen)
               m3ApiGetArg(uint32_t, ro_flags) Proc *p = up;
-  m3ApiCheckMem(ro_datalen, sizeof(uint32_t));
-  m3ApiCheckMem(ro_flags, sizeof(uint32_t));
+  m3ApiCheckMem(ro_datalen, (uint32_t)sizeof(uint32_t));
+  m3ApiCheckMem(ro_flags, (uint32_t)sizeof(uint32_t));
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
@@ -2559,10 +3052,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
   uint32_t iov_size = 0;
   if (wasi_iovecs_size(ri_data_len, &iov_size) < 0)
     m3ApiReturn(WASI_ERRNO_INVAL);
+  /*@ assert ri_data_len <= 0x1FFFFFFF; */
   m3ApiCheckMem(ri_data, iov_size);
 
   uint32_t total = 0;
   for (uint32_t i = 0; i < ri_data_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = ri_data + (i * 8);
     uint32_t len = m3ApiReadMem32(iov_addr + 4);
     if (len > WASI_RUMP_IO_MAX - total)
@@ -2574,6 +3069,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
     uint32_t remaining = total;
     uint32_t count = 0;
     for (uint32_t i = 0; i < ri_data_len && remaining > 0; i++) {
+      /*@ assert i * 8 <= 0xFFFFFFFF; */
       uint32_t iov_addr = ri_data + (i * 8);
       uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
       uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -2603,8 +3099,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
   req[3] = total;
 
   uint8_t resp[12 + WASI_RUMP_IO_MAX];
-  int r = wasi_rump_rpc_read("/srv/rump/posix/sock_recv", req, sizeof(req),
-                             resp, 12 + total);
+  int r = wasi_rump_rpc_read("/srv/rump/posix/sock_recv", req,
+                             (uint32_t)sizeof(req), resp, 12 + total);
   if (r < 4)
     m3ApiReturn(WASI_ERRNO_IO);
 
@@ -2624,6 +3120,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
   uint32_t remaining = count;
   uint32_t off = 12;
   for (uint32_t i = 0; i < ri_data_len && remaining > 0; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = ri_data + (i * 8);
     uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
     uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -2649,7 +3146,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
       m3ApiGetArg(uint32_t, si_data) m3ApiGetArg(uint32_t, si_data_len)
           m3ApiGetArg(uint32_t, si_flags) m3ApiGetArg(uint32_t, so_datalen)
               Proc *p = up;
-  m3ApiCheckMem(so_datalen, sizeof(uint32_t));
+  m3ApiCheckMem(so_datalen, (uint32_t)sizeof(uint32_t));
   if (!p->wasm.initialized || !p->wasm.wasi_ctx)
     m3ApiReturn(WASI_ERRNO_BADF);
   wasi_context_t *ctx = (wasi_context_t *)p->wasm.wasi_ctx;
@@ -2660,10 +3157,12 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
   uint32_t iov_size = 0;
   if (wasi_iovecs_size(si_data_len, &iov_size) < 0)
     m3ApiReturn(WASI_ERRNO_INVAL);
+  /*@ assert si_data_len <= 0x1FFFFFFF; */
   m3ApiCheckMem(si_data, iov_size);
 
   uint32_t total = 0;
   for (uint32_t i = 0; i < si_data_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = si_data + (i * 8);
     uint32_t len = m3ApiReadMem32(iov_addr + 4);
     if (len > WASI_RUMP_IO_MAX - total)
@@ -2674,6 +3173,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
   if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
     uint32_t written = 0;
     for (uint32_t i = 0; i < si_data_len; i++) {
+      /*@ assert i * 8 <= 0xFFFFFFFF; */
       uint32_t iov_addr = si_data + (i * 8);
       uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
       uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -2704,6 +3204,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
 
   uint32_t off = 16;
   for (uint32_t i = 0; i < si_data_len; i++) {
+    /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = si_data + (i * 8);
     uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
     uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
@@ -2716,9 +3217,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
 
   uint32_t resp[2];
   int r = wasi_rump_rpc_read("/srv/rump/posix/sock_send", req, req_size, resp,
-                             sizeof(resp));
+                             (uint32_t)sizeof(resp));
   free(req);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   uint32_t err = resp[0];
@@ -2750,9 +3251,10 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_shutdown) {
   req[1] = (uint32_t)fd;
   req[2] = how;
 
-  int r = wasi_rump_rpc_read("/srv/rump/posix/sock_shutdown", req, sizeof(req),
-                             &resp, sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r =
+      wasi_rump_rpc_read("/srv/rump/posix/sock_shutdown", req,
+                         (uint32_t)sizeof(req), &resp, (uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   if (resp != 0)
@@ -2811,13 +3313,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_get) {
   }
 
   uint32_t req[2];
-  uint8_t resp[4 + sizeof(rump_stat)];
+  uint8_t resp[4 + (uint32_t)sizeof(rump_stat)];
   req[0] = POSIX_FDSTAT_GET;
   req[1] = (uint32_t)fd;
 
-  int r = wasi_rump_rpc("/srv/rump/posix/fdstat", req, sizeof(req), resp,
-                        (uint32_t)sizeof(resp));
-  if (r < (int)sizeof(resp))
+  int r = wasi_rump_rpc("/srv/rump/posix/fdstat", req, (uint32_t)sizeof(req),
+                        resp, (uint32_t)(uint32_t)sizeof(resp));
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   uint32_t err = *(uint32_t *)resp;
@@ -2925,11 +3427,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_get) {
   memmove(req + 8, posix_path, full_len);
   free(fullpath);
 
-  uint8_t resp[4 + sizeof(rump_stat)];
+  uint8_t resp[4 + (uint32_t)sizeof(rump_stat)];
   int r = wasi_rump_rpc("/srv/rump/posix/pathstat", req, req_size, resp,
-                        (uint32_t)sizeof(resp));
+                        (uint32_t)(uint32_t)sizeof(resp));
   free(req);
-  if (r < (int)sizeof(resp))
+  if (r < (int)(uint32_t)sizeof(resp))
     m3ApiReturn(WASI_ERRNO_IO);
 
   uint32_t err = *(uint32_t *)resp;
@@ -2957,7 +3459,7 @@ static M3Result wasi_link_if(IM3Module module, u32int allow_mask, u32int flag,
                              M3RawCall func) {
   if ((allow_mask & flag) == 0) {
     DPRINT("WASI_LINK_SKIP: %s (flag 0x%x not in mask 0x%x)\n", name, flag,
-          allow_mask);
+           allow_mask);
     return m3Err_none;
   }
 

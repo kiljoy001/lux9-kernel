@@ -9,9 +9,16 @@
 #include "m3_exception.h"
 
 
+/*@
+  @ assigns \nothing;
+  @*/
 void Module_FreeFunctions (IM3Module i_module)
 {
-    for (u32 i = 0; i < i_module->numFunctions; ++i)
+      /*@ loop invariant 0 <= i <= i_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant i_module->numFunctions - i;
+    @*/
+  for (u32 i = 0; i < i_module->numFunctions; ++i)
     {
         IM3Function func = & i_module->functions [i];
         Function_Release (func);
@@ -19,6 +26,9 @@ void Module_FreeFunctions (IM3Module i_module)
 }
 
 
+/*@
+  @ assigns \nothing;
+  @*/
 void  m3_FreeModule  (IM3Module i_module)
 {
     if (i_module)
@@ -34,7 +44,11 @@ void  m3_FreeModule  (IM3Module i_module)
         m3_Free (i_module->dataSegments);
         m3_Free (i_module->table0);
 
-        for (u32 i = 0; i < i_module->numGlobals; ++i)
+          /*@ loop invariant 0 <= i <= i_module->numGlobals;
+    @ loop assigns i;
+    @ loop variant i_module->numGlobals - i;
+    @*/
+  for (u32 i = 0; i < i_module->numGlobals; ++i)
         {
             m3_Free (i_module->globals[i].name);
             FreeImportInfo(&(i_module->globals[i].import));
@@ -50,6 +64,10 @@ void  m3_FreeModule  (IM3Module i_module)
 }
 
 
+/*@
+  @ requires o_global == \null || \valid(o_global);
+  @ assigns \nothing;
+  @*/
 M3Result  Module_AddGlobal  (IM3Module io_module, IM3Global * o_global, u8 i_type, bool i_mutable, bool i_isImported)
 {
 _try {
@@ -69,6 +87,9 @@ _try {
     return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result  Module_PreallocFunctions  (IM3Module io_module, u32 i_totalFunctions)
 {
 _try {
@@ -81,6 +102,9 @@ _try {
     return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result  Module_AddFunction  (IM3Module io_module, u32 i_typeIndex, IM3ImportInfo i_importInfo)
 {
 _try {
@@ -113,9 +137,16 @@ _   (Module_PreallocFunctions(io_module, io_module->numFunctions));
 }
 
 #ifdef DEBUG
+/*@
+  @ assigns \nothing;
+  @*/
 void  Module_GenerateNames  (IM3Module i_module)
 {
-    for (u32 i = 0; i < i_module->numFunctions; ++i)
+      /*@ loop invariant 0 <= i <= i_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant i_module->numFunctions - i;
+    @*/
+  for (u32 i = 0; i < i_module->numFunctions; ++i)
     {
         IM3Function func = & i_module->functions [i];
 
@@ -127,7 +158,11 @@ void  Module_GenerateNames  (IM3Module i_module)
             func->numNames = 1;
         }
     }
-    for (u32 i = 0; i < i_module->numGlobals; ++i)
+      /*@ loop invariant 0 <= i <= i_module->numGlobals;
+    @ loop assigns i;
+    @ loop variant i_module->numGlobals - i;
+    @*/
+  for (u32 i = 0; i < i_module->numGlobals; ++i)
     {
         IM3Global global = & i_module->globals [i];
 
@@ -141,6 +176,9 @@ void  Module_GenerateNames  (IM3Module i_module)
 }
 #endif
 
+/*@
+  @ assigns \nothing;
+  @*/
 IM3Function  Module_GetFunction  (IM3Module i_module, u32 i_functionIndex)
 {
     IM3Function func = NULL;
@@ -155,6 +193,10 @@ IM3Function  Module_GetFunction  (IM3Module i_module, u32 i_functionIndex)
 }
 
 
+/*@
+  @ ensures \result == \null || \valid(\result);
+  @ assigns \nothing;
+  @*/
 const char*  m3_GetModuleName  (IM3Module i_module)
 {
     if (!i_module || !i_module->name)
@@ -163,11 +205,18 @@ const char*  m3_GetModuleName  (IM3Module i_module)
     return i_module->name;
 }
 
+/*@
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 void  m3_SetModuleName  (IM3Module i_module, const char* name)
 {
     if (i_module) i_module->name = name;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 IM3Runtime  m3_GetModuleRuntime  (IM3Module i_module)
 {
     return i_module ? i_module->runtime : NULL;

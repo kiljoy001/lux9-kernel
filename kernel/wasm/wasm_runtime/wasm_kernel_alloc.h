@@ -11,7 +11,7 @@ typedef u16int uint16_t;
 typedef u8int uint8_t;
 
 /* Disable floating point support for kernel (no SSE/FPU usage) */
-#define d_m3HasFloat 0
+#define d_m3HasFloat 1
 
 /* Fix const correctness for kernel strcmp */
 #define strcmp(s1, s2) strcmp((char *)(s1), (char *)(s2))

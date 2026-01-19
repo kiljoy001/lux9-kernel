@@ -14,13 +14,20 @@
 #include "m3_exception.h"
 #include "m3_info.h"
 
+/*@
+  @ assigns \nothing;
+  @*/
 IM3Environment m3_NewEnvironment() {
   IM3Environment env = m3_AllocStruct(M3Environment);
 
   if (env) {
     _try {
       // create FuncTypes for all simple block return ValueTypes
-      for (u8 t = c_m3Type_none; t <= c_m3Type_f64; t++) {
+        /*@ loop invariant 0 <= t <= = c_m3Type_f64;
+    @ loop assigns t;
+    @ loop variant = c_m3Type_f64 - t;
+    @*/
+  for (u8 t = c_m3Type_none; t <= c_m3Type_f64; t++) {
         IM3FuncType ftype;
         _(AllocFuncType(&ftype, 1));
 
@@ -45,6 +52,9 @@ IM3Environment m3_NewEnvironment() {
   return env;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void Environment_Release(IM3Environment i_environment) {
   IM3FuncType ftype = i_environment->funcTypes;
 
@@ -59,6 +69,9 @@ void Environment_Release(IM3Environment i_environment) {
   FreeCodePages(&i_environment->pagesReleased);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void m3_FreeEnvironment(IM3Environment i_environment) {
   if (i_environment) {
     Environment_Release(i_environment);
@@ -209,6 +222,9 @@ void *_FreeModule(IM3Module i_module, void *i_info) {
   return NULL;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void Runtime_Release(IM3Runtime i_runtime) {
   ForEachModule(i_runtime, _FreeModule, NULL);
   d_m3Assert(i_runtime->numActiveCodePages == 0);
@@ -220,6 +236,9 @@ void Runtime_Release(IM3Runtime i_runtime) {
   m3_Free(i_runtime->memory.mallocated);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void m3_FreeRuntime(IM3Runtime i_runtime) {
   if (i_runtime) {
     m3_PrintProfilerInfo();
@@ -306,6 +325,9 @@ M3Result EvaluateExpression(IM3Module i_module, void *o_expressed, u8 i_type,
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result InitMemory(IM3Runtime io_runtime, IM3Module i_module) {
   M3Result result = m3Err_none; // d_m3Assert (not
                                 // io_runtime->memory.wasmPages);
@@ -322,6 +344,9 @@ M3Result InitMemory(IM3Runtime io_runtime, IM3Module i_module) {
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result ResizeMemory(IM3Runtime io_runtime, u32 i_numPages) {
   M3Result result = m3Err_none;
 
@@ -396,6 +421,9 @@ _catch:
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result InitGlobals(IM3Module io_module) {
   M3Result result = m3Err_none;
 
@@ -409,7 +437,11 @@ M3Result InitGlobals(IM3Module io_module) {
 
     //          if (io_module->globalMemory)
     {
-      for (u32 i = 0; i < io_module->numGlobals; ++i) {
+        /*@ loop invariant 0 <= i <= io_module->numGlobals;
+    @ loop assigns i;
+    @ loop variant io_module->numGlobals - i;
+    @*/
+  for (u32 i = 0; i < io_module->numGlobals; ++i) {
         M3Global *g = &io_module->globals[i];
         m3log(runtime, "initializing global: %d", i);
 
@@ -435,11 +467,19 @@ M3Result InitGlobals(IM3Module io_module) {
   return result;
 }
 
+/*@
+  @ requires io_memory == \null || \valid(io_memory);
+  @ assigns \nothing;
+  @*/
 M3Result InitDataSegments(M3Memory *io_memory, IM3Module io_module) {
   M3Result result = m3Err_none;
 
   _throwif("unallocated linear memory", !(io_memory->mallocated));
 
+    /*@ loop invariant 0 <= i <= io_module->numDataSegments;
+    @ loop assigns i;
+    @ loop variant io_module->numDataSegments - i;
+    @*/
   for (u32 i = 0; i < io_module->numDataSegments; ++i) {
     M3DataSegment *segment = &io_module->dataSegments[i];
 
@@ -464,12 +504,19 @@ _catch:
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result InitElements(IM3Module io_module) {
   M3Result result = m3Err_none;
 
   bytes_t bytes = io_module->elementSection;
   cbytes_t end = io_module->elementSectionEnd;
 
+    /*@ loop invariant 0 <= i <= io_module->numElementSegments;
+    @ loop assigns i;
+    @ loop variant io_module->numElementSegments - i;
+    @*/
   for (u32 i = 0; i < io_module->numElementSegments; ++i) {
     u32 index;
     _(ReadLEB_u32(&index, &bytes, end));
@@ -494,7 +541,11 @@ M3Result InitElements(IM3Module io_module) {
       }
       _throwifnull(io_module->table0);
 
-      for (u32 e = 0; e < numElements; ++e) {
+        /*@ loop invariant 0 <= e <= numElements;
+    @ loop assigns e;
+    @ loop variant numElements - e;
+    @*/
+  for (u32 e = 0; e < numElements; ++e) {
         u32 functionIndex;
         _(ReadLEB_u32(&functionIndex, &bytes, end));
         _throwif("function index out of range",
@@ -512,9 +563,16 @@ _catch:
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_CompileModule(IM3Module io_module) {
   M3Result result = m3Err_none;
 
+    /*@ loop invariant 0 <= i <= io_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant io_module->numFunctions - i;
+    @*/
   for (u32 i = 0; i < io_module->numFunctions; ++i) {
     IM3Function f = &io_module->functions[i];
     if (f->wasm and not f->compiled) {
@@ -526,6 +584,9 @@ _catch:
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_RunStart(IM3Module io_module) {
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
   // Execution disabled for fuzzing builds
@@ -573,6 +634,9 @@ _catch:
 }
 
 // TODO: deal with main + side-modules loading efforcement
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_LoadModule(IM3Runtime io_runtime, IM3Module io_module) {
   M3Result result = m3Err_none;
 
@@ -605,8 +669,16 @@ _catch:
   return result;
 }
 
+/*@
+  @ requires i_globalName == \null || \valid(i_globalName);
+  @ assigns \nothing;
+  @*/
 IM3Global m3_FindGlobal(IM3Module io_module, const char *const i_globalName) {
   // Search exports
+    /*@ loop invariant 0 <= i <= io_module->numGlobals;
+    @ loop assigns i;
+    @ loop variant io_module->numGlobals - i;
+    @*/
   for (u32 i = 0; i < io_module->numGlobals; ++i) {
     IM3Global g = &io_module->globals[i];
     if (g->name and strcmp(g->name, i_globalName) == 0) {
@@ -615,6 +687,10 @@ IM3Global m3_FindGlobal(IM3Module io_module, const char *const i_globalName) {
   }
 
   // Search imports
+    /*@ loop invariant 0 <= i <= io_module->numGlobals;
+    @ loop assigns i;
+    @ loop variant io_module->numGlobals - i;
+    @*/
   for (u32 i = 0; i < io_module->numGlobals; ++i) {
     IM3Global g = &io_module->globals[i];
 
@@ -627,6 +703,9 @@ IM3Global m3_FindGlobal(IM3Module io_module, const char *const i_globalName) {
   return NULL;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_GetGlobal(IM3Global i_global, IM3TaggedValue o_value) {
   if (not i_global)
     return m3Err_globalLookupFailed;
@@ -654,6 +733,9 @@ M3Result m3_GetGlobal(IM3Global i_global, IM3TaggedValue o_value) {
   return m3Err_none;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_SetGlobal(IM3Global i_global, const IM3TaggedValue i_value) {
   if (not i_global)
     return m3Err_globalLookupFailed;
@@ -684,6 +766,9 @@ M3Result m3_SetGlobal(IM3Global i_global, const IM3TaggedValue i_value) {
   return m3Err_none;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3ValueType m3_GetGlobalType(IM3Global i_global) {
   return (i_global) ? (M3ValueType)(i_global->type) : c_m3Type_none;
 }
@@ -691,6 +776,10 @@ M3ValueType m3_GetGlobalType(IM3Global i_global) {
 void *v_FindFunction(IM3Module i_module, const char *const i_name) {
   extern int print(char *, ...); // Ensure print is available
   // Prefer exported functions
+    /*@ loop invariant 0 <= i <= i_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant i_module->numFunctions - i;
+    @*/
   for (u32 i = 0; i < i_module->numFunctions; ++i) {
     IM3Function f = &i_module->functions[i];
     if (f->export_name) {
@@ -708,6 +797,10 @@ void *v_FindFunction(IM3Module i_module, const char *const i_name) {
   }
 
   // Search internal functions
+    /*@ loop invariant 0 <= i <= i_module->numFunctions;
+    @ loop assigns i;
+    @ loop variant i_module->numFunctions - i;
+    @*/
   for (u32 i = 0; i < i_module->numFunctions; ++i) {
     IM3Function f = &i_module->functions[i];
 
@@ -716,7 +809,11 @@ void *v_FindFunction(IM3Module i_module, const char *const i_name) {
     if (isImported)
       continue;
 
-    for (int j = 0; j < f->numNames; j++) {
+      /*@ loop invariant 0 <= j <= f->numNames;
+    @ loop assigns j;
+    @ loop variant f->numNames - j;
+    @*/
+  for (int j = 0; j < f->numNames; j++) {
       if (f->names[j] and strcmp(f->names[j], i_name) == 0)
         return f;
     }
@@ -784,6 +881,9 @@ _catch:
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static M3Result checkStartFunction(IM3Module i_module) {
   M3Result result = m3Err_none;
   d_m3Assert(i_module);
@@ -796,6 +896,9 @@ static M3Result checkStartFunction(IM3Module i_module) {
   return result;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uint32_t m3_GetArgCount(IM3Function i_function) {
   if (i_function) {
     IM3FuncType ft = i_function->funcType;
@@ -806,6 +909,9 @@ uint32_t m3_GetArgCount(IM3Function i_function) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uint32_t m3_GetRetCount(IM3Function i_function) {
   if (i_function) {
     IM3FuncType ft = i_function->funcType;
@@ -816,6 +922,9 @@ uint32_t m3_GetRetCount(IM3Function i_function) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3ValueType m3_GetArgType(IM3Function i_function, uint32_t index) {
   if (i_function) {
     IM3FuncType ft = i_function->funcType;
@@ -826,6 +935,9 @@ M3ValueType m3_GetArgType(IM3Function i_function, uint32_t index) {
   return c_m3Type_none;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3ValueType m3_GetRetType(IM3Function i_function, uint32_t index) {
   if (i_function) {
     IM3FuncType ft = i_function->funcType;
@@ -845,6 +957,9 @@ u8 *GetStackPointerForArgs(IM3Function i_function) {
   return (u8 *)stack;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_CallV(IM3Function i_function, ...) {
   va_list ap;
   va_start(ap, i_function);
@@ -853,6 +968,9 @@ M3Result m3_CallV(IM3Function i_function, ...) {
   return r;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void ReportNativeStackUsage() {
 #if d_m3LogNativeStack
   int stackUsed = m3StackGetMax();
@@ -860,6 +978,9 @@ static void ReportNativeStackUsage() {
 #endif
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_CallVL(IM3Function i_function, va_list i_args) {
   IM3Runtime runtime = i_function->module->runtime;
   IM3FuncType ftype = i_function->funcType;
@@ -880,6 +1001,10 @@ M3Result m3_CallVL(IM3Function i_function, va_list i_args) {
 
   s = GetStackPointerForArgs(i_function);
 
+    /*@ loop invariant 0 <= i <= ftype->numArgs;
+    @ loop assigns i;
+    @ loop variant ftype->numArgs - i;
+    @*/
   for (u32 i = 0; i < ftype->numArgs; ++i) {
     switch (d_FuncArgType(ftype, i)) {
     case c_m3Type_i32:
@@ -945,6 +1070,10 @@ M3Result m3_Call(IM3Function i_function, uint32_t i_argc,
 
   s = GetStackPointerForArgs(i_function);
 
+    /*@ loop invariant 0 <= i <= ftype->numArgs;
+    @ loop assigns i;
+    @ loop variant ftype->numArgs - i;
+    @*/
   for (u32 i = 0; i < ftype->numArgs; ++i) {
     switch (d_FuncArgType(ftype, i)) {
     case c_m3Type_i32:
@@ -1011,6 +1140,10 @@ M3Result m3_CallArgv(IM3Function i_function, uint32_t i_argc,
 
   s = GetStackPointerForArgs(i_function);
 
+    /*@ loop invariant 0 <= i <= ftype->numArgs;
+    @ loop assigns i;
+    @ loop variant ftype->numArgs - i;
+    @*/
   for (u32 i = 0; i < ftype->numArgs; ++i) {
     switch (d_FuncArgType(ftype, i)) {
     case c_m3Type_i32:
@@ -1073,6 +1206,10 @@ M3Result m3_GetResults(IM3Function i_function, uint32_t i_retc,
 
   u8 *s = (u8 *)runtime->stack;
 
+    /*@ loop invariant 0 <= i <= ftype->numRets;
+    @ loop assigns i;
+    @ loop variant ftype->numRets - i;
+    @*/
   for (u32 i = 0; i < ftype->numRets; ++i) {
     switch (d_FuncRetType(ftype, i)) {
     case c_m3Type_i32:
@@ -1100,6 +1237,9 @@ M3Result m3_GetResults(IM3Function i_function, uint32_t i_retc,
   return m3Err_none;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_GetResultsV(IM3Function i_function, ...) {
   va_list ap;
   va_start(ap, i_function);
@@ -1108,6 +1248,9 @@ M3Result m3_GetResultsV(IM3Function i_function, ...) {
   return r;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result m3_GetResultsVL(IM3Function i_function, va_list o_rets) {
   IM3Runtime runtime = i_function->module->runtime;
   IM3FuncType ftype = i_function->funcType;
@@ -1117,6 +1260,10 @@ M3Result m3_GetResultsVL(IM3Function i_function, va_list o_rets) {
   }
 
   u8 *s = (u8 *)runtime->stack;
+    /*@ loop invariant 0 <= i <= ftype->numRets;
+    @ loop assigns i;
+    @ loop variant ftype->numRets - i;
+    @*/
   for (u32 i = 0; i < ftype->numRets; ++i) {
     switch (d_FuncRetType(ftype, i)) {
     case c_m3Type_i32:
@@ -1144,6 +1291,9 @@ M3Result m3_GetResultsVL(IM3Function i_function, va_list o_rets) {
   return m3Err_none;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void ReleaseCodePageNoTrack(IM3Runtime i_runtime, IM3CodePage i_codePage) {
   if (i_codePage) {
     IM3CodePage *list;
@@ -1183,10 +1333,16 @@ IM3CodePage AcquireCodePageWithCapacity(IM3Runtime i_runtime,
   return page;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 IM3CodePage AcquireCodePage(IM3Runtime i_runtime) {
   return AcquireCodePageWithCapacity(i_runtime, d_m3CodePageFreeLinesThreshold);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void ReleaseCodePage(IM3Runtime i_runtime, IM3CodePage i_codePage) {
   if (i_codePage) {
     ReleaseCodePageNoTrack(i_runtime, i_codePage);
@@ -1235,6 +1391,10 @@ M3Result m3Error(M3Result i_result, IM3Runtime i_runtime, IM3Module i_module,
 }
 #endif
 
+/*@
+  @ requires o_info == \null || \valid(o_info);
+  @ assigns \nothing;
+  @*/
 void m3_GetErrorInfo(IM3Runtime i_runtime, M3ErrorInfo *o_info) {
   if (i_runtime) {
     *o_info = i_runtime->error;
@@ -1242,6 +1402,9 @@ void m3_GetErrorInfo(IM3Runtime i_runtime, M3ErrorInfo *o_info) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void m3_ResetErrorInfo(IM3Runtime i_runtime) {
   if (i_runtime) {
     M3_INIT(i_runtime->error);
@@ -1267,6 +1430,9 @@ uint8_t *m3_GetMemory(IM3Runtime i_runtime, uint32_t *o_memorySizeInBytes,
   return memory;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uint32_t m3_GetMemorySize(IM3Runtime i_runtime) {
   if (i_runtime && i_runtime->memory.mallocated) {
     return i_runtime->memory.mallocated->length;

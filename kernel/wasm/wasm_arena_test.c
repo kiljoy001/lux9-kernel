@@ -18,12 +18,19 @@ extern int sys_wasm_destroy(Fcall *tx, Fcall *rx);
 static void wasm_arena_test_main(void);
 
 /* Arena test kernel process wrapper */
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void wasm_arena_test_proc(void *) {
     print("=== WASM Arena Test Starting (in kproc) ===\n");
     wasm_arena_test_main();
 }
 
 /* Arena test: Load and execute arena_test.wasm */
+/*@
+  @ assigns \nothing;
+  @*/
 static void wasm_arena_test_main(void) {
     print("=== WASM Arena Test - Loading Module ===\n");
 
@@ -93,7 +100,11 @@ static void wasm_arena_test_main(void) {
         "test_conservation"
     };
 
-    for (int i = 0; i < 5; i++) {
+      /*@ loop invariant 0 <= i <= 5;
+    @ loop assigns i;
+    @ loop variant 5 - i;
+    @*/
+  for (int i = 0; i < 5; i++) {
         print("\n=== Test %d: %s ===\n", i+1, tests[i]);
 
         /* Build Tsyscall(SYS_WASM_EXECUTE) */
@@ -141,6 +152,9 @@ static void wasm_arena_test_main(void) {
 }
 
 /* Public entry point - spawns test as kproc */
+/*@
+  @ assigns \nothing;
+  @*/
 void wasm_arena_test(void) {
     kproc("wasm_arena_test", wasm_arena_test_proc, nil);
     print("=== WASM Arena Test - kproc spawned ===\n");

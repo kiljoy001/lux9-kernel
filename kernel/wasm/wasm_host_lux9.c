@@ -23,6 +23,9 @@
 #define nil ((void *)0)
 #endif
 
+/*@
+  @ assigns \nothing;
+  @*/
 static int wasm_ptr_in_bounds(IM3Runtime runtime, uint32_t ptr, uint32_t len) {
   uint32_t memsize = m3_GetMemorySize(runtime);
   if (ptr > memsize)
@@ -122,6 +125,9 @@ m3ApiRawFunction(host_lux9_random) {
 
 /* ========== Linking Function ========== */
 
+/*@
+  @ assigns \nothing;
+  @*/
 M3Result LinkLux9(IM3Module module) {
   M3Result result = m3Err_none;
   const char *ns = "lux9";

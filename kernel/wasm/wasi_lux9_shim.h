@@ -10,14 +10,7 @@
 #include "../include/portlib.h"
 #include "../include/u.h"
 
-/* Provide standard types required by wasm3.h */
-typedef u8int uint8_t;
-typedef u16int uint16_t;
-typedef u32int uint32_t;
-typedef u64int uint64_t;
-typedef s32int int32_t;
-typedef s64int int64_t;
-typedef uintptr uintptr_t;
+/* Standard types are provided by wasm3.h when __PLAN9_KERNEL__ is defined */
 
 #include "wasm_runtime/wasm3/wasm3.h"
 
@@ -29,9 +22,9 @@ typedef struct {
   u32int rights;         /* WASI rights */
   u32int rights_inheriting;
   int is_dir;
-  int backend;           /* WASI backend selector */
-  char *base_path;       /* Preopen/base path for dirfds */
-  u64int offset; /* Current offset */
+  int backend;     /* WASI backend selector */
+  char *base_path; /* Preopen/base path for dirfds */
+  u64int offset;   /* Current offset */
 } wasi_fd_entry_t;
 
 /* WASI Context for a Process */

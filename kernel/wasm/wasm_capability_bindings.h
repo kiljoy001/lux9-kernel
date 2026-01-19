@@ -11,7 +11,7 @@
  *   - Kernel validates all capability operations
  *
  * Integration:
- *   - Uses kernel/capability/clr_capability.{c,h} for actual capability logic
+ *   - Uses kernel/capability/lux_capability.{c,h} for actual capability logic
  *   - Maintains per-process capability handle table
  *   - Handles are process-local, not transferable directly (use IPC)
  */
@@ -19,7 +19,8 @@
 #ifndef WASM_CAPABILITY_BINDINGS_H
 #define WASM_CAPABILITY_BINDINGS_H
 
-#include "../capability/clr_capability.h"
+#include "../capability/lux_capability.h"
+#include "wasm_runtime/wasm3/wasm3.h"
 
 /* WASM uses 32-bit handles for capability references */
 typedef u32int wasm_cap_handle_t;
@@ -36,7 +37,7 @@ typedef u32int wasm_cap_handle_t;
  * This provides isolation: process A's handle 5 != process B's handle 5.
  */
 typedef struct wasm_cap_table {
-  clr_monotonic_capability_t *caps[WASM_CAP_TABLE_SIZE];
+  lux_capability_t *caps[WASM_CAP_TABLE_SIZE];
   u32int next_handle; /* Next available handle */
 } wasm_cap_table_t;
 
@@ -48,11 +49,11 @@ void wasm_cap_table_destroy(wasm_cap_table_t *table);
 
 /* Insert capability and return handle */
 wasm_cap_handle_t wasm_cap_table_insert(wasm_cap_table_t *table,
-                                        clr_monotonic_capability_t *cap);
+                                        lux_capability_t *cap);
 
 /* Lookup capability by handle */
-clr_monotonic_capability_t *wasm_cap_table_lookup(wasm_cap_table_t *table,
-                                                  wasm_cap_handle_t handle);
+lux_capability_t *wasm_cap_table_lookup(wasm_cap_table_t *table,
+                                        wasm_cap_handle_t handle);
 
 /* Remove capability from table */
 void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle);
@@ -81,8 +82,8 @@ void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle);
  * WASM signature: (i32, i32) -> i32
  */
 wasm_cap_handle_t wasm_import_cap_create_module(
-    wasm_cap_table_t *table, capability_manager_t *manager, u8int *linear_mem,
-    u32int mem_size, u32int name_ptr, u32int name_len);
+    wasm_cap_table_t *table, lux_capability_manager_t *manager,
+    u8int *linear_mem, u32int mem_size, u32int name_ptr, u32int name_len);
 
 /* Derive child capability with reduced permissions
  *
@@ -92,7 +93,7 @@ wasm_cap_handle_t wasm_import_cap_create_module(
  * @param linear_mem: Pointer to WASM linear memory base
  * @param mem_size: Size of WASM linear memory
  * @param perms: Requested permissions (must be subset of parent)
- * @param scope: New scope (CAP_SCOPE_CLASS or CAP_SCOPE_METHOD)
+ * @param scope: New scope (LUX_CAP_SCOPE_CLASS or LUX_CAP_SCOPE_METHOD)
  * @param name_ptr: Pointer to derived capability name in WASM memory
  * @param name_len: Length of name
  * @returns: New capability handle, or WASM_CAP_INVALID_HANDLE on error
@@ -100,7 +101,7 @@ wasm_cap_handle_t wasm_import_cap_create_module(
  * WASM signature: (i32, i32, i32, i32, i32) -> i32
  */
 wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
-                                         capability_manager_t *manager,
+                                         lux_capability_manager_t *manager,
                                          wasm_cap_handle_t parent_handle,
                                          u8int *linear_mem, u32int mem_size,
                                          u32int perms, u32int scope,
@@ -128,7 +129,7 @@ u32int wasm_import_cap_check(wasm_cap_table_t *table, wasm_cap_handle_t handle,
  * WASM signature: (i32) -> i32
  */
 u32int wasm_import_cap_validate(wasm_cap_table_t *table,
-                                capability_manager_t *manager,
+                                lux_capability_manager_t *manager,
                                 wasm_cap_handle_t handle);
 
 /* Get capability permissions (for inspection)
@@ -154,12 +155,6 @@ u32int wasm_import_cap_revoke(wasm_cap_table_t *table,
                               wasm_cap_handle_t handle);
 
 /* ========== IPC Integration ========== */
-/*
- * For message-based IPC, capabilities need to be:
- *   1. Serialized into messages (as UUIDs)
- *   2. Deserialized on receive (lookup by UUID, insert into receiver's table)
- *   3. Validated on transfer (sender must have TRANSFER permission)
- */
 
 /* Serialize capability to UUID for IPC
  *
@@ -178,8 +173,12 @@ u32int wasm_cap_serialize_for_ipc(wasm_cap_table_t *table,
  * @param uuid: UUID from IPC message
  * @returns: New handle in receiver's table, or WASM_CAP_INVALID_HANDLE
  */
-wasm_cap_handle_t wasm_cap_deserialize_from_ipc(wasm_cap_table_t *table,
-                                                capability_manager_t *manager,
-                                                const uuid_t *uuid);
+wasm_cap_handle_t
+wasm_cap_deserialize_from_ipc(wasm_cap_table_t *table,
+                              lux_capability_manager_t *manager,
+                              const uuid_t *uuid);
+
+/* Link capability functions to WASM module */
+M3Result LinkCapabilities(IM3Module module);
 
 #endif /* WASM_CAPABILITY_BINDINGS_H */
