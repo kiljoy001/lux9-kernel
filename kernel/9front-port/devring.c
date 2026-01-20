@@ -1,14 +1,14 @@
 #include "u.h"
 /* #include "lib.h" */
+#include "9p_router.h"
 #include "borrowchecker.h"
 #include "dat.h"
 #include "error.h"
-#include "fns.h"
 #include "fcall.h"
+#include "fns.h"
 #include "hhdm.h"
 #include "ipc_ring.h"
 #include "mem.h"
-#include "9p_router.h"
 #include "pageown.h"
 #include "pebble.h"
 
@@ -68,22 +68,22 @@ static void ringclose(Chan *c) {
   }
 }
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long ringread(Chan *c, void *va, long n, vlong offset) {
   if ((ulong)c->qid.path == Qctl)
     return readstr(offset, va, n, "ring 0: page-flip mode active\n");
   return devdirread(c, va, n, ringdir, nelem(ringdir), devgen);
 }
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long ringwrite(Chan *c, void *va, long n, vlong offset) {
   struct ChannelState *cs;
 
@@ -194,8 +194,7 @@ static int p9_build_reply_batch(Proc *caller, BatchHeader *batch,
     if (write_offset + BIT16SZ >= BY2PG)
       break;
     u16int avail = BY2PG - (write_offset + BIT16SZ);
-    u16int rep_size =
-        convS2M(&r, resp_page + write_offset + BIT16SZ, avail);
+    u16int rep_size = convS2M(&r, resp_page + write_offset + BIT16SZ, avail);
     if (rep_size == 0)
       break;
 
@@ -225,7 +224,7 @@ static int p9_build_reply_batch(Proc *caller, BatchHeader *batch,
   @*/
 static void ring_process_batch(struct ChannelState *cs) {
   struct IpcChannel *chan = cs->kmap_addr;
-  u32int head, tail;
+  u32int head, tail, c_tail;
   u64int page_handle;
   uintptr page_phys, user_vaddr;
   struct BatchHeader *batch;
@@ -347,7 +346,7 @@ static void ring_process_batch(struct ChannelState *cs) {
 
   skip_page:
     /* 4. Return to Completion Ring */
-    u32int c_tail = chan->completion.tail;
+    c_tail = chan->completion.tail;
     chan->completion.pages[c_tail & RING_MASK] = page_handle;
     chan->completion.tail++;
 

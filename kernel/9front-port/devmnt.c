@@ -1,6 +1,4 @@
-#ifndef __FRAMAC__
-/*
- * devmnt.c - 9front 9P mount device
+/* devmnt.c - 9front 9P mount device
  *
  * FORMAL VERIFICATION:
  *   Coq proofs:  proofs/mnt/types.v, tag.v, rpc.v
@@ -642,6 +640,11 @@ static int mntwstat(Chan *c, uchar *dp, int n) {
   return n;
 }
 
+/*@ requires c != \null;
+    requires buf != \null;
+    requires (n > 0 ==> \valid((char*)buf + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)buf)[0 .. (integer)n-1] \if n > 0;
+*/
 static long mntread(Chan *c, void *buf, long n, vlong off) {
   uchar *p, *e;
   int dirlen;
@@ -662,6 +665,11 @@ static long mntread(Chan *c, void *buf, long n, vlong off) {
   return n;
 }
 
+/*@ requires c != \null;
+    requires buf != \null;
+    requires (n > 0 ==> \valid_read((char*)buf + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long mntwrite(Chan *c, void *buf, long n, vlong off) {
   return mntrdwr(Twrite, c, buf, n, off);
 }
@@ -1356,7 +1364,7 @@ static void mntfree(Mntrpc *r) {
     unlock(&mntalloc.lock);
     return;
   }
-  freetag(r->request.tag);  // BUG: See tag_queue_safety.v line 305-328
+  freetag(r->request.tag); // BUG: See tag_queue_safety.v line 305-328
   unlock(&mntalloc.lock);
   free(r);
 }
@@ -1482,4 +1490,3 @@ Dev mntdevtab = {
     mntstat,  mntopen,  mntcreate,   mntclose,  mntread,
     devbread, mntwrite, devbwrite,   mntremove, mntwstat,
 };
-#endif

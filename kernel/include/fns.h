@@ -135,6 +135,12 @@ int eqchantdqid(Chan *, int, int, Qid, int);
 int eqqid(Qid, Qid);
 #ifdef __FRAMAC__
 /* Frama-C compatible version without attributes */
+/*@
+  @ requires \valid_read(e);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
 void lux9_error(char *e);
 #define error(e) lux9_error(e)
 #else
@@ -179,7 +185,7 @@ uintptr getmalloctag(void *);
 uintptr getrealloctag(void *);
 _Noreturn void gotolabel(Label *);
 /*@ requires name == \null || valid_string(name);
-  @ assigns \result \from name[0..];
+  @ assigns \result \from name[0 .. ACSL_MAXSTR-1];
   @ ensures \result == \null || valid_string(\result);
   @*/
 char *getconf(char *name);
@@ -214,8 +220,16 @@ void iomapinit(ulong);
 int ioreserve(ulong, ulong, ulong, char *);
 int ioreservewin(ulong, ulong, ulong, ulong, char *);
 int iounused(ulong, ulong);
-int iprint(char *, ...);
-int iprint_intr(char *, ...);
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
+int iprint(char *fmt, ...);
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
+int iprint_intr(char *fmt, ...);
 void isdir(Chan *);
 int iseve(void);
 int islo(void);
@@ -226,7 +240,11 @@ void kexit(Ureg *);
 void kickpager(void);
 void killbig(void);
 void killproc(Proc *, int);
-int kproc(char *, void (*)(void *), void *);
+/*@
+  @ requires valid_string(name);
+  @ assigns \result;
+  @*/
+int kproc(char *name, void (*fn)(void *), void *arg);
 void kprocchild(Proc *, void (*)(void));
 void linkproc(void);
 extern void (*kproftimer)(uintptr);
@@ -593,11 +611,7 @@ void *xallocz(ulong size, int zero);
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *xallocz_raw(ulong size, int zero);
-/*@ terminates \true;
-    allocates \result;
-    assigns \result \from size;
-    ensures \result == \null || \valid((char*)\result + (0..size-1));
-*/
+
 /*@ terminates \true;
     allocates \result;
     assigns \result \from size;

@@ -311,12 +311,16 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              const u8int *vault_secret) {
   /*@
     @ requires out_cap == \null || \valid(out_cap);
-    @ requires vault_secret == \null || \valid((u8int *)vault_secret +
+    @ requires vault_secret == \null || \valid_read(vault_secret +
     (0..BLIND_LEDGER_SECRET_SIZE-1));
     @ ensures (out_cap == \null || vault_secret == \null || len == 0 || pa == 0
     ||
     @          (len % BLIND_LEDGER_TOKEN_UNIT != 0)) ==> \result ==
     BLIND_LEDGER_EINVAL;
+    @ ensures \result == BLIND_LEDGER_OK ==> \valid(out_cap);
+    @ assigns *out_cap, ledger_tree,
+    ledger_pa_index[0..LEDGER_PA_HASHTABLE_SIZE-1],
+    @         ledger_entry_count, ledger_total_memory, derivation_counter;
     @*/
   /*
     // Input validation per mint_refinement

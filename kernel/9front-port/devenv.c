@@ -1,6 +1,4 @@
-#ifndef __FRAMAC__
-/*
- * devenv.c - 9front environment variable device
+/* devenv.c - 9front environment variable device
  *
  * FORMAL VERIFICATION:
  *   Coq proofs:  proofs/env/types.v, conservation.v, hash.v
@@ -353,12 +351,17 @@ static void envclose(Chan *c) {
   }
 }
 
-static long envread(Chan *c, void *a, long n, vlong off) {
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
+static long envread(Chan *c, void *va, long n, vlong off) {
   Egrp *eg;
   Evalue *e;
 
   if (c->qid.type & QTDIR)
-    return devdirread(c, a, n, nil, 0, envgen);
+    return devdirread(c, va, n, nil, 0, envgen);
 
   eg = envgrp(c);
   rlock(&eg->rwlock);
@@ -376,13 +379,18 @@ static long envread(Chan *c, void *a, long n, vlong off) {
   if (n <= 0)
     n = 0;
   else
-    memmove(a, e->value + off, n);
+    memmove(va, e->value + off, n);
   runlock(&eg->rwlock);
   poperror();
   return n;
 }
 
-static long envwrite(Chan *c, void *a, long n, vlong off) {
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
+static long envwrite(Chan *c, void *va, long n, vlong off) {
   Egrp *eg;
   Evalue *e;
   int diff;
@@ -403,7 +411,7 @@ static long envwrite(Chan *c, void *a, long n, vlong off) {
     e->value = envrealloc(eg, e->value, e->len + diff);
   else
     diff = 0;
-  memmove(e->value + off, a, n); /* might fault */
+  memmove(e->value + off, va, n); /* might fault */
   if (off > e->len)
     memset(e->value + e->len, 0, off - e->len);
   e->len += diff;
@@ -642,4 +650,3 @@ void kconf_set(char *name, char *val) {
 
   wunlock(&eg->rwlock);
 }
-#endif

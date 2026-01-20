@@ -259,8 +259,15 @@ typedef __builtin_va_list va_list;
 #define va_copy(dest, src) __builtin_va_copy(dest, src)
 
 // Plan 9 formatted I/O functions (stubs)
-/*@ assigns \result \from fmt; */
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
 extern int print(char *fmt, ...);
+/*@
+  @ requires valid_string(fmt);
+  @ assigns buf[0 .. ACSL_MAXSTR-1];
+  @*/
 extern int sprint(char *buf, char *fmt, ...);
 extern int snprint(char *buf, int len, char *fmt, ...);
 extern int vsnprint(char *buf, int len, char *fmt, va_list args);

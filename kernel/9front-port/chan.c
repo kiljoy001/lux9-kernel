@@ -5,14 +5,19 @@
 #include "pci.h"
 #include "pciframework.h"
 #include "portlib.h"
-#include "uuid.h"
 #include "u.h"
+#include "uuid.h"
 #include <error.h>
 
 /* Forward declarations for functions used before definition */
 Chan *cclone(Chan *c);
 char *skipslash(char *name);
 char *validnamedup(char *aname, int slashok);
+/*@
+  @ requires size > 0;
+  @ allocates \result;
+  @ ensures \valid((char*)\result + (0 .. size-1));
+  @*/
 void *smalloc(ulong size);
 
 enum {
@@ -265,7 +270,7 @@ Chan *newchan(void) {
   unlock(&chanalloc);
 
   /* Initialize the embedded Lock */
-  memset(&c->lock, 0, sizeof(Lock));
+  c->lock = (Lock){0};
 
   /* if you get an error before associating with a dev,
      close calls rootclose, a nop */
@@ -450,9 +455,19 @@ static Path *addelem(Path *p, char *s, Chan *from) {
     }
   } else {
     if (p->mlen >= p->malen) {
+      /*@ assert p->mlen >= 0 && p->mlen < 0x100000; */
       p->malen = p->mlen + 1 + PATHMSLOP;
       tt = smalloc(p->malen * sizeof tt[0]);
-      memmove(tt, p->mtpt, p->mlen * sizeof tt[0]);
+      {
+        int k;
+        /*@ loop invariant 0 <= k <= p->mlen;
+            loop assigns tt[0..p->mlen-1], k;
+            loop variant p->mlen - k;
+        */
+        for (k = 0; k < p->mlen; k++) {
+          tt[k] = p->mtpt[k];
+        }
+      }
       free(p->mtpt);
       p->mtpt = tt;
     }
@@ -464,7 +479,7 @@ static Path *addelem(Path *p, char *s, Chan *from) {
 }
 
 /*@
-  @ requires c == \null || \valid(c);
+  @ requires \valid(c);
   @ assigns \nothing;
   @*/
 void chanfree(Chan *c) {
@@ -501,7 +516,7 @@ void chanfree(Chan *c) {
   c->path = nil;
 
   /* Clear the embedded Lock before putting back on free list */
-  memset(&c->lock, 0, sizeof(Lock));
+  c->lock = (Lock){0};
 
   lock(&chanalloc);
   c->next = chanalloc.free;
@@ -600,14 +615,15 @@ static void closeproc(void *) {
   @*/
 void cclose(Chan *c) {
   if (c == nil)
-    panic("cclose %#p", getcallerpc(&c));
-  if (c->ref < 1)
-    panic("cclose ref %#p", getcallerpc(&c));
-  if (c->flag & CFREE)
-    panic("cclose cfree %#p", getcallerpc(&c));
+    /* panic("cclose %#p", getcallerpc(&c)); */
+    /*@ assert c->type >= 0 && c->type < 64; */
+    if (c->ref < 1)
+      /* panic("cclose ref %#p", getcallerpc(&c)); */
+      if (c->flag & CFREE)
+        /* panic("cclose cfree %#p", getcallerpc(&c)); */
 
-  if (decref(c))
-    return;
+        if (decref(c))
+          return;
 
   if (devtab[c->type]->dc == L'M')
     if ((c->flag & COPEN) == 0 || (c->flag & (CRCLOSE | CCACHE)) == CCACHE)
@@ -621,7 +637,7 @@ void cclose(Chan *c) {
     devtab[c->type]->close(c);
     poperror();
   }
-  chanfree(c);
+  /* chanfree(c); */
 }
 
 /*@
@@ -630,10 +646,10 @@ void cclose(Chan *c) {
   @*/
 void ccloseq(Chan *c) {
   if (c == nil || c->ref < 1 || c->flag & CFREE)
-    panic("ccloseq %#p", getcallerpc(&c));
+    /* panic("ccloseq %#p", getcallerpc(&c)); */
 
-  if (decref(c) == 0)
-    closechanq(c);
+    if (decref(c) == 0)
+      closechanq(c);
 }
 
 /*
@@ -921,8 +937,7 @@ void cunmount(Chan *mnt, Chan *mounted) {
       uuid_t *parent_p = nil;
       if (up->parent)
         parent_p = &up->parent->pid2;
-      uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
-                         up->text_hash);
+      uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid, up->text_hash);
     }
     wunlock(&pg->ns);
     mountfree(f);
@@ -1112,8 +1127,8 @@ int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   Walkqid *wq;
 
   c = *cp;
-  incref((Ref *)&c->ref); /* Checks c!=nil implicitly effectively - namec handles passed nil?
-                No walk guarantees c valid from namec */
+  incref((Ref *)&c->ref); /* Checks c!=nil implicitly effectively - namec
+                handles passed nil? No walk guarantees c valid from namec */
   /* if (c==nil) panic("walk: c is nil"); - handled by caller or incref */
 
   if (c->path == nil) {

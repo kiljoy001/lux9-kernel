@@ -40,8 +40,8 @@
 
 /*@
   @ predicate valid_string(char *s) =
-  @   \exists integer n; 0 <= n < ACSL_MAXSTR &&
-  @     \valid_read(s + (0..n)) &&
+  @   \exists integer n; 0 <= n < (integer)ACSL_MAXSTR &&
+  @     \valid_read(s + (0 .. (integer)n)) &&
   @     s[n] == '\0' &&
   @     (\forall integer i; 0 <= i < n ==> s[i] != '\0');
   @*/

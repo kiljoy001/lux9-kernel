@@ -21,44 +21,51 @@
 /*
  * mem routines
  */
-extern void *memccpy(void *, void *, int, usize);
-/*@ assigns \result \from s;
+extern void *memccpy(void *, const void *, int, usize);
+/*@
+  @ requires (n > 0 ==> \valid((char*)s + (0 .. (integer)n-1))) || (n == 0);
+  @ terminates \true;
+  @ assigns ((char*)s)[0 .. (integer)n-1] \if (n > 0);
   @ ensures \result == s;
-  @ terminates \true;
-  */
+  @*/
 extern void *memset(void *s, int c, usize n);
-extern int memcmp(void *, void *, usize);
-/*@ assigns \result \from dest;
-  @ ensures \result == dest;
+extern int memcmp(const void *, const void *, usize);
+/*@
+  @ requires (n > 0 ==> \valid((char*)dest + (0 .. (integer)n-1))) || (n == 0);
+  @ requires (n > 0 ==> \valid_read((char*)src + (0 .. (integer)n-1))) || (n ==
+  0);
   @ terminates \true;
-  */
-extern void *memmove(void *dest, void *src, usize n);
-extern void *memchr(void *, int, usize);
+  @ assigns ((char*)dest)[0 .. (integer)n-1] \if (n > 0);
+  @ assigns \result \from dest;
+  @ ensures \result == dest;
+  @*/
+extern void *memmove(void *dest, const void *src, usize n);
+extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
  */
-extern char *strcat(char *, char *);
-extern char *strchr(char *, int);
-extern char *strrchr(char *, int);
+extern char *strcat(char *, const char *);
+extern char *strchr(const char *, int);
+extern char *strrchr(const char *, int);
 /*@ requires s1 == \null || valid_string(s1);
   @ requires s2 == \null || valid_string(s2);
   @ assigns \nothing;
   @ terminates \true;
   */
-extern int strcmp(char *s1, char *s2);
-extern char *strcpy(char *, char *);
-extern char *strecpy(char *, char *, char *);
-extern char *strncat(char *, char *, long);
-extern char *strncpy(char *, char *, long);
-extern int strncmp(char *, char *, long);
+extern int strcmp(const char *s1, const char *s2);
+extern char *strcpy(char *, const char *);
+extern char *strecpy(char *, char *, const char *);
+extern char *strncat(char *, const char *, long);
+extern char *strncpy(char *, const char *, long);
+extern int strncmp(const char *s1, const char *s2, long);
 /*@ requires s == \null || valid_string(s);
   @ assigns \nothing;
   @ ensures \result >= 0;
   @ terminates \true;
   */
-extern long strlen(char *s);
-extern char *strstr(char *, char *);
+extern long strlen(const char *s);
+extern char *strstr(const char *, const char *);
 extern int atoi(char *);
 extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
@@ -96,6 +103,7 @@ extern int abs(int);
 /*
  * print routines
  */
+#ifndef __FRAMAC__
 typedef struct Fmt Fmt;
 typedef int (*Fmts)(Fmt *);
 struct Fmt {
@@ -112,11 +120,21 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-/*@ assigns \result \from fmt; */
+#endif
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
 extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
-extern int snprint(char *, int, char *, ...);
+/*@
+  @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+  @ ensures \result >= 0;
+  @*/
+extern int snprint(char *s, int n, char *fmt, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
@@ -222,6 +240,7 @@ extern void qsort(void *, usize, usize, int (*)(void *, void *));
 #define NSAVE 2 /* clear note but hold state */
 #define NRSTR 3 /* restore saved state */
 
+#ifndef __FRAMAC__
 typedef struct Qid Qid;
 typedef struct Dir Dir;
 typedef struct OWaitmsg OWaitmsg;
@@ -280,6 +299,7 @@ struct Waitmsg {
   ulong time[3];    /* of loved one and descendants */
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
+#endif
 
 #endif /* _PORTLIB_H_ not defined - end of lib.h definitions */
 

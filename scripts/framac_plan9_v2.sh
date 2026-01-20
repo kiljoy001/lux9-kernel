@@ -32,6 +32,8 @@ gcc -D__FRAMAC__ \
     -Ikernel/crypto \
     -Ikernel/wasm \
     -Ikernel/wasm/wasm_runtime/wasm3 \
+    -Isrc/9/port \
+    -Isrc/9/pc \
     -I. \
     -E -P -C \
     "$INPUT_FILE" \
@@ -40,6 +42,7 @@ gcc -D__FRAMAC__ \
 cat "$GCC_OUTPUT" | \
 # Step 3: Filter out Plan 9-specific constructs that Frama-C can't parse
 sed \
+    -e 's/\\U000000b5/u/g' \
     -e 's/µs/us/g' \
     -e '/µs/d' \
     -e 's/@\*\//\*\//g' \
@@ -50,6 +53,20 @@ sed \
     -e '/#pragma pack/d' \
     -e '/#pragma textflag/d' \
     -e '/#pragma profile/d' \
+    -e 's/_Float128/long double/g' \
+    -e 's/__builtin_expect(\([^,]*\), [^)]*)/(\1)/g' \
+    -e 's/typedef[[:space:]]\+.*__gnuc_va_list;//g' \
+    -e 's/typedef[[:space:]]\+.*va_list[[:space:]]\+va_list;//g' \
+    -e 's/__builtin_va_list/va_list/g' \
+    -e 's/__gnuc_va_list/va_list/g' \
+    -e '1itypedef __builtin_va_list va_list;' \
+    -e 's/__attribute__(([a-zA-Z0-9_, ]*))//g' \
+    -e 's/__attribute__((__noinline__))//g' \
+    -e 's/__attribute__((noinline))//g' \
+    -e 's/__attribute__((__unused__))//g' \
+    -e 's/__attribute__((unused))//g' \
+    -e 's/__attribute__((packed))//g' \
+    -e '/^# [0-9]/d' \
 | \
 # Step 4: Remove empty lines for compactness
 sed '/^$/d' \
@@ -144,13 +161,19 @@ struct Waitmsg {
 WAITMSG_DEF
 fi
 
+# Step 6.5: Include Frama-C Stubs (must be before any code uses them)
+if [ -f "kernel/include/framac_stubs.h" ]; then
+    echo '#include "kernel/include/framac_stubs.h"' | cat - "$TEMP_OUTPUT" > "${TEMP_OUTPUT}.tmp" && mv "${TEMP_OUTPUT}.tmp" "$TEMP_OUTPUT"
+fi
+
+
 # Note: Dirtab is NOT excluded by __FRAMAC__ in Plan 9 headers, so do not redefine it
 
 # Append the preprocessed Plan 9 code
 cat "$TEMP_OUTPUT" >> "$OUTPUT_FILE"
 
-# Final cleanup: normalize ACSL comment terminators.
-sed -i 's/@\*\//\*\//g' "$OUTPUT_FILE"
+# Final cleanup: normalize ACSL comment terminators. (Modified to preserve @*/ for Frama-C)
+# sed -i 's/@\*\//\*\//g' "$OUTPUT_FILE"
 rm -f "$TEMP_OUTPUT" "$GCC_OUTPUT" "$GCC_ERR"
 
 # Step 4: Check for any remaining problematic constructs

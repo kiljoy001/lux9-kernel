@@ -59,7 +59,7 @@ extern char *strrchr(char *, int);
 extern char *strtok(char *, char *);
 /*@
   @ requires valid_string(s);
-  @ assigns \result \from indirect:s[0..];
+  @ assigns \result \from indirect:s[0..ACSL_MAXSTR];
   @ ensures \result >= 0;
   @ ensures \result <= ACSL_MAXSTR;
   @ ensures s[\result] == '\0';
@@ -166,6 +166,7 @@ extern void *malloctopoolblock(void *);
 /*
  * print routines
  */
+#ifndef __FRAMAC__
 #ifndef _FMT_TYPEDEF_
 #define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
@@ -183,6 +184,7 @@ struct Fmt {
   int prec;            /* precision of format */
   ulong flags;
 };
+#endif
 #endif
 
 enum {
@@ -204,14 +206,20 @@ enum {
 };
 
 /*@ assigns \result \from fmt; */
-extern int print(char *, ...);
+extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
-extern int snprint(char *, int, char *, ...);
+/*@
+  @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+  @ ensures \result >= 0;
+  @*/
+extern int snprint(char *s, int n, char *fmt, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern char *smprint(char *, ...);
 extern char *vsmprint(char *, va_list);
-extern int sprint(char *, char *, ...);
+extern int sprint(char *s, char *fmt, ...);
 extern int fprint(int, char *, ...);
 extern int vfprint(int, char *, va_list);
 
@@ -745,6 +753,7 @@ enum {
   RFNOMNT = (1 << 14)
 };
 
+#ifndef __FRAMAC__
 #ifndef _QID_TYPEDEF_
 #define _QID_TYPEDEF_
 typedef struct Qid {
@@ -780,6 +789,7 @@ typedef struct Waitmsg {
   ulong time[3]; /* of loved one & descendants */
   char *msg;
 } Waitmsg;
+#endif
 #endif
 
 typedef struct IOchunk {

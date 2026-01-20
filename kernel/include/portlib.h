@@ -27,51 +27,56 @@ typedef unsigned int Rune;
  * mem routines
  */
 extern void *memccpy(void *, const void *, int, usize);
-/*@ requires \valid((char*)s + (0..n-1));
+/*@
+  @ requires (n > 0 ==> \valid((char*)s + (0 .. (integer)n-1))) || (n == 0);
   @ terminates \true;
-  @ assigns ((char*)s)[0..n-1];
+  @ assigns ((char*)s)[0 .. (integer)n-1] \if (n > 0);
   @ ensures \result == s;
-  */
+  @*/
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(const void *, const void *, usize);
-/*@ terminates \true;
+/*@
+  @ requires (n > 0 ==> \valid((char*)dst + (0 .. (integer)n-1))) || (n == 0);
+  @ requires (n > 0 ==> \valid_read((char*)src + (0 .. (integer)n-1))) || (n ==
+  0);
+  @ terminates \true;
+  @ assigns ((char*)dst)[0 .. (integer)n-1] \if (n > 0);
   @ assigns \result \from dst;
   @ ensures \result == dst;
-  */
+  @*/
 extern void *memmove(void *dst, const void *src, usize n);
 extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
  */
-extern char *strcat(char *, char *);
-extern char *strchr(char *, int);
-extern char *strrchr(char *, int);
+extern char *strcat(char *, const char *);
+extern char *strchr(const char *, int);
+extern char *strrchr(const char *, int);
 /*@ requires s1 == \null || valid_string(s1);
   @ requires s2 == \null || valid_string(s2);
   @ terminates \true;
   @ assigns \nothing;
   */
-extern int strcmp(char *s1, char *s2);
-extern char *strcpy(char *, char *);
-extern char *strecpy(char *, char *, char *);
-extern char *strncat(char *, char *, long);
-extern char *strncpy(char *, char *, long);
-extern int strncmp(char *, char *, long);
+extern int strcmp(const char *s1, const char *s2);
+extern char *strcpy(char *, const char *);
+extern char *strecpy(char *, char *, const char *);
+extern char *strncat(char *, const char *, long);
+extern char *strncpy(char *, const char *, long);
+extern int strncmp(const char *, const char *, long);
 /*@ requires s == \null || valid_string(s);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= 0;
   */
-extern long strlen(char *s);
-extern char *strstr(char *, char *);
+extern long strlen(const char *s);
+extern char *strstr(const char *, const char *);
 extern int atoi(char *);
 extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
 #ifndef _LIBC_H_
-#ifndef __FRAMAC__
 enum {
   UTFmax = 4,         /* maximum bytes per rune */
   Runesync = 0x80,    /* cannot represent part of a UTF sequence */
@@ -79,7 +84,6 @@ enum {
   Runeerror = 0xFFFD, /* decoding error in UTF */
   Runemax = 0x10FFFF, /* 21 bit rune */
 };
-#endif
 #endif
 
 /*
@@ -106,6 +110,7 @@ extern int abs(int);
 /*
  * print routines
  */
+#ifndef __FRAMAC__
 #ifndef _FMT_TYPEDEF_
 #define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
@@ -124,12 +129,23 @@ struct Fmt {
   ulong flags;
 };
 #endif
+#endif
 typedef int (*Fmts)(Fmt *);
-/*@ assigns \result \from fmt; */
+
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
 extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
-extern int snprint(char *, int, char *, ...);
+/*@
+  @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+  @ ensures \result >= 0;
+  @*/
+extern int snprint(char *s, int n, char *fmt, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
@@ -261,6 +277,7 @@ typedef struct Waitmsg Waitmsg;
 #define DMWRITE 0x2         /* mode bit for write permission */
 #define DMEXEC 0x1          /* mode bit for execute permission */
 
+#ifndef __FRAMAC__
 #ifndef _QID_TYPEDEF_
 #define _QID_TYPEDEF_
 struct Qid {
@@ -302,6 +319,7 @@ struct Waitmsg {
   ulong time[3];    /* of loved one and descendants */
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
+#endif
 #endif
 #endif /* _LIB_H_ */
 

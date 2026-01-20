@@ -22,7 +22,7 @@ typedef struct Waitmsg Waitmsg;
 
 /* Local forward declaration for verification stability */
 /*@ requires name == \null || valid_string(name);
-  @ assigns \result \from name[0..];
+  @ assigns \result \from name[0 .. ACSL_MAXSTR-1];
   @ ensures \result == \null || valid_string(\result);
   @*/
 extern char *getconf(char *name);

@@ -28,7 +28,8 @@
   @ behavior nonzero:
   @   assumes size > 0;
   @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size - 1));
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
   @ complete behaviors;
   @ disjoint behaviors;
   @ terminates \true;
@@ -36,7 +37,7 @@
 extern void *malloc(ulong size);
 
 /*@ assigns \nothing;
-  */
+ */
 extern void free(void *p);
 
 typedef struct Pipe Pipe;
@@ -351,6 +352,7 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
     // COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
     // COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref
     // COQ_PROOF_REF: proofs/pipe/safety.v:close_irreversible
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
 */
 static long pipewrite(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;

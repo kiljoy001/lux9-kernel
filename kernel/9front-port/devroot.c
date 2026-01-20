@@ -123,13 +123,11 @@ static void rootreset(void) { rootreset_impl(); }
 
 static Chan *rootattach(char *spec) { return devattach('/', spec); }
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires name == \null || \valid(name);
-  @ requires  == \null || \valid();
-  @ requires dp == \null || \valid(dp);
-  @ assigns \nothing;
-  @*/
+/*@ requires \valid(c);
+    requires name == \null || \valid(name);
+    requires dp == \null || \valid(dp);
+    assigns \nothing;
+*/
 static int rootgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
   int t;
   Dirtab *d;
@@ -199,11 +197,11 @@ static Chan *rootopen(Chan *c, int omode) {
  */
 static void rootclose(Chan *) {}
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
+/*@ requires c != \null;
+    requires buf != \null;
+    requires (n > 0 ==> \valid((char*)buf + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)buf)[0 .. (integer)n-1] \if n > 0;
+*/
 static long rootread(Chan *c, void *buf, long n, vlong off) {
   ulong t;
   Dirtab *d;

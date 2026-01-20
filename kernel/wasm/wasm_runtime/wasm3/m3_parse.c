@@ -66,11 +66,11 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
       print("ParseSection_Type: array allocated\n");
       io_module->numFuncTypes = numTypes;
 
-        /*@ loop invariant 0 <= i <= numTypes;
-    @ loop assigns i;
-    @ loop variant numTypes - i;
-    @*/
-  for (u32 i = 0; i < numTypes; ++i) {
+      /*@ loop invariant 0 <= i <= numTypes;
+  @ loop assigns i;
+  @ loop variant numTypes - i;
+  @*/
+      for (u32 i = 0; i < numTypes; ++i) {
         print("ParseSection_Type: loop %d\n", i);
         i8 form;
         _(ReadLEB_i7(&form, &i_bytes, i_end));
@@ -88,11 +88,11 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
 #else
         u8 argTypes[numArgs + 1]; // make ubsan happy
 #endif
-          /*@ loop invariant 0 <= a <= numArgs;
-    @ loop assigns a;
-    @ loop variant numArgs - a;
-    @*/
-  for (u32 a = 0; a < numArgs; ++a) {
+        /*@ loop invariant 0 <= a <= numArgs;
+  @ loop assigns a;
+  @ loop variant numArgs - a;
+  @*/
+        for (u32 a = 0; a < numArgs; ++a) {
           i8 wasmType;
           u8 argType;
           _(ReadLEB_i7(&wasmType, &i_bytes, i_end));
@@ -115,11 +115,11 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
         ftype->numRets = numRets;
         print("ParseSection_Type: fields assigned\n");
 
-          /*@ loop invariant 0 <= r <= numRets;
-    @ loop assigns r;
-    @ loop variant numRets - r;
-    @*/
-  for (u32 r = 0; r < numRets; ++r) {
+        /*@ loop invariant 0 <= r <= numRets;
+  @ loop assigns r;
+  @ loop variant numRets - r;
+  @*/
+        for (u32 r = 0; r < numRets; ++r) {
           i8 wasmType;
           u8 retType;
           _(ReadLEB_i7(&wasmType, &i_bytes, i_end));
@@ -172,10 +172,10 @@ M3Result ParseSection_Function(IM3Module io_module, bytes_t i_bytes,
   _(Module_PreallocFunctions(io_module,
                              io_module->numFunctions + numFunctions));
 
-    /*@ loop invariant 0 <= i <= numFunctions;
-    @ loop assigns i;
-    @ loop variant numFunctions - i;
-    @*/
+  /*@ loop invariant 0 <= i <= numFunctions;
+  @ loop assigns i;
+  @ loop variant numFunctions - i;
+  @*/
   for (u32 i = 0; i < numFunctions; ++i) {
     u32 funcTypeIndex;
     _(ReadLEB_u32(&funcTypeIndex, &i_bytes, i_end));
@@ -202,10 +202,10 @@ M3Result ParseSection_Import(IM3Module io_module, bytes_t i_bytes,
   // Most imports are functions, so we won't waste much space anyway (if any)
   _(Module_PreallocFunctions(io_module, numImports));
 
-    /*@ loop invariant 0 <= i <= numImports;
-    @ loop assigns i;
-    @ loop variant numImports - i;
-    @*/
+  /*@ loop invariant 0 <= i <= numImports;
+  @ loop assigns i;
+  @ loop variant numImports - i;
+  @*/
   for (u32 i = 0; i < numImports; ++i) {
     u8 importKind;
 
@@ -278,10 +278,10 @@ M3Result ParseSection_Export(IM3Module io_module, bytes_t i_bytes,
 
   _throwif("too many exports", numExports > d_m3MaxSaneExportsCount);
 
-    /*@ loop invariant 0 <= i <= numExports;
-    @ loop assigns i;
-    @ loop variant numExports - i;
-    @*/
+  /*@ loop invariant 0 <= i <= numExports;
+  @ loop assigns i;
+  @ loop variant numExports - i;
+  @*/
   for (u32 i = 0; i < numExports; ++i) {
     u8 exportKind;
     u32 index;
@@ -396,10 +396,10 @@ M3Result ParseSection_Code(M3Module *io_module, bytes_t i_bytes,
     _throw("mismatched function count in code section");
   }
 
-    /*@ loop invariant 0 <= f <= numFunctions;
-    @ loop assigns f;
-    @ loop variant numFunctions - f;
-    @*/
+  /*@ loop invariant 0 <= f <= numFunctions;
+  @ loop assigns f;
+  @ loop variant numFunctions - f;
+  @*/
   for (u32 f = 0; f < numFunctions; ++f) {
     const u8 *start = i_bytes;
 
@@ -411,9 +411,9 @@ M3Result ParseSection_Code(M3Module *io_module, bytes_t i_bytes,
       i_bytes += size;
 
       if (i_bytes <= i_end) {
-        /*
+#if 0
         u32 numLocalBlocks;
-_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end)); m3log (parse, "
+_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end)); m3log (parse, " \
 code size: %-4d", size);
 
         u32 numLocals = 0;
@@ -435,7 +435,7 @@ _                   (NormalizeType (& normalType, wasmType));
             numLocals += varCount; m3log (parse, "      %2d locals; type: '%s'",
 varCount, c_waTypes [normalType]);
         }
-         */
+#endif
 
         IM3Function func =
             Module_GetFunction(io_module, f + io_module->numFuncImports);
@@ -472,10 +472,10 @@ M3Result ParseSection_Data(M3Module *io_module, bytes_t i_bytes,
   _throwifnull(io_module->dataSegments);
   io_module->numDataSegments = numDataSegments;
 
-    /*@ loop invariant 0 <= i <= numDataSegments;
-    @ loop assigns i;
-    @ loop variant numDataSegments - i;
-    @*/
+  /*@ loop invariant 0 <= i <= numDataSegments;
+  @ loop assigns i;
+  @ loop variant numDataSegments - i;
+  @*/
   for (u32 i = 0; i < numDataSegments; ++i) {
     M3DataSegment *segment = &io_module->dataSegments[i];
 
@@ -529,10 +529,10 @@ M3Result ParseSection_Global(M3Module *io_module, bytes_t i_bytes,
 
   _throwif("too many globals", numGlobals > d_m3MaxSaneGlobalsCount);
 
-    /*@ loop invariant 0 <= i <= numGlobals;
-    @ loop assigns i;
-    @ loop variant numGlobals - i;
-    @*/
+  /*@ loop invariant 0 <= i <= numGlobals;
+  @ loop assigns i;
+  @ loop variant numGlobals - i;
+  @*/
   for (u32 i = 0; i < numGlobals; ++i) {
     i8 waType;
     u8 type, isMutable;
@@ -578,11 +578,11 @@ M3Result ParseSection_Name(M3Module *io_module, bytes_t i_bytes,
 
       _throwif("too many names", numNames > d_m3MaxSaneFunctionsCount);
 
-        /*@ loop invariant 0 <= i <= numNames;
-    @ loop assigns i;
-    @ loop variant numNames - i;
-    @*/
-  for (u32 i = 0; i < numNames; ++i) {
+      /*@ loop invariant 0 <= i <= numNames;
+  @ loop assigns i;
+  @ loop variant numNames - i;
+  @*/
+      for (u32 i = 0; i < numNames; ++i) {
         u32 index;
         _(ReadLEB_u32(&index, &i_bytes, i_end));
         _(Read_utf8(&name, &i_bytes, i_end));

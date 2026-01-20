@@ -198,6 +198,10 @@ static int usertrap(Ureg *ureg, int vno) {
   @ requires ureg == \null || \valid(ureg);
   @ assigns \nothing;
   @*/
+/*@
+  @ requires \valid(ureg);
+  @ assigns *ureg;
+  @*/
 void trap(Ureg *ureg) {
   int vno, user;
   static int trap_count = 0;

@@ -1,4 +1,3 @@
-#ifndef __FRAMAC__
 #include "../include/u.h"
 
 #define _BREAK_SORT_1 1
@@ -9,10 +8,10 @@
 
 /*@
   @ requires \valid_read(d);
-  @ requires d->name == \null || \valid_read(d->name + (0..));
-  @ requires d->uid == \null || \valid_read(d->uid + (0..));
-  @ requires d->gid == \null || \valid_read(d->gid + (0..));
-  @ requires d->muid == \null || \valid_read(d->muid + (0..));
+  @ requires valid_string_or_null(d->name);
+  @ requires valid_string_or_null(d->uid);
+  @ requires valid_string_or_null(d->gid);
+  @ requires valid_string_or_null(d->muid);
   @ assigns \nothing;
   @ ensures \result >= STATFIXLEN;
   @*/
@@ -26,6 +25,11 @@ uint sizeD2M(Dir *d) {
   sv[3] = d->muid;
 
   ns = 0;
+  /*@ loop invariant 0 <= i <= 4;
+    @ loop assigns i, ns;
+    @ loop variant 4 - i;
+    @ loop pragma UNROLL 4;
+    @*/
   for (i = 0; i < 4; i++)
     if (sv[i])
       ns += strlen(sv[i]);
@@ -36,10 +40,10 @@ uint sizeD2M(Dir *d) {
 /*@
   @ requires \valid_read(d);
   @ requires nbuf > 0 ==> \valid(buf + (0 .. nbuf-1));
-  @ requires d->name == \null || \valid_read(d->name + (0..));
-  @ requires d->uid == \null || \valid_read(d->uid + (0..));
-  @ requires d->gid == \null || \valid_read(d->gid + (0..));
-  @ requires d->muid == \null || \valid_read(d->muid + (0..));
+  @ requires valid_string_or_null(d->name);
+  @ requires valid_string_or_null(d->uid);
+  @ requires valid_string_or_null(d->gid);
+  @ requires valid_string_or_null(d->muid);
   @ assigns buf[0 .. nbuf-1];
   @ ensures \result <= nbuf;
   @ ensures \result == 0 || \result >= BIT16SZ;
@@ -61,6 +65,11 @@ uint convD2M(Dir *d, uchar *buf, uint nbuf) {
   sv[3] = d->muid;
 
   ns = 0;
+  /*@ loop invariant 0 <= i <= 4;
+    @ loop assigns i, ns, nsv[0..3];
+    @ loop variant 4 - i;
+    @ loop pragma UNROLL 4;
+    @*/
   for (i = 0; i < 4; i++) {
     if (sv[i])
       nsv[i] = strlen(sv[i]);
@@ -98,6 +107,11 @@ uint convD2M(Dir *d, uchar *buf, uint nbuf) {
   PBIT64(p, d->length);
   p += BIT64SZ;
 
+  /*@ loop invariant 0 <= i <= 4;
+    @ loop assigns i, p, ns, buf[0..nbuf-1];
+    @ loop variant 4 - i;
+    @ loop pragma UNROLL 4;
+    @*/
   for (i = 0; i < 4; i++) {
     ns = nsv[i];
     if (p + ns + BIT16SZ > ebuf)
@@ -114,4 +128,3 @@ uint convD2M(Dir *d, uchar *buf, uint nbuf) {
 
   return p - buf;
 }
-#endif

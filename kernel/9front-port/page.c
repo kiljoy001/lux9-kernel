@@ -245,8 +245,6 @@ void freepages(Page *head, Page *tail, ulong np) {
       tail->ref = 0;
       if (tail->next == nil)
         break;
-      if (tail->next == nil)
-        break;
       tail = tail->next;
     }
   }
@@ -364,9 +362,10 @@ static int ispages(void *) {
          up->noswap && palloc.freecount > 0;
 }
 
-/*@ assigns \everything;
-  @ ensures \result == \null || \valid(\result);
-  @*/
+/*@ requires seg == \null || \valid(seg);
+    assigns \everything;
+    ensures \result == \null || \valid(\result);
+*/
 Page *newpage(uintptr va, Segment *seg) {
   Page *p, **l;
   int color;
@@ -529,10 +528,6 @@ void putpage(Page *p) {
     freepages(p, p, 1);
 }
 
-/*@ requires f == \null || \valid(f);
-  @ requires t == \null || \valid(t);
-  @ assigns \everything;
-  @*/
 /*
 void copypage(Page *f, Page *t) {
   KMap *ks, *kd;
@@ -546,9 +541,9 @@ void copypage(Page *f, Page *t) {
 */
 
 /*@ requires p == \null || \valid(p);
-  @ assigns \everything;
-  @ ensures \result == p;
-  @*/
+    assigns \everything;
+    ensures \result == p;
+*/
 Page *fillpage(Page *p, int c) {
   KMap *k;
 

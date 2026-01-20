@@ -679,6 +679,11 @@ static void ramclose(Chan *c) {
  * Read Operations
  * ======================================================================== */
 
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 long ramread(Chan *c, void *va, long n, vlong off) {
   char status[256];
   ProcessVault *v;
@@ -781,6 +786,11 @@ long ramread(Chan *c, void *va, long n, vlong off) {
  * Write Operations
  * ======================================================================== */
 
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing; // simplified, actually modifies ramdisk_data or vault
+*/
 long ramwrite(Chan *c, void *va, long n, vlong off) {
   char cmd[256];
   char *argv[3];

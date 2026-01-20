@@ -145,7 +145,7 @@ double pow(double x, double y) { return 0.0; }
   @ requires endptr == \null || \valid(endptr);
   @ assigns \nothing;
   @*/
-double strtod(const char *nptr, char **endptr) {
+double strtod(char *nptr, char **endptr) {
   if (endptr)
     *endptr = (char *)nptr;
   return 0.0;

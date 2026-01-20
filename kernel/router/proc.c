@@ -683,7 +683,13 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
 
     {
       extern void uartputs(char *, int);
-      extern int snprint(char *, int, char *, ...);
+      /*@
+        @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+        @ requires valid_string(fmt);
+        @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+        @ ensures \result >= 0;
+        @*/
+      extern int snprint(char *s, int n, char *fmt, ...);
       /* strlen is from headers */
       char buf[256];
       snprint(buf, sizeof(buf), "CONSOLE: Tsysexec path hex: ");
@@ -705,7 +711,13 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
           (char *)kpath, (void *)uargv);
     {
       extern void uartputs(char *, int);
-      extern int snprint(char *, int, char *, ...);
+      /*@
+        @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+        @ requires valid_string(fmt);
+        @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+        @ ensures \result >= 0;
+        @*/
+      extern int snprint(char *s, int n, char *fmt, ...);
       /* strlen is available from portlib.h via includes */
       char buf[256];
       snprint(buf, sizeof(buf), "CONSOLE: Tsysexec calling sysexec('%s')\n",

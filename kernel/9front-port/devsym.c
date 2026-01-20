@@ -1,10 +1,10 @@
-#include "u.h"
 #include "../port/error.h"
 #include "../port/lib.h"
+#include "../symbolic/mini-gmp.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
-#include "../symbolic/mini-gmp.h"
+#include "u.h"
 
 extern void minigmp_init(void);
 
@@ -25,17 +25,16 @@ struct SymChanState {
 static int sym_ready;
 
 static Dirtab symdir[] = {
-    ".", {Qdir, 0, QTDIR}, 0, DMDIR | 0555,   "evalr",   {Qevalr}, 0, 0444,
-    "evalw", {Qevalw},     0, 0222,           "help",    {Qhelp}, 0, 0444,
-    "version", {Qversion}, 0, 0444,
+    ".",       {Qdir, 0, QTDIR}, 0, DMDIR | 0555, "evalr", {Qevalr}, 0, 0444,
+    "evalw",   {Qevalw},         0, 0222,         "help",  {Qhelp},  0, 0444,
+    "version", {Qversion},       0, 0444,
 };
 
-static char sym_help[] =
-    "usage: write to evalw, read from evalr\n"
-    "expr: (op <a> [<b> [<c>]]) with nesting\n"
-    "ops: add sub mul div rem mod pow powm gcd lcm\n"
-    "     abs neg cmp and or xor not shl shr popcount\n"
-    "numbers are base-10 integers\n";
+static char sym_help[] = "usage: write to evalw, read from evalr\n"
+                         "expr: (op <a> [<b> [<c>]]) with nesting\n"
+                         "ops: add sub mul div rem mod pow powm gcd lcm\n"
+                         "     abs neg cmp and or xor not shl shr popcount\n"
+                         "numbers are base-10 integers\n";
 
 /*@
   @ assigns \nothing;
@@ -340,6 +339,11 @@ static int sym_parse_expr(char **pp, mpz_t out) {
   @ requires va == \null || \valid(va);
   @ assigns \nothing;
   @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long symread(Chan *c, void *va, long n, vlong offset) {
   SymChanState *st;
 
@@ -366,6 +370,11 @@ static long symread(Chan *c, void *va, long n, vlong offset) {
   @ requires va == \null || \valid(va);
   @ assigns \nothing;
   @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long symwrite(Chan *c, void *va, long n, vlong offset) {
   char *buf;
   mpz_t r;
@@ -431,10 +440,7 @@ badarg:
   return 0;
 
 nomem:
-  // FIXME: a, b, r not defined in this scope
-  // mpz_clear(a);
-  // mpz_clear(b);
-  // mpz_clear(r);
+  mpz_clear(r);
   free(out);
   free(buf);
   error(Enomem);
@@ -442,9 +448,9 @@ nomem:
 }
 
 Dev symdevtab = {
-    'Z',    "symbolic",
+    'Z',      "symbolic",
 
-    devreset, syminit,  devshutdown, symattach, symwalk,
-    symstat,  symopen,  devcreate,   symclose,  symread,
-    devbread, symwrite, devbwrite,   devremove, devwstat,
+    devreset, syminit,    devshutdown, symattach, symwalk,
+    symstat,  symopen,    devcreate,   symclose,  symread,
+    devbread, symwrite,   devbwrite,   devremove, devwstat,
 };

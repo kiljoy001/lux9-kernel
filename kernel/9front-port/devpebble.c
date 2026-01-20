@@ -1,10 +1,10 @@
-#include "u.h"
 #include "../port/error.h"
 #include "../port/lib.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "pebble.h"
+#include "u.h"
 
 /*
  * /dev/pebble - Pebble Memory Accounting Interface
@@ -125,8 +125,7 @@ static int pebparse_cap_hash(const char *buf, UserCapability *cap) {
     p++;
   if (strncmp(p, "cap", 3) == 0 && (p[3] == ' ' || p[3] == '\t')) {
     p += 3;
-  } else if (strncmp(p, "hash", 4) == 0 &&
-             (p[4] == ' ' || p[4] == '\t')) {
+  } else if (strncmp(p, "hash", 4) == 0 && (p[4] == ' ' || p[4] == '\t')) {
     p += 4;
   }
   while (*p == ' ' || *p == '\t')
@@ -191,6 +190,11 @@ static void pebsetresp(Chan *c, const char *msg) {
   @ requires va == \null || \valid(va);
   @ assigns \nothing;
   @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long pebread(Chan *c, void *va, long n, vlong off) {
   char *buf;
   long rv = 0;
@@ -236,6 +240,11 @@ static long pebread(Chan *c, void *va, long n, vlong off) {
   @ requires va == \null || \valid(va);
   @ assigns \nothing;
   @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long pebwrite(Chan *c, void *va, long n, vlong off) {
   char *buf;
   char tmp[256];
@@ -281,8 +290,8 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
       UserCapability cap;
       void *addr;
       if (pebble_alloc_with_white(size, &cap, &addr) == 0) {
-        snprint(tmp, sizeof(tmp), "cap %H size %llud perms %ud addr %#p\n", cap.hash,
-                cap.size, cap.perms, addr);
+        snprint(tmp, sizeof(tmp), "cap %H size %llud perms %ud addr %#p\n",
+                cap.hash, cap.size, cap.perms, addr);
         pebsetresp(c, tmp);
       } else {
         free(buf);

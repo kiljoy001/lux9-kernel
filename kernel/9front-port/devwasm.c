@@ -33,22 +33,22 @@ static Chan *wasmopen(Chan *c, int omode) {
 
 static void wasmclose(Chan *) {}
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long wasmread(Chan *c, void *va, long n, vlong offset) {
   if ((ulong)c->qid.path == Qctl)
     return readstr(offset, va, n, "stats: dump wasm runtime stats\n");
   return devdirread(c, va, n, wasmdir, nelem(wasmdir), devgen);
 }
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long wasmwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
 

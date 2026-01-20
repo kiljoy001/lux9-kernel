@@ -98,10 +98,17 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-extern int print(char *, ...);
+/*@ assigns \result \from fmt; */
+extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
-extern int snprint(char *, int, char *, ...);
+/*@
+  @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+  @ ensures \result >= 0;
+  @*/
+extern int snprint(char *s, int n, char *fmt, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 

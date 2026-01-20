@@ -44,7 +44,7 @@ typedef ulong *syscall_va_list;
 /*@
   @ axiomatic Syscall_ABI {
   @   predicate valid_syscall_args(ulong *list, integer n) =
-  @     \valid(list + (0..n-1));
+  @      (n > 0 ==> \valid(list + (0 .. (integer)n-1))) || (n == 0);
   @
   @   axiom syscall_arg_advance:
   @     \forall ulong *list, integer n;
@@ -52,7 +52,7 @@ typedef ulong *syscall_va_list;
   @ }
   @*/
 /*@
-  @ requires e == \null || \valid(e);
+  @ requires valid_string(e);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
@@ -587,9 +587,9 @@ uintptr sysrfork(void *list_void) {
 }
 
 /*@
-  @ requires \valid(s + (0..n-1));
+  @ requires  (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
   @ requires \valid(ap + (0..nap-1));
-  @ assigns s[0..n-1], ap[0..nap-1];
+  @ assigns s[0 .. (integer)n-1] \if n > 0, ap[0..nap-1];
   @ ensures \result >= -1 && \result < nap;
   @*/
 static int shargs(char *s, int n, char **ap, int nap) {

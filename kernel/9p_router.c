@@ -36,6 +36,12 @@ extern char *proc_state_names[PS_COUNT];
 
 /* ACSL specifications for error handling functions */
 /*@ assigns \nothing; exits \nothing; */
+/*@
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
 extern void lux9_error(char *s);
 /*@ assigns \nothing; exits \nothing; */
 extern void nexterror(void);
@@ -691,7 +697,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   int type = 0;
   extern void uartputs(char *, int);
   char buf[128];
-  extern int snprint(char *, int, char *, ...);
+  /*@
+    @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+    @ requires valid_string(fmt);
+    @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+    @ ensures \result >= 0;
+    @*/
+  extern int snprint(char *s, int n, char *fmt, ...);
 
   snprint(buf, sizeof(buf), "CONSOLE: p9_dispatch: ENTRY type=%d tag=%d\n",
           t->type, t->tag);

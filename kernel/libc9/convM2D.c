@@ -1,4 +1,3 @@
-#ifndef __FRAMAC__
 #include "../include/u.h"
 
 #define _BREAK_SORT_1 1
@@ -31,6 +30,11 @@ int statcheck(uchar *buf, uint nbuf) {
 
   buf += STATFIXLEN - 4 * BIT16SZ;
 
+  /*@ loop invariant 0 <= i <= 4;
+    @ loop assigns i, buf;
+    @ loop variant 4 - i;
+    @ loop pragma UNROLL 4;
+    @*/
   for (i = 0; i < 4; i++) {
     if (buf + BIT16SZ > ebuf)
       return -1;
@@ -48,7 +52,7 @@ static char nullstring[] = "";
 /*@
   @ requires nbuf > 0 ==> \valid_read(buf + (0 .. nbuf-1));
   @ requires \valid(d);
-  @ requires strs != \null ==> \valid(strs + (0 .. nbuf));
+  @ requires strs != \null ==> \valid(strs + (0 .. nbuf)); // Approximate bound
   @ assigns *d, strs[0 .. nbuf];
   @ ensures \result <= nbuf;
   @*/
@@ -83,6 +87,11 @@ uint convM2D(uchar *buf, uint nbuf, Dir *d, char *strs) {
   d->length = GBIT64(p);
   p += BIT64SZ;
 
+  /*@ loop invariant 0 <= i <= 4;
+    @ loop assigns i, p, ns, sv[0..3], strs[0..nbuf];
+    @ loop variant 4 - i;
+    @ loop pragma UNROLL 4;
+    @*/
   for (i = 0; i < 4; i++) {
     if (p + BIT16SZ > ebuf)
       return 0;
@@ -113,4 +122,3 @@ uint convM2D(uchar *buf, uint nbuf, Dir *d, char *strs) {
 
   return p - buf;
 }
-#endif

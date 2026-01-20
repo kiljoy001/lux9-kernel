@@ -29,6 +29,12 @@ extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
   @ assigns \nothing;
   @ exits \nothing;
   @*/
+/*@
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
 extern void lux9_error(char *s);
 
 /*@ requires \valid((char*)dst+(0..n-1));

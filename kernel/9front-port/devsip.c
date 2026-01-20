@@ -106,13 +106,12 @@ static long sipstat(Chan *c, uchar *dp, long n) {
   return devstat(c, dp, n, nil, 0, sipgen);
 }
 
+/*@ requires \valid(c);
+    requires !(TYPE(c->qid) == Qctl && PID(c->qid) != 0 &&
+               PID(c->qid) != up->pid) ||
+             has_capability(up, PEBBLE_CAP_ADMIN);
+*/
 static Chan *sipopen(Chan *c, int omode) {
-  /*@
-    @ requires \valid(c);
-    @ requires !(TYPE(c->qid) == Qctl && PID(c->qid) != 0 &&
-    @            PID(c->qid) != up->pid) ||
-    @          has_capability(up, PEBBLE_CAP_ADMIN);
-    @*/
   /* Universal CBS: Opening process ctl files requires ADMIN for others'
    * processes */
   int pid = PID(c->qid);
@@ -127,6 +126,11 @@ static Chan *sipopen(Chan *c, int omode) {
 
 static void sipclose(Chan *c) { USED(c); }
 
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long sipread(Chan *c, void *va, long n, vlong off) {
   char buf[512];
   int len, pid;
@@ -191,11 +195,12 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
   }
 }
 
+/*@ requires \valid(c);
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char *)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long sipwrite(Chan *c, void *va, long n, vlong off) {
-  /*@
-    @ requires \valid(c);
-    @ requires va == \null || \valid((char *)va + (0..n-1));
-    @*/
   char buf[256];
   char *fields[8];
   int nfields, pid;

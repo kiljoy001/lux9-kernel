@@ -163,7 +163,7 @@ extern Dev memdevtab;
 extern Dev irqdevtab;
 extern Dev dmadevtab;
 extern Dev pcidevtab;
-extern Dev familydevtab;
+
 extern Dev ramdevtab;
 extern Dev sipdevtab;
 extern Dev pebbledevtab;
@@ -176,11 +176,11 @@ extern Dev symdevtab;
 extern Dev wasmdevtab;
 
 Dev *devtab[] = {
-    &rootdevtab,   &archdevtab, &consdevtab, &envdevtab,       &mntdevtab,
-    &procdevtab,   &exchdevtab, &memdevtab,  &ramdevtab,       &sipdevtab,
-    &pebbledevtab, &ringdevtab, &irqdevtab,  &dmadevtab,       &pcidevtab,
-    &familydevtab, &pipedevtab, &tpmdevtab,  &consensusdevtab, &srvdevtab,
-    &symdevtab,    &wasmdevtab, nil,
+    &rootdevtab,   &archdevtab, &consdevtab,      &envdevtab, &mntdevtab,
+    &procdevtab,   &exchdevtab, &memdevtab,       &ramdevtab, &sipdevtab,
+    &pebbledevtab, &ringdevtab, &irqdevtab,       &dmadevtab, &pcidevtab,
+    &pipedevtab,   &tpmdevtab,  &consensusdevtab, &srvdevtab, &symdevtab,
+    &wasmdevtab,   nil,
 };
 
 /* Additional stubs for console/device support */
@@ -541,4 +541,32 @@ long p9_route_message(int pid, void *msg, ulong len) {
   (void)msg;
   (void)len;
   return 0; /* TODO: Wire to 9p_router when ready */
+}
+/* Stubs for missing symbols */
+/*@
+  @ assigns \nothing;
+  @*/
+uvlong nsec(void) { return 0; /* TODO: Implement proper time with TSC/HPET */ }
+
+/*@
+  @ requires buf == \null || \valid((uchar*)buf + (0..n-1));
+  @ assigns ((uchar*)buf)[0..n-1];
+  @*/
+void randombytes(void *buf, long n) {
+  uchar *p = buf;
+  while (n-- > 0)
+    *p++ = 0; /* TODO: Wire to CSPRNG */
+}
+
+/*@
+  @ assigns \nothing;
+  @*/
+int __popcountdi2(long long a) {
+  unsigned long long x = (unsigned long long)a;
+  int c = 0;
+  while (x) {
+    c++;
+    x &= x - 1;
+  }
+  return c;
 }

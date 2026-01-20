@@ -767,6 +767,12 @@ uintptr sys_read(void *list_void) {
   return (uintptr)read(fd, buf, len, nil);
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr syspread(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -856,6 +862,12 @@ uintptr sys_write(void *list_void) {
   return (uintptr)write(fd, buf, len, nil, 1);
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= -1;
+  @*/
 uintptr syspwrite(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd;
@@ -941,6 +953,12 @@ vlong sseek(int fd, vlong o, int type) {
   return off;
 }
 
+/*@
+  @ requires \valid((ulong*)list_void);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == 0;
+  @*/
 uintptr sysseek(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int fd, t;

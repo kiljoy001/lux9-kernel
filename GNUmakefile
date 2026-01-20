@@ -69,6 +69,7 @@ BENCHMARK_C := kernel/benchmark.c
 CAPABILITY_C := kernel/capability/clr_capability.c
 # mini-gmp wrapper for symbolic math
 SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
+BPRINT_C := kernel/bprint.c
 
 # CLR removed - archived in old_clr_pipeline/
 
@@ -108,11 +109,12 @@ WASM_FILESERVER_C := kernel/wasm/wasm_runtime.c kernel/wasm/wasm_fileserver.c ke
 WASM_C := $(WASM3_C) $(WASM_FILESERVER_C)
 WASM_O := $(WASM_C:.c=.o)
 SYMBOLIC_O := $(SYMBOLIC_C:.c=.o)
+BPRINT_O := $(BPRINT_C:.c=.o)
 # TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)  # Removed - using minimal SAPI
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(UUID_O)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(BPRINT_O) $(UUID_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -133,12 +135,12 @@ $(QBE_A): $(QBE_CORE_O)
 # WASM3 Runtime build - use WASM3's compatibility headers
 kernel/wasm/wasm_runtime/wasm3/%.o: kernel/wasm/wasm_runtime/wasm3/%.c
 	@echo "CC $< (WASM3)"
-	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -Dd_m3HasFloat=0 -Ikernel/wasm/wasm_runtime/wasm3/include -c $< -o $@
+	@$(CC) $(CFLAGS) -msse -msse2 -Wno-conversion -Wno-sign-conversion -Wno-shadow -Dd_m3HasFloat=0 -Ikernel/wasm/wasm_runtime/wasm3/include -c $< -o $@
 
 # WASM file server code also needs WASM3 headers
 kernel/wasm/%.o: kernel/wasm/%.c
 	@echo "CC $<"
-	@$(CC) $(CFLAGS) -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+	@$(CC) $(CFLAGS) -msse -msse2 -Wno-shadow -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 # Relax warnings for 9p_router.c due to extensive use of mixed integer types
 kernel/9p_router.o: kernel/9p_router.c
