@@ -151,6 +151,7 @@ void lux9_error(char *e);
   */
 _Noreturn void error(char *e);
 #endif
+
 void eqlock(QLock *);
 uintptr execregs(uintptr, ulong, ulong);
 void exhausted(char *);
@@ -342,7 +343,13 @@ int growfd(Fgrp *, int);
 void unlockfgrp(Fgrp *);
 int newfd(Chan *, int);
 Mhead *newmhead(Chan *);
-Mount *newmount(Chan *, int, char *);
+Mhead *newmhead(Chan *);
+/*@ requires spec != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
+Mount *newmount(Chan *, int, char *spec);
 Image *newimage(ulong);
 Page *newpage(uintptr, Segment *);
 Path *newpath(char *);
@@ -667,6 +674,7 @@ ulong us(void);
 #else
 ulong µs(void);
 #endif
+
 long lcycles(void);
 extern void (*cycles)(uvlong *);
 void devmask(Pgrp *, int, char *);
@@ -678,37 +686,33 @@ extern int (*pcicfgrw8)(int, int, int, int);
 extern int (*pcicfgrw16)(int, int, int, int);
 extern int (*pcicfgrw32)(int, int, int, int);
 
-#ifndef __FRAMAC__
 #pragma varargck argpos iprint 1
 #pragma varargck argpos panic 1
 #pragma varargck argpos pprint 1
-#endif
+
 
 /* Platform-specific address macros - must be provided by arch */
 #ifndef KADDR
 extern void *kaddr(uintptr);
 #define KADDR(a) kaddr(a)
-#endif
 
 #ifndef PADDR
 extern uintptr paddr(void *);
 #define PADDR(a) paddr((void *)(a))
-#endif
 
 #ifndef evenaddr
 #define evenaddr(x) /* x86 doesn't care about alignment */
-#endif
 
 #ifndef userureg
 int userureg(Ureg *);
-#endif
+
 
 KMap *kmap(Page *);
 void kunmap(KMap *);
 
 #ifndef kmapinval
 #define kmapinval() /* Invalidate kmap cache */
-#endif
+
 
 void setuppagetables(void); /* Setup kernel page tables */
 
@@ -744,7 +748,7 @@ int pageown_release(Proc *, uintptr);         /* Release page ownership */
 enum PageOwnError pageown_acquire(Proc *, uintptr,
                                   u64int);          /* Acquire page ownership */
 enum PageOwnError pageown_release(Proc *, uintptr); /* Release page ownership */
-#endif
+
 void pageown_cleanup_process(Proc *); /* Clean up page ownership for process */
 
 /* Architecture-specific process functions - declarations handled in
@@ -752,6 +756,7 @@ void pageown_cleanup_process(Proc *); /* Clean up page ownership for process */
 void procsave(Proc *);             /* Save process state */
 void procrestore(Proc *);          /* Restore process state */
 void procsetup(Proc *);            /* Setup process state */
+#endif
 void procfork(Proc *);             /* Fork process state */
 int proc_setup_p9page(Proc *);     /* Setup 9P exchange page (deprecated) */
 int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */

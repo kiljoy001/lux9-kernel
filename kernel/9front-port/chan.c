@@ -13,6 +13,7 @@
 Chan *cclone(Chan *c);
 char *skipslash(char *name);
 char *validnamedup(char *aname, int slashok);
+Path *newpath(char *s);
 /*@
   @ requires size > 0;
   @ allocates \result;
@@ -65,7 +66,7 @@ long incref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    panic("incref: NULL Ref from pc=%#p", getcallerpc(&r));
+    panic("incref: NULL Ref from pc=%#p", (void *)0);
     return 0;
   }
 
@@ -84,14 +85,14 @@ long decref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    panic("decref: dangling ref pc=%#p", getcallerpc(&r));
+    panic("decref: dangling ref pc=%#p", (void *)0);
     return 0;
   }
 
   do {
     old = r->ref;
     if (old <= 0)
-      panic("decref pc=%#p", getcallerpc(&r));
+      panic("decref pc=%#p", (void *)0);
     new = old - 1;
   } while (!cmpswap(&r->ref, old, new));
   return new;
@@ -122,9 +123,10 @@ Path *pathincref(Path *p) {
  * save a string in up->genbuf;
  */
 /*@
-  @ requires s == \null || \valid(s);
-  @ requires t == \null || \valid(t);
-  @ assigns \nothing;
+  @ requires s != \null && t != \null;
+  @ requires \valid(s + (0 .. ns-1));
+  @ requires \valid_read(t);
+  @ assigns s[0 .. ns-1];
   @*/
 void kstrcpy(char *s, char *t, int ns) {
   int nt;
@@ -146,7 +148,7 @@ void kstrcpy(char *s, char *t, int ns) {
   /* look for first byte of UTF-8 sequence by skipping continuation bytes */
   while (ns > 0 && (s[--ns] & 0xC0) == 0x80)
     ;
-  strcpy(s + ns, "...");
+  memmove(s + ns, "...", 4);
 }
 
 /*@
@@ -182,7 +184,7 @@ void kstrdup(char **p, char *s) {
     if (t == nil)
       panic("kstrdup: no memory");
   }
-  setmalloctag(t, getcallerpc(&p));
+  /* setmalloctag(t, 0); */
   memmove(t, s, n);
   t[n] = '\0';
   prev = *p;
@@ -318,7 +320,7 @@ Path *newpath(char *s) {
    * allowed, but other names with / in them draw warnings.
    */
   if (strchr(s, '/') != nil && strcmp(s, "#/") != 0 && strcmp(s, "/") != 0)
-    print("newpath: %s from %#p\n", s, getcallerpc(&s));
+    print("newpath: %s from %#p\n", s, (void *)0);
 
   p->mlen = 1;
   p->malen = PATHMSLOP;
@@ -397,7 +399,7 @@ static void fixdotdotname(Path *p) {
     r = strchr(p->s, '/');
     if (r == nil)
       return;
-    cleanname(r);
+    /* cleanname(r); */
 
     /*
      * The correct name is #i rather than #i/,
@@ -406,7 +408,7 @@ static void fixdotdotname(Path *p) {
     if (strcmp(r, "/") == 0 && p->s[1] != '/')
       *r = '\0';
   } else
-    cleanname(p->s);
+    /* cleanname(p->s); */
   p->len = strlen(p->s);
 }
 
@@ -615,15 +617,15 @@ static void closeproc(void *) {
   @*/
 void cclose(Chan *c) {
   if (c == nil)
-    /* panic("cclose %#p", getcallerpc(&c)); */
+    panic("cclose %#p", (void *)0);
     /*@ assert c->type >= 0 && c->type < 64; */
-    if (c->ref < 1)
-      /* panic("cclose ref %#p", getcallerpc(&c)); */
-      if (c->flag & CFREE)
-        /* panic("cclose cfree %#p", getcallerpc(&c)); */
+  if (c->ref < 1)
+    panic("cclose ref %#p", (void *)0);
+  if (c->flag & CFREE)
+    panic("cclose cfree %#p", (void *)0);
 
-        if (decref(c))
-          return;
+  if (decref(c))
+    return;
 
   if (devtab[c->type]->dc == L'M')
     if ((c->flag & COPEN) == 0 || (c->flag & (CRCLOSE | CCACHE)) == CCACHE)
@@ -646,10 +648,10 @@ void cclose(Chan *c) {
   @*/
 void ccloseq(Chan *c) {
   if (c == nil || c->ref < 1 || c->flag & CFREE)
-    /* panic("ccloseq %#p", getcallerpc(&c)); */
+    panic("ccloseq %#p", (void *)0);
 
-    if (decref(c) == 0)
-      closechanq(c);
+  if (decref(c) == 0)
+    closechanq(c);
 }
 
 /*
@@ -665,7 +667,7 @@ Chan *cunique(Chan *c) {
   }
 
   if (c->umh != nil) { // BUG
-    print("cunique umh != nil from %#p\n", getcallerpc(&c));
+    print("cunique umh != nil from %#p\n", (void *)0);
     putmhead(c->umh);
     c->umh = nil;
   }
@@ -718,7 +720,7 @@ Mhead *newmhead(Chan *from) {
   mh->ref = 1;
   mh->from = from;
   incref((Ref *)&from->ref);
-  setmalloctag(mh, getcallerpc(&from));
+  /* setmalloctag(mh, 0); */
   return mh;
 }
 
@@ -768,7 +770,7 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
   Pgrp *pg;
 
   if (old->umh != nil)
-    print("cmount: unexpected umh, caller %#p\n", getcallerpc(&new));
+    print("cmount: unexpected umh, caller %#p\n", (void *)0);
 
   if (QTDIR & (old->qid.type ^ new->qid.type))
     error(Emount);
@@ -816,7 +818,7 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
        */
       f = nm;
       for (um = um->next; um != nil; um = um->next) {
-        f->next = newmount(um->to, order == MREPL ? MAFTER : order, um->spec);
+        f->next = newmount(um->to, order == MREPL ? MAFTER : order, (char *)um->spec);
         f = f->next;
       }
     }
@@ -989,8 +991,8 @@ Chan *cclone(Chan *c) {
   Chan *nc;
   Walkqid *wq;
 
-  if (c == nil || c->ref < 1 || c->flag & CFREE)
-    panic("cclone: %#p", getcallerpc(&c));
+  if (c->ref != 1 && c->ref != 2 && (c->ref != 3 || m->machno != 0))
+    panic("cunique ref %#p", (void *)0);
   wq = devtab[c->type]->walk(c, nil, nil, 0);
   if (wq == nil)
     error("clone failed");
@@ -1085,7 +1087,7 @@ static Chan *undomount(Chan *c, Path *path) {
 
   if (path->ref != 1 || path->mlen == 0)
     print("undomount: path %s ref %ld mlen %d caller %#p\n", path->s, path->ref,
-          path->mlen, getcallerpc(&c));
+          path->mlen, (void *)0);
 
   if (path->mlen > 0 && (nc = path->mtpt[path->mlen - 1]) != nil) {
     cclose(c);
@@ -1961,11 +1963,11 @@ static char *validname0(char *aname, int slashok, int dup, uintptr pc) {
   @ assigns \nothing;
   @*/
 void validname(char *aname, int slashok) {
-  validname0(aname, slashok, 0, getcallerpc(&aname));
+  validname0(aname, slashok, 0, 0);
 }
 
 char *validnamedup(char *aname, int slashok) {
-  return validname0(aname, slashok, 1, getcallerpc(&aname));
+  return validname0(aname, slashok, 1, 0);
 }
 
 /*@

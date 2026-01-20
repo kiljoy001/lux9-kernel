@@ -270,7 +270,11 @@ struct Mount {
   Mount *next;
   Mount *order;
   Chan *to; /* channel replacing channel */
+#ifdef __FRAMAC__
+  char spec[128];
+#else
   char spec[];
+#endif
 };
 
 struct Mhead {
@@ -1155,12 +1159,12 @@ enum {
 
 #define DEVDOTDOT -1
 
-#ifndef __FRAMAC__
+
 #pragma varargck type "I" uchar *
 #pragma varargck type "V" uchar *
 #pragma varargck type "E" uchar *
 #pragma varargck type "M" uchar *
-#endif
+
 
 /*
  * Log console output so it can be retrieved via /dev/kmesg.
@@ -1174,4 +1178,4 @@ struct Kmesg {
 
 extern struct Kmesg kmesg;
 
-#endif /* _PORTDAT_H_ */
+ /* _PORTDAT_H_ */

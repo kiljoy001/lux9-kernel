@@ -28,23 +28,28 @@ typedef unsigned int Rune;
  */
 extern void *memccpy(void *, const void *, int, usize);
 /*@
-  @ requires (n > 0 ==> \valid((char*)s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires \valid(((char*)s) + (0 .. (integer)n - 1));
   @ terminates \true;
-  @ assigns ((char*)s)[0 .. (integer)n-1] \if (n > 0);
+  @ assigns ((char*)s)[0 .. (integer)n - 1];
+  @ assigns \result \from s;
   @ ensures \result == s;
   @*/
 extern void *memset(void *s, int c, usize n);
-extern int memcmp(const void *, const void *, usize);
 /*@
-  @ requires (n > 0 ==> \valid((char*)dst + (0 .. (integer)n-1))) || (n == 0);
-  @ requires (n > 0 ==> \valid_read((char*)src + (0 .. (integer)n-1))) || (n ==
-  0);
-  @ terminates \true;
-  @ assigns ((char*)dst)[0 .. (integer)n-1] \if (n > 0);
-  @ assigns \result \from dst;
-  @ ensures \result == dst;
+  @ requires \valid_read(((char*)s1) + (0 .. (integer)n - 1));
+  @ requires \valid_read(((char*)s2) + (0 .. (integer)n - 1));
+  @ assigns \nothing;
   @*/
-extern void *memmove(void *dst, const void *src, usize n);
+extern int memcmp(const void *s1, const void *s2, usize n);
+/*@
+  @ requires \valid(((char*)dest) + (0 .. (integer)n - 1));
+  @ requires \valid_read(((char*)src) + (0 .. (integer)n - 1));
+  @ terminates \true;
+  @ assigns ((char*)dest)[0 .. (integer)n - 1];
+  @ assigns \result \from dest;
+  @ ensures \result == dest;
+  @*/
+extern void *memmove(void *dest, const void *src, usize n);
 extern void *memchr(const void *, int, usize);
 
 /*
@@ -84,7 +89,6 @@ enum {
   Runeerror = 0xFFFD, /* decoding error in UTF */
   Runemax = 0x10FFFF, /* 21 bit rune */
 };
-#endif
 
 /*
  * rune routines
@@ -92,8 +96,14 @@ enum {
 extern int runetochar(char *, Rune *);
 extern int chartorune(Rune *, char *);
 extern char *utfecpy(char *s1, char *es1, char *s2);
-extern char *utfrune(char *, long);
-extern int utflen(char *);
+/*@ requires s != \null;
+  @ assigns \nothing; 
+  @*/
+extern char *utfrune(char *s, long c);
+/*@ requires s != \null;
+  @ assigns \nothing;
+  @*/
+extern int utflen(char *s);
 extern int utfnlen(char *, long);
 extern int runelen(long);
 
@@ -110,7 +120,7 @@ extern int abs(int);
 /*
  * print routines
  */
-#ifndef __FRAMAC__
+
 #ifndef _FMT_TYPEDEF_
 #define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
@@ -128,12 +138,11 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-#endif
-#endif
+
 typedef int (*Fmts)(Fmt *);
 
 /*@
-  @ requires valid_string(fmt);
+  @ requires fmt != \null;
   @ assigns \nothing;
   @*/
 extern int print(char *fmt, ...);
@@ -146,10 +155,14 @@ extern char *vseprint(char *, char *, char *, va_list);
   @ ensures \result >= 0;
   @*/
 extern int snprint(char *s, int n, char *fmt, ...);
+/*@ requires s != \null;
+  @ requires \valid_read(s+(0..n-1));
+  @ assigns \nothing;
+  @*/
+extern int uartputs(char *s, int n);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
-#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos print 1
 #pragma varargck argpos seprint 3
@@ -193,7 +206,7 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "p" uintptr
 #pragma varargck type "p" void *
 #pragma varargck flag ','
-#endif /* __FRAMAC__ */
+/* __FRAMAC__ */
 
 extern int fmtstrinit(Fmt *);
 extern int fmtinstall(int, int (*)(Fmt *));
@@ -277,7 +290,6 @@ typedef struct Waitmsg Waitmsg;
 #define DMWRITE 0x2         /* mode bit for write permission */
 #define DMEXEC 0x1          /* mode bit for execute permission */
 
-#ifndef __FRAMAC__
 #ifndef _QID_TYPEDEF_
 #define _QID_TYPEDEF_
 struct Qid {
@@ -285,7 +297,6 @@ struct Qid {
   ulong vers;
   uchar type;
 };
-#endif
 
 #ifndef _DIR_TYPEDEF_
 #define _DIR_TYPEDEF_
@@ -304,7 +315,6 @@ struct Dir {
   char *gid;    /* group name */
   char *muid;   /* last modifier name */
 };
-#endif
 
 struct OWaitmsg {
   char pid[12];      /* of loved one */
@@ -319,8 +329,14 @@ struct Waitmsg {
   ulong time[3];    /* of loved one and descendants */
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
-#endif
-#endif
-#endif /* _LIB_H_ */
 
-#endif /* _PORTLIB_H_ */
+/* _LIB_H_ */
+
+/* _PORTLIB_H_ */
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
