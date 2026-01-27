@@ -19,8 +19,6 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -nostdinc -I$(GCC_INC) \
            -Ikernel/include \
            -Ikernel/crypto \
-           -Ikernel/clr/libmcu-cbor \
-           -Ikernel/tpm2-tss/include \
            -Iport \
            -I. \
            -D_PLAN9_SOURCE \
@@ -30,7 +28,8 @@ CFLAGS := -Wall -Wextra -Wno-unused -Wno-unknown-pragmas -Wno-builtin-declaratio
            -DUSE_PEBBLE_ALLOC=1 \
            -DKTZERO=0xffffffff80110000 \
            -fplan9-extensions -nostdlib -fno-builtin -fno-omit-frame-pointer \
-           -Wformat-security -Wconversion -Wshadow
+           -Wformat-security -Wconversion -Wshadow \
+           -fcf-protection=none
 
 # Linker flags
 # Phase 7: Security hardening - DEP/NX enabled
@@ -39,10 +38,11 @@ LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie --no-dynamic-linker \
            -z noexecstack \
            -T kernel/linker.ld
 
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
+
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
-# Shadow files to bypass reversion issues
-PORT_C := $(filter-out kernel/9front-port/blind_ledger.c, $(PORT_C))
+# Filter out conflicting/duplicate files
 PORT_C := $(filter-out kernel/9front-port/rbtree.c, $(PORT_C))
 
 # Ensure TPM drivers are included
@@ -52,31 +52,27 @@ LIBC_C := $(wildcard kernel/libc9/*.c)
 MEMDRAW_C := $(wildcard kernel/libmemdraw/*.c)
 FAMILY_C := $(wildcard kernel/family/*.c)
 CRYPTO_C := $(wildcard kernel/crypto/*.c)
-BORROW_C := kernel/borrowchecker.c
+BORROW_C := kernel/borrowchecker.c kernel/borrow_enforce.c
 LOCKDAG_C := kernel/lock_dag.c
 PROCSTATEDAG_C := kernel/proc_state_dag.c
 PROCFSM_C := kernel/proc_fsm.c
-P9ROUTER_C := kernel/9p_router.c
+P9ROUTER_C := kernel/router/core.c kernel/router/fs.c kernel/router/proc.c kernel/router/ipc.c kernel/router/wasm.c kernel/router/doorbell.c kernel/router/srv.c
 # SYSCALL9P_C removed - Phase 6: TRUE syscall elimination via exchange page doorbell
 # GHOSTDAG renamed to msgord - see MSGORD_C below
 MSGORD_C := kernel/msgord.c
 CONSENSUS_DEPTH_C := kernel/consensus_depth.c
 REAL_DRIVERS_C := $(wildcard real_drivers/*.c)
-PEBBLE_C := kernel/pebble.c
+PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c kernel/distributed_pebble.c
+EXCHANGE_POOL_C := kernel/exchange_pool.c kernel/exchange_pool_ipc.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
-CBOR_C := kernel/clr/libmcu-cbor/common.c kernel/clr/libmcu-cbor/decoder.c kernel/clr/libmcu-cbor/encoder.c kernel/clr/libmcu-cbor/parser.c
-CLR_C := kernel/clr/fruity/fruity_ir.c kernel/clr/fruity/fruity_to_qbe.c kernel/clr/fruity/fruity_cbor.c kernel/clr/fruity/qbe_buffer.c kernel/clr/qbe_compile.c kernel/clr/qbe/kernel_compat.c kernel/clr/qbe/exchange_io.c kernel/clr/qbe/clr_p9_internal.c kernel/clr/qbe/clr_core.c kernel/clr/qbe/clr_console.c kernel/clr/qbe/clr_bcl_helpers.c kernel/clr/clr_exchange_ops.c kernel/clr/qbe/amd64/targ.c kernel/clr/qbe/qbe_globals.c kernel/clr/clr_runtime.c kernel/clr/il_parser.c kernel/clr/il_to_fruity.c kernel/clr/clr-kernel/clr_pebble_integration.c $(CBOR_C)
+CAPABILITY_C := kernel/capability/clr_capability.c
+# mini-gmp wrapper for symbolic math
+SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
+BPRINT_C := kernel/bprint.c
 
-# TPM2-TSS sources - REMOVED, using minimal SAPI instead
-# TPM2_MU_C := $(wildcard kernel/tpm2-tss/mu/*.c)
-# TPM2_SAPI_C := $(wildcard kernel/tpm2-tss/sapi/*.c) $(wildcard kernel/tpm2-tss/sapi/api/*.c)
-# TPM2_TCTI_C := kernel/tpm2-tss/tcti_kernel.c
-# TPM2_TSS_C := $(TPM2_MU_C) $(TPM2_SAPI_C) $(TPM2_TCTI_C)
+# CLR removed - archived in old_clr_pipeline/
 
-# QBE compiler core sources (for qbe.a)
-QBE_CORE_C := kernel/clr/qbe/alias.c kernel/clr/qbe/cfg.c kernel/clr/qbe/copy.c kernel/clr/qbe/fold.c kernel/clr/qbe/gas.c kernel/clr/qbe/live.c kernel/clr/qbe/load.c kernel/clr/qbe/mem.c kernel/clr/qbe/parse.c kernel/clr/qbe/rega.c kernel/clr/qbe/spill.c kernel/clr/qbe/ssa.c kernel/clr/qbe/util.c kernel/clr/qbe/amd64/emit.c kernel/clr/qbe/amd64/isel.c kernel/clr/qbe/amd64/sysv.c
-QBE_CORE_O := $(QBE_CORE_C:.c=.o)
 
 # SD/FIS support files already included by wildcard above
 
@@ -102,18 +98,23 @@ P9ROUTER_O := $(P9ROUTER_C:.c=.o)
 MSGORD_O := $(MSGORD_C:.c=.o)
 CONSENSUS_DEPTH_O := $(CONSENSUS_DEPTH_C:.c=.o)
 REAL_DRIVERS_O := $(REAL_DRIVERS_C:.c=.o)
+UUID_O := kernel/lib/uuid.o
 PEBBLE_O := $(PEBBLE_C:.c=.o)
+EXCHANGE_POOL_O := $(EXCHANGE_POOL_C:.c=.o)
 POW_GATE_O := $(POW_GATE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
-CLR_O := $(CLR_C:.c=.o)
+CAPABILITY_O := $(CAPABILITY_C:.c=.o)
+WASM3_C := $(filter-out kernel/wasm/wasm_runtime/wasm3/m3_api_libc.c, $(wildcard kernel/wasm/wasm_runtime/wasm3/*.c))
+WASM_FILESERVER_C := kernel/wasm/wasm_runtime.c kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c kernel/wasm/wasi_lux9_shim.c kernel/wasm/wasm_host_lux9.c
+WASM_C := $(WASM3_C) $(WASM_FILESERVER_C)
+WASM_O := $(WASM_C:.c=.o)
+SYMBOLIC_O := $(SYMBOLIC_C:.c=.o)
+BPRINT_O := $(BPRINT_C:.c=.o)
 # TPM2_TSS_O := $(TPM2_TSS_C:.c=.o)  # Removed - using minimal SAPI
-
-# External archives
-QBE_A := kernel/clr/qbe/qbe.a
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(POW_GATE_O) $(BENCHMARK_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(CLR_O) $(QBE_A)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(BPRINT_O) $(UUID_O)
 # TPM already included in PORT_O
 
 .PHONY: all clean count iso run help
@@ -122,7 +123,7 @@ all: $(KERNEL)
 
 $(KERNEL): $(ALL_O)
 	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) $(ALL_O) -o $@
+	$(LD) $(LDFLAGS) $(ALL_O) $(LIBGCC) -o $@
 	@echo "Build complete: $(KERNEL)"
 	@ls -lh $(KERNEL)
 
@@ -131,19 +132,20 @@ $(QBE_A): $(QBE_CORE_O)
 	@echo "AR $@"
 	@ar rcs $@ $(QBE_CORE_O)
 
-# QBE needs SSE for floating point and doesn't use GNU extensions
-kernel/clr/qbe/%.o: kernel/clr/qbe/%.c
-	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+# WASM3 Runtime build - use WASM3's compatibility headers
+kernel/wasm/wasm_runtime/wasm3/%.o: kernel/wasm/wasm_runtime/wasm3/%.c
+	@echo "CC $< (WASM3)"
+	@$(CC) $(CFLAGS) -msse -msse2 -Wno-conversion -Wno-sign-conversion -Wno-shadow -Dd_m3HasFloat=0 -Ikernel/wasm/wasm_runtime/wasm3/include -c $< -o $@
 
-kernel/clr/qbe/amd64/%.o: kernel/clr/qbe/amd64/%.c
-	@echo "CC $< (QBE)"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -std=gnu11,$(CFLAGS)) -std=c11 -msse -msse2 -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+# WASM file server code also needs WASM3 headers
+kernel/wasm/%.o: kernel/wasm/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -msse -msse2 -Wno-shadow -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
-# CBOR library needs special flags
-kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
-	@echo "CC $< (CBOR)"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+# Relax warnings for 9p_router.c due to extensive use of mixed integer types
+kernel/9p_router.o: kernel/9p_router.c
+	@echo "CC $< (Relaxed)"
+	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"
@@ -154,8 +156,7 @@ kernel/clr/libmcu-cbor/%.o: kernel/clr/libmcu-cbor/%.c
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(ALL_O) $(CLR_O) $(KERNEL)
-	rm -f kernel/clr/qbe/qbe.a kernel/clr/qbe/**/*.o
+	rm -f $(ALL_O) $(UUID_O) $(KERNEL)
 	rm -rf iso_root lux9.iso
 
 count:
@@ -183,7 +184,11 @@ test-build:
 
 userspace/build/initrd.tar:
 	@echo "Building userspace..."
-	@$(MAKE) -C userspace initrd
+	@$(MAKE) -C userspace
+	@echo "Copying initrd to boot/..."
+	@mkdir -p boot
+	@cp userspace/build/initrd.tar boot/initrd.tar
+	@echo "✓ initrd.tar copied to boot/"
 
 iso: $(KERNEL) userspace/build/initrd.tar
 	@echo "Creating ISO image..."

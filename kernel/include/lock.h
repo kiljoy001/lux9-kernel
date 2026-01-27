@@ -1,19 +1,8 @@
 #ifndef _LOCK_H_
 #define _LOCK_H_
 
+#include "types_fwd.h"
 #include "u.h"
-
-#ifndef _PROC_DEFINED
-#define _PROC_DEFINED
-typedef struct Proc Proc;
-#endif
-
-#ifndef _MACH_DEFINED
-#define _MACH_DEFINED
-typedef struct Mach Mach;
-#endif
-
-typedef struct Lock Lock;
 
 struct Lock {
   ulong key;

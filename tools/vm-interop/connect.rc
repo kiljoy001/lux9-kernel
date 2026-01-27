@@ -1,0 +1,8 @@
+#!/bin/rc
+# Connect to VM interop share from 9front
+
+echo 'Connecting to VM interop share...'
+srv tcp!10.0.2.2!9564 interop
+mount /srv/interop /n/interop
+echo 'Mounted at /n/interop'
+ls -l /n/interop

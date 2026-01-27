@@ -2,6 +2,7 @@
 #define _PORTLIB_H_
 
 /* Include base types */
+#include "acsl_bounds.h"
 #include "u.h"
 
 /*
@@ -16,37 +17,71 @@ typedef unsigned int Rune;
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
 #define assert(x)                                                              \
   if (x) {                                                                     \
-  } else                                                                       \
-    panic("assert: %s", #x)
+  } else {                                                                     \
+    print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);                \
+    /* panic("assert: %s", #x); */                                             \
+  }
 
+#ifndef _LIB_H_
 /*
  * mem routines
  */
-extern void *memccpy(void *, void *, int, usize);
-extern void *memset(void *, int, usize);
-extern int memcmp(void *, void *, usize);
-extern void *memmove(void *, void *, usize);
-extern void *memchr(void *, int, usize);
+extern void *memccpy(void *, const void *, int, usize);
+/*@
+  @ requires \valid(((char*)s) + (0 .. (integer)n - 1));
+  @ terminates \true;
+  @ assigns ((char*)s)[0 .. (integer)n - 1];
+  @ assigns \result \from s;
+  @ ensures \result == s;
+  @*/
+extern void *memset(void *s, int c, usize n);
+/*@
+  @ requires \valid_read(((char*)s1) + (0 .. (integer)n - 1));
+  @ requires \valid_read(((char*)s2) + (0 .. (integer)n - 1));
+  @ assigns \nothing;
+  @*/
+extern int memcmp(const void *s1, const void *s2, usize n);
+/*@
+  @ requires \valid(((char*)dest) + (0 .. (integer)n - 1));
+  @ requires \valid_read(((char*)src) + (0 .. (integer)n - 1));
+  @ terminates \true;
+  @ assigns ((char*)dest)[0 .. (integer)n - 1];
+  @ assigns \result \from dest;
+  @ ensures \result == dest;
+  @*/
+extern void *memmove(void *dest, const void *src, usize n);
+extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
  */
-extern char *strcat(char *, char *);
-extern char *strchr(char *, int);
-extern char *strrchr(char *, int);
-extern int strcmp(char *, char *);
-extern char *strcpy(char *, char *);
-extern char *strecpy(char *, char *, char *);
-extern char *strncat(char *, char *, long);
-extern char *strncpy(char *, char *, long);
-extern int strncmp(char *, char *, long);
-extern long strlen(char *);
-extern char *strstr(char *, char *);
+extern char *strcat(char *, const char *);
+extern char *strchr(const char *, int);
+extern char *strrchr(const char *, int);
+/*@ requires s1 == \null || valid_string(s1);
+  @ requires s2 == \null || valid_string(s2);
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+extern int strcmp(const char *s1, const char *s2);
+extern char *strcpy(char *, const char *);
+extern char *strecpy(char *, char *, const char *);
+extern char *strncat(char *, const char *, long);
+extern char *strncpy(char *, const char *, long);
+extern int strncmp(const char *, const char *, long);
+/*@ requires s == \null || valid_string(s);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  */
+extern long strlen(const char *s);
+extern char *strstr(const char *, const char *);
 extern int atoi(char *);
 extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
+#ifndef _LIBC_H_
 enum {
   UTFmax = 4,         /* maximum bytes per rune */
   Runesync = 0x80,    /* cannot represent part of a UTF sequence */
@@ -61,8 +96,14 @@ enum {
 extern int runetochar(char *, Rune *);
 extern int chartorune(Rune *, char *);
 extern char *utfecpy(char *s1, char *es1, char *s2);
-extern char *utfrune(char *, long);
-extern int utflen(char *);
+/*@ requires s != \null;
+  @ assigns \nothing; 
+  @*/
+extern char *utfrune(char *s, long c);
+/*@ requires s != \null;
+  @ assigns \nothing;
+  @*/
+extern int utflen(char *s);
 extern int utfnlen(char *, long);
 extern int runelen(long);
 
@@ -79,8 +120,10 @@ extern int abs(int);
 /*
  * print routines
  */
+
+#ifndef _FMT_TYPEDEF_
+#define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
-typedef int (*Fmts)(Fmt *);
 struct Fmt {
   uchar runes;         /* output buffer is runes or chars? */
   void *start;         /* of buffer */
@@ -95,10 +138,28 @@ struct Fmt {
   int prec;
   ulong flags;
 };
-extern int print(char *, ...);
+
+typedef int (*Fmts)(Fmt *);
+
+/*@
+  @ requires fmt != \null;
+  @ assigns \nothing;
+  @*/
+extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
-extern int snprint(char *, int, char *, ...);
+/*@
+  @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
+  @ ensures \result >= 0;
+  @*/
+extern int snprint(char *s, int n, char *fmt, ...);
+/*@ requires s != \null;
+  @ requires \valid_read(s+(0..n-1));
+  @ assigns \nothing;
+  @*/
+extern int uartputs(char *s, int n);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
@@ -145,6 +206,7 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "p" uintptr
 #pragma varargck type "p" void *
 #pragma varargck flag ','
+/* __FRAMAC__ */
 
 extern int fmtstrinit(Fmt *);
 extern int fmtinstall(int, int (*)(Fmt *));
@@ -159,6 +221,11 @@ extern char *fmtstrflush(Fmt *);
 extern char *cleanname(char *);
 extern uintptr getcallerpc(void *);
 
+extern double strtod(char *, char **);
+/*@
+  @ assigns \result, *endptr;
+  @ ensures \valid(endptr) ==> \valid(*endptr);
+  @*/
 extern long strtol(char *, char **, int);
 extern ulong strtoul(char *, char **, int);
 extern vlong strtoll(char *, char **, int);
@@ -223,12 +290,16 @@ typedef struct Waitmsg Waitmsg;
 #define DMWRITE 0x2         /* mode bit for write permission */
 #define DMEXEC 0x1          /* mode bit for execute permission */
 
+#ifndef _QID_TYPEDEF_
+#define _QID_TYPEDEF_
 struct Qid {
   uvlong path;
   ulong vers;
   uchar type;
 };
 
+#ifndef _DIR_TYPEDEF_
+#define _DIR_TYPEDEF_
 struct Dir {
   /* system-modified data */
   ushort type; /* server type */
@@ -251,10 +322,21 @@ struct OWaitmsg {
   char msg[64];      /* compatibility BUG */
 };
 
+#ifndef _WAITMSG_TYPEDEF_
+#define _WAITMSG_TYPEDEF_
 struct Waitmsg {
   int pid;          /* of loved one */
   ulong time[3];    /* of loved one and descendants */
   char msg[ERRMAX]; /* actually variable-size in user mode */
 };
 
-#endif /* _PORTLIB_H_ */
+/* _LIB_H_ */
+
+/* _PORTLIB_H_ */
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif
+#endif

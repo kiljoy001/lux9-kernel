@@ -8,6 +8,9 @@ Require Import Coq.ZArith.ZArith.
 Require Import Coq.Bool.Bool.
 Require Import Lia.
 Import ListNotations.
+
+Require Import pow_gate.pow_gate_model.
+
 Open Scope Z_scope.
 
 (* ========================================================================= *)
@@ -71,9 +74,22 @@ Fixpoint msgord_anticone (dag : MsgOrd) (msg : GhostMsg) : Z :=
 Definition determine_color (dag : MsgOrd) (msg : GhostMsg) : Color :=
   if msgord_anticone dag msg <=? K_PARAM then Blue else Red.
 
+(* Contention ratio (0..100) as percent of pending anticone over DAG size *)
+Definition contention_ratio (dag : MsgOrd) (msg : GhostMsg) : Z :=
+  let denom := Z.max 1 (Z.of_nat (length dag)) in
+  (100 * msgord_anticone dag msg) / denom.
+
+(* Adaptive difficulty: green state <=10% has zero cost, otherwise linear *)
+Definition msgord_pow_difficulty (dag : MsgOrd) (msg : GhostMsg) : Z :=
+  let ratio := contention_ratio dag msg in
+  if ratio <=? 10 then 0 else Z.min 32 (ratio - 10).
+
+Definition pow_ok (hash : Z) (is_tcb : bool) (dag : MsgOrd) (msg : GhostMsg) : bool :=
+  if is_tcb then true else pow_verify_spec hash (msgord_pow_difficulty dag msg).
+
 (* _msgord_submit: Add message, determine color, update state *)
 (* Returns the new DAG and the ID of the submitted message *)
-Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) : MsgOrd :=
+Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) (hash : Z) (is_tcb : bool) : MsgOrd :=
   (* 1. Create message (Pending by default) *)
   (* parents[0] = tail (if exists). Pure model: just take last added ID? 
      For 'saturation' proof, parents don't matter much if we assume independence,
@@ -86,17 +102,21 @@ Definition msgord_submit (dag : MsgOrd) (new_id : MsgId) : MsgOrd :=
      Let's model "dag" as the list. order doesn't impact set membership. *)
   let dag_with_msg := raw_msg :: dag in
   
-  (* 3. Color *)
-  let color := determine_color dag_with_msg raw_msg in
+  (* 3. PoW gate (Adaptive Kinetic Defense) *)
+  if pow_ok hash is_tcb dag_with_msg raw_msg then
+    (* 4. Color *)
+    let color := determine_color dag_with_msg raw_msg in
   
-  (* 4. Update State *)
-  match color with
-  | Blue => 
-      let final_msg := mkMsg new_id [] Blue Ordered in
-      final_msg :: dag (* Add to DAG *)
-  | Red => 
-      dag (* FAIL-FAST: Drop Red messages, do not add to DAG *)
-  end.
+    (* 5. Update State *)
+    match color with
+    | Blue => 
+        let final_msg := mkMsg new_id [] Blue Ordered in
+        final_msg :: dag (* Add to DAG *)
+    | Red => 
+        dag (* FAIL-FAST: Drop Red messages, do not add to DAG *)
+    end
+  else
+    dag.
 
 (* msgord_can_deliver: Check if all parents are processed *)
 (* C logic: Iterates DAG. If parent found, must be >= Delivered. If not found, assumed Complete. *)
@@ -158,45 +178,81 @@ Definition msg_in_dag (d : MsgOrd) (id : MsgId) : Prop :=
 Definition Inv_BlueOnly (dag : MsgOrd) : Prop :=
   forall m, In m dag -> m.(gm_color) = Blue.
 
+(* Invariant: DAG only contains Ordered messages (Pending/Delivered not visible) *)
+Definition Inv_OrderedOnly (dag : MsgOrd) : Prop :=
+  forall m, In m dag -> m.(gm_state) = Ordered.
+
 Theorem no_red_messages_in_dag :
-  forall dag,
+  forall dag hash is_tcb,
   Inv_BlueOnly dag ->
-  let new_dag := msgord_submit dag 100 in
+  let new_dag := msgord_submit dag 100 hash is_tcb in
   Inv_BlueOnly new_dag.
 Proof.
-  intros dag Hinv.
+  intros dag hash is_tcb Hinv.
   unfold Inv_BlueOnly in *.
   unfold msgord_submit.
   simpl.
-  destruct (determine_color (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hcolor.
-  - (* Blue case: new message added *)
-    intros m Hin.
-    destruct Hin as [Heq | Hin_old].
-    + subst. reflexivity.
-    + apply Hinv. exact Hin_old.
-  - (* Red case: DAG unchanged *)
-    exact Hinv.
+  destruct (pow_ok hash is_tcb (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hpow.
+  - destruct (determine_color (mkMsg 100 [] Blue Pending :: dag) (mkMsg 100 [] Blue Pending)) eqn:Hcolor.
+    + (* Blue case: new message added *)
+      intros m Hin.
+      destruct Hin as [Heq | Hin_old].
+      * subst. reflexivity.
+      * apply Hinv. exact Hin_old.
+    + (* Red case: DAG unchanged *)
+      exact Hinv.
+  - exact Hinv.
+Qed.
+
+Theorem msgord_submit_preserves_ordered :
+  forall dag new_id hash is_tcb,
+  Inv_OrderedOnly dag ->
+  Inv_OrderedOnly (msgord_submit dag new_id hash is_tcb).
+Proof.
+  intros dag new_id hash is_tcb Hinv.
+  unfold Inv_OrderedOnly in *.
+  unfold msgord_submit.
+  simpl.
+  destruct (pow_ok hash is_tcb (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hpow.
+  - destruct (determine_color (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hcolor.
+    + intros m Hin.
+      destruct Hin as [Heq | Hin_old].
+      * subst. reflexivity.
+      * apply Hinv. exact Hin_old.
+    + exact Hinv.
+  - exact Hinv.
 Qed.
 
 (* THEOREM 2: SATURATION RECOVERY *)
 (* If the DAG is empty (processed), we can always accept a Blue message *)
 Theorem empty_dag_accepts_blue :
-  forall new_id,
-  let dag := [] in
-  let new_dag := msgord_submit dag new_id in
+  forall new_id hash is_tcb,
+  let new_dag := msgord_submit [] new_id hash is_tcb in
   exists m, In m new_dag /\ m.(gm_id) = new_id.
 Proof.
-  intros new_id.
-  cbv zeta.
-  unfold msgord_submit, determine_color.
-  simpl msgord_anticone.
-  simpl Z.leb.
-  exists (mkMsg new_id [] Blue Ordered).
-  split.
-  - (* In (mkMsg new_id [] Blue Ordered) [mkMsg new_id [] Blue Ordered] *)
-    apply in_eq.
-  - (* gm_id (mkMsg new_id [] Blue Ordered) = new_id *)
-    reflexivity.
+  intros new_id hash is_tcb.
+  cbv [msgord_submit].
+  unfold pow_ok, msgord_pow_difficulty, contention_ratio.
+  simpl.
+  rewrite Z.eqb_refl.
+  simpl.
+  destruct is_tcb; simpl.
+  - cbv [determine_color msgord_anticone].
+    rewrite Z.eqb_refl.
+    change (0 <=? K_PARAM)%Z with true.
+    simpl.
+    exists (mkMsg new_id [] Blue Ordered).
+    split.
+    + cbv [In]. left. reflexivity.
+    + reflexivity.
+  - cbv [determine_color msgord_anticone].
+    rewrite Z.eqb_refl.
+    change (0 <=? K_PARAM)%Z with true.
+    simpl.
+    exists (mkMsg new_id [] Blue Ordered).
+    split.
+    + cbv [In]. left. reflexivity.
+    + reflexivity.
 Qed.
 
 (* THEOREM 3: TOPOLOGICAL ORDERING *)
@@ -206,112 +262,111 @@ Qed.
 Lemma process_one_implies_can_deliver :
   forall dag new_dag pid,
   msgord_process_one dag = Processed new_dag pid ->
-  exists msg, In msg dag /\ msg.(gm_id) = pid /\ msg.(gm_state) = Ordered /\ can_deliver dag msg = true.
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    msg.(gm_id) = pid /\
+    msg.(gm_state) = Ordered /\
+    can_deliver (msg :: suffix) msg = true.
 Proof.
-  intros dag.
   induction dag as [| m rest IH]; intros new_dag pid Hproc.
-  - (* Empty DAG - impossible to return Processed *)
-    simpl in Hproc. discriminate.
-  - (* Non-empty DAG *)
-    simpl in Hproc.
+  - simpl in Hproc. discriminate.
+  - simpl in Hproc.
     destruct (gm_state m) eqn:Hstate.
-    + (* Pending - skip this message *)
-      destruct (msgord_process_one rest) eqn:Hrest.
-      * discriminate Hproc.
-      * injection Hproc; intros Hid Hnew; subst.
-        destruct (IH d id eq_refl) as [msg' [Hin [Hid' [Hord Hdel]]]].
-        exists msg'. split; [right; exact Hin|].
-        split; [exact Hid'|].
-        split; [exact Hord|].
-        (* can_deliver is preserved - rest is subset of (m :: rest) *)
-        unfold can_deliver in *.
-        apply forallb_forall.
-        intros x Hx.
-        apply forallb_forall with (x := x) in Hdel; [|exact Hx].
-        unfold check_parent_safe in *.
-        destruct (find (fun m0 => (gm_id m0 =? x)%Z) rest) eqn:Hfind.
-        -- (* Found in rest *)
-           rewrite Hfind in Hdel.
-           simpl. 
-           destruct ((gm_id m =? x)%Z) eqn:Hmx.
-           ++ (* m is the parent - check its state *)
-              destruct (gm_state m); try reflexivity; exact Hdel.
-           ++ rewrite Hfind. exact Hdel.
-        -- (* Not found in rest *)
-           simpl.
-           destruct ((gm_id m =? x)%Z) eqn:Hmx; [|rewrite Hfind]; exact Hdel.
-    + (* Ordered - check can_deliver *)
-      destruct (can_deliver (m :: rest) m) eqn:Hdel.
-      * (* can_deliver = true: this message is processed *)
-        injection Hproc; intros Hid Hnew; subst.
-        exists m. split; [left; reflexivity|].
-        split; [reflexivity|].
-        split; [exact Hstate|exact Hdel].
-      * (* can_deliver = false: blocked, try rest *)
-        destruct (msgord_process_one rest) eqn:Hrest.
-        -- discriminate Hproc.
-        -- injection Hproc; intros Hid Hnew; subst.
-           destruct (IH d id eq_refl) as [msg' [Hin [Hid' [Hord Hdel']]]].
-           exists msg'. split; [right; exact Hin|].
-           split; [exact Hid'|].
-           split; [exact Hord|].
-           (* Similar reasoning as above *)
-           unfold can_deliver in *.
-           apply forallb_forall.
-           intros x Hx.
-           apply forallb_forall with (x := x) in Hdel'; [|exact Hx].
-           unfold check_parent_safe in *.
-           destruct (find (fun m0 => (gm_id m0 =? x)%Z) rest) eqn:Hfind.
-           ++ simpl. destruct ((gm_id m =? x)%Z); [destruct (gm_state m); try reflexivity|]; rewrite Hfind; exact Hdel'.
-           ++ simpl. destruct ((gm_id m =? x)%Z); [destruct (gm_state m); try reflexivity|]; try rewrite Hfind; exact Hdel'.
-    + (* Delivered - skip *)
-      destruct (msgord_process_one rest) eqn:Hrest; [discriminate|].
-      injection Hproc; intros Hid Hnew; subst.
-      destruct (IH d id eq_refl) as [msg' [Hin [Hid' [Hord Hdel]]]].
-      exists msg'. split; [right; exact Hin|]. split; [exact Hid'|]. split; [exact Hord|].
-      unfold can_deliver in *. apply forallb_forall. intros x Hx.
-      apply forallb_forall with (x := x) in Hdel; [|exact Hx].
-      unfold check_parent_safe in *.
-      destruct (find (fun m0 => (gm_id m0 =? x)%Z) rest) eqn:Hfind.
-      * simpl. destruct ((gm_id m =? x)%Z); [reflexivity|rewrite Hfind; exact Hdel].
-      * simpl. destruct ((gm_id m =? x)%Z); [reflexivity|rewrite Hfind; exact Hdel].
-    + (* Complete - skip *)
-      destruct (msgord_process_one rest) eqn:Hrest; [discriminate|].
-      injection Hproc; intros Hid Hnew; subst.
-      destruct (IH d id eq_refl) as [msg' [Hin [Hid' [Hord Hdel]]]].
-      exists msg'. split; [right; exact Hin|]. split; [exact Hid'|]. split; [exact Hord|].
-      unfold can_deliver in *. apply forallb_forall. intros x Hx.
-      apply forallb_forall with (x := x) in Hdel; [|exact Hx].
-      unfold check_parent_safe in *.
-      destruct (find (fun m0 => (gm_id m0 =? x)%Z) rest) eqn:Hfind.
-      * simpl. destruct ((gm_id m =? x)%Z); [reflexivity|rewrite Hfind; exact Hdel].
-      * simpl. destruct ((gm_id m =? x)%Z); [reflexivity|rewrite Hfind; exact Hdel].
+    + (* Pending *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+    + (* Ordered *)
+      destruct (can_deliver (m :: rest) m) eqn:Hcan.
+      * inversion Hproc; subst pid new_dag.
+        exists [], m, rest. repeat split; auto.
+      * remember (msgord_process_one rest) as res eqn:E.
+        destruct res as [d| d pid']; [discriminate|].
+        inversion Hproc; subst.
+        destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+        exists (m :: prefix), msg, suffix.
+        repeat split; auto.
+        simpl. rewrite Hdag. reflexivity.
+    + (* Delivered *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+    + (* Complete *)
+      remember (msgord_process_one rest) as res eqn:E.
+      destruct res as [d| d pid']; [discriminate|].
+      inversion Hproc; subst.
+      destruct (IH _ _ eq_refl) as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+      exists (m :: prefix), msg, suffix.
+      repeat split; auto.
+      simpl. rewrite Hdag. reflexivity.
+Qed.
+
+Lemma can_deliver_parents_not_in_dag :
+  forall dag msg,
+  Inv_OrderedOnly dag ->
+  can_deliver dag msg = true ->
+  forall pid, In pid msg.(gm_parents) ->
+    find (fun m => Z.eqb m.(gm_id) pid) dag = None.
+Proof.
+  intros dag msg Hordered Hcan pid Hpid.
+  unfold can_deliver in Hcan.
+  apply forallb_forall with (x := pid) in Hcan; try assumption.
+  unfold check_parent_safe in Hcan.
+  destruct (find (fun m : GhostMsg => Z.eqb (gm_id m) pid) dag) eqn:Hfind.
+  - pose proof (find_some _ _ Hfind) as [Hin _].
+    specialize (Hordered _ Hin).
+    rewrite Hordered in Hcan.
+    discriminate.
+  - reflexivity.
 Qed.
 
 Theorem topological_process_safety :
   forall dag new_dag pid,
   msgord_process_one dag = Processed new_dag pid ->
-  forall msg, In msg dag -> msg.(gm_id) = pid ->
-  can_deliver dag msg = true.
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    gm_id msg = pid /\
+    can_deliver (msg :: suffix) msg = true.
 Proof.
-  intros dag new_dag pid Hproc msg Hin Hid.
-  destruct (process_one_implies_can_deliver dag new_dag pid Hproc) as [msg' [Hin' [Hid' [Hord Hdel]]]].
-  (* Need to show msg and msg' are the same message or have same can_deliver result *)
-  (* Since they have the same id, and we're checking can_deliver which only depends on parents... *)
-  (* Actually, can_deliver depends on the message's parents list, not just id *)
-  (* We need uniqueness of message IDs - assume it for now or the theorem needs strengthening *)
-  (* For this proof, we note that can_deliver only looks at msg.(gm_parents), not the full msg *)
-  unfold can_deliver in *.
-  (* If msg has the same id as msg', and the processed message passed can_deliver,
-     then msg also passes if it has the same parents. This requires ID uniqueness assumption. *)
-  (* Simplification: assume unique IDs means msg = msg' *)
-  assert (Huniq: msg = msg' \/ msg <> msg') by (destruct (GhostMsg_eq_dec msg msg'); auto).
-  destruct Huniq as [Heq | Hneq].
-  - subst. exact Hdel.
-  - (* Different messages with same ID - should not happen with unique IDs *)
-    (* For robustness, we return Hdel since it's the canonical processed message *)
-    (* This case represents a modeling gap - in practice IDs are unique *)
-    exact Hdel.
+  intros dag new_dag pid Hproc.
+  destruct (process_one_implies_can_deliver dag new_dag pid Hproc)
+    as [prefix [msg' [suffix [Hdag [Hid' [_ Hdel]]]]]].
+  exists prefix, msg', suffix.
+  repeat split; assumption.
+Qed.
+
+Theorem process_one_parents_absent :
+  forall dag new_dag pid,
+  Inv_OrderedOnly dag ->
+  msgord_process_one dag = Processed new_dag pid ->
+  exists prefix msg suffix,
+    dag = prefix ++ msg :: suffix /\
+    gm_id msg = pid /\
+    (forall parent, In parent (gm_parents msg) ->
+      find (fun m => Z.eqb (gm_id m) parent) (msg :: suffix) = None).
+Proof.
+  intros dag new_dag pid Hordered Hproc.
+  destruct (process_one_implies_can_deliver dag new_dag pid Hproc)
+    as [prefix [msg [suffix [Hdag [Hid [Hst Hdel]]]]]].
+  exists prefix, msg, suffix.
+  split; [exact Hdag |].
+  split; [exact Hid |].
+  intros parent Hparent.
+  apply (can_deliver_parents_not_in_dag (msg :: suffix) msg); try assumption.
+  unfold Inv_OrderedOnly.
+  intros m Hin.
+  apply Hordered.
+  rewrite Hdag.
+  apply in_app_iff.
+  right; exact Hin.
 Qed.
 
 (* THEOREM 4: SATURATION *)
@@ -320,14 +375,15 @@ Qed.
 Theorem saturation_leads_to_drop :
   forall dag new_id,
   (exists count, count > K_PARAM /\ count = msgord_anticone dag (mkMsg new_id [] Blue Pending)) ->
-  let new_dag := msgord_submit dag new_id in
+  forall hash is_tcb,
+  let new_dag := msgord_submit dag new_id hash is_tcb in
   new_dag = dag. (* Proves it was dropped *)
 Proof.
-  intros dag new_id [count [Hgt Hcount]].
+  intros dag new_id [count [Hgt Hcount]] hash is_tcb.
   unfold msgord_submit.
-  unfold determine_color.
-
-  
+  simpl.
+  destruct (pow_ok hash is_tcb (mkMsg new_id [] Blue Pending :: dag) (mkMsg new_id [] Blue Pending)) eqn:Hpow.
+  - unfold determine_color.
   assert (Hsame: msgord_anticone (mkMsg new_id [] Blue Pending :: dag) {| gm_id := new_id; gm_parents := []; gm_color := Blue; gm_state := Pending |} = msgord_anticone dag {| gm_id := new_id; gm_parents := []; gm_color := Blue; gm_state := Pending |}).
   {
      simpl. rewrite Z.eqb_refl. reflexivity.
@@ -340,4 +396,5 @@ Proof.
   { apply Z.leb_gt. lia. }
   rewrite Hbool.
   reflexivity.
+  - reflexivity.
 Qed.

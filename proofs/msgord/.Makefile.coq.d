@@ -1,0 +1,16 @@
+model.vo model.glob model.v.beautified model.required_vo: model.v ../pow_gate/pow_gate_model.vo
+model.vos model.vok model.required_vos: model.v ../pow_gate/pow_gate_model.vos
+msgord_correctness.vo msgord_correctness.glob msgord_correctness.v.beautified msgord_correctness.required_vo: msgord_correctness.v 
+msgord_correctness.vos msgord_correctness.vok msgord_correctness.required_vos: msgord_correctness.v 
+msgord_verified_simple.vo msgord_verified_simple.glob msgord_verified_simple.v.beautified msgord_verified_simple.required_vo: msgord_verified_simple.v 
+msgord_verified_simple.vos msgord_verified_simple.vok msgord_verified_simple.required_vos: msgord_verified_simple.v 
+msgord_proven.vo msgord_proven.glob msgord_proven.v.beautified msgord_proven.required_vo: msgord_proven.v 
+msgord_proven.vos msgord_proven.vok msgord_proven.required_vos: msgord_proven.v 
+msgord_final_complete.vo msgord_final_complete.glob msgord_final_complete.v.beautified msgord_final_complete.required_vo: msgord_final_complete.v 
+msgord_final_complete.vos msgord_final_complete.vok msgord_final_complete.required_vos: msgord_final_complete.v 
+msgord_fsm_optimization_proofs.vo msgord_fsm_optimization_proofs.glob msgord_fsm_optimization_proofs.v.beautified msgord_fsm_optimization_proofs.required_vo: msgord_fsm_optimization_proofs.v 
+msgord_fsm_optimization_proofs.vos msgord_fsm_optimization_proofs.vok msgord_fsm_optimization_proofs.required_vos: msgord_fsm_optimization_proofs.v 
+msgord_consensus_proofs.vo msgord_consensus_proofs.glob msgord_consensus_proofs.v.beautified msgord_consensus_proofs.required_vo: msgord_consensus_proofs.v 
+msgord_consensus_proofs.vos msgord_consensus_proofs.vok msgord_consensus_proofs.required_vos: msgord_consensus_proofs.v 
+msgord_complete_proofs.vo msgord_complete_proofs.glob msgord_complete_proofs.v.beautified msgord_complete_proofs.required_vo: msgord_complete_proofs.v 
+msgord_complete_proofs.vos msgord_complete_proofs.vok msgord_complete_proofs.required_vos: msgord_complete_proofs.v 

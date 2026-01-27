@@ -22,9 +22,9 @@
 #define _BLIND_LEDGER_H_
 
 #include "../include/rbtree.h"
-
-struct Proc;
-typedef struct Proc Proc;
+#include "types_fwd.h"
+#include "u.h"
+#include "uuid.h"
 
 #define BLIND_LEDGER_SECRET_SIZE 32
 #define BLIND_LEDGER_TOKEN_UNIT 8   // 8 bytes per Token Unit (Peg)
@@ -37,11 +37,17 @@ typedef struct Proc Proc;
  * Users never see physical addresses. They hold this struct.
  * Access is granted if they can present this struct, and
  * Hash(Entry.Secret | Entry.PhysAddr) == Capability.Hash.
+ *
+ * HYBRID DESIGN:
+ * - uuid: Compact 16-byte UUIDv8 identifier for wire protocol (ring buffers)
+ * - hash: Full 32-byte BLAKE2b hash for cryptographic verification
  */
 typedef struct UserCapability {
-  u8int hash[BLIND_LEDGER_CAP_SIZE]; /* The cryptographic proof of ownership */
-  u64int size;                       /* Size of the object (Span) in bytes */
-  u32int type;                       /* Resource Type (Memory, Channel, PCI) */
+  uuid_t uuid; /* 16-byte UUIDv8 public identifier */
+  u8int
+      hash[BLIND_LEDGER_CAP_SIZE]; /* 32-byte BLAKE2b hash (security anchor) */
+  u64int size;                     /* Size of the object (Span) in bytes */
+  u32int type;                     /* Resource Type (Memory, Channel, PCI) */
   u32int perms; /* Permissions (Read, Write, Execute, Transfer) */
 } UserCapability;
 
@@ -51,6 +57,7 @@ enum {
   CAP_TYPE_CHANNEL = 2,
   CAP_TYPE_DEVICE = 3,
   CAP_TYPE_IPC = 4,
+  CAP_TYPE_SPAWN = 5,
 };
 
 /* Capability Permissions */
@@ -118,6 +125,8 @@ BlindLedgerError ledger_mint(UserCapability *out_cap, uintptr pa, ulong len,
                              const u8int *vault_secret);
 BlindLedgerError ledger_verify(const UserCapability *cap,
                                BlindLedgerEntry *out_entry);
+BlindLedgerError ledger_verify_by_uuid(const uuid_t *uuid,
+                                       BlindLedgerEntry *out_entry);
 BlindLedgerError ledger_transfer(const UserCapability *cap, Proc *from_owner,
                                  Proc *to_owner);
 BlindLedgerError ledger_burn(const UserCapability *cap, Proc *owner);

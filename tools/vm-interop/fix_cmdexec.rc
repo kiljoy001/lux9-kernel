@@ -1,0 +1,55 @@
+#!/bin/rc
+# Fix and restart cmdexec with new monitoring features
+
+echo 'Fixing cmdexec with status monitoring and wake mechanism...'
+
+# Kill existing cmdexec if running
+ps | grep cmdexec | awk '{print $2}' | while(pid=`{read}){
+	echo 'Killing old cmdexec pid' $pid
+	echo kill >/proc/$pid/ctl
+}
+
+# Remove stale lock and status files
+rm -f /tmp/cmdexec.lock
+rm -f /n/interop/cmdexec.status
+rm -f /n/interop/cmdexec.wake
+rm -f /n/interop/stop_cmdexec
+
+# Copy fixed cmdexec source
+cp /n/interop/cmdexec.c /tmp/cmdexec.c
+
+# Build in temp directory
+cd /tmp
+echo 'Building fixed cmdexec...'
+6c -FTVw cmdexec.c
+if(! ~ $status ''){
+	echo 'Compilation failed!'
+	exit 1
+}
+
+6l -o cmdexec cmdexec.6
+if(! ~ $status ''){
+	echo 'Linking failed!'
+	exit 1
+}
+
+# Install
+cp cmdexec /bin/cmdexec
+chmod +x /bin/cmdexec
+
+# Start with debug output
+echo 'Starting fixed cmdexec...'
+/bin/cmdexec -d > /n/interop/cmdexec.log >[2=1] &
+
+sleep 1
+
+# Check if it started
+if(test -f /n/interop/cmdexec.status){
+	echo 'cmdexec started successfully!'
+	cat /n/interop/cmdexec.status
+} else {
+	echo 'cmdexec failed to start - check /n/interop/cmdexec.log'
+	tail /n/interop/cmdexec.log
+}
+
+echo 'Done!'

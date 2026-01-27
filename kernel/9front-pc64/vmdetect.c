@@ -1,10 +1,9 @@
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
+#include "vmdetect.h"
 #include "dat.h"
 #include "fns.h"
-#include "vmdetect.h"
-
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
 
 #define cpu_relax() asm volatile("rep; nop" ::: "memory")
 
@@ -69,6 +68,12 @@ static int check_vm_timing(void) {
 }
 
 /* Main VM detection function */
+/*@
+    requires \true;
+    assigns vm_info, vm_detect_has_run;
+    ensures vm_detect_has_run == 1;
+    ensures vm_info.detected == 1;
+*/
 void vm_detect(void) {
   char vendor[16];
 

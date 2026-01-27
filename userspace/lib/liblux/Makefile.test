@@ -1,0 +1,10 @@
+# Simple test Makefile for exchange pool
+CC=gcc
+CFLAGS=-I. -Iinc -I../../../kernel/include -I../../../include -D_LOCK_H_ -fPIC -Wall -Wextra -nostdlib -ffreestanding
+LDFLAGS=-L.
+
+test_exchange: test_exchange.c liblux.a
+	$(CC) $(CFLAGS) $(LDFLAGS) -o test_exchange test_exchange.c -llux
+
+clean:
+	rm -f test_exchange

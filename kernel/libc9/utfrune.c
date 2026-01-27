@@ -1,6 +1,7 @@
 #include <u.h>
 #include <libc.h>
 
+/* ACSL removed */
 char*
 utfrune(char *s, long c)
 {
@@ -11,6 +12,7 @@ utfrune(char *s, long c)
 	if(c < Runesync)		/* not part of utf sequence */
 		return strchr(s, c);
 
+	/* ACSL removed */
 	for(;;) {
 		c1 = *(uchar*)s;
 		if(c1 < Runeself) {	/* one byte rune */

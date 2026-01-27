@@ -12,6 +12,11 @@
 /*
  * Rotate left at node
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 static void __rb_rotate_left(struct rb_node *node, struct rb_root *root) {
   struct rb_node *right = node->rb_right;
   struct rb_node *parent = rb_parent(node);
@@ -37,6 +42,11 @@ static void __rb_rotate_left(struct rb_node *node, struct rb_root *root) {
 /*
  * Rotate right at node
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 static void __rb_rotate_right(struct rb_node *node, struct rb_root *root) {
   struct rb_node *left = node->rb_left;
   struct rb_node *parent = rb_parent(node);
@@ -62,6 +72,11 @@ static void __rb_rotate_right(struct rb_node *node, struct rb_root *root) {
 /*
  * Rebalance after insertion
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 void rb_insert_color(struct rb_node *node, struct rb_root *root) {
   struct rb_node *parent, *gparent;
 
@@ -197,6 +212,11 @@ static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
 /*
  * Delete node from tree
  */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
 void rb_erase(struct rb_node *node, struct rb_root *root) {
   struct rb_node *child, *parent;
   int color;

@@ -52,6 +52,9 @@ Segdesc temp_idt[512] __attribute__((aligned(16)));
 
 int userureg(Ureg *ureg) { return (ureg->cs & 3) == 3; }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void trapinit0(void) {
   u32int d1, v;
   uintptr vaddr;
@@ -113,6 +116,9 @@ void trapinit0(void) {
   uartputs("trapinit0: DONE\n", 17);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void trapinit(void) {
   print("trapinit: ENTRY\n");
   irqinit();
@@ -169,6 +175,10 @@ static char *excname[32] = {
     "31 (reserved)",
 };
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 static int usertrap(Ureg *ureg, int vno) {
   char buf[ERRMAX];
 
@@ -184,6 +194,14 @@ static int usertrap(Ureg *ureg, int vno) {
   return 0;
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
+/*@
+  @ requires \valid(ureg);
+  @ assigns *ureg;
+  @*/
 void trap(Ureg *ureg) {
   int vno, user;
   static int trap_count = 0;
@@ -191,6 +209,14 @@ void trap(Ureg *ureg) {
   static int post_exec_trap = 0;
 
   vno = ureg->type;
+
+  /* DEBUG: Show first few traps during boot */
+  trap_count++;
+  if ((trap_count <= 256 || vno < 32 || trap_count % 100 == 0)) {
+    uintptr pc = ureg->pc;
+    print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
+          ureg->sp, userureg(ureg));
+  }
 
   post_exec_trap++;
   (void)trap_count;
@@ -254,6 +280,10 @@ out:
   intret_debug_stage = 4;
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void dumpregs(Ureg *ureg) {
   if (up)
     iprint("cpu%d: registers for %s %lud\n", m->machno, up->text, up->pid);
@@ -296,6 +326,10 @@ void dumpregs(Ureg *ureg) {
  * Fill in enough of Ureg to get a stack trace, and call a function.
  * Used by debugging interface rdb.
  */
+/*@
+  @ requires ) == \null || \valid());
+  @ assigns \nothing;
+  @*/
 void callwithureg(void (*fn)(Ureg *)) {
   Ureg ureg;
   ureg.pc = getcallerpc(&fn);
@@ -305,11 +339,20 @@ void callwithureg(void (*fn)(Ureg *)) {
 
 static void doublefault(Ureg *, void *) { panic("double fault"); }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void unexpected(Ureg *ureg, void *) {
   iprint("unexpected trap %llud\n", ureg->type);
   panic("unexpected");
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 static void _dumpstack(Ureg *ureg) {
   uintptr l, v, i, estack;
   extern char etext[];
@@ -374,6 +417,11 @@ static void _dumpstack(Ureg *ureg) {
 
 void dumpstack(void) { callwithureg(_dumpstack); }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void debugexc(Ureg *ureg, void *) {
   u64int dr6, m;
   char buf[ERRMAX];
@@ -407,6 +455,11 @@ static void debugexc(Ureg *ureg, void *) {
   qunlock(&up->debug);
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void debugbpt(Ureg *ureg, void *) {
   if (up == 0)
     panic("kernel bpt");
@@ -415,20 +468,82 @@ static void debugbpt(Ureg *ureg, void *) {
   postnote(up, 1, "sys: breakpoint", NDebug);
 }
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void faultamd64(Ureg *ureg, void *) {
   uintptr addr;
   int read, user;
   static int fault_count = 0;
+  extern int borrow_is_owned(uintptr key);
+  extern Proc *borrow_get_owner(uintptr key);
 
   addr = getcr2();
   read = !(ureg->error & 2);
   user = userureg(ureg);
 
-  /* Minimal debug - just show fault number, address, and mode */
+  /* Enhanced debug - show detailed fault info */
   fault_count++;
-  if (fault_count <= 5 || fault_count % 100 == 0)
-    print("fault[%d]: addr=%#p pc=%#p %s %s\n", fault_count, addr, ureg->pc,
-          user ? "user" : "kern", read ? "R" : "W");
+  if ((fault_count <= 20 || fault_count % 100 == 0) && boot_verbose) {
+    print("\n=== PAGE FAULT #%d ===\n", fault_count);
+    print("  Address:    %#p\n", addr);
+    print("  PC:         %#p\n", ureg->pc);
+    print("  SP:         %#p\n", ureg->sp);
+    print("  Mode:       %s\n", user ? "user" : "kernel");
+    print("  Access:     %s\n", read ? "READ" : "WRITE");
+    print("  Error code: %#lux ", ureg->error);
+    if (ureg->error & 1)
+      print("[P] ");
+    if (ureg->error & 2)
+      print("[W] ");
+    if (ureg->error & 4)
+      print("[U] ");
+    if (ureg->error & 8)
+      print("[RSVD] ");
+    if (ureg->error & 16)
+      print("[I] ");
+    print("\n");
+
+    /* Check borrow checker ownership */
+    uintptr pa = 0;
+    if (user) {
+      /* Walk user page table to get PA */
+      extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+      uintptr *pte = mmuwalk(m->pml4, addr, 0, 0);
+      if (pte && (*pte & PTEVALID))
+        pa = PPN(*pte);
+    } else {
+      /* Kernel address - check range before calling PADDR */
+      if (addr >= KZERO) {
+        pa = PADDR(addr); /* Simple approximation for direct map */
+      } else {
+        /* Kernel accessed user address (fault) - walk PT */
+        extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
+        uintptr *pte = mmuwalk(m->pml4, addr, 0, 0);
+        if (pte && (*pte & PTEVALID))
+          pa = PPN(*pte);
+      }
+    }
+
+    if (pa != 0 && borrow_is_owned(pa)) {
+      Proc *owner = borrow_get_owner(pa);
+      if (owner)
+        print("  Borrow:     Page owned by proc '%s' (pid=%lu)\n",
+              owner->text ? owner->text : "???", owner->pid);
+      else
+        print("  Borrow:     Page tracked by system/unknown\n");
+    } else {
+      if (up == nil)
+        print("  Borrow:     Page not tracked (up==nil, early boot)\n");
+      else
+        print("  Borrow:     Page not tracked (not yet allocated or map "
+              "failed)\n");
+    }
+
+    print("========================\n\n");
+  }
   if (!user) {
     extern void _peekinst(void);
 
@@ -461,11 +576,43 @@ static void faultamd64(Ureg *ureg, void *) {
         poperror();
         return;
       }
+
+      /* DEGRADED MODE: Log detailed info and attempt recovery */
+      print("\n!!! KERNEL FAULT - ATTEMPTING RECOVERY !!!\n");
       dumpregs(ureg);
+
+      /* Check if this is during boot/initialization */
+      extern int xinit_done;
+      if (!xinit_done) {
+        print("FAULT: During early boot - attempting to continue\n");
+        /* Zero out fault address in case it's a read */
+        if (read && up != nil) {
+          print("FAULT: Setting AX=0 and skipping instruction\n");
+          ureg->ax = 0;
+          ureg->pc += 4; /* Skip faulting instruction (approximate) */
+          poperror();
+          return;
+        }
+      }
+
+      /* If we have a process context, try to kill it instead of panicking */
+      if (up != nil) {
+        print("FAULT: Killing process '%s' (pid=%d) instead of panic\n",
+              up->text, up->pid);
+        print("FAULT: This is a DEGRADED recovery - system may be unstable\n");
+        poperror();
+        pexit("kernel fault", 1);
+        return;
+      }
+
+      /* Last resort: panic */
       panic("kernel fault: %s addr=%#p", read ? "read" : "write", addr);
     }
     faultnote("fault", read ? "read" : "write", addr);
   }
+
+  print("faultamd64: DONE pid=%ld addr=%#llx user=%d\n", up ? up->pid : -1,
+        (unsigned long long)addr, user);
 
   if (!user)
     poperror();
@@ -488,10 +635,12 @@ static char *syscallnames[] = {
     [50] = "PREAD",  [51] = "PWRITE",
 };
 
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void syscall(Ureg *ureg) {
-  ulong scallnr;
   static int syscall_count = 0;
-  char *scname;
 
   syscall_count++;
   if (!kenter(ureg))
@@ -499,59 +648,42 @@ void syscall(Ureg *ureg) {
   if (pebble_enabled)
     pebble_auto_verify(up, ureg);
   fpukenter(ureg);
-  scallnr = ureg->bp; /* RARG */
 
-  /* Get syscall name for debug output */
-  scname = "UNKNOWN";
-  if (scallnr < nelem(syscallnames) && syscallnames[scallnr] != nil)
-    scname = syscallnames[scallnr];
+  /* PURE MESSAGE-BASED ARCHITECTURE
+   * ===============================
+   * Syscall instruction is ONLY a doorbell trigger.
+   * All operations come from 9P messages in exchange page.
+   * NO RBP reading - NO legacy Plan 9 syscall ABI.
+   */
 
-  /* Print syscall entry for first few and every 100th */
-  if (syscall_count <= 50 || syscall_count % 100 == 0)
-    print("SYSCALL[%d]: %s (#%ld) pc=%#p sp=%#p cx=%#p\n", syscall_count,
-          scname, scallnr, ureg->pc, ureg->sp, ureg->cx);
+  /* Print clean syscall entry */
+  if ((syscall_count <= 50 || syscall_count % 100 == 0) && boot_verbose)
+    print("SYSCALL[%d]: PURE-9P-DOORBELL pid=%ld\n", syscall_count,
+          up ? up->pid : -1);
 
-  /* Phase 6: Pure 9P - TRUE syscall elimination
-   * Re-enabled to use doorbell/9P mechanism instead of legacy syscalls */
-  print("SYSCALL: Attempting doorbell for syscall %d\n", scallnr);
-  if (p9_handle_doorbell(up) < 0) {
-    /* Fallback: Doorbell not rung? Try legacy syscall dispatch */
-    print("SYSCALL: Doorbell failed, falling back to legacy dosyscall\n");
-    dosyscall(
-        scallnr,
-        (Sargs *)(ureg->sp), /* No offset - SYSCALL doesn't push return addr */
-        (uintptr *)(&ureg->ax));
+  /* PURE DOORBELL TRIGGER - No RBP reading */
+  int result = p9_handle_doorbell(up, ureg);
+
+  if (result < 0) {
+    /* No valid message in exchange page */
+    print("SYSCALL: Pure 9P mode - no valid message\n");
+    ureg->ax = -1;
   } else {
-    print("SYSCALL: Doorbell succeeded\n");
+    /* Message processed via 9P - result written to reply */
+    print("SYSCALL: 9P message processed successfully\n");
+    /* ureg->ax already set by p9_handle_doorbell */
   }
 
-  /* Debug: after 9P dispatch */
-  /* DEBUG: Disabled verbose syscall return tracing */
-  if (syscall_count <= 50 || syscall_count % 100 == 0)
-    print("syscall: 9P dispatch returned ret=%ld delaysched=%d\n", ureg->ax,
-          up->delaysched);
+  /* FORCE INTERRUPTS ENABLED ON RETURN */
+  /* Ensure R11 (for sysret) and Flags (for iret) have IF=1 */
+  ureg->r11 |= 0x200;
+  ureg->flags |= 0x200;
 
   /* if we delayed sched because we held a lock, sched now */
   if (up->delaysched) {
     print("syscall: calling sched()\n");
     sched();
     print("syscall: sched() returned\n");
-  }
-
-  /* Debug: print return address after EXEC */
-  if (scallnr == 7) { /* EXEC */
-    extern Mach *m;
-    print("EXEC return: pc=%#p sp=%#p cs=%#x\n", ureg->pc, ureg->sp,
-          (uint)ureg->cs);
-    print("EXEC pre-kexit: pml4[0]=%#llux\n", (uvlong)m->pml4[0]);
-
-    /*
-     * Important: keep KernelGSBase pointing at the kernel Mach*.
-     * Only set user TLS via FS (and, if needed, user GS base),
-     * never overwrite KernelGSBase with a user pointer.
-     * Go runtime expects SP+16 for _privates via FS.
-     */
-    wrmsr(0xC0000100, ureg->sp + 16); /* IA32_FS_BASE */
   }
 
   /* Initialize stack slot to 0 for fast SYSRET path */
@@ -593,6 +725,11 @@ Ureg *notify(Ureg *ureg, char *msg) {
 /*
  *   Return user to state before notify()
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires nureg == \null || \valid(nureg);
+  @ assigns \nothing;
+  @*/
 int noted(Ureg *ureg, Ureg *nureg, int arg0) {
   uintptr oureg, sp;
 
@@ -621,17 +758,23 @@ int noted(Ureg *ureg, Ureg *nureg, int arg0) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
   uintptr *sp;
   Ureg *ureg;
 
   sp = (uintptr *)(USTKTOP - ssize);
   *--sp = nargs;
+  *--sp = p9_user_base(up);
   ureg = up->dbgreg;
   ureg->sp = (uintptr)sp;
   ureg->pc = entry;
   ureg->cs = UESEL;
   ureg->ss = UD64SEL;
+  ureg->ax = p9_user_base(up);
+  ureg->di = p9_user_base(up);
   ureg->r14 = ureg->r15 = 0; /* extern user registers */
 
   print("execregs: entry=%#p sp=%#p cs=%#x ss=%#x flags=%#llux\n", entry,
@@ -646,6 +789,9 @@ uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
 /*
  *  return the userpc the last exception happened at
  */
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr userpc(void) {
   Ureg *ureg;
 
@@ -657,6 +803,12 @@ uintptr userpc(void) {
  * to write from devproc and noted() and then restore the saved values before
  * returning.
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires pureg == \null || \valid(pureg);
+  @ requires uva == \null || \valid(uva);
+  @ assigns \nothing;
+  @*/
 void setregisters(Ureg *ureg, char *pureg, char *uva, int n) {
   u64int flags;
 
@@ -668,6 +820,11 @@ void setregisters(Ureg *ureg, char *pureg, char *uva, int n) {
   ureg->pc &= UADDRMASK;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires (*entry)(void) == \null || \valid((*entry)(void));
+  @ assigns \nothing;
+  @*/
 void kprocchild(Proc *p, void (*entry)(void)) {
   /*
    * gotolabel() needs a word on the stack in
@@ -679,6 +836,11 @@ void kprocchild(Proc *p, void (*entry)(void)) {
   p->sched.sp = (uintptr)p->kstack + KSTACK - BY2WD;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires ureg == \null || \valid(ureg);
+  @ assigns \nothing;
+  @*/
 void forkchild(Proc *p, Ureg *ureg) {
   Ureg *cureg;
 
@@ -694,17 +856,27 @@ void forkchild(Proc *p, Ureg *ureg) {
   memmove(cureg, ureg, sizeof(Ureg));
 
   cureg->ax = 0;
+  cureg->r14 = (uintptr)p;
 }
 
 /* Give enough context in the ureg to produce a kernel stack for
  * a sleeping process
  */
+/*@
+  @ requires ureg == \null || \valid(ureg);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void setkernur(Ureg *ureg, Proc *p) {
   ureg->pc = p->sched.pc;
   ureg->sp = p->sched.sp + 8;
   ureg->r14 = (uintptr)p;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 uintptr dbgpc(Proc *p) {
   Ureg *ureg;
 

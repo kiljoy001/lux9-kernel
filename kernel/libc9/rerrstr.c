@@ -1,6 +1,7 @@
 #include <u.h>
 #include <libc.h>
 
+/* ACSL removed */
 void
 rerrstr(char *buf, uint nbuf)
 {

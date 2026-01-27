@@ -1,0 +1,47 @@
+#!/bin/rc
+# Test cmdexec build and run
+
+echo 'Building cmdexec...'
+cd /n/interop
+6c -FTVw cmdexec.c
+if(! ~ $status ''){
+	echo 'Compile failed'
+	exit 1
+}
+
+6l -o cmdexec cmdexec.6
+if(! ~ $status ''){
+	echo 'Link failed'
+	exit 1
+}
+
+echo 'Build successful!'
+
+# Kill any existing autorun
+ps | grep autorun | awk '{print $2}' | while(pid) kill $pid
+
+echo 'Starting cmdexec in background...'
+./cmdexec -d &
+cmdexec_pid=$apid
+
+sleep 1
+
+# Write test commands
+echo 'Testing commands...'
+echo 'echo test1' > command.txt
+sleep 2
+echo 'echo test2' >> command.txt
+sleep 2
+echo 'pwd' >> command.txt
+sleep 2
+
+# Check output
+echo 'Checking output...'
+tail -20 output.txt
+
+# Stop cmdexec
+touch stop_cmdexec
+sleep 1
+rm stop_cmdexec
+
+echo 'Test complete'

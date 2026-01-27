@@ -68,6 +68,7 @@ Syscall syspebblewhiteverify;
 Syscall syspebbleredcopy;
 Syscall syspebblebluediscard;
 Syscall sysclrcompile;
+Syscall sys_getpid2;
 
 Syscall *systab[] = {
     [SYSR1] sysr1,
@@ -134,6 +135,7 @@ Syscall *systab[] = {
     [PEBBLE_RED_COPY] syspebbleredcopy,
     [PEBBLE_BLUE_DISCARD] syspebblebluediscard,
     [CLR_COMPILE] sysclrcompile,
+    [GETPID2] sys_getpid2,
 };
 
 int nsyscall = (sizeof systab / sizeof systab[0]);

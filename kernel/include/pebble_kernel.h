@@ -31,6 +31,8 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc);
 
 /* Single-call: reserve + activate */
 void *pebble_kernel_alloc(ulong size);
+/* Free by pointer lookup */
+void pebble_kernel_free_ptr(void *ptr);
 
 /*
  * Statistics

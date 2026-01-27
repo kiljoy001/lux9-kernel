@@ -12,6 +12,8 @@
 #define _PROC_PACKET_H_
 
 /* Include Plan 9 types (uchar, ushort, ulong, etc.) */
+#include "dat.h"
+#include "types_fwd.h"
 #include <u.h>
 
 /* Forward declaration - Proc is defined in portdat.h */
@@ -68,6 +70,8 @@ enum ProcEvent {
   EV_BREAK,       /* * -> Broken */
   EV_RENDEZ,      /* Running -> Rendezvous */
   EV_RENDEZ_DONE, /* Rendezvous -> Ready */
+  EV_VFORK,       /* Running -> Waitrelease (vfork parent block) */
+  EV_VFORK_DONE,  /* Waitrelease -> Ready (child exec/exit) */
   EV_COUNT
 };
 

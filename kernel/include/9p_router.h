@@ -8,24 +8,45 @@
 #define _9P_ROUTER_H_
 
 /* Include base types */
+#include "fcall.h"
+#include "types_fwd.h"
 #include "u.h"
 
-/* Forward declarations */
-typedef struct Proc Proc;
-typedef struct Fcall Fcall;
-
-/* 9P Exchange Page Layout */
-#define P9_PAGE_SIZE 8192
-#define P9_REQUEST_OFFSET 0x000
-#define P9_REQUEST_SIZE 0xF00
-#define P9_REPLY_OFFSET 0x1000
-#define P9_REPLY_SIZE 0x1000
+/*
+ * 9P Exchange Page Layout - PER-PROCESS VA MODEL
+ * ==============================================
+ * Each process has ONE 4KB exchange page allocated from the pool and mapped
+ * at a per-process virtual address (p->p9uaddr). Ownership flips between
+ * process and kernel via borrow checker.
+ *
+ * Layout:
+ *   0x000 - 0xEFF: Message area (3840 bytes) - request OR reply
+ *   0xF00 - 0xFFF: Control block (256 bytes)
+ */
+#define P9_PAGE_SIZE 4096
+#define P9_MSG_OFFSET 0x000
+#define P9_MSG_SIZE 0xF00 /* 3840 bytes for message */
 #define P9_CONTROL_OFFSET 0xF00
-#define P9_CONTROL_SIZE 0x100
+#define P9_CONTROL_SIZE 0x100 /* 256 bytes for control */
 
-/* Fixed user virtual address for the Exchange Page (below stack at
- * 0x7FFFFEFFF000) */
+/* Exchange page ring layout for small messages */
+#define P9_RING_SLOT_SIZE 256
+#define P9_RING_HEADER_SIZE 8
+#define P9_RING_DATA_SIZE (P9_RING_SLOT_SIZE - P9_RING_HEADER_SIZE)
+#define P9_RING_SLOTS (P9_MSG_SIZE / P9_RING_SLOT_SIZE)
+
+/* Legacy aliases (for transition) */
+#define P9_REQUEST_OFFSET P9_MSG_OFFSET
+#define P9_REQUEST_SIZE P9_MSG_SIZE
+#define P9_REPLY_OFFSET                                                        \
+  P9_MSG_OFFSET /* Same location - ownership-flip model                        \
+                 */
+#define P9_REPLY_SIZE P9_MSG_SIZE
+
+/* Legacy fixed user VA (deprecated). */
 #define EXCHANGE_PAGE_ADDR 0x7FFFFEEFF000ULL
+
+uintptr p9_user_base(Proc *p);
 
 #include "atomic.h"
 
@@ -39,8 +60,8 @@ typedef struct P9Control {
   volatile uint rep_tail;
   volatile uint req_seq;
   volatile uint rep_seq;
-  uchar session_pebble[32];
-  uchar reserved[192];
+  uchar session_pebble[64];
+  uchar reserved[160];
 } P9Control;
 
 /* Status codes */
@@ -80,9 +101,10 @@ typedef struct PebbleToken {
 void p9_router_init(void);
 int p9_alloc_page(Proc *p);
 void p9_free_page(Proc *p);
-int p9_handle_doorbell(Proc *p);
+int p9_handle_doorbell(Proc *p, Ureg *ureg);
 int p9_route(Proc *p, Fcall *t, Fcall *r);
 int p9_dispatch(Proc *p, Fcall *t, Fcall *r);
+int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
 
 /* Pebble validation */
 int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out);
@@ -95,10 +117,20 @@ int env_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 
+/* /srv registry helpers */
+void srv_init(void);
+int srv_post_fd(Proc *caller, const char *name, int fd);
+int srv_create_entry(Proc *caller, const char *name);
+int srv_remove_entry(Proc *caller, const char *name);
+int srv_get_by_index(int index, char *name, int namelen);
+int srv_index_of(const char *name);
+int srv_get_by_index_for_proc(Proc *caller, int index, char *name, int namelen);
+int srv_index_of_for_proc(Proc *caller, const char *name);
+Chan *srv_clone_chan(const char *name);
+
 /*
  * Async 9P Operations (Phase 3)
  */
-typedef struct Fcall Fcall;
 
 /* Completion callback type */
 typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);
@@ -106,8 +138,8 @@ typedef void (*P9CompletionCallback)(Fcall *reply, void *arg, int status);
 /* Async operation tracking */
 typedef struct AsyncP9Op {
   uint op_id;                    /* MSGORD message ID */
-  Fcall *request;                /* Original request (copied) */
-  Fcall *reply;                  /* Reply when ready */
+  Fcall request;                 /* Original request (copied) */
+  Fcall reply;                   /* Reply when ready */
   P9CompletionCallback callback; /* Completion callback */
   void *callback_arg;            /* Callback argument */
   uvlong submit_time;            /* When submitted */

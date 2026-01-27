@@ -10,13 +10,8 @@
 #ifndef _MSGORD_KERNEL_H_
 #define _MSGORD_KERNEL_H_
 
-/* Forward declarations */
-struct Proc;
-struct Fcall;
-struct Rendez;
-typedef struct Proc Proc;
-typedef struct Fcall Fcall;
-typedef struct Rendez Rendez;
+#include "exchange.h"
+#include "types_fwd.h"
 
 /*
  * MSGORD Configuration
@@ -46,6 +41,7 @@ typedef struct Rendez Rendez;
  */
 #define MSGORD_MSG_9P 0
 #define MSGORD_MSG_RAW 1
+#define MSGORD_MSG_EXCHANGE 2
 
 /*
  * MSGORD Message Payload
@@ -58,6 +54,11 @@ typedef struct OrdPayload {
       void *data;
       ulong len;
     } raw;
+    struct {
+      ExchangeHandle handle;
+      ulong offset;
+      ulong len;
+    } exchange;
   };
 } OrdPayload;
 
@@ -152,10 +153,14 @@ void msgord_destroy_instance(MsgOrd *dag);
 MsgOrd *msgord_get(int id);
 
 /* Submit 9P message for ordering - REPLACES p9_route() */
-int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path);
+int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
+                  u64int nonce);
 
 /* Submit raw data for ordering */
-int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len);
+int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len,
+                      u64int nonce);
+uint msgord_submit_exchange(MsgOrd *dag, Proc *caller, ExchangeHandle handle,
+                            ulong offset, ulong len, char *path, u64int nonce);
 
 /* Get next ordered message ready for delivery */
 OrdMsg *msgord_next(MsgOrd *dag);
@@ -204,8 +209,7 @@ typedef MsgOrd msgord_state_t;
 
 /* Create/destroy for CLR compatibility */
 msgord_state_t *msgord_state_create(uint k_param);
-uint msgord_add_message(msgord_state_t *state, Proc *p, Fcall *t,
-                          char *path);
+uint msgord_add_message(msgord_state_t *state, Proc *p, Fcall *t, char *path);
 
 /*
  * Completion Callback API
@@ -214,7 +218,7 @@ typedef void (*MsgordCallback)(OrdMsg *msg, int status, void *arg);
 
 /* Submit 9P message with completion callback */
 uint msgord_submit_async(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
-                           MsgordCallback cb, void *cb_arg);
+                         MsgordCallback cb, void *cb_arg, u64int nonce);
 
 /* Find message by ID */
 OrdMsg *msgord_find_by_id(MsgOrd *dag, uint id);
@@ -240,14 +244,15 @@ int msgord_fire_completions(MsgOrd *dag);
 
 /* Check consensus depth for an operation - confidence is 0-100 scale
  * depth argument is ConsensusDepth enum value (compatible with int) */
-int msgord_check_consensus_depth(MsgOrd *dag, uint op_id,
-                                   int required_depth, int *confidence_out);
+int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
+                                 int *confidence_out);
 
 /* Submit async with depth parameter (alternative signature for
  * consensus_depth.c)
  * t and r are Fcall* but declared as void* for header independence */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                                char *path, int depth, uint *msg_id_out);
+                              char *path, int depth, uint *msg_id_out,
+                              u64int nonce);
 
 /* Macro alias for backwards compatibility */
 #define msgord_submit_async_ex msgord_submit_async_depth

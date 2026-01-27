@@ -67,14 +67,27 @@ long decref(Ref *);
 int decrypt(void *, void *, int);
 void delay(int);
 Proc *dequeueproc(Schedq *, Proc *);
-Chan *devattach(int, char *);
+/*@ assigns \nothing; */
+Chan *devattach(int, char *spec);
 Block *devbread(Chan *, long, ulong);
 long devbwrite(Chan *, Block *, ulong);
 Chan *devclone(Chan *);
 int devconfig(int, char *, DevConf *);
 Chan *devcreate(Chan *, char *, int, ulong);
-void devdir(Chan *, Qid, char *, vlong, char *, long, Dir *);
-long devdirread(Chan *, char *, long, Dirtab *, int, Devgen *);
+/*@ requires c != \null;
+  @ requires name == \null || \valid(name);
+  @ requires user == \null || \valid(user);
+  @ requires dp != \null;
+  @ terminates \true;
+  @ assigns *dp;
+  */
+void devdir(Chan *c, Qid qid, char *name, vlong length, char *user, long perm,
+            Dir *dp);
+/*@ requires c != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+long devdirread(Chan *c, char *va, long n, Dirtab *tab, int ntab, Devgen *gen);
 Devgen devgen;
 void devinit(void);
 int devno(int, int);
@@ -84,8 +97,17 @@ void devpower(int);
 void devremove(Chan *);
 void devreset(void);
 void devshutdown(void);
-int devstat(Chan *, uchar *, int, Dirtab *, int, Devgen *);
-Walkqid *devwalk(Chan *, Chan *, char **, int, Dirtab *, int, Devgen *);
+/*@ requires c != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+int devstat(Chan *c, uchar *dp, int n, Dirtab *tab, int ntab, Devgen *gen);
+/*@ requires c != \null;
+  @ terminates \true;
+  @ assigns \result \from \nothing;
+  */
+Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
+                 int ntab, Devgen *gen);
 int devwstat(Chan *, uchar *, int);
 Dir *dirchanstat(Chan *);
 int donotify(Ureg *);
@@ -111,7 +133,25 @@ void envcpy(Egrp *, Egrp *);
 int eqchan(Chan *, Chan *, int);
 int eqchantdqid(Chan *, int, int, Qid, int);
 int eqqid(Qid, Qid);
-_Noreturn void error(char *);
+#ifdef __FRAMAC__
+/* Frama-C compatible version without attributes */
+/*@
+  @ requires \valid_read(e);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
+void lux9_error(char *e);
+#define error(e) lux9_error(e)
+#else
+/*@ requires e != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  */
+_Noreturn void error(char *e);
+#endif
+
 void eqlock(QLock *);
 uintptr execregs(uintptr, ulong, ulong);
 void exhausted(char *);
@@ -131,7 +171,10 @@ void forkchild(Proc *, Ureg *);
 void forkret(void);
 void fpunotify(Proc *);
 void fpunoted(Proc *);
-void free(void *);
+/*@ terminates \true;
+  @ assigns \nothing;
+  */
+void free(void *p);
 void freeb(Block *);
 void freeblist(Block *);
 int freebroken(void);
@@ -142,6 +185,11 @@ void getcolor(ulong, ulong *, ulong *, ulong *);
 uintptr getmalloctag(void *);
 uintptr getrealloctag(void *);
 _Noreturn void gotolabel(Label *);
+/*@ requires name == \null || valid_string(name);
+  @ assigns \result \from name[0 .. ACSL_MAXSTR-1];
+  @ ensures \result == \null || valid_string(\result);
+  @*/
+char *getconf(char *name);
 char *getconfenv(void);
 void growbp(Bpool *, int);
 long hostdomainwrite(char *, int);
@@ -151,9 +199,17 @@ void hzsched(void);
 Block *iallocb(int);
 Block *iallocbp(Bpool *);
 uintptr ibrk(uintptr, int);
-void ilock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void ilock(Lock *l);
 _Noreturn void interrupted(void);
-void iunlock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void iunlock(Lock *l);
 ulong imagecached(void);
 ulong imagereclaim(ulong);
 long incref(Ref *);
@@ -165,8 +221,16 @@ void iomapinit(ulong);
 int ioreserve(ulong, ulong, ulong, char *);
 int ioreservewin(ulong, ulong, ulong, ulong, char *);
 int iounused(ulong, ulong);
-int iprint(char *, ...);
-int iprint_intr(char *, ...);
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
+int iprint(char *fmt, ...);
+/*@
+  @ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
+int iprint_intr(char *fmt, ...);
 void isdir(Chan *);
 int iseve(void);
 int islo(void);
@@ -177,7 +241,11 @@ void kexit(Ureg *);
 void kickpager(void);
 void killbig(void);
 void killproc(Proc *, int);
-void kproc(char *, void (*)(void *), void *);
+/*@
+  @ requires valid_string(name);
+  @ assigns \result;
+  @*/
+int kproc(char *name, void (*fn)(void *), void *arg);
 void kprocchild(Proc *, void (*)(void));
 void linkproc(void);
 extern void (*kproftimer)(uintptr);
@@ -185,7 +253,11 @@ void ksetenv(char *, char *, int);
 int kopen(char *, int);
 void kstrcpy(char *, char *, int);
 void kstrdup(char **, char *);
-void lock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void lock(Lock *l);
 void logopen(Log *);
 void logclose(Log *);
 char *logctl(Log *, int, char **, Logflag *);
@@ -196,9 +268,48 @@ Cmdtab *lookupcmd(Cmdbuf *, Cmdtab *, int);
 Page *lookpage(Image *, uintptr);
 #define MS2NS(n) (((vlong)(n)) * 1000000LL)
 void machinit(void);
-void *mallocz(ulong, int);
-void *malloc(ulong);
-void *mallocalign(ulong, ulong, long, ulong);
+/*@ terminates \true;
+  @ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  */
+void *mallocz(ulong size, int clr);
+/*@ terminates \true;
+  @ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  */
+void *malloc(ulong size);
+/*@ terminates \true;
+  @ behavior zero:
+  @   assumes size == 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid((char *)\result);
+  @ behavior nonzero:
+  @   assumes size > 0;
+  @   assigns \result \from \nothing;
+  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
+  - 1));
+  @ complete behaviors;
+  @ disjoint behaviors;
+  */
+void *mallocalign(ulong size, ulong align, long offset, ulong span);
 void mallocsummary(void);
 void memmapdump(void);
 uvlong memmapnext(uvlong, ulong);
@@ -232,7 +343,13 @@ int growfd(Fgrp *, int);
 void unlockfgrp(Fgrp *);
 int newfd(Chan *, int);
 Mhead *newmhead(Chan *);
-Mount *newmount(Chan *, int, char *);
+Mhead *newmhead(Chan *);
+/*@ requires spec != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
+Mount *newmount(Chan *, int, char *spec);
 Image *newimage(ulong);
 Page *newpage(uintptr, Segment *);
 Path *newpath(char *);
@@ -251,18 +368,26 @@ Block *packblock(Block *);
 Block *padblock(Block *, int);
 void pageinit(void);
 ulong pagereclaim(Image *);
-_Noreturn void panic(char *, ...);
+/*@ requires fmt != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  */
+_Noreturn void panic(char *fmt, ...);
 Cmdbuf *parsecmd(char *a, int n);
 void pathclose(Path *);
 ulong perfticks(void);
 _Noreturn void pexit(char *, int);
 void pgrpcpy(Pgrp *, Pgrp *);
+void namespace_cid_update(Pgrp *);
+void namespace_cid_update_locked(Pgrp *);
 ulong pidalloc(Proc *);
 #define waserror() setlabel(&up->errlab[up->nerrlab++])
 #define poperror() up->nerrlab--
 void portcountpagerefs(ulong *, int);
 char *popnote(Ureg *);
-int postnote(Proc *, int, char *, int);
+/*@ requires s == \null || valid_string(s); */
+int postnote(Proc *, int, char *s, int);
 void postnotepg(ulong, char *, int);
 int pprint(char *, ...);
 void preempted(int);
@@ -310,30 +435,64 @@ Block *qbread(Queue *, int);
 long qbwrite(Queue *, Block *);
 Queue *qbypass(void (*)(void *, Block *), void *);
 int qcanread(Queue *);
-void qclose(Queue *);
+/*@ requires q != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+void qclose(Queue *q);
 int qconsume(Queue *, void *, int);
 Block *qcopy(Queue *, int, ulong);
 int qdiscard(Queue *, int);
 void qflush(Queue *);
-void qfree(Queue *);
+/*@ requires q != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+void qfree(Queue *q);
 int qfull(Queue *);
 Block *qget(Queue *);
 void qhangup(Queue *, char *);
 int qisclosed(Queue *);
 int qiwrite(Queue *, void *, int);
-int qlen(Queue *);
-void qlock(QLock *);
+/*@ requires q != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+int qlen(Queue *q);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  */
+void qlock(QLock *l);
+/*@ terminates \true;
+  @ assigns \result \from \nothing;
+  @ ensures \result == \null || \valid(\result);
+  */
 Queue *qopen(int, int, void (*)(void *), void *);
 int qpass(Queue *, Block *);
 int qpassnolim(Queue *, Block *);
 int qproduce(Queue *, void *, int);
 void qputback(Queue *, Block *);
-long qread(Queue *, void *, int);
+/*@ requires q != \null;
+  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
+  @ terminates \true;
+  @ assigns ((char *)buf)[0..n-1];
+  */
+long qread(Queue *q, void *buf, int n);
 Block *qremove(Queue *);
 void qreopen(Queue *);
 void qsetlimit(Queue *, int);
-void qunlock(QLock *);
-int qwrite(Queue *, void *, int);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  */
+void qunlock(QLock *l);
+/*@ requires q != \null;
+  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
+  @ terminates \true;
+  @ assigns \nothing;
+  */
+int qwrite(Queue *q, void *buf, int n);
 void qnoblock(Queue *, int);
 void qsetnoblock_early(Queue *, int);
 void randominit(void);
@@ -417,7 +576,11 @@ int uartstageoutput(Uart *);
 void unbreak(Proc *);
 void uncachepage(Page *);
 long unionread(Chan *, void *, long);
-void unlock(Lock *);
+/*@ requires l != \null;
+  @ terminates \true;
+  @ assigns *l;
+  @*/
+void unlock(Lock *l);
 uvlong us2fastticks(uvlong);
 void userinit(void);
 uintptr userpc(void);
@@ -431,9 +594,57 @@ Proc *wakeup(Rendez *);
 int walk(Chan **, char **, int, int, int *);
 void wlock(RWLock *);
 void wunlock(RWLock *);
-void *xalloc(ulong);
-void *xallocz(ulong, int);
-void xfree(void *);
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xalloc(ulong size);
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xalloc_raw(ulong size);
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xallocz(ulong size, int zero);
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xallocz_raw(ulong size, int zero);
+
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xalloc_driver(ulong size);
+
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size, zero;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *xallocz_driver(ulong size, int zero);
+
+/*@ terminates \true;
+    allocates \result;
+    assigns \result \from size;
+    ensures \result == \null || \valid((char*)\result + (0..size-1));
+*/
+void *smalloc_driver(ulong size);
+
+void xfree_driver(void *p);
+/*@ terminates \true;
+  @ assigns \nothing;
+*/
+void xfree(void *p);
 void xhole(uintptr, uintptr);
 void xinit(void);
 int xmerge(void *, void *);
@@ -456,7 +667,14 @@ void hnputs(void *, ushort);
 uvlong nhgetv(void *);
 uint nhgetl(void *);
 ushort nhgets(void *);
+/* Frama-C struggles with the UTF-8 symbol here; provide an ASCII alias. */
+#ifdef __FRAMAC__
+ulong us(void);
+#define µs us
+#else
 ulong µs(void);
+#endif
+
 long lcycles(void);
 extern void (*cycles)(uvlong *);
 void devmask(Pgrp *, int, char *);
@@ -472,31 +690,29 @@ extern int (*pcicfgrw32)(int, int, int, int);
 #pragma varargck argpos panic 1
 #pragma varargck argpos pprint 1
 
+
 /* Platform-specific address macros - must be provided by arch */
 #ifndef KADDR
 extern void *kaddr(uintptr);
 #define KADDR(a) kaddr(a)
-#endif
 
 #ifndef PADDR
 extern uintptr paddr(void *);
 #define PADDR(a) paddr((void *)(a))
-#endif
 
 #ifndef evenaddr
 #define evenaddr(x) /* x86 doesn't care about alignment */
-#endif
 
 #ifndef userureg
 int userureg(Ureg *);
-#endif
+
 
 KMap *kmap(Page *);
 void kunmap(KMap *);
 
 #ifndef kmapinval
 #define kmapinval() /* Invalidate kmap cache */
-#endif
+
 
 void setuppagetables(void); /* Setup kernel page tables */
 
@@ -525,18 +741,28 @@ void outs(int port, ushort value); /* Output to I/O port */
 /* Memory and page ownership functions */
 uintptr cankaddr(uintptr); /* Check if address in kernel address space - matches
                               arch signature */
+#ifdef __FRAMAC__
+int pageown_acquire(Proc *, uintptr, u64int); /* Acquire page ownership */
+int pageown_release(Proc *, uintptr);         /* Release page ownership */
+#else
 enum PageOwnError pageown_acquire(Proc *, uintptr,
                                   u64int);          /* Acquire page ownership */
 enum PageOwnError pageown_release(Proc *, uintptr); /* Release page ownership */
+
 void pageown_cleanup_process(Proc *); /* Clean up page ownership for process */
 
 /* Architecture-specific process functions - declarations handled in
  * arch-specific fns.h */
-void procsave(Proc *);         /* Save process state */
-void procrestore(Proc *);      /* Restore process state */
-void procsetup(Proc *);        /* Setup process state */
-void procfork(Proc *);         /* Fork process state */
-int proc_setup_p9page(Proc *); /* Setup 9P exchange page */
+void procsave(Proc *);             /* Save process state */
+void procrestore(Proc *);          /* Restore process state */
+void procsetup(Proc *);            /* Setup process state */
+#endif
+void procfork(Proc *);             /* Fork process state */
+int proc_setup_p9page(Proc *);     /* Setup 9P exchange page (deprecated) */
+int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */
+uintptr p9_pick_uaddr(Proc *, const UserCapability *);
+void *kernel_setup_init_exchange(
+    Proc *); /* Kernel boot: setup #X exchange channel for init */
 
 /* MMU and page table functions */
 uintptr *mmuwalk(uintptr *, uintptr, int, int); /* Walk page table */
@@ -562,3 +788,30 @@ uvlong rdtsc(void);
 /* MMU virtual mapping (architecture-specific but commonly used) */
 void *vmap(uvlong, vlong);
 void vunmap(void *, vlong);
+
+long kread(int, void *, long);
+long kwrite(int, void *, long);
+vlong kseek(int, vlong, int);
+
+/* WASM runtime functions */
+void wasm_runtime_init(void);
+void wasm_arena_test(void);
+struct Chan;       /* Forward declaration */
+struct M3Function; /* Forward declaration for WASM3 */
+int wasm_exec_compile(struct Chan *, struct M3Function **);
+void wasm_exec_run(struct M3Function *);
+void wasm_runtime_cleanup_process(Proc *);
+
+extern int boot_verbose;
+
+/* Bounded print for formal verification */
+/*@ requires \valid_read(fmt);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+int bprint(const char *fmt, ...);
+
+/*@ requires \valid_read(fmt);
+  @ terminates \false;
+  @*/
+void bpanic(const char *fmt, ...) __attribute__((noreturn));

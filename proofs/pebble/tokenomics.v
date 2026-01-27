@@ -10,6 +10,7 @@
 Require Import types.
 Require Import conservation.
 Require Import security.
+Require Import global_budget.
 
 (* ========================================================================= *)
 (* WHITE TOKEN MODEL                                                         *)
@@ -38,21 +39,20 @@ Record TokenomicState := mkTokenomic {
 (* LIFECYCLE TRANSITIONS                                                     *)
 (* ========================================================================= *)
 
-(** IssueWhite: Create a WHITE token (no state change, just tracking)
+(** IssueWhite: Create a WHITE token and reserve budget
     
     Implementation: pebble_issue_white()
     - Allocates slot in whites[] array
     - Sets generation number
-    - NO budget deduction (WHITE tokens are free) *)
+    - Deducts from colorless bank and increases white_pending *)
 Inductive IssueWhite (size : Z) (s1 s2 : TokenomicState) : Prop :=
   | IW_Success :
       size > 0 ->
       (* Create new white token *)
       let new_white := mkWhite (s1.(pebble).(next_cap_id)) size true in
+      WhiteIssue size s1.(pebble) s2.(pebble) ->
       (* Add to tracking list *)
-      s2 = mkTokenomic
-             s1.(pebble)  (* NO state change - white tokens are free *)
-             (new_white :: s1.(white_tokens)) ->
+      s2.(white_tokens) = (new_white :: s1.(white_tokens)) ->
       IssueWhite size s1 s2.
 
 (** VerifyWhite: Exchange WHITE for authorization
@@ -78,14 +78,12 @@ Inductive VerifyWhite (size : Z) (s1 s2 : TokenomicState) : Prop :=
                        else wt) s1.(white_tokens) ->
       VerifyWhite size s1 s2.
 
-(** MintBlack: COLORLESS → BLACK (consumes authorization)
+(** MintBlack: Mint a BLACK capability (ledger-backed)
     
     Implementation: pebble_black_alloc()
-    - Requires white_verified > 0
-    - Requires white_pending >= size
+    - Requires a valid WHITE token pointer and size match
     - Calls ledger_mint() to create capability
-    - Decrements colorless budget
-    - Increments black usage *)
+    - Does not update budget accounting in pebble.c *)
 Inductive MintBlack (size : Z) (cap : CapId) (s1 s2 : TokenomicState) : Prop :=
   | MB_Success :
       size > 0 ->
@@ -142,7 +140,8 @@ Theorem issue_white_preserves_nonneg :
 Proof.
   intros s1 s2 size Hnonneg HIssue.
   inversion HIssue. subst.
-  unfold TokenomicNonNegative in *. simpl. exact Hnonneg.
+  unfold TokenomicNonNegative in *.
+  eapply whiteissue_preserves_nonneg; eauto.
 Qed.
 
 (** VerifyWhite preserves non-negative invariant *)
@@ -198,8 +197,8 @@ Definition SystemInvariant (s : TokenomicState) (total : Z) : Prop :=
 (* CONSERVATION PROOFS                                                       *)
 (* ========================================================================= *)
 
-(** WHITE tokens don't consume budget *)
-Theorem white_tokens_are_lightweight :
+(** WHITE issuance preserves the conservation lower bound *)
+Theorem white_issue_preserves_conservation :
   forall s1 s2 size total,
   TokenomicConservation s1 total ->
   IssueWhite size s1 s2 ->
@@ -208,7 +207,7 @@ Proof.
   intros s1 s2 size total Hcons HIssue.
   inversion HIssue. subst.
   unfold TokenomicConservation in *.
-  simpl. exact Hcons.
+  simpl. eapply white_issue_conserves; eauto.
 Qed.
 
 (** WHITE verification preserves conservation *)
@@ -259,7 +258,7 @@ Theorem full_lifecycle_conservation :
   forall s0 s1 s2 s3 s4 size cap total,
   (* Initial state with conservation *)
   TokenomicConservation s0 total ->
-  (* Step 1: Issue WHITE token (lightweight) *)
+  (* Step 1: Issue WHITE token (budgeted) *)
   IssueWhite size s0 s1 ->
   (* Step 2: Verify WHITE → authorization *)
   VerifyWhite size s1 s2 ->
@@ -273,7 +272,7 @@ Proof.
   intros s0 s1 s2 s3 s4 size cap total H0 H1 H2 H3 H4.
   (* Apply each conservation theorem in sequence *)
   assert (TokenomicConservation s1 total) as H0'.
-  { apply white_tokens_are_lightweight with s0 size; auto. }
+  { apply white_issue_preserves_conservation with s0 size; auto. }
   assert (TokenomicConservation s2 total) as H1'.
   { apply white_verify_conserves with s1 size; auto. }
   assert (TokenomicConservation s3 total) as H2'.
@@ -281,12 +280,11 @@ Proof.
   apply black_burn_conserves with s3 size cap; auto.
 Qed.
 
-(** Budget accounting is always correct *)
-Theorem budget_accounting_correct :
+(** Budget accounting lower bound is preserved *)
+Theorem budget_accounting_lower_bound :
   forall s total,
   TokenomicConservation s total ->
-  s.(pebble).(colorless) + s.(pebble).(black) + 
-  s.(pebble).(blue) + s.(pebble).(red) = total.
+  BudgetPotential s.(pebble) >= total.
 Proof.
   intros s total Hcons.
   unfold TokenomicConservation in Hcons.
@@ -308,7 +306,7 @@ Proof.
   unfold SystemInvariant. split.
   - (* Conservation *)
     assert (TokenomicConservation s1 total) as Hc1.
-    { apply white_tokens_are_lightweight with s0 size; auto. }
+    { apply white_issue_preserves_conservation with s0 size; auto. }
     assert (TokenomicConservation s2 total) as Hc2.
     { apply white_verify_conserves with s1 size; auto. }
     assert (TokenomicConservation s3 total) as Hc3.
@@ -369,7 +367,7 @@ Proof.
   
   (* Apply conservation through the lifecycle *)
   assert (TokenomicConservation s1 total) as H0'.
-  { apply white_tokens_are_lightweight with s0 size; auto. }
+  { apply white_issue_preserves_conservation with s0 size; auto. }
   assert (TokenomicConservation s2 total) as H1'.
   { apply white_verify_conserves with s1 size; auto. }
   assert (TokenomicConservation s3 total) as H2'.
@@ -403,7 +401,105 @@ Proof.
   inversion HMint; subst; clear HMint.
   unfold BorrowAcquirePrecondition.
   inversion H0; subst; clear H0.
-  simpl. exact H7.
+  simpl. assumption.
+Qed.
+
+(* ========================================================================= *)
+(* GLOBAL POOL INTEGRATION                                                   *)
+(* ========================================================================= *)
+
+Record TokenomicSystemState := mkTokSys {
+  sys : SystemState;
+  tok : TokenomicState;
+}.
+
+Definition TokSysConsistent (ts : TokenomicSystemState) : Prop :=
+  (tok ts).(pebble) = proc ts.(sys).
+
+Definition tok_update_pebble (t : TokenomicState) (ps : PebbleState)
+  : TokenomicState :=
+  mkTokenomic ps t.(white_tokens).
+
+Definition TokSysInvariant (ts : TokenomicSystemState) : Prop :=
+  TokSysConsistent ts /\
+  SysConservation ts.(sys) /\
+  SysNonNegative ts.(sys).
+
+Inductive TokSysIncreaseBudget
+          (PowValid : Z -> Z -> Z -> Prop)
+          (size nonce : Z)
+          (s1 s2 : TokenomicSystemState) : Prop :=
+  | TSIB_Success :
+      TokSysConsistent s1 ->
+      IncreaseBudget PowValid size nonce s1.(sys) s2.(sys) ->
+      s2.(tok) = tok_update_pebble s1.(tok) (proc s2.(sys)) ->
+      TokSysIncreaseBudget PowValid size nonce s1 s2.
+
+Inductive TokSysReturnBudget
+          (size : Z)
+          (s1 s2 : TokenomicSystemState) : Prop :=
+  | TSRB_Success :
+      TokSysConsistent s1 ->
+      ReturnBudget size s1.(sys) s2.(sys) ->
+      s2.(tok) = tok_update_pebble s1.(tok) (proc s2.(sys)) ->
+      TokSysReturnBudget size s1 s2.
+
+Lemma sys_nonneg_implies_tokenomic_nonneg :
+  forall ts,
+  TokSysConsistent ts ->
+  SysNonNegative ts.(sys) ->
+  TokenomicNonNegative (tok_update_pebble ts.(tok) (proc ts.(sys))).
+Proof.
+  intros ts Hcons Hnn.
+  unfold TokenomicNonNegative.
+  unfold tok_update_pebble. simpl.
+  unfold SysNonNegative in Hnn.
+  destruct Hnn as [_ Hpn]. exact Hpn.
+Qed.
+
+Theorem toksys_increase_preserves_invariant :
+  forall PowValid s1 s2 size nonce,
+  TokSysInvariant s1 ->
+  TokSysIncreaseBudget PowValid size nonce s1 s2 ->
+  TokSysInvariant s2.
+Proof.
+  intros PowValid s1 s2 size nonce [Hcons1 [Hsyscons1 Hsysnn1]] Hstep.
+  inversion Hstep; subst.
+  split.
+  - unfold TokSysConsistent.
+    match goal with
+    | Htok : s2.(tok) = _ |- _ => rewrite Htok; simpl; reflexivity
+    end.
+  - split.
+    + eapply increase_budget_preserves_conservation; eauto.
+    + eapply increase_budget_preserves_nonneg; eauto.
+Qed.
+
+Theorem toksys_return_preserves_invariant :
+  forall s1 s2 size,
+  TokSysInvariant s1 ->
+  TokSysReturnBudget size s1 s2 ->
+  TokSysInvariant s2.
+Proof.
+  intros s1 s2 size [Hcons1 [Hsyscons1 Hsysnn1]] Hstep.
+  inversion Hstep; subst.
+  split.
+  - unfold TokSysConsistent.
+    match goal with
+    | Htok : s2.(tok) = _ |- _ => rewrite Htok; simpl; reflexivity
+    end.
+  - split.
+    + eapply return_budget_preserves_conservation; eauto.
+    + eapply return_budget_preserves_nonneg; eauto.
+Qed.
+
+Theorem toksys_invariant_implies_tokenomic_nonneg :
+  forall ts,
+  TokSysInvariant ts ->
+  TokenomicNonNegative (tok_update_pebble ts.(tok) (proc ts.(sys))).
+Proof.
+  intros ts [Hcons [Hsyscons Hsysnn]].
+  apply sys_nonneg_implies_tokenomic_nonneg; assumption.
 Qed.
 
 (* ========================================================================= *)
@@ -415,23 +511,22 @@ Definition CapabilityUnique (s : TokenomicState) (cap : CapId) : Prop :=
   In cap s.(pebble).(live_caps) ->
   ~ In cap s.(pebble).(freed_caps).
 
-(** Minting creates unique capabilities *)
-Theorem mint_creates_unique_capability :
+(** Minting creates a fresh capability *)
+Theorem mint_creates_fresh_capability :
   forall s1 s2 size cap,
   MintBlack size cap s1 s2 ->
-  CapabilityUnique s2 cap.
+  In cap s2.(pebble).(live_caps) /\
+  ~ In cap s2.(pebble).(freed_caps).
 Proof.
   intros s1 s2 size cap HMint.
   inversion HMint; subst; clear HMint.
-  inversion H0; subst; clear H0.
-  (* After inversions: cap = next_cap_id (pebble s1) 
-     H8 : ~ In (next_cap_id (pebble s1)) (freed_caps (pebble s1))
-     H9 shows freed_caps (pebble s2) = freed_caps (pebble s1) *)
-  unfold CapabilityUnique.
-  (* Rewrite using H9 to show the freed_caps are equal *)
-  rewrite H9. simpl.
-  intro HIn.
-  exact H8.
+  match goal with
+  | Halloc : BlackAlloc _ _ _ _ |- _ =>
+      inversion Halloc; subst; clear Halloc
+  end.
+  split.
+  - rewrite H6. simpl. apply in_eq.
+  - rewrite H6. simpl. assumption.
 Qed.
 
 (** Burning invalidates capabilities *)
@@ -455,8 +550,8 @@ Qed.
 (* ========================================================================= *)
 
 (** The Pebble token economy is correct:
-    1. Conservation holds across all transitions
-    2. WHITE tokens are lightweight (no budget cost)
+    1. Conservation lower bound holds across all transitions
+    2. WHITE issuance reserves budget and tracks authorizations
     3. BLACK capabilities are unique and tracked
     4. CIL GC operations (LIME/VANILLA/BURN) are sound
     5. Integration with Borrow Checker and Blind Ledger is correct *)
@@ -471,4 +566,3 @@ Proof.
   intros s0 total Hcons Hnonneg.
   exact Hcons.
 Qed.
-

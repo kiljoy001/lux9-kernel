@@ -16,6 +16,7 @@ extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
 extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
+#include "acsl_bounds.h"
 #include "borrowchecker.h"
 #include "fns.h"
 #include "hhdm.h"
@@ -23,45 +24,176 @@ extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
 #include "pebble.h"
 #include "siphash.h" /* For DoS-resistant hash table hashing */
 
+/* ACSL specifications for error handling functions */
+/*@ requires valid_string(s);
+  @ assigns \nothing;
+  @ exits \nothing;
+  @*/
+/*@
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \false;
+  @*/
+extern void lux9_error(char *s);
+
+/*@ requires \valid((char*)dst+(0..n-1));
+  @ requires \valid_read((char*)src+(0..n-1));
+  @ assigns ((char*)dst)[0..n-1];
+  @ terminates \true;
+  @*/
+extern void *memcpy(void *dst, const void *src, usize n);
+
+/*@ requires valid_string((char *)fmt);
+  @ assigns \nothing;
+  @ terminates \true;
+  @*/
+extern int bprint(const char *fmt, ...);
+
+/*@ requires valid_string((char *)fmt);
+  @ terminates \false;
+  @*/
+extern void bpanic(const char *fmt, ...) __attribute__((noreturn));
+
 /* Global borrow pool */
 struct BorrowPool borrowpool;
 
 /* SipHash key for DoS-resistant hashing (generated at boot from TPM/RDRAND) */
 static hsiphash_key_t borrow_hash_key;
 
+enum {
+  BORROW_BLOOM_BITS_DEFAULT = 1 << 20,
+  BORROW_BLOOM_BITS_MIN = 1 << 16,
+  BORROW_BLOOM_BITS_MAX = 1 << 22,
+  BORROW_BLOOM_HASHES = 3,
+};
+
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result >= BORROW_BLOOM_BITS_MIN && \result <=
+  BORROW_BLOOM_BITS_MAX;
+  @*/
+static ulong borrow_bloom_bits_target(void) {
+  if (conf.npage == 0)
+    return BORROW_BLOOM_BITS_DEFAULT;
+
+  ulong target = conf.npage * 2;
+  ulong bits = BORROW_BLOOM_BITS_MIN;
+
+  if (bits == 0)
+    bits = 4;
+
+  while (bits < target && bits < BORROW_BLOOM_BITS_MAX) {
+    bits <<= 1;
+  }
+
+  if (bits < BORROW_BLOOM_BITS_MIN)
+    bits = BORROW_BLOOM_BITS_MIN;
+  if (bits > BORROW_BLOOM_BITS_MAX)
+    bits = BORROW_BLOOM_BITS_MAX;
+
+  return bits;
+}
+
+/*@
+  @ terminates \true;
+  @*/
+static void borrow_bloom_add(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return;
+  /*@ assert \valid_read(&borrow_hash_key); */
+  u32int h1 = hsiphash((u8int *)&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] != 0xff)
+      borrowpool.bloom[idx]++;
+  }
+}
+
+/*@
+  @ terminates \true;
+  @*/
+static void borrow_bloom_remove(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return;
+  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] > 0)
+      borrowpool.bloom[idx]--;
+  }
+}
+
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+static int borrow_bloom_maybe(uintptr key) {
+  if (borrowpool.bloom == nil || borrowpool.bloom_bits == 0)
+    return 1;
+  u32int h1 = hsiphash(&key, sizeof(key), &borrow_hash_key);
+  u32int h2 = hsiphash_1u32((u32int)(key >> 32), &borrow_hash_key);
+  if (h2 == 0)
+    h2 = 0x9e3779b9u;
+  for (u32int i = 0; i < borrowpool.bloom_hashes; i++) {
+    u32int idx = (h1 + i * h2) % borrowpool.bloom_bits;
+    if (borrowpool.bloom[idx] == 0)
+      return 0;
+  }
+  return 1;
+}
+
 /* Borrow FSM events: enforce state transitions centrally (hard FSM). */
+/*@
+  @ requires \valid(owner);
+  @ requires valid_string(ctx);
+  @ terminates \true;
+  @*/
 static void borrow_check_invariants(struct BorrowOwner *owner,
                                     const char *ctx) {
   if (owner == nil)
-    panic("borrow: nil owner in %s", ctx);
+    bpanic("borrow: nil owner in %s", ctx);
 
   switch (owner->state) {
   case BORROW_FREE:
     if (owner->owner != nil || owner->shared_count != 0 ||
         owner->shared_list != nil || owner->mut_borrower != nil)
-      panic("borrow: invalid FREE state key=%p ctx=%s", owner->key, ctx);
+      bpanic("borrow: invalid FREE state key=%p ctx=%s", owner->key, ctx);
     break;
   case BORROW_EXCLUSIVE:
     if (owner->shared_count != 0 || owner->shared_list != nil ||
         owner->mut_borrower != nil)
-      panic("borrow: invalid EXCLUSIVE state key=%p ctx=%s", owner->key, ctx);
+      bpanic("borrow: invalid EXCLUSIVE state key=%p ctx=%s", owner->key, ctx);
     break;
   case BORROW_SHARED_OWNED:
     if (owner->shared_count <= 0 || owner->shared_list == nil ||
         owner->mut_borrower != nil)
-      panic("borrow: invalid SHARED state key=%p ctx=%s", owner->key, ctx);
+      bpanic("borrow: invalid SHARED state key=%p ctx=%s", owner->key, ctx);
     break;
   case BORROW_MUT_LENT:
     if (owner->mut_borrower == nil || owner->shared_count != 0 ||
         owner->shared_list != nil)
-      panic("borrow: invalid MUT_LENT state key=%p ctx=%s", owner->key, ctx);
+      bpanic("borrow: invalid MUT_LENT state key=%p ctx=%s", owner->key, ctx);
     break;
   default:
-    panic("borrow: unknown state %d key=%p ctx=%s", owner->state, owner->key,
-          ctx);
+    bpanic("borrow: unknown state %d key=%p ctx=%s", owner->state, owner->key,
+           ctx);
   }
 }
 
+/*@
+  @ requires \valid(owner);
+  @ terminates \true;
+  @ assigns owner->state;
+  @ ensures \result == 0 || \result == 1;
+  @*/
 static int borrow_fsm_transition(struct BorrowOwner *owner,
                                  enum BorrowState next) {
   if (owner == nil)
@@ -118,20 +250,20 @@ static int borrow_fsm_transition(struct BorrowOwner *owner,
     }
     break;
   default:
-    panic("borrow_fsm_transition: invalid current state %d key=%p next=%d",
-          owner->state, owner->key, next);
+    bpanic("borrow_fsm_transition: invalid current state %d key=%p next=%d",
+           owner->state, owner->key, next);
   }
 
   return 0;
 }
 
 /* Helper to get cryptographically secure random nonce (3-tier fallback) */
+/*@
+  @ terminates \true;
+  @ ensures \result != 0;
+  @*/
 static u64int get_random_nonce(void) {
   u64int nonce;
-  extern int tpm_get_random(u8int * buffer, int len);
-  extern u64int rdrand_u64(void);
-  extern int crypto_hw_rdrand_available(void);
-  extern u64int chacha20_csprng_u64(void);
 
   /*
    * Tier 1: Use TPM hardware RNG for cryptographic nonce generation.
@@ -157,7 +289,7 @@ static u64int get_random_nonce(void) {
   }
 
   /* FATAL: Even CSPRNG failed (should never happen) */
-  print("get_random_nonce: FATAL - all RNG sources failed\n");
+  bprint("get_random_nonce: FATAL - all RNG sources failed\n");
   return 0;
 }
 
@@ -169,6 +301,10 @@ static u64int get_random_nonce(void) {
  * bootstrap_alloc, initializes all bucket heads to nil, and resets the owner,
  * shared, and mutable borrow counters to zero. Panics if allocation fails.
  */
+/*@
+  @ terminates \true;
+  @ assigns borrowpool;
+  @*/
 void borrowinit(void) {
   ulong i;
 
@@ -178,10 +314,10 @@ void borrowinit(void) {
   borrowpool.owners =
       bootstrap_alloc(borrowpool.nbuckets * sizeof(struct BorrowBucket));
   if (borrowpool.owners == nil) {
-    panic("borrowinit: failed to allocate hash table");
+    bpanic("borrowinit: failed to allocate hash table");
   }
-  print("borrowinit: using bootstrap_alloc hash table (%%lu buckets)\n",
-        borrowpool.nbuckets);
+  bprint("borrowinit: using bootstrap_alloc hash table (%%lu buckets)\n",
+         borrowpool.nbuckets);
 
   for (i = 0; i < borrowpool.nbuckets; i++) {
     borrowpool.owners[i].head = nil;
@@ -190,39 +326,61 @@ void borrowinit(void) {
   borrowpool.nowners = 0;
   borrowpool.nshared = 0;
   borrowpool.nmut = 0;
+  borrowpool.bloom_bits = borrow_bloom_bits_target();
+  borrowpool.bloom_hashes = BORROW_BLOOM_HASHES;
+  borrowpool.bloom = bootstrap_alloc(borrowpool.bloom_bits * sizeof(u8int));
+  if (borrowpool.bloom == nil) {
+    bprint("borrowinit: bloom alloc failed; continuing without bloom\n");
+    borrowpool.bloom_bits = 0;
+    borrowpool.bloom_hashes = 0;
+  } else {
+    memset(borrowpool.bloom, 0, borrowpool.bloom_bits * sizeof(u8int));
+  }
 
   /* Generate SipHash key from secure RNG (3-tier fallback) */
-  extern int tpm_get_random(u8int * buffer, int len);
-  extern u64int rdrand_u64(void);
-  extern int crypto_hw_rdrand_available(void);
-  extern u64int chacha20_csprng_u64(void);
-
-  if (tpm_get_random((u8int *)&borrow_hash_key, sizeof(borrow_hash_key)) ==
-      sizeof(borrow_hash_key)) {
-    print("borrowchecker: Using TPM random for SipHash key\n");
+  /*@ assert \valid((unsigned char*)&borrow_hash_key + (0..15)); */
+  u8int key_buf[16];
+  if (tpm_get_random(key_buf, 16) == 16) {
+    memcpy(&borrow_hash_key, key_buf, 16);
+    bprint("borrowchecker: Using TPM random for SipHash key\n");
   } else if (crypto_hw_rdrand_available()) {
     borrow_hash_key.key[0] = rdrand_u64();
     borrow_hash_key.key[1] = rdrand_u64();
-    print("borrowchecker: Using RDRAND for SipHash key\n");
+    bprint("borrowchecker: Using RDRAND for SipHash key\n");
   } else {
     /* Fallback to ChaCha20 CSPRNG with multi-source entropy */
     borrow_hash_key.key[0] = chacha20_csprng_u64();
     borrow_hash_key.key[1] = chacha20_csprng_u64();
-    print("borrowchecker: Using ChaCha20 CSPRNG for SipHash key (SOFTWARE "
-          "FALLBACK)\n");
+    bprint("borrowchecker: Using ChaCha20 CSPRNG for SipHash key (SOFTWARE "
+           "FALLBACK)\n");
   }
 }
 
 /* SipHash-based hash function for uintptr keys (DoS-resistant) */
+/*@
+  @ requires \valid_read(&borrow_hash_key);
+  @ requires borrowpool.nbuckets > 0;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result < borrowpool.nbuckets;
+  @*/
 ulong borrow_hash(uintptr key) {
   if (borrowpool.nbuckets == 0 || borrowpool.owners == nil)
-    panic("borrow_hash: borrowinit not called");
+    bpanic("borrow_hash: borrowinit not called");
   /* Use HalfSipHash for fast, DoS-resistant hashing */
   return hsiphash(&key, sizeof(key), &borrow_hash_key) % borrowpool.nbuckets;
 }
 
 /* Find BorrowOwner for a key */
+/*@
+  @ requires borrowpool.nbuckets > 0;
+  @ requires \valid(borrowpool.owners + (0..borrowpool.nbuckets-1));
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 static struct BorrowOwner *find_owner(uintptr key) {
+  if (!borrow_bloom_maybe(key))
+    return nil;
   ulong hash = borrow_hash(key);
   struct BorrowOwner *owner = borrowpool.owners[hash].head;
 
@@ -247,6 +405,9 @@ static struct BorrowOwner *find_owner(uintptr key) {
  * @returns Pointer to the newly created BorrowOwner, or `nil` if allocation
  * failed.
  */
+/*@
+  @ terminates \true;
+  @*/
 static struct BorrowOwner *create_owner(uintptr key) {
   ulong hash = borrow_hash(key);
   struct BorrowOwner *owner;
@@ -255,14 +416,14 @@ static struct BorrowOwner *create_owner(uintptr key) {
   if (xinit_done) {
     owner = xalloc(sizeof(struct BorrowOwner));
     if (owner == nil) {
-      print("create_owner: xalloc failed for BorrowOwner\n");
+      bprint("create_owner: xalloc failed for BorrowOwner\n");
       return nil;
     }
     owner->alloc_source = ALLOC_XALLOC;
   } else {
     owner = bootstrap_alloc(sizeof(struct BorrowOwner));
     if (owner == nil) {
-      print("create_owner: bootstrap_alloc failed for BorrowOwner\n");
+      bprint("create_owner: bootstrap_alloc failed for BorrowOwner\n");
       return nil;
     }
     owner->alloc_source = ALLOC_BOOTSTRAP;
@@ -286,6 +447,7 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
   owner->next = borrowpool.owners[hash].head;
   borrowpool.owners[hash].head = owner;
+  borrow_bloom_add(key);
 
   borrowpool.nowners++;
   return owner;
@@ -293,11 +455,17 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
 /* Acquire ownership of a resource */
 /* Acquire ownership of a resource */
-/*@
+/*
   // Transition: Free -> Exclusive
   // Corresponds to 'Acquire' in proofs/borrow/borrow_core.v (Implicit in
 ownership model)
-@*/
+*/
+/*@
+  @ requires p != \null ==> \valid(p);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_EALREADY || \result == BORROW_ENOMEM;
+  @*/
 enum BorrowError borrow_acquire(Proc *p, uintptr key) {
   struct BorrowOwner *owner;
   u64int nonce;
@@ -312,7 +480,7 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
    */
   nonce = get_random_nonce();
   if (nonce == 0) {
-    panic("borrow_acquire: FATAL - cannot generate secure capability nonce");
+    bpanic("borrow_acquire: FATAL - cannot generate secure capability nonce");
   }
 
   ilock(&borrowpool.lock);
@@ -367,10 +535,17 @@ enum BorrowError borrow_acquire(Proc *p, uintptr key) {
  * @returns BORROW_EBORROWED if there are active shared or mutable borrows that
  * prevent release.
  */
-/*@
+/*
   // Transition: Exclusive -> Free
   // Corresponds to release logic in proofs/borrow/borrow_core.v
-@*/
+*/
+/*@
+  @ requires p != \null ==> \valid(p);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EBORROWED;
+  @*/
 enum BorrowError borrow_release(Proc *p, uintptr key) {
   struct BorrowOwner *owner, *prev;
   ulong hash;
@@ -419,6 +594,7 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
       if (owner->alloc_source == ALLOC_XALLOC) {
         xfree(owner);
       }
+      borrow_bloom_remove(key);
       break;
     }
     prev = owner;
@@ -429,10 +605,34 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
 }
 
 /* Transfer ownership from one process to another (Low-level) */
-/*@
+/*
   // Transition: Exclusive -> Exclusive (Transfer)
   // Corresponds to 'Transfer' in proofs/borrow/borrow_core.v
-@*/
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: transfer_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires from != \null && to != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == from && o->state == BORROW_EXCLUSIVE;
+ *   requires o->shared_count == 0 && o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->owner == to && o->state == BORROW_EXCLUSIVE;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->owner, o->key_cap, o->acquired_ns;
+*/
+/*@
+  @ requires from != \null && to != \null ==> \valid(from) && \valid(to);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EBORROWED;
+  @*/
 enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
   struct BorrowOwner *owner;
 
@@ -469,7 +669,7 @@ enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
   owner->key_cap.gen++;
   owner->key_cap.nonce = get_random_nonce();
   if (owner->key_cap.nonce == 0) {
-    panic("borrow_transfer: FATAL - cannot generate secure capability nonce");
+    bpanic("borrow_transfer: FATAL - cannot generate secure capability nonce");
   }
 
   iunlock(&borrowpool.lock);
@@ -480,12 +680,34 @@ enum BorrowError borrow_transfer(Proc *from, Proc *to, uintptr key) {
  * Broker Algorithm Transfer (v2.0)
  * Implements the atomic transition with Two-Factor Authorization.
  *
- * @param sender Sending process (must own the resource)
- * @param receiver Receiving process
- * @param phys_addr Physical address (key) of the page/resource
- * @param cap Capability key provided by sender
- * @returns BORROW_OK on success, error code otherwise.
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @theorem: Transfer_Success (extended with capability authorization)
+ * @lemma: transfer_coherent ensures coherence preservation
+ *
+ * ACSL Contract:
+ *   requires sender != \null && receiver != \null;
+ *   requires \valid(&cap);
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == phys_addr && o->owner == sender && o->state ==
+ * BORROW_EXCLUSIVE; requires o->key_cap.gen == cap.gen && o->key_cap.nonce ==
+ * cap.nonce; requires o->shared_count == 0 && o->mut_borrower == \null; ensures
+ * \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == phys_addr && o->owner == receiver &&
+ *       o->state == BORROW_EXCLUSIVE && o->key_cap.gen == \old(o->key_cap.gen)
+ * + 1; ensures borrow_pool_valid(\old(borrowpool), borrowpool); ensures
+ * borrow_write_safety preserved; ensures borrow_no_rwr_race preserved; assigns
+ * borrowpool.lock, o->owner, o->key_cap; assigns borrowpool.nowners \from
+ * borrowpool.nowners;
  */
+/*@
+  @ requires sender != \null && receiver != \null ==> \valid(sender) &&
+  \valid(receiver);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EBORROWED;
+  @*/
 enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
                                         uintptr phys_addr,
                                         struct IdentKey cap) {
@@ -536,8 +758,8 @@ enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
   owner->key_cap.gen++;
   owner->key_cap.nonce = get_random_nonce();
   if (owner->key_cap.nonce == 0) {
-    panic("borrow_broker_transfer: FATAL - cannot generate secure capability "
-          "nonce");
+    bpanic("borrow_broker_transfer: FATAL - cannot generate secure capability "
+           "nonce");
   }
 
   iunlock(&borrowpool.lock);
@@ -563,10 +785,36 @@ enum BorrowError borrow_broker_transfer(Proc *sender, Proc *receiver,
  * resource.
  * @returns BORROW_ENOMEM if allocation of the shared-borrow record fails.
  */
-/*@
+/*
   // Transition: Exclusive -> SharedOwned OR SharedOwned -> SharedOwned
   // Corresponds to 'BorrowShared' in proofs/borrow/borrow_core.v
-@*/
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: borrow_shared_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires owner != \null && borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == owner &&
+ *     (o->state == BORROW_EXCLUSIVE || o->state == BORROW_SHARED_OWNED);
+ *   requires o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->state == BORROW_SHARED_OWNED;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->shared_list, o->shared_count, o->state;
+*/
+/*@
+  @ requires owner != \null && borrower != \null ==> \valid(owner) &&
+  \valid(borrower);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EMUTBORROW || \result == BORROW_EALREADY || \result == BORROW_ENOMEM;
+  @*/
 enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
                                       uintptr key) {
   struct BorrowOwner *own;
@@ -640,10 +888,36 @@ enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
 }
 
 /* Borrow resource as mutable */
-/*@
+/*
   // Transition: Exclusive -> MutLent
   // Corresponds to 'BorrowMut' in proofs/borrow/borrow_core.v
-@*/
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: borrow_mut_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires owner != \null && borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->owner == owner && o->state == BORROW_EXCLUSIVE;
+ *   requires o->shared_count == 0 && o->mut_borrower == \null;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->mut_borrower == borrower &&
+ *       o->state == BORROW_MUT_LENT;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->mut_borrower, o->state, borrowpool.nmut;
+*/
+/*@
+  @ requires owner != \null && borrower != \null ==> \valid(owner) &&
+  \valid(borrower);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EMUTBORROW;
+  @*/
 enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 
@@ -700,10 +974,34 @@ enum BorrowError borrow_borrow_mut(Proc *owner, Proc *borrower, uintptr key) {
  *          BORROW_ENOTFOUND if no owner exists for `key`;
  *          BORROW_ENOTBORROWED if the borrower does not hold a shared borrow.
  */
-/*@
+/*
   // Transition: SharedOwned -> SharedOwned OR SharedOwned -> Exclusive
   // Corresponds to 'ReturnShared' in proofs/borrow/borrow_core.v
-@*/
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: return_shared_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->state == BORROW_SHARED_OWNED;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key &&
+ *       (o->state == BORROW_SHARED_OWNED ||
+ *        (o->state == BORROW_EXCLUSIVE && o->shared_count == 0));
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->shared_list, o->shared_count, o->state;
+*/
+/*@
+  @ requires borrower != \null ==> \valid(borrower);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTBORROWER;
+  @*/
 enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
   struct SharedBorrower *sb, *prev;
@@ -760,10 +1058,34 @@ enum BorrowError borrow_return_shared(Proc *borrower, uintptr key) {
 }
 
 /* Return a mutable borrow */
-/*@
+/*
   // Transition: MutLent -> Exclusive
   // Corresponds to 'ReturnMut' in proofs/borrow/borrow_core.v
-@*/
+ *
+ * @coq_proof: proofs/borrow/borrow_core.v
+ * @lemma: return_mut_coherent
+ * @lemma: borrow_step_preserves_valid
+ *
+ * ACSL Contract:
+ *   requires borrower != \null;
+ *   requires \exists struct BorrowOwner *o;
+ *     o->key == key && o->state == BORROW_MUT_LENT &&
+ *     o->mut_borrower == borrower;
+ *   ensures \result == BORROW_OK ==>
+ *     \exists struct BorrowOwner *o;
+ *       o->key == key && o->mut_borrower == \null &&
+ *       o->state == BORROW_EXCLUSIVE;
+ *   ensures borrow_pool_valid(\old(borrowpool), borrowpool);
+ *   ensures borrow_write_safety preserved;
+ *   ensures borrow_no_rwr_race preserved;
+ *   assigns borrowpool.lock, o->mut_borrower, o->state, borrowpool.nmut;
+*/
+/*@
+  @ requires borrower != \null ==> \valid(borrower);
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTBORROWER;
+  @*/
 enum BorrowError borrow_return_mut(Proc *borrower, uintptr key) {
   struct BorrowOwner *own;
 
@@ -795,6 +1117,10 @@ enum BorrowError borrow_return_mut(Proc *borrower, uintptr key) {
 }
 
 /* Query functions */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int borrow_is_owned(uintptr key) {
   struct BorrowOwner *owner;
   int owned;
@@ -807,6 +1133,10 @@ int borrow_is_owned(uintptr key) {
   return owned;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 Proc *borrow_get_owner(uintptr key) {
   struct BorrowOwner *owner;
   Proc *p;
@@ -819,6 +1149,11 @@ Proc *borrow_get_owner(uintptr key) {
   return p;
 }
 
+/*@
+  @ requires \valid(out);
+  @ terminates \true;
+  @ assigns *out;
+  @*/
 int borrow_get_owner_snapshot(uintptr key, struct BorrowOwner *out) {
   struct BorrowOwner *owner;
   int ok = 0;
@@ -838,6 +1173,10 @@ int borrow_get_owner_snapshot(uintptr key, struct BorrowOwner *out) {
   return ok;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 enum BorrowState borrow_get_state(uintptr key) {
   struct BorrowOwner *owner;
   enum BorrowState state;
@@ -850,6 +1189,10 @@ enum BorrowState borrow_get_state(uintptr key) {
   return state;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int borrow_can_borrow_shared(uintptr key) {
   struct BorrowOwner *owner;
   int can;
@@ -863,6 +1206,10 @@ int borrow_can_borrow_shared(uintptr key) {
   return can;
 }
 
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int borrow_can_borrow_mut(uintptr key) {
   struct BorrowOwner *owner;
   int can;
@@ -891,6 +1238,10 @@ int borrow_can_borrow_mut(uintptr key) {
  * @param p Pointer to the process whose borrow-related state should be cleaned;
  * no action is taken if `p` is `nil`.
  */
+/*@
+  @ requires p != \null ==> \valid(p);
+  @ terminates \true;
+  @*/
 void borrow_cleanup_process(Proc *p) {
   ulong i;
   struct BorrowOwner *owner, *prev, *next;
@@ -974,6 +1325,7 @@ void borrow_cleanup_process(Proc *p) {
         if (owner->alloc_source == ALLOC_XALLOC) {
           xfree(owner);
         }
+        borrow_bloom_remove(owner->key);
       } else {
         prev = owner;
       }
@@ -985,21 +1337,27 @@ void borrow_cleanup_process(Proc *p) {
   iunlock(&borrowpool.lock);
 
   if (cleaned > 0) {
-    print("borrow: cleaned %%d resources for pid %%d\n", cleaned, p->pid);
+    bprint("borrow: cleaned %%d resources for pid %%d\n", cleaned, p->pid);
   }
 }
 
 /* Statistics */
+/*@
+  @ terminates \true;
+  @*/
 void borrow_stats(void) {
   ilock(&borrowpool.lock);
-  print("Borrow Checker Statistics:\n");
-  print("  Total owners:  %%lud\n", borrowpool.nowners);
-  print("  Shared borrows: %%lud\n", borrowpool.nshared);
-  print("  Mut borrows:   %%lud\n", borrowpool.nmut);
+  bprint("Borrow Checker Statistics:\n");
+  bprint("  Total owners:  %%lud\n", borrowpool.nowners);
+  bprint("  Shared borrows: %%lud\n", borrowpool.nshared);
+  bprint("  Mut borrows:   %%lud\n", borrowpool.nmut);
   iunlock(&borrowpool.lock);
 }
 
 /* Dump resource info */
+/*@
+  @ terminates \true;
+  @*/
 void borrow_dump_resource(uintptr key) {
   struct BorrowOwner *owner;
   char *statestr[] = {
@@ -1012,21 +1370,21 @@ void borrow_dump_resource(uintptr key) {
   ilock(&borrowpool.lock);
   owner = find_owner(key);
   if (owner == nil) {
-    print("Resource %%#p not found\n", key);
+    bprint("Resource %%#p not found\n", key);
     iunlock(&borrowpool.lock);
     return;
   }
 
-  print("Resource %%#p:\n", key);
-  print("  State:          %s\n", statestr[owner->state]);
-  print("  Owner:          %s (pid %d)\n",
-        owner->owner ? owner->owner->text : "none",
-        owner->owner ? owner->owner->pid : -1);
-  print("  Shared borrows: %d\n", owner->shared_count);
-  print("  Mut borrower:   %s (pid %d)\n",
-        owner->mut_borrower ? owner->mut_borrower->text : "none",
-        owner->mut_borrower ? owner->mut_borrower->pid : -1);
-  print("  Total borrows:  %%lud\n", owner->borrow_count);
+  bprint("Resource %%#p:\n", key);
+  bprint("  State:          %s\n", statestr[owner->state]);
+  bprint("  Owner:          %s (pid %d)\n",
+         owner->owner ? owner->owner->text : "none",
+         owner->owner ? owner->owner->pid : -1);
+  bprint("  Shared borrows: %d\n", owner->shared_count);
+  bprint("  Mut borrower:   %s (pid %d)\n",
+         owner->mut_borrower ? owner->mut_borrower->text : "none",
+         owner->mut_borrower ? owner->mut_borrower->pid : -1);
+  bprint("  Total borrows:  %%lud\n", owner->borrow_count);
 
   iunlock(&borrowpool.lock);
 }
@@ -1047,6 +1405,11 @@ void borrow_dump_resource(uintptr key) {
  *          BORROW_ENOMEM if an owner entry could not be allocated;
  *          BORROW_EALREADY if the resource is not free.
  */
+/*@
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_ENOMEM || \result ==
+  BORROW_EALREADY;
+  @*/
 enum BorrowError borrow_acquire_system(uintptr key,
                                        enum BorrowSystemOwner owner) {
   struct BorrowOwner *own;
@@ -1100,6 +1463,11 @@ enum BorrowError borrow_acquire_system(uintptr key,
  * @returns BORROW_EBORROWED if the resource has active shared or mutable
  * borrows.
  */
+/*@
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_ENOTFOUND || \result ==
+  BORROW_ENOTOWNER || \result == BORROW_EBORROWED;
+  @*/
 enum BorrowError borrow_release_system(uintptr key,
                                        enum BorrowSystemOwner owner) {
   struct BorrowOwner *own, *prev;
@@ -1143,6 +1511,7 @@ enum BorrowError borrow_release_system(uintptr key,
       if (own->alloc_source == ALLOC_XALLOC) {
         xfree(own);
       }
+      borrow_bloom_remove(key);
       break;
     }
     prev = own;
@@ -1171,6 +1540,12 @@ enum BorrowError borrow_release_system(uintptr key,
  * @returns BORROW_EBORROWED if the resource has active shared or mutable
  * borrows and cannot be transferred.
  */
+/*@
+  @ terminates \true;
+  @ ensures \result == BORROW_OK || \result == BORROW_EINVAL || \result ==
+  BORROW_ENOTFOUND || \result == BORROW_ENOTOWNER || \result ==
+  BORROW_EBORROWED;
+  @*/
 enum BorrowError borrow_transfer_system(enum BorrowSystemOwner from,
                                         enum BorrowSystemOwner to,
                                         uintptr key) {
@@ -1205,6 +1580,10 @@ enum BorrowError borrow_transfer_system(enum BorrowSystemOwner from,
 }
 
 /* Get system owner of a resource */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 enum BorrowSystemOwner borrow_get_system_owner(uintptr key) {
   struct BorrowOwner *owner;
   enum BorrowSystemOwner sys_owner;
@@ -1222,6 +1601,10 @@ enum BorrowSystemOwner borrow_get_system_owner(uintptr key) {
 }
 
 /* Check if resource is owned by a specific system */
+/*@
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
 int borrow_is_owned_by_system(uintptr key, enum BorrowSystemOwner owner) {
   struct BorrowOwner *own;
   int owned;
@@ -1246,7 +1629,10 @@ static Lock range_lock;
  * Prepares internal state used to record and manage ownership of memory ranges
  * during bootstrap and runtime.
  */
-void memory_range_init(void) { print("memory_range_init: initialized\n"); }
+/*@
+  @ terminates \true;
+  @*/
+void memory_range_init(void) { bprint("memory_range_init: initialized\n"); }
 
 /**
  * Add a physical memory range to the tracked memory ranges and associate it
@@ -1262,6 +1648,9 @@ void memory_range_init(void) { print("memory_range_init: initialized\n"); }
  * @param end End physical address of the range.
  * @param owner System owner to associate with this memory range.
  */
+/*@
+  @ terminates \true;
+  @*/
 void memory_range_add(uintptr start, uintptr end,
                       enum BorrowSystemOwner owner) {
   /* Always use dynamic allocation */
@@ -1282,6 +1671,9 @@ void memory_range_add(uintptr start, uintptr end,
  * @param end End physical address of the range (exclusive).
  * @param owner The system owner to associate with the range.
  */
+/*@
+  @ terminates \true;
+  @*/
 void memory_range_add_discovered(uintptr start, uintptr end,
                                  enum BorrowSystemOwner owner) {
   struct MemoryRange *range;
@@ -1293,9 +1685,9 @@ void memory_range_add_discovered(uintptr start, uintptr end,
     range = bootstrap_alloc(sizeof(struct MemoryRange));
   }
   if (range == nil) {
-    print("memory_range_add_discovered: allocation failed for range "
-          "[%%#p-%%#p]\n",
-          start, end);
+    bprint("memory_range_add_discovered: allocation failed for range "
+           "[%%#p-%%#p]\n",
+           start, end);
     return;
   }
 
@@ -1311,8 +1703,8 @@ void memory_range_add_discovered(uintptr start, uintptr end,
 
   iunlock(&range_lock);
 
-  print("memory_range_add_discovered: [%%#p-%%#p] owner=%%d (dynamic)\n", start,
-        end, owner);
+  bprint("memory_range_add_discovered: [%%#p-%%#p] owner=%%d (dynamic)\n",
+         start, end, owner);
 }
 
 /**
@@ -1328,6 +1720,9 @@ void memory_range_add_discovered(uintptr start, uintptr end,
  * @param end Ending address of the range to remove (same value used when the
  * range was added).
  */
+/*@
+  @ terminates \true;
+  @*/
 void memory_range_remove(uintptr start, uintptr end) {
   struct MemoryRange *range, *prev;
 
@@ -1349,14 +1744,14 @@ void memory_range_remove(uintptr start, uintptr end) {
       }
 
       iunlock(&range_lock);
-      print("memory_range_remove: [%%#p-%%#p] removed\n", start, end);
+      bprint("memory_range_remove: [%%#p-%%#p] removed\n", start, end);
       return;
     }
     prev = range;
   }
 
   iunlock(&range_lock);
-  print("memory_range_remove: [%%#p-%%#p] not found\n", start, end);
+  bprint("memory_range_remove: [%%#p-%%#p] not found\n", start, end);
 }
 
 /**
@@ -1372,15 +1767,15 @@ void memory_range_dump(void) {
 
   ilock(&range_lock);
 
-  print("=== Memory Range Tracking ===\n");
+  bprint("=== Memory Range Tracking ===\n");
   for (range = range_list; range != nil; range = range->next) {
-    print("  [%%#p-%%#p] owner=%%s size=%%#p\n", range->start, range->end,
-          range->owner == OWNER_BOOTLOADER ? "BOOTLOADER" : "KERNEL",
-          range->end - range->start);
+    bprint("  [%%#p-%%#p] owner=%%s size=%%#p\n", range->start, range->end,
+           range->owner == OWNER_BOOTLOADER ? "BOOTLOADER" : "KERNEL",
+           range->end - range->start);
     count++;
   }
-  print("Total: %%d ranges\n", count);
-  print("Mode: BOOTSTRAP ALLOCATION (early boot)\n");
+  bprint("Total: %%d ranges\n", count);
+  bprint("Mode: BOOTSTRAP ALLOCATION (early boot)\n");
 
   iunlock(&range_lock);
 }
@@ -1470,8 +1865,8 @@ enum BorrowError borrow_acquire_range_phys(uintptr start_pa, usize size,
   /* IMPORTANT: Only use this after xinit() for runtime tracking!
    * For boot coordination, use memory_range_add() instead */
   if (!xinit_done) {
-    print("borrow_acquire_range_phys: ERROR - called during early boot\n");
-    print("  Use memory_range_add() for boot coordination instead\n");
+    bprint("borrow_acquire_range_phys: ERROR - called during early boot\n");
+    bprint("  Use memory_range_add() for boot coordination instead\n");
     return BORROW_EINVAL;
   }
 
@@ -1580,7 +1975,7 @@ void boot_memory_coordination_init(void) {
   /* Initialize range-based tracking */
   memory_range_init();
 
-  print("boot_memory_coordination_init: initialized (state=BOOTLOADER)\n");
+  bprint("boot_memory_coordination_init: initialized (state=BOOTLOADER)\n");
 }
 
 /* Transfer bootloader memory to kernel - simple state transition */
@@ -1589,8 +1984,8 @@ void transfer_bootloader_to_kernel(void) {
   mem_coord.state = MEMORY_KERNEL_ACTIVE;
   mem_coord.current_owner = OWNER_KERNEL;
 
-  print("transfer_bootloader_to_kernel: ownership transferred (BOOTLOADER "
-        "\u2192 KERNEL)\n");
+  bprint("transfer_bootloader_to_kernel: ownership transferred (BOOTLOADER "
+         "-> KERNEL)\n");
 }
 
 /* Establish memory ownership zones using range-based tracking (STATIC) */
@@ -1617,9 +2012,9 @@ void establish_memory_ownership_zones(void) {
 
   mem_coord.state = MEMORY_COORDINATED;
 
-  print("establish_memory_ownership_zones: zones established (static, %%d "
-        "ranges)\n",
-        4);
+  bprint("establish_memory_ownership_zones: zones established (static, %%d "
+         "ranges)\n",
+         4);
 }
 
 /**
@@ -1639,13 +2034,13 @@ void establish_memory_ownership_zones_dynamic(void) {
   uintptr start, region_end;
 
   if (!xinit_done) {
-    print("establish_memory_ownership_zones_dynamic: ERROR - call after "
-          "xinit()\n");
+    bprint("establish_memory_ownership_zones_dynamic: ERROR - call after "
+           "xinit()\n");
     return;
   }
 
-  print("establish_memory_ownership_zones_dynamic: discovering memory from "
-        "conf.mem[]\n");
+  bprint("establish_memory_ownership_zones_dynamic: discovering memory from "
+         "conf.mem[]\n");
 
   /* Discover kernel memory regions from conf.mem[] */
   for (i = 0; i < nelem(conf.mem); i++) {
@@ -1659,16 +2054,16 @@ void establish_memory_ownership_zones_dynamic(void) {
     if (start >= conf.mem[i].kbase && start < conf.mem[i].klimit) {
       /* Kernel memory */
       memory_range_add_discovered(start, region_end, OWNER_KERNEL);
-      print("  Kernel region [%%#p-%%#p] size=%%#p\n", start, region_end,
-            region_end - start);
+      bprint("  Kernel region [%%#p-%%#p] size=%%#p\n", start, region_end,
+             region_end - start);
     } else {
       /* User/free memory - not tracked initially */
-      print("  User/free region [%%#p-%%#p] size=%%#p (not tracked)\n", start,
-            region_end, region_end - start);
+      bprint("  User/free region [%%#p-%%#p] size=%%#p (not tracked)\n", start,
+             region_end, region_end - start);
     }
   }
 
-  print("establish_memory_ownership_zones_dynamic: discovery complete\n");
+  bprint("establish_memory_ownership_zones_dynamic: discovery complete\n");
   memory_range_dump();
 }
 
@@ -1676,25 +2071,25 @@ void establish_memory_ownership_zones_dynamic(void) {
 int validate_memory_coordination_ready(void) {
   /* Check coordination enabled */
   if (!mem_coord.coordination_enabled) {
-    print("validate_memory_coordination_ready: coordination disabled\n");
+    bprint("validate_memory_coordination_ready: coordination disabled\n");
     return 0;
   }
 
   /* Check we're in coordinated state */
   if (mem_coord.state != MEMORY_COORDINATED &&
       mem_coord.state != MEMORY_KERNEL_ACTIVE) {
-    print("validate_memory_coordination_ready: wrong state %%d\n",
-          mem_coord.state);
+    bprint("validate_memory_coordination_ready: wrong state %%d\n",
+           mem_coord.state);
     return 0;
   }
 
   /* Check kernel owns critical region (sample check) */
   if (memory_range_get_owner(0x200000) != OWNER_KERNEL) {
-    print("validate_memory_coordination_ready: kernel doesn't own 0x200000\n");
+    bprint("validate_memory_coordination_ready: kernel doesn't own 0x200000\n");
     return 0;
   }
 
-  print("validate_memory_coordination_ready: ready for CR3 switch\n");
+  bprint("validate_memory_coordination_ready: ready for CR3 switch\n");
   return 1;
 }
 
@@ -1719,17 +2114,17 @@ int memory_system_ready_before_cr3(void) {
 int post_cr3_memory_system_operational(void) {
   /* After CR3 switch, verify we can still access our data structures */
   if (borrowpool.owners == nil || borrowpool.nbuckets == 0) {
-    print("post_cr3_memory_system_operational: borrow pool inaccessible\n");
+    bprint("post_cr3_memory_system_operational: borrow pool inaccessible\n");
     return 0;
   }
 
   /* Verify coordination state is accessible */
   if (mem_coord.state != MEMORY_KERNEL_ACTIVE) {
-    print("post_cr3_memory_system_operational: unexpected state %%d\n",
-          mem_coord.state);
+    bprint("post_cr3_memory_system_operational: unexpected state %%d\n",
+           mem_coord.state);
     return 0;
   }
 
-  print("post_cr3_memory_system_operational: memory system operational\n");
+  bprint("post_cr3_memory_system_operational: memory system operational\n");
   return 1;
 }

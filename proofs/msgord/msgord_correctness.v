@@ -21,8 +21,11 @@ Definition msgord_message_order (a b : msgord_lite_meta) : Prop :=
   (timestamp a = timestamp b /\ msg_id a < msg_id b).
 
 (* Properties that must hold *)
-Axiom timestamp_monotonic : forall t1 t2, t1 < t2 -> t1 <> t2.
-Axiom msg_id_unique : forall m1 m2, msg_id m1 = msg_id m2 -> m1 = m2.
+Lemma timestamp_monotonic : forall t1 t2, t1 < t2 -> t1 <> t2.
+Proof.
+  intros t1 t2 Hlt Heq.
+  subst. exact (Nat.lt_irrefl _ Hlt).
+Qed.
 
 (* MSGORD-lite ordering is a strict total order *)
 Theorem msgord_order_transitive : 
@@ -164,7 +167,9 @@ Qed.
 (* Alternative formulation: for ANY two messages (not just in consensus list) *)
 Theorem msgord_lite_total_order :
   forall m1 m2 : msgord_lite_meta,
-    msgord_message_order m1 m2 \/ msgord_message_order m2 m1 \/ m1 = m2.
+    msgord_message_order m1 m2 \/
+    msgord_message_order m2 m1 \/
+    (timestamp m1 = timestamp m2 /\ msg_id m1 = msg_id m2).
 Proof.
   intros m1 m2.
   unfold msgord_message_order.
@@ -172,7 +177,7 @@ Proof.
   - left. left. exact Hlt.
   - destruct (Nat.lt_trichotomy (msg_id m1) (msg_id m2)) as [Hlt_id|[Heq_id|Hgt_id]].
     + left. right. split; assumption.
-    + right. right. apply msg_id_unique. exact Heq_id.
+    + right. right. split; assumption.
     + right. left. right. split; [symmetry; exact Heq | exact Hgt_id].
   - right. left. left. exact Hgt.
 Qed.

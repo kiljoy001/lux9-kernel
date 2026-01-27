@@ -9,11 +9,7 @@
 #define _CONSENSUS_DEPTH_H_
 
 #include "msgord.h"
-
-/* Forward declarations */
-struct Proc;
-struct Fcall;
-typedef struct Fcall Fcall;
+#include "types_fwd.h"
 
 /*
  * Operation Types for Classification

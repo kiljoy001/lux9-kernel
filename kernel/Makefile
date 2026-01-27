@@ -37,31 +37,40 @@ PEBBLE_KERNEL_C := ../kernel/pebble_kernel.c
 CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
 CRYPTO_S := ../kernel/crypto/hwcrypto.S
 REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
-FAMILY_C := family/family.c family/pci_family.c family/pci_resource_pool.c family/pci_channel.c family/pci_transactions.c family/pci_9p.c family/pebble.c family/stubs.c family/devfamily.c
+
 CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/fruity/fruity_interp.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/qbe/fruity_sljit.c clr/qbe/qbe_exec.c clr/clr_runtime.c clr/lux_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
+SYMBOLIC_C := ../kernel/symbolic/minigmp_kernel.c
 
 # Object files
 PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
 PC64_O := $(patsubst $(PC64_DIR)/%.c,%.o,$(PC64_C))
 LIBC_O := $(patsubst $(LIBC_DIR)/%.c,%.o,$(LIBC_C))
 ASM_O := $(patsubst $(PC64_DIR)/%.S,%.o,$(ASM_S))
-BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C))
+BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C)) borrow_enforce.o
 LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
 PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
 PEBBLE_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_KERNEL_C))
 CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%.o,$(CRYPTO_S))
 REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
-FAMILY_O := family.o pci_family.o pci_resource_pool.o pci_channel.o pci_transactions.o pci_9p.o stubs.o devfamily.o
+
 AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
 CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o fruity_interp.o
 CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
 CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o clr_vtable.o
 # fruity_sljit.o and qbe_exec.o temporarily disabled due to sljit/kernel header conflicts
 CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
-MISC_KERNEL_O := msgord.o 9p_router.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o test_il_opcodes.o pow_gate.o
+MISC_KERNEL_O := msgord.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o exchange_pool.o exchange_pool_ipc.o bprint.o test_hybrid_ipc.o
+ROUTER_O := router/core.o router/doorbell.o router/fs.o router/ipc.o router/proc.o router/srv.o router/wasm.o
+SYMBOLIC_O := $(patsubst ../kernel/%.c,%.o,$(SYMBOLIC_C))
+WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c wasm/wasi_lux9_shim.c
+WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o wasm_arena_test.o wasi_lux9_shim.o wasm_host_lux9.o wasm_host_fruity.o wasm/fruity_ir.o
+WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wasm/wasm_runtime/wasm3/m3_code.o \
+           wasm/wasm_runtime/wasm3/m3_compile.o wasm/wasm_runtime/wasm3/m3_parse.o wasm/wasm_runtime/wasm3/m3_bind.o \
+           wasm/wasm_runtime/wasm3/m3_function.o wasm/wasm_runtime/wasm3/m3_module.o wasm/wasm_runtime/wasm3/m3_exec.o \
+           wasm/wasm_runtime/wasm3/m3_info.o wasm/wasm_runtime/wasm3/lux9_math.o
+CAP_O := capability/lux_capability.o
 
-
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(FAMILY_O) $(CLR_FRUITY_O) $(CLR_CBOR_O) $(CLR_QBE_O) $(CLR_INTERP_O) $(MISC_KERNEL_O)
+ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(MISC_KERNEL_O) $(ROUTER_O) $(WASM_O) $(WASM3_O) $(CAP_O) $(SYMBOLIC_O)
 # AML_O removed temporarily to fix build
 # $(AML_O)
 
@@ -138,17 +147,25 @@ $(KERNEL_BINARY): $(ALL_O)
 	@echo "AS $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+crypto/%.o: crypto/%.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 %.o: ../real_drivers/%.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-pebble_family.o: family/pebble.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
 
-%.o: family/%.c
+# WASM compilation
+%.o: wasm/%.c
 	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -Iwasm/wasm_runtime -c $< -o $@
+
+# WASM3 interpreter with SSE enabled (WASMv1 requires float)
+wasm/wasm_runtime/wasm3/%.o: wasm/wasm_runtime/wasm3/%.c
+	@echo "CC (WASM3) $<"
+	@$(CC) $(filter-out -mno-sse -mno-sse2 -mno-80387 -mno-mmx,$(CFLAGS)) -Dd_m3HasFloat=1 -c $< -o $@
+
 
 # CLR Fruity IR compilation
 fruity_ir.o: clr/fruity/fruity_ir.c
@@ -261,6 +278,10 @@ clr_exchange_ops.o: clr/clr_exchange_ops.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+test_hybrid_ipc.o: clr/qbe/test_hybrid_ipc.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 # New Interpreter and AOT Components
 fruity_interp.o: clr/fruity/fruity_interp.c
 	@echo "CC $<"
@@ -279,6 +300,16 @@ test_il_opcodes.o: test/test_il_opcodes.c
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+# Explicit rules for files in subdirectories
+uuid.o: ../kernel/lib/uuid.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+borrow_enforce.o: ../kernel/borrow_enforce.c
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+
 # Testing targets (placeholder)
 
 
@@ -290,8 +321,9 @@ iso: $(KERNEL_BINARY)
 	@echo "Creating ISO..."
 	@mkdir -p $(ISO_DIR)/boot/limine
 	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
+	@cp ../limine.conf $(ISO_DIR)/limine.conf
 	@cp ../limine.conf $(ISO_DIR)/boot/limine/limine.cfg
-	@cp ../initrd.tar.gz $(ISO_DIR)/boot/initrd.tar
+	@cp ../initrd.tar $(ISO_DIR)/boot/initrd.tar
 	@cp ../boot/limine/bin/limine-bios.sys $(ISO_DIR)/boot/limine/
 	@cp ../boot/limine/bin/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
 	@cp ../boot/limine/bin/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/
@@ -300,13 +332,13 @@ iso: $(KERNEL_BINARY)
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		$(ISO_DIR) -o $(ISO_BINARY)
-	@../boot/limine/bin/limine bios-install $(ISO_BINARY)
+	@#../boot/limine/bin/limine bios-install $(ISO_BINARY)
 	@echo "ISO created: $(ISO_BINARY)"
 	@ls -lh $(ISO_BINARY)
 
 run: iso
-	@echo "Running kernel in QEMU (ISO)..."
-	@qemu-system-x86_64 -M q35 -m 2G -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio
+	@echo "Running kernel in QEMU (UEFI)..."
+	@qemu-system-x86_64 -M q35 -m 2G -bios /usr/share/qemu/OVMF.fd -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio
 
 debug: iso
 	@echo "Running kernel in QEMU with GDB (ISO)..."

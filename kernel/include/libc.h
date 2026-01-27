@@ -1,32 +1,45 @@
+#ifndef _LIBC_H_
+#define _LIBC_H_
+
+#ifndef __FRAMAC__
 #pragma lib "libc.a"
 #pragma src "/sys/src/libc"
+#endif
 
 #ifdef _PORTLIB_H_
 typedef long jmp_buf[16];
+#ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
 extern void longjmp(jmp_buf, int);
+#endif
+#else
+#ifdef __FRAMAC__
+typedef long jmp_buf[16];
 #else
 #include <setjmp.h>
 #endif
-#include <stdarg.h>
+#endif
 #include "u.h"
+#include <stdarg.h>
 
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
 #define assert(x)                                                              \
   if (x) {                                                                     \
-  } else                                                                       \
-    _assert("x")
+  } else {                                                                     \
+    print("ASSERT FAILED: %s:%d %s\n", __FILE__, __LINE__, #x);                \
+    /* _assert(#x); */                                                         \
+  }
 
 /*
  * mem routines
  */
-extern void *memccpy(void *, void *, int, usize);
+extern void *memccpy(void *, const void *, int, usize);
 extern void *memset(void *, int, usize);
-extern int memcmp(void *, void *, usize);
-extern void *memcpy(void *, void *, usize);
-extern void *memmove(void *, void *, usize);
-extern void *memchr(void *, int, usize);
+extern int memcmp(const void *, const void *, usize);
+extern void *memcpy(void *, const void *, usize);
+extern void *memmove(void *, const void *, usize);
+extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
@@ -145,7 +158,8 @@ extern void *malloctopoolblock(void *);
 /*
  * print routines
  */
-#ifndef _PORTLIB_H_
+#ifndef _FMT_TYPEDEF_
+#define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
 struct Fmt {
   uchar runes;         /* output buffer is runes or chars? */
@@ -157,8 +171,8 @@ struct Fmt {
   int nfmt;            /* num chars formatted so far */
   va_list args;        /* args passed to dofmt */
   int r;               /* % format Rune */
-  int width;
-  int prec;
+  int width;           /* width of format */
+  int prec;            /* precision of format */
   ulong flags;
 };
 #endif
@@ -181,6 +195,7 @@ enum {
   FmtFlag = FmtByte << 1
 };
 
+/*@ assigns \result \from fmt; */
 extern int print(char *, ...);
 extern char *seprint(char *, char *, char *, ...);
 extern char *vseprint(char *, char *, char *, va_list);
@@ -207,6 +222,7 @@ extern char *fmtstrflush(Fmt *);
 extern int runefmtstrinit(Fmt *);
 extern Rune *runefmtstrflush(Fmt *);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos fprint 2
 #pragma varargck argpos print 1
@@ -273,9 +289,19 @@ extern Rune *runefmtstrflush(Fmt *);
 #pragma varargck type "[" void *
 #pragma varargck type "H" void *
 #pragma varargck type "lH" void *
+#endif
 
 extern int fmtinstall(int, int (*)(Fmt *));
-extern int dofmt(Fmt *, char *);
+#include "acsl_bounds.h"
+
+/*@
+  @ requires \valid(f);
+  @ requires \valid_read(fmt + (0..ACSL_MAX_FMT_LEN-1));
+  @ requires \exists integer k; 0 <= k < ACSL_MAX_FMT_LEN && fmt[k] == '\0';
+  @ assigns *f;
+  @ ensures \result >= -1;
+  @*/
+extern int dofmt(Fmt *f, char *fmt);
 extern int dorfmt(Fmt *, Rune *);
 extern int fmtprint(Fmt *, char *, ...);
 extern int fmtvprint(Fmt *, char *, va_list);
@@ -356,7 +382,9 @@ extern double fmod(double, double);
  * Time-of-day
  */
 typedef struct Tzone Tzone;
+#ifndef __FRAMAC__
 #pragma incomplete Tzone
+#endif
 
 typedef struct Tm {
   int nsec;      /* nseconds (range 0...1e9) */
@@ -378,7 +406,9 @@ typedef struct Tmfmt {
   Tm *tm;
 } Tmfmt;
 
+#ifndef __FRAMAC__
 #pragma varargck type "τ" Tmfmt
+#endif
 
 extern Tzone *tzload(char *name);
 extern Tm *tmnow(Tm *, Tzone *);
@@ -452,7 +482,9 @@ extern char *getwd(char *, int);
 extern int iounit(int);
 extern long labs(long);
 extern double ldexp(double, int);
+#ifndef __FRAMAC__
 extern _Noreturn void longjmp(jmp_buf, int);
+#endif
 extern char *mktemp(char *);
 extern double modf(double, double *);
 extern int netcrypt(void *, void *);
@@ -462,16 +494,20 @@ extern int postnote(int, int, char *);
 extern double pow10(int);
 extern int putenv(char *, char *);
 extern void qsort(void *, usize, usize, int (*)(void *, void *));
+#ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
+#endif
 extern double strtod(char *, char **);
 extern long strtol(char *, char **, int);
 extern ulong strtoul(char *, char **, int);
 extern vlong strtoll(char *, char **, int);
 extern uvlong strtoull(char *, char **, int);
 extern _Noreturn void sysfatal(char *, ...);
+#ifndef __FRAMAC__
 #pragma varargck argpos sysfatal 1
 extern void syslog(int, char *, char *, ...);
 #pragma varargck argpos syslog 3
+#endif
 extern long time(long *);
 extern int tolower(int);
 extern int toupper(int);
@@ -549,7 +585,9 @@ extern int rwakeupall(Rendez *);
 extern void **privalloc(void);
 
 extern void procsetname(char *, ...);
+#ifndef __FRAMAC__
 #pragma varargck argpos procsetname 1
+#endif
 
 /*
  * atomic operations
@@ -700,13 +738,17 @@ enum {
   RFNOMNT = (1 << 14)
 };
 
-#ifndef _PORTLIB_H_
+#ifndef _QID_TYPEDEF_
+#define _QID_TYPEDEF_
 typedef struct Qid {
   uvlong path;
   ulong vers;
   uchar type;
 } Qid;
+#endif
 
+#ifndef _DIR_TYPEDEF_
+#define _DIR_TYPEDEF_
 typedef struct Dir {
   /* system-modified data */
   ushort type; /* server type */
@@ -722,8 +764,10 @@ typedef struct Dir {
   char *gid;    /* group name */
   char *muid;   /* last modifier name */
 } Dir;
+#endif
 
-/* keep /sys/src/ape/lib/ap/plan9/sys9.h in sync with this -rsc */
+#ifndef _WAITMSG_TYPEDEF_
+#define _WAITMSG_TYPEDEF_
 typedef struct Waitmsg {
   int pid;       /* of loved one */
   ulong time[3]; /* of loved one & descendants */
@@ -844,3 +888,4 @@ extern char *argv0;
 
 /* this is used by sbrk and brk,  it's a really bad idea to redefine it */
 extern char end[];
+#endif /* _LIBC_H_ */

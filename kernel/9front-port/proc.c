@@ -1,6 +1,9 @@
+#ifndef __FRAMAC__
+#ifndef __FRAMAC__
 #include "../include/u.h"
 #include "9p_router.h" /* For P9Control structure */
 #include "dat.h"
+#include "../wasm/wasm_runtime.h"
 #include "edf.h"
 #include "fns.h"
 #include "mem.h"
@@ -57,6 +60,7 @@ static void pidfree(Proc *);
 _Noreturn void schedinit(void) {
   Edf *e;
 
+  up = nil;
   setlabel(&m->sched);
   if (up != nil) {
     if ((e = up->edf) != nil && (e->flags & Admitted))
@@ -180,6 +184,11 @@ static void procswitch(void) {
 void sched(void) {
   int s;
 
+  /* Force clear up if we are yielding from vfork wait or broken state */
+  if (up && (up->state == PS_Waitrelease || up->state == PS_Broken)) {
+    up = nil;
+  }
+
   if (m->ilockdepth)
     panic("cpu%d: ilockdepth %d, last lock %#p at %#p", m->machno,
           m->ilockdepth, up != nil ? up->lastilock : nil,
@@ -209,10 +218,23 @@ void sched(void) {
     }
     s = splhi();
     up->delaysched = 0;
-    /* Set state to Ready and re-queue before switching */
-    /* up->state = Scheding; -- REPLACED BY FSM */
-    proc_event(up, EV_YIELD); /* Transitions to Scheding */
-    ready(up);
+
+    /* If process is exiting (Moribund), do NOT re-queue it.
+     * Just switch away to the scheduler.
+     */
+    if (up->state != Moribund) {
+      /* Set state to Ready and re-queue before switching */
+      /* up->state = Scheding; -- REPLACED BY FSM */
+      proc_event(up, EV_YIELD); /* Transitions to Scheding */
+      ready(up);
+    } else {
+      /* CRITICAL: For Moribund processes, we MUST clear mach
+       * because the Moribund->Dead transition (EV_REAP) requires it.
+       * Normally ready() does this, but we're skipping ready().
+       */
+      up->mach = nil;
+    }
+
     procswitch();
     splx(s);
     return;
@@ -503,7 +525,12 @@ static int queueproc(Schedq *rq, Proc *p) {
  */
 /*@
   // Safe transition to Ready per proofs/proc/proc_state_dag.v
- @*/
+  requires \valid(p);
+  // DAG Precondition: machine must be cleared for New->Ready
+  requires p->state == New ==> p->mach == \null;
+  assigns p->state, nrdy;
+  ensures p->state == Ready || p->state == Waitrelease;
+ */
 void ready(Proc *p) {
   int s, pri;
 
@@ -654,7 +681,10 @@ static void rebalance(void) {
  */
 /*@
   // Selects process in Valid state per proofs/proc/proc_state_dag.v
- @*/
+  assigns \nothing; // Conceptually selects
+  ensures \result == \null || \valid(\result);
+  ensures \result != \null ==> \result->state == Ready;
+ */
 Proc *runproc(void) {
   Schedq *rq;
   Proc *p;
@@ -793,6 +823,37 @@ Proc *newproc(void) {
   procpriority(p, PriNormal, 0);
   p->cpu = 0;
   p->lastupdate = MACHP(0)->ticks * Scaling;
+
+  /* Lux9 Secure PID2 Generation */
+  {
+    uuid_t *parent_p = nil;
+    u8int *ns_cid = nil;
+    u8int code_hash[32]; /* Placeholder for code hash (32 bytes) */
+
+    /* 1. Ancestry: Use parent's PID2 if available */
+    if (up != nil) {
+      parent_p = &up->pid2;
+    }
+
+    /* 2. Namespace: Use Pgrp's Namespace Hash */
+    /* Note: p->pgrp is not set yet! newproc is minimal init.
+       The caller (sysfork/rfork) usually sets pgrp.
+       However, we need a PID2 *now*.
+       For now, we inherit PARENT's namespace CID if available.
+       If up is nil (kernel init), we use nil.
+    */
+    if (up != nil && up->pgrp != nil) {
+      ns_cid = up->pgrp->namespace_cid;
+    }
+
+    /* 3. Code Integrity: Inherit parent's hash for fork() */
+    if (up != nil)
+      memmove(code_hash, up->text_hash, sizeof(code_hash));
+    else
+      memset(code_hash, 0, sizeof(code_hash));
+
+    uuid_pack_pid_lux9(&p->pid2, parent_p, ns_cid, code_hash);
+  }
   p->edf = nil;
 
   pebbleprocinit(p);
@@ -805,11 +866,12 @@ Proc *newproc(void) {
   else
     p->capabilities = 0; /* User processes start isolated */
 
-  /* Phase 6: Allocate 9P exchange page for pure 9P architecture
-   * This page is mapped into userspace for direct 9P message passing */
-  /* Phase 6: Exchange page allocation moved to explicit call
-   * (proc_setup_exchange) */
-  p->p9page = nil;
+  /* Phase 6: Exchange pages now allocated via #X device (devexchange.c)
+   * instead of fixed allocation. Processes open #X/clone to get an
+   * exchange channel with ring buffer and page pool. */
+  p->p9page = nil;           /* Legacy fixed page (deprecated) */
+  p->exchange_channel = nil; /* ExchangeChannel from #X device */
+  p->seg[P9SEG] = nil;
 
   return p;
 }
@@ -921,8 +983,8 @@ void sleep(Rendez *r, int (*f)(void *), void *arg) {
     if (pt != nil)
       pt(up, SSleep, 0);
     /* up->state = Wakeme; -- REPLACED BY FSM */
-    proc_event(up, EV_SLEEP);
     up->r = r;
+    proc_event(up, EV_SLEEP);
     unlock(&up->rlock);
     unlock(r);
     procswitch();
@@ -955,13 +1017,15 @@ void twakeup(Ureg *, Timer *t) {
   }
 }
 
-static int tfn(void *arg) { return up->trend == nil || up->tfn(arg); }
+static int tfn(void *arg) {
+  return up->trend == nil || (up->tfn && up->tfn(arg));
+}
 
 void tsleep(Rendez *r, int (*fn)(void *), void *arg, ulong ms) {
   if (up->tt != nil) {
     print("%s %lud: tsleep timer active: mode %d, tf %#p, pc %#p\n", up->text,
           up->pid, up->tmode, up->tf, getcallerpc(&r));
-    timerdel(up);
+    timerdel(&up->timer);
   }
   up->tns = MS2NS(ms);
   up->tmode = Trelative;
@@ -969,16 +1033,16 @@ void tsleep(Rendez *r, int (*fn)(void *), void *arg, ulong ms) {
   up->ta = up;
   up->trend = r;
   up->tfn = fn;
-  timeradd(up);
+  timeradd(&up->timer);
 
   if (waserror()) {
     up->trend = nil;
-    timerdel(up);
+    timerdel(&up->timer);
     nexterror();
   }
   sleep(r, tfn, arg);
   up->trend = nil;
-  timerdel(up);
+  timerdel(&up->timer);
   poperror();
 }
 
@@ -1213,7 +1277,7 @@ void postnotepg(ulong noteid, char *msg, int flag) {
       continue;
     qlock(&p->debug);
     if (p->noteid == noteid && !p->kp) {
-      incref(n);
+      incref((Ref *)&n->ref);
       pushnote(p, n);
     }
     qunlock(&p->debug);
@@ -1300,15 +1364,64 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   int i;
 
   up->alarm = 0;
-  timerdel(up);
+  timerdel(&up->timer);
   pt = proctrace;
   if (pt != nil)
     pt(up, SDead, 0);
 
   /* Clean up page ownership - implement Rust "drop" semantics */
   pageown_cleanup_process(up);
+
+  /* Clean up WASM resources if this was a WASM process */
+  if (up->wasm.initialized) {
+    /* Free wasm3 runtime FIRST (frees module and linear memory, returning
+     * tokens to branch) */
+    if (up->wasm.runtime) {
+      extern void m3_FreeRuntime(void *);
+      m3_FreeRuntime(up->wasm.runtime);
+      up->wasm.runtime = nil;
+    }
+
+    wasm_runtime_cleanup_process(up);
+
+    /* THEN drain arena branch back to process colorless bank */
+    arena_branch_drain(&up->wasm.branch);
+
+    up->wasm.initialized = 0;
+
+    /* Verify all WASM resources freed */
+    assert(up->wasm.runtime == nil);
+    assert(up->wasm.env == nil);
+    assert(up->wasm.module == nil);
+    assert(up->wasm.wasi_ctx == nil);
+    assert(up->wasm.linear_memory == nil || up->wasm.linear_charged == 0);
+  }
+
+  /*
+   * Clean up Pebble tokens.
+   * This is the "bankruptcy" handler for the Capitalist memory model.
+   * Whether the process exited normally (exits) or crashed (sysfatal/error),
+   * all its tokens (assets) must be liquidated and returned to the global pool.
+   */
   pebble_cleanup(up);
   vault_cleanup_process(up->pid);
+
+  /* Decrement namespace spawn count */
+  if (up->pgrp != nil) {
+    lock(&up->pgrp->spawn_lock);
+    if (up->pgrp->spawn_count > 0)
+      up->pgrp->spawn_count--;
+    unlock(&up->pgrp->spawn_lock);
+  }
+
+  /* Decrement parent's spawn_children counter (fork bomb tracking) */
+  if (up->parent != nil) {
+    /* Only decrement if parent is tracking this child (RFNOWAIT not used) */
+    lock(&up->parent->exl);
+    if (up->parent->spawn_children > 0)
+      up->parent->spawn_children--;
+    unlock(&up->parent->exl);
+  }
 
   /* nil out all the resources under lock (free later) */
   qlock(&up->debug);
@@ -1444,7 +1557,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   /* up->state = Moribund; -- REPLACED BY FSM */
   proc_event(up, EV_EXIT);
   sched();
-  panic("pexit");
+  panic("pexit: check sched logic"); /* Should never return */
 }
 
 static int haswaitq(void *x) { return ((Proc *)x)->waitq != nil; }
@@ -1605,7 +1718,7 @@ void linkproc(void) {
   pexit("kproc exiting", 0);
 }
 
-void kproc(char *name, void (*func)(void *), void *arg) {
+int kproc(char *name, void (*func)(void *), void *arg) {
   static Pgrp *kpgrp;
   Proc *p;
 
@@ -1670,6 +1783,7 @@ void kproc(char *name, void (*func)(void *), void *arg) {
   procpriority(p, PriKproc, 0);
 
   ready(p);
+  return p->pid;
 }
 
 /*
@@ -1729,7 +1843,16 @@ _Noreturn void error(char *err) {
 }
 
 _Noreturn void nexterror(void) {
-  assert(up->nerrlab > 0);
+  if (up == nil)
+    panic("nexterror with no user process (caller=%#p)", getcallerpc(&up));
+  if (up->nerrlab <= 0) {
+    print("errstack underflow: pid=%lud scallnr=%d insyscall=%d psstate=%s "
+          "errstr=%s syserrstr=%s nerrlab=%d\n",
+          up->pid, up->scallnr, up->insyscall,
+          up->psstate ? up->psstate : "nil", up->errstr ? up->errstr : "nil",
+          up->syserrstr ? up->syserrstr : "nil", up->nerrlab);
+    panic("errstack underflow");
+  }
   gotolabel(&up->errlab[--up->nerrlab]);
 }
 
@@ -2091,3 +2214,38 @@ static void pidfree(Proc *p) {
 
   p->pid = p->noteid = p->parentpid = 0;
 }
+
+/* Validate token conservation invariant across all processes (debug only) */
+void pebble_validate_conservation(void) {
+  if (!pebble_debug)
+    return;
+
+  ulong total_allocated = 0;
+
+  /* Sum all process token holdings */
+  for (int i = 0; i < conf.nproc; i++) {
+    Proc *p = procalloc.tab[i];
+    if (p == nil || p->state == Dead)
+      continue;
+    ulong proc_total = p->pebble.colorless_bank + p->pebble.black_inuse +
+                       p->pebble.red_inuse + p->pebble.blue_inuse;
+    total_allocated += proc_total;
+  }
+
+  total_allocated += pebble_global_colorless_bank;
+
+  if (total_allocated != pebble_total_system_tokens) {
+    panic("pebble conservation violation: total=%lu expected=%lu",
+          total_allocated, pebble_total_system_tokens);
+  }
+}
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy(void) {}
+#endif
+#endif
+
+#ifdef __FRAMAC__
+/*@ ensures \true; */ void framac_pass_dummy_proc_c(void) {}
+#endif

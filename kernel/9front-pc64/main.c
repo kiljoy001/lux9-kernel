@@ -1,4 +1,5 @@
 #include "../../limine.h"
+#include "9p_router.h"
 #include "borrowchecker.h"
 #include "dat.h"
 #include "exchange.h"
@@ -19,6 +20,8 @@
 
 Conf conf;
 int idle_spin;
+
+int console_ready = 0;
 
 /* BOOT STATE MACHINE */
 typedef enum {
@@ -53,14 +56,48 @@ static char *boot_state_names[] = {
     "MSGORD",  "CRYPTO",        "CHANDEV_INIT", "USERINIT",  "SCHED",
     "COMPLETE"};
 
+/* Boot state transition rules */
 void set_boot_state(BootState s) {
+  if (s <= current_boot_state && s != BOOT_START) {
+    print("BOOT_WARNING: Validating state regression %s -> %s\n",
+          boot_state_names[current_boot_state], boot_state_names[s]);
+  }
   current_boot_state = s;
-  print("BOOT_STATE: %s\n", boot_state_names[s]);
+
+  if (boot_verbose) {
+    if (console_ready)
+      print("BOOT_STATE: %s\n", boot_state_names[s]);
+    else
+      uartputs("BOOT_STATE: ", 12),
+          uartputs(boot_state_names[s], strlen(boot_state_names[s])),
+          uartputs("\n", 1);
+  }
 }
 
 /* CRITICAL: Global debug flag that doesn't depend on environment device */
-int panic_debug = 0; /* Default to SILENT mode for performance */
+int panic_debug = 1; /* Enabled for Tsyscall testing */
 int jitdebug = 0;    /* JIT debug flag */
+
+/* Boot verbosity control */
+int boot_verbose = 1;
+extern void uartputs(char *, int);
+
+/* Consolidated boot debug function */
+static void boot_log(char *fmt, ...) {
+  if (!boot_verbose)
+    return;
+
+  char buf[256];
+  va_list arg;
+  va_start(arg, fmt);
+  vsnprint(buf, sizeof(buf), fmt, arg);
+  va_end(arg);
+
+  if (console_ready)
+    print("%s", buf);
+  else
+    uartputs(buf, strlen(buf));
+}
 
 extern void (*i8237alloc)(void);
 extern void bootscreeninit(void);
@@ -71,6 +108,9 @@ void confinit(void) {
   char *p;
   int i, userpcnt;
   ulong kpages;
+
+  if ((p = getconf("verbose")) != nil && *p != '0')
+    boot_verbose = 1;
 
   if (p = getconf("service")) {
     if (strcmp(p, "cpu") == 0)
@@ -93,8 +133,8 @@ void confinit(void) {
     conf.nproc *= 3;
   if (conf.nproc > 4000)
     conf.nproc = 4000;
-  /* Temporary: limit to 100 procs for early boot debugging */
-  if (conf.nproc > 100)
+  /* Set minimum of 100 procs */
+  if (conf.nproc < 100)
     conf.nproc = 100;
   conf.nimage = 200;
   conf.nswap = conf.nproc * 80;
@@ -190,6 +230,15 @@ void machinit(void) {
   m->loopconst = 100000;
 }
 
+/*@
+    requires \true;
+    assigns m, *MACHP(0), conf.nmach, active.machs[0], active.exiting;
+    ensures m == MACHP(0);
+    ensures m->machno == 0;
+    ensures conf.nmach == 1;
+    ensures active.machs[0] == 1;
+    ensures active.exiting == 0;
+*/
 void mach0init(void) {
   extern Mach *m; /* Define m as extern - it should be in globals or bss */
 
@@ -217,109 +266,138 @@ void mach0init(void) {
 
 /* Main boot continuation after CR3 switch
  * Called directly by setuppagetables() after page table switch is complete */
+/*@
+    requires current_boot_state == BOOT_START || current_boot_state ==
+   BOOT_XINIT; assigns current_boot_state;
+    // We cannot easily specify all the state changes in the kernel global state
+   here
+    // as it touches almost everything.
+    ensures current_boot_state == BOOT_SCHED;
+*/
 void main_after_cr3(void) {
   char *p;
 
   /* CRITICAL: First output must be via UART to verify we got here */
-  extern void uartputs(char *, int);
-  uartputs("main_after_cr3: ENTERED\n", 24);
+  boot_log("main_after_cr3: ENTERED\n");
   set_boot_state(BOOT_XINIT);
 
   /* Skip print() until we've reinitialized - it was set up with old stack */
 
-  uartputs("main_after_cr3: calling xinit\n", 31);
+  boot_log("main_after_cr3: calling xinit\n");
   xinit();
 
   /* Transition memory tracking to dynamic allocator */
   establish_memory_ownership_zones_dynamic();
 
   set_boot_state(BOOT_PAGES_OWN);
-  uartputs("main_after_cr3: calling pageowninit\n", 37);
+  boot_log("main_after_cr3: calling pageowninit\n");
   pageowninit();
 
   set_boot_state(BOOT_EXCHANGE);
-  uartputs("main_after_cr3: calling exchangeinit\n", 38);
+  boot_log("main_after_cr3: calling exchangeinit\n");
   exchangeinit();
 
-  uartputs("DEBUG: pre-pebble-selftest [SKIPPED]\n", 35);
+  /* Initialize global exchange pool for child process isolation */
+  extern void exchange_pool_init(uint pool_size);
+  boot_log("main_after_cr3: calling exchange_pool_init\n");
+  exchange_pool_init(64); /* 64 pages for exchange pool */
+
+  boot_log("DEBUG: pre-pebble-selftest [SKIPPED]\n");
   /* Run Pebble Self-Test (xalloc works now) */
   /* extern void pebble_selftest(void); */
   /* pebble_selftest(); */
-  uartputs("DEBUG: post-pebble-selftest\n", 26);
+  boot_log("DEBUG: post-pebble-selftest\n");
 
   set_boot_state(BOOT_TRAP);
-  uartputs("main_after_cr3: calling trapinit\n", 35);
+  boot_log("main_after_cr3: calling trapinit\n");
   trapinit();
-  uartputs("main_after_cr3: calling mathinit\n", 35);
+  boot_log("main_after_cr3: calling mathinit\n");
   mathinit();
   if (i8237alloc != nil)
     i8237alloc();
-  uartputs("main_after_cr3: calling pcicfginit\n", 37);
+  boot_log("main_after_cr3: calling pcicfginit\n");
   pcicfginit();
-  print("DEBUG: pcicfginit RETURNED\n");
-  uartputs("main_after_cr3: calling bootscreeninit\n", 41);
+  boot_log("DEBUG: pcicfginit RETURNED\n");
+  boot_log("main_after_cr3: calling bootscreeninit\n");
   bootscreeninit();
-  print("DEBUG: bootscreeninit RETURNED\n");
-  uartputs("main_after_cr3: calling fbconsoleinit ENTER\n", 46);
+  boot_log("DEBUG: bootscreeninit RETURNED\n");
+  boot_log("main_after_cr3: calling fbconsoleinit ENTER\n");
   fbconsoleinit();
-  print("DEBUG: fbconsoleinit RETURNED\n");
-  uartputs("main_after_cr3: fbconsoleinit RETURNED\n", 40);
-  uartputs("main_after_cr3: before cpuidentify check\n", 45);
+  console_ready = 1; /* Console is now initialized */
+  boot_log("DEBUG: fbconsoleinit RETURNED\n");
+  boot_log("main_after_cr3: fbconsoleinit RETURNED\n");
+  boot_log("main_after_cr3: before cpuidentify check\n");
   if (cpuidentify_done == 0)
     cpuidentify(); /* Initialize CPU data structures before cpuidprint() */
-  uartputs("main_after_cr3: calling fpuinit\n", 33);
+  boot_log("main_after_cr3: calling fpuinit\n");
   fpuinit(); /* Initialize FPU - must happen after xinit() */
-  uartputs("main_after_cr3: fpuinit returned, calling cpuidprint\n", 55);
+  boot_log("main_after_cr3: fpuinit returned, calling cpuidprint\n");
   cpuidprint();
 
-  /* FIX: Move configuration environment setup earlier to prevent reboot */
-  /* FIX: Set only the most critical variable early, defer the rest until
-   * devices are ready */
+  /* Early configuration setup to prevent reboot issues */
+  {
+    extern void bootconfinit(void);
+    extern void kconf_set(char *, char *);
+    char buf[2 * KNAMELEN];
 
-  /* Note: *debug is now handled by global panic_debug variable, no need for
-   * ksetenv here */
+    /* 1. Populate all bootargs into global confname/confval arrays */
+    bootconfinit();
+
+    /* 2. Set critical kernel variables using kconf_set (safe for early boot) */
+    /* Note: setconfenv() is NOT called here - it uses ksetenv() which requires
+     * channels/processes. We'll call it later in init0() after proc0 is ready.
+     */
+    kconf_set("cputype", "amd64");
+    kconf_set("service", cpuserver ? "cpu" : "terminal");
+
+    snprint(buf, sizeof(buf), "%s %s", arch->id, conffile);
+    kconf_set("terminal", buf);
+
+    boot_log("BOOT_INFO: Early environment config set (critical vars only)\n");
+  }
 
   mmuinit();
 
   /* Initialize r15 to point to Mach structure after mmuinit sets up GS */
   __asm__ volatile("movq %0, %%r15" : : "r"(m) : "r15");
-  print("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
+  boot_log("DEBUG: Initialized r15=m=%p after mmuinit\n", m);
 
   /* Debug: check if IDT is still valid after mmuinit */
   {
     extern Segdesc temp_idt[];
-    print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
-    print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46 * 2].d0);
-    print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46 * 2].d1);
-    if (temp_idt[0x46 * 2].d0 == 0 && temp_idt[0x46 * 2].d1 == 0)
-      print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
-    else
-      print("OK: IDT[0x46] still valid after mmuinit\n");
+    if (boot_verbose) {
+      print("DEBUG: Checking IDT[0x46] AFTER mmuinit:\n");
+      print("  IDT[0x46*2].d0 = %#lux\n", temp_idt[0x46 * 2].d0);
+      print("  IDT[0x46*2].d1 = %#lux\n", temp_idt[0x46 * 2].d1);
+      if (temp_idt[0x46 * 2].d0 == 0 && temp_idt[0x46 * 2].d1 == 0)
+        print("ERROR: IDT[0x46] CORRUPTED by mmuinit()!\n");
+      else
+        print("OK: IDT[0x46] still valid after mmuinit\n");
 
-    /* Check timer interrupt IDT entry (vector 32) */
-    print("DEBUG: Checking IDT[32] (timer):\n");
-    print("  IDT[32*2].d0 = %#lux\n", temp_idt[32 * 2].d0);
-    print("  IDT[32*2].d1 = %#lux\n", temp_idt[32 * 2].d1);
-    print("  IST field = %d (bits 0-2 of d1)\n",
-          (int)(temp_idt[32 * 2].d1 & 0x7));
+      /* Check timer interrupt IDT entry (vector 32) */
+      print("DEBUG: Checking IDT[32] (timer):\n");
+      print("  IDT[32*2].d0 = %#lux\n", temp_idt[32 * 2].d0);
+      print("  IDT[32*2].d1 = %#lux\n", temp_idt[32 * 2].d1);
+      print("  IST field = %d (bits 0-2 of d1)\n",
+            (int)(temp_idt[32 * 2].d1 & 0x7));
+    }
   }
 
-  print("DEBUG: About to call arch->intrinit\n");
+  boot_log("DEBUG: About to call arch->intrinit\n");
 
   /* Re-map ACPI tables after CR3 switch (if ACPI is being used) */
   extern PCArch archacpi;
   if (arch == &archacpi) {
     extern void acpi_remap_tables(void);
-    print("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
+    boot_log("DEBUG: Re-mapping ACPI tables after CR3 switch\n");
     acpi_remap_tables();
   }
 
   if (arch->intrinit) {
     set_boot_state(BOOT_ARCH);
-    print("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
+    boot_log("DEBUG: Calling arch->intrinit (ACPI: acpiinit)\n");
     arch->intrinit();
-    extern void uartputs(char *, int);
-    uartputs("DEBUG: arch->intrinit complete\n", 33);
+    boot_log("DEBUG: arch->intrinit complete\n");
 
     /* Debug: check if IDT is still valid after arch->intrinit (pcmpinit) */
     {
@@ -341,29 +419,29 @@ void main_after_cr3(void) {
 
   set_boot_state(BOOT_PROC_INIT);
   procinit0();
-  uartputs("DEBUG: procinit0 complete\n", 28);
+  boot_log("DEBUG: procinit0 complete\n");
 
   set_boot_state(BOOT_SEG_INIT);
   initseg();
-  uartputs("DEBUG: initseg complete\n", 26);
+  boot_log("DEBUG: initseg complete\n");
 
   set_boot_state(BOOT_LINKS);
   links();
-  uartputs("DEBUG: links complete\n", 24);
+  boot_log("DEBUG: links complete\n");
 
   /* Initialize I/O port allocation after links() */
   set_boot_state(BOOT_IO);
   iomapinit(0xFFFF);
-  uartputs("DEBUG: iomapinit complete\n", 29);
+  boot_log("DEBUG: iomapinit complete\n");
 
   /* Reset and initialize all devices before environment setup */
   set_boot_state(BOOT_CHANDEV_RESET);
   chandevreset();
-  uartputs("DEBUG: chandevreset complete\n", 32);
+  boot_log("DEBUG: chandevreset complete\n");
 
   set_boot_state(BOOT_PAGEK);
   pageinit();
-  uartputs("DEBUG: pageinit complete\n", 27);
+  boot_log("DEBUG: pageinit complete\n");
 
   set_boot_state(BOOT_PRINT);
   printinit();
@@ -381,6 +459,18 @@ void main_after_cr3(void) {
   msgord_init(3); /* k=3 for robust ordering */
   print("=== MSGORD Consensus Initialized ===\n");
 
+  /* Initialize distributed Pebble token economy */
+  extern void distributed_pebble_init(void);
+  print("=== Initializing Distributed Pebble ===\n");
+  distributed_pebble_init();
+  print("=== Distributed Pebble Initialized ===\n");
+
+  /* Initialize WASM3 Runtime (Layer 1) */
+  extern void wasm_runtime_init(void);
+  print("=== Initializing WASM3 Runtime (Layer 1) ===\n");
+  wasm_runtime_init();
+  print("=== WASM3 Runtime Initialized ===\n");
+
   /* Initialize crypto subsystem early for testing */
   extern int crypto_tpm_key_init(void);
   set_boot_state(BOOT_CRYPTO);
@@ -395,12 +485,12 @@ void main_after_cr3(void) {
   /* Initialize device drivers BEFORE spawning proc0 */
   set_boot_state(BOOT_CHANDEV_INIT);
   chandevinit();
-  uartputs("DEBUG: chandevinit complete\n", 30);
+  boot_log("DEBUG: chandevinit complete\n");
 
   /* Now spawn proc0 - devices are ready */
   set_boot_state(BOOT_USERINIT);
   userinit();
-  uartputs("DEBUG: userinit complete\n", 28);
+  boot_log("DEBUG: userinit complete\n");
 
   /* Debug: show scheduler state before entering schedinit */
   extern ulong runvec;
@@ -409,8 +499,16 @@ void main_after_cr3(void) {
    * proc0 */
   splhi();
   timersinit();
+
+  /* CRITICAL FIX: Register the timer interrupt handler
+   * timersinit() sets up the timer hardware but doesn't register the handler.
+   * Without this, vno=32 has no handler and causes interrupt storm. */
+  extern void lapicclock(Ureg *, void *);
+  intrenable(IrqTIMER, lapicclock, nil, BUSUNKNOWN, "clock");
+  boot_log("DEBUG: Timer handler registered at vno=%d\n", VectorPIC + IrqTIMER);
+
   spllo(); /* Re-enable interrupts for scheduler - CRITICAL */
-  uartputs("DEBUG: timersinit complete, interrupts enabled\n", 48);
+  boot_log("DEBUG: timersinit complete, interrupts enabled\n");
   set_boot_state(BOOT_SCHED);
   schedinit();
 }
@@ -425,6 +523,10 @@ void main_after_cr3(void) {
  * calling touser() with the prepared stack frame.
  */
 void init0(void) {
+  /* Run hybrid IPC batching tests */
+  extern void test_hybrid_batching(void);
+  test_hybrid_batching();
+
   char buf[2 * KNAMELEN], **sp;
 
   /*
@@ -469,17 +571,38 @@ void init0(void) {
   uartputs("init0: calling kproc(alarm)\n", 26);
   kproc("alarm", alarmkproc, 0);
 
-  sp = (char **)(USTKTOP - sizeof(Tos) - 8 - sizeof(sp[0]) * 4);
-  sp[3] = sp[2] = nil;
-  strcpy(sp[1] = (char *)&sp[4], "boot");
-  sp[0] = nil;
+  uintptr *stack = (uintptr *)(USTKTOP - sizeof(Tos) - 16 - sizeof(sp[0]) * 4);
+  print("BOOT[init0]: using prebuilt user stack at %#p (p9uaddr=%#p)\n", stack,
+        (void *)p9_user_base(up));
+  {
+    uintptr *pte = mmuwalk(m->pml4, (uintptr)stack, 0, 0);
+    if (pte && (*pte & PTEVALID)) {
+      uintptr pa = PPN(*pte) | ((uintptr)stack & (BY2PG - 1));
+      uintptr *kva = (uintptr *)KADDR(pa & ~(BY2PG - 1));
+      uintptr off = ((uintptr)stack & (BY2PG - 1)) / sizeof(uintptr);
+      print("BOOT[init0]: ustack[0]=%#p ustack[1]=%#p ustack[2]=%#p\n",
+            (void *)kva[off], (void *)kva[off + 1], (void *)kva[off + 2]);
+    } else {
+      print("BOOT[init0]: ustack PTE missing\n");
+    }
+  }
 
   splhi();
   fpukexit(nil);
   if (m->proc == nil)
     panic("BOOT[init0]: m->proc is NULL before touser()!");
   uartputs("init0: calling touser\n", 22);
-  touser(sp);
+  print("BOOT[init0]: entry_point=0x%lx\n", up->entry_point);
+
+  /* Check if this is a WASM process */
+  if (up->wasm.initialized) {
+    print("BOOT[init0]: Executing WASM process (pid=%lu)\n", up->pid);
+    /* Entry point holds the start_func pointer for WASM */
+    wasm_exec_run((struct M3Function *)up->entry_point);
+    /* NOTREACHED */
+  }
+
+  touser((void *)stack, up->entry_point, p9_user_base(up));
 }
 
 void main(void) {
@@ -488,10 +611,11 @@ void main(void) {
                          ...); /* Formatted UART output before prbuf is ready */
 
   mach0init();
+  i8250console();
+  uartputs("TEST: main() started\n", 21);
   bootargsinit();
   trapinit0();
   ioinit();
-  i8250console();
 
   /* Debug: check if trapinit0() actually initialized the IDT */
   {
@@ -531,12 +655,17 @@ void main(void) {
   screeninit();
   uartprintf("\nLux9\n");
 
-  /* Detect VM early - before any problematic operations */
   vm_detect();
   vm_apply_workarounds();
 
+  /*@
+      requires m->machno == 0;
+      assigns m->cpuhz, m->havetsc, m->cpuidax, m->cpuidbx, m->cpuidcx,
+     m->cpuiddx; assigns m->cpuiddx; ensures m->cpuidax != 0;
+  */
   cpuidentify();
-  uartprintf("main: cpuidentify() returned\n");
+  if (boot_verbose)
+    uartprintf("main: cpuidentify() returned\n");
   /* Stash initrd pointers; parsing deferred until proc0 when allocators are
    * ready */
   extern struct limine_module_request *limine_module;

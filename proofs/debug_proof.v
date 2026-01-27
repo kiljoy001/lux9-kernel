@@ -46,11 +46,5 @@ Definition ValidState (s : SystemState) : Prop := True.
 Theorem transition_preserves_validity :
   forall s1 s2, ValidState s1 -> Step s1 s2 -> ValidState s2.
 Proof.
-  intros s1 s2 Hvalid Hstep.
-  destruct Hvalid as [_ [_ _]]. (* Dummy destruct *)
-  induction Hstep.
-  
-  - (* Acquire *)
-    intros pid pg Hacq.
-    (* Check variables here *)
-    Show.
+  unfold ValidState. auto.
+Qed.

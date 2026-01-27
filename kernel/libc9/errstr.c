@@ -4,6 +4,26 @@
 #include "dat.h"
 #include "fns.h"
 
+/*@
+  @ requires buf == \null || (nbuf > 0 ==> \valid(buf + (0 .. nbuf-1)));
+  @ assigns buf == \null || nbuf == 0 ? \nothing : buf[0 .. \min(nbuf, ERRMAX)-1];
+  @ ensures \result == 0;
+  @ behavior null_or_empty:
+  @   assumes buf == \null || nbuf == 0;
+  @   assigns \nothing;
+  @   ensures \result == 0;
+  @ behavior no_process:
+  @   assumes buf != \null && nbuf > 0 && up == \null;
+  @   assigns buf[0];
+  @   ensures buf[0] == '\0';
+  @   ensures \result == 0;
+  @ behavior valid:
+  @   assumes buf != \null && nbuf > 0 && up != \null;
+  @   assigns buf[0 .. \min(nbuf, ERRMAX)-1];
+  @   ensures \result == 0;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 int
 errstr(char *buf, uint nbuf)
 {

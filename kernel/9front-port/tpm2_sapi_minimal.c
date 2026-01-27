@@ -25,6 +25,11 @@ extern int tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp,
 
 static int verbose_tpm(void) { return getconf("debug.tpm") != nil; }
 
+/*@
+  @ requires prefix == \null || \valid(prefix);
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 void tpm_dump_buffer(const char *prefix, u8int *buffer, usize len) {
   usize i;
   if (!verbose_tpm())
@@ -40,12 +45,20 @@ void tpm_dump_buffer(const char *prefix, u8int *buffer, usize len) {
   print("\n");
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static void marshal_u16(u8int **buf, u16int val) {
   (*buf)[0] = (val >> 8) & 0xFF;
   (*buf)[1] = val & 0xFF;
   *buf += 2;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static void marshal_u32(u8int **buf, u32int val) {
   (*buf)[0] = (val >> 24) & 0xFF;
   (*buf)[1] = (val >> 16) & 0xFF;
@@ -54,12 +67,20 @@ static void marshal_u32(u8int **buf, u32int val) {
   *buf += 4;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static u16int unmarshal_u16(u8int **buf) {
   u16int val = ((*buf)[0] << 8) | (*buf)[1];
   *buf += 2;
   return val;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static u32int unmarshal_u32(u8int **buf) {
   u32int val =
       ((*buf)[0] << 24) | ((*buf)[1] << 16) | ((*buf)[2] << 8) | (*buf)[3];
@@ -68,6 +89,11 @@ static u32int unmarshal_u32(u8int **buf) {
 }
 
 /* Marshal TPM2B buffer (size + data) */
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ requires data == \null || \valid(data);
+  @ assigns \nothing;
+  @*/
 static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
   marshal_u16(buf, len);
   if (len > 0) {
@@ -77,6 +103,11 @@ static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
 }
 
 /* Unmarshal TPM2B buffer */
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ requires data == \null || \valid(data);
+  @ assigns \nothing;
+  @*/
 static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
   u16int len = unmarshal_u16(buf);
   if (len > max_len)
@@ -95,6 +126,10 @@ static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
  * The authSize is the size of all authorization structures that follow,
  * NOT including the authSize field itself (4 bytes).
  */
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static void marshal_password_session(u8int **buf) {
   /* Authorization Size (excludes itself, includes session data):
    * sessionHandle (4) + nonce size (2) + attributes (1) + hmac size (2) = 9
@@ -114,6 +149,10 @@ static void marshal_password_session(u8int **buf) {
  * Must be called before any other TPM commands.
  * Uses TPM2_SU_CLEAR to start with a clean state.
  */
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 int tpm2_startup(TPMContext *ctx) {
   USED(ctx);
   u8int cmd[12];
@@ -163,6 +202,11 @@ int tpm2_startup(TPMContext *ctx) {
  *
  * Returns handle to primary key (parent for sealed objects)
  */
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ requires handle_out == \null || \valid(handle_out);
+  @ assigns \nothing;
+  @*/
 int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   USED(ctx);
   u8int cmd[512];
@@ -571,6 +615,10 @@ int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
 /*
  * TPM2_NV_UndefineSpace - Delete NVRAM index
  */
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 int tpm2_nv_undefine_space(TPMContext *ctx, u32int nv_index) {
   USED(ctx);
   u8int cmd[128];
@@ -757,6 +805,9 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
  *
  * Based on Linux kernel's tpm2_flush_context()
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int tpm2_flush_context(u32int handle) {
   u8int cmd[64];
   u8int resp[64];
@@ -814,6 +865,10 @@ int tpm2_flush_context(u32int handle) {
  *
  * Based on Linux kernel's tpm2_shutdown()
  */
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 int tpm2_shutdown(TPMContext *ctx, u16int shutdown_type) {
   USED(ctx);
   u8int cmd[64];
@@ -963,6 +1018,10 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
  *
  * Based on Linux kernel's tpm2_do_selftest()
  */
+/*@
+  @ requires ctx == \null || \valid(ctx);
+  @ assigns \nothing;
+  @*/
 int tpm2_self_test(TPMContext *ctx, u8int full_test) {
   USED(ctx);
   u8int cmd[64];

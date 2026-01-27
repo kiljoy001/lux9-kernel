@@ -33,7 +33,9 @@
 
 #define MAXMACH 128 /* max # cpus system can run */
 
-#define KSTACK (32 * KiB) /* Size of Proc kernel stack */
+#define KSTACK                                                                 \
+  (256 * KiB) /* Size of Proc kernel stack - increased for WASM3               \
+               */
 
 /*
  * Time
@@ -50,10 +52,16 @@
 #define USTKTOP (0x00007ffffffff000ull)
 #define USTKSIZE (16 * MiB) /* size of user stack */
 
+/* Per-process exchange page VA region (below the stack). */
+#define P9_VA_REGION_PAGES 256
+#define P9_VA_REGION_SIZE (P9_VA_REGION_PAGES * BY2PG)
+#define P9_VA_REGION_BASE (USTKTOP - USTKSIZE - P9_VA_REGION_SIZE)
+
 /*
  *  Address spaces. Kernel, sorted by address.
  */
 #define KZERO (0xffffffff80000000ull)
+#define PADDR(a) ((uintptr)(a) - KZERO)
 #ifndef KTZERO
 #define KTZERO (KZERO + 1 * MiB + 64 * KiB)
 #endif

@@ -37,6 +37,10 @@ typedef signed long long s64int;
 
 typedef u32int Rune; /* UTF-8 code point */
 
+typedef struct {
+  u8int data[16];
+} uuid_t;
+
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
 

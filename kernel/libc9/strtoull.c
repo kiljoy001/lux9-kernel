@@ -1,8 +1,28 @@
 #include <u.h>
+#include "acsl_bounds.h"
 #include <libc.h>
 
 #define UVLONG_MAX	(~0ULL)
 
+/*@
+  @ requires valid_string(nptr);
+  @ requires \exists integer k; k >= 0 && nptr[k] == '\0';
+  @ requires endptr == \null || \valid(endptr);
+  @ requires -36 <= base <= 36;
+  @ assigns endptr == \null ? \nothing : *endptr;
+  @ ensures 0 <= \result <= UVLONG_MAX;
+  @ ensures endptr == \null || \valid_read(*endptr);
+  @ ensures endptr == \null || *endptr >= nptr;
+  @ behavior invalid_base:
+  @   assumes base < 2 || base > 36;
+  @   ensures endptr != \null ==> *endptr == nptr;
+  @ behavior valid_base:
+  @   assumes base == 0 || (2 <= base <= 36);
+  @   ensures endptr != \null ==> *endptr >= nptr;
+  @ behavior overflow:
+  @   ensures \result == UVLONG_MAX;
+  @ complete behaviors;
+  @*/
 uvlong
 strtoull(char *nptr, char **endptr, int base)
 {

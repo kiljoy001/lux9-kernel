@@ -8,6 +8,7 @@
 #include "hhdm.h"
 #include <stddef.h>
 
+/*@ assigns \nothing; */
 extern void uartputs(char *, int);
 
 /* CR3 switch memory system functions */
@@ -119,6 +120,8 @@ static void loadptr(u16int lim, uintptr off, void (*load)(void *)) {
   (*load)(s);
 }
 
+static u64int virt2phys(void *virt);
+
 static void
 taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc
                                      // (address of Proc struct)
@@ -145,9 +148,12 @@ taskswitch(uintptr proc_struct_addr) // 'stack' argument is (uintptr)proc
     tss->rsp2[0] = (u32int)kstack_top;
     tss->rsp2[1] = kstack_top >> 32;
   }
-  /* For now, skip TLB flush during first process switch - we're using same page
-   * tables */
-  /* mmuflushtlb(PADDR(m->pml4)); */
+  /* Ensure TLB is flushed to see new mappings */
+  if (m->machno == 0) {
+    /* print("taskswitch: m->pml4=%p PADDR=%#p - Skipping flush to check
+       loop\n", m->pml4, PADDR(m->pml4)); */
+  }
+  putcr3(virt2phys(m->pml4));
 }
 
 static void kernelro(void);
@@ -165,7 +171,7 @@ static void dump_transition_pte(const char *label, uintptr va) {
 uintptr dbg_getpte(uintptr va) {
   uintptr *pte;
 
-  pte = mmuwalk(m->pml4, va, 0, 0);
+  pte = mmuwalk((uintptr *)m->pml4, va, 0, 0);
   if (pte == nil)
     return 0;
   return *pte;
@@ -603,13 +609,14 @@ void mmuinit(void) {
   vlong v;
   int i;
 
-  if (m->machno == 0)
+  static int kernelro_done = 0;
+  if (m->machno == 0 && !kernelro_done) {
+    kernelro_done = 1;
     kernelro();
+  }
 
   m->tss = mallocz(sizeof(Tss), 1);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: TSS allocated at %p\n", m->tss);
-  */
   if (m->tss == nil)
     panic("mmuinit: no memory for Tss");
   m->tss->iomap = 0xDFFF;
@@ -641,23 +648,14 @@ void mmuinit(void) {
   m->gdt[TSSSEG + 1].d0 = x >> 32;
   m->gdt[TSSSEG + 1].d1 = 0;
 
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Loading GDT\n");
-  */
   loadptr(sizeof(gdt) - 1, (uintptr)m->gdt, lgdt);
   /* IDT already set up by trapinit0() - don't reload from uninitialized IDT */
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Setting up task switch\n");
-  */
   taskswitch((uintptr)m + MACHSIZE);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Loading TSS\n");
-  */
   ltr(TSSSEL);
-  /* DEBUG: Reduced verbose mmuinit printing
   print("DEBUG: Setting up MSRs\n");
-  print("DEBUG: Setting up MSRs\n");
-  */
   /* KernelGSBase must always point at the per-CPU Mach* so swapgs works. */
   wrmsr(FSbase, 0ull); /* user TLS set later on EXEC */
   wrmsr(GSbase, 0ull); /* user GS unused; leave clear */
@@ -680,7 +678,8 @@ void mmuinit(void) {
   v = 0;
   rdmsr(Efer, &v);
 
-  v |= 1ull; /* Enable SCE */
+  v |= 1ull;  /* Enable SCE */
+  v |= 0x800; /* Enable NXE (Bit 11) */
   wrmsr(Efer, v);
 
   /* We use IRETQ for all returns instead of the faster SYSRET instruction.
@@ -784,6 +783,24 @@ static MMU *mmualloc(void) {
  * pt_page - Allocate a page for page tables from the palloc pool
  * Returns HHDM virtual address of the page, or nil if none available
  */
+/*@
+  requires table != \null;
+  requires \valid(table + (0..511));
+  requires 0 <= index < 512;
+  requires 0 <= level <= 3;
+  assigns table[index] \from va, level, index;
+
+  behavior success:
+    ensures \result != \null;
+    ensures \valid((uintptr*)\result + (0..511));
+    ensures ((uintptr)\result) % 4096 == 0;  // page-aligned per mmu_model.v
+
+  behavior failure:
+    ensures \result == \null;
+
+  complete behaviors;
+  disjoint behaviors;
+*/
 static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   uintptr *page, flags;
   MMU *p;
@@ -885,6 +902,15 @@ static uintptr *mmucreate(uintptr *table, uintptr va, int level, int index) {
   return page;
 }
 
+/*@
+  requires table != \null;
+  requires \valid(table + (0..511));
+  requires 0 <= level <= 3;
+  assigns \nothing;
+
+  ensures \result == \null || \valid(\result);
+  ensures \result != \null ==> ((uintptr)\result) % 8 == 0;
+*/
 uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
   uintptr pte;
   int i, x;
@@ -913,9 +939,9 @@ uintptr *mmuwalk(uintptr *table, uintptr va, int level, int create) {
 static uintptr *getpte(uintptr va) {
   uintptr *pte;
 
-  if ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+  if ((pte = mmuwalk((uintptr *)m->pml4, va, 0, 1)) == nil) {
     flushmmu();
-    while ((pte = mmuwalk(m->pml4, va, 0, 1)) == nil) {
+    while ((pte = mmuwalk((uintptr *)m->pml4, va, 0, 1)) == nil) {
       int x = spllo();
       resrcwait("out of MMU pages");
       splx(x);
@@ -1060,9 +1086,9 @@ void pmap(uintptr pa, uintptr va, vlong size) {
       flags |= PTESIZE;
     l = (flags & PTESIZE) != 0;
     z = PGLSZ(l);
-    pte = mmuwalk(m->pml4, va, l, 1);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 1);
     if (pte == nil) {
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
       if (pte && (*pte & PTESIZE)) {
         flags |= PTESIZE;
         z = va & (PGLSZ(l) - 1);
@@ -1092,9 +1118,9 @@ void punmap(uintptr va, vlong size) {
     if ((va % PGLSZ(1)) != 0 || size < PGLSZ(1))
       ptesplit(m->pml4, va);
     l = 0;
-    pte = mmuwalk(m->pml4, va, l, 0);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 0);
     if (pte == nil && (va % PGLSZ(1)) == 0 && size >= PGLSZ(1))
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
     if (pte) {
       *pte = 0;
       invlpg(va);
@@ -1183,7 +1209,9 @@ void mmuswitch(Proc *proc) {
   }
 
   /* Process all PML4E entries in the linked list */
-  for (p = proc->mmuhead; p != nil && p->level == PML4E; p = p->next) {
+  for (p = proc->mmuhead; p != nil; p = p->next) {
+    if (p->level != PML4E)
+      continue;
     m->mmumap[p->index / MAPBITS] |= 1ull << (p->index % MAPBITS);
     m->pml4[p->index] = PADDR(p->page) | PTEUSER | PTEWRITE | PTEVALID;
   }
@@ -1208,16 +1236,40 @@ void mmurelease(Proc *proc) {
   taskswitch((uintptr)m + MACHSIZE);
 }
 
-void putmmu(uintptr va, uintptr pa, Page *) {
+void putmmu(uintptr va, uintptr pa, Page *pg) {
   uintptr *pte, old;
   int x;
 
   x = splhi();
   pte = getpte(va);
   old = *pte;
-  *pte = pa | PTEACCESSED | PTEDIRTY | PTEUSER | PTEWRITE | PTEVALID;
+  if (pg == nil) {
+    /* Invalidate PTE */
+    *pte = 0;
+  } else {
+    /* Use pa as-is - already contains correct flags from caller */
+    *pte = pa;
+  }
   splx(x);
   invlpg(va);
+}
+
+/* Read current PTE value for a virtual address */
+uintptr getmmu(uintptr va, Page **pgp) {
+  uintptr *pte;
+  uintptr val;
+  int x;
+
+  x = splhi();
+  pte = getpte(va);
+  val = *pte;
+  splx(x);
+
+  /* For now, don't try to extract Page* from PTE */
+  if (pgp != nil)
+    *pgp = nil;
+
+  return val;
 }
 
 /*
@@ -1229,7 +1281,7 @@ void checkmmu(uintptr va, uintptr pa) {
   int x;
 
   x = splhi();
-  pte = mmuwalk(m->pml4, va, 0, 0);
+  pte = mmuwalk((uintptr *)m->pml4, va, 0, 0);
   if (pte == nil || ((old = *pte) & PTEVALID) == 0 || PPN(old) == pa) {
     splx(x);
     return;
@@ -1323,9 +1375,9 @@ void patwc(void *a, int n) {
   /* set the bits for all pages in range */
   for (va = (uintptr)a; n > 0; n -= z, va += z) {
     l = 0;
-    pte = mmuwalk(m->pml4, va, l, 0);
+    pte = mmuwalk((uintptr *)m->pml4, va, l, 0);
     if (pte == nil)
-      pte = mmuwalk(m->pml4, va, ++l, 0);
+      pte = mmuwalk((uintptr *)m->pml4, va, ++l, 0);
     if (pte == nil || (*pte & PTEVALID) == 0)
       panic("patwc: va=%#p", va);
     z = PGLSZ(l);

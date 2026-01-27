@@ -1,7 +1,9 @@
+#include "borrowchecker.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "pageown.h"
+#include "pebble.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -11,6 +13,32 @@ extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
 
 static inline uintptr hhdm_virt(uintptr pa) {
   return pa + saved_limine_hhdm_offset;
+}
+
+/* Validate token color matches borrowchecker state (debug only) */
+static void validate_page_token_state(Page *p) {
+  if (!pebble_debug || p->pa == 0)
+    return;
+
+  enum BorrowState bstate = borrow_get_state(p->pa);
+
+  switch (p->token_color) {
+  case PEBBLE_COLOR_BLACK:
+    if (bstate != BORROW_EXCLUSIVE) {
+      panic("page token mismatch: BLACK but not EXCLUSIVE (pa=%#p)", p->pa);
+    }
+    break;
+  case PEBBLE_COLOR_RED:
+    if (bstate != BORROW_SHARED_OWNED) {
+      panic("page token mismatch: RED but not SHARED_OWNED (pa=%#p)", p->pa);
+    }
+    break;
+  case PEBBLE_COLOR_COLORLESS:
+    if (borrow_is_owned(p->pa)) {
+      panic("page token mismatch: COLORLESS but still owned (pa=%#p)", p->pa);
+    }
+    break;
+  }
 }
 
 Palloc palloc;
@@ -97,6 +125,7 @@ void pageinit(void) {
         continue;
       }
       p->color = color;
+      p->token_color = PEBBLE_COLOR_COLORLESS; /* All pages start COLORLESS */
       color = (color + 1) % NCOLOR;
       /* Note: Physical page memory will be zeroed by fillpage() in newpage()
        * when actually allocated. Don't zero here as HHDM may not cover all
@@ -142,6 +171,10 @@ static void pagechaindone(void) {
     wakeup(&palloc.pwait[1]);
 }
 
+/*@ requires head == \null || \valid(head);
+  @ requires tail == \null || \valid(tail);
+  @ assigns \everything;
+  @*/
 void freepages(Page *head, Page *tail, ulong np) {
   if (head == nil)
     return;
@@ -156,10 +189,49 @@ void freepages(Page *head, Page *tail, ulong np) {
   Page *p = head;
   while (p != nil) {
     if (up != nil && p->pa != 0) {
+      /* Update per-process color counters before freeing */
+      lock(&pebble_global_lock);
+      switch (p->token_color) {
+      case PEBBLE_COLOR_BLACK:
+        up->pebble.black_inuse -= BY2PG;
+        break;
+      case PEBBLE_COLOR_RED:
+        up->pebble.red_inuse -= BY2PG;
+        break;
+      case PEBBLE_COLOR_BLUE:
+        up->pebble.blue_inuse -= BY2PG;
+        break;
+      }
+      p->token_color = PEBBLE_COLOR_COLORLESS;
+      unlock(&pebble_global_lock);
+
       /* Try to release, but don't banic if not owned (might be early boot) */
+      /* Try to release, but don't panic if not owned (might be early boot) */
       if (pageown_is_owned(p->pa)) {
-        if (pageown_release(up, p->pa) != POWN_OK)
-          panic("freepages: failed to release page ownership pa=%#p", p->pa);
+        Proc *owner = pageown_get_owner(p->pa);
+        if (owner != nil) {
+          if (pageown_release(up, p->pa) != POWN_OK) {
+            panic("freepages: release failed pa=%#p (kaddr=%#p). OwnerPID: %d, "
+                  "CurrentPID: %d.",
+                  p->pa, hhdm_virt(p->pa), owner->pid, up ? up->pid : -2);
+          }
+        } else if (borrow_is_owned_by_system(hhdm_virt(p->pa), OWNER_KERNEL)) {
+          /* System-owned (WASM) page - release using system API */
+          if (borrow_release_system(hhdm_virt(p->pa), OWNER_KERNEL) !=
+              BORROW_OK) {
+            pageown_dump_page(p->pa);
+            panic("freepages: system release failed pa=%#p (kaddr=%#p). "
+                  "CurrentPID: %d.",
+                  p->pa, hhdm_virt(p->pa), up ? up->pid : -2);
+          }
+        } else {
+          /* Owned but no owner and not OWNER_KERNEL? Phantom state. */
+          uintptr hhdm_va = hhdm_virt(p->pa);
+          pageown_dump_page(p->pa);
+          panic("freepages: phantom ownership pa=%#p (kaddr=%#p). OwnerPID: "
+                "-1, CurrentPID: %d.",
+                p->pa, hhdm_va, up ? up->pid : -2);
+        }
       }
     }
     if (p == tail)
@@ -171,8 +243,6 @@ void freepages(Page *head, Page *tail, ulong np) {
     tail = head;
     for (np = 1;; np++) {
       tail->ref = 0;
-      if (tail->next == nil)
-        break;
       if (tail->next == nil)
         break;
       tail = tail->next;
@@ -194,8 +264,46 @@ void freepages(Page *head, Page *tail, ulong np) {
   palloc.freecount += np;
   pagechaindone();
   unlock(&palloc);
+
+  /* Update per-process color counters before freeing */
+  {
+    Page *p = head;
+    while (p != nil) {
+      if (up != nil) {
+        lock(&pebble_global_lock);
+        switch (p->token_color) {
+        case PEBBLE_COLOR_BLACK:
+          up->pebble.black_inuse -= BY2PG;
+          break;
+        case PEBBLE_COLOR_RED:
+          up->pebble.red_inuse -= BY2PG;
+          break;
+        case PEBBLE_COLOR_BLUE:
+          up->pebble.blue_inuse -= BY2PG;
+          break;
+        }
+        p->token_color = PEBBLE_COLOR_COLORLESS;
+        unlock(&pebble_global_lock);
+      }
+
+      if (p == tail)
+        break;
+      p = p->next;
+    }
+  }
+
+  /* Return tokens to global pool for freed pages */
+  /* Each page = BY2PG / PEBBLE_BYTES_PER_TOKEN tokens */
+  {
+    ulong tokens = np * (BY2PG / PEBBLE_BYTES_PER_TOKEN);
+    lock(&pebble_bank_lock);
+    pebble_global_colorless_bank += tokens;
+    unlock(&pebble_bank_lock);
+  }
 }
 
+/*@ assigns \everything;
+  @*/
 ulong pagereclaim(Image *i) {
   Page **h, **e, **l, **x, *p;
   Page *fh, *ft;
@@ -254,6 +362,10 @@ static int ispages(void *) {
          up->noswap && palloc.freecount > 0;
 }
 
+/*@ requires seg == \null || \valid(seg);
+    assigns \everything;
+    ensures \result == \null || \valid(\result);
+*/
 Page *newpage(uintptr va, Segment *seg) {
   Page *p, **l;
   int color;
@@ -269,7 +381,25 @@ Page *newpage(uintptr va, Segment *seg) {
     print("newpage[%d]: va=%p free=%lud\n", newpage_count, va,
           palloc.freecount);
 
+  /* Pebble: Check and consume budget for page allocation (userspace only) */
+  /* Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes */
+  if (up != nil && !(seg && (seg->type & SG_WASM))) {
+    ulong tokens_needed = BY2PG / PEBBLE_BYTES_PER_TOKEN;
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < tokens_needed) {
+      unlock(&pebble_global_lock);
+      if (pebble_debug)
+        print("PEBBLE: insufficient tokens for page va=%#p (need %lu, have "
+              "%lu)\n",
+              va, tokens_needed, up->pebble.colorless_bank);
+      return nil; /* Insufficient budget */
+    }
+    up->pebble.colorless_bank -= tokens_needed;
+    unlock(&pebble_global_lock);
+  }
+
   lock(&palloc);
+
   while (!ispages(nil)) {
     unlock(&palloc);
     if (locked)
@@ -343,8 +473,19 @@ Page *newpage(uintptr va, Segment *seg) {
   if (up != nil && p->pa != 0) {
     extern uintptr saved_limine_hhdm_offset;
     uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
-    if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
-      panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
+    if (seg && (seg->type & SG_WASM)) {
+      if (borrow_acquire_system(hhdm_va, OWNER_KERNEL) != BORROW_OK)
+        panic("newpage: failed to acquire wasm ownership pa=%#p", p->pa);
+    } else {
+      if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
+        panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
+    }
+
+    /* Set token color to BLACK (exclusive ownership) */
+    p->token_color = PEBBLE_COLOR_BLACK;
+    lock(&pebble_global_lock);
+    up->pebble.black_inuse += BY2PG;
+    unlock(&pebble_global_lock);
   }
 
   return p;
@@ -354,6 +495,9 @@ Page *newpage(uintptr va, Segment *seg) {
  *  deadpage() decrements the page refcount
  *  and returns the page when it becomes freeable.
  */
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 Page *deadpage(Page *p) {
   if (p->image != nil) {
     decref(p);
@@ -361,9 +505,17 @@ Page *deadpage(Page *p) {
   }
   if (decref(p) != 0)
     return nil;
+
+  /* Transition any color → COLORLESS when ref reaches 0 */
+  p->token_color = PEBBLE_COLOR_COLORLESS;
+  /* freepages() will update per-process counters and return tokens */
+
   return p;
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void putpage(Page *p) {
   /* Release ownership before freeing */
   /* TEMPORARILY DISABLED - pageown lock is broken */
@@ -376,6 +528,7 @@ void putpage(Page *p) {
     freepages(p, p, 1);
 }
 
+/*
 void copypage(Page *f, Page *t) {
   KMap *ks, *kd;
 
@@ -385,7 +538,12 @@ void copypage(Page *f, Page *t) {
   kunmap(ks);
   kunmap(kd);
 }
+*/
 
+/*@ requires p == \null || \valid(p);
+    assigns \everything;
+    ensures \result == p;
+*/
 Page *fillpage(Page *p, int c) {
   KMap *k;
 
@@ -397,6 +555,9 @@ Page *fillpage(Page *p, int c) {
   return p;
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void cachepage(Page *p, Image *i) {
   Page *x, **h;
   uintptr daddr;
@@ -418,6 +579,9 @@ done:
   unlock(i);
 }
 
+/*@ requires p == \null || \valid(p);
+  @ assigns \everything;
+  @*/
 void uncachepage(Page *p) {
   Page **l, *x;
   Image *i;
@@ -445,6 +609,9 @@ done:
   unlock(i);
 }
 
+/*@ assigns \everything;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 Page *lookpage(Image *i, uintptr daddr) {
   Page *p, **h, **l;
 
@@ -455,7 +622,7 @@ Page *lookpage(Image *i, uintptr daddr) {
       *l = p->next;
       p->next = *h;
       *h = p;
-      incref(p);
+      incref((Ref *)&p->ref);
       unlock(i);
       return p;
     }
@@ -466,6 +633,8 @@ Page *lookpage(Image *i, uintptr daddr) {
   return nil;
 }
 
+/*@ assigns \everything;
+  @*/
 void cachedel(Image *i, uintptr daddr) {
   Page *p;
 
@@ -475,6 +644,8 @@ void cachedel(Image *i, uintptr daddr) {
   }
 }
 
+/*@ assigns \everything;
+  @*/
 void zeroprivatepages(void) {
   Page *p, *pe;
 
@@ -491,9 +662,9 @@ void zeroprivatepages(void) {
   pe = palloc.pages + palloc.user;
   for (p = palloc.pages; p != pe; p++) {
     if (p->modref & PG_PRIV) {
-      incref(p);
+      incref((Ref *)&p->ref);
       fillpage(p, 0);
-      decref(p);
+      decref((Ref *)&p->ref);
     }
   }
   unlock(&palloc);
@@ -504,6 +675,8 @@ void zeroprivatepages(void) {
  * This function creates the necessary page table entries
  * and links them into the current process's mmuhead.
  */
+/*@ assigns \everything;
+  @*/
 void userpmap(uintptr va, uintptr pa, int perms) {
   uintptr *pte;
   int x;
@@ -525,6 +698,12 @@ void userpmap(uintptr va, uintptr pa, int perms) {
     panic("userpmap: out of memory for page tables");
   }
   *pte = pa | perms;
+
+  /* Invalidate TLB for this VA to ensure mapping takes effect immediately.
+   * This is critical when userpmap() is called after mmuswitch(), as the
+   * CPU may have cached a "not present" TLB entry for this address. */
+  __asm__ volatile("invlpg (%0)" ::"r"(va) : "memory");
+
   print("userpmap: va=%#p pa=%#p perms=%#ux pte=%#llux\n", va, pa, perms,
         (uvlong)*pte);
   splx(x);

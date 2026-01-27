@@ -1,0 +1,18 @@
+{
+  "frame": {
+    "x": 8,
+    "y": 732,
+    "width": 1089,
+    "height": 644
+  },
+  "settings": {
+    "ivette.sidebar.selected": "frama-c.plugins.eva_sidebar",
+    "ivette.sidebar.group.fc.kernel": true
+  },
+  "storage": {
+    "Controller.history": [
+      "--working /home/scott/Repo/lux9-kernel"
+    ]
+  },
+  "devtools": false
+}

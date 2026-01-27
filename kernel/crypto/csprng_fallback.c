@@ -166,7 +166,11 @@ collect_randomized_entropy(u8 output[32])
 	int max_sources = ENTROPY_SOURCE_COUNT;
 
 	/* Collect from randomized sources */
-	for(int attempt = 0; attempt < max_sources && sources_used < max_sources; attempt++) {
+	  /*@ loop invariant 0 <= attempt <= max_sources && sources_used;
+    @ loop assigns attempt;
+    @ loop variant max_sources && sources_used - attempt;
+    @*/
+  for(int attempt = 0; attempt < max_sources && sources_used < max_sources; attempt++) {
 		/* Select source based on TSC-derived randomness */
 		enum EntropySource src = (source_order + attempt * 7) % ENTROPY_SOURCE_COUNT;
 
@@ -214,7 +218,11 @@ csprng_init(void)
 	collect_randomized_entropy(seed_material);
 
 	/* Wait for timing jitter */
-	for(int i = 0; i < 100; i++)
+	  /*@ loop invariant 0 <= i <= 100;
+    @ loop assigns i;
+    @ loop variant 100 - i;
+    @*/
+  for(int i = 0; i < 100; i++)
 		rdtsc();
 
 	/* Collect randomized entropy for nonce */
@@ -242,7 +250,11 @@ csprng_reseed(void)
 	collect_randomized_entropy(new_seed);
 
 	/* Mix new entropy with existing key */
-	for(int i = 0; i < 32; i++)
+	  /*@ loop invariant 0 <= i <= 32;
+    @ loop assigns i;
+    @ loop variant 32 - i;
+    @*/
+  for(int i = 0; i < 32; i++)
 		csprng_state.key[i] ^= new_seed[i];
 
 	/* Update nonce from new entropy */

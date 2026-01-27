@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <defs>
+    <style>
+      .proc { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; rx: 10; }
+      .kernel { fill: #fff3e0; stroke: #e65100; stroke-width: 2; rx: 10; }
+      .shared { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 2; stroke-dasharray: 5,5; }
+      .router { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; rx: 5; }
+      .target { fill: #ffffff; stroke: #333; stroke-width: 1; rx: 5; }
+      .arrow { stroke: #333; stroke-width: 2; marker-end: url(#arrowhead); }
+      .text { font-family: sans-serif; font-size: 14px; fill: #333; text-anchor: middle; }
+      .label { font-family: sans-serif; font-size: 12px; fill: #666; text-anchor: middle; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="400" y="30" class="text" font-size="20" font-weight="bold">Lux9 9P Router Architecture</text>
+
+  <!-- User Space -->
+  <g transform="translate(50, 100)">
+    <rect x="0" y="0" width="150" height="400" class="proc" />
+    <text x="75" y="30" class="text" font-weight="bold">User Process</text>
+    <text x="75" y="200" class="text">Writes T-Message</text>
+    <text x="75" y="220" class="text">Triggers Interrupt</text>
+  </g>
+
+  <!-- Exchange Page (Shared) -->
+  <g transform="translate(250, 200)">
+    <rect x="0" y="-50" width="120" height="200" class="shared" />
+    <text x="60" y="-20" class="text" font-weight="bold">Exchange</text>
+    <text x="60" y="0" class="text" font-weight="bold">Page</text>
+    <text x="60" y="50" class="label">Shared Memory</text>
+    <text x="60" y="70" class="label">(Zero Copy)</text>
+  </g>
+
+  <!-- Kernel Space -->
+  <g transform="translate(420, 100)">
+    <rect x="0" y="0" width="350" height="400" class="kernel" />
+    <text x="175" y="30" class="text" font-weight="bold">Kernel Space</text>
+
+    <!-- 9P Router -->
+    <g transform="translate(30, 100)">
+      <rect x="0" y="0" width="200" height="150" class="router" />
+      <text x="100" y="30" class="text" font-weight="bold">9P Router</text>
+      
+      <!-- Security Check -->
+      <rect x="20" y="50" width="160" height="30" fill="#ffebee" stroke="#c62828" />
+      <text x="100" y="70" class="label">1. Validate Pebble Token</text>
+      
+      <!-- Permission Check -->
+      <rect x="20" y="90" width="160" height="30" fill="#fffde7" stroke="#fbc02d" />
+      <text x="100" y="110" class="label">2. Check Permissions</text>
+    </g>
+
+    <!-- Targets -->
+    <g transform="translate(260, 50)">
+      <rect x="0" y="0" width="80" height="40" class="target" />
+      <text x="40" y="25" class="text">#p (Proc)</text>
+
+      <rect x="0" y="60" width="80" height="40" class="target" />
+      <text x="40" y="85" class="text">#d (Dev)</text>
+
+      <rect x="0" y="120" width="80" height="40" class="target" />
+      <text x="40" y="145" class="text">#W (WASM)</text>
+      
+      <rect x="0" y="180" width="80" height="40" class="target" />
+      <text x="40" y="205" class="text">#s (Srv)</text>
+    </g>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="200" y1="200" x2="250" y2="200" class="arrow" />
+  <line x1="370" y1="200" x2="450" y2="200" class="arrow" />
+  
+  <!-- Dispatch Arrows -->
+  <path d="M 650 220 L 680 220 L 680 70" fill="none" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M 650 220 L 680 220 L 680 130" fill="none" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M 650 220 L 680 220 L 680 190" fill="none" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M 650 220 L 680 220 L 680 250" fill="none" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+
+</svg>

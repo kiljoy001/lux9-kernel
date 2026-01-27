@@ -321,6 +321,12 @@ void edfrun(Proc *p, int edfpri) {
   e->s = now;
 }
 
+/*@
+  requires \valid(p);
+  requires \valid(p->edf);
+  // property: valid_task (C > 0, T > 0, D > 0, D <= T, C <= D)
+  ensures \result == \null ==> (p->edf->flags & Admitted);
+*/
 char *edfadmit(Proc *p) {
   char *err;
   Edf *e;
@@ -462,16 +468,16 @@ void edfyield(void) {
   up->tf = releaseintr;
   up->ta = up;
   up->trend = &up->sleep;
-  timeradd(up);
+  timeradd(&up->timer);
   edfunlock();
   if (waserror()) {
     up->trend = nil;
-    timerdel(up);
+    timerdel(&up->timer);
     nexterror();
   }
   sleep(&up->sleep, yfn, nil);
   up->trend = nil;
-  timerdel(up);
+  timerdel(&up->timer);
   poperror();
 }
 
@@ -561,6 +567,17 @@ static void testenq(Proc *p) {
   xp->edf->testnext = p;
 }
 
+/*@
+  requires \valid(theproc);
+  requires \valid(theproc->edf);
+  requires theproc->edf->T > 0;
+  requires theproc->edf->C > 0;
+  requires theproc->edf->C <= theproc->edf->T;
+  // property: corresponds to edf_step_check in proofs/scheduler/edf_policy.v
+  assigns qschedulability; // Global state modification
+  ensures \result == \null ==> (\forall integer t; 0 < t && t < Maxsteps;
+  total_demand(t) <= t);
+*/
 static char *testschedulability(Proc *theproc) {
   Proc *p;
   long H, G, Cb, ticks;

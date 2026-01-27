@@ -7,6 +7,7 @@
 #include "fns.h"
 #include "mem.h"
 #include "u.h"
+#include "vmdetect.h"
 #include <lib.h>
 
 extern struct limine_framebuffer_request *limine_framebuffer;
@@ -329,6 +330,9 @@ extern void (*screenputs)(char *, int);
 extern void uartputs(char *, int);
 
 /* Call this BEFORE switching to kernel page tables to save framebuffer info */
+/*@
+  @ assigns \nothing;
+  @*/
 void save_framebuffer_info(void) {
   struct limine_framebuffer_response *fb_response;
   struct limine_framebuffer *framebuffer;
@@ -368,6 +372,9 @@ void save_framebuffer_info(void) {
   uartputs("save_framebuffer_info: saved\n", 30);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void fbconsoleinit(void) {
   extern uintptr saved_limine_hhdm_offset;
   uintptr fbaddr;
@@ -425,11 +432,22 @@ void fbconsoleinit(void) {
   print("fbconsole: memset complete\n");
 
   /* Hook into screenputs - routes print() output to framebuffer */
-  print("fbconsole: PRE-HOOK\n");
-  screenputs = fbconsolescreenputs;
-  uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
+  /* SKIP in VM: MMIO framebuffer access is extremely slow in software emulation
+   */
+  if (vm_info.type != VM_NONE) {
+    uartputs("fbconsole: SKIPPING screenputs hook (VM detected - MMIO slow)\n",
+             63);
+    uartputs("fbconsole: UART remains primary output\n", 40);
+  } else {
+    print("fbconsole: PRE-HOOK\n");
+    screenputs = fbconsolescreenputs;
+    uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
+  }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void fbputpixel(int x, int y, u32int color) {
   u32int *pixel;
 
@@ -440,6 +458,9 @@ static void fbputpixel(int x, int y, u32int color) {
   *pixel = color;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void fbputchar(int x, int y, int c, u32int fg, u32int bg) {
   int row, col, bit;
   uchar *glyph;
@@ -461,6 +482,9 @@ static void fbputchar(int x, int y, int c, u32int fg, u32int bg) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void fbscroll(void) {
   int src_y, dst_y;
 
@@ -478,6 +502,9 @@ static void fbscroll(void) {
          fb.pitch * FONT_HEIGHT);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void fbconsoleputc(int c) {
   int max_cols, max_rows;
 
@@ -523,6 +550,10 @@ void fbconsoleputc(int c) {
   }
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void fbconsolescreenputs(char *s, int n) {
   int i;
 

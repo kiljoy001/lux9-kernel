@@ -77,23 +77,44 @@ Definition utilization_scaled (task : Task) (scale : nat) : nat :=
 Definition total_utilization_scaled (tasks : list Task) (scale : nat) : nat :=
   fold_right (fun task acc => utilization_scaled task scale + acc) 0 tasks.
 
-(** 
- * Theorem: Utilization bound U <= 1 implies schedulability for D=T
- * (Liu & Layland 1973). We prove a specific instance for validation.
- *)
-Theorem edf_utilization_bound :
-  forall (tasks : list Task),
-  (forall t, In t tasks -> t.(D) = t.(T)) -> (* Implicit deadline case *)
-  (forall t, In t tasks -> t.(T) > 0) ->
-  (* If total utilization <= 1 (scaled to avoid fractions) *)
-  (* For logic, we abstract this to: sum(C/T) <= 1 *)
-  (forall time_interval, total_demand tasks time_interval <= time_interval) ->
-  is_schedulable tasks.
+(* ========================================================================= *)
+(* RUNQUEUE MODEL (ABSTRACT) *)
+(* ========================================================================= *)
+
+Record RunQueue := mkRQ { rq_tasks : list Task }.
+
+Definition rq_invariant (rq : RunQueue) : Prop :=
+  Forall valid_task rq.(rq_tasks).
+
+Definition enqueue (rq : RunQueue) (t : Task) : RunQueue :=
+  mkRQ (t :: rq.(rq_tasks)).
+
+Definition dequeue (rq : RunQueue) : option (Task * RunQueue) :=
+  match rq.(rq_tasks) with
+  | [] => None
+  | h :: tl => Some (h, mkRQ tl)
+  end.
+
+Lemma enqueue_preserves_valid :
+  forall rq t,
+    rq_invariant rq ->
+    valid_task t ->
+    rq_invariant (enqueue rq t).
 Proof.
-  intros tasks Himplicit Hperiod Hdemand.
-  unfold is_schedulable.
-  intros t Hpos.
-  apply Hdemand.
+  unfold rq_invariant, enqueue; intros rq t Hfor Hvalid.
+  constructor; assumption.
+Qed.
+
+Lemma dequeue_preserves_valid :
+  forall rq t rq',
+    dequeue rq = Some (t, rq') ->
+    rq_invariant rq ->
+    rq_invariant rq'.
+Proof.
+  intros rq t rq' Hdeq Hinv.
+  destruct rq as [tasks]; simpl in *.
+  destruct tasks; inversion Hdeq; subst; clear Hdeq.
+  inversion Hinv; subst; assumption.
 Qed.
 
 (* ========================================================================= *)

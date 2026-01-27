@@ -1,0 +1,10 @@
+-R . msgord
+-R ../pow_gate pow_gate
+model.v
+msgord_correctness.v
+msgord_verified_simple.v
+msgord_proven.v
+msgord_final_complete.v
+msgord_fsm_optimization_proofs.v
+msgord_consensus_proofs.v
+msgord_complete_proofs.v

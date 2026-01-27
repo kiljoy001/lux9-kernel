@@ -1,6 +1,9 @@
+#include "9p_router.h"
 #include "dat.h"
 #include "fns.h"
+#include "hhdm.h"
 #include "mem.h"
+#include "pageown.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -26,6 +29,11 @@ struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {
   return nil;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 _Noreturn static void faulterror(char *s, Chan *c) {
   char buf[ERRMAX];
 
@@ -44,6 +52,11 @@ _Noreturn static void faulterror(char *s, Chan *c) {
   pexit(s, 1);
 }
 
+/*@
+  @ requires type == \null || \valid(type);
+  @ requires access == \null || \valid(access);
+  @ assigns \nothing;
+  @*/
 void faultnote(char *type, char *access, uintptr addr) {
   char buf[ERRMAX];
 
@@ -52,6 +65,11 @@ void faultnote(char *type, char *access, uintptr addr) {
   postnote(up, 1, buf, NDebug);
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static int pio(Segment *s, uintptr addr, uintptr soff, Page **p) {
   KMap *k;
   Chan *c;
@@ -117,6 +135,8 @@ retry:
       nexterror();
     }
     n = devtab[c->type]->read(c, (uchar *)VA(k), ask, daddr);
+    if (n < 0)
+      nexterror();
     if (n != ask)
       error(Eshort);
     if (n < BY2PG)
@@ -125,11 +145,12 @@ retry:
     {
       uchar *data = (uchar *)VA(k);
       print(
-          "pio: read %d bytes from offset %#llux, first 16: %02x %02x %02x "
+          "pio: read %d bytes from offset %#llux, pa=%#llx, first 16: %02x "
+          "%02x %02x "
           "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-          n, (uvlong)daddr, data[0], data[1], data[2], data[3], data[4],
-          data[5], data[6], data[7], data[8], data[9], data[10], data[11],
-          data[12], data[13], data[14], data[15]);
+          n, (uvlong)daddr, (uvlong)new->pa, data[0], data[1], data[2], data[3],
+          data[4], data[5], data[6], data[7], data[8], data[9], data[10],
+          data[11], data[12], data[13], data[14], data[15]);
     }
     kunmap(k);
     settxtflush(new, s->flushme);
@@ -185,6 +206,10 @@ retry:
   goto retry;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 int fixfault(Segment *s, uintptr addr, int read) {
   Pte **pte, *etp;
   uintptr soff, mmuphys;
@@ -250,6 +275,7 @@ int fixfault(Segment *s, uintptr addr, int read) {
       s->used++;
     }
     /* wet floor */
+    /* fallthrough */
   case SG_DATA: /* Demand load/pagein/copy on write */
     if (pagedout(*pg)) {
       if (pio(s, addr, soff, pg) < 0)
@@ -261,6 +287,7 @@ int fixfault(Segment *s, uintptr addr, int read) {
      */
     if (read && conf.copymode == 0 && s->ref == 1) {
       mmuphys = PPN((*pg)->pa) | PTERONLY | PTECACHED | PTEVALID;
+      print("fixfault: SG_DATA mapping pa=%#llx\n", (uvlong)(*pg)->pa);
       (*pg)->modref |= PG_REF;
       break;
     }
@@ -270,16 +297,20 @@ int fixfault(Segment *s, uintptr addr, int read) {
         (old->ref + swapcount(old->daddr)) == 1)
       uncachepage(old);
     if (old->ref > 1 || old->image != nil) {
-      new = newpage(addr, s);
-      if (new == nil)
-        return -1;
-      copypage(old, new);
-      settxtflush(new, s->flushme);
-      *pg = new;
-      /* s->used count unchanged */
-      putpage(old);
+      /* ZERO-COPY ENFORCEMENT:
+       * We cannot copy pages. If a page is shared (ref > 1) and a write occurs,
+       * it implies a violation of the pure Exchange/Borrow model unless it's
+       * SG_SHARED intent. But SG_DATA implies private data. If we are here, it
+       * means we have a write fault on a shared page. Previously we would copy.
+       * Now we must forbid it.
+       */
+      print("fixfault: COW attempt blocked on addr=%#p type=%d ref=%ld\n", addr,
+            s->type, old->ref);
+      panic("fixfault: Strict No-Copy Violation - Write to shared page");
+      /* copyptr(old, new); -- REMOVED */
     }
     /* wet floor */
+    /* fallthrough */
   case SG_STICKY: /* Never paged out */
     mmuphys = PPN((*pg)->pa) | PTEWRITE | PTECACHED | PTEVALID;
     (*pg)->modref |=
@@ -298,24 +329,96 @@ int fixfault(Segment *s, uintptr addr, int read) {
     mmuphys |= PTENOEXEC;
 #endif
 
+  /* Ensure user-space pages are accessible from user mode */
+  if (addr < USTKTOP)
+    mmuphys |= PTEUSER;
+
   qunlock(&s->qlock);
 
   putmmu(addr, mmuphys, *pg);
 
+  /* CRITICAL: Update kernel mapping for exchange page if we just allocated it.
+   * KADDR translates physical address to kernel virtual address (HHDM).
+   * This ensures syscallentry reads arguments from the CORRECT page (child's),
+   * not the stale parent page.
+   */
+  if (up != nil && addr == p9_user_base(up)) {
+    up->p9page = (uchar *)KADDR((*pg)->pa);
+    up->p9page_phys = (*pg)->pa;
+    /* print("fixfault: updated p->p9page for pid %lud to pa %#llx\n", up->pid,
+     * (unsigned long long)up->p9page_phys); */
+  }
+
   return 0;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static void mapphys(Segment *s, uintptr addr, int attr) {
   uintptr mmuphys;
   Page pg = {0};
 
+  /* Debug: check if this is exchange page mapping */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    print("mapphys: EXCHANGE PAGE addr=%#p pseg->pa=%#p\n", addr, s->pseg->pa);
+  }
+
   addr &= ~(BY2PG - 1);
+
+  /*
+   * LAZY ALLOCATION: If pseg->pa is 0, this is a demand-paged exchange page.
+   * Allocate a fresh physical page now.
+   */
+  if (s->pseg->pa == 0) {
+    void *kva = mallocalign(BY2PG, BY2PG, 0, 0);
+    if (kva == nil) {
+      print("mapphys: mallocalign failed for demand-paged exchange page\n");
+      qunlock(&s->qlock);
+      error(Enovmem);
+    }
+    memset(kva, 0, BY2PG);
+
+    /* Store physical address in pseg */
+    extern u64int limine_kernel_phys_base;
+    uintptr kva_addr = (uintptr)kva;
+    extern uintptr hhdm_base;
+
+    print("DEBUG: mapphys kva=%p is_hhdm=%d hhdm_base=%p KZERO=%#llx\n", kva,
+          is_hhdm_virt(kva), hhdm_base, (unsigned long long)KZERO);
+
+    if (is_hhdm_virt(kva)) {
+      s->pseg->pa = hhdm_phys(kva);
+      print("mapphys: HHDM translation kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    } else if (kva_addr >= KZERO) {
+      s->pseg->pa = (kva_addr - KZERO) + limine_kernel_phys_base;
+      print("mapphys: KZERO translation kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    } else {
+      s->pseg->pa = PADDR(kva); /* Fallback to macro */
+      print("mapphys: PADDR fallback kva=%p -> pa=%#p\n", kva, s->pseg->pa);
+    }
+
+    print("mapphys: LAZY ALLOC exchange page pid=%lud kva=%p pa=%#p\n", up->pid,
+          kva, s->pseg->pa);
+
+    /* Register with borrow checker - process initially owns it */
+    extern uintptr saved_limine_hhdm_offset;
+    uintptr hhdm_va = s->pseg->pa + saved_limine_hhdm_offset;
+
+    if (pageown_acquire(up, s->pseg->pa, hhdm_va) != POWN_OK) {
+      print("mapphys: failed to acquire ownership of exchange page\n");
+    }
+  }
+
   pg.ref = 1;
   pg.va = addr;
   pg.pa = s->pseg->pa + (addr - s->base);
   settxtflush(&pg, s->flushme);
 
-  mmuphys = PPN(pg.pa) | PTEVALID;
+  mmuphys = (pg.pa & ~(1ull << 63 | (BY2PG - 1))) | PTEVALID;
+  if (addr < USTKTOP)
+    mmuphys |= PTEUSER;
   if ((attr & SG_RONLY) == 0)
     mmuphys |= PTEWRITE;
   else
@@ -336,15 +439,54 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   else
     mmuphys |= PTECACHED;
 
+  /* Debug: Verify flags before putmmu at exchange page */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    print(
+        "mapphys: PRE-PUTMMU flags check: mmuphys=%#p (NX=%d W=%d VALID=%d)\n",
+        mmuphys, (mmuphys & PTENOEXEC) ? 1 : 0, (mmuphys & PTEWRITE) ? 1 : 0,
+        (mmuphys & PTEVALID) ? 1 : 0);
+  }
+
   qunlock(&s->qlock);
 
   putmmu(addr, mmuphys, &pg);
+
+  /* CRITICAL: Update kernel mapping for exchange page if we just allocated it.
+   * This ensures the kernel reads from the CORRECT physical page.
+   * Without this, up->p9page remains nil or points to the wrong page,
+   * causing syscalls to be silently ignored.
+   */
+  if (up != nil && addr == p9_user_base(up)) {
+    up->p9page = (uchar *)KADDR(pg.pa);
+    up->p9page_phys = pg.pa;
+    print("mapphys: updated up->p9page for pid %lud to pa %#llx kva %p\n",
+          up->pid, (unsigned long long)pg.pa, up->p9page);
+  }
+
+  /* Verify data at exchange page after mapping */
+  if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
+    uchar *data = (uchar *)kaddr(pg.pa);
+    print("mapphys: VERIFY after putmmu, reading PA=0x%p first 16: ", pg.pa);
+      /*@ loop invariant 0 <= i <= 16;
+    @ loop assigns i;
+    @ loop variant 16 - i;
+    @*/
+  for (int i = 0; i < 16; i++)
+      print("%02x ", data[i]);
+    print("\n");
+  }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 int fault(uintptr addr, uintptr pc, int read) {
   Segment *s;
   char *sps;
   int pnd, ins, attr;
+
+  print("fault: ENTRY addr=%#llx pc=%#llx pid=%ld\n", (unsigned long long)addr,
+        (unsigned long long)pc, up ? up->pid : 0);
 
   if (up == nil)
     panic("fault: no user process pc=%#p addr=%#p", pc, addr);
@@ -364,12 +506,18 @@ int fault(uintptr addr, uintptr pc, int read) {
   m->pfault++;
 
   for (;;) {
-    /* Re-enable interrupts before potentially blocking seg() lookup */
-    if (up && m && up->nlocks == 0)
-      spllo();
+    /* NOTE: spllo() removed here. Previously it re-enabled interrupts
+     * which could trigger a timer interrupt -> sched() -> reschedule.
+     * For newly forked children, this caused them to be rescheduled
+     * mid-fault, never completing their TEXT page fix.
+     * Fault handling must run to completion before allowing reschedule. */
+    print("fault: calling seg(%p, %#llx, 1)\n", up, (unsigned long long)addr);
 
     s = seg(up, addr, 1); /* leaves s locked if seg != nil */
+    print("fault: seg() returned %p\n", s);
     if (s == nil) {
+      print("fault: seg lookup FAILED addr=%#llx pid=%ld\n",
+            (unsigned long long)addr, up->pid);
       up->psstate = sps;
       up->insyscall = ins;
       return -1;
@@ -423,12 +571,20 @@ int fault(uintptr addr, uintptr pc, int read) {
   up->insyscall = ins;
   up->notepending |= pnd;
 
+  /* Re-enable interrupts after fault is fully resolved.
+   * This allows timer interrupts for scheduler preemption. */
+  if (up && m && up->nlocks == 0)
+    spllo();
+
   return 0;
 }
 
 /*
  * Called only in a system call
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int okaddr(uintptr addr, ulong len, int write) {
   Segment *s;
   int iterations = 0;
@@ -480,6 +636,9 @@ int okaddr(uintptr addr, ulong len, int write) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void validaddr(uintptr addr, ulong len, int write) {
   if (!okaddr(addr, len, write)) {
     pprint("suicide: invalid address %#p/%lud in sys call pc=%#p\n", addr, len,
@@ -494,20 +653,20 @@ void validaddr(uintptr addr, ulong len, int write) {
  */
 void *vmemchr(void *s, int c, ulong n) {
   uintptr a;
-  ulong m;
+  ulong sz;
   void *t;
 
   a = (uintptr)s;
   for (;;) {
-    m = BY2PG - (a & (BY2PG - 1));
-    if (n <= m)
+    sz = BY2PG - (a & (BY2PG - 1));
+    if (n <= sz)
       break;
     /* spans pages; handle this page */
-    t = memchr((void *)a, c, m);
+    t = memchr((void *)a, c, sz);
     if (t != nil)
       return t;
-    a += m;
-    n -= m;
+    a += sz;
+    n -= sz;
     if (a < KZERO)
       validaddr(a, 1, 0);
   }
@@ -518,6 +677,9 @@ void *vmemchr(void *s, int c, ulong n) {
 
 extern void checkmmu(uintptr, uintptr);
 
+/*@
+  @ assigns \nothing;
+  @*/
 void checkpages(void) {
   uintptr addr, off;
   Pte *p;

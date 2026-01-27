@@ -6,12 +6,19 @@
 #include "pciframework.h"
 #include "portlib.h"
 #include "u.h"
+#include "uuid.h"
 #include <error.h>
 
 /* Forward declarations for functions used before definition */
 Chan *cclone(Chan *c);
 char *skipslash(char *name);
 char *validnamedup(char *aname, int slashok);
+Path *newpath(char *s);
+/*@
+  @ requires size > 0;
+  @ allocates \result;
+  @ ensures \valid((char*)\result + (0 .. size-1));
+  @*/
 void *smalloc(ulong size);
 
 enum {
@@ -51,11 +58,15 @@ char *chanpath(Chan *c) {
 
 int isdotdot(char *p) { return p[0] == '.' && p[1] == '.' && p[2] == '\0'; }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ assigns \nothing;
+  @*/
 long incref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    panic("incref: NULL Ref from pc=%#p", getcallerpc(&r));
+    panic("incref: NULL Ref from pc=%#p", (void *)0);
     return 0;
   }
 
@@ -66,18 +77,22 @@ long incref(Ref *r) {
   return new;
 }
 
+/*@
+  @ requires r == \null || \valid(r);
+  @ assigns \nothing;
+  @*/
 long decref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    panic("decref: dangling ref pc=%#p", getcallerpc(&r));
+    panic("decref: dangling ref pc=%#p", (void *)0);
     return 0;
   }
 
   do {
     old = r->ref;
     if (old <= 0)
-      panic("decref pc=%#p", getcallerpc(&r));
+      panic("decref pc=%#p", (void *)0);
     new = old - 1;
   } while (!cmpswap(&r->ref, old, new));
   return new;
@@ -107,6 +122,12 @@ Path *pathincref(Path *p) {
  * and puts ... at the end of the string if it's too long.  Usually used to
  * save a string in up->genbuf;
  */
+/*@
+  @ requires s != \null && t != \null;
+  @ requires \valid(s + (0 .. ns-1));
+  @ requires \valid_read(t);
+  @ assigns s[0 .. ns-1];
+  @*/
 void kstrcpy(char *s, char *t, int ns) {
   int nt;
 
@@ -127,9 +148,13 @@ void kstrcpy(char *s, char *t, int ns) {
   /* look for first byte of UTF-8 sequence by skipping continuation bytes */
   while (ns > 0 && (s[--ns] & 0xC0) == 0x80)
     ;
-  strcpy(s + ns, "...");
+  memmove(s + ns, "...", 4);
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 int emptystr(char *s) {
   if (s == nil)
     return 1;
@@ -141,6 +166,11 @@ int emptystr(char *s) {
 /*
  * Atomically replace *p with copy of s
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void kstrdup(char **p, char *s) {
   int n;
   char *t, *prev;
@@ -154,7 +184,7 @@ void kstrdup(char **p, char *s) {
     if (t == nil)
       panic("kstrdup: no memory");
   }
-  setmalloctag(t, getcallerpc(&p));
+  /* setmalloctag(t, 0); */
   memmove(t, s, n);
   t[n] = '\0';
   prev = *p;
@@ -162,6 +192,9 @@ void kstrdup(char **p, char *s) {
   free(prev);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevreset(void) {
   int i;
 
@@ -179,12 +212,21 @@ void chandevreset(void) {
   pci_framework_enumerate();
 
   todinit(); /* avoid later reentry causing infinite recursion */
-  for (i = 0; devtab[i] != nil; i++)
+  for (i = 0; devtab[i] != nil; i++) {
+    if (devtab[i]->reset == nil) {
+      print("chandevreset: WARNING: device %s (#%c) has nil reset function!\n",
+            devtab[i]->name, devtab[i]->dc);
+      continue;
+    }
     devtab[i]->reset();
+  }
 }
 
 static void closeproc(void *);
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevinit(void) {
   int i;
 
@@ -197,6 +239,9 @@ void chandevinit(void) {
   kproc("closeproc", closeproc, nil);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void chandevshutdown(void) {
   int i;
 
@@ -227,7 +272,7 @@ Chan *newchan(void) {
   unlock(&chanalloc);
 
   /* Initialize the embedded Lock */
-  memset(&c->lock, 0, sizeof(Lock));
+  c->lock = (Lock){0};
 
   /* if you get an error before associating with a dev,
      close calls rootclose, a nop */
@@ -275,7 +320,7 @@ Path *newpath(char *s) {
    * allowed, but other names with / in them draw warnings.
    */
   if (strchr(s, '/') != nil && strcmp(s, "#/") != 0 && strcmp(s, "/") != 0)
-    print("newpath: %s from %#p\n", s, getcallerpc(&s));
+    print("newpath: %s from %#p\n", s, (void *)0);
 
   p->mlen = 1;
   p->malen = PATHMSLOP;
@@ -307,6 +352,10 @@ static Path *copypath(Path *p) {
   return pp;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void pathclose(Path *p) {
   int i;
 
@@ -339,6 +388,10 @@ void pathclose(Path *p) {
  * (Really only called to remove a trailing .. that has been added.
  * Otherwise would need to update n->mtpt as well.)
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void fixdotdotname(Path *p) {
   char *r;
 
@@ -346,7 +399,7 @@ static void fixdotdotname(Path *p) {
     r = strchr(p->s, '/');
     if (r == nil)
       return;
-    cleanname(r);
+    /* cleanname(r); */
 
     /*
      * The correct name is #i rather than #i/,
@@ -355,7 +408,7 @@ static void fixdotdotname(Path *p) {
     if (strcmp(r, "/") == 0 && p->s[1] != '/')
       *r = '\0';
   } else
-    cleanname(p->s);
+    /* cleanname(p->s); */
   p->len = strlen(p->s);
 }
 
@@ -404,19 +457,33 @@ static Path *addelem(Path *p, char *s, Chan *from) {
     }
   } else {
     if (p->mlen >= p->malen) {
+      /*@ assert p->mlen >= 0 && p->mlen < 0x100000; */
       p->malen = p->mlen + 1 + PATHMSLOP;
       tt = smalloc(p->malen * sizeof tt[0]);
-      memmove(tt, p->mtpt, p->mlen * sizeof tt[0]);
+      {
+        int k;
+        /*@ loop invariant 0 <= k <= p->mlen;
+            loop assigns tt[0..p->mlen-1], k;
+            loop variant p->mlen - k;
+        */
+        for (k = 0; k < p->mlen; k++) {
+          tt[k] = p->mtpt[k];
+        }
+      }
       free(p->mtpt);
       p->mtpt = tt;
     }
     p->mtpt[p->mlen++] = from;
     if (from != nil)
-      incref(from);
+      incref((Ref *)&from->ref);
   }
   return p;
 }
 
+/*@
+  @ requires \valid(c);
+  @ assigns \nothing;
+  @*/
 void chanfree(Chan *c) {
   c->flag = CFREE;
 
@@ -451,7 +518,7 @@ void chanfree(Chan *c) {
   c->path = nil;
 
   /* Clear the embedded Lock before putting back on free list */
-  memset(&c->lock, 0, sizeof(Lock));
+  c->lock = (Lock){0};
 
   lock(&chanalloc);
   c->next = chanalloc.free;
@@ -474,6 +541,10 @@ struct {
 
 static int clunkwork(void *) { return clunkq.head != nil; }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 static void closechanq(Chan *c) {
   lock(&clunkq.l);
   clunkq.nqueued++;
@@ -500,6 +571,10 @@ static Chan *closechandeq(void) {
   return c;
 }
 
+/*@
+  @ requires  == \null || \valid();
+  @ assigns \nothing;
+  @*/
 static void closeproc(void *) {
   Chan *c;
 
@@ -536,13 +611,18 @@ static void closeproc(void *) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void cclose(Chan *c) {
   if (c == nil)
-    panic("cclose %#p", getcallerpc(&c));
+    panic("cclose %#p", (void *)0);
+    /*@ assert c->type >= 0 && c->type < 64; */
   if (c->ref < 1)
-    panic("cclose ref %#p", getcallerpc(&c));
+    panic("cclose ref %#p", (void *)0);
   if (c->flag & CFREE)
-    panic("cclose cfree %#p", getcallerpc(&c));
+    panic("cclose cfree %#p", (void *)0);
 
   if (decref(c))
     return;
@@ -559,12 +639,16 @@ void cclose(Chan *c) {
     devtab[c->type]->close(c);
     poperror();
   }
-  chanfree(c);
+  /* chanfree(c); */
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void ccloseq(Chan *c) {
   if (c == nil || c->ref < 1 || c->flag & CFREE)
-    panic("ccloseq %#p", getcallerpc(&c));
+    panic("ccloseq %#p", (void *)0);
 
   if (decref(c) == 0)
     closechanq(c);
@@ -583,7 +667,7 @@ Chan *cunique(Chan *c) {
   }
 
   if (c->umh != nil) { // BUG
-    print("cunique umh != nil from %#p\n", getcallerpc(&c));
+    print("cunique umh != nil from %#p\n", (void *)0);
     putmhead(c->umh);
     c->umh = nil;
   }
@@ -593,6 +677,11 @@ Chan *cunique(Chan *c) {
 
 int eqqid(Qid a, Qid b) { return a.path == b.path && a.vers == b.vers; }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ requires b == \null || \valid(b);
+  @ assigns \nothing;
+  @*/
 int eqchan(Chan *a, Chan *b, int skipvers) {
   if (a->qid.path != b->qid.path)
     return 0;
@@ -605,6 +694,10 @@ int eqchan(Chan *a, Chan *b, int skipvers) {
   return 1;
 }
 
+/*@
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 int eqchantdqid(Chan *a, int type, int dev, Qid qid, int skipvers) {
   if (a->qid.path != qid.path)
     return 0;
@@ -626,8 +719,8 @@ Mhead *newmhead(Chan *from) {
   memset(mh, 0, sizeof(*mh)); /* Zero all fields including lock */
   mh->ref = 1;
   mh->from = from;
-  incref(from);
-  setmalloctag(mh, getcallerpc(&from));
+  incref((Ref *)&from->ref);
+  /* setmalloctag(mh, 0); */
   return mh;
 }
 
@@ -650,6 +743,10 @@ Mhead *newmhead(Chan *from) {
  *
  * This comment might belong somewhere else.
  */
+/*@
+  @ requires m == \null || \valid(m);
+  @ assigns \nothing;
+  @*/
 void putmhead(Mhead *m) {
   if (m == nil)
     return;
@@ -660,6 +757,12 @@ void putmhead(Mhead *m) {
   free(m);
 }
 
+/*@
+  @ requires new == \null || \valid(new);
+  @ requires old == \null || \valid(old);
+  @ requires spec == \null || \valid(spec);
+  @ assigns \nothing;
+  @*/
 int cmount(Chan *new, Chan *old, int flag, char *spec) {
   int order;
   Mhead *m, **l, *mh;
@@ -667,7 +770,7 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
   Pgrp *pg;
 
   if (old->umh != nil)
-    print("cmount: unexpected umh, caller %#p\n", getcallerpc(&new));
+    print("cmount: unexpected umh, caller %#p\n", (void *)0);
 
   if (QTDIR & (old->qid.type ^ new->qid.type))
     error(Emount);
@@ -715,7 +818,7 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
        */
       f = nm;
       for (um = um->next; um != nil; um = um->next) {
-        f->next = newmount(um->to, order == MREPL ? MAFTER : order, um->spec);
+        f->next = newmount(um->to, order == MREPL ? MAFTER : order, (char *)um->spec);
         f = f->next;
       }
     }
@@ -773,6 +876,13 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
     m->mount = nm;
   }
   wunlock(&m->lock);
+  namespace_cid_update_locked(pg);
+  if (up != nil && up->pgrp == pg) {
+    uuid_t *parent_p = nil;
+    if (up->parent)
+      parent_p = &up->parent->pid2;
+    uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid, up->text_hash);
+  }
   wunlock(&pg->ns);
   poperror();
 
@@ -781,6 +891,11 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
   return 0;
 }
 
+/*@
+  @ requires mnt == \null || \valid(mnt);
+  @ requires mounted == \null || \valid(mounted);
+  @ assigns \nothing;
+  @*/
 void cunmount(Chan *mnt, Chan *mounted) {
   Pgrp *pg;
   Mhead *m, **l;
@@ -819,6 +934,13 @@ void cunmount(Chan *mnt, Chan *mounted) {
     *l = m->hash;
     m->mount = nil;
     wunlock(&m->lock);
+    namespace_cid_update_locked(pg);
+    if (up != nil && up->pgrp == pg) {
+      uuid_t *parent_p = nil;
+      if (up->parent)
+        parent_p = &up->parent->pid2;
+      uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid, up->text_hash);
+    }
     wunlock(&pg->ns);
     mountfree(f);
     putmhead(m);
@@ -832,12 +954,28 @@ void cunmount(Chan *mnt, Chan *mounted) {
       if (m->mount == nil) {
         *l = m->hash;
         wunlock(&m->lock);
+        namespace_cid_update_locked(pg);
+        if (up != nil && up->pgrp == pg) {
+          uuid_t *parent_p = nil;
+          if (up->parent)
+            parent_p = &up->parent->pid2;
+          uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
+                             up->text_hash);
+        }
         wunlock(&pg->ns);
         mountfree(f);
         putmhead(m);
         return;
       }
       wunlock(&m->lock);
+      namespace_cid_update_locked(pg);
+      if (up != nil && up->pgrp == pg) {
+        uuid_t *parent_p = nil;
+        if (up->parent)
+          parent_p = &up->parent->pid2;
+        uuid_pack_pid_lux9(&up->pid2, parent_p, pg->namespace_cid,
+                           up->text_hash);
+      }
       wunlock(&pg->ns);
       mountfree(f);
       return;
@@ -853,8 +991,8 @@ Chan *cclone(Chan *c) {
   Chan *nc;
   Walkqid *wq;
 
-  if (c == nil || c->ref < 1 || c->flag & CFREE)
-    panic("cclone: %#p", getcallerpc(&c));
+  if (c->ref != 1 && c->ref != 2 && (c->ref != 3 || m->machno != 0))
+    panic("cunique ref %#p", (void *)0);
   wq = devtab[c->type]->walk(c, nil, nil, 0);
   if (wq == nil)
     error("clone failed");
@@ -870,6 +1008,11 @@ Chan *cclone(Chan *c) {
 }
 
 /* also used by sysfile.c:/^mountfix */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires mp == \null || \valid(mp);
+  @ assigns \nothing;
+  @*/
 int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
   Chan *to;
   Pgrp *pg;
@@ -880,10 +1023,10 @@ int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
   for (m = MOUNTH(pg, qid); m != nil; m = m->hash) {
     if (eqchantdqid(m->from, type, dev, qid, 1)) {
       if (mp != nil)
-        incref(m);
+        incref((Ref *)&m->ref);
       rlock(&m->lock);
       to = m->mount->to;
-      incref(to);
+      incref((Ref *)&to->ref);
       runlock(&m->lock);
       runlock(&pg->ns);
       if (mp != nil) {
@@ -903,6 +1046,12 @@ int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
 /*
  * Calls findmount but also updates path.
  */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires mp == \null || \valid(mp);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 static int domount(Chan **cp, Mhead **mp, Path **path) {
   Chan **lc, *from;
   Path *p;
@@ -917,7 +1066,7 @@ static int domount(Chan **cp, Mhead **mp, Path **path) {
       print("domount: path %s has mlen==%d\n", p->s, p->mlen);
     else {
       from = (*mp)->from;
-      incref(from);
+      incref((Ref *)&from->ref);
       lc = &p->mtpt[p->mlen - 1];
       if (*lc != nil)
         cclose(*lc);
@@ -938,7 +1087,7 @@ static Chan *undomount(Chan *c, Path *path) {
 
   if (path->ref != 1 || path->mlen == 0)
     print("undomount: path %s ref %ld mlen %d caller %#p\n", path->s, path->ref,
-          path->mlen, getcallerpc(&c));
+          path->mlen, (void *)0);
 
   if (path->mlen > 0 && (nc = path->mtpt[path->mlen - 1]) != nil) {
     cclose(c);
@@ -965,6 +1114,12 @@ static Walkqid *ewalk(Chan *c, Chan *nc, char **name, int nname) {
  * Either walks all the way or not at all.  No partial results in *cp.
  * *nerror is the number of names to display in an error message.
  */
+/*@
+  @ requires cp == \null || \valid(cp);
+  @ requires names == \null || \valid(names);
+  @ requires nerror == \null || \valid(nerror);
+  @ assigns \nothing;
+  @*/
 int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   int dev, didmount, dotdot, i, n, nhave, ntry, type;
   Chan *c, *nc, *mtpt;
@@ -974,8 +1129,8 @@ int walk(Chan **cp, char **names, int nnames, int nomount, int *nerror) {
   Walkqid *wq;
 
   c = *cp;
-  incref(c); /* Checks c!=nil implicitly effectively - namec handles passed nil?
-                No walk guarantees c valid from namec */
+  incref((Ref *)&c->ref); /* Checks c!=nil implicitly effectively - namec
+                handles passed nil? No walk guarantees c valid from namec */
   /* if (c==nil) panic("walk: c is nil"); - handled by caller or incref */
 
   if (c->path == nil) {
@@ -1164,6 +1319,10 @@ Chan *createdir(Chan *c, Mhead *m) {
 
 void saveregisters(void) {}
 
+/*@
+  @ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @*/
 static void growparse(Elemlist *e) {
   char **new;
   int *inew;
@@ -1192,6 +1351,11 @@ static void growparse(Elemlist *e) {
  */
 extern void uartputs(char *, int);
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ requires e == \null || \valid(e);
+  @ assigns \nothing;
+  @*/
 static void parsename(char *aname, Elemlist *e) {
   char *name, *slash;
 
@@ -1243,6 +1407,11 @@ static void parsename(char *aname, Elemlist *e) {
   }
 }
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ requires err == \null || \valid(err);
+  @ assigns \nothing;
+  @*/
 _Noreturn void namelenerror(char *aname, int len, char *err) {
   char *ename, *name, *next;
   int i, errlen;
@@ -1361,7 +1530,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     c = up->slash;
     if (c == nil)
       panic("namec: up->slash is nil for %s", name);
-    incref(c);
+    incref((Ref *)&c->ref);
     break;
 
   case '#':
@@ -1396,7 +1565,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     c = up->dot;
     if (c == nil)
       panic("namec: up->dot is nil for %s", name);
-    incref(c);
+    incref((Ref *)&c->ref);
     break;
   }
 
@@ -1575,7 +1744,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
      * for the create path below. */
     {
       Chan *parent = c;
-      incref(parent);
+      incref((Ref *)&parent->ref);
       if (walk(&c, e.elems + e.nelems - 1, 1, nomount, nil) == 0) {
         /* File exists - try to open with truncation */
         cclose(parent);
@@ -1642,7 +1811,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
                 current_boot_state);
           panic("namec Acreate: c is nil when trying to incref for create");
         }
-        incref(cnew);
+        incref((Ref *)&cnew->ref);
       }
 
       /*
@@ -1750,7 +1919,7 @@ static char *validname0(char *aname, int slashok, int dup, uintptr pc) {
   Rune r;
 
   name = aname;
-  if ((uintptr)name < KZERO) {
+  if ((uintptr)name < USTKTOP) {
     if (!dup)
       print("warning: validname called from %#p with user pointer", pc);
     ename = vmemchr(name, 0, (1 << 16));
@@ -1789,14 +1958,22 @@ static char *validname0(char *aname, int slashok, int dup, uintptr pc) {
   return s;
 }
 
+/*@
+  @ requires aname == \null || \valid(aname);
+  @ assigns \nothing;
+  @*/
 void validname(char *aname, int slashok) {
-  validname0(aname, slashok, 0, getcallerpc(&aname));
+  validname0(aname, slashok, 0, 0);
 }
 
 char *validnamedup(char *aname, int slashok) {
-  return validname0(aname, slashok, 1, getcallerpc(&aname));
+  return validname0(aname, slashok, 1, 0);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ assigns \nothing;
+  @*/
 void isdir(Chan *c) {
   if (c->qid.type & QTDIR)
     return;

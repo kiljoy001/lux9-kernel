@@ -1,6 +1,7 @@
 #include <u.h>
 #include <libc.h>
 
+/* ACSL removed */
 int
 utfnlen(char *s, long m)
 {
@@ -10,6 +11,7 @@ utfnlen(char *s, long m)
 	char *es;
 
 	es = s + m;
+	/* ACSL removed */
 	for(n = 0; s < es; n++) {
 		c = *(uchar*)s;
 		if(c < Runeself){

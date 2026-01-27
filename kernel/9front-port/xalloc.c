@@ -4,12 +4,18 @@
 #include "portlib.h"
 #include "u.h"
 
+#include "borrow_enforce.h"
+
+#ifdef __FRAMAC__
+#include "acsl_bounds.h"
+#endif
+
 /* Limine HHDM offset - all physical memory mapped at PA + this offset */
 extern uintptr saved_limine_hhdm_offset;
 int xinit_done = 0;
 
 /* Bootstrap allocation for early boot systems */
-static uchar bootstrap_pool[8192]; /* Simple 8KB bootstrap pool */
+static uchar bootstrap_pool[131072]; /* Increased to 128KB for dynamic hole allocation */
 static ulong bootstrap_offset = 0;
 
 /**
@@ -92,10 +98,10 @@ static void xtrace(const char *fmt, ...) {
  * -------------------------------------------------------------------------
  */
 enum {
-  INITIAL_NHOLE = 128,
-  DYNAMIC_NHOLE = 256,
-  Nhole = INITIAL_NHOLE,  /* static hole descriptor count */
-  Magichole = 0x484F4C45, /* HOLE */
+  INITIAL_NHOLE = 2048,    /* Increased from 512 to handle high page fault load */
+  DYNAMIC_NHOLE = 1024,    /* Increased from 512 for larger batches */
+  Nhole = INITIAL_NHOLE,   /* static hole descriptor count */
+  Magichole = 0x484F4C45,  /* HOLE */
 };
 
 typedef struct Hole Hole;
@@ -112,7 +118,7 @@ struct Hole {
 struct Xhdr {
   ulong size;
   ulong magix;
-  char data[];
+  char data[0];
 };
 
 struct Xalloc {
@@ -212,14 +218,31 @@ void *xspanalloc(ulong size, int align, ulong span) {
   return (void *)v;
 }
 
-void *xallocz(ulong size, int zero) {
+/*@
+  @ requires size < ACSL_MAX_ALLOC;
+  @
+  @ behavior success:
+  @   assumes \exists Hole *h; h->size >= size;
+  @   ensures \result != \null;
+  @   ensures \valid((char *)\result + (0 ..size - 1));
+  @   ensures((uintptr)\result & 7) == 0;
+  @ behavior failure:
+  @   assumes \forall Hole *h; h->size < size;
+  @   ensures \result == \null;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
+  @ terminates \true;
+  @*/
+static void *xalloc_internal(ulong size, int zero, int raw) {
   Xhdr *p;
   Hole *h, **l;
   ulong orig_size = size;
   ulong overhead;
   uintptr addr_check;
 
-  if (size >= 4096)
+  /* DEBUG removed - causes recursion */
+  if (0 && size >= 4096 && boot_verbose)
     xtrace("xallocz start size=%lud zero=%d caller=%#p\n", size, zero,
            getcallerpc(&size));
 
@@ -228,14 +251,15 @@ void *xallocz(ulong size, int zero) {
 
   /* Detect potential overflow when adding header overhead */
   if (size > ~0UL - overhead) {
-    print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size,
-          overhead);
+    /* print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size,
+          overhead); */
     panic("xallocz: request size overflow (size=%lud)", size);
   }
 
   /* Additional check for unreasonably large allocations */
   if (size > 128 * 1024 * 1024) { /* More than 128MB */
-    print("xallocz: unreasonably large allocation request: %lud bytes\n", size);
+    /* print("xallocz: unreasonably large allocation request: %lud bytes\n",
+     * size); */
     panic("xallocz: unreasonably large allocation request (size=%lud)", size);
   }
 
@@ -244,12 +268,14 @@ void *xallocz(ulong size, int zero) {
   size = (size + BY2V - 1) & ~(BY2V - 1); /* FIX: Round UP */
 
   /* Only print for large allocations to reduce verbose output */
-  if (size > 64 * 1024) {
-    xtrace("xallocz: adjusted size %lud bytes\n", size);
+  if (size >= 4096) {
+    // print("xallocz: adjusted size %lud bytes\n", size);
   }
 
+  /* DEBUG: Print before lock attempt */
+  // print("xallocz: locked size=%lud\n", size);
   ilock(&xlists.lk);
-  if (size >= 4096)
+  if (size >= 4096 && boot_verbose)
     xtrace("xallocz: locked size=%lud\n", size);
 
   l = &xlists.table;
@@ -273,8 +299,8 @@ void *xallocz(ulong size, int zero) {
         h->addr = aligned_addr;
         h->size -= waste;
 
-        print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
-              (void *)addr_check, (void *)aligned_addr, waste);
+        /* print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
+              (void *)addr_check, (void *)aligned_addr, waste); */
       }
 
       p = (Xhdr *)h->addr;
@@ -308,28 +334,51 @@ void *xallocz(ulong size, int zero) {
 
       /* TEST 2A: Track allocation success */
       xalloc_successes++;
-      if (size >= 4096)
+      if (size >= 4096 && boot_verbose)
         xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
-      xtrace("xallocz: about to return p->data=%p\n", p->data);
+      if (boot_verbose)
+        xtrace("xallocz: about to return p->data=%p\n", p->data);
+
+      /* Borrow Checker: Acquire kernel ownership of allocated memory (unless
+       * RAW) */
+      if (!raw) {
+        BORROW_ACQUIRE_ALLOC(p->data, size - overhead);
+      }
+
       /* Lock already released at line 294 */
       return p->data;
     }
     l = &h->link;
   }
   iunlock(&xlists.lk);
-  if (size >= 4096)
+  if (size >= 4096 && boot_verbose)
     xtrace("xallocz failure size=%lud\n", size);
 
   /* TEST 2A: Track allocation failure */
   xalloc_failures++;
   xalloc_last_failure_size = orig_size;
-  print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures,
-        orig_size, getcallerpc(&orig_size));
+  /* print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures,
+        orig_size, getcallerpc(&orig_size)); */
   return nil;
 }
 
-void *xalloc(ulong size) { return xallocz(size, 1); }
+void *xallocz(ulong size, int zero) { return xalloc_internal(size, zero, 0); }
 
+void *xallocz_raw(ulong size, int zero) {
+  return xalloc_internal(size, zero, 1);
+}
+
+void *xalloc(ulong size) { return xalloc_internal(size, 1, 0); }
+
+void *xalloc_raw(ulong size) { return xalloc_internal(size, 1, 1); }
+
+/*@
+  @ requires p != \null;
+  @ requires \valid((char *)p - offsetof(Xhdr, data[0]) + (0 ..sizeof(Xhdr) -
+  1));
+  @ assigns xlists;
+  @ terminates \true;
+  @*/
 void xfree(void *p) {
   Xhdr *x;
 
@@ -372,14 +421,11 @@ int xmerge(void *vp, void *vq) {
   return 0;
 }
 
-/* Modern VM-aware xhole system for Limine boot environment
- *
- * API Contract:
- * - Takes a PHYSICAL address and size
- * - Converts to VIRTUAL internally using HHDM mapping
- * - All allocations return virtual addresses in HHDM region
- * - Holes track virtual address ranges after conversion
- */
+/*@
+  @ requires size == 0 || addr + size > addr;
+  @ assigns xlists, xalloc_successes;
+  @ terminates \true;
+  @*/
 void xhole(uintptr addr, uintptr size) {
   Hole *h, *c, **l;
   uintptr top;
@@ -454,11 +500,13 @@ void xhole(uintptr addr, uintptr size) {
     /* ---------------------------------------------------------------
      * If we have exhausted the static free list, allocate a fresh batch
      * of Hole descriptors from the kernel malloc pool.
-     * --------------------------------------------------------------- */
-    Hole *extra = (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
+     * -------------------------------------------------------------- */
+    Hole *extra =
+        (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
     if (extra == nil) {
       iunlock(&xlists.lk);
-      panic("xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
+      panic(
+          "xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
     }
     for (int i = 0; i < DYNAMIC_NHOLE - 1; i++) {
       extra[i].link = &extra[i + 1];
@@ -528,3 +576,8 @@ void xalloc_test(void) {
   print("xalloc_test: freed all allocations\n");
   print("xalloc_test: test completed successfully\n");
 }
+
+/* Standard C library allocator wrappers for WASM3 and other libs */
+/* malloc, free, realloc are provided by alloc.c */
+
+void *calloc(ulong n, ulong size) { return xallocz(n * size, 1); }

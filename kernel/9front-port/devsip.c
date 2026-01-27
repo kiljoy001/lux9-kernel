@@ -1,10 +1,10 @@
 #include "../port/error.h"
-#include "../port/lib.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
 #include "pebble.h"
 #include "u.h"
+#include <lib.h>
 
 /*
  * /dev/sip - Universal Capability-Based Security Manager
@@ -106,6 +106,11 @@ static long sipstat(Chan *c, uchar *dp, long n) {
   return devstat(c, dp, n, nil, 0, sipgen);
 }
 
+/*@ requires \valid(c);
+    requires !(TYPE(c->qid) == Qctl && PID(c->qid) != 0 &&
+               PID(c->qid) != up->pid) ||
+             has_capability(up, PEBBLE_CAP_ADMIN);
+*/
 static Chan *sipopen(Chan *c, int omode) {
   /* Universal CBS: Opening process ctl files requires ADMIN for others'
    * processes */
@@ -121,6 +126,11 @@ static Chan *sipopen(Chan *c, int omode) {
 
 static void sipclose(Chan *c) { USED(c); }
 
+/*@ requires c != \null;
+    requires va != \null;
+    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+*/
 static long sipread(Chan *c, void *va, long n, vlong off) {
   char buf[512];
   int len, pid;
@@ -185,6 +195,11 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
   }
 }
 
+/*@ requires \valid(c);
+    requires va != \null;
+    requires (n > 0 ==> \valid_read((char *)va + (0 .. (integer)n-1))) || (n == 0);
+    assigns \nothing;
+*/
 static long sipwrite(Chan *c, void *va, long n, vlong off) {
   char buf[256];
   char *fields[8];

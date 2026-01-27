@@ -19,6 +19,9 @@ struct KineticState {
   Lock lock;
 } kinetic;
 
+/*@
+  @ assigns \nothing;
+  @*/
 void pow_gate_init(void) {
   /* Initialize with random seed */
   extern void genrandom(uchar * buf, int nbytes);
@@ -36,6 +39,9 @@ void pow_gate_init(void) {
  * Calculate Difficulty Target
  * Returns number of leading zeros required (0-64).
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int pow_calculate_difficulty(int op_class, ulong magnitude) {
   int diff = 0;
   int congestion = MACHP(0)->load / 100; /* Load average */
@@ -43,10 +49,19 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
   /* Base difficulty by operation class */
   switch (op_class) {
   case POW_OP_ALLOC:
-    /* Linear scaling with memory size: 1 bit per 64MB */
+    /* Budget requests: modest base cost + gradual penalty for tiny top-ups */
     if (magnitude < 4096)
-      return 0; /* Free for small allocs */
-    diff = 4 + (magnitude / (64 * 1024 * 1024));
+      magnitude = 4096;
+    diff = 1 + (magnitude / (64 * 1024 * 1024));
+    if (magnitude < (64 * 1024 * 1024)) {
+      ulong bucket = magnitude;
+      int penalty = 0;
+      while (bucket < (64 * 1024 * 1024) && penalty < 6) {
+        penalty++;
+        bucket <<= 1;
+      }
+      diff += penalty;
+    }
     break;
 
   case POW_OP_STACK_ALLOC:
@@ -73,6 +88,18 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
     diff = 16;
     break;
 
+  case POW_OP_MSGORD:
+    /* MsgOrd Consensus Admission
+     * magnitude = Red Message Ratio (0-100)
+     * If DAG is healthy (low red ratio), entry is cheap.
+     * If DAG is contested (high red ratio), entry gets expensive.
+     */
+    if (magnitude <= 10)
+      return 0; /* No PoW required if healthy */
+    
+    diff = 1 + ((magnitude - 10) / 5);
+    break;
+
   default:
     diff = 4;
     break;
@@ -96,6 +123,9 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
  * context: The data being operated on (e.g., ptr address, size)
  * required_diff: Result from pow_calculate_difficulty
  */
+/*@
+  @ assigns \nothing;
+  @*/
 int pow_verify(u64int nonce, u64int context, int required_diff) {
   if (required_diff <= 0)
     return 1;
@@ -136,6 +166,9 @@ int pow_verify(u64int nonce, u64int context, int required_diff) {
  * Rotate the seed to prevent "Long Range Attacks" (Pre-mining)
  * Called by timer interrupt every N seconds.
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void pow_rotate_epoch(void) {
   extern void genrandom(uchar * buf, int nbytes);
   lock(&kinetic.lock);

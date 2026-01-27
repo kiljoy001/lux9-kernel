@@ -167,17 +167,19 @@ Proof.
     (* s2 has two table updates: Unmap sender, Map receiver *)
     (* Unfold outer update (Map receiver) *)
     unfold update_tables in Hmap. simpl in Hmap.
-    destruct (Nat.eqb pid0 r) eqn:Heqr; destruct (Nat.eqb v0 v_new) eqn:Heqv.
+    destruct (Nat.eqb pid0 r) eqn:Heqr; destruct (Nat.eqb v0 v) eqn:Heqv.
     + (* The new mapping for receiver *)
       injection Hmap; intro; subst.
       apply Nat.eqb_eq in Heqv. rewrite Heqv.
-      eapply Nat.le_lt_trans. apply H4. apply Waterline.
+      eapply Nat.le_lt_trans. apply H5. apply Waterline.
     + (* Look at inner update (Unmap sender) *)
       destruct (Nat.eqb pid0 s) eqn:Heqs; destruct (Nat.eqb v0 (data_ptr m)) eqn:Heqd.
       * (* Unmapped *)
         discriminate. (* It was set to None *)
       * (* Unchanged *)
         eapply Hinv; eauto.
+      * destruct (Nat.eqb v0 (data_ptr m)); try discriminate; eapply Hinv; eauto.
+      * destruct (Nat.eqb v0 (data_ptr m)); try discriminate; eapply Hinv; eauto.
     + destruct (Nat.eqb pid0 s); destruct (Nat.eqb v0 (data_ptr m)); try discriminate; eapply Hinv; eauto.
     + destruct (Nat.eqb pid0 s); destruct (Nat.eqb v0 (data_ptr m)); try discriminate; eapply Hinv; eauto.
 Qed.

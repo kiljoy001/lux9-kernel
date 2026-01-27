@@ -6,6 +6,7 @@
 Require Import Coq.Lists.List.
 Require Import Coq.Arith.Arith.
 Require Import Coq.Bool.Bool.
+Require Import Coq.micromega.Lia.
 Require Import Coq.Relations.Relation_Definitions.
 Require Import Coq.Relations.Relation_Operators.
 
@@ -41,20 +42,87 @@ Inductive ancestor (state : MsgordState) : nat -> nat -> Prop :=
   | transitive : forall x y z,
       ancestor state x y -> ancestor state y z -> ancestor state x z.
 
+Lemma ancestor_nodes_eq :
+  forall s1 s2 x y,
+    s1.(nodes) = s2.(nodes) ->
+    ancestor s1 x y ->
+    ancestor s2 x y.
+Proof.
+  intros s1 s2 x y H_nodes H_anc.
+  induction H_anc.
+  - apply direct_parent with (node := node).
+    + rewrite <- H_nodes. exact H.
+    + exact H0.
+  - eapply transitive; eauto.
+Qed.
+
 Definition acyclic (state : MsgordState) : Prop :=
   forall node, In node state.(nodes) -> ~ancestor state node.(msg_id) node.(msg_id).
 
-(* Axiom: Adding a new node with parents from existing nodes and no self-loops preserves acyclicity *)
-Parameter dag_extension_preserves_acyclicity: forall (initial_state new_state : MsgordState) (new_node : DagNode),
-  acyclic initial_state ->
-  new_state.(nodes) = new_node :: initial_state.(nodes) ->
-  (forall parent, In parent new_node.(parents) -> 
-    exists old_node, In old_node initial_state.(nodes) /\ old_node.(msg_id) = parent) ->
-  ~(exists old_node, In old_node initial_state.(nodes) /\ old_node.(msg_id) = new_node.(msg_id)) ->
-  ~In (new_node.(msg_id)) (new_node.(parents)) ->
-  acyclic new_state.
+Lemma no_old_parent_points_to_new_id :
+  forall (old_nodes : list DagNode) (new_id : nat),
+    is_dag {| nodes := old_nodes; k_parameter := 0; genesis_id := 0 |} ->
+    ~(exists old_node, In old_node old_nodes /\ old_node.(msg_id) = new_id) ->
+    forall node parent,
+      In node old_nodes ->
+      In parent node.(parents) ->
+      parent <> new_id.
+Proof.
+  intros old_nodes new_id H_dag H_unique node parent H_in_node H_in_parent H_eq.
+  subst parent.
+  specialize (H_dag node H_in_node new_id H_in_parent).
+  destruct H_dag as [parent_node [H_parent_in [H_parent_id _]]].
+  apply H_unique.
+  exists parent_node. split; [exact H_parent_in | exact H_parent_id].
+Qed.
 
-(* Simplified Theorem using the axiom *)
+Lemma no_ancestor_from_new_id :
+  forall (old_nodes : list DagNode) (new_node : DagNode),
+    is_dag {| nodes := old_nodes; k_parameter := 0; genesis_id := 0 |} ->
+    ~(exists old_node, In old_node old_nodes /\ old_node.(msg_id) = new_node.(msg_id)) ->
+    ~In new_node.(msg_id) new_node.(parents) ->
+    forall y,
+      ~ancestor {| nodes := new_node :: old_nodes; k_parameter := 0; genesis_id := 0 |}
+        new_node.(msg_id) y.
+Proof.
+  intros old_nodes new_node H_dag H_unique H_no_self y H_anc.
+  induction H_anc.
+  - simpl in H.
+    destruct H as [H_is_new | H_is_old].
+    + subst node. simpl in H0.
+      apply H_no_self. exact H0.
+    + eapply no_old_parent_points_to_new_id; eauto.
+  - eapply IHH_anc1; eauto.
+Qed.
+
+Lemma ancestor_excluding_new_id :
+  forall (old_nodes : list DagNode) (new_node : DagNode) x y,
+    is_dag {| nodes := old_nodes; k_parameter := 0; genesis_id := 0 |} ->
+    ~(exists old_node, In old_node old_nodes /\ old_node.(msg_id) = new_node.(msg_id)) ->
+    ~In new_node.(msg_id) new_node.(parents) ->
+    y <> new_node.(msg_id) ->
+    ancestor {| nodes := new_node :: old_nodes; k_parameter := 0; genesis_id := 0 |} x y ->
+    ancestor {| nodes := old_nodes; k_parameter := 0; genesis_id := 0 |} x y.
+Proof.
+  intros old_nodes new_node x y H_dag H_unique H_no_self H_yneq H_anc.
+  induction H_anc.
+  - simpl in H.
+    destruct H as [H_is_new | H_is_old].
+    + subst node.
+      exfalso. apply H_yneq. reflexivity.
+    + apply direct_parent with (node := node); try assumption.
+  - destruct (Nat.eq_dec z new_node.(msg_id)) as [H_eq | H_neq].
+    + exfalso. apply H_yneq. exact H_eq.
+    + destruct (Nat.eq_dec y new_node.(msg_id)) as [H_mid | H_mid].
+      * exfalso.
+        subst y.
+        eapply (no_ancestor_from_new_id old_nodes new_node); eauto.
+      * eapply transitive.
+        -- apply IHH_anc1; try assumption; exact H_mid.
+        -- apply IHH_anc2; try assumption; exact H_neq.
+Qed.
+
+(* Simplified theorem: DAG property is preserved when adding a well-formed node. *)
 Theorem msgord_maintains_dag : forall (initial_state new_state : MsgordState) (new_node : DagNode),
   is_dag initial_state ->
   acyclic initial_state ->
@@ -67,11 +135,10 @@ Theorem msgord_maintains_dag : forall (initial_state new_state : MsgordState) (n
   ~In (new_node.(msg_id)) (new_node.(parents)) ->
   is_dag new_state /\ acyclic new_state.
 Proof.
-  intros initial_state new_state new_node H_initial_dag H_initial_acyclic 
+  intros initial_state new_state new_node H_initial_dag H_initial_acyclic
          H_node_addition H_parents_exist H_unique_id H_no_self_loop.
   split.
-  - (* Prove DAG property maintained *)
-    unfold is_dag.
+  - unfold is_dag.
     intros node H_node_in_new parent H_parent_in_node.
     simpl in H_node_addition.
     rewrite H_node_addition in H_node_in_new.
@@ -87,13 +154,38 @@ Proof.
       destruct H_initial_dag as [parent_node [H_parent_in_old [H_parent_id H_timestamp]]].
       exists parent_node.
       split; [rewrite H_node_addition; right; exact H_parent_in_old | split; [exact H_parent_id | exact H_timestamp]].
-  - (* Prove acyclicity using axiom *)
-    apply dag_extension_preserves_acyclicity with initial_state new_node; try assumption.
-    (* Need to show parents exist without timestamp constraint *)
-    intros parent H_parent.
-    specialize (H_parents_exist parent H_parent).
-    destruct H_parents_exist as [old_node [H_in [H_id H_time]]].
-    exists old_node. split; assumption.
+  - unfold acyclic.
+    intros node H_node_in_new H_cycle.
+    simpl in H_node_addition.
+    rewrite H_node_addition in H_node_in_new.
+    destruct H_node_in_new as [H_is_new | H_is_old].
+    + subst node.
+      set (new_state0 := {| nodes := new_node :: initial_state.(nodes); k_parameter := 0; genesis_id := 0 |}).
+      assert (H_cycle0 : ancestor new_state0 (msg_id new_node) (msg_id new_node)).
+      { apply ancestor_nodes_eq with (s1 := new_state).
+        - rewrite H_node_addition. reflexivity.
+        - exact H_cycle. }
+      pose proof (no_ancestor_from_new_id initial_state.(nodes) new_node
+                    H_initial_dag H_unique_id H_no_self_loop (msg_id new_node)) as H_no.
+      exact (H_no H_cycle0).
+    + apply (H_initial_acyclic node H_is_old).
+      set (new_state0 := {| nodes := new_node :: initial_state.(nodes); k_parameter := 0; genesis_id := 0 |}).
+      set (old_state0 := {| nodes := initial_state.(nodes); k_parameter := 0; genesis_id := 0 |}).
+      assert (H_cycle0 : ancestor new_state0 (msg_id node) (msg_id node)).
+      { apply ancestor_nodes_eq with (s1 := new_state).
+        - rewrite H_node_addition. reflexivity.
+        - exact H_cycle. }
+      assert (H_cycle_old0 : ancestor old_state0 (msg_id node) (msg_id node)).
+      { apply (ancestor_excluding_new_id initial_state.(nodes) new_node (msg_id node) (msg_id node)).
+        - exact H_initial_dag.
+        - exact H_unique_id.
+        - exact H_no_self_loop.
+        - intro H_eq. apply H_unique_id.
+          exists node. split; [exact H_is_old | exact H_eq].
+        - exact H_cycle0. }
+      apply ancestor_nodes_eq with (s1 := old_state0).
+      * reflexivity.
+      * exact H_cycle_old0.
 Qed.
 
 (* k-cluster Definition *)
@@ -124,19 +216,6 @@ Definition valid_coloring (state : MsgordState) : Prop :=
       node.(color) = true  (* BLUE *)
     else
       node.(color) = false. (* RED *)
-
-(* Axiom: MSGORD coloring is well-defined *)
-Parameter msgord_coloring_exists: forall (state : MsgordState),
-  is_dag state -> 
-  exists coloring : nat -> bool, 
-    forall node, In node state.(nodes) -> 
-      valid_coloring {| nodes := map (fun n => 
-        if n.(msg_id) =? node.(msg_id) then 
-          {| msg_id := n.(msg_id); parents := n.(parents); 
-             timestamp := n.(timestamp); color := coloring n.(msg_id) |}
-        else n) state.(nodes);
-        k_parameter := state.(k_parameter);
-        genesis_id := state.(genesis_id) |}.
 
 (* Consensus Safety Property *)
 Definition safety_property (state : MsgordState) : Prop :=
@@ -221,8 +300,18 @@ Definition consensus_complexity (state : MsgordState) (msg_id : nat) : nat :=
   let anticone_size := length (anticone state msg_id) in
   anticone_size * (Nat.log2 (length state.(nodes))).
 
-(* Axiom: log2 is bounded by 8 for values up to 256 *)
-Parameter log2_bound_256: forall n, n <= 256 -> Nat.log2 n <= 8.
+Lemma log2_256 : Nat.log2 256 = 8.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Lemma log2_bound_256 : forall n, n <= 256 -> Nat.log2 n <= 8.
+Proof.
+  intros n Hn.
+  apply Nat.le_trans with (m := Nat.log2 256).
+  - apply Nat.log2_le_mono. exact Hn.
+  - rewrite log2_256. lia.
+Qed.
 
 Theorem msgord_complexity_bound : forall (state : MsgordState) (msg_id : nat),
   length state.(nodes) <= 256 ->
@@ -240,13 +329,6 @@ Proof.
     apply Nat.mul_le_mono_r. exact H_anticone_bound.
 Qed.
 
-(* Axiom: Valid coloring ensures k-cluster property *)
-Parameter coloring_ensures_k_cluster: forall (state : MsgordState),
-  valid_coloring state ->
-  forall blue_msgs,
-    (forall m, In m blue_msgs -> exists n, In n state.(nodes) /\ n.(msg_id) = m /\ n.(color) = true) ->
-    k_cluster state blue_msgs.
-
 (* Main Consensus Correctness Theorem *)
 Theorem msgord_consensus_correct : forall (state : MsgordState),
   is_dag state ->
@@ -254,11 +336,13 @@ Theorem msgord_consensus_correct : forall (state : MsgordState),
   valid_coloring state ->
   state.(k_parameter) >= 1 ->
   length state.(nodes) <= 256 ->
+  (forall blue_msgs,
+    (forall m, In m blue_msgs -> exists n, In n state.(nodes) /\ n.(msg_id) = m /\ n.(color) = true) ->
+    k_cluster state blue_msgs) ->
   safety_property state /\ liveness_property state.
 Proof.
-  intros state H_dag H_acyclic H_coloring H_k_pos H_bounded.
+  intros state H_dag H_acyclic H_coloring H_k_pos H_bounded H_k_cluster.
   split.
   - apply msgord_safety; try assumption.
-    apply coloring_ensures_k_cluster. assumption.
   - apply msgord_liveness; assumption.
 Qed.

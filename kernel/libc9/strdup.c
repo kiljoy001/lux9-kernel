@@ -2,8 +2,27 @@
  * strdup - duplicate a string
  */
 #include "u.h"
+#include "acsl_bounds.h"
 #include "../include/libc.h"
 
+/*@
+  @ requires s == \null || (valid_string(s) && \exists integer n; n >= 0 && s[n] == '\0');
+  @ assigns \nothing;
+  @ behavior null_input:
+  @   assumes s == \null;
+  @   ensures \result == \null;
+  @ behavior valid_input:
+  @   assumes s != \null;
+  @   behavior allocation_success:
+  @     assumes s != \null;
+  @     ensures \result == \null || (
+  @       \valid(\result + (0 .. \strlen(s))) &&
+  @       \forall integer i; 0 <= i <= \strlen(s) ==> \result[i] == s[i] &&
+  @       \strlen(\result) == \strlen(s)
+  @     );
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 char*
 strdup(char *s)
 {

@@ -12,6 +12,7 @@
  *   - RED/BLUE consensus orthogonal to WHITE/BLACK state
  */
 
+#include "csprng_fallback.h"
 #include "dat.h"
 #include "error.h"
 #include "fns.h"
@@ -42,6 +43,7 @@ typedef struct PebbleKernelAlloc {
   ulong size;         /* Size in bytes (8-byte aligned) */
   PebbleWhite *white; /* WHITE token (reservation) */
   int is_black;       /* 0 = WHITE (reserved), 1 = BLACK (used) */
+  int from_branch;    /* 1 = allocated from arena branch, 0 = global pebble */
   uint msgord_id;     /* MSGORD message ID for tracking */
 
   /* List linkage */
@@ -65,6 +67,32 @@ static struct {
   uvlong peak_black;
 } kernel_pebble_stats;
 
+static void pebble_kernel_log_msgord_failure(const char *where, void *ptr,
+                                             ulong size) {
+  uvlong total = 0;
+  uvlong blue = 0;
+  uvlong red = 0;
+
+  print("pebble_kernel_%s: MSGORD submit failed ptr=%p size=%lud\n", where, ptr,
+        size);
+  if (msgord == nil) {
+    print("pebble_kernel_%s: MSGORD unavailable (nil)\n", where);
+    return;
+  }
+
+  msgord_stats(msgord, &total, &blue, &red);
+  print("pebble_kernel_%s: MSGORD id=%d init=%d count=%ud total=%llud "
+        "blue=%llud red=%llud next_id=%ud global_seq=%llud\n",
+        where, msgord->gd_id, msgord->gd_initialized, msgord->gd_count, total,
+        blue, red, msgord->gd_next_id, msgord->gd_global_seq);
+  print("pebble_kernel_%s: pebble reserves=%llud activates=%llud frees=%llud "
+        "white=%llud black=%llud peak_white=%llud peak_black=%llud\n",
+        where, kernel_pebble_stats.total_reserves,
+        kernel_pebble_stats.total_activates, kernel_pebble_stats.total_frees,
+        kernel_pebble_stats.current_white, kernel_pebble_stats.current_black,
+        kernel_pebble_stats.peak_white, kernel_pebble_stats.peak_black);
+}
+
 /*
  * pebble_kernel_reserve - Reserve memory (COLORLESS → WHITE)
  *
@@ -72,12 +100,17 @@ static struct {
  * Memory is reserved but not yet in active use.
  */
 PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
+  /*@
+    @ requires size >= 0;
+    @ ensures \result != \null ==> \result->ptr != \null;
+    @ ensures \result != \null ==> \result->is_black == 0;
+    @*/
   PebbleKernelAlloc *alloc;
   PebbleState *ps;
   void *buf;
   PebbleWhite *white;
   PebbleOp op;
-  uint msg_id;
+  int msg_id;
 
   /* Enforce 8-byte alignment (Pebble quantum) */
   if (size < PEBBLE_MIN_ALLOC)
@@ -97,11 +130,22 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
     error("pebble state not initialized");
   }
 
-  /* Issue WHITE token (reservation) */
-  white = pebble_issue_white(ps, buf, size);
-  if (white == nil) {
-    xfree(buf);
-    error(PEBBLE_E_AGAIN);
+  /* Check if this is a WASM process with an active arena branch */
+  if (up && up->wasm.initialized) {
+    /* Use local arena branch for allocation (lock-free optimization) */
+    if (arena_branch_alloc(&up->wasm.branch, size) < 0) {
+      xfree(buf);
+      error(PEBBLE_E_AGAIN);
+    }
+    white = nil; /* Branch allocations track budget locally, no individual white
+                    tokens */
+  } else {
+    /* Issue WHITE token from global/process bank */
+    white = pebble_issue_white(ps, buf, size);
+    if (white == nil) {
+      xfree(buf);
+      error(PEBBLE_E_AGAIN);
+    }
   }
 
   /* Create allocation tracking structure */
@@ -116,22 +160,29 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   alloc->size = size;
   alloc->white = white;
   alloc->is_black = 0; /* Still WHITE (reserved) */
+  alloc->from_branch = (white == nil);
 
-  /* Track in MSGORD for ordering */
-  op.type = PEBBLE_OP_RESERVE;
-  op.ptr = buf;
-  op.size = size;
-  op.timestamp = fastticks(nil);
+  /* Track in MSGORD for ordering - SKIP during boot when scheduler not ready */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_RESERVE;
+    op.ptr = buf;
+    op.size = size;
+    op.timestamp = fastticks(nil);
 
-  msg_id = msgord_submit_raw(msgord, up, &op, sizeof(op));
-  if (msg_id == 0) {
-    /* MSGORD submission failed, continue anyway */
-    print("pebble_kernel_reserve: MSGORD submit failed\n");
+    msg_id =
+        msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64());
+    if (msg_id < 0) {
+      /* MSGORD submission failed, continue anyway */
+      pebble_kernel_log_msgord_failure("reserve", buf, size);
+      msg_id = 0;
+    }
+  } else {
+    msg_id = 0; /* Boot-time allocation, no MSGORD tracking */
   }
-  alloc->msgord_id = msg_id;
+  alloc->msgord_id = (uint)msg_id;
 
   /* Add to global tracking list */
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
   alloc->next = kernel_allocs_head;
   alloc->prev = nil;
   if (kernel_allocs_head)
@@ -146,7 +197,7 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
   if (kernel_pebble_stats.current_white > kernel_pebble_stats.peak_white)
     kernel_pebble_stats.peak_white = kernel_pebble_stats.current_white;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
   return alloc;
 }
@@ -157,15 +208,19 @@ PebbleKernelAlloc *pebble_kernel_reserve(ulong size) {
  * Transitions reserved memory to active use.
  */
 void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
+  /*@
+    @ requires \valid(alloc);
+    @ ensures alloc->is_black == 1;
+    @*/
   PebbleOp op;
 
   if (alloc == nil)
     error(PEBBLE_E_BADARG);
 
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
 
   if (alloc->is_black) {
-    unlock(&kernel_allocs_lock);
+    iunlock(&kernel_allocs_lock);
     return; /* Already BLACK, idempotent */
   }
 
@@ -179,15 +234,19 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
   if (kernel_pebble_stats.current_black > kernel_pebble_stats.peak_black)
     kernel_pebble_stats.peak_black = kernel_pebble_stats.current_black;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
-  /* Track transition in MSGORD */
-  op.type = PEBBLE_OP_ACTIVATE;
-  op.ptr = alloc->ptr;
-  op.size = alloc->size;
-  op.timestamp = fastticks(nil);
+  /* Track transition in MSGORD - SKIP during boot */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_ACTIVATE;
+    op.ptr = alloc->ptr;
+    op.size = alloc->size;
+    op.timestamp = fastticks(nil);
 
-  msgord_submit_raw(msgord, up, &op, sizeof(op));
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64()) <
+        0)
+      pebble_kernel_log_msgord_failure("activate", alloc->ptr, alloc->size);
+  }
 }
 
 /*
@@ -196,12 +255,15 @@ void pebble_kernel_activate(PebbleKernelAlloc *alloc) {
  * Burns WHITE token and returns memory to system pool.
  */
 void pebble_kernel_free(PebbleKernelAlloc *alloc) {
+  /*@
+    @ requires alloc == \null || \valid(alloc);
+    @*/
   PebbleOp op;
 
   if (alloc == nil)
     return;
 
-  lock(&kernel_allocs_lock);
+  ilock(&kernel_allocs_lock);
 
   /* Remove from tracking list */
   if (alloc->prev)
@@ -221,19 +283,29 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
   else
     kernel_pebble_stats.current_white--;
 
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 
-  /* Track free in MSGORD */
-  op.type = PEBBLE_OP_FREE;
-  op.ptr = alloc->ptr;
-  op.size = alloc->size;
-  op.timestamp = fastticks(nil);
+  /* Track free in MSGORD - SKIP during boot */
+  if (up != nil && msgord != nil) {
+    op.type = PEBBLE_OP_FREE;
+    op.ptr = alloc->ptr;
+    op.size = alloc->size;
+    op.timestamp = fastticks(nil);
 
-  msgord_submit_raw(msgord, up, &op, sizeof(op));
+    if (msgord_submit_raw(msgord, up, &op, sizeof(op), chacha20_csprng_u64()) <
+        0)
+      pebble_kernel_log_msgord_failure("free", alloc->ptr, alloc->size);
+  }
 
-  /* Burn WHITE token */
-  if (alloc->white)
+  /* Burn WHITE token OR return to branch */
+  if (alloc->from_branch) {
+    if (up && up->wasm.initialized) {
+      arena_branch_free(&up->wasm.branch, alloc->size);
+    }
+    /* If WASM process died, branch is already drained, so just free memory */
+  } else if (alloc->white) {
     alloc->white->token = 0;
+  }
 
   /* Return to COLORLESS bank */
   xfree(alloc->ptr);
@@ -246,6 +318,9 @@ void pebble_kernel_free(PebbleKernelAlloc *alloc) {
  * Single-call allocation for common use case.
  */
 void *pebble_kernel_alloc(ulong size) {
+  /*@
+    @ requires size >= 0;
+    @*/
   PebbleKernelAlloc *alloc;
 
   alloc = pebble_kernel_reserve(size);
@@ -259,7 +334,15 @@ void *pebble_kernel_alloc(ulong size) {
  */
 void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
                          uvlong *white, uvlong *black) {
-  lock(&kernel_allocs_lock);
+  /*@
+    @ requires reserves == \null || \valid(reserves);
+    @ requires activates == \null || \valid(activates);
+    @ requires frees == \null || \valid(frees);
+    @ requires white == \null || \valid(white);
+    @ requires black == \null || \valid(black);
+    @ assigns *reserves, *activates, *frees, *white, *black;
+    @*/
+  ilock(&kernel_allocs_lock);
   if (reserves)
     *reserves = kernel_pebble_stats.total_reserves;
   if (activates)
@@ -270,12 +353,57 @@ void pebble_kernel_stats(uvlong *reserves, uvlong *activates, uvlong *frees,
     *white = kernel_pebble_stats.current_white;
   if (black)
     *black = kernel_pebble_stats.current_black;
-  unlock(&kernel_allocs_lock);
+  iunlock(&kernel_allocs_lock);
 }
 
 /*
  * pebble_kernel_init - Initialize kernel Pebble subsystem
  */
+/*
+ * pebble_kernel_free_ptr - Free allocation by pointer (BLACK → COLORLESS)
+ *
+ * Looks up the allocation struct by pointer and frees it.
+ * This is O(N) but required for compatibility with standard malloc/free
+ * interfaces.
+ */
+void pebble_kernel_free_ptr(void *ptr) {
+  PebbleKernelAlloc *curr;
+
+  if (ptr == nil)
+    return;
+
+  ilock(&kernel_allocs_lock);
+  curr = kernel_allocs_head;
+  while (curr) {
+    if (curr->ptr == ptr) {
+      /* Found match, unlock and free (free re-locks, so we must be careful) */
+      /* Actually pebble_kernel_free takes a lock, so we should separate lookup
+         from free to avoid deadlock? pebble_kernel_free takes the lock. We are
+         holding it. We should probably inline the free logic or return the
+         alloc to free outside. Or just duplicate the removal logic here.
+      */
+      break;
+    }
+    curr = curr->next;
+  }
+  iunlock(&kernel_allocs_lock);
+
+  if (curr) {
+    pebble_kernel_free(curr);
+  } else {
+    /* Pointer not found in Pebble list - implies it wasn't allocated by us */
+    /* Fallback to standard free? Or warn? */
+    /* Since we are migrating the pipeline, we assume it should be here. */
+    /* But m3 might mix allocations? Unlikely if we replace m3_Malloc globally.
+     */
+    /* Safest to just return if not found, or panic if strict. */
+    print("pebble_kernel_free_ptr: warning: pointer %p not found in pebble "
+          "list\n",
+          ptr);
+    /* Try legacy free just in case? No, double free risk. */
+  }
+}
+
 void pebble_kernel_init(void) {
   memset(&kernel_pebble_stats, 0, sizeof(kernel_pebble_stats));
   memset(&kernel_allocs_lock, 0, sizeof(Lock));

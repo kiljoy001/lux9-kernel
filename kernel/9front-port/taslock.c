@@ -97,6 +97,7 @@ ilock(Lock *l)
 {
 	int x;
 	uintptr pc;
+	long i = 0;
 
 	pc = getcallerpc(&l);
 
@@ -109,8 +110,13 @@ ilock(Lock *l)
 		 */
 		for(;;){
 			splx(x);
-			while(l->key)
-				;
+			while(l->key){
+				if(i++ > 10000000){
+					i = 0;
+					print("ilock spin lock=%#p holder_pc=%#p holder_pid=%lud caller=%#p\n",
+						l, l->pc, l->p ? l->p->pid : 0, pc);
+				}
+			}
 			x = splhi();
 			if(tas(&l->key) == 0)
 				goto acquire;

@@ -16,6 +16,16 @@ typedef struct Waitmsg Waitmsg;
 #include "fns.h"
 #include "mem.h"
 #include "msgord.h"
+#include "portlib.h"
+#include "siphash.h"
+#include <error.h>
+
+/* Local forward declaration for verification stability */
+/*@ requires name == \null || valid_string(name);
+  @ assigns \result \from name[0 .. ACSL_MAXSTR-1];
+  @ ensures \result == \null || valid_string(\result);
+  @*/
+extern char *getconf(char *name);
 
 /* Global rollback registry */
 RollbackRegistry *global_rollback_registry = nil;
@@ -25,6 +35,11 @@ static Lock registry_lock;
 /*
  * Path Classification Helpers
  */
+/*@
+  @ requires path == \null || \valid(path);
+  @ requires prefix == \null || \valid(prefix);
+  @ assigns \nothing;
+  @*/
 static int path_starts_with(char *path, char *prefix) {
   if (path == nil || prefix == nil)
     return 0;
@@ -34,6 +49,10 @@ static int path_starts_with(char *path, char *prefix) {
 /*
  * Classify operation based on Fcall type
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 static OperationType classify_by_fcall_type(Fcall *t) {
   if (t == nil)
     return OP_TYPE_UNKNOWN;
@@ -79,6 +98,10 @@ static OperationType classify_by_fcall_type(Fcall *t) {
 /*
  * Check if operation is local memory (no consensus needed)
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ assigns \nothing;
+  @*/
 int is_local_memory_operation(Fcall *t) {
   if (t == nil)
     return 0;
@@ -101,6 +124,11 @@ int is_local_memory_operation(Fcall *t) {
 /*
  * Check if operation is IPC between processes
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 int is_ipc_between_processes(Fcall *t, char *path) {
   if (path == nil)
     return 0;
@@ -123,6 +151,11 @@ int is_ipc_between_processes(Fcall *t, char *path) {
 /*
  * Check if operation is device access
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 int is_device_operation(Fcall *t, char *path) {
   USED(t);
   if (path == nil)
@@ -138,6 +171,11 @@ int is_device_operation(Fcall *t, char *path) {
 /*
  * Check if operation is security critical
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 int is_security_critical_operation(Fcall *t, char *path) {
   if (path == nil)
     return 0;
@@ -168,6 +206,11 @@ int is_security_critical_operation(Fcall *t, char *path) {
 /*
  * Get operation type from Fcall and path
  */
+/*@
+  @ requires t == \null || \valid(t);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 OperationType get_operation_type(Fcall *t, char *path) {
   /* Check security first (highest priority) */
   if (is_security_critical_operation(t, path))
@@ -193,9 +236,14 @@ OperationType get_operation_type(Fcall *t, char *path) {
  * Main classification function
  * Determines consensus depth required for operation.
  */
-/*@
+/*
   // Assigns consensus depth per proofs/msgord/msgord_consensus_proofs.v
- @*/
+ */
+/*@
+  @ requires t == \null || \valid(t);
+  @ requires path == \null || \valid(path);
+  @ assigns \nothing;
+  @*/
 ConsensusDepth classify_operation(Fcall *t, char *path) {
   OperationType op_type = get_operation_type(t, path);
 
@@ -238,6 +286,10 @@ ConsensusDepth classify_operation(Fcall *t, char *path) {
  * Rollback Registry Implementation
  */
 
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ assigns \nothing;
+  @*/
 void rollback_registry_init(RollbackRegistry *reg, uint max_entries) {
   if (reg == nil)
     return;
@@ -266,9 +318,9 @@ static OpRollbackEntry *rollback_alloc(void) {
 /*
  * Register optimistic execution for potential rollback
  */
-/*@
+/*
   // Registers optimistic execution per proofs/msgord/msgord_consensus_proofs.v
- @*/
+ */
 OpRollbackEntry *rollback_register(RollbackRegistry *reg, uint op_id,
                                    ConsensusDepth depth, Proc *caller, Fcall *t,
                                    Fcall *r) {
@@ -343,6 +395,11 @@ OpRollbackEntry *rollback_find(RollbackRegistry *reg, uint op_id) {
 /*
  * Remove entry from registry (internal)
  */
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ requires entry == \null || \valid(entry);
+  @ assigns \nothing;
+  @*/
 static void rollback_unlink(RollbackRegistry *reg, OpRollbackEntry *entry) {
   if (entry->prev != nil)
     entry->prev->next = entry->next;
@@ -361,6 +418,10 @@ static void rollback_unlink(RollbackRegistry *reg, OpRollbackEntry *entry) {
 /*
  * Mark operation as verified (commit - no rollback needed)
  */
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ assigns \nothing;
+  @*/
 int rollback_commit(RollbackRegistry *reg, uint op_id) {
   OpRollbackEntry *entry;
 
@@ -392,6 +453,10 @@ int rollback_commit(RollbackRegistry *reg, uint op_id) {
 /*
  * Trigger rollback for failed consensus
  */
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ assigns \nothing;
+  @*/
 int rollback_trigger(RollbackRegistry *reg, uint op_id) {
   OpRollbackEntry *entry;
   int result;
@@ -428,12 +493,16 @@ int rollback_trigger(RollbackRegistry *reg, uint op_id) {
  * Execute rollback for a single entry.
  * Strategy: KILL the process. Consensus failure is treated as fatal.
  */
+/*@
+  @ requires entry == \null || \valid(entry);
+  @ assigns \nothing;
+  @*/
 int rollback_execute(OpRollbackEntry *entry) {
   if (entry == nil)
     return -1;
 
   if (entry->caller != nil) {
-    if(getconf("debug.consensus"))
+    if (getconf("debug.consensus"))
       print("consensus_depth: KILLING pid %lud due to consensus failure\n",
             entry->caller->pid);
 
@@ -451,6 +520,10 @@ int rollback_execute(OpRollbackEntry *entry) {
 /*
  * Clean up completed/committed entries
  */
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ assigns \nothing;
+  @*/
 void rollback_cleanup(RollbackRegistry *reg) {
   OpRollbackEntry *entry, *next;
 
@@ -485,6 +558,11 @@ void register_verify_callback(VerifyCallback cb) { verify_cb = cb; }
 /*
  * Verify all pending operations against their required depth
  */
+/*@
+  @ requires reg == \null || \valid(reg);
+  @ requires dag == \null || \valid(dag);
+  @ assigns \nothing;
+  @*/
 void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
   OpRollbackEntry *entry;
   int confidence;
@@ -539,7 +617,7 @@ void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
       uvlong now = (uvlong)seconds();
       if (now > entry->submit_time + 30) { /* 30 second timeout */
         unlock(&registry_lock);
-        if(getconf("debug.consensus"))
+        if (getconf("debug.consensus"))
           print("consensus_depth: op %ud timed out (depth=%d conf=%d), "
                 "triggering rollback\n",
                 entry->op_id, entry->required_depth, confidence);
@@ -573,7 +651,8 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
     reg = global_rollback_registry;
 
   /* Submit to MSGORD with optimistic execution */
-  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id);
+  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id,
+                                     chacha20_csprng_u64());
   if (result < 0)
     return result;
 
@@ -588,9 +667,12 @@ int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
 /*
  * Module initialization
  */
+/*@
+  @ assigns \nothing;
+  @*/
 void consensus_depth_init(void) {
   rollback_registry_init(&_global_registry, 256);
-  if(getconf("debug.consensus"))
+  if (getconf("debug.consensus"))
     print("consensus_depth: initialized with max_entries=%ud\n",
           _global_registry.max_entries);
 }

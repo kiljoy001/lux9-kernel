@@ -2,7 +2,7 @@
 #
 # Verifies all formal proofs in the kernel
 
-SUBDIRS := ramdisk 9p_router proc pebble borrow blind_ledger capability clr msgord
+SUBDIRS := ramdisk 9p_router proc pebble borrow blind_ledger capability clr msgord mmu allocator pipe env mnt cache
 
 .PHONY: all verify clean stats help $(SUBDIRS) verify-root
 
@@ -19,7 +19,7 @@ verify: $(SUBDIRS) verify-root
 verify-root:
 	@echo ""
 	@echo "Verifying root proofs..."
-	@coqc *.v 2>/dev/null || echo "  ⚠️  Some root proofs failed to compile (ignored for now)"
+	@coqc -R . proofs *.v 2>/dev/null || echo "  ⚠️  Some root proofs failed to compile (ignored for now)"
 
 # Build each subdirectory
 $(SUBDIRS):

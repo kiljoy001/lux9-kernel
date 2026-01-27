@@ -1,7 +1,12 @@
+#ifndef _PORTDAT_H_
+#define _PORTDAT_H_
+
+#include "types_fwd.h"
+#include "uuid.h"
+
 typedef struct Alarms Alarms;
 typedef struct Block Block;
 typedef struct Bpool Bpool;
-typedef struct Chan Chan;
 typedef struct Cmdbuf Cmdbuf;
 typedef struct Cmdtab Cmdtab;
 typedef struct Confmem Confmem;
@@ -30,13 +35,16 @@ typedef struct Perf Perf;
 typedef struct PhysUart PhysUart;
 typedef struct Pgrp Pgrp;
 typedef struct Physseg Physseg;
-typedef struct Proc Proc;
 typedef struct Pte Pte;
 typedef struct PMach PMach;
 typedef struct QLock QLock;
 typedef struct Queue Queue;
+#ifdef __FRAMAC__
+struct Queue {
+  int _frama_dummy;
+};
+#endif
 typedef struct Ref Ref;
-typedef struct Rendez Rendez;
 typedef struct Rendezq Rendezq;
 typedef struct Rgrp Rgrp;
 typedef struct RWLock RWLock;
@@ -77,7 +85,7 @@ typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
 #pragma incomplete Queue
 #pragma incomplete Timers
 
-#include <fcall.h>
+#include "fcall.h"
 
 struct Ref {
   long ref;
@@ -262,7 +270,11 @@ struct Mount {
   Mount *next;
   Mount *order;
   Chan *to; /* channel replacing channel */
+#ifdef __FRAMAC__
+  char spec[128];
+#else
   char spec[];
+#endif
 };
 
 struct Mhead {
@@ -330,14 +342,15 @@ enum {
 
 struct Page {
   long ref;
-  Page *next;    /* Free list or Hash chains */
-  uintptr pa;    /* Physical address in memory */
-  uintptr va;    /* Virtual address for user */
-  uintptr daddr; /* Disc address on swap */
-  Image *image;  /* Associated text or swap image */
-  ushort refage; /* Swap reference age */
-  char modref;   /* Simulated modify/reference bits */
-  char color;    /* Cache coloring */
+  Page *next;       /* Free list or Hash chains */
+  uintptr pa;       /* Physical address in memory */
+  uintptr va;       /* Virtual address for user */
+  uintptr daddr;    /* Disc address on swap */
+  Image *image;     /* Associated text or swap image */
+  ushort refage;    /* Swap reference age */
+  char modref;      /* Simulated modify/reference bits */
+  char color;       /* Cache coloring */
+  char token_color; /* Pebble token color (enum PebbleColor) */
 
 #ifndef inittxtflush
   /* Flush icache bitmap for putmmu() */
@@ -393,6 +406,7 @@ enum {
   SG_CACHED = 0400,  /* Normal cached memory */
   SG_DEVICE = 01000, /* Memory mapped device */
   SG_NOEXEC = 02000, /* No execute */
+  SG_WASM = 04000,   /* WASM-isolated segment */
 };
 
 #define PG_ONSWAP 1
@@ -503,6 +517,14 @@ struct Pgrp {
   RWLock ns;            /* Namespace n read/one write lock */
   u64int notallowed[4]; /* Room for 256 devices */
   Mhead *mnthash[MNTHASH];
+
+  /* Namespace spawn limits - cryptographically bound via identity_hash */
+  u8int identity_hash[16]; /* Blake2b hash of Pgrp for spawn cap binding */
+  u8int namespace_cid[32]; /* Full BLAKE2b hash of Namespace Config
+                              (Mounts+Caps) */
+  Lock spawn_lock;         /* Protect spawn counts */
+  u32int spawn_limit;      /* Max procs allowed in this namespace */
+  u32int spawn_count;      /* Current proc count in namespace */
 };
 
 struct Rgrp {
@@ -521,7 +543,7 @@ struct Evalue {
 };
 
 struct Egrp {
-  long ref;
+  Ref ref;
   RWLock rwlock;
   Evalue **ent;
   int nent;              /* numer of slots in ent[] */
@@ -603,7 +625,20 @@ enum {
 /*
  *  process memory segments - NSEG always last !
  */
-enum { SSEG, TSEG, DSEG, BSEG, ESEG, LSEG, SEG1, SEG2, SEG3, SEG4, NSEG };
+enum {
+  SSEG,
+  TSEG,
+  DSEG,
+  BSEG,
+  ESEG,
+  P9SEG,
+  LSEG,
+  SEG1,
+  SEG2,
+  SEG3,
+  SEG4,
+  NSEG
+};
 
 enum {
   Dead = 0, /* Process states */
@@ -678,6 +713,9 @@ struct Proc {
   char *text;
   char *user;
 
+  uintptr entry_point; /* Entry point for process (ELF e_entry or UTZERO for
+                          a.out) */
+
   char *args;
   int nargs;   /* number of bytes of args */
   int setargs; /* process changed its args */
@@ -691,7 +729,15 @@ struct Proc {
   ushort hdr_checksum; /* CRC-16 of critical fields */
 
   /* 9P Exchange Page for pure 9P architecture */
-  void *p9page; /* Exchange page for 9P messages */
+  void *p9page;       /* DEPRECATED: Fixed exchange page (legacy).
+                       * New code should use exchange_channel via #X device.
+                       * Kept for backwards compatibility with existing doorbell code.
+                       */
+  uvlong p9page_phys; /* physical address of p9page */
+  uintptr p9uaddr;    /* user VA for exchange page (per-process slot) */
+
+  void *exchange_channel; /* ExchangeChannel from #X device (devexchange.c)
+                           * Provides: ring buffer, page pool, capabilities */
 
   /* 9P FID tracking for syscall translation layer */
   u32int fid_counter;     /* Next FID to allocate for this process */
@@ -699,6 +745,7 @@ struct Proc {
   vlong fid_offsets[256]; /* Offset per FID for read/write/seek tracking */
 
   ulong pid;
+  uuid_t pid2;  /* Lux9 Secure ID */
   ulong noteid; /* Equivalent of note group */
   ulong parentpid;
   ulong index;
@@ -755,6 +802,8 @@ struct Proc {
   Proc *palarm;    /* Next alarm time */
   ulong alarm;     /* Time of call */
   int newtlb;      /* Pager has changed my pte's, I must flush */
+
+  Proc *vforkp; /* vfork parent to unblock on exec/exit */
 
   uintptr rendtag; /* Tag for rendezvous */
   uintptr rendval; /* Value for rendezvous */
@@ -845,6 +894,48 @@ struct Proc {
 
   /* Security: Hash of the running binary (Blake2b-512) */
   uchar text_hash[64];
+
+  /* CLR Thread-Local Storage (for managed code LocalDataStore) */
+#define CLR_TLS_SLOTS 64
+  void *clr_tls[CLR_TLS_SLOTS];
+  int clr_tls_next_slot;
+
+  /* WASM execution context (only populated if this is a WASM process)
+   * See ADR_WASM_AS_PROCESSES.md for architecture rationale.
+   * WASM programs run as first-class processes, not separate instances.
+   */
+  struct {
+    int initialized;       /* 1 if this is a WASM process, 0 for native */
+    void *runtime;         /* IM3Runtime - wasm3 runtime for this process */
+    void *module;          /* IM3Module - loaded WASM module */
+    void *env;             /* IM3Environment - per-process wasm3 environment */
+    u8int *linear_memory;  /* WASM linear memory (mapped to seg[LSEG]) */
+    u32int memory_size;    /* Size of linear memory in bytes */
+    u32int memory_pages;   /* Number of 64KB WASM pages */
+    u32int linear_charged; /* Pebble-charged linear memory bytes */
+    u8int *heap_base;      /* WASM runtime heap base (userspace addr) */
+    u32int heap_size;      /* WASM runtime heap size in bytes */
+    u32int heap_used;      /* WASM runtime heap used bytes */
+    void *heap_head;       /* WASM heap block list head */
+    u32int heap_live;      /* WASM heap live bytes (token-backed) */
+    arena_branch_t branch; /* Local Pebble branch bank for this container */
+    void *wasi_ctx;        /* WASI Context (wasi_lux9_shim.h wasi_context_t) */
+    void *module_bytes;    /* Persistent WASM module bytecode */
+    u32int module_bytes_len;
+    u32int permissions; /* Active WASM capability permissions bitmask */
+    void *cap_table;    /* Capability handle table (wasm_cap_table_t) */
+  } wasm;
+
+  /* Spawn Capability - UUIDv8-based process creation control.
+   * Uses CAP_TYPE_SPAWN capability token with child limit. */
+  uuid_t spawn_cap; /* UUIDv8 spawn capability (null = no spawn rights) */
+  u32int spawn_max_children; /* Maximum children this process can spawn */
+  u32int spawn_children;     /* Current number of children spawned */
+
+  /* Init Hardening: Binary binding for spawn.
+   * If non-zero, this process can ONLY exec binaries matching this hash.
+   * Used to ensure init can only spawn resurrection server. */
+  u8int spawn_bound_binary[64]; /* Blake2b-512 of allowed binary (0 = any) */
 } __attribute__((aligned(64)));
 
 enum {
@@ -1068,10 +1159,12 @@ enum {
 
 #define DEVDOTDOT -1
 
+
 #pragma varargck type "I" uchar *
 #pragma varargck type "V" uchar *
 #pragma varargck type "E" uchar *
 #pragma varargck type "M" uchar *
+
 
 /*
  * Log console output so it can be retrieved via /dev/kmesg.
@@ -1084,3 +1177,5 @@ struct Kmesg {
 };
 
 extern struct Kmesg kmesg;
+
+ /* _PORTDAT_H_ */

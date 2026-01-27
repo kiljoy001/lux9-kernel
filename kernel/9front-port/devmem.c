@@ -41,6 +41,9 @@ enum {
  * MMIO address validation
  * Prevents access to kernel memory and enforces valid device ranges
  */
+/*@
+  @ assigns \nothing;
+  @*/
 static int isvalidmmio(uintptr pa, usize len) {
   uintptr end;
 
@@ -84,6 +87,9 @@ static int isvalidmmio(uintptr pa, usize len) {
 /*
  * Check if process has required capability
  */
+/*@
+  @ assigns \nothing;
+  @*/
 static void checkcap(ulong required) {
   if (up == nil)
     return; /* kernel processes have full access */
@@ -98,6 +104,11 @@ static Walkqid *memwalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, memdir, nelem(memdir), devgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static int memstat(Chan *c, uchar *dp, int n) {
   return devstat(c, dp, n, memdir, nelem(memdir), devgen);
 }
@@ -119,6 +130,11 @@ static Chan *memopen(Chan *c, int omode) {
 
 static void memclose(Chan *c) { USED(c); }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long memread(Chan *c, void *va, long n, vlong off) {
   uintptr pa;
   uchar *a;
@@ -183,6 +199,11 @@ static long memread(Chan *c, void *va, long n, vlong off) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long memwrite(Chan *c, void *va, long n, vlong off) {
   uintptr pa;
   uchar *a;

@@ -3,6 +3,7 @@
 
 static char qsep[] = " \t\r\n";
 
+/* ACSL removed */
 static char*
 qtoken(char *s, char *sep)
 {
@@ -11,6 +12,7 @@ qtoken(char *s, char *sep)
 
 	quoting = 0;
 	t = s;	/* s is output string, t is input string */
+	/* ACSL removed */
 	while(*t!='\0' && (quoting || utfrune(sep, *t)==nil)){
 		if(*t != '\''){
 			*s++ = *t++;
@@ -41,6 +43,7 @@ qtoken(char *s, char *sep)
 	return t;
 }
 
+/* ACSL removed */
 static char*
 etoken(char *t, char *sep)
 {
@@ -48,6 +51,7 @@ etoken(char *t, char *sep)
 
 	/* move to end of next token */
 	quoting = 0;
+	/* ACSL removed */
 	while(*t!='\0' && (quoting || utfrune(sep, *t)==nil)){
 		if(*t != '\''){
 			t++;
@@ -72,12 +76,15 @@ etoken(char *t, char *sep)
 	return t;
 }
 
+/* ACSL removed */
 int
 gettokens(char *s, char **args, int maxargs, char *sep)
 {
 	int nargs;
 
+	/* ACSL removed */
 	for(nargs=0; nargs<maxargs; nargs++){
+		/* ACSL removed */
 		while(*s!='\0' && utfrune(sep, *s)!=nil)
 			*s++ = '\0';
 		if(*s == '\0')
@@ -89,12 +96,15 @@ gettokens(char *s, char **args, int maxargs, char *sep)
 	return nargs;
 }
 
+/* ACSL removed */
 int
 tokenize(char *s, char **args, int maxargs)
 {
 	int nargs;
 
+	/* ACSL removed */
 	for(nargs=0; nargs<maxargs; nargs++){
+		/* ACSL removed */
 		while(*s!='\0' && utfrune(qsep, *s)!=nil)
 			s++;
 		if(*s == '\0')

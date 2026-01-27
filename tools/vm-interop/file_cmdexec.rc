@@ -1,0 +1,25 @@
+#!/bin/rc
+# Simple file-based command executor for 9front
+# Watches /n/vminterop/cmd.txt and writes output to /n/vminterop/out.txt
+
+cmdfile=/n/vminterop/cmd.txt
+outfile=/n/vminterop/out.txt
+
+echo 'File cmdexec: watching' $cmdfile
+
+while(sleep 1){
+    if(test -f $cmdfile && test -s $cmdfile){
+        cmd=`{cat $cmdfile}
+        if(! ~ $#cmd 0){
+            echo 'Executing:' $cmd
+
+            # Execute and save output
+            eval $cmd >$outfile >[2=1]
+
+            # Clear command file
+            >$cmdfile
+
+            echo 'Output written to' $outfile
+        }
+    }
+}

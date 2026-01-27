@@ -39,10 +39,15 @@ char *proc_state_names[PS_COUNT] = {
  */
 
 /* Guard: mach must be nil (not on any CPU) */
-/*@
+/*
   // Implements check_mach_cleared per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_mach_nil(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->mach == \null;
+    @ assigns \nothing;
+    @*/
   if (p->mach != nil) {
     *reason = "mach must be nil";
     return 0;
@@ -51,10 +56,15 @@ static int guard_mach_nil(Proc *p, const char **reason) {
 }
 
 /* Guard: mach must be set (on a CPU) */
-/*@
+/*
   // Implements check_mach_set per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_mach_set(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->mach != \null;
+    @ assigns \nothing;
+    @*/
   if (p->mach == nil) {
     *reason = "mach must be set";
     return 0;
@@ -63,10 +73,15 @@ static int guard_mach_set(Proc *p, const char **reason) {
 }
 
 /* Guard: r (rendezvous) must be nil - THE CRITICAL FIX */
-/*@
+/*
   // Implements check_rendezvous_cleared per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_r_nil(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->r == \null;
+    @ assigns \nothing;
+    @*/
   if (p->r != nil) {
     *reason = "p->r must be nil before wakeup";
     return 0;
@@ -75,10 +90,15 @@ static int guard_r_nil(Proc *p, const char **reason) {
 }
 
 /* Guard: r (rendezvous) must be set for sleep */
-/*@
+/*
   // Implements check_rendezvous_set per proofs/proc/proc_state_dag.v
- @*/
+ */
 static int guard_r_set(Proc *p, const char **reason) {
+  /*@
+    @ requires \valid(p);
+    @ ensures \result == 1 ==> p->r != \null;
+    @ assigns \nothing;
+    @*/
   if (p->r == nil) {
     *reason = "p->r must be set for sleep";
     return 0;
@@ -127,6 +147,10 @@ static ProcTransition fsm_transitions[] = {
     /* Debug/Stop */
     {PS_Running, EV_STOP, PS_Stopped, nil},
     {PS_Stopped, EV_CONT, PS_Ready, nil},
+
+    /* vfork Synchronization (RFMEM) */
+    {PS_Running, EV_VFORK, PS_Waitrelease, nil},
+    {PS_Waitrelease, EV_VFORK_DONE, PS_Ready, nil},
 
     /* Exit */
     {PS_Running, EV_EXIT, PS_Moribund, nil},
@@ -193,10 +217,15 @@ static ProcTransition *fsm_find(int from_state, int event) {
  *
  * Returns new state on success, panics on invalid transition.
  */
-/*@
+/*
   // Enforces valid_transition per proofs/proc/proc_state_dag.v
- @*/
+ */
 int proc_event(Proc *p, int event) {
+  /*@
+    @ requires \valid(p);
+    @ ensures p->state == \result;
+    @ assigns p->state_trace, p->state, p->hdr_checksum;
+    @*/
   int current;
   ProcTransition *t;
   const char *reason;

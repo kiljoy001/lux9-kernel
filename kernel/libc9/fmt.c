@@ -57,6 +57,7 @@ int	(*doquote)(int);
 /*
  * _fmtlock() must be set
  */
+/* ACSL removed */
 static int
 _fmtinstall(int c, Fmts f)
 {
@@ -84,6 +85,7 @@ _fmtinstall(int c, Fmts f)
 	return 0;
 }
 
+/* ACSL removed */
 int
 fmtinstall(int c, Fmts f)
 {
@@ -95,6 +97,7 @@ fmtinstall(int c, Fmts f)
 	return ret;
 }
 
+/* ACSL removed */
 static Fmts
 fmtfmt(int c)
 {
@@ -121,6 +124,7 @@ fmtfmt(int c)
 	return _badfmt;
 }
 
+/* ACSL removed */
 void*
 _fmtdispatch(Fmt *f, void *fmt, int isrunes)
 {

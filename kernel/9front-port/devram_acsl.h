@@ -53,7 +53,7 @@
   @   lock_encryption_invariant(rd) &&
   @   init_key_invariant(rd) &&
   @   refcount_invariant(rd);
-  @*/
+  */
 
 /**
  * Secure Wipe Specification
@@ -63,7 +63,7 @@
   @ requires size > 0;
   @ ensures \forall integer i; 0 <= i < size ==> data[i] == 0;
   @ assigns data[0..size-1];
-  @*/
+  */
 extern void secure_wipe(uchar *data, ulong size);
 
 /**
@@ -79,7 +79,7 @@ extern void secure_wipe(uchar *data, ulong size);
   @ ensures \forall integer i; 0 <= i < 24 ==> nonce_is_fresh(data + i);
   @ ensures \forall integer i; 24 <= i < data_size ==> data[i] != \old(data[i]);
   @ assigns data[0..data_size-1];
-  @*/
+  */
 extern void xchacha20_encrypt_with_fresh_nonce(uchar *data, ulong data_size, uchar *key);
 
 /**
@@ -92,7 +92,7 @@ extern void xchacha20_encrypt_with_fresh_nonce(uchar *data, ulong data_size, uch
   @ ensures \forall integer i; 24 <= i < data_size ==>
   @   data[i] == /* decrypted value based on stored nonce */;
   @ assigns data[24..data_size-1];
-  @*/
+  */
 extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uchar *key);
 
 /**
@@ -107,7 +107,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @ ensures is_locked(&secure_rd);  // BUG #3 FIX
   @ ensures system_invariant(&secure_rd);
   @ assigns secure_rd.initialized, secure_rd.locked, secure_rd.master_key[0..31];
-  @*/
+  */
 // extern void handle_init_command(const char *password);
 
 /**
@@ -123,7 +123,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @ ensures is_unlocked(&secure_rd);
   @ ensures system_invariant(&secure_rd);
   @ assigns secure_rd.locked, secure_rd.data[0..secure_rd.size-1];
-  @*/
+  */
 // extern void handle_unlock_command(const char *password);
 
 /**
@@ -138,7 +138,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @ ensures is_encrypted(&secure_rd);
   @ ensures system_invariant(&secure_rd);
   @ assigns secure_rd.locked, secure_rd.data[0..secure_rd.size-1];
-  @*/
+  */
 // extern void handle_lock_command(void);
 
 /**
@@ -151,7 +151,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @ ensures secure_rd.refcount == \old(secure_rd.refcount) + 1;
   @ ensures refcount_invariant(&secure_rd);
   @ assigns secure_rd.refcount;
-  @*/
+  */
 // extern Chan *ramopen(Chan *c, int omode);
 
 /**
@@ -166,7 +166,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @ ensures (secure_rd.refcount == 0 && is_locked(&secure_rd)) ==>
   @   \forall integer i; 0 <= i < secure_rd.size ==> secure_rd.data[i] == 0;
   @ assigns secure_rd.refcount, secure_rd.data[0..secure_rd.size-1];
-  @*/
+  */
 // extern void ramclose(Chan *c);
 
 /**
@@ -190,7 +190,7 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @     \forall uchar *buf;
   @       \valid(buf);  // Simplified
   @ }
-  @*/
+  */
 
 /**
  * Concurrency Safety (QLock)
@@ -201,16 +201,16 @@ extern void xchacha20_decrypt_with_stored_nonce(uchar *data, ulong data_size, uc
   @
   @ predicate lock_free(QLock *lock) =
   @   \true;  // Abstract: lock is not held
-  @*/
+  */
 
 /*@ requires lock_free(&secure_rd.lock);
   @ ensures lock_held(&secure_rd.lock);
-  @*/
+  */
 extern void qlock(QLock *lock);
 
 /*@ requires lock_held(&secure_rd.lock);
   @ ensures lock_free(&secure_rd.lock);
-  @*/
+  */
 extern void qunlock(QLock *lock);
 
 /**
@@ -237,7 +237,7 @@ extern void qunlock(QLock *lock);
   @ ensures nonce_generation_counter == \old(nonce_generation_counter) + 1;
   @ ensures nonce_is_fresh(nonce);
   @ assigns nonce_generation_counter;
-  @*/
+  */
 // extern void ghost_generate_nonce(uchar *nonce);
 
 #endif /* DEVRAM_ACSL_H */

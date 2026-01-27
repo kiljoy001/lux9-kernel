@@ -1,8 +1,0 @@
-DIGEST c991675b2942e78e9dab8ad78b3bcae4
-Fproofs.capability_derivation
-R94:123 proofs.capability.PermsBitmask <> <> lib
-R141:173 proofs.capability.CapabilityModel <> <> lib
-R191:223 proofs.capability.DerivationChain <> <> lib
-R241:270 proofs.capability.Decidability <> <> lib
-R288:322 proofs.capability.ChainDecidability <> <> lib
-R340:373 proofs.capability.LedgerInvariants <> <> lib

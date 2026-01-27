@@ -100,6 +100,10 @@ static DagEntry *get_entry(GhostDAG *dag, ushort idx) {
   return &dag->window[idx];
 }
 
+/*@
+  @ requires dag == \null || \valid(dag);
+  @ assigns \nothing;
+  @*/
 static int is_ancestor(GhostDAG *dag, ushort a_idx, ushort b_idx) {
   DagEntry *b;
   int i;
@@ -120,10 +124,18 @@ static int is_ancestor(GhostDAG *dag, ushort a_idx, ushort b_idx) {
   return 0;
 }
 
+/*@
+  @ requires dag == \null || \valid(dag);
+  @ assigns \nothing;
+  @*/
 static int in_anticone(GhostDAG *dag, ushort a_idx, ushort b_idx) {
   return !is_ancestor(dag, a_idx, b_idx) && !is_ancestor(dag, b_idx, a_idx);
 }
 
+/*@
+  @ requires dag == \null || \valid(dag);
+  @ assigns \nothing;
+  @*/
 static int blue_anticone_count(GhostDAG *dag, ushort entry_idx) {
   int count = 0, i;
   ushort other_idx;
@@ -143,6 +155,10 @@ static int blue_anticone_count(GhostDAG *dag, ushort entry_idx) {
   return count;
 }
 
+/*@
+  @ requires dag == \null || \valid(dag);
+  @ assigns \nothing;
+  @*/
 static GhostColor determine_color(GhostDAG *dag, ushort entry_idx) {
   DagEntry *entry = get_entry(dag, entry_idx);
   int blue_ac;
@@ -176,6 +192,11 @@ static GhostColor determine_color(GhostDAG *dag, ushort entry_idx) {
   return GHOSTDAG_BLUE;
 }
 
+/*@
+  @ requires dag == \null || \valid(dag);
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 static void domain_init(GhostDAG *dag, char *name) {
   memset(dag, 0, sizeof(GhostDAG));
   strncpy(dag->name, name, sizeof(dag->name) - 1);
@@ -197,6 +218,9 @@ static void domain_init(GhostDAG *dag, char *name) {
   dag->tips_count = 1;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void consensus_init(void) {
   if (consensus_initialized)
     return;
@@ -207,6 +231,10 @@ static void consensus_init(void) {
   consensus_initialized = 1;
 }
 
+/*@
+  @ requires data == \null || \valid(data);
+  @ assigns \nothing;
+  @*/
 static uvlong consensus_submit(uchar subsystem_id, void *data, uint len) {
   GhostDAG *dag = &default_domain;
   DagEntry *entry;
@@ -290,6 +318,10 @@ static uvlong consensus_submit(uchar subsystem_id, void *data, uint len) {
   return order;
 }
 
+/*@
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static int consensus_read_ordered(void *buf, uint len) {
   GhostDAG *dag = &default_domain;
   DagEntry *entry;
@@ -370,6 +402,9 @@ static Dirtab domainfiles[] = {
     "order", {Qorder},         0, 0444,         "status", {Qstatus}, 0, 0444,
 };
 
+/*@
+  @ assigns \nothing;
+  @*/
 static void consensusinit(void) {
   consensus_init();
   print("consensus: initialized with k=%d\n", default_domain.k_param);
@@ -455,6 +490,11 @@ static Walkqid *consensuswalk(Chan *c, Chan *nc, char **name, int nname) {
   return devwalk(c, nc, name, nname, nil, 0, consensusgen);
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 static long consensusstat(Chan *c, uchar *dp, long n) {
   return devstat(c, dp, n, nil, 0, consensusgen);
 }
@@ -465,6 +505,11 @@ static Chan *consensusopen(Chan *c, int omode) {
 
 static void consensusclose(Chan *c) { USED(c); }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires buf == \null || \valid(buf);
+  @ assigns \nothing;
+  @*/
 static long consensusread(Chan *c, void *buf, long n, vlong off) {
   char status_buf[256];
   GhostDAG *dag = &default_domain;
@@ -496,6 +541,11 @@ static long consensusread(Chan *c, void *buf, long n, vlong off) {
   return 0;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static long consensuswrite(Chan *c, void *va, long n, vlong off) {
   char cmd[64];
   uvlong order;

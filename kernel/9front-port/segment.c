@@ -2,6 +2,7 @@
 #include "fns.h"
 #include "lock_borrow.h"
 #include "mem.h"
+#include "pebble.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -73,6 +74,9 @@ Image *newimage(ulong pages) {
   return i;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void initseg(void) {
   int i;
   Physseg *ps, *prev_ps;
@@ -170,6 +174,10 @@ Segment *newseg(int type, uintptr base, ulong size) {
   return s;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void putseg(Segment *s) {
   Image *i;
 
@@ -283,13 +291,40 @@ static Pte *ptecpy(Pte *new, Pte *old) {
       continue;
     if (onswap(entry))
       dupswap(entry);
-    else
-      incref(entry);
+    else {
+      /* Borrow Checker Integration for Shared Pages (SG_TEXT) */
+      /* Child borrows the page as SHARED & IMMUTABLE */
+      /* Parent retains ownership but cannot write while borrowed */
+      entry->token_color = PEBBLE_COLOR_RED; /* Mark shared */
+      incref((Ref *)&entry->ref);
+
+      /* Enforce READ-ONLY for shared borrow */
+      /* Note: We don't have direct PTE bits here, but we pass entry.
+         The caller (dupseg) ensures types are correct. */
+
+      /* Transition BLACK → RED when page becomes shared */
+      if (entry->token_color == PEBBLE_COLOR_BLACK) {
+        entry->token_color = PEBBLE_COLOR_RED;
+        if (up != nil) {
+          lock(&pebble_global_lock);
+          up->pebble.black_inuse -= BY2PG;
+          up->pebble.red_inuse += BY2PG;
+          unlock(&pebble_global_lock);
+        }
+      }
+
+      /* TODO: Borrowchecker integration - need to find correct API */
+      /* Borrowchecker state should transition EXCLUSIVE → SHARED_OWNED */
+      /* This requires exposing the right interfaces from borrowchecker.c */
+    }
     new->last = dst;
     *dst = entry;
   }
   return new;
 }
+
+/* Deep copy a PTE - used for fork to enforce private memory (since COW is
+ * broken) */
 
 Segment *dupseg(Segment **seg, int segno, int share) {
   int i;
@@ -312,6 +347,9 @@ Segment *dupseg(Segment **seg, int segno, int share) {
     goto sameseg;
 
   case SG_STACK:
+    /* Explicitly check share flag for stack/data/bss */
+    if (share)
+      goto sameseg;
     n = newseg(s->type, s->base, s->size);
     break;
 
@@ -334,7 +372,8 @@ Segment *dupseg(Segment **seg, int segno, int share) {
     n->image = s->image;
     n->fstart = s->fstart;
     n->flen = s->flen;
-    incref((Ref *)&s->image->ref);
+    if (s->image != nil)
+      incref((Ref *)&s->image->ref);
     break;
   }
   for (i = 0; i < s->mapsize; i++) {
@@ -346,15 +385,35 @@ Segment *dupseg(Segment **seg, int segno, int share) {
         putseg(n);
         error(Enomem);
       }
-      n->map[i] = ptecpy(pte, s->map[i]);
-      print("dupseg assign: src=%p dst=%p idx=%d pte=%p\n", s, n, i, n->map[i]);
+      /* STRICT ISOLATION:
+       * Only SG_TEXT (Code) allows shared borrowing.
+       * SG_STACK, SG_DATA, SG_BSS must NOT be copied or shared.
+       * Child gets FRESH (empty) segments for these to ensure isolation.
+       */
+      if (s->type == SG_TEXT) {
+        /* Shared Code Pattern: Borrow Checker allows sharing immutable code */
+        /* Use Copy-on-Write (Reference Copy) semantics */
+        n->map[i] = ptecpy(pte, s->map[i]);
+      } else {
+        /* Mutable Data Pattern: NO COPYING allowed.
+         * Child starts with FRESH, ZEROED state.
+         * Do not copy PTEs. Child will fault and alloc new pages on demand.
+         */
+        /* n->map[i] = ptecpy(pte, s->map[i]); - DISABLED */
+        free(pte); /* Free the unused PTE table allocated above */
+        n->map[i] = nil;
+      }
     }
   }
   n->used = s->used;
   n->swapped = s->swapped;
   n->flushme = s->flushme;
-  if (s->ref > 1)
-    procflushseg(s);
+  /* DISABLED: procflushseg() destroys parent's entire page table via mmuzap(),
+   * breaking exchange page and code segment. COW should be handled via
+   * flushme flag and page fault mechanism, not TLB destruction.
+   * if (s->ref > 1)
+   *   procflushseg(s);
+   */
   qunlock(&s->qlock);
   poperror();
   return n;
@@ -370,6 +429,10 @@ sameseg:
   return s;
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 static int user_perms(Segment *s) {
   int flags = PTEVALID | PTEUSER;
   if (s->type & SG_STACK)
@@ -385,6 +448,11 @@ static int user_perms(Segment *s) {
  *  segpage inserts Page p into Segmnet s.
  *  on error, calls putpage() on p.
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void segpage(Segment *s, Page *p) {
   Pte **pte, *etp;
   uintptr soff;
@@ -423,6 +491,10 @@ void segpage(Segment *s, Page *p) {
   userpmap(p->va, p->pa, user_perms(s));
 }
 
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void relocateseg(Segment *s, uintptr offset) {
   Pte **pte, **emap;
   Page **pg, **pe;
@@ -496,12 +568,16 @@ found:
   lock(i);
   if (i->c == nil) {
     i->c = c;
-    incref(c);
+    incref((Ref *)&c->ref);
   }
   return i;
 }
 
 /* remove from idle list */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 static void busyimage(Image *i) {
   /* not on idle list? */
   if (i->link == nil)
@@ -518,6 +594,10 @@ static void busyimage(Image *i) {
 }
 
 /* insert into idle list */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 static void idleimage(Image *i) {
   Image **l, *j;
 
@@ -547,6 +627,10 @@ static void idleimage(Image *i) {
 }
 
 /* putimage(): called with image locked and unlocks */
+/*@
+  @ requires i == \null || \valid(i);
+  @ assigns \nothing;
+  @*/
 void putimage(Image *i) {
   Chan *c;
   long r;
@@ -597,6 +681,9 @@ void putimage(Image *i) {
 
 ulong imagecached(void) { return imagealloc.pgidle; }
 
+/*@
+  @ assigns \nothing;
+  @*/
 ulong imagereclaim(ulong pages) {
   ulong np;
   Image *i;
@@ -629,9 +716,12 @@ ulong imagereclaim(ulong pages) {
   return np;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr ibrk(uintptr addr, int seg) {
   Segment *s, *ns;
-  uintptr newtop;
+  uintptr newtop, oldtop;
   ulong newsize;
   int i, mapsize;
   Pte **map;
@@ -655,6 +745,7 @@ uintptr ibrk(uintptr addr, int seg) {
   }
 
   newtop = PGROUND(addr);
+  oldtop = s->top;
   newsize = (newtop - s->base) / BY2PG;
   if (newtop < s->top) {
     /*
@@ -672,6 +763,25 @@ uintptr ibrk(uintptr addr, int seg) {
     qunlock(&s->qlock);
     flushmmu();
     return 0;
+  }
+
+  /*
+   * Pebble: Check budget for segment growth BEFORE growing (userspace only).
+   * TCB processes (kp == 1) are exempt to prevent circular dependencies.
+   * Budget is in tokens; 1 token = PEBBLE_BYTES_PER_TOKEN bytes.
+   */
+  if (up != nil && up->kp == 0 && newtop > oldtop) {
+    ulong growth_bytes = newtop - oldtop;
+    ulong tokens_needed =
+        (growth_bytes + PEBBLE_BYTES_PER_TOKEN - 1) / PEBBLE_BYTES_PER_TOKEN;
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < tokens_needed) {
+      unlock(&pebble_global_lock);
+      qunlock(&s->qlock);
+      error(Enovmem);
+    }
+    up->pebble.colorless_bank -= tokens_needed;
+    unlock(&pebble_global_lock);
   }
 
   for (i = 0; i < NSEG; i++) {
@@ -701,9 +811,9 @@ uintptr ibrk(uintptr addr, int seg) {
     s->map = map;
     s->mapsize = mapsize;
   }
-
   s->top = newtop;
   s->size = newsize;
+
   qunlock(&s->qlock);
   return 0;
 }
@@ -717,6 +827,10 @@ uintptr ibrk(uintptr addr, int seg) {
  *  flushing its own TBL by calling flushmmu()
  *  afterwards.
  */
+/*@
+  @ requires s == \null || \valid(s);
+  @ assigns \nothing;
+  @*/
 void mfreeseg(Segment *s, uintptr start, ulong pages) {
   uintptr off;
   Pte **pte, **emap;
@@ -850,6 +964,10 @@ Physseg *findphysseg(char *name) {
  * Remove a Physseg entry from the doubly-linked list
  * Note: This doesn't free the entry itself - caller must do that
  */
+/*@
+  @ requires entry == \null || \valid(entry);
+  @ assigns \nothing;
+  @*/
 static void removephysseg(Physseg *entry) {
   if (entry == nil)
     return;
@@ -868,6 +986,10 @@ static void removephysseg(Physseg *entry) {
   entry->next = nil;
 }
 
+/*@
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
 uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
   int sno;
   Segment *s, *os;
@@ -951,6 +1073,20 @@ uintptr segattach(int attr, char *name, uintptr va, uintptr len) {
   /* Copy in defaults */
   attr |= ps->attr;
 
+  /* Pebble: Consume budget for segment attachment (userspace only).
+   * TCB processes (kp == 1) are exempt to prevent circular dependencies. */
+  if (up != nil && up->kp == 0) {
+    ulong tokens_needed =
+        (len + PEBBLE_BYTES_PER_TOKEN - 1) / PEBBLE_BYTES_PER_TOKEN;
+    lock(&pebble_global_lock);
+    if (up->pebble.colorless_bank < tokens_needed) {
+      unlock(&pebble_global_lock);
+      error(Enovmem);
+    }
+    up->pebble.colorless_bank -= tokens_needed;
+    unlock(&pebble_global_lock);
+  }
+
   s = newseg(attr, va, len / BY2PG);
   s->pseg = ps;
   up->seg[sno] = s;
@@ -961,6 +1097,10 @@ done:
   return va;
 }
 
+/*@
+  @ requires va == \null || \valid(va);
+  @ assigns \nothing;
+  @*/
 static void segflush(void *va, uintptr len) {
   uintptr from, to, off;
   Segment *s;
@@ -1006,6 +1146,9 @@ static void segflush(void *va, uintptr len) {
   }
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 uintptr syssegflush(va_list list) {
   void *va;
   ulong len;
@@ -1017,6 +1160,9 @@ uintptr syssegflush(va_list list) {
   return 0;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void segclock(uintptr pc) {
   Segment *s;
 
@@ -1033,6 +1179,8 @@ void segclock(uintptr pc) {
 Segment *txt2data(Segment *s) {
   Segment *ps;
 
+  print("txt2data: called by pid %d on seg %p image %p\n", up ? up->pid : -1, s,
+        s->image);
   ps = newseg(SG_DATA, s->base, s->size);
   ps->image = s->image;
   ps->fstart = s->fstart;
@@ -1079,12 +1227,20 @@ enum {
   Cdie,
 };
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static int cmddone(void *arg) {
   Segio *sio = arg;
 
   return sio->cmd == Cnone;
 }
 
+/*@
+  @ requires sio == \null || \valid(sio);
+  @ assigns \nothing;
+  @*/
 static void docmd(Segio *sio, int cmd) {
   sio->err = nil;
   sio->cmd = cmd;
@@ -1097,12 +1253,20 @@ static void docmd(Segio *sio, int cmd) {
     error(sio->err);
 }
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static int cmdready(void *arg) {
   Segio *sio = arg;
 
   return sio->cmd != Cnone;
 }
 
+/*@
+  @ requires arg == \null || \valid(arg);
+  @ assigns \nothing;
+  @*/
 static void segmentioproc(void *arg) {
   Segio *sio = arg;
   int done;
@@ -1158,6 +1322,12 @@ static void segmentioproc(void *arg) {
   pexit("done", 1);
 }
 
+/*@
+  @ requires sio == \null || \valid(sio);
+  @ requires s == \null || \valid(s);
+  @ requires a == \null || \valid(a);
+  @ assigns \nothing;
+  @*/
 long segio(Segio *sio, Segment *s, void *a, long n, vlong off, int read) {
   uintptr m;
   void *b;

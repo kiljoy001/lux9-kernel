@@ -149,6 +149,53 @@ The boot sequence is fairly straightforward, mostly focused on setting up the re
 4.  **Registration**: Once the scan is done, it calls `family_register(FAMILY_PCI, ...)` to plug the PCI subsystem into the generic HAL.
 5.  **Channel Manager**: Finally, `setup_pci_channel_manager` runs to initialize the allocators. Now the system is ready to hand out Channel IDs to processes that ask for them.
 
+### 5.1 Console Output Evolution During Boot
+
+The Lux9 kernel implements a sophisticated console output evolution during the boot sequence, transitioning from basic UART to full framebuffer console. This evolution ensures reliable output throughout all boot phases.
+
+![Console Evolution](../console_evolution.svg)
+
+**Key Evolution Stages:**
+
+1. **UART Console (Earliest Boot)**
+   - **Function**: `i8250console()` (line 593 in `main.c`)
+   - **Output**: `uartputs("TEST: main() started\n", 21)` (line 594)
+   - **Characteristics**: 
+     - Polled I/O at 115200 baud
+     - Reliable before memory setup
+     - Character-by-character output
+     - Used in `mach0init()`, `i8250console()`, early boot logging
+
+2. **Serial Console (Buffered Output)**
+   - **Function**: `bootargsinit()` (lines 27-126 in `boot.c`)
+   - **Output**: `uartputs("bootargsinit: cmdline found: ", 31)` (line 61)
+   - **Characteristics**:
+     - UART interrupts enabled
+     - Ring buffer support
+     - Interrupt-driven I/O
+     - Higher throughput than polled mode
+
+3. **Framebuffer Console (High-Speed Output)**
+   - **Function**: `bootscreeninit()` → `fbconsoleinit()` (lines 304-311 in `main.c`)
+   - **Transition**: `console_ready = 1` (line 309)
+   - **Characteristics**:
+     - Direct framebuffer access
+     - DMA acceleration
+     - Pixel-perfect output
+     - Rich text formatting
+
+4. **Full Console System**
+   - **Smart Boot Logging**: `boot_log()` function (lines 86-100 in `main.c`)
+   - **Auto-Switching**: Automatically selects UART vs `print()` based on `console_ready` flag
+   - **Seamless Transition**: Preserves all output during console evolution
+
+**Console Ready State Machine:**
+- `console_ready = 0`: Only UART output available (`uartputs`)
+- `console_ready = 1`: Framebuffer + `print()` available
+- `boot_log()` automatically handles the transition
+
+This evolution ensures that debug output is never lost, even during the critical early boot phases when only UART is available.
+
 ---
 
 ## 6. Formal Verification (Coq)

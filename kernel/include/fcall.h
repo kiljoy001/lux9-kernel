@@ -1,8 +1,13 @@
 #ifndef _FCALL_H_
 #define _FCALL_H_
 
+#include "portlib.h"
+#include "u.h"
+
+#ifndef __FRAMAC__
 #pragma src "/sys/src/libc/9sys"
 #pragma lib "libc.a"
+#endif
 
 #define VERSION9P "9P2000"
 
@@ -58,6 +63,42 @@ typedef struct Fcall {
       ushort nstat; /* Twstat, Rstat */
       uchar *stat;  /* Twstat, Rstat */
     };
+    struct {
+      u32int scallnr; /* Tsyscall */
+      u32int sflags;  /* Tsyscall flags/category */
+      uchar *sdata;   /* Tsyscall, Rsyscall */
+      u32int scount;  /* Tsyscall, Rsyscall */
+      u64int retval;  /* Rsyscall */
+    };
+    /* Tsys* message fields */
+    struct {
+      u32int flags; /* Tsysfork (rfork flags), Tsysbind, Tsysmount */
+      u32int pid;   /* Rsysfork, Rsyswait */
+    };
+    struct {
+      char *path;  /* Tsysexec - executable path */
+      char **argv; /* Tsysexec - argument array */
+      u32int argc; /* Tsysexec - argument count */
+      char
+          *args[MAXWELEM]; /* Tsysexec - workspace for deserialized arguments */
+    };
+    struct {
+      u64int addr; /* Tsysbrk, Rsysbrk - memory address */
+    };
+    struct {
+      char *oldpath; /* Tsysbind, Tsysmount, Tsysunmount - old path */
+      u32int fd;     /* Tsysmount - file descriptor */
+    };
+    struct {
+      u32int fid0; /* Rsyspipe - first pipe fid */
+      u32int fid1; /* Rsyspipe - second pipe fid */
+    };
+    struct {
+      int whence; /* Tsysseek - seek type (SEEK_SET, etc.) */
+    };
+    struct {
+      u64int handler; /* Tsysnotify - notification handler address */
+    };
   };
 } Fcall;
 
@@ -75,30 +116,30 @@ typedef struct Fcall {
 
 #define PBIT8(p, v)                                                            \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
   } while (0)
 #define PBIT16(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
   } while (0)
 #define PBIT32(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
-    (p)[2] = (v) >> 16;                                                        \
-    (p)[3] = (v) >> 24;                                                        \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
+    ((uchar *)(p))[2] = (uchar)((v) >> 16);                                    \
+    ((uchar *)(p))[3] = (uchar)((v) >> 24);                                    \
   } while (0)
 #define PBIT64(p, v)                                                           \
   do {                                                                         \
-    (p)[0] = (v);                                                              \
-    (p)[1] = (v) >> 8;                                                         \
-    (p)[2] = (v) >> 16;                                                        \
-    (p)[3] = (v) >> 24;                                                        \
-    (p)[4] = (v) >> 32;                                                        \
-    (p)[5] = (v) >> 40;                                                        \
-    (p)[6] = (v) >> 48;                                                        \
-    (p)[7] = (v) >> 56;                                                        \
+    ((uchar *)(p))[0] = (uchar)(v);                                            \
+    ((uchar *)(p))[1] = (uchar)((v) >> 8);                                     \
+    ((uchar *)(p))[2] = (uchar)((v) >> 16);                                    \
+    ((uchar *)(p))[3] = (uchar)((v) >> 24);                                    \
+    ((uchar *)(p))[4] = (uchar)((v) >> 32);                                    \
+    ((uchar *)(p))[5] = (uchar)((v) >> 40);                                    \
+    ((uchar *)(p))[6] = (uchar)((v) >> 48);                                    \
+    ((uchar *)(p))[7] = (uchar)((v) >> 56);                                    \
   } while (0)
 
 #define BIT8SZ 1
@@ -151,6 +192,83 @@ enum {
   /* Lux9 custom message types */
   Texec = 128,
   Rexec,
+
+  /* Lux9 syscall message types - for pure 9P message passing */
+  /* Generic Syscall Message: Tsyscall (130) - kept for backwards compatibility
+   */
+  Tsyscall = 130,
+  Rsyscall,
+
+  /* Specific syscall wrappers - provide syscall-like semantics over 9P */
+  /* I/O Operations */
+  Tsysopen = 132, /* open(path, mode) -> fid */
+  Rsysopen,
+  Tsyscreate = 134, /* create(path, perm, mode) -> fid */
+  Rsyscreate,
+  Tsysread = 136, /* read(fid, offset, count) -> data */
+  Rsysread,
+  Tsyswrite = 138, /* write(fid, offset, data) -> count */
+  Rsyswrite,
+  Tsysclose = 140, /* close(fid) */
+  Rsysclose,
+  Tsyspread = 142, /* pread(fid, offset, count) -> data */
+  Rsyspread,
+  Tsyspwrite = 144, /* pwrite(fid, offset, data) -> count */
+  Rsyspwrite,
+  Tsysremove = 146, /* remove(path) */
+  Rsysremove,
+
+  /* File Info Operations */
+  Tsysstat = 148, /* stat(path) -> Dir */
+  Rsysstat,
+  Tsysfstat = 150, /* fstat(fid) -> Dir */
+  Rsysfstat,
+  Tsyswstat = 152, /* wstat(path, Dir) */
+  Rsyswstat,
+  Tsysfwstat = 154, /* fwstat(fid, Dir) */
+  Rsysfwstat,
+
+  /* Process Control */
+  Tsysfork = 160, /* rfork(flags) -> pid */
+  Rsysfork,
+  Tsysexec = 162, /* exec(path, argv) */
+  Rsysexec,
+  Tsysexit = 164, /* exits(status) */
+  Rsysexit,
+  Tsyswait = 166, /* wait() -> Waitmsg */
+  Rsyswait,
+  Tsysbrk = 168, /* brk(addr) -> addr */
+  Rsysbrk,
+  Tsyssleep = 170, /* sleep(millisecs) */
+  Rsyssleep,
+
+  /* Namespace Operations */
+  Tsysbind = 180, /* bind(name, old, flags) */
+  Rsysbind,
+  Tsysmount = 182, /* mount(fd, afd, old, flags, aname) */
+  Rsysmount,
+  Tsysunmount = 184, /* unmount(name, old) */
+  Rsysunmount,
+  Tsyschdir = 186, /* chdir(path) */
+  Rsyschdir,
+
+  /* FD Operations */
+  Tsysdup = 190, /* dup(oldfd, newfd) -> fid */
+  Rsysdup,
+  Tsyspipe = 192, /* pipe(fd[2]) -> fid[2] */
+  Rsyspipe,
+  Tsysfd2path = 194, /* fd2path(fid) -> path */
+  Rsysfd2path,
+
+  /* Misc Operations */
+  Tsysseek = 200, /* seek(fid, offset, type) -> offset */
+  Rsysseek,
+  Tsysnotify = 202, /* notify(handler) */
+  Rsysnotify,
+  Tsysalarm = 204, /* alarm(millisecs) -> previous */
+  Rsysalarm,
+
+  Tsysmax,
 };
 
 uint convM2S(uchar *, uint, Fcall *);
@@ -168,8 +286,47 @@ int dirmodefmt(Fmt *);
 
 int read9pmsg(int, void *, uint);
 
+#ifndef __FRAMAC__
 #pragma varargck type "F" Fcall *
 #pragma varargck type "M" ulong
 #pragma varargck type "D" Dir *
+#endif
+
+/* Syscall Numbers */
+enum {
+  SYS_OPEN = 1,
+  SYS_CLOSE,
+  SYS_READ,
+  SYS_WRITE,
+  SYS_PREAD,
+  SYS_PWRITE,
+  SYS_CREATE,
+  SYS_REMOVE = 25,
+  SYS_EXIT,
+  SYS_FORK,
+  SYS_STAT,
+  SYS_WSTAT,
+  SYS_RFORK = 19,
+  SYS_PIPE = 21,
+  SYS_SEEK = 39,
+  SYS_MOUNT = 46,
+  SYS_NSEC = 53,
+  SYS_BRK = 55,
+  SYS_PEBBLE_ALLOC = 59,
+  SYS_PEBBLE_FREE = 60,
+  SYS_PEBBLE_INCREASE_BUDGET = 61,
+  SYS_WASM_COMPILE = 160,
+  SYS_WASM_EXECUTE = 161,
+  SYS_WASM_DESTROY = 162,
+  SYS_GETPID2 = 66,
+  SYS_EXCHANGE_ALLOC = 67,
+  SYS_EXCHANGE_FREE = 68,
+  SYS_EXCHANGE_PUBLISH = 69,
+  SYS_EXCHANGE_SUBSCRIBE = 70,
+  SYS_EXCHANGE_UNSUBSCRIBE = 71,
+  SYS_EXCHANGE_RECEIVE = 72,
+  SYS_WAIT = 166
+
+};
 
 #endif /* _FCALL_H_ */

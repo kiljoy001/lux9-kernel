@@ -15,6 +15,10 @@ extern void uartputs(char *, int);
 
 #define MALLOC_TRACE_THRESHOLD (4 * 1024)
 
+/*@
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 static void malloctrace(const char *fmt, ...) {
   va_list v;
   char buf[128];
@@ -37,11 +41,19 @@ static Private pmainpriv;
  * Pebble Arena Allocator: Backs Main/Image/Secret pools.
  * Acquires a Black Token for the entire arena.
  */
-#include <pebble.h> /* For Pebble definitions */
+#include "pageown.h" /* For borrow checker registration */
+#include <pebble.h>  /* For Pebble definitions */
 
-static void *pebble_arena_alloc(ulong size) {
+/*
+ * xalloc_driver: Pebble-aware allocator for drivers.
+ * Charges the allocation against the current process's Pebble budget.
+ * Returns zeroed memory.
+ */
+void *xalloc_driver(ulong size) {
   UserCapability cap;
   void *addr;
+  PebbleWhite *white;
+  PebbleState *ps;
 
   /*
    * Early-boot bypass: Before the first process (up) exists, Pebble
@@ -49,31 +61,119 @@ static void *pebble_arena_alloc(ulong size) {
    * Use raw xalloc for initial pool arena allocations.
    */
   if (up == nil) {
-    return xalloc(size);
+    return xallocz_raw(size, 1);
   }
 
-  /* 1. Allocate a Pebble Black Token */
-  if (pebble_black_alloc(size, &cap) < 0) {
+  ps = pebble_state();
+  if (ps == nil)
     return nil;
-  }
 
-  /* 2. Retrieve the confirmed physical address */
-  addr = pebble_get_black_addr(&cap);
+  /* 1. Reserve budget (WHITE token) */
+  white = pebble_issue_white(ps, nil, size);
+  if (white == nil)
+    return nil;
 
-  /* 3. Verify address is valid */
+  /* 2. Allocate RAW memory (breaks recursion loop) */
+  addr = xallocz_raw(size, 1);
   if (addr == nil) {
+    pebble_return_white(ps, white);
     return nil;
+  }
+
+  /* 3. Bind and Verify WHITE */
+  white->data_ptr = addr;
+  void *black_handle;
+  if (pebble_white_verify(white, &black_handle) != 0) {
+    /* Verification failed - cleanup resources */
+    xfree(addr);
+    pebble_return_white(ps, white);
+    return nil;
+  }
+
+  /* 4. Convert to BLACK token */
+  if (pebble_black_alloc(white, addr, size, &cap) < 0) {
+    /* pebble_black_alloc frees buf on error if it fails later steps?
+     * Checking pebble_black_alloc implementation:
+     * It calls borrow_release and xfree on error.
+     * So we just return nil.
+     */
+    return nil;
+  }
+
+  /* 5. Register with borrow checker (after userspace init only)
+   * This tracks all pool allocations for memory safety verification.
+   * Only done after BOOT_USERINIT (state 18) when borrow checker is active.
+   */
+  extern int current_boot_state;
+  if (current_boot_state >= 18) {
+    extern uintptr saved_limine_hhdm_offset;
+    /* Register each page in the allocation */
+    uintptr pa = PADDR(addr);
+    uintptr end_pa = pa + size;
+      /*@ loop invariant 0 <= page_pa <= end_pa;
+    @ loop assigns page_pa;
+    @ loop variant end_pa - page_pa;
+    @*/
+  for (uintptr page_pa = pa & ~(BY2PG - 1); page_pa < end_pa;
+         page_pa += BY2PG) {
+      uintptr hhdm_va = page_pa + saved_limine_hhdm_offset;
+      /* Don't panic on failure - page may already be tracked by another
+       * allocation */
+      pageown_acquire(up, page_pa, hhdm_va);
+    }
   }
 
   return addr;
 }
 
+void *xallocz_driver(ulong size, int zero) {
+  /* xalloc_driver always zeroes, so we ignore 'zero' param for now or assert
+   * it's 1 */
+  return xalloc_driver(size);
+}
+
+void *smalloc_driver(ulong size) { return xalloc_driver(size); }
+
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
+void xfree_driver(void *p) {
+  PebbleState *ps;
+  PebbleBlack *pb;
+
+  if (p == nil)
+    return;
+
+  if (up == nil) {
+    xfree(p);
+    return;
+  }
+
+  ps = pebble_state();
+  if (ps == nil) {
+    xfree(p);
+    return;
+  }
+
+  pb = pebble_lookup_black_by_addr(ps, p);
+  if (pb != nil) {
+    pebble_black_free(&pb->capability);
+  } else {
+    /* Fallback for untracked allocations (e.g. early boot leftovers) */
+    xfree(p);
+  }
+}
+
+/* pebble_arena_alloc is now xalloc_driver */
+static void *pebble_arena_alloc(ulong size) { return xalloc_driver(size); }
+
 static Pool pmainmem = {
     .name = "Main",
-    .maxsize = 4 * 1024 * 1024,
+    .maxsize = 32 * 1024 * 1024,
     .minarena = 128 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = POOL_TOLERANCE,
 
@@ -88,10 +188,10 @@ static Pool pmainmem = {
 static Private pimagpriv;
 static Pool pimagmem = {
     .name = "Image",
-    .maxsize = 16 * 1024 * 1024,
+    .maxsize = 64 * 1024 * 1024,
     .minarena = 2 * 1024 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = 0,
 
@@ -109,7 +209,7 @@ static Pool psecrmem = {
     .maxsize = 16 * 1024 * 1024,
     .minarena = 64 * 1024,
     .quantum = 32,
-    .alloc = pebble_arena_alloc, /* PEBBLE BACKED */
+    .alloc = xalloc, /* REVERTED TO xalloc FOR DEBUGGING */
     .merge = xmerge,
     .flags = POOL_ANTAGONISM,
 
@@ -133,10 +233,10 @@ Pool *secrmem = &psecrmem;
 static Private pmetapriv;
 static Pool pmetamem = {
     .name = "Meta",
-    .maxsize = 4 * 1024 * 1024,
+    .maxsize = 16 * 1024 * 1024,
     .minarena = 4096,
     .quantum = 32,
-    .alloc = xalloc, /* RAW BACKING */
+    .alloc = xalloc_raw, /* RAW BACKING - No Borrow Checker tracking */
     .merge = xmerge,
     .flags = 0,
 
@@ -149,6 +249,9 @@ static Pool pmetamem = {
 };
 Pool *metamem = &pmetamem;
 
+/*@
+  @ assigns \nothing;
+  @*/
 int checkmainmemlockkey(void) {
   Private *pv = &pmainpriv;
   return pv->lk.key;
@@ -158,6 +261,11 @@ int checkmainmemlockkey(void) {
  * because we can't print while we're holding the locks,
  * we have the save the message and print it once we let go.
  */
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 static void poolprint(Pool *p, char *fmt, ...) {
   va_list v;
   Private *pv;
@@ -168,6 +276,11 @@ static void poolprint(Pool *p, char *fmt, ...) {
   va_end(v);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ requires fmt == \null || \valid(fmt);
+  @ assigns \nothing;
+  @*/
 static void ppanic(Pool *p, char *fmt, ...) {
   va_list v;
   Private *pv;
@@ -182,6 +295,10 @@ static void ppanic(Pool *p, char *fmt, ...) {
   panic("%s", msg);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void plock(Pool *p) {
   Private *pv;
 
@@ -191,6 +308,10 @@ static void plock(Pool *p) {
   pv->msg[0] = 0;
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 static void punlock(Pool *p) {
   Private *pv;
   char msg[sizeof pv->msg];
@@ -205,12 +326,19 @@ static void punlock(Pool *p) {
   iunlock(&pv->lk);
 }
 
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 void poolsummary(Pool *p) {
   print("%s max %llud cur %llud free %llud alloc %llud\n", p->name,
         (uvlong)p->maxsize, (uvlong)p->cursize, (uvlong)p->curfree,
         (uvlong)p->curalloc);
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 void mallocsummary(void) {
   poolsummary(mainmem);
   poolsummary(imagmem);
@@ -319,6 +447,10 @@ void *mallocalign(ulong size, ulong align, long offset, ulong span) {
   return v;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void free(void *v) {
   if (v != nil)
     poolfree(mainmem, (ulong *)v - Npadlong);
@@ -341,6 +473,10 @@ void *realloc(void *v, ulong size) {
   return nv;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 ulong msize(void *v) {
   return poolmsize(mainmem, (ulong *)v - Npadlong) - Npadlong * sizeof(ulong);
 }
@@ -364,6 +500,10 @@ void *secalloc(ulong size) {
   return v;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void secfree(void *v) {
   if (v != nil)
     poolfree(secrmem, (ulong *)v - Npadlong);
@@ -391,11 +531,19 @@ void *pebble_meta_alloc(ulong size) {
   return v;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void pebble_meta_free(void *v) {
   if (v != nil)
     poolfree(metamem, (ulong *)v - Npadlong);
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void setmalloctag(void *v, uintptr pc) {
   USED(v, pc);
   if (Npadlong <= MallocOffset || v == nil)
@@ -403,6 +551,10 @@ void setmalloctag(void *v, uintptr pc) {
   ((ulong *)v)[-Npadlong + MallocOffset] = (ulong)pc;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 void setrealloctag(void *v, uintptr pc) {
   USED(v, pc);
   if (Npadlong <= ReallocOffset || v == nil)
@@ -410,6 +562,10 @@ void setrealloctag(void *v, uintptr pc) {
   ((ulong *)v)[-Npadlong + ReallocOffset] = (ulong)pc;
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 uintptr getmalloctag(void *v) {
   USED(v);
   if (Npadlong <= MallocOffset)
@@ -417,6 +573,10 @@ uintptr getmalloctag(void *v) {
   return (int)((ulong *)v)[-Npadlong + MallocOffset];
 }
 
+/*@
+  @ requires v == \null || \valid(v);
+  @ assigns \nothing;
+  @*/
 uintptr getrealloctag(void *v) {
   USED(v);
   if (Npadlong <= ReallocOffset)

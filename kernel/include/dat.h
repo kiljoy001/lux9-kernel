@@ -3,6 +3,7 @@
 /* Include base types and architecture constants first */
 #include "mem.h"
 #include "portlib.h"
+#include "types_fwd.h"
 #include "u.h"
 
 typedef struct Conf Conf;
@@ -14,19 +15,15 @@ typedef struct FPsave FPsave;
 typedef struct PFPU PFPU;
 typedef struct ISAConf ISAConf;
 typedef struct Label Label;
-typedef struct Lock Lock;
 typedef struct MMU MMU;
-typedef struct Mach Mach;
 typedef struct PCArch PCArch;
 typedef struct Pcidev Pcidev;
 typedef struct PCMmap PCMmap;
 typedef struct PCMslot PCMslot;
 typedef struct Page Page;
 typedef struct PMMU PMMU;
-typedef struct Proc Proc;
 typedef struct Segdesc Segdesc;
 typedef vlong Tval;
-typedef struct Ureg Ureg;
 typedef struct Vctl Vctl;
 
 #pragma incomplete Pcidev
@@ -40,6 +37,8 @@ typedef struct Vctl Vctl;
 #define AOUT_MAGIC (S_MAGIC)
 
 #include "lock.h"
+
+/* For Frama-C: don't alias bprint to print to avoid declaration conflicts */
 
 struct Label {
   uintptr sp;  /* offset 0 */
@@ -179,10 +178,11 @@ struct Mach {
   Proc *proc;    /* current process on this processor */
 
   /* PMach fields */
-  Proc *readied;    /* for runproc */
-  Label sched;      /* scheduler wakeup */
-  ulong ticks;      /* of the clock since boot time */
-  ulong schedticks; /* next forced context switch */
+  uintptr rbx_restore; /* scratch for saving user RBX during syscallentry */
+  Proc *readied;       /* for runproc */
+  Label sched;         /* scheduler wakeup */
+  ulong ticks;         /* of the clock since boot time */
+  ulong schedticks;    /* next forced context switch */
   int pfault;
   int cs;
   int syscall;
@@ -225,9 +225,9 @@ struct Mach {
   int fpstate; /* FPU state for interrupts */
   FPalloc *fpsave;
 
-  u64int *pml4; /* pml4 base for this processor (va) */
-  Tss *tss;     /* tss for this processor */
-  Segdesc *gdt; /* gdt for this processor */
+  uintptr *pml4; /* pml4 base for this processor (va) */
+  Tss *tss;      /* tss for this processor */
+  Segdesc *gdt;  /* gdt for this processor */
 
   u64int dr7; /* shadow copy of dr7 */
   u64int xcr0;

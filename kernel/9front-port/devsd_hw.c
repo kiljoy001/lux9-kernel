@@ -109,6 +109,9 @@ static int ahci_ready(ulong base, int timeout);
 static int ide_ready(int cmdport, int ctlport, int timeout);
 
 /* AHCI hardware functions */
+/*@
+  @ assigns \nothing;
+  @*/
 static int ahci_port_ready(ulong port_base, int timeout) 
 {
 	int i;
@@ -121,6 +124,10 @@ static int ahci_port_ready(ulong port_base, int timeout)
 	return -1;
 }
 
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 static int ahci_build_command(ulong port_base, int write, ulong lba, void *buffer, int sector_count)
 {
 	uchar *cfis;
@@ -151,6 +158,10 @@ static int ahci_build_command(ulong port_base, int write, ulong lba, void *buffe
 }
 
 /* Real AHCI sector read function */
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 int ahci_read_sector(ulong controller_base, int port, ulong lba, void *buffer)
 {
 	ulong port_base;
@@ -221,6 +232,10 @@ int ahci_read_sector(ulong controller_base, int port, ulong lba, void *buffer)
 }
 
 /* Real AHCI sector write function */
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 int ahci_write_sector(ulong controller_base, int port, ulong lba, void *buffer)
 {
 	ulong port_base;
@@ -286,6 +301,9 @@ int ahci_write_sector(ulong controller_base, int port, ulong lba, void *buffer)
 }
 
 /* IDE hardware functions */
+/*@
+  @ assigns \nothing;
+  @*/
 static int ide_ready(int cmdport, int ctlport, int timeout)
 {
 	int i;
@@ -301,6 +319,10 @@ static int ide_ready(int cmdport, int ctlport, int timeout)
 }
 
 /* Real IDE sector read function */
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 int ide_read_sector(int cmdport, int ctlport, int device, ulong lba, void *buffer)
 {
 	int i;
@@ -380,6 +402,10 @@ int ide_read_sector(int cmdport, int ctlport, int device, ulong lba, void *buffe
 }
 
 /* Real IDE sector write function */
+/*@
+  @ requires buffer == \null || \valid(buffer);
+  @ assigns \nothing;
+  @*/
 int ide_write_sector(int cmdport, int ctlport, int device, ulong lba, void *buffer)
 {
 	int i;
@@ -455,6 +481,9 @@ int ide_write_sector(int cmdport, int ctlport, int device, ulong lba, void *buff
 }
 
 /* Controller detection */
+/*@
+  @ assigns \nothing;
+  @*/
 int detect_ahci_controllers(void)
 {
 	Pcidev *p;
@@ -481,6 +510,9 @@ int detect_ahci_controllers(void)
 	return count;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 int detect_ide_controllers(void)
 {
 	Pcidev *p;

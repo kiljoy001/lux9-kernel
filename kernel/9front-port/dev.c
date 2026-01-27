@@ -2,17 +2,25 @@
 #include "fns.h"
 #include "mem.h"
 #include "portlib.h"
+#include "uuid.h"
 #include "u.h"
 #include <error.h>
 
 extern ulong kerndate;
 
+/*@
+  @ requires q == \null || \valid(q);
+  @ assigns \nothing;
+  @*/
 void mkqid(Qid *q, vlong path, ulong vers, int type) {
   q->type = type;
   q->vers = vers;
   q->path = path;
 }
 
+/*@
+  @ assigns \nothing;
+  @*/
 int devno(int c, int user) {
   int i;
 
@@ -26,6 +34,11 @@ int devno(int c, int user) {
   return -1;
 }
 
+/*@
+  @ requires pgrp == \null || \valid(pgrp);
+  @ requires devs == \null || \valid(devs);
+  @ assigns \nothing;
+  @*/
 void devmask(Pgrp *pgrp, int invert, char *devs) {
   int i, t, w;
   char *p;
@@ -52,9 +65,21 @@ void devmask(Pgrp *pgrp, int invert, char *devs) {
   wlock(&pgrp->ns);
   for (i = 0; i < nelem(pgrp->notallowed); i++)
     pgrp->notallowed[i] |= mask[i];
+  namespace_cid_update_locked(pgrp);
+  if (up != nil && up->pgrp == pgrp) {
+    uuid_t *parent_p = nil;
+    u8int *ns_cid = pgrp->namespace_cid;
+    if (up->parent)
+      parent_p = &up->parent->pid2;
+    uuid_pack_pid_lux9(&up->pid2, parent_p, ns_cid, up->text_hash);
+  }
   wunlock(&pgrp->ns);
 }
 
+/*@
+  @ requires pgrp == \null || \valid(pgrp);
+  @ assigns \nothing;
+  @*/
 int devallowed(Pgrp *pgrp, int r) {
   int t, w, b;
 
@@ -74,6 +99,10 @@ int devallowed(Pgrp *pgrp, int r) {
   return b;
 }
 
+/*@
+  @ requires pgrp == \null || \valid(pgrp);
+  @ assigns \nothing;
+  @*/
 int canmount(Pgrp *pgrp) {
   /*
    * Devmnt is not usable directly from user procs, so
@@ -133,6 +162,13 @@ void devdir(Chan *c, Qid qid, char *n, vlong length, char *user, long perm,
 /*
  * the zeroth element of the table MUST be the directory itself for ..
  */
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires name == \null || \valid(name);
+  @ requires tab == \null || \valid(tab);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
 int devgen(Chan *c, char *name, Dirtab *tab, int ntab, int i, Dir *dp) {
   if (tab == 0)
     return -1;
@@ -374,6 +410,13 @@ Done:
   return retq;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires db == \null || \valid(db);
+  @ requires tab == \null || \valid(tab);
+  @ requires gen == \null || \valid(gen);
+  @ assigns \nothing;
+  @*/
 int devstat(Chan *c, uchar *db, int n, Dirtab *tab, int ntab, Devgen *gen) {
   int i;
   Dir dir;
@@ -415,6 +458,13 @@ int devstat(Chan *c, uchar *db, int n, Dirtab *tab, int ntab, Devgen *gen) {
   }
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires d == \null || \valid(d);
+  @ requires tab == \null || \valid(tab);
+  @ requires gen == \null || \valid(gen);
+  @ assigns \nothing;
+  @*/
 long devdirread(Chan *c, char *d, long n, Dirtab *tab, int ntab, Devgen *gen) {
   long m, dsz;
   Dir dir;
@@ -447,6 +497,10 @@ long devdirread(Chan *c, char *d, long n, Dirtab *tab, int ntab, Devgen *gen) {
 /*
  * error(Eperm) if open permission not granted for up->user.
  */
+/*@
+  @ requires fileuid == \null || \valid(fileuid);
+  @ assigns \nothing;
+  @*/
 void devpermcheck(char *fileuid, ulong perm, int omode) {
   ulong t;
   static int access[] = {0400, 0200, 0600, 0100};
@@ -507,6 +561,11 @@ Block *devbread(Chan *c, long n, ulong offset) {
   return bp;
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires bp == \null || \valid(bp);
+  @ assigns \nothing;
+  @*/
 long devbwrite(Chan *c, Block *bp, ulong offset) {
   long n;
 

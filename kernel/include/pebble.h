@@ -1,19 +1,7 @@
 #pragma once
 
-struct Proc;
-struct Ureg;
-
-#ifndef _PROC_DEFINED
-#define _PROC_DEFINED
-typedef struct Proc Proc;
-#endif
-
-#ifndef _LOCK_DEFINED
-#define _LOCK_DEFINED
-typedef struct Lock Lock;
-#endif
-
-typedef struct Ureg Ureg;
+#include "types_fwd.h"
+#include "u.h"
 
 /*
  * Pebble Primitives - Core Kernel Feature
@@ -25,15 +13,53 @@ typedef struct Ureg Ureg;
  */
 
 /* Compile-time configuration */
-#define PEBBLE_DEFAULT_BUDGET (256 * 1024 * 1024) /* 256 MiB per process */
-#define PEBBLE_MAX_TOKENS 128
-#define PEBBLE_DEBUG 0
+#define PEBBLE_DEFAULT_BUDGET 0 /* per-process starts at 0 (caller-managed) */
+#define PEBBLE_BOOT_BUDGET (256 * 1024 * 1024) /* 256 MiB for boot kernel */
+#define PEBBLE_INIT_BUDGET                                                     \
+  (256 * 1024 * 1024) /* 256MB initial budget for init/proc0 */
+#define PEBBLE_MAX_TOKENS 4096
+#define PEBBLE_DEBUG 1 /* Enable debug output for arena testing */
+
+/* Token economics: 1 token = 8 bytes of memory authorization */
+#define PEBBLE_BYTES_PER_TOKEN 8
+
+/*
+ * Pebble Token Color States (5 mutually exclusive)
+ * Used for page-level tracking in fork/COW mechanism.
+ * Maps to borrowchecker states: BLACK=EXCLUSIVE, RED=SHARED_OWNED
+ */
+enum PebbleColor {
+  PEBBLE_COLOR_COLORLESS = 0, /* Free pool, not in use */
+  PEBBLE_COLOR_WHITE = 1,     /* Unverified/uninitialized (future) */
+  PEBBLE_COLOR_BLACK = 2,     /* Exclusive access (one writer) */
+  PEBBLE_COLOR_RED = 3,       /* Shared/read-only (multiple readers) */
+  PEBBLE_COLOR_BLUE = 4,      /* I/O buffer (future) */
+};
+
+/* Syscall costs (in tokens) - Security enforcement */
+#define PEBBLE_PROC_COST                                                       \
+  (1024 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 1MB for fork */
+#define PEBBLE_PIPE_COST                                                       \
+  (64 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 64KB for pipe */
+#define PEBBLE_MOUNT_COST                                                      \
+  (4 * 1024 / PEBBLE_BYTES_PER_TOKEN)                      /* 4KB for mount */
+#define PEBBLE_FD_COST (1 * 1024 / PEBBLE_BYTES_PER_TOKEN) /* 1KB per FD */
 
 /*
  * Pebble runtime toggles.
  */
 extern int pebble_enabled;
 extern int pebble_debug;
+
+/*
+ * Global colorless bank - single pool for entire system.
+ * Total tokens = system RAM / PEBBLE_BYTES_PER_TOKEN.
+ * Processes pull tokens from this pool via PoW.
+ * PoW difficulty increases as pool shrinks (scarcity mechanism).
+ */
+extern Lock pebble_bank_lock;
+extern ulong pebble_global_colorless_bank; /* tokens available globally */
+extern ulong pebble_total_system_tokens;   /* RAM/8, constant after init */
 
 /* Error handling */
 #define PEBBLE_E_PERM "permission denied"
@@ -84,6 +110,7 @@ extern int pebble_debug;
 
 #include "blind_ledger.h"
 #include "borrowchecker.h"
+#include "uuid.h"
 
 /* White token structure - opaque to user */
 typedef struct PebbleWhite {
@@ -113,14 +140,15 @@ typedef struct PebbleBlack {
   UserCapability capability; // The UserCapability provided by Blind Ledger
   void *
       physical_addr; // The actual physical memory address managed by this token
-  ulong size;        // Size of the allocation
+  uintptr user_vaddr; // The user-space virtual address mapping (if any)
+  ulong size;         // Size of the allocation
   ulong flags;
   struct PebbleBlack *next;
 } PebbleBlack;
 
 /* Per-process Pebble state */
 typedef struct PebbleState {
-  ulong black_budget;   /* remaining bytes for this process (COLORLESS pool) */
+  ulong colorless_bank; /* remaining bytes for this process (COLORLESS pool) */
   ulong black_inuse;    /* bytes in BLACK state */
   ulong blue_inuse;     /* bytes in BLUE state */
   ulong red_inuse;      /* bytes in RED state */
@@ -130,6 +158,8 @@ typedef struct PebbleState {
   ulong blue_count;     /* number of live blue tokens */
   ulong total_allocs;   /* total allocations made */
   ulong total_frees;    /* total frees performed */
+
+  uintptr vbase; /* next available user virtual address for Pebble mapping */
 
   /* Lists for tracking objects */
   PebbleBlack *black_list;
@@ -147,14 +177,60 @@ typedef struct PebbleState {
   int white_head;
 } PebbleState;
 
+/*@
+  @ predicate pebble_state_valid(PebbleState *ps) =
+  @   \valid(ps) &&
+  @   ps->colorless_bank + ps->black_inuse + ps->blue_inuse + ps->red_inuse <=
+  pebble_total_system_tokens &&
+  @   ps->white_pending <= ps->colorless_bank;
+  @*/
+
+/*
+ * Arena Branch Bank - Per-Container Resource Management
+ *
+ * Each WASM container (or other arena) gets its own branch bank
+ * for lock-free local allocations. Branches periodically reconcile
+ * with the process colorless bank.
+ *
+ * Token flow: Process colorless_bank → branch local_colorless → BLACK
+ * All transitions remain 1:1 (token conservation).
+ *
+ * See docs/WASM_ARENA_BRANCH_BANKS.md for design details.
+ */
+typedef struct arena_branch {
+  Lock lock;                /* Per-branch lock (no global contention) */
+  ulong local_colorless;    /* Tokens available locally in this branch */
+  ulong borrowed_from_proc; /* Tokens borrowed from process bank */
+  ulong max_tokens;         /* Hard cap on branch tokens */
+  ulong low_water;          /* Request refill when below this threshold */
+  ulong high_water;         /* Return excess when above this threshold */
+  ulong total_allocated;    /* Statistics: total bytes allocated from branch */
+  ulong total_freed;        /* Statistics: total bytes freed to branch */
+  PebbleState *owner_ps;    /* Back-pointer to owning process PebbleState */
+} arena_branch_t;
+
+/* Arena Branch API */
+void arena_branch_init(arena_branch_t *branch, PebbleState *ps,
+                       ulong initial_budget);
+int arena_branch_alloc(arena_branch_t *branch,
+                       ulong size); /* Branch tokens → allocation */
+void arena_branch_free(arena_branch_t *branch,
+                       ulong size); /* Allocation → branch tokens */
+int arena_branch_refill(arena_branch_t *branch); /* Process bank → branch */
+void arena_branch_drain(arena_branch_t *branch); /* Branch → process bank */
+
 /* Global Pebble lock - one system-wide lock for now */
 extern Lock pebble_global_lock;
 
 /* Core API functions */
-int pebble_black_alloc(ulong size, UserCapability *out_cap);
+int pebble_black_alloc(PebbleWhite *white, void *buf, ulong size,
+                       UserCapability *out_cap);
 void *pebble_get_black_addr(const UserCapability *cap);
 int pebble_black_free(const UserCapability *cap);
 int pebble_white_verify(PebbleWhite *white_cap, void **black_cap);
+int pebble_create_token_uuid(PebbleWhite *white, uuid_t *out_uuid);
+int pebble_alloc_with_white(ulong size, UserCapability *out_cap,
+                            void **out_addr);
 
 /* Blue/Red API - Independent colored tokens for block I/O transactions */
 PebbleBlue *pebble_blue_alloc(ulong size); /* COLORLESS → BLUE */
@@ -173,11 +249,69 @@ int pebble_blue_discard(PebbleBlue *blue_obj); /* Use pebble_blue_free */
 PebbleState *pebble_state(void);
 int pebble_set_budget(ulong budget);
 ulong pebble_get_budget(void);
+int pebble_increase_budget(ulong size, u64int nonce);
 void pebble_auto_verify(Proc *p, Ureg *ureg);
+
 void pebble_red_blue_exit(void);
+
+/*@ requires ps != \null;
+  @ requires \valid(ps);
+  @ requires white != \null && \valid(white);
+  @ requires white->data_ptr == \null || \valid((uchar*)white->data_ptr +
+  (0..(integer)white->size-1));
+  @ requires white->size > 0;
+  @ terminates \true;
+  @ assigns ps->whites[0..4095],
+  @         ps->whites_active[0..4095],
+  @         ps->white_generation, ps->white_head, ps->white_pending;
+  @ ensures \result != 0 ==> \result == 1;
+  @ behavior success:
+  @   assumes ps->white_pending + white->size <= ps->colorless_bank;
+  @   ensures \result == 1;
+  @ behavior failure:
+  @   assumes ps->white_pending + white->size > ps->colorless_bank;
+  @   ensures \result == 0;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  */
 int pebble_valid_white_token(PebbleState *ps, PebbleWhite *white);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires data == \null || \valid((uchar*)data + (0..(integer)size-1));
+  @ requires size > 0 && size <= ps->colorless_bank;
+  @ terminates \true;
+  @ assigns ps->whites[0..4095],
+  ps->whites_active[0..4095],
+  @         ps->white_generation, ps->white_head, ps->white_pending;
+  @ ensures \result != \null ==> \valid(\result);
+  @ ensures \result != \null ==> \result->data_ptr == data;
+  @ ensures \result != \null ==> \result->size == size;
+  @ ensures \result == \null || (\result->token < 4096 &&
+  ps->whites_active[\result->token] != 0);
+  */
 PebbleWhite *pebble_issue_white(PebbleState *ps, void *data, ulong size);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires white != \null ==> \valid(white);
+  @ requires white != \null ==> white->token < 4096;
+  @ terminates \true;
+  @ assigns ps->whites_active[0..4095], ps->white_pending;
+  */
+void pebble_return_white(PebbleState *ps, PebbleWhite *white);
+
+/*@ requires ps != \null && \valid(ps);
+  @ requires handle != \null;
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  */
 PebbleBlack *pebble_lookup_black(PebbleState *ps, void *handle);
+/*@ requires ps != \null && \valid(ps);
+  @ terminates \true;
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  */
+PebbleBlack *pebble_lookup_black_by_addr(PebbleState *ps, void *addr);
 int pebble_blue_exists(PebbleState *ps, PebbleBlue *blue);
 int pebble_has_matching_red(PebbleState *ps, PebbleBlue *blue);
 PebbleRed *pebble_duplicate_blue(PebbleState *ps, PebbleBlue *blue);
@@ -190,7 +324,7 @@ void pebble_sip_issue_test(void);
 
 /* Debug support */
 #if PEBBLE_DEBUG
-#define pebble_dprint(fmt, ...) print("PEBBLE: " fmt "\n", ##__VA_ARGS__)
+#define pebble_dprint(fmt, ...) bprint("PEBBLE: " fmt "\n", ##__VA_ARGS__)
 #else
 #define pebble_dprint(fmt, ...)
 #endif
@@ -209,13 +343,15 @@ void pebble_meta_free(void *v);
 
 /*
  * B.E.V.I.S. (Byzantine Energy Verification & Isolation Subsystem)
- * B.U.T.T.H.E.A.D. (Bandwidth-Utilizing Thermodynamic Token Hardened Economic Allocation Dispatcher)
+ * B.U.T.T.H.E.A.D. (Bandwidth-Utilizing Thermodynamic Token Hardened Economic
+ * Allocation Dispatcher)
  */
-#define POW_OP_ALLOC       1
-#define POW_OP_SPAWN       2
-#define POW_OP_NET_BIND    3
-#define POW_OP_REALTIME    4
-#define POW_OP_STACK_ALLOC 5  /* CIL localloc - cheaper than heap */
+#define POW_OP_ALLOC 1
+#define POW_OP_SPAWN 2
+#define POW_OP_NET_BIND 3
+#define POW_OP_REALTIME 4
+#define POW_OP_STACK_ALLOC 5 /* CIL localloc - cheaper than heap */
+#define POW_OP_MSGORD 6      /* MsgOrd consensus admission */
 
 int pow_calculate_difficulty(int op_class, ulong magnitude);
 int pow_verify(u64int nonce, u64int context, int required_diff);
