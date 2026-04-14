@@ -1,0 +1,281 @@
+#include "dat.h"
+#include "fns.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
+#include <error.h>
+
+/* Stub for rootinit - called during device initialization */
+static void rootinit(void) {
+  /* Root device initialization - minimal stub for boot */
+}
+
+enum {
+  Qdir = 0,
+  Qboot = 0x1000,
+  Qbin = 3,
+  Qdev,
+  Qenv,
+  Qfd,
+  Qnet,
+  Qnetalt,
+  Qproc,
+  Qroot,
+  Qsrv,
+  Qmnt,
+  Qwasm,
+  Qtmp,
+
+  Nrootfiles = 32,
+  Nbootfiles = 32,
+};
+
+typedef struct Dirlist Dirlist;
+struct Dirlist {
+  uint base;
+  Dirtab *dir;
+  uchar **data;
+  int ndir;
+  int mdir;
+};
+
+static Dirtab rootdir[Nrootfiles] = {
+    "#/",      {Qdir, 0, QTDIR},  0, DMDIR | 0555,
+    "boot",    {Qboot, 0, QTDIR}, 0, DMDIR | 0555,
+    "bin",     {Qbin, 0, QTDIR},  0, DMDIR | 0555,
+    "dev",     {Qdev, 0, QTDIR},  0, DMDIR | 0555,
+    "env",     {Qenv, 0, QTDIR},  0, DMDIR | 0555,
+    "fd",      {Qfd, 0, QTDIR},   0, DMDIR | 0555,
+    "net",     {Qnet, 0, QTDIR},  0, DMDIR | 0555,
+    "net.alt", {Qnetalt, 0, QTDIR}, 0, DMDIR | 0555,
+    "proc",    {Qproc, 0, QTDIR}, 0, DMDIR | 0555,
+    "root",    {Qroot, 0, QTDIR}, 0, DMDIR | 0555,
+    "srv",     {Qsrv, 0, QTDIR},  0, DMDIR | 0555,
+    "mnt",     {Qmnt, 0, QTDIR},  0, DMDIR | 0555,
+    "wasm",    {Qwasm, 0, QTDIR}, 0, DMDIR | 0555,
+    "tmp",     {Qtmp, 0, QTDIR},  0, DMDIR | 0777,
+};
+static uchar *rootdata[Nrootfiles];
+static Dirlist rootlist = {0, rootdir, rootdata, 14, Nrootfiles};
+
+static Dirtab bootdir[Nbootfiles] = {
+    "boot",
+    {Qboot, 0, QTDIR},
+    0,
+    DMDIR | 0555,
+};
+static uchar *bootdata[Nbootfiles];
+static Dirlist bootlist = {Qboot, bootdir, bootdata, 1, Nbootfiles};
+
+/*
+ *  add a file to the list
+ */
+static void addlist(Dirlist *l, char *name, uchar *contents, ulong len,
+                    int perm) {
+  Dirtab *d;
+  ulong ndir, mdir; /* Local copies to avoid repeated memory access */
+
+  /* Check if pointer looks valid - should be in kernel address space */
+  if ((uintptr)l < 0xffffffff80000000ULL) {
+    panic("addlist: invalid Dirlist pointer %#p", l);
+  }
+
+  /* Read values with explicit volatile to force memory access */
+  ndir = *(volatile ulong *)&l->ndir;
+  mdir = *(volatile ulong *)&l->mdir;
+
+  if (ndir >= mdir)
+    panic("too many root files");
+  l->data[l->ndir] = contents;
+  d = &l->dir[l->ndir];
+  if (strlen(name) >= sizeof d->name)
+    panic("root file name too long: %s", name);
+  strcpy(d->name, name);
+  d->length = len;
+  d->perm = perm;
+  d->qid.type = 0;
+  d->qid.vers = 0;
+  d->qid.path = ++l->ndir + l->base;
+  if (perm & DMDIR)
+    d->qid.type |= QTDIR;
+}
+
+/*
+ *  add a root file
+ */
+/*@
+  @ requires name == \null || \valid(name);
+  @ requires contents == \null || \valid(contents);
+  @ assigns \nothing;
+  @*/
+void addbootfile(char *name, uchar *contents, ulong len) {
+  print("addbootfile: adding '%s' len=%lud to bootlist (ndir=%d)\n", name, len,
+        bootlist.ndir);
+  addlist(&bootlist, name, contents, len, 0555);
+  print("addbootfile: after add, bootlist.ndir=%d\n", bootlist.ndir);
+}
+
+/*
+ *  add a root directory
+ */
+/*@
+  @ requires name == \null || \valid(name);
+  @ assigns \nothing;
+  @*/
+static void addrootdir(char *name) {
+  addlist(&rootlist, name, nil, 0, DMDIR | 0555);
+}
+
+/* Implementation of rootreset - called directly to avoid function pointer
+ * issues */
+/*@
+  @ assigns \nothing;
+  @*/
+void rootreset_impl(void) {
+  /* Directories are pre-initialized in rootdir array */
+}
+
+/* Wrapper for devtab - not currently used but kept for compatibility */
+static void rootreset(void) { rootreset_impl(); }
+
+static Chan *rootattach(char *spec) { return devattach('/', spec); }
+
+/*@ requires \valid(c);
+    requires name == \null || \valid(name);
+    requires dp == \null || \valid(dp);
+    assigns \nothing;
+*/
+static int rootgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
+  int t;
+  Dirtab *d;
+  Dirlist *l;
+
+  switch ((int)c->qid.path) {
+  case Qdir:
+    if (s == DEVDOTDOT) {
+      devdir(c, (Qid){Qdir, 0, QTDIR}, "#/", 0, eve, 0555, dp);
+      return 1;
+    }
+    return devgen(c, name, rootlist.dir, rootlist.ndir, s, dp);
+  case Qboot:
+    if (s == DEVDOTDOT) {
+      devdir(c, (Qid){Qdir, 0, QTDIR}, "#/", 0, eve, 0555, dp);
+      return 1;
+    }
+    return devgen(c, name, bootlist.dir, bootlist.ndir, s, dp);
+  default:
+    if (s == DEVDOTDOT) {
+      if ((int)c->qid.path < Qboot)
+        devdir(c, (Qid){Qdir, 0, QTDIR}, "#/", 0, eve, 0555, dp);
+      else
+        devdir(c, (Qid){Qboot, 0, QTDIR}, "#/", 0, eve, 0555, dp);
+      return 1;
+    }
+    if (s != 0)
+      return -1;
+    if ((int)c->qid.path < Qboot) {
+      t = c->qid.path - 1;
+      l = &rootlist;
+    } else {
+      t = c->qid.path - Qboot - 1;
+      l = &bootlist;
+    }
+    if (t >= l->ndir)
+      return -1;
+    if (t < 0) {
+      print("rootgen %llud %d %d\n", c->qid.path, s, t);
+      panic("whoops");
+    }
+    d = &l->dir[t];
+    devdir(c, d->qid, d->name, d->length, eve, d->perm, dp);
+    return 1;
+  }
+}
+
+static Walkqid *rootwalk(Chan *c, Chan *nc, char **name, int nname) {
+  return devwalk(c, nc, name, nname, nil, 0, rootgen);
+}
+
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires dp == \null || \valid(dp);
+  @ assigns \nothing;
+  @*/
+static int rootstat(Chan *c, uchar *dp, int n) {
+  return devstat(c, dp, n, nil, 0, rootgen);
+}
+
+static Chan *rootopen(Chan *c, int omode) {
+  return devopen(c, omode, nil, 0, rootgen);
+}
+
+/*
+ * sysremove() knows this is a nop
+ */
+static void rootclose(Chan *) {}
+
+/*@ requires c != \null;
+    requires buf != \null;
+    requires (n > 0 ==> \valid((char*)buf + (0 .. (integer)n-1))) || (n == 0);
+    assigns ((char*)buf)[0 .. (integer)n-1] \if n > 0;
+*/
+static long rootread(Chan *c, void *buf, long n, vlong off) {
+  ulong t;
+  Dirtab *d;
+  Dirlist *l;
+  uchar *data;
+  ulong offset = off;
+
+  t = c->qid.path;
+  switch (t) {
+  case Qdir:
+  case Qboot:
+    return devdirread(c, buf, n, nil, 0, rootgen);
+  }
+
+  if (t < Qboot)
+    l = &rootlist;
+  else {
+    t -= Qboot;
+    l = &bootlist;
+  }
+
+  t--;
+  if (t >= l->ndir)
+    error(Egreg);
+
+  d = &l->dir[t];
+  data = l->data[t];
+  if (data == nil)
+    error(Eio);
+  if (offset >= d->length)
+    return 0;
+  if (offset + n > d->length)
+    n = d->length - offset;
+  memmove(buf, data + offset, n);
+  return n;
+}
+
+static long rootwrite(Chan *, void *, long, vlong) { error(Egreg); }
+
+Dev rootdevtab = {
+    .dc = '/',
+    .name = "root",
+    .reset = devreset,
+    .init = rootinit,
+    .shutdown = devshutdown,
+    .attach = rootattach,
+    .walk = rootwalk,
+    .stat = rootstat,
+    .open = rootopen,
+    .create = devcreate,
+    .close = rootclose,
+    .read = rootread,
+    .write = rootwrite,
+    .bread = nil,    /* No buffered block read */
+    .bwrite = nil,   /* No buffered block write */
+    .remove = devremove,
+    .wstat = devwstat,
+    .power = nil,
+    .config = nil,
+};

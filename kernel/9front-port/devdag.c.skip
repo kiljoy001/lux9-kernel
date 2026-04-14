@@ -1,0 +1,357 @@
+/*
+ * /dev/dag - GHOSTDAG User Interface
+ *
+ * Provides a synthetic filesystem for creating and interacting with
+ * GhostDAG instances.
+ */
+
+#include "dat.h"
+#include "error.h"
+#include "fns.h"
+#include "ghostdag_kernel.h"
+#include "mem.h"
+#include "pebble.h"
+#include "portlib.h"
+#include "u.h"
+
+/*
+ * Qid mapping
+ *
+ * 0: /
+ * 1: ctl
+ *
+ * Per-DAG (Base = 100, Stride = 10):
+ * Base + id*10 + 0: /N/ (Dir)
+ * Base + id*10 + 1: submit
+ * Base + id*10 + 2: stream
+ * Base + id*10 + 3: graph
+ */
+
+enum {
+  Qdir = 0,
+  Qctl,
+  Qdagbase = 100,
+  Qdagstride = 10,
+};
+
+#define DAGID(path) (((path) - Qdagbase) / Qdagstride)
+#define DAGTYPE(path) (((path) - Qdagbase) % Qdagstride)
+
+enum {
+  QDagDir = 0,
+  Qsubmit,
+  Qstream,
+  Qgraph,
+};
+
+static int daggen(Chan *c, char *, Dirtab *, int, int s, Dir *dp) {
+  Qid q;
+  GhostDAG *dag;
+  int id;
+  int type;
+
+  if (s == DEVDOTDOT) {
+    devdir(c, c->qid, "#dag", 0, eve, 0555, dp);
+    return 1;
+  }
+
+  if (c->qid.path == Qdir) {
+    if (s == 0) {
+      mkqid(&q, Qctl, 0, QTFILE);
+      devdir(c, q, "ctl", 0, eve, 0666, dp);
+      return 1;
+    }
+
+    /* Iterate active DAGs */
+    /* s starts at 1 (ctl is 0th in iteration logic) */
+    s--;
+    for (id = 0; id < GHOSTDAG_MAX_DAGS; id++) {
+      dag = ghostdag_get(id);
+      if (dag) {
+        if (s == 0) {
+          char buf[16];
+          snprint(buf, sizeof(buf), "%d", id);
+          mkqid(&q, Qdagbase + id * Qdagstride + QDagDir, 0, QTDIR);
+          devdir(c, q, buf, 0, eve, 0555, dp);
+          return 1;
+        }
+        s--;
+      }
+    }
+    return -1;
+  }
+
+  /* Inside a DAG directory */
+  if (c->qid.path >= Qdagbase &&
+      (c->qid.path - Qdagbase) % Qdagstride == QDagDir) {
+    id = DAGID(c->qid.path);
+    dag = ghostdag_get(id);
+    if (dag == nil)
+      return -1;
+
+    switch (s) {
+    case 0:
+      mkqid(&q, Qdagbase + id * Qdagstride + Qsubmit, 0, QTFILE);
+      devdir(c, q, "submit", 0, eve, 0222, dp);
+      return 1;
+    case 1:
+      mkqid(&q, Qdagbase + id * Qdagstride + Qstream, 0, QTFILE);
+      devdir(c, q, "stream", 0, eve, 0444, dp);
+      return 1;
+    case 2:
+      mkqid(&q, Qdagbase + id * Qdagstride + Qgraph, 0, QTFILE);
+      devdir(c, q, "graph", 0, eve, 0444, dp);
+      return 1;
+    }
+    return -1;
+  }
+
+  return -1;
+}
+
+static void daginit(void) {}
+
+static Chan *dagattach(char *spec) { return devattach('G', spec); }
+
+static Walkqid *dagwalk(Chan *c, Chan *nc, char **name, int nname) {
+  return devwalk(c, nc, name, nname, 0, 0, daggen);
+}
+
+static int dagstat(Chan *c, uchar *db, int n) {
+  return devstat(c, db, n, 0, 0, daggen);
+}
+
+static Chan *dagopen(Chan *c, int omode) {
+  int id;
+  GhostDAG *dag;
+
+  if (c->qid.type & QTDIR) {
+    if (omode != OREAD)
+      error(Eperm);
+  }
+
+  if (c->qid.path >= Qdagbase) {
+    id = DAGID(c->qid.path);
+    dag = ghostdag_get(id);
+    if (dag == nil)
+      error(Enonexist);
+
+    if (DAGTYPE(c->qid.path) == Qstream) {
+      /* Initialize stream state in aux */
+      /* We start reading from current global_seq */
+      c->aux = (void *)(uintptr)dag->gd_global_seq;
+    }
+  }
+
+  c->mode = openmode(omode);
+  c->flag |= COPEN;
+  c->offset = 0;
+  return c;
+}
+
+static void dagclose(Chan *c) {
+  /* Nothing to clean up for now. Stream position is lost on close. */
+}
+
+/*
+ * Rendez condition for stream
+ */
+static int stream_ready(void *a) {
+  Chan *c = a;
+  GhostDAG *dag;
+  int id = DAGID(c->qid.path);
+  uvlong last_seq = (uvlong)(uintptr)c->aux;
+
+  dag = ghostdag_get(id);
+  if (dag == nil)
+    return 1; /* Error/Closed, return ready to handle in read */
+
+  return dag->gd_global_seq > last_seq;
+}
+
+static long dagread(Chan *c, void *va, long n, vlong offset) {
+  int id;
+  GhostDAG *dag;
+  char *buf = va;
+  long total_read = 0;
+  uvlong last_seq;
+  GhostMsg *m;
+
+  if (c->qid.type & QTDIR)
+    return devdirread(c, va, n, 0, 0, daggen);
+
+  if (c->qid.path == Qctl)
+    error(Eperm); /* Write-only ctl for now? Or maybe read stats? */
+
+  if (c->qid.path >= Qdagbase) {
+    id = DAGID(c->qid.path);
+    dag = ghostdag_get(id);
+    if (dag == nil)
+      error(Enonexist);
+
+    switch (DAGTYPE(c->qid.path)) {
+    case Qstream:
+      /* Blocking read of ordered messages */
+      last_seq = (uvlong)(uintptr)c->aux;
+
+      while (1) {
+        if (dag->gd_global_seq > last_seq) {
+          /* Data available */
+          break;
+        }
+        if (waserror()) {
+          nexterror();
+        }
+        sleep(&dag->gd_rendez, stream_ready, c);
+        poperror();
+
+        /* Check if DAG destroyed while sleeping */
+        dag = ghostdag_get(id);
+        if (dag == nil)
+          error(Eshutdown);
+      }
+
+      /* Read loop */
+      /* In a real implementation, we would walk the DAG or a separate ordered
+         queue. Since GhostDAG structure here only keeps messages until
+         process_one consumes them, and process_one consumes them for System
+         DAG...
+
+         Crucial Refactor Point:
+         For custom DAGs, 'ghostdag_process_one' is the CONSUMER.
+         Currently it runs via kernel scheduling or loop.
+         With /dev/dag, the READER is the consumer.
+
+         If we are reading the stream, WE are the ones who should call
+         'ghostdag_next'.
+
+         But `ghostdag_process_one` marks them delivered and frees them.
+         If we read here, we should do the same: get next, copy data, free.
+
+         However, `ghostdag_process_one` assumes it's dispatching Fcalls.
+
+         We need to support peeling off messages.
+      */
+
+      /* We can only deliver 1 message at a time per read for simplicity, or
+       * stream multiple. */
+      m = ghostdag_next(dag);
+      if (m) {
+        long copy_len = 0;
+        if (m->gm_payload.type == GHOSTDAG_MSG_RAW) {
+          copy_len = m->gm_payload.raw.len;
+          if (copy_len > n)
+            copy_len = n;
+          memmove(buf, m->gm_payload.raw.data, copy_len);
+        } else if (m->gm_payload.type == GHOSTDAG_MSG_9P) {
+          /* Not supported via stream yet, or serialize Fcall? */
+          snprint(buf, n, "Fcall msg id=%d", m->gm_id);
+          copy_len = strlen(buf);
+        }
+
+        /* Advance seq tracking */
+        c->aux = (void *)(uintptr)m->gm_global_seq;
+
+        /* Mark delivered and free */
+        /* Note: This competes with ghostdag_process_one logic if that's running
+           blindly. For custom DAGs, the kernel shouldn't run
+           ghostdag_process_one automatically. Ideally, the stream reader acts
+           as the processor.
+        */
+        ghostdag_complete(dag, m);
+
+        return copy_len;
+      }
+      return 0;
+
+    case Qgraph:
+      /* Dump graph topology */
+      return readstr(offset, va, n, "TODO: Graph Topology JSON");
+    }
+  }
+
+  return 0;
+}
+
+static long dagwrite(Chan *c, void *va, long n, vlong offset) {
+  int id;
+  GhostDAG *dag;
+  char *buf;
+  Cmdbuf *cb;
+  Cmdtab *ct;
+
+  if (c->qid.path == Qctl) {
+    cb = parsecmd(va, n);
+    if (waserror()) {
+      free(cb);
+      nexterror();
+    }
+
+    if (cb->nf < 1)
+      error(Ebadarg);
+
+    if (strcmp(cb->f[0], "create") == 0) {
+      uint k = GHOSTDAG_K_PARAMETER;
+      /* Parse k=... if present */
+      if (cb->nf > 1 && strncmp(cb->f[1], "k=", 2) == 0) {
+        k = atoi(cb->f[1] + 2);
+      }
+
+      dag = ghostdag_create_instance(k);
+      if (dag == nil)
+        error(Enomem);
+
+      /* Print ID to user (hack using error string or print?)
+         Usually ctl writes don't return data. User checks /dev/dag listing.
+      */
+      /* print("Created DAG %d\n", dag->gd_id); */
+    } else if (strcmp(cb->f[0], "destroy") == 0) {
+      if (cb->nf < 2)
+        error(Ebadarg);
+      id = atoi(cb->f[1]);
+      dag = ghostdag_get(id);
+      if (dag == nil)
+        error(Enonexist);
+      ghostdag_destroy_instance(dag);
+    } else {
+      error(Ebadarg);
+    }
+
+    free(cb);
+    poperror();
+    return n;
+  }
+
+  if (c->qid.path >= Qdagbase && DAGTYPE(c->qid.path) == Qsubmit) {
+    id = DAGID(c->qid.path);
+    dag = ghostdag_get(id);
+    if (dag == nil)
+      error(Enonexist);
+
+    /* Anti-spam check: Black Pebble for memory ownership proof */
+    {
+      UserCapability cap;
+      /* Charge the size of the data we are about to allocate in the DAG */
+      if (pebble_black_alloc(n, &cap) < 0)
+        error("pebble: insufficient black pebbles (memory budget)");
+
+      /* We immediately free it because we are transfering 'ownership' to the
+         kernel DAG (The DAG manages its own memory, this just proves user HAD
+         the budget) */
+      pebble_black_free(&cap);
+    }
+
+    if (ghostdag_submit_raw(dag, up, va, n) < 0)
+      error("ghostdag submit failed");
+
+    return n;
+  }
+
+  error(Eperm);
+  return -1;
+}
+
+Dev devdagtab = {
+    'G',       "dag",    daginit, dagattach, dagwalk,   dagstat,  dagopen,
+    devcreate, dagclose, dagread, dagwrite,  devremove, devwstat,
+};

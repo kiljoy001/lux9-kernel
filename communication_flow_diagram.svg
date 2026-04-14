@@ -1,0 +1,151 @@
+<svg width="1200" height="800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .component { fill: #f8f9fa; stroke: #495057; stroke-width: 2; rx: 5; }
+      .kernel { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+      .family { fill: #fce4ec; stroke: #c2185b; stroke-width: 2; }
+      .rump { fill: #e8f5e8; stroke: #388e3c; stroke-width: 2; }
+      .hal { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+      .user { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; }
+      .arrow { stroke: #666; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .arrow-syscall { stroke: #d32f2f; stroke-width: 3; stroke-dasharray: 5,5; }
+      .arrow-9p { stroke: #388e3c; stroke-width: 3; stroke-dasharray: 3,3; }
+      .arrow-family { stroke: #9c27b0; stroke-width: 3; }
+      .text { font-family: Arial, sans-serif; font-size: 12px; fill: #333; }
+      .small-text { font-family: Arial, sans-serif; font-size: 10px; fill: #666; }
+      .title { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #000; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="600" y="20" text-anchor="middle" class="title">NetBSD Rump + HAL + Family Interface Communication Flow</text>
+  
+  <!-- User Space -->
+  <rect x="450" y="50" width="300" height="100" class="user" rx="5"/>
+  <text x="600" y="70" text-anchor="middle" class="title">USER SPACE</text>
+  <text x="600" y="90" text-anchor="middle" class="text">Console Program</text>
+  <text x="600" y="105" text-anchor="middle" class="small-text">open("/dev/ttyS0")</text>
+  <text x="600" y="120" text-anchor="middle" class="small-text">read/write operations</text>
+  <text x="600" y="135" text-anchor="middle" class="small-text">file I/O calls</text>
+  
+  <!-- HAL Server -->
+  <rect x="50" y="200" width="200" height="80" class="hal" rx="5"/>
+  <text x="150" y="220" text-anchor="middle" class="title">HAL Server</text>
+  <text x="150" y="240" text-anchor="middle" class="small-text">• Hardware detection</text>
+  <text x="150" y="255" text-anchor="middle" class="small-text">• Service coordination</text>
+  <text x="150" y="270" text-anchor="middle" class="small-text">• Rump server lifecycle</text>
+  
+  <!-- Console Rump Server -->
+  <rect x="450" y="200" width="300" height="120" class="rump" rx="5"/>
+  <text x="600" y="220" text-anchor="middle" class="title">Console Rump Server (NetBSD Kernel)</text>
+  <text x="600" y="240" text-anchor="middle" class="small-text">UART 8250 Driver ←→ VGA Driver ←→ PS/2 Keyboard Driver</text>
+  <text x="600" y="255" text-anchor="middle" class="small-text">↑ All in single NetBSD kernel instance</text>
+  <text x="600" y="270" text-anchor="middle" class="small-text">↑ Complete driver stack for I/O devices</text>
+  <text x="600" y="285" text-anchor="middle" class="small-text">↑ 9P device file creation</text>
+  <text x="600" y="300" text-anchor="middle" class="small-text">↑ Transaction management</text>
+  <text x="600" y="315" text-anchor="middle" class="small-text">↑ Hardware access via family interfaces</text>
+  
+  <!-- Storage Rump Server -->
+  <rect x="850" y="200" width="300" height="80" class="rump" rx="5"/>
+  <text x="1000" y="220" text-anchor="middle" class="title">Storage Rump Server (NetBSD Kernel)</text>
+  <text x="1000" y="240" text-anchor="middle" class="small-text">AHCI Driver ←→ NVMe Driver ←→ USB Storage Driver</text>
+  <text x="1000" y="255" text-anchor="middle" class="small-text">Complete storage stack in single NetBSD kernel</text>
+  <text x="1000" y="270" text-anchor="middle" class="small-text">Block device management</text>
+  
+  <!-- Family Interfaces -->
+  <rect x="100" y="370" width="200" height="120" class="family" rx="5"/>
+  <text x="200" y="390" text-anchor="middle" class="title">PCI Family Interface</text>
+  <text x="200" y="410" text-anchor="middle" class="small-text">• Device discovery</text>
+  <text x="200" y="425" text-anchor="middle" class="small-text">• Channel management</text>
+  <text x="200" y="440" text-anchor="middle" class="small-text">• Transaction support</text>
+  <text x="200" y="455" text-anchor="middle" class="small-text">• Hardware resource mapping</text>
+  <text x="200" y="470" text-anchor="middle" class="small-text">• Security & pebble tokens</text>
+  <text x="200" y="485" text-anchor="middle" class="small-text">• 9P device interface</text>
+  
+  <rect x="350" y="370" width="200" height="80" class="family" rx="5"/>
+  <text x="450" y="390" text-anchor="middle" class="title">Serial Family Interface</text>
+  <text x="450" y="410" text-anchor="middle" class="small-text">• UART operations</text>
+  <text x="450" y="425" text-anchor="middle" class="small-text">• Flow control</text>
+  <text x="450" y="440" text-anchor="middle" class="small-text">• Buffer management</text>
+  <text x="450" y="455" text-anchor="middle" class="small-text">• Communication protocols</text>
+  
+  <rect x="600" y="370" width="200" height="80" class="family" rx="5"/>
+  <text x="700" y="390" text-anchor="middle" class="title">USB Family Interface</text>
+  <text x="700" y="410" text-anchor="middle" class="small-text">• Device hierarchy</text>
+  <text x="700" y="425" text-anchor="middle" class="small-text">• Hub management</text>
+  <text x="700" y="440" text-anchor="middle" class="small-text">• Transaction support</text>
+  <text x="700" y="455" text-anchor="middle" class="small-text">• Hotplug handling</text>
+  
+  <rect x="850" y="370" width="200" height="80" class="family" rx="5"/>
+  <text x="950" y="390" text-anchor="middle" class="title">9P Interface Layer</text>
+  <text x="950" y="410" text-anchor="middle" class="small-text">• Device file creation</text>
+  <text x="950" y="425" text-anchor="middle" class="small-text">• Channel-based access</text>
+  <text x="950" y="440" text-anchor="middle" class="small-text">• Service discovery</text>
+  <text x="950" y="455" text-anchor="middle" class="small-text">• Protocol translation</text>
+  
+  <!-- Kernel -->
+  <rect x="350" y="540" width="500" height="80" class="kernel" rx="5"/>
+  <text x="600" y="560" text-anchor="middle" class="title">Lux9 Kernel (Minimal Host)</text>
+  <text x="600" y="580" text-anchor="middle" class="small-text">Memory Management • Process Management • Syscall Interface</text>
+  <text x="600" y="595" text-anchor="middle" class="small-text">Transaction Manager • Security Primitives • Hardware Coordination</text>
+  
+  <!-- Hardware -->
+  <rect x="350" y="660" width="500" height="80" fill="#f5f5f5" stroke="#666" stroke-width="2" rx="5"/>
+  <text x="600" y="680" text-anchor="middle" class="title">HARDWARE LAYER</text>
+  <text x="600" y="700" text-anchor="middle" class="small-text">UART @ 0x3F8 • VGA Controller • AHCI Controller • PS/2 Keyboard • USB Hub</text>
+  <text x="600" y="715" text-anchor="middle" class="small-text">All hardware accessible via family interface abstractions</text>
+  
+  <!-- Communication Arrows with Labels -->
+  
+  <!-- User Space to Rump Server (9P) -->
+  <line x1="600" y1="150" x2="600" y2="200" class="arrow-9p"/>
+  <text x="620" y="175" class="small-text" fill="#388e3c">9P: open("/dev/ttyS0")</text>
+  
+  <!-- HAL to Rump Servers (Syscall) -->
+  <line x1="250" y1="240" x2="450" y2="260" class="arrow-syscall"/>
+  <text x="320" y="250" class="small-text" fill="#d32f2f">Syscall: launch_console_rump_server()</text>
+  <line x1="250" y1="260" x2="850" y2="240" class="arrow-syscall"/>
+  <text x="520" y="250" class="small-text" fill="#d32f2f">Syscall: launch_storage_rump_server()</text>
+  
+  <!-- Rump Server to Family Interface (Family API) -->
+  <line x1="500" y1="320" x2="250" y2="430" class="arrow-family"/>
+  <text x="320" y="375" class="small-text" fill="#9c27b0">Family API: allocate_channel(FAMILY_SERIAL)</text>
+  <line x1="700" y1="320" x2="250" y2="450" class="arrow-family"/>
+  <text x="420" y="385" class="small-text" fill="#9c27b0">Family API: access_pci_device()</text>
+  <line x1="950" y1="280" x2="700" y2="400" class="arrow-family"/>
+  <text x="780" y="340" class="small-text" fill="#9c27b0">Family API: usb_device_transaction()</text>
+  
+  <!-- Family Interface to Hardware (Direct Access) -->
+  <line x1="200" y1="490" x2="400" y2="660" class="arrow"/>
+  <text x="250" y="580" class="small-text">Direct hardware access via PCI config space</text>
+  <line x1="450" y1="450" x2="450" y2="660" class="arrow"/>
+  <text x="460" y="560" class="small-text">I/O port access for UART</text>
+  <line x1="700" y1="450" x2="600" y2="660" class="arrow"/>
+  <text x="710" y="560" class="small-text">USB hub communication</text>
+  
+  <!-- Transaction Flow Arrows (showing rollback capability) -->
+  <line x1="150" y1="340" x2="450" y2="260" stroke="#ff5722" stroke-width="2" stroke-dasharray="3,3" fill="none" marker-end="url(#arrowhead)"/>
+  <text x="220" y="300" class="small-text" fill="#ff5722">Transaction: begin() → commit/rollback</text>
+  
+  <!-- Legend -->
+  <rect x="50" y="50" width="150" height="120" fill="none" stroke="#333" stroke-width="1" rx="3"/>
+  <text x="60" y="65" class="small-text" font-weight="bold">Communication Types:</text>
+  <line x1="60" y1="80" x2="100" y2="80" class="arrow-9p"/>
+  <text x="110" y="85" class="small-text">9P Protocol</text>
+  <line x1="60" y1="100" x2="100" y2="100" class="arrow-syscall"/>
+  <text x="110" y="105" class="small-text">Syscalls</text>
+  <line x1="60" y1="120" x2="100" y2="120" class="arrow-family"/>
+  <text x="110" y="125" class="small-text">Family API</text>
+  <line x1="60" y1="140" x2="100" y2="140" class="arrow"/>
+  <text x="110" y="145" class="small-text">Direct Access</text>
+  
+  <!-- Rump Server Legend -->
+  <rect x="50" y="180" width="150" height="60" fill="none" stroke="#333" stroke-width="1" rx="3"/>
+  <text x="60" y="195" class="small-text" font-weight="bold">NetBSD Rump Servers:</text>
+  <text x="60" y="210" class="small-text">• Single kernel instance</text>
+  <text x="60" y="225" class="small-text">• Multiple driver stacks</text>
+  <text x="60" y="240" class="small-text">• Complete OS services</text>
+</svg>

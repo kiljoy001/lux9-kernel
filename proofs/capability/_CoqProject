@@ -1,0 +1,8 @@
+-R . proofs.capability
+PermsBitmask.v
+
+CapabilityModel.v
+DerivationChain.v
+ChainDecidability.v
+LedgerInvariants.v
+Decidability.v

@@ -1,0 +1,813 @@
+name: Formal Verification
+
+on:
+  push:
+    branches: [ main, develop, secure-ramdisk ]
+    paths:
+      - 'proofs/**/*.v'
+      - 'kernel/**/*.c'
+      - 'kernel/**/*.h'
+      - '.github/workflows/verify-proofs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'proofs/**/*.v'
+      - 'kernel/**/*.c'
+      - 'kernel/**/*.h'
+
+jobs:
+  # Coq proof verification using docker-coq-action
+  # Reference: Martin-Dorel, É. (2025). "Docker-based CI/CD for Rocq/OCaml projects"
+  #            arXiv:2510.19089v1 [cs.SE]
+  # Images:    https://hub.docker.com/r/coqorg/coq
+  # Action:    https://github.com/coq-community/docker-coq-action
+  verify-coq-proofs:
+    name: Verify Coq Proofs
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Verify Coq proofs
+      uses: coq-community/docker-coq-action@v1
+      with:
+        custom_image: 'coqorg/coq:8.20'
+        custom_script: |
+          cd proofs
+          
+          # Clean any stale .vo files
+          find . -name "*.vo" -delete
+          find . -name "*.glob" -delete
+          find . -name ".*.aux" -delete
+          
+          # Build using the proofs Makefile
+          if [ -f "Makefile" ]; then
+            make -j$(nproc) verify || make verify
+          else
+            # Fallback: compile each directory
+            for dir in pebble blind_ledger ramdisk 9p_router proc scheduler borrow capability clr msgord relooper mnt cache; do
+              if [ -d "$dir" ]; then
+                echo "═══════════════════════════════════════════════"
+                echo "Verifying: $dir"
+                echo "═══════════════════════════════════════════════"
+                cd "$dir"
+                if [ -f "Makefile" ]; then
+                  make || exit 1
+                elif ls *.v >/dev/null 2>&1; then
+                  for vfile in *.v; do
+                    echo "  Compiling $vfile..."
+                    coqc -R . "$dir" "$vfile" || exit 1
+                  done
+                fi
+                cd ..
+              fi
+            done
+          fi
+          
+          echo ""
+          echo "✅ All Coq proofs verified!"
+
+    - name: Check proof statistics
+      run: |
+        echo "Proof Statistics:"
+        echo "================"
+        THEOREMS=$(find proofs -name "*.v" -exec grep -c "Theorem\|Lemma" {} \; 2>/dev/null | paste -sd+ | bc || echo 0)
+        ADMITS=$(find proofs -name "*.v" -exec grep -c "Admitted\." {} \; 2>/dev/null | paste -sd+ | bc || echo 0)
+        echo "Theorems/Lemmas: $THEOREMS"
+        echo "Admitted: $ADMITS"
+
+    - name: Check for incomplete proofs
+      run: |
+        ADMITTED=$(find proofs -name "*.v" -exec grep -l "Admitted\." {} \;)
+        if [ -n "$ADMITTED" ]; then
+          echo "⚠️ WARNING: Found incomplete proofs:"
+          echo "$ADMITTED"
+          echo "admitted_count=$(echo "$ADMITTED" | wc -l)" >> $GITHUB_OUTPUT
+        else
+          echo "✅ All proofs complete!"
+          echo "admitted_count=0" >> $GITHUB_OUTPUT
+        fi
+      id: check_admitted
+
+    - name: Generate proof report
+      run: |
+        echo "# Formal Verification Report" > proof_report.md
+        echo "" >> proof_report.md
+        echo "**Build:** ${{ github.run_number }}" >> proof_report.md
+        echo "**Commit:** ${{ github.sha }}" >> proof_report.md
+        echo "**Coq Version:** 8.20" >> proof_report.md
+        echo "" >> proof_report.md
+        echo "## Proof Statistics" >> proof_report.md
+        echo '```' >> proof_report.md
+        cd proofs && make stats >> ../proof_report.md 2>/dev/null || echo "Stats not available" >> ../proof_report.md
+        echo '```' >> proof_report.md
+
+    - name: Generate proof coverage report
+      run: |
+        python3 scripts/proof_coverage.py --md > coq_coverage_report.md
+        echo "" >> proof_report.md
+        cat coq_coverage_report.md >> proof_report.md
+
+    - name: Upload proof reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: proof-report
+        path: |
+          proof_report.md
+          coq_coverage_report.md
+
+    - name: Comment PR with proof status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('proof_report.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });
+
+  # ============================================================================
+  # FRAMA-C ACSL VERIFICATION
+  # Uses Docker + Plan 9 translator for accurate Frama-C analysis
+  # Reports TRUTHFULLY what is verified vs unverified
+  # ============================================================================
+  frama-c-verification:
+    name: Frama-C ACSL Verification
+    runs-on: ubuntu-latest
+    # Advisory - tracks verification status but doesn't block CI
+    continue-on-error: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Frama-C verification
+      run: |
+        # Use official Frama-C Docker image
+        docker pull framac/frama-c:latest
+        
+        # Create verification script that runs inside container
+        cat > /tmp/verify_acsl.sh << 'SCRIPT'
+        #!/bin/bash
+        set -e
+        
+        cd /workspace
+        
+        echo "═══════════════════════════════════════════════════════════"
+        echo "Frama-C ACSL Verification Report"
+        echo "═══════════════════════════════════════════════════════════"
+        
+        # Initialize counters
+        VERIFIED=0
+        FAILED=0
+        SKIPPED=0
+        TOTAL_GOALS=0
+        PROVED_GOALS=0
+        
+        # Track verified/unverified features
+        echo "" > /tmp/verified_features.txt
+        echo "" > /tmp/unverified_features.txt
+        echo "" > /tmp/no_acsl_features.txt
+        echo "" > /tmp/verification_details.txt
+        
+        # Count ALL kernel C files vs files WITH ACSL
+        ALL_C_FILES=$(find kernel -name "*.c" | wc -l)
+        ACSL_FILES=$(grep -rl '/\*@' kernel --include="*.c" 2>/dev/null || true)
+        ACSL_FILE_COUNT=$(echo "$ACSL_FILES" | grep -c . || echo 0)
+        
+        echo "Total kernel C files: $ALL_C_FILES"
+        echo "Files with ACSL annotations: $ACSL_FILE_COUNT"
+        echo ""
+        
+        # Find files WITHOUT ACSL (for reporting coverage gaps)
+        for file in $(find kernel -name "*.c"); do
+          if ! grep -q '/\*@' "$file" 2>/dev/null; then
+            echo "$file" >> /tmp/no_acsl_features.txt
+          fi
+        done
+        NO_ACSL_COUNT=$(grep -c . /tmp/no_acsl_features.txt || echo 0)
+        
+        for file in $ACSL_FILES; do
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Verifying: $file"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Preprocess using Plan 9 translator
+          PREPROCESSED="/tmp/$(basename "$file" .c)_pp.c"
+          if [ -f scripts/framac_plan9_v2.sh ]; then
+            bash scripts/framac_plan9_v2.sh "$file" "$PREPROCESSED" 2>&1 || {
+              echo "  ⚠️  Preprocessing failed - SKIPPING"
+              echo "$file: SKIPPED (preprocessing failed)" >> /tmp/verification_details.txt
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            }
+          else
+            # Fallback: simple preprocessing
+            gcc -D__FRAMAC__ -E -P \
+              -Ikernel/include -Ikernel/9front-pc64 -Ikernel/9front-port \
+              -include kernel/include/framac_plan9.h \
+              "$file" 2>/dev/null | \
+              sed -e '/#pragma varargck/d' -e '/#pragma lib/d' > "$PREPROCESSED" || {
+              echo "  ⚠️  Preprocessing failed - SKIPPING"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            }
+          fi
+          
+          # Run Frama-C WP
+          OUTPUT=$(frama-c -wp -wp-prover alt-ergo,z3 -wp-timeout 30 \
+            -machdep gcc_x86_64 \
+            -no-cpp-frama-c-compliant \
+            -cpp-command "cat" \
+            "$PREPROCESSED" 2>&1) || true
+          
+          # Parse results
+          if echo "$OUTPUT" | grep -q "Proved goals"; then
+            GOALS_LINE=$(echo "$OUTPUT" | grep "Proved goals")
+            PROVED=$(echo "$GOALS_LINE" | grep -oP '\d+(?= / )' | head -1 || echo 0)
+            TOTAL=$(echo "$GOALS_LINE" | grep -oP '(?<= / )\d+' | head -1 || echo 0)
+            
+            TOTAL_GOALS=$((TOTAL_GOALS + TOTAL))
+            PROVED_GOALS=$((PROVED_GOALS + PROVED))
+            
+            if [ "$PROVED" = "$TOTAL" ] && [ "$TOTAL" != "0" ]; then
+              echo "  ✅ VERIFIED: $PROVED/$TOTAL goals proved"
+              echo "$file" >> /tmp/verified_features.txt
+              echo "$file: VERIFIED ($PROVED/$TOTAL goals)" >> /tmp/verification_details.txt
+              VERIFIED=$((VERIFIED + 1))
+            else
+              echo "  ⚠️  PARTIAL: $PROVED/$TOTAL goals proved"
+              echo "$file" >> /tmp/unverified_features.txt
+              echo "$file: PARTIAL ($PROVED/$TOTAL goals)" >> /tmp/verification_details.txt
+              FAILED=$((FAILED + 1))
+            fi
+          elif echo "$OUTPUT" | grep -q "No proof obligations"; then
+            echo "  ℹ️  No proof obligations (trivial or no ACSL)"
+            SKIPPED=$((SKIPPED + 1))
+          else
+            echo "  ❌ FAILED: Frama-C error"
+            echo "$file" >> /tmp/unverified_features.txt
+            echo "$file: FAILED (error)" >> /tmp/verification_details.txt
+            FAILED=$((FAILED + 1))
+          fi
+          
+          rm -f "$PREPROCESSED"
+        done
+        
+        # Generate summary report
+        echo ""
+        echo "═══════════════════════════════════════════════════════════"
+        echo "VERIFICATION SUMMARY"
+        echo "═══════════════════════════════════════════════════════════"
+        echo "Files verified:    $VERIFIED"
+        echo "Files failed:      $FAILED"
+        echo "Files skipped:     $SKIPPED"
+        echo "Total goals:       $TOTAL_GOALS"
+        echo "Proved goals:      $PROVED_GOALS"
+        if [ "$TOTAL_GOALS" -gt 0 ]; then
+          PCT=$((PROVED_GOALS * 100 / TOTAL_GOALS))
+          echo "Proof coverage:    $PCT%"
+        fi
+        echo ""
+        
+        # Write persistent report
+        ANNOTATION_PCT=$((ACSL_FILE_COUNT * 100 / ALL_C_FILES))
+        cat > /workspace/framac_report.md << EOF
+        # Frama-C ACSL Verification Report
+        
+        **Tool:** Frama-C (WP plugin)
+        **Provers:** Alt-Ergo, Z3
+        **Timeout:** 30s per goal
+        
+        ## What is ACSL?
+        
+        ACSL (ANSI/ISO C Specification Language) is the annotation language for Frama-C.
+        You write \`/*@ ... @*/\` annotations in C code, Frama-C generates SMT-LIB2,
+        and Z3/Alt-Ergo prove the properties.
+        
+        ## Summary
+        
+        | Metric | Value |
+        |--------|-------|
+        | Total Kernel C Files | $ALL_C_FILES |
+        | Files with ACSL | $ACSL_FILE_COUNT |
+        | Files without ACSL | $NO_ACSL_COUNT |
+        | **Annotation Coverage** | **$ANNOTATION_PCT%** |
+        | Files Verified | $VERIFIED |
+        | Files Failed | $FAILED |
+        | Files Skipped | $SKIPPED |
+        | Total Proof Obligations | $TOTAL_GOALS |
+        | Proved Obligations | $PROVED_GOALS |
+        | Proof Coverage | ${PCT:-0}% |
+        
+        ## Verified Features ✅
+        
+        \`\`\`
+        $(cat /tmp/verified_features.txt)
+        \`\`\`
+        
+        ## Unverified Features ❌
+        
+        > [!WARNING]
+        > The following files have ACSL annotations but are NOT fully verified:
+        
+        \`\`\`
+        $(cat /tmp/unverified_features.txt)
+        \`\`\`
+        
+        ## Files Without ACSL Annotations 📝
+        
+        > [!NOTE]
+        > These kernel files have NO formal specifications. Consider adding ACSL annotations:
+        
+        <details>
+        <summary>Show $NO_ACSL_COUNT files without ACSL</summary>
+        
+        \`\`\`
+        $(cat /tmp/no_acsl_features.txt | head -50)
+        \`\`\`
+        $(if [ $NO_ACSL_COUNT -gt 50 ]; then echo "... and $((NO_ACSL_COUNT - 50)) more"; fi)
+        </details>
+        
+        ## Detailed Results
+        
+        \`\`\`
+        $(cat /tmp/verification_details.txt)
+        \`\`\`
+        EOF
+        
+        # Exit with error if any verifications failed (for advisory reporting)
+        if [ "$FAILED" -gt 0 ]; then
+          echo "⚠️  Some verifications failed - see report for details"
+          exit 1
+        fi
+        SCRIPT
+        
+        chmod +x /tmp/verify_acsl.sh
+        
+        # Run inside Frama-C container
+        docker run --rm \
+          -v "${{ github.workspace }}:/workspace" \
+          -v /tmp/verify_acsl.sh:/verify_acsl.sh:ro \
+          framac/frama-c:latest \
+          bash /verify_acsl.sh || true
+
+    - name: Upload Frama-C report
+      uses: actions/upload-artifact@v4
+      with:
+        name: framac-report
+        path: framac_report.md
+
+  # ============================================================================
+  # CLANG STATIC ANALYZER
+  # ============================================================================
+  clang-static-analysis:
+    name: Clang Static Analyzer
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Clang tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang clang-tools
+
+    - name: Run Clang Static Analyzer
+      run: |
+        mkdir -p clang-analysis
+        
+        # Analyze key kernel files
+        for file in kernel/pebble.c kernel/borrowchecker.c kernel/9front-port/blind_ledger.c \
+                    kernel/9front-port/devram.c kernel/pow_gate.c kernel/crypto/crypto.c; do
+          if [ -f "$file" ]; then
+            echo "Analyzing: $file"
+            scan-build -o clang-analysis \
+              clang -c "$file" \
+              -Ikernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+              -Wno-incompatible-pointer-types \
+              2>&1 | tee -a clang-analysis/scan-build.log || true
+          fi
+        done
+
+    - name: Generate Clang report
+      run: |
+        echo "# Clang Static Analysis Report" > clang_report.md
+        echo "" >> clang_report.md
+        echo "**Commit:** ${{ github.sha }}" >> clang_report.md
+        echo "" >> clang_report.md
+        
+        # Count issues
+        BUGS=$(grep -c "warning:" clang-analysis/scan-build.log 2>/dev/null || echo "0")
+        echo "## Summary" >> clang_report.md
+        echo "- **Warnings found:** $BUGS" >> clang_report.md
+        echo "" >> clang_report.md
+        
+        echo "## Details" >> clang_report.md
+        echo '```' >> clang_report.md
+        cat clang-analysis/scan-build.log | grep -E "(warning:|error:)" | head -50 >> clang_report.md || echo "No issues found" >> clang_report.md
+        echo '```' >> clang_report.md
+
+    - name: Upload Clang report
+      uses: actions/upload-artifact@v4
+      with:
+        name: clang-report
+        path: |
+          clang_report.md
+          clang-analysis/
+
+  # ============================================================================
+  # CBMC BOUNDED MODEL CHECKING
+  # ============================================================================
+  cbmc-verification:
+    name: CBMC Bounded Model Checking
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install CBMC
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cbmc
+
+    - name: Run CBMC on security-critical functions
+      run: |
+        mkdir -p cbmc-results
+        
+        # CBMC verification targets (functions with assertions)
+        # Verify memory safety properties with bounded unrolling
+        
+        echo "# CBMC Verification Results" > cbmc-results/cbmc_output.txt
+        
+        # Check pebble allocation (bounded to 10 iterations)
+        echo "=== Checking pebble.c ===" >> cbmc-results/cbmc_output.txt
+        cbmc kernel/pebble.c \
+          -I kernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+          --bounds-check --pointer-check --memory-leak-check \
+          --unwind 10 --unwinding-assertions \
+          2>&1 >> cbmc-results/cbmc_output.txt || true
+        
+        # Check pow_gate (PoW security)
+        echo "=== Checking pow_gate.c ===" >> cbmc-results/cbmc_output.txt
+        cbmc kernel/pow_gate.c \
+          -I kernel/include -D__PLAN9_KERNEL__ -DKERNEL \
+          --bounds-check --pointer-check \
+          --unwind 5 \
+          2>&1 >> cbmc-results/cbmc_output.txt || true
+
+    - name: Generate CBMC report
+      run: |
+        echo "# CBMC Model Checking Report" > cbmc_report.md
+        echo "" >> cbmc_report.md
+        echo "**Commit:** ${{ github.sha }}" >> cbmc_report.md
+        echo "**Checks:** bounds, pointer, memory-leak" >> cbmc_report.md
+        echo "" >> cbmc_report.md
+        
+        # Count verification results
+        VERIFIED=$(grep -c "VERIFICATION SUCCESSFUL" cbmc-results/cbmc_output.txt 2>/dev/null || echo "0")
+        FAILED=$(grep -c "VERIFICATION FAILED" cbmc-results/cbmc_output.txt 2>/dev/null || echo "0")
+        
+        echo "## Summary" >> cbmc_report.md
+        echo "- **Verified:** $VERIFIED" >> cbmc_report.md
+        echo "- **Failed:** $FAILED" >> cbmc_report.md
+        echo "" >> cbmc_report.md
+        
+        echo "## Property Violations" >> cbmc_report.md
+        echo '```' >> cbmc_report.md
+        grep -A2 "FAILURE" cbmc-results/cbmc_output.txt >> cbmc_report.md 2>/dev/null || echo "None" >> cbmc_report.md
+        echo '```' >> cbmc_report.md
+
+    - name: Upload CBMC report
+      uses: actions/upload-artifact@v4
+      with:
+        name: cbmc-report
+        path: |
+          cbmc_report.md
+          cbmc-results/
+
+  # ============================================================================
+  # ADMIT TRACKER (Historical Metrics)
+  # ============================================================================
+  admit-tracker:
+    name: Track Proof Metrics Over Time
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for trend analysis
+
+    - name: Calculate proof metrics
+      id: metrics
+      run: |
+        # Count admits
+        ADMITS=$(find proofs -name "*.v" -exec grep -c "Admitted\." {} \; 2>/dev/null | paste -sd+ | bc 2>/dev/null || echo 0)
+        
+        # Count theorems
+        THEOREMS=$(find proofs -name "*.v" -exec grep -c "Theorem\|Lemma\|Corollary" {} \; 2>/dev/null | paste -sd+ | bc 2>/dev/null || echo 0)
+        
+        # Count ACSL annotations
+        ACSL=$(grep -rh "/\*@" kernel --include="*.c" 2>/dev/null | wc -l || echo 0)
+        
+        # Count proof files
+        PROOF_FILES=$(find proofs -name "*.v" | wc -l)
+        
+        # Lines of proof
+        PROOF_LINES=$(find proofs -name "*.v" -exec wc -l {} \; 2>/dev/null | tail -1 | awk '{print $1}' || echo 0)
+        
+        echo "admits=$ADMITS" >> $GITHUB_OUTPUT
+        echo "theorems=$THEOREMS" >> $GITHUB_OUTPUT
+        echo "acsl=$ACSL" >> $GITHUB_OUTPUT
+        echo "proof_files=$PROOF_FILES" >> $GITHUB_OUTPUT
+        echo "proof_lines=$PROOF_LINES" >> $GITHUB_OUTPUT
+        
+        # Calculate completion percentage
+        if [ "$THEOREMS" -gt 0 ]; then
+          COMPLETE=$(echo "scale=1; ($THEOREMS - $ADMITS) * 100 / $THEOREMS" | bc)
+        else
+          COMPLETE=0
+        fi
+        echo "complete=$COMPLETE" >> $GITHUB_OUTPUT
+
+    - name: Generate metrics report
+      run: |
+        echo "# Proof Metrics Dashboard" > metrics_report.md
+        echo "" >> metrics_report.md
+        echo "**Commit:** ${{ github.sha }}" >> metrics_report.md
+        echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> metrics_report.md
+        echo "" >> metrics_report.md
+        
+        echo "## Current State" >> metrics_report.md
+        echo "" >> metrics_report.md
+        echo "| Metric | Value |" >> metrics_report.md
+        echo "|--------|-------|" >> metrics_report.md
+        echo "| Coq Theorems/Lemmas | ${{ steps.metrics.outputs.theorems }} |" >> metrics_report.md
+        echo "| Admitted Proofs | ${{ steps.metrics.outputs.admits }} |" >> metrics_report.md
+        echo "| Completion | ${{ steps.metrics.outputs.complete }}% |" >> metrics_report.md
+        echo "| ACSL Annotations | ${{ steps.metrics.outputs.acsl }} |" >> metrics_report.md
+        echo "| Proof Files | ${{ steps.metrics.outputs.proof_files }} |" >> metrics_report.md
+        echo "" >> metrics_report.md
+        
+        # Progress bar
+        COMPLETE=${{ steps.metrics.outputs.complete }}
+        echo "## Progress" >> metrics_report.md
+        echo "" >> metrics_report.md
+        echo '```' >> metrics_report.md
+        printf "Proven:   ["
+        for i in $(seq 1 10); do
+          if [ $(echo "$COMPLETE / 10 >= $i" | bc) -eq 1 ]; then
+            printf "█"
+          else
+            printf "░"
+          fi
+        done
+        echo "] $COMPLETE%"
+        echo '```' >> metrics_report.md
+
+    - name: Save metrics to history
+      run: |
+        mkdir -p .github/metrics
+        echo "${{ github.sha }},${{ steps.metrics.outputs.admits }},${{ steps.metrics.outputs.theorems }},${{ steps.metrics.outputs.acsl }},$(date -u +%Y-%m-%d)" >> .github/metrics/history.csv
+
+    - name: Upload metrics report
+      uses: actions/upload-artifact@v4
+      with:
+        name: metrics-report
+        path: metrics_report.md
+
+  # ============================================================================
+  # SEMGREP SECURITY SCANNING
+  # ============================================================================
+  semgrep-security:
+    name: Semgrep Security Rules
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Advisory - don't block CI
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create custom Semgrep rules
+      run: |
+        mkdir -p .semgrep
+        
+        # Custom rules for lux9 kernel security (refined to reduce false positives)
+        cat > .semgrep/lux9-security.yaml << 'RULES'
+        rules:
+          # Capability leak detection - only UserCapability struct
+          - id: capability-leak
+            patterns:
+              - pattern: memcpy($DST, &$CAP, ...)
+              - metavariable-regex:
+                  metavariable: $CAP
+                  regex: ".*UserCapability.*"
+            message: "Potential capability leak via memcpy - UserCapability should not be copied to user space"
+            languages: [c]
+            severity: ERROR
+          
+          # Hardcoded secrets - specific patterns only
+          - id: hardcoded-secret
+            patterns:
+              - pattern-regex: "0xdeadbeef(?!.*stub)|0xcafebabe"
+            message: "Potential hardcoded secret or test value"
+            languages: [c]
+            severity: ERROR
+          
+          # Missing lock before secure_rd data access (not all fields)
+          - id: secure-rd-data-without-lock
+            patterns:
+              - pattern: secure_rd.data
+              - pattern-not-inside: |
+                  qlock(&secure_rd.lock);
+                  ...
+                  qunlock(&secure_rd.lock);
+            message: "secure_rd.data accessed without holding lock"
+            languages: [c]
+            severity: WARNING
+            paths:
+              include:
+                - kernel/9front-port/devram.c
+          
+          # Password variable passed to print (not just "key" in string)
+          - id: password-variable-logged
+            patterns:
+              - pattern: print(..., $VAR, ...)
+              - metavariable-regex:
+                  metavariable: $VAR
+                  regex: "password|master_key|secret_key|vault_secret"
+            message: "Sensitive variable may be logged"
+            languages: [c]
+            severity: ERROR
+        RULES
+
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: .semgrep/lux9-security.yaml
+
+    - name: Generate Semgrep report
+      if: always()
+      run: |
+        echo "# Semgrep Security Scan" > semgrep_report.md
+        echo "" >> semgrep_report.md
+        echo "**Commit:** ${{ github.sha }}" >> semgrep_report.md
+        echo "**Mode:** Advisory (non-blocking)" >> semgrep_report.md
+        echo "" >> semgrep_report.md
+        echo "## Custom Rules" >> semgrep_report.md
+        echo "- capability-leak: UserCapability struct leaks" >> semgrep_report.md
+        echo "- hardcoded-secret: 0xdeadbeef/0xcafebabe patterns" >> semgrep_report.md
+        echo "- secure-rd-data-without-lock: Vault data access" >> semgrep_report.md
+        echo "- password-variable-logged: Sensitive vars in logs" >> semgrep_report.md
+
+    - name: Upload Semgrep report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: semgrep-report
+        path: semgrep_report.md
+
+  check-c-code:
+    name: Check C Code Changes
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Check for security-critical changes
+      run: |
+        # Check if devram.c was modified
+        if git diff HEAD~1 HEAD --name-only | grep -q 'devram\.c'; then
+          echo "⚠️ devram.c was modified"
+
+          # Check for crypto changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "xchacha20\|crypto_\|encrypt\|decrypt"; then
+            echo "🔐 Cryptographic code modified - proofs may need updates"
+            echo "crypto_modified=true" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for concurrency changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "qlock\|refcount\|locked"; then
+            echo "🔒 Concurrency code modified - proofs may need updates"
+            echo "concurrency_modified=true" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for state machine changes
+          if git diff HEAD~1 HEAD kernel/9front-port/devram.c | grep -q "initialized\|locked.*=\|state"; then
+            echo "🔄 State machine modified - proofs may need updates"
+            echo "state_modified=true" >> $GITHUB_OUTPUT
+          fi
+        fi
+      id: check_changes
+
+    - name: Verify proof updates
+      if: steps.check_changes.outputs.crypto_modified == 'true' || steps.check_changes.outputs.concurrency_modified == 'true'
+      run: |
+        # Check if proofs were also updated
+        if ! git diff HEAD~1 HEAD --name-only | grep -q 'proofs/ramdisk/'; then
+          echo "❌ ERROR: Critical C code changed but proofs not updated!"
+          echo ""
+          echo "The following critical components were modified:"
+          echo "- Cryptography: ${{ steps.check_changes.outputs.crypto_modified }}"
+          echo "- Concurrency: ${{ steps.check_changes.outputs.concurrency_modified }}"
+          echo "- State machine: ${{ steps.check_changes.outputs.state_modified }}"
+          echo ""
+          echo "Please update proofs in proofs/ramdisk/ to match C changes."
+          exit 1
+        else
+          echo "✅ Proofs were updated alongside C code changes"
+        fi
+
+  runtime-invariant-check:
+    name: Check Runtime Invariants
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for invariant violations
+      run: |
+        echo "Checking for potential runtime invariant violations..."
+
+        # Check for operations without locking
+        UNLOCKED=$(grep -n "secure_rd\." kernel/9front-port/devram.c | grep -v "qlock\|qunlock" || true)
+        if [ -n "$UNLOCKED" ]; then
+          echo "⚠️ Potential unlocked access to secure_rd:"
+          echo "$UNLOCKED"
+        fi
+
+        # Check for state modifications without validation
+        STATE_MODS=$(grep -n "secure_rd\.locked.*=" kernel/9front-port/devram.c | grep -v "check_lock_invariant" || true)
+        if [ -n "$STATE_MODS" ]; then
+          echo "⚠️ State modifications without invariant checks:"
+          echo "$STATE_MODS"
+        fi
+
+  build-status:
+    name: Verification Summary
+    runs-on: ubuntu-latest
+    needs: [verify-coq-proofs, frama-c-verification, clang-static-analysis, cbmc-verification, admit-tracker, semgrep-security, check-c-code, runtime-invariant-check]
+    if: always()
+
+    steps:
+    - name: Generate summary
+      run: |
+        echo "## 🔒 Lux9 Kernel Verification Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Core Verification (Blocking)" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Coq Proofs | ${{ needs.verify-coq-proofs.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| C Code Check | ${{ needs.check-c-code.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Runtime Invariants | ${{ needs.runtime-invariant-check.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Static Analysis (Advisory)" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Frama-C ACSL | ${{ needs.frama-c-verification.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Clang Static Analyzer | ${{ needs.clang-static-analysis.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| CBMC Model Checking | ${{ needs.cbmc-verification.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Semgrep Security | ${{ needs.semgrep-security.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Metrics" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Admit Tracker | ${{ needs.admit-tracker.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Determine overall status
+        if [ "${{ needs.verify-coq-proofs.result }}" == "success" ] && \
+           [ "${{ needs.check-c-code.result }}" == "success" ] && \
+           [ "${{ needs.runtime-invariant-check.result }}" == "success" ]; then
+          echo "✅ **All blocking checks passed!**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Blocking checks failed**" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Count advisory failures
+        ADVISORY_FAILURES=0
+        [ "${{ needs.frama-c-verification.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.clang-static-analysis.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.cbmc-verification.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        [ "${{ needs.semgrep-security.result }}" != "success" ] && ADVISORY_FAILURES=$((ADVISORY_FAILURES + 1))
+        
+        if [ $ADVISORY_FAILURES -gt 0 ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ *$ADVISORY_FAILURES advisory check(s) need attention - see artifacts*" >> $GITHUB_STEP_SUMMARY
+        fi

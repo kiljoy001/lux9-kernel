@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <linearGradient id="white" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#edf2f7"/>
+    </linearGradient>
+    <linearGradient id="black" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d3748"/>
+      <stop offset="100%" style="stop-color:#1a202c"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#63b3ed"/>
+      <stop offset="100%" style="stop-color:#3182ce"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fc8181"/>
+      <stop offset="100%" style="stop-color:#e53e3e"/>
+    </linearGradient>
+    <linearGradient id="colorless" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e2e8f0"/>
+      <stop offset="100%" style="stop-color:#cbd5e0"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4a5568"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#2d3748">Pebble Token Lifecycle</text>
+
+  <!-- Node Coordinates:
+       Colorless: (400, 300) - Center
+       White:     (600, 200) - Upper Right
+       Black:     (600, 400) - Lower Right
+       Red:       (200, 200) - Upper Left
+       Blue:      (200, 400) - Lower Left
+  -->
+
+  <!-- Colorless (Budget) - Center -->
+  <g transform="translate(340, 240)">
+    <circle cx="60" cy="60" r="60" fill="url(#colorless)" stroke="#718096" stroke-width="3" filter="url(#shadow)"/>
+    <text x="60" y="55" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Colorless</text>
+    <text x="60" y="75" text-anchor="middle" font-family="Arial" font-size="12" fill="#4a5568">(Budget)</text>
+  </g>
+
+  <!-- White (Reservation) -->
+  <g transform="translate(550, 150)">
+    <circle cx="50" cy="50" r="50" fill="url(#white)" stroke="#a0aec0" stroke-width="3" filter="url(#shadow)"/>
+    <text x="50" y="45" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#4a5568">White</text>
+    <text x="50" y="65" text-anchor="middle" font-family="Arial" font-size="12" fill="#718096">Reservation</text>
+  </g>
+
+  <!-- Black (Ownership) -->
+  <g transform="translate(550, 350)">
+    <circle cx="50" cy="50" r="50" fill="url(#black)" stroke="#1a202c" stroke-width="3" filter="url(#shadow)"/>
+    <text x="50" y="45" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#f7fafc">Black</text>
+    <text x="50" y="65" text-anchor="middle" font-family="Arial" font-size="12" fill="#e2e8f0">Ownership</text>
+  </g>
+
+  <!-- Red (Snapshot) -->
+  <g transform="translate(150, 150)">
+    <circle cx="50" cy="50" r="50" fill="url(#red)" stroke="#e53e3e" stroke-width="3" filter="url(#shadow)"/>
+    <text x="50" y="45" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Red</text>
+    <text x="50" y="65" text-anchor="middle" font-family="Arial" font-size="12" fill="#742a2a">Snapshot</text>
+  </g>
+
+  <!-- Blue (Borrow) -->
+  <g transform="translate(150, 350)">
+    <circle cx="50" cy="50" r="50" fill="url(#blue)" stroke="#3182ce" stroke-width="3" filter="url(#shadow)"/>
+    <text x="50" y="45" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#2d3748">Blue</text>
+    <text x="50" y="65" text-anchor="middle" font-family="Arial" font-size="12" fill="#2c5282">Borrow/IO</text>
+  </g>
+
+  <!-- Transitions -->
+
+  <!-- CYCLE: Colorless -> White -> Black -> Colorless -->
+  
+  <!-- 1. Colorless (400,300) -> White (600,200) -->
+  <!-- Exit Colorless roughly (440, 270), Enter White roughly (570, 230) -->
+  <path d="M 440 270 L 560 215" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="490" y="235" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a5568" transform="rotate(-25 500 240)">issue_white</text>
+
+  <!-- 2. White (600,200) -> Black (600,400) -->
+  <!-- Exit White (600, 250), Enter Black (600, 350) -->
+  <path d="M 600 250 L 600 350" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="610" y="300" text-anchor="start" font-family="monospace" font-size="11" fill="#4a5568">verify</text>
+  
+  <!-- 3. Black (600,400) -> Colorless (400,300) -->
+  <!-- Exit Black (560, 380), Enter Colorless (440, 330) -->
+  <path d="M 560 380 L 450 330" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <text x="510" y="375" text-anchor="middle" font-family="monospace" font-size="11" fill="#4a5568" transform="rotate(25 500 360)">black_free</text>
+
+  <!-- LOOPS: Blue -->
+  <!-- Colorless -> Blue (Alloc) -->
+  <path d="M 360 330 L 250 380" stroke="#63b3ed" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="290" y="340" text-anchor="middle" font-family="monospace" font-size="11" fill="#3182ce" transform="rotate(-25 300 360)">blue_alloc</text>
+
+  <!-- Blue -> Colorless (Free) -->
+  <path d="M 270 370 L 370 320" stroke="#63b3ed" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <text x="350" y="375" text-anchor="middle" font-family="monospace" font-size="11" fill="#3182ce" transform="rotate(-25 320 380)">blue_free</text>
+
+  <!-- LOOPS: Red -->
+  <!-- Colorless -> Red (Alloc) -->
+  <path d="M 360 270 L 250 220" stroke="#fc8181" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="290" y="270" text-anchor="middle" font-family="monospace" font-size="11" fill="#c53030" transform="rotate(25 300 240)">red_alloc</text>
+
+  <!-- Red -> Colorless (Free) -->
+  <path d="M 270 230 L 370 280" stroke="#fc8181" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <text x="350" y="235" text-anchor="middle" font-family="monospace" font-size="11" fill="#c53030" transform="rotate(25 320 220)">red_free</text>
+
+  <!-- Snapshot: Blue -> Red -->
+  <path d="M 200 350 L 200 250" stroke="#e53e3e" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="4,4"/>
+  <text x="190" y="300" text-anchor="end" font-family="monospace" font-size="11" font-weight="bold" fill="#c53030">snapshot</text>
+
+</svg>

@@ -1,0 +1,417 @@
+/*
+ * Red-Black Tree Implementation (New version)
+ *
+ * Based on Linux kernel's lib/rbtree.c
+ * Provides O(log n) operations for Blind Ledger capability lookups.
+ */
+
+#include "../include/rbtree.h"
+#include "dat.h"
+#include "mem.h"
+#include "portlib.h"
+#include "u.h"
+
+/*
+ * Augmented RB-tree Implementation
+ *
+ * Supports incremental updates (e.g., Merkle Tree hashes) via callbacks
+ * during rotations and rebalancing.
+ */
+
+/*
+ * Rotate left at node (Internal helper with augmentation)
+ */
+static void __rb_rotate_left(struct rb_node *node, struct rb_root *root,
+                             rb_augment_f augment_rotate, void *data) {
+  struct rb_node *right = node->rb_right;
+  struct rb_node *parent = rb_parent(node);
+
+  node->rb_right = right->rb_left;
+  if (right->rb_left)
+    rb_set_parent(right->rb_left, node);
+
+  right->rb_left = node;
+  rb_set_parent(right, parent);
+
+  if (parent) {
+    if (node == parent->rb_left)
+      parent->rb_left = right;
+    else
+      parent->rb_right = right;
+  } else {
+    root->rb_node = right;
+  }
+  rb_set_parent(node, right);
+
+  // Augmentation callback: Update 'node' first (child), then 'right' (parent)
+  if (augment_rotate) {
+    augment_rotate(node, data);
+    augment_rotate(right, data);
+  }
+}
+
+/*
+ * Rotate right at node (Internal helper with augmentation)
+ */
+static void __rb_rotate_right(struct rb_node *node, struct rb_root *root,
+                              rb_augment_f augment_rotate, void *data) {
+  struct rb_node *left = node->rb_left;
+  struct rb_node *parent = rb_parent(node);
+
+  node->rb_left = left->rb_right;
+  if (left->rb_right)
+    rb_set_parent(left->rb_right, node);
+
+  left->rb_right = node;
+  rb_set_parent(left, parent);
+
+  if (parent) {
+    if (node == parent->rb_right)
+      parent->rb_right = left;
+    else
+      parent->rb_left = left;
+  } else {
+    root->rb_node = left;
+  }
+  rb_set_parent(node, left);
+
+  // Augmentation callback: Update 'node' first (child), then 'left' (parent)
+  if (augment_rotate) {
+    augment_rotate(node, data);
+    augment_rotate(left, data);
+  }
+}
+
+/*
+ * Rebalance after insertion (Augmented)
+ */
+void rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                         rb_augment_f augment_rotate, void *data) {
+  struct rb_node *parent, *gparent;
+
+  while ((parent = rb_parent(node)) && rb_is_red(parent)) {
+    gparent = rb_parent(parent);
+
+    if (parent == gparent->rb_left) {
+      struct rb_node *uncle = gparent->rb_right;
+
+      if (uncle && rb_is_red(uncle)) {
+        rb_set_black(uncle);
+        rb_set_black(parent);
+        rb_set_red(gparent);
+        node = gparent;
+        continue;
+      }
+
+      if (parent->rb_right == node) {
+        __rb_rotate_left(parent, root, augment_rotate, data);
+        node = parent;
+        parent = rb_parent(node);
+      }
+
+      rb_set_black(parent);
+      rb_set_red(gparent);
+      __rb_rotate_right(gparent, root, augment_rotate, data);
+    } else {
+      struct rb_node *uncle = gparent->rb_left;
+
+      if (uncle && rb_is_red(uncle)) {
+        rb_set_black(uncle);
+        rb_set_black(parent);
+        rb_set_red(gparent);
+        node = gparent;
+        continue;
+      }
+
+      if (parent->rb_left == node) {
+        __rb_rotate_right(parent, root, augment_rotate, data);
+        node = parent;
+        parent = rb_parent(node);
+      }
+
+      rb_set_black(parent);
+      rb_set_red(gparent);
+      __rb_rotate_left(gparent, root, augment_rotate, data);
+    }
+  }
+
+  rb_set_black(root->rb_node);
+}
+
+/*
+ * Standard Insert (Compatibility wrapper)
+ */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
+void rb_insert_color(struct rb_node *node, struct rb_root *root) {
+  rb_insert_augmented(node, root, nil, nil);
+}
+
+/*
+ * Rebalance after deletion (Augmented)
+ */
+static void __rb_erase_color(struct rb_node *node, struct rb_node *parent,
+                             struct rb_root *root, rb_augment_f augment_rotate,
+                             void *data) {
+  struct rb_node *sibling;
+
+  while ((!node || rb_is_black(node)) && node != root->rb_node) {
+    if (parent->rb_left == node) {
+      sibling = parent->rb_right;
+      if (sibling == nil)
+        break; /* Malformed tree or end of rebalancing */
+
+      if (rb_is_red(sibling)) {
+        rb_set_black(sibling);
+        rb_set_red(parent);
+        __rb_rotate_left(parent, root, augment_rotate, data);
+        sibling = parent->rb_right;
+        if (sibling == nil)
+          break;
+      }
+
+      if ((!sibling->rb_left || rb_is_black(sibling->rb_left)) &&
+          (!sibling->rb_right || rb_is_black(sibling->rb_right))) {
+        rb_set_red(sibling);
+        node = parent;
+        parent = rb_parent(node);
+      } else {
+        if (!sibling->rb_right || rb_is_black(sibling->rb_right)) {
+          rb_set_black(sibling->rb_left);
+          rb_set_red(sibling);
+          __rb_rotate_right(sibling, root, augment_rotate, data);
+          sibling = parent->rb_right;
+        }
+
+        rb_set_parent_color(sibling, rb_parent(parent), rb_color(parent));
+        rb_set_black(parent);
+        rb_set_black(sibling->rb_right);
+        __rb_rotate_left(parent, root, augment_rotate, data);
+        node = root->rb_node;
+        break;
+      }
+    } else {
+      sibling = parent->rb_left;
+      if (sibling == nil)
+        break; /* Malformed tree or end of rebalancing */
+
+      if (rb_is_red(sibling)) {
+        rb_set_black(sibling);
+        rb_set_red(parent);
+        __rb_rotate_right(parent, root, augment_rotate, data);
+        sibling = parent->rb_left;
+        if (sibling == nil)
+          break;
+      }
+
+      if ((!sibling->rb_left || rb_is_black(sibling->rb_left)) &&
+          (!sibling->rb_right || rb_is_black(sibling->rb_right))) {
+        rb_set_red(sibling);
+        node = parent;
+        parent = rb_parent(node);
+      } else {
+        if (!sibling->rb_left || rb_is_black(sibling->rb_left)) {
+          rb_set_black(sibling->rb_right);
+          rb_set_red(sibling);
+          __rb_rotate_left(sibling, root, augment_rotate, data);
+          sibling = parent->rb_left;
+        }
+
+        rb_set_parent_color(sibling, rb_parent(parent), rb_color(parent));
+        rb_set_black(parent);
+        rb_set_black(sibling->rb_left);
+        __rb_rotate_right(parent, root, augment_rotate, data);
+        node = root->rb_node;
+        break;
+      }
+    }
+  }
+
+  if (node)
+    rb_set_black(node);
+}
+
+/*
+ * Delete node from tree (Augmented)
+ */
+void rb_erase_augmented(struct rb_node *node, struct rb_root *root,
+                        rb_augment_f augment_rotate, void *data) {
+  struct rb_node *child, *parent;
+  int color;
+
+  if (!node->rb_left) {
+    child = node->rb_right;
+  } else if (!node->rb_right) {
+    child = node->rb_left;
+  } else {
+    struct rb_node *old = node, *left;
+
+    node = node->rb_right;
+    while ((left = node->rb_left) != nil)
+      node = left;
+
+    if (rb_parent(old)) {
+      if (rb_parent(old)->rb_left == old)
+        rb_parent(old)->rb_left = node;
+      else
+        rb_parent(old)->rb_right = node;
+    } else {
+      root->rb_node = node;
+    }
+
+    child = node->rb_right;
+    parent = rb_parent(node);
+    color = rb_color(node);
+
+    if (parent == old) {
+      parent = node;
+    } else {
+      if (child)
+        rb_set_parent(child, parent);
+      parent->rb_left = child;
+
+      node->rb_right = old->rb_right;
+      rb_set_parent(old->rb_right, node);
+    }
+
+    node->__rb_parent_color = old->__rb_parent_color;
+    node->rb_left = old->rb_left;
+    rb_set_parent(old->rb_left, node);
+
+    goto color_fixup;
+  }
+
+  parent = rb_parent(node);
+  color = rb_color(node);
+
+  if (child)
+    rb_set_parent(child, parent);
+
+  if (parent) {
+    if (parent->rb_left == node)
+      parent->rb_left = child;
+    else
+      parent->rb_right = child;
+  } else {
+    root->rb_node = child;
+  }
+
+color_fixup:
+  if (color == RB_BLACK)
+    __rb_erase_color(child, parent, root, augment_rotate, data);
+}
+
+/*
+ * Standard Erase (Compatibility wrapper)
+ */
+/*@
+  @ requires node == \null || \valid(node);
+  @ requires root == \null || \valid(root);
+  @ assigns \nothing;
+  @*/
+void rb_erase(struct rb_node *node, struct rb_root *root) {
+  rb_erase_augmented(node, root, nil, nil);
+}
+
+/*
+ * Get leftmost (minimum) node
+ */
+struct rb_node *rb_first(const struct rb_root *root) {
+  struct rb_node *n = root->rb_node;
+
+  if (!n)
+    return nil;
+
+  while (n->rb_left)
+    n = n->rb_left;
+
+  return n;
+}
+
+/*
+ * Get rightmost (maximum) node
+ */
+struct rb_node *rb_last(const struct rb_root *root) {
+  struct rb_node *n = root->rb_node;
+
+  if (!n)
+    return nil;
+
+  while (n->rb_right)
+    n = n->rb_right;
+
+  return n;
+}
+
+/*
+ * Get next node in order
+ */
+struct rb_node *rb_next(const struct rb_node *node) {
+  struct rb_node *parent;
+
+  if (RB_EMPTY_NODE(node))
+    return nil;
+
+  if (node->rb_right) {
+    node = node->rb_right;
+    while (node->rb_left)
+      node = node->rb_left;
+    return (struct rb_node *)node;
+  }
+
+  while ((parent = rb_parent(node)) && node == parent->rb_right)
+    node = parent;
+
+  return parent;
+}
+
+/*
+ * Get previous node in order
+ */
+struct rb_node *rb_prev(const struct rb_node *node) {
+  struct rb_node *parent;
+
+  if (RB_EMPTY_NODE(node))
+    return nil;
+
+  if (node->rb_left) {
+    node = node->rb_left;
+    while (node->rb_right)
+      node = node->rb_right;
+    return (struct rb_node *)node;
+  }
+
+  while ((parent = rb_parent(node)) && node == parent->rb_left)
+    node = parent;
+
+  return parent;
+}
+
+/*
+ * Replace node in tree (for in-place updates)
+ */
+void rb_replace_node(struct rb_node *victim, struct rb_node *new_node,
+                     struct rb_root *root) {
+  struct rb_node *parent = rb_parent(victim);
+
+  /* Copy the pointers/colour from the victim to the replacement */
+  *new_node = *victim;
+
+  /* Set the surrounding nodes to point to the replacement */
+  if (victim->rb_left)
+    rb_set_parent(victim->rb_left, new_node);
+  if (victim->rb_right)
+    rb_set_parent(victim->rb_right, new_node);
+
+  if (parent) {
+    if (victim == parent->rb_left)
+      parent->rb_left = new_node;
+    else
+      parent->rb_right = new_node;
+  } else {
+    root->rb_node = new_node;
+  }
+}

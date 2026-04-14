@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <style>
+      .box { fill: #f8f9fa; stroke: #333; stroke-width: 2; }
+      .header { fill: #e3f2fd; stroke: #333; stroke-width: 2; }
+      .msg { fill: #fff3e0; stroke: #333; stroke-width: 2; }
+      .field { fill: #ffffff; stroke: #666; stroke-width: 1; }
+      .text { font-family: monospace; font-size: 14px; fill: #333; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .label { font-family: sans-serif; font-size: 12px; fill: #666; }
+    </style>
+  </defs>
+
+  <text x="400" y="30" text-anchor="middle" class="title">Exchange Page Memory Layout (4KB)</text>
+
+  <!-- Main 4KB Page Container -->
+  <rect x="100" y="50" width="600" height="400" class="box" />
+  <text x="710" y="65" class="label">Offset 0</text>
+  <text x="710" y="445" class="label">Offset 4096</text>
+
+  <!-- P9Control Header (256 bytes) -->
+  <rect x="100" y="50" width="600" height="120" class="header" />
+  <text x="400" y="80" text-anchor="middle" class="text" font-weight="bold">P9Control Header (256 bytes)</text>
+  <line x1="100" y1="50" x2="700" y2="50" stroke="#333" stroke-width="2" />
+  
+  <!-- Fields within Header -->
+  <g transform="translate(120, 90)">
+    <rect x="0" y="0" width="130" height="30" class="field" />
+    <text x="65" y="20" text-anchor="middle" class="text">req_seq (4B)</text>
+
+    <rect x="140" y="0" width="130" height="30" class="field" />
+    <text x="205" y="20" text-anchor="middle" class="text">rep_seq (4B)</text>
+
+    <rect x="280" y="0" width="130" height="30" class="field" />
+    <text x="345" y="20" text-anchor="middle" class="text">rep_head (4B)</text>
+
+    <rect x="420" y="0" width="130" height="30" class="field" />
+    <text x="485" y="20" text-anchor="middle" class="text">rep_tail (4B)</text>
+  </g>
+
+  <!-- Session Pebble Field -->
+  <rect x="120" y="130" width="560" height="30" class="field" style="fill: #e8f5e9" />
+  <text x="400" y="150" text-anchor="middle" class="text">session_pebble (32 bytes) - Security Token</text>
+
+  <!-- Padding/Reserved -->
+  <text x="400" y="190" text-anchor="middle" class="label" font-style="italic">Reserved / Padding (212 bytes)</text>
+
+  <!-- Message Buffer -->
+  <rect x="100" y="210" width="600" height="240" class="msg" />
+  <text x="400" y="240" text-anchor="middle" class="text" font-weight="bold">Message Buffer (3840 bytes)</text>
+  <text x="710" y="215" class="label">Offset 256</text>
+  
+  <text x="400" y="300" text-anchor="middle" class="text">Standard 9P Message (Twrite/Rread)</text>
+  <text x="400" y="320" text-anchor="middle" class="label">or</text>
+  <text x="400" y="340" text-anchor="middle" class="text">Ring Buffer Slots (if ring_mode=1)</text>
+
+</svg>

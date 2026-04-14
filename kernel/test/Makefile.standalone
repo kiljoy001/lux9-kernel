@@ -1,0 +1,82 @@
+# Standalone IL Test Suite Makefile
+#
+# Build and run tests on host Linux without kernel boot.
+#
+# Usage:
+#   make              - Build all test binaries
+#   make test         - Build and run all tests
+#   make run-qbe      - Run QBE IL tests only
+#   make run-cil      - Run CIL tests only
+#   make clean        - Clean build artifacts
+
+CC = gcc
+CFLAGS = -O0 -g3 -Wall -Wno-unused-result
+
+# QBE IL test
+QBE_TARGET = test_qbe
+QBE_SOURCES = test_qbe_standalone.c qbe_compile_standalone.c
+
+# CIL test
+CIL_TARGET = test_cil
+CIL_SOURCES = test_cil_opcodes.c
+
+# Pipeline test (CIL -> FRUITY -> QBE -> ASM)
+PIPE_TARGET = test_pipeline
+PIPE_SOURCES = test_pipeline.c qbe_compile_standalone.c \
+               ../clr/il_to_fruity.c \
+               ../clr/fruity/fruity_ir.c \
+               ../clr/fruity/fruity_to_qbe.c \
+               ../clr/fruity/qbe_buffer.c \
+               ../clr/il_disasm.c \
+               ../clr/il_parser.c
+PIPE_CFLAGS = $(CFLAGS) -DUSERSPACE_TEST -I../clr -I../clr/fruity
+
+# Phase 1 opcode test
+PHASE1_TARGET = test_opcodes_phase1
+PHASE1_SOURCES = test_opcodes_phase1.c qbe_compile_standalone.c \
+                 ../clr/il_to_fruity.c \
+                 ../clr/fruity/fruity_ir.c \
+                 ../clr/fruity/fruity_to_qbe.c \
+                 ../clr/fruity/qbe_buffer.c \
+                 ../clr/il_disasm.c \
+                 ../clr/il_parser.c
+PHASE1_CFLAGS = $(CFLAGS) -DUSERSPACE_TEST -I../clr -I../clr/fruity
+
+all: $(QBE_TARGET) $(CIL_TARGET) $(PIPE_TARGET) $(PHASE1_TARGET)
+
+$(QBE_TARGET): $(QBE_SOURCES)
+	$(CC) $(CFLAGS) -o $@ $(QBE_SOURCES)
+
+$(CIL_TARGET): $(CIL_SOURCES)
+	$(CC) $(CFLAGS) -o $@ $(CIL_SOURCES)
+
+$(PIPE_TARGET): $(PIPE_SOURCES)
+	$(CC) $(PIPE_CFLAGS) -o $@ $(PIPE_SOURCES)
+
+$(PHASE1_TARGET): $(PHASE1_SOURCES)
+	$(CC) $(PHASE1_CFLAGS) -o $@ $(PHASE1_SOURCES)
+
+test: all
+	@echo "--- QBE ---"
+	@./$(QBE_TARGET)
+	@echo "\n--- CIL ---"
+	@./$(CIL_TARGET)
+	@echo "\n--- PIPELINE ---"
+	@./$(PIPE_TARGET)
+	@echo "\n--- PHASE 1 OPCODES ---"
+	@./$(PHASE1_TARGET)
+
+run-qbe: $(QBE_TARGET)
+	@./$(QBE_TARGET)
+
+run-cil: $(CIL_TARGET)
+	@./$(CIL_TARGET)
+
+run-pipe: $(PIPE_TARGET)
+	@./$(PIPE_TARGET)
+
+clean:
+	rm -f $(QBE_TARGET) $(CIL_TARGET) $(PIPE_TARGET)
+
+.PHONY: all test run-qbe run-cil run-pipe clean
+

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1450" height="900" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="spaceGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5f5f5"/>
+      <stop offset="100%" style="stop-color:#bdbdbd"/>
+    </linearGradient>
+    <linearGradient id="timeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff8e1"/>
+      <stop offset="100%" style="stop-color:#ffe0b2"/>
+    </linearGradient>
+    
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+    <marker id="flow" markerWidth="12" markerHeight="12" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L11,4 z" fill="#009688"/>
+    </marker>
+    <marker id="timeflow" markerWidth="12" markerHeight="12" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L11,4 z" fill="#e65100"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="50" y="50" text-anchor="start" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#2d3748">Pebble Macro-Economy</text>
+  <text x="50" y="75" text-anchor="start" font-family="Arial, sans-serif" font-size="14" fill="#666">Separation of Space (Memory) and Time (CPU)</text>
+
+  <!-- ========================================================================================== -->
+  <!-- LEFT SIDE: SPACE ECONOMY (Memory) -->
+  <!-- ========================================================================================== -->
+  
+  <!-- Space Bank -->
+  <g transform="translate(450, 30)">
+    <rect x="-10" y="0" width="180" height="100" rx="50" fill="url(#spaceGrad)" stroke="#757575" stroke-width="2" filter="url(#shadow)"/>
+    <text x="80" y="45" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#424242">Space Bank</text>
+    <text x="80" y="70" text-anchor="middle" font-family="monospace" font-size="12" fill="#616161">Colorless / RAM</text>
+  </g>
+
+  <!-- Cycle A: RAM Economy -->
+  <g transform="translate(50, 200)">
+    <rect x="0" y="0" width="400" height="600" rx="10" fill="#f7fafc" stroke="#4a5568" stroke-width="2"/>
+    <text x="200" y="30" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold" fill="#2d3748">Cycle A: RAM Economy</text>
+    
+    <g transform="translate(150, 80)">
+       <circle cx="50" cy="50" r="45" fill="white" stroke="#a0aec0" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold">White</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11">Reservation</text>
+    </g>
+    <path d="M 200 180 L 200 240" stroke="#4a5568" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="210" y="215" font-family="monospace" font-size="11">verify()</text>
+    <g transform="translate(150, 250)">
+       <circle cx="50" cy="50" r="45" fill="#2d3748" stroke="#1a202c" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="white">Black</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="white">Ownership</text>
+    </g>
+    <path d="M 200 350 L 200 500" stroke="#c62828" stroke-width="3" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+    <text x="210" y="430" font-family="monospace" font-size="11" fill="#c62828">black_free (Burn)</text>
+  </g>
+
+  <!-- Cycle B: I/O Economy -->
+  <g transform="translate(500, 200)">
+    <rect x="0" y="0" width="400" height="600" rx="10" fill="#e3f2fd" stroke="#3182ce" stroke-width="2"/>
+    <text x="200" y="30" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold" fill="#2c5282">Cycle B: I/O Economy</text>
+
+    <g transform="translate(150, 80)">
+       <circle cx="50" cy="50" r="45" fill="#bee3f8" stroke="#3182ce" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="#2c5282">Blue</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="#2c5282">Mutable / IO</text>
+    </g>
+    <path d="M 200 180 L 200 240" stroke="#3182ce" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="210" y="215" font-family="monospace" font-size="11" fill="#2b6cb0">snapshot()</text>
+    <g transform="translate(150, 250)">
+       <circle cx="50" cy="50" r="45" fill="#fed7d7" stroke="#e53e3e" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="#742a2a">Red</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="#742a2a">CoW / Rollback</text>
+    </g>
+    <path d="M 200 350 L 200 500" stroke="#c62828" stroke-width="3" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+    <text x="210" y="430" font-family="monospace" font-size="11" fill="#c62828">blue_free (Burn)</text>
+  </g>
+
+  <!-- Space Arrows -->
+  <path d="M 450 130 L 250 200" stroke="#009688" stroke-width="3" marker-end="url(#flow)" fill="none"/>
+  <text x="320" y="160" font-family="monospace" font-size="11" fill="#00796b" text-anchor="middle">issue_white</text>
+  
+  <path d="M 530 130 L 700 200" stroke="#009688" stroke-width="3" marker-end="url(#flow)" fill="none"/>
+  <text x="650" y="160" font-family="monospace" font-size="11" fill="#00796b">blue_alloc</text>
+
+  <!-- Space Recycling -->
+  <g transform="translate(395, 720)">
+     <rect x="-10" y="0" width="180" height="80" rx="40" fill="url(#spaceGrad)" stroke="#757575" stroke-width="2" filter="url(#shadow)"/>
+     <text x="80" y="35" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#424242">Space Recycling</text>
+     <text x="80" y="55" text-anchor="middle" font-family="monospace" font-size="11" fill="#616161">Return to Pool</text>
+     <!-- Incoming -->
+     <path d="M -145 -20 L 10 40" stroke="#c62828" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+     <path d="M 305 -20 L 150 40" stroke="#c62828" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  </g>
+
+  <!-- ========================================================================================== -->
+  <!-- RIGHT SIDE: TIME ECONOMY (CPU) -->
+  <!-- ========================================================================================== -->
+
+  <!-- Time Bank -->
+  <g transform="translate(1080, 30)">
+    <rect x="-10" y="0" width="180" height="100" rx="50" fill="url(#timeGrad)" stroke="#fbc02d" stroke-width="2" filter="url(#shadow)"/>
+    <text x="80" y="45" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#e65100">Time Bank</text>
+    <text x="80" y="70" text-anchor="middle" font-family="monospace" font-size="12" fill="#bf360c">Clock / Float</text>
+  </g>
+
+  <!-- Cycle C: CPU Economy -->
+  <g transform="translate(950, 200)">
+    <rect x="0" y="0" width="440" height="600" rx="10" fill="#fffde7" stroke="#fbc02d" stroke-width="2"/>
+    <text x="220" y="30" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold" fill="#afb42b">Cycle C: CPU Sched</text>
+    <text x="220" y="55" text-anchor="middle" font-family="Arial" font-size="14" font-style="italic" fill="#afb42b">(Future Enhancement)</text>
+
+    <!-- 1a. Green (Time Slice) -->
+    <g transform="translate(60, 80)">
+       <circle cx="50" cy="50" r="45" fill="#dcedc8" stroke="#689f38" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="#33691e">Green</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="#33691e">Time Slice</text>
+    </g>
+
+    <!-- 1b. Purple (Priority) -->
+    <g transform="translate(280, 80)">
+       <circle cx="50" cy="50" r="45" fill="#e1bee7" stroke="#8e24aa" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="#4a148c">Purple</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="#4a148c">Priority</text>
+    </g>
+    
+    <path d="M 110 180 L 170 250" stroke="#689f38" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 330 180 L 270 250" stroke="#8e24aa" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="220" y="215" font-family="monospace" font-size="11" fill="#f57f17" text-anchor="middle">schedule()</text>
+
+    <!-- 2. Yellow (Execution) -->
+    <g transform="translate(170, 250)">
+       <circle cx="50" cy="50" r="45" fill="#fff9c4" stroke="#fbc02d" stroke-width="3"/>
+       <text x="50" y="45" text-anchor="middle" font-weight="bold" fill="#f57f17">Yellow</text>
+       <text x="50" y="65" text-anchor="middle" font-size="11" fill="#f57f17">Execution</text>
+    </g>
+
+    <!-- Burn Flow -->
+    <path d="M 220 350 L 220 560" stroke="#c62828" stroke-width="3" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+    <text x="230" y="430" font-family="monospace" font-size="11" fill="#c62828">yield (Burn)</text>
+  </g>
+
+  <!-- Time Arrows -->
+  <path d="M 1100 130 L 1050 200" stroke="#ff9800" stroke-width="3" marker-end="url(#timeflow)" fill="none"/>
+  <text x="1040" y="160" font-family="monospace" font-size="11" fill="#e65100">alloc_time</text>
+
+  <path d="M 1240 130 L 1290 200" stroke="#ff9800" stroke-width="3" marker-end="url(#timeflow)" fill="none"/>
+  <text x="1300" y="160" font-family="monospace" font-size="11" fill="#e65100">alloc_priority</text>
+
+  <!-- Time Recycling -->
+  <g transform="translate(1080, 720)">
+     <rect x="-10" y="0" width="180" height="80" rx="40" fill="url(#timeGrad)" stroke="#fbc02d" stroke-width="2" filter="url(#shadow)"/>
+     <text x="80" y="35" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#e65100">Time Recycling</text>
+     <text x="80" y="55" text-anchor="middle" font-family="monospace" font-size="11" fill="#bf360c">Free Float</text>
+     
+     <!-- Incoming Arrow Removed (Consolidated into Cycle C) -->
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(50, 830)">
+    <text font-family="Arial" font-size="12" fill="#555">
+      The Pebble Economy consists of two distinct domains:
+      1. SPACE (Left): Managed by Space Bank. Cycles A (RAM) &amp; B (I/O). White/Black/Blue/Red.
+      2. TIME (Right): Managed by Time Bank. Cycle C (CPU). Green/Purple/Yellow.
+    </text>
+  </g>
+
+</svg>

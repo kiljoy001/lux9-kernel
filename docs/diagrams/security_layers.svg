@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 700" width="900" height="700">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <linearGradient id="userGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff6b6b"/>
+      <stop offset="100%" style="stop-color:#ee5a5a"/>
+    </linearGradient>
+    <linearGradient id="capGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ecdc4"/>
+      <stop offset="100%" style="stop-color:#3dbdb5"/>
+    </linearGradient>
+    <linearGradient id="memGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#45b7d1"/>
+      <stop offset="100%" style="stop-color:#36a3bc"/>
+    </linearGradient>
+    <linearGradient id="execGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#96c93d"/>
+      <stop offset="100%" style="stop-color:#7db82f"/>
+    </linearGradient>
+    <linearGradient id="hwGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#9333ea"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#2d3748">
+    Lux9 Security Architecture
+  </text>
+
+  <!-- User Space Layer -->
+  <rect x="50" y="55" width="800" height="80" rx="8" fill="url(#userGrad)" filter="url(#shadow)"/>
+  <text x="450" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+    USER SPACE (Untrusted)
+  </text>
+  <text x="450" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">
+    Processes hold opaque capabilities, never see physical addresses
+  </text>
+
+  <!-- Arrow -->
+  <path d="M 450 140 L 450 165" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+  <text x="460" y="155" font-family="Arial, sans-serif" font-size="10" fill="#666">syscalls</text>
+  
+  <!-- Capability Layer -->
+  <rect x="50" y="170" width="800" height="150" rx="8" fill="url(#capGrad)" filter="url(#shadow)"/>
+  <text x="450" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+    CAPABILITY LAYER (Trusted)
+  </text>
+  
+  <!-- Capability Components -->
+  <rect x="70" y="210" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="185" y="230" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Blind Ledger</text>
+  <text x="185" y="250" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">UserCapability = SHA256 hash</text>
+  <text x="185" y="270" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Prevents:</text>
+  <text x="185" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Forge addresses • UAF</text>
+
+  <rect x="335" y="210" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="450" y="230" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Exchange</text>
+  <text x="450" y="250" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Capability Verification</text>
+  <text x="450" y="270" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Prevents:</text>
+  <text x="450" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Unauthorized access • Races</text>
+
+  <rect x="600" y="210" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="715" y="230" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Vault System</text>
+  <text x="715" y="250" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Per-Process Encrypted Vaults</text>
+  <text x="715" y="270" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Prevents:</text>
+  <text x="715" y="285" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Disk tampering • Mem dumps</text>
+
+  <!-- Arrow -->
+  <path d="M 450 325 L 450 350" stroke="#666" stroke-width="2" fill="none"/>
+
+  <!-- Memory Management Layer -->
+  <rect x="50" y="355" width="800" height="150" rx="8" fill="url(#memGrad)" filter="url(#shadow)"/>
+  <text x="450" y="380" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+    MEMORY MANAGEMENT LAYER
+  </text>
+  
+  <!-- Memory Components -->
+  <rect x="70" y="395" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="185" y="415" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Pebble System</text>
+  <text x="185" y="435" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Token-based allocation</text>
+  <text x="185" y="455" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">White=Free, Black=Used</text>
+  <text x="185" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Blue=Borrow, Red=Snapshot</text>
+
+  <rect x="335" y="395" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="450" y="415" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Borrow Checker</text>
+  <text x="450" y="435" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Linear types for memory</text>
+  <text x="450" y="455" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Prevents:</text>
+  <text x="450" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Data races • UAF</text>
+
+  <rect x="600" y="395" width="230" height="95" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="715" y="415" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Lock DAG</text>
+  <text x="715" y="435" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Deadlock prevention</text>
+  <text x="715" y="455" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Prevents:</text>
+  <text x="715" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Deadlock • Livelock</text>
+
+  <!-- Arrow -->
+  <path d="M 450 510 L 450 535" stroke="#666" stroke-width="2" fill="none"/>
+
+  <!-- Execution Layer -->
+  <rect x="50" y="540" width="800" height="145" rx="8" fill="url(#execGrad)" filter="url(#shadow)"/>
+  <text x="450" y="565" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+    EXECUTION LAYER (CLR Runtime)
+  </text>
+  
+  <!-- CLR Pipeline -->
+  <rect x="70" y="585" width="760" height="85" rx="5" fill="white" fill-opacity="0.2"/>
+  <text x="450" y="610" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">
+    .NET/C# Bytecode → Fruity IR → QBE → Native Code
+  </text>
+  <text x="450" y="635" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">
+    Every allocation → Pebble token | Every object → Blind Ledger capability
+  </text>
+  <text x="450" y="655" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">
+    Prevents: Type confusion | Buffer overflow | Code injection
+  </text>
+
+  <!-- Legend -->
+  <rect x="50" y="695" width="800" height="1" fill="#e2e8f0"/>
+</svg>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Flow stages -->
+    <linearGradient id="limine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24"/>
+      <stop offset="100%" style="stop-color:#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="assembly" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#dc2626"/>
+    </linearGradient>
+    <linearGradient id="c" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    
+    <!-- Arrow markers -->
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#374151"/>
+    </marker>
+    <marker id="processArrow" markerWidth="14" markerHeight="14" refX="12" refY="5" orient="auto">
+      <path d="M0,0 L0,10 L12,5 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#1f2937">
+    Assembly Entry Flow
+  </text>
+  <text x="500" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">
+    Bootstrapping from Limine to Kernel Main
+  </text>
+
+  <!-- Stage 1: Limine Bootloader -->
+  <g transform="translate(50, 120)">
+    <rect x="0" y="0" width="200" height="120" rx="8" fill="url(#limine)" stroke="#d97706" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">1. Limine Bootloader</text>
+    
+    <text x="100" y="50" text-anchor="middle" font-family="Arial" font-size="11" fill="white">UEFI-based bootloader</text>
+    <text x="100" y="65" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Loads kernel at high VA</text>
+    <text x="100" y="78" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Provides HHDM offset</text>
+    <text x="100" y="91" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Sets up temp page tables</text>
+    <text x="100" y="104" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Jumps to 'entry' symbol</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <g transform="translate(270, 170)">
+    <path d="M 0 0 L 80 0" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+    <text x="40" y="-10" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">jmp entry</text>
+    <text x="40" y="20" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">UEFI transition</text>
+  </g>
+
+  <!-- Stage 2: Assembly Entry -->
+  <g transform="translate(380, 120)">
+    <rect x="0" y="0" width="200" height="120" rx="8" fill="url(#assembly)" stroke="#b91c1c" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">2. Assembly Entry</text>
+    <text x="100" y="50" text-anchor="middle" font-family="monospace" font-size="11" fill="white">kernel/9front-pc64/l.S</text>
+    
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• cli (disable interrupts)</text>
+    <text x="100" y="83" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Setup kernel stack</text>
+    <text x="100" y="96" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• Call main() in C</text>
+    <text x="100" y="109" text-anchor="middle" font-family="Arial" font-size="9" fill="#fef3c7">Ring 0 execution</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <g transform="translate(600, 170)">
+    <path d="M 0 0 L 80 0" stroke="#374151" stroke-width="3" marker-end="url(#processArrow)"/>
+    <text x="40" y="-10" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">call main</text>
+    <text x="40" y="20" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Assembly to C</text>
+  </g>
+
+  <!-- Stage 3: C Main -->
+  <g transform="translate(710, 120)">
+    <rect x="0" y="0" width="200" height="120" rx="8" fill="url(#c)" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold" fill="white">3. C Main</text>
+    <text x="100" y="50" text-anchor="middle" font-family="monospace" font-size="11" fill="white">kernel/9front-pc64/main.c</text>
+    
+    <text x="100" y="70" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• mach0init() - CPU0 setup</text>
+    <text x="100" y="83" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• UART console init</text>
+    <text x="100" y="96" text-anchor="middle" font-family="Arial" font-size="10" fill="white">• setuppagetables()</text>
+    <text x="100" y="109" text-anchor="middle" font-family="Arial" font-size="9" fill="#dbeafe">Early kernel init</text>
+  </g>
+
+  <!-- Stage 4: CR3 Switch -->
+  <g transform="translate(190, 300)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="#8b5cf6" stroke="#7c3aed" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">4. CR3 Switch</text>
+    <text x="100" y="45" text-anchor="middle" font-family="monospace" font-size="10" fill="white">setuppagetables()</text>
+    <text x="100" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="white">Never returns - critical transition</text>
+  </g>
+
+  <!-- Arrow to CR3 -->
+  <g transform="translate(590, 240)">
+    <path d="M 0 0 L -200 60" stroke="#374151" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="-100" y="20" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">call setuppagetables</text>
+  </g>
+
+  <!-- Final Stage: main_after_cr3 -->
+  <g transform="translate(580, 300)">
+    <rect x="0" y="0" width="200" height="80" rx="8" fill="#059669" stroke="#047857" stroke-width="2"/>
+    <text x="100" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">5. main_after_cr3()</text>
+    <text x="100" y="45" text-anchor="middle" font-family="monospace" font-size="10" fill="white">20-state boot machine</text>
+    <text x="100" y="60" text-anchor="middle" font-family="Arial" font-size="9" fill="white">Complete kernel initialization</text>
+  </g>
+
+  <!-- Arrow to main_after_cr3 -->
+  <g transform="translate(390, 340)">
+    <path d="M 0 0 L 190 0" stroke="#374151" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="95" y="-10" text-anchor="middle" font-family="monospace" font-size="10" fill="#374151">jmp main_after_cr3</text>
+    <text x="95" y="20" text-anchor="middle" font-family="Arial" font-size="9" fill="#6b7280">Direct jump after CR3</text>
+  </g>
+
+  <!-- Technical Details Box -->
+  <g transform="translate(50, 420)">
+    <rect x="0" y="0" width="900" height="70" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1"/>
+    <text x="450" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#334155">Critical Transition Points</text>
+    
+    <text x="20" y="45" font-family="Arial" font-size="10" fill="#475569">• Entry: First instruction in kernel, runs with bootloader's page tables</text>
+    <text x="350" y="45" font-family="Arial" font-size="10" fill="#475569">• CR3 Switch: Permanent kernel page tables, never returns</text>
+    <text x="20" y="60" font-family="Arial" font-size="10" fill="#475569">• main_after_cr3(): Safe C environment with proper memory mapping</text>
+    <text x="550" y="60" font-family="Arial" font-size="10" fill="#475569">• All transitions validated for correctness</text>
+  </g>
+
+</svg>

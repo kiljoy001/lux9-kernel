@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <style>
+      .app { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; rx: 5; }
+      .lib { fill: #fff3e0; stroke: #e65100; stroke-width: 2; rx: 5; }
+      .hw { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 2; rx: 5; }
+      .text { font-family: sans-serif; font-size: 14px; fill: #333; text-anchor: middle; }
+      .label { font-family: sans-serif; font-size: 12px; fill: #666; text-anchor: middle; }
+      .title { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .arrow { stroke: #333; stroke-width: 2; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="400" y="30" class="title" text-anchor="middle">Cryptographic Subsystem Stack</text>
+
+  <!-- Application Layer -->
+  <g transform="translate(100, 70)">
+    <rect x="0" y="0" width="180" height="60" class="app" />
+    <text x="90" y="35" class="text">Blind Ledger</text>
+    <text x="90" y="55" class="label">(Capabilities)</text>
+
+    <rect x="210" y="0" width="180" height="60" class="app" />
+    <text x="300" y="35" class="text">Process Vaults</text>
+    <text x="300" y="55" class="label">(Secure Storage)</text>
+
+    <rect x="420" y="0" width="180" height="60" class="app" />
+    <text x="510" y="35" class="text">Secure RAMDisk</text>
+    <text x="510" y="55" class="label">(Encrypted Swap)</text>
+  </g>
+
+  <!-- Library Layer (Monocypher) -->
+  <g transform="translate(100, 200)">
+    <rect x="0" y="0" width="600" height="120" class="lib" />
+    <text x="300" y="30" class="text" font-weight="bold">Monocypher Library (kernel/crypto/monocypher.c)</text>
+    
+    <g transform="translate(20, 50)">
+      <rect x="0" y="0" width="130" height="40" fill="#fff" stroke="#e65100" />
+      <text x="65" y="25" class="text">BLAKE2b</text>
+      
+      <rect x="140" y="0" width="130" height="40" fill="#fff" stroke="#e65100" />
+      <text x="205" y="25" class="text">XChaCha20</text>
+      
+      <rect x="280" y="0" width="130" height="40" fill="#fff" stroke="#e65100" />
+      <text x="345" y="25" class="text">Poly1305</text>
+      
+      <rect x="420" y="0" width="130" height="40" fill="#fff" stroke="#e65100" />
+      <text x="485" y="25" class="text">Elligator</text>
+    </g>
+  </g>
+
+  <!-- Hardware Layer -->
+  <g transform="translate(100, 380)">
+    <rect x="0" y="0" width="600" height="80" class="hw" />
+    <text x="300" y="30" class="text" font-weight="bold">Hardware Acceleration (hwcrypto.S)</text>
+    
+    <g transform="translate(50, 40)">
+      <rect x="0" y="0" width="150" height="30" fill="#fff" stroke="#2e7d32" />
+      <text x="75" y="20" class="text">SHA-NI</text>
+      
+      <rect x="175" y="0" width="150" height="30" fill="#fff" stroke="#2e7d32" />
+      <text x="250" y="20" class="text">RDRAND</text>
+      
+      <rect x="350" y="0" width="150" height="30" fill="#fff" stroke="#2e7d32" />
+      <text x="425" y="20" class="text">AES-NI</text>
+    </g>
+  </g>
+
+  <!-- Connections -->
+  <line x1="190" y1="130" x2="190" y2="200" class="arrow" />
+  <line x1="400" y1="130" x2="400" y2="200" class="arrow" />
+  <line x1="610" y1="130" x2="610" y2="200" class="arrow" />
+  
+  <line x1="400" y1="320" x2="400" y2="380" class="arrow" />
+
+</svg>

@@ -1,0 +1,82 @@
+#!/bin/bash
+#
+# frama-c-plan9: Seamless Frama-C integration for Plan 9 C code
+#
+# This script acts as a drop-in replacement for frama-c that automatically
+# preprocesses Plan 9 code before analysis.
+#
+# Usage:
+#   frama-c-plan9 [frama-c options] <plan9-file.c>
+#
+# Examples:
+#   frama-c-plan9 -wp kernel/9front-port/devram.c
+#   frama-c-plan9 -eva -wp-rte kernel/msgord.c
+#   frama-c-plan9 -print kernel/pebble.c
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Find the last argument (should be the input file)
+INPUT_FILE="${!#}"
+
+# Check if input file exists and is a C file
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "Error: Input file '$INPUT_FILE' not found" >&2
+    exit 1
+fi
+
+if [[ ! "$INPUT_FILE" =~ \.c$ ]]; then
+    echo "Error: Input file must be a .c file" >&2
+    exit 1
+fi
+
+# Create temporary preprocessed file
+TEMP_FILE=$(mktemp /tmp/framac_plan9_XXXXXX.c)
+# # trap "rm -f $TEMP_FILE" EXIT
+
+# Preprocess the Plan 9 file
+echo "📋 [frama-c-plan9] Preprocessing $INPUT_FILE..." >&2
+"$SCRIPT_DIR/framac_plan9_v2.sh" "$INPUT_FILE" "$TEMP_FILE" >&2
+
+# Build frama-c command with all arguments except the last one
+FRAMA_C_ARGS=()
+for arg in "${@:1:$(($#-1))}"; do
+    FRAMA_C_ARGS+=("$arg")
+done
+
+# Allow users to override annot-error handling.
+HAS_ANNOT_ERROR=0
+HAS_WP=0
+HAS_WP_TIMEOUT=0
+for arg in "${FRAMA_C_ARGS[@]}"; do
+    if [[ "$arg" == *"annot-error"* ]]; then
+        HAS_ANNOT_ERROR=1
+    fi
+    if [[ "$arg" == "-wp" ]]; then
+        HAS_WP=1
+    fi
+    if [[ "$arg" == "-wp-timeout" ]]; then
+        HAS_WP_TIMEOUT=1
+    fi
+done
+
+# Add required Frama-C options
+FRAMA_C_ARGS+=(
+    "-machdep" "gcc_x86_64"
+    "-no-cpp-frama-c-compliant"
+    "-cpp-command" "$SCRIPT_DIR/frama_noop_cpp.sh"
+    "$TEMP_FILE"
+)
+if [ "$HAS_ANNOT_ERROR" -eq 0 ]; then
+    FRAMA_C_ARGS+=("-kernel-warn-key" "annot-error=inactive")
+fi
+if [ "$HAS_WP" -eq 1 ] && [ "$HAS_WP_TIMEOUT" -eq 0 ]; then
+    FRAMA_C_ARGS+=("-wp-timeout" "120")
+fi
+
+# Run Frama-C
+echo "🔍 [frama-c-plan9] Running Frama-C analysis..." >&2
+exec frama-c "${FRAMA_C_ARGS[@]}"

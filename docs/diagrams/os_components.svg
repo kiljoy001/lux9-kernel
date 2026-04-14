@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="1000" height="800">
+  <rect width="100%" height="100%" fill="white"/>
+  <defs>
+    <linearGradient id="kernelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#5a67d8"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ed8936"/>
+      <stop offset="100%" style="stop-color:#dd6b20"/>
+    </linearGradient>
+    <linearGradient id="halGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#38b2ac"/>
+      <stop offset="100%" style="stop-color:#2c7a7b"/>
+    </linearGradient>
+    <linearGradient id="p9Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#9f7aea"/>
+      <stop offset="100%" style="stop-color:#805ad5"/>
+    </linearGradient>
+    <linearGradient id="clrGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#48bb78"/>
+      <stop offset="100%" style="stop-color:#38a169"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#cbd5e0" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#2d3748">
+    Lux9 Kernel Architecture
+  </text>
+
+  <!-- Main Container -->
+  <rect x="30" y="55" width="940" height="730" rx="10" fill="#f7fafc" stroke="#e2e8f0" stroke-width="2"/>
+
+  <!-- Connections (Background) -->
+  <!-- Core <-> Security -->
+  <path d="M350 175 L370 175" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Core <-> Drivers -->
+  <path d="M200 425 L200 445" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Security <-> Crypto -->
+  <path d="M520 275 L520 445" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Security <-> HAL -->
+  <path d="M520 275 L520 295" stroke="#cbd5e0" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- HAL <-> Drivers -->
+  <path d="M370 360 L350 540" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+  <!-- 9P <-> Core -->
+  <path d="M690 360 L350 250" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+  <!-- CLR <-> Core -->
+  <path d="M690 175 L350 175" stroke="#cbd5e0" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- 9front Core Section -->
+  <rect x="50" y="75" width="300" height="350" rx="8" fill="url(#coreGrad)" filter="url(#shadow)"/>
+  <text x="200" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    9front Core (~12.5K LOC)
+  </text>
+  
+  <rect x="65" y="120" width="270" height="290" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <g transform="translate(0, -5)">
+  <text x="80" y="145" font-family="monospace" font-size="12" fill="white">proc.c</text>
+  <text x="180" y="145" font-family="Arial" font-size="10" fill="white">- Fair-share scheduler</text>
+  
+  <text x="80" y="165" font-family="monospace" font-size="12" fill="white">page.c</text>
+  <text x="180" y="165" font-family="Arial" font-size="10" fill="white">- Page management</text>
+  
+  <text x="80" y="185" font-family="monospace" font-size="12" fill="white">segment.c</text>
+  <text x="180" y="185" font-family="Arial" font-size="10" fill="white">- Memory segments</text>
+  
+  <text x="80" y="205" font-family="monospace" font-size="12" fill="white">syscall.c</text>
+  <text x="180" y="205" font-family="Arial" font-size="10" fill="white">- Syscall dispatch</text>
+  
+  <text x="80" y="225" font-family="monospace" font-size="12" fill="white">chan.c</text>
+  <text x="180" y="225" font-family="Arial" font-size="10" fill="white">- Channel abstraction</text>
+  
+  <text x="80" y="245" font-family="monospace" font-size="12" fill="white">dev.c</text>
+  <text x="180" y="245" font-family="Arial" font-size="10" fill="white">- Device table</text>
+  
+  <text x="80" y="265" font-family="monospace" font-size="12" fill="white">devmnt.c</text>
+  <text x="180" y="265" font-family="Arial" font-size="10" fill="white">- 9P mount device</text>
+  
+  <text x="80" y="285" font-family="monospace" font-size="12" fill="white">devproc.c</text>
+  <text x="180" y="285" font-family="Arial" font-size="10" fill="white">- /proc filesystem</text>
+  
+  <text x="80" y="305" font-family="monospace" font-size="12" fill="white">alloc.c</text>
+  <text x="180" y="305" font-family="Arial" font-size="10" fill="white">- Memory allocator</text>
+  
+  <text x="80" y="325" font-family="monospace" font-size="12" fill="white">mmu.c</text>
+  <text x="180" y="325" font-family="Arial" font-size="10" fill="white">- Page tables</text>
+  
+  <text x="80" y="345" font-family="monospace" font-size="12" fill="white">trap.c</text>
+  <text x="180" y="345" font-family="Arial" font-size="10" fill="white">- Interrupts/exceptions</text>
+  
+  <text x="80" y="365" font-family="monospace" font-size="12" fill="white">apic.c</text>
+  <text x="180" y="365" font-family="Arial" font-size="10" fill="white">- APIC controller</text>
+  
+  <text x="80" y="385" font-family="monospace" font-size="12" fill="white">squidboy.c</text>
+  <text x="180" y="385" font-family="Arial" font-size="10" fill="white">- SMP startup</text>
+  </g>
+
+  <!-- Pebble/Security Section -->
+  <rect x="370" y="75" width="300" height="200" rx="8" fill="url(#kernelGrad)" filter="url(#shadow)"/>
+  <text x="520" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    Pebble Security
+  </text>
+  
+  <rect x="385" y="120" width="270" height="140" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="400" y="145" font-family="monospace" font-size="12" fill="white">pebble.c</text>
+  <text x="520" y="145" font-family="Arial" font-size="10" fill="white">- Token-based memory</text>
+  
+  <text x="400" y="165" font-family="monospace" font-size="12" fill="white">borrowchecker.c</text>
+  <text x="520" y="165" font-family="Arial" font-size="10" fill="white">- Ownership rules</text>
+  
+  <text x="400" y="185" font-family="monospace" font-size="12" fill="white">blind_ledger.c</text>
+  <text x="520" y="185" font-family="Arial" font-size="10" fill="white">- Capability hashes</text>
+  
+  <text x="400" y="205" font-family="monospace" font-size="12" fill="white">exchange.c</text>
+  <text x="520" y="205" font-family="Arial" font-size="10" fill="white">- Safe IPC</text>
+  
+  <text x="400" y="225" font-family="monospace" font-size="12" fill="white">lock_dag.c</text>
+  <text x="520" y="225" font-family="Arial" font-size="10" fill="white">- Deadlock prevention</text>
+  
+  <text x="400" y="245" font-family="monospace" font-size="12" fill="white">pageown.c</text>
+  <text x="520" y="245" font-family="Arial" font-size="10" fill="white">- Page ownership</text>
+
+  <!-- CLR Runtime Section -->
+  <rect x="690" y="75" width="260" height="200" rx="8" fill="url(#clrGrad)" filter="url(#shadow)"/>
+  <text x="820" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    WASM Runtime
+  </text>
+  
+  <rect x="705" y="120" width="230" height="140" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="720" y="145" font-family="monospace" font-size="11" fill="white">wasm3.c</text>
+  <text x="820" y="160" font-family="Arial" font-size="10" fill="white" text-anchor="middle">WASM Interpreter</text>
+  
+  <text x="720" y="180" font-family="monospace" font-size="11" fill="white">fruity_ir.c</text>
+  <text x="820" y="195" font-family="Arial" font-size="10" fill="white" text-anchor="middle">Intermediate repr</text>
+  
+  <text x="720" y="215" font-family="monospace" font-size="11" fill="white">fruity_to_wasm.c</text>
+  <text x="820" y="230" font-family="Arial" font-size="10" fill="white" text-anchor="middle">WASM Codegen</text>
+  
+  <text x="720" y="250" font-family="monospace" font-size="11" fill="white">il_parser.c</text>
+  <text x="820" y="265" font-family="Arial" font-size="10" fill="white" text-anchor="middle">Metadata parsing</text>
+
+  <!-- Family HAL Section -->
+  <rect x="370" y="295" width="300" height="130" rx="8" fill="url(#halGrad)" filter="url(#shadow)"/>
+  <text x="520" y="325" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    Family HAL
+  </text>
+  
+  <rect x="385" y="340" width="270" height="70" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="400" y="365" font-family="monospace" font-size="12" fill="white">family.c</text>
+  <text x="520" y="365" font-family="Arial" font-size="10" fill="white">- Device families</text>
+  
+  <text x="400" y="385" font-family="monospace" font-size="12" fill="white">pci_family.c</text>
+  <text x="520" y="385" font-family="Arial" font-size="10" fill="white">- PCI bus abstraction</text>
+  
+  <text x="400" y="405" font-family="monospace" font-size="12" fill="white">devfamily.c</text>
+  <text x="520" y="405" font-family="Arial" font-size="10" fill="white">- /dev/family device</text>
+
+  <!-- 9P Interface Section -->
+  <rect x="690" y="295" width="260" height="130" rx="8" fill="url(#p9Grad)" filter="url(#shadow)"/>
+  <text x="820" y="325" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    9P Interface
+  </text>
+  
+  <rect x="705" y="340" width="230" height="70" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="720" y="365" font-family="monospace" font-size="11" fill="white">9p_router.c</text>
+  <text x="820" y="365" font-family="Arial" font-size="10" fill="white">- Message routing</text>
+  
+  <text x="720" y="385" font-family="monospace" font-size="11" fill="white">syscall_9p.c</text>
+  <text x="820" y="385" font-family="Arial" font-size="10" fill="white">- 9P syscalls</text>
+  
+  <text x="720" y="405" font-family="monospace" font-size="11" fill="white">devsip.c</text>
+  <text x="820" y="405" font-family="Arial" font-size="10" fill="white">- Token issuance</text>
+
+  <!-- Device Drivers Section -->
+  <rect x="50" y="445" width="300" height="190" rx="8" fill="#718096" filter="url(#shadow)"/>
+  <text x="200" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    Device Drivers
+  </text>
+  
+  <rect x="65" y="490" width="270" height="130" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="80" y="515" font-family="monospace" font-size="12" fill="white">devcons_minimal.c</text>
+  <text x="200" y="515" font-family="Arial" font-size="10" fill="white">- Minimal Console</text>
+  
+  <text x="80" y="535" font-family="monospace" font-size="12" fill="white">devram.c</text>
+  <text x="200" y="535" font-family="Arial" font-size="10" fill="white">- RAM disk</text>
+  
+  <text x="80" y="555" font-family="monospace" font-size="12" fill="white">devpci.c</text>
+  <text x="200" y="555" font-family="Arial" font-size="10" fill="white">- PCI access</text>
+  
+  <text x="80" y="575" font-family="monospace" font-size="12" fill="white">devtpm.c</text>
+  <text x="200" y="575" font-family="Arial" font-size="10" fill="white">- TPM driver</text>
+  
+  <text x="80" y="595" font-family="monospace" font-size="12" fill="white">uart.c</text>
+  <text x="200" y="595" font-family="Arial" font-size="10" fill="white">- Serial port</text>
+  
+  <text x="80" y="615" font-family="monospace" font-size="12" fill="white">ahci_driver.c</text>
+  <text x="200" y="615" font-family="Arial" font-size="10" fill="white">- SATA/AHCI</text>
+
+  <!-- Crypto Section -->
+  <rect x="370" y="445" width="300" height="190" rx="8" fill="#e53e3e" filter="url(#shadow)"/>
+  <text x="520" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    Cryptography
+  </text>
+  
+  <rect x="385" y="490" width="270" height="130" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="400" y="515" font-family="monospace" font-size="12" fill="white">monocypher</text>
+  <text x="520" y="515" font-family="Arial" font-size="10" fill="white">- ChaCha20/Poly1305</text>
+  
+  <text x="400" y="535" font-family="monospace" font-size="12" fill="white">hwcrypto.S</text>
+  <text x="520" y="535" font-family="Arial" font-size="10" fill="white">- HW acceleration</text>
+  
+  <text x="400" y="555" font-family="monospace" font-size="12" fill="white">random.c</text>
+  <text x="520" y="555" font-family="Arial" font-size="10" fill="white">- RDRAND/RDSEED</text>
+  
+  <text x="400" y="575" font-family="monospace" font-size="12" fill="white">tpm2_*.c</text>
+  <text x="520" y="575" font-family="Arial" font-size="10" fill="white">- TPM integration</text>
+  
+  <text x="400" y="595" font-family="monospace" font-size="12" fill="white">vault.c</text>
+  <text x="520" y="595" font-family="Arial" font-size="10" fill="white">- Encrypted storage</text>
+
+  <!-- Proofs Section -->
+  <rect x="690" y="445" width="260" height="190" rx="8" fill="#d69e2e" filter="url(#shadow)"/>
+  <text x="820" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">
+    Formal Proofs (Coq)
+  </text>
+  
+  <rect x="705" y="490" width="230" height="130" rx="5" fill="white" fill-opacity="0.15"/>
+  
+  <text x="720" y="515" font-family="monospace" font-size="11" fill="white">pebble_clr.v</text>
+  <text x="820" y="515" font-family="Arial" font-size="10" fill="white">- Memory safety</text>
+  
+  <text x="720" y="535" font-family="monospace" font-size="11" fill="white">borrow_*.v</text>
+  <text x="820" y="535" font-family="Arial" font-size="10" fill="white">- Ownership proofs</text>
+  
+  <text x="720" y="555" font-family="monospace" font-size="11" fill="white">scheduler_*.v</text>
+  <text x="820" y="555" font-family="Arial" font-size="10" fill="white">- Fairness proofs</text>
+  
+  <text x="720" y="575" font-family="monospace" font-size="11" fill="white">capability_*.v</text>
+  <text x="820" y="575" font-family="Arial" font-size="10" fill="white">- Capability safety</text>
+  
+  <text x="720" y="595" font-family="monospace" font-size="11" fill="white">router_*.v</text>
+  <text x="820" y="595" font-family="Arial" font-size="10" fill="white">- 9P router proofs</text>
+
+  <!-- Statistics -->
+  <rect x="50" y="655" width="900" height="110" rx="8" fill="#2d3748" filter="url(#shadow)"/>
+  <text x="500" y="685" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">
+    Architecture Summary
+  </text>
+  
+  <text x="150" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Kernel Core</text>
+  <text x="150" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">~12.5K LOC</text>
+  
+  <text x="350" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">System Scale</text>
+  <text x="350" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#48bb78">~159K LOC</text>
+  
+  <text x="550" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Security Systems</text>
+  <text x="550" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#4ecdc4">5 Layers</text>
+  
+  <text x="750" y="715" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#a0aec0">Code Verification</text>
+  <text x="750" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#d69e2e">46% (9.7K/21K LOC)</text>
+</svg>
