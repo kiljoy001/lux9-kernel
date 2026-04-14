@@ -67,6 +67,9 @@ m3ApiRawFunction(m3_libc_print) {
   m3ApiReturn(i_size);
 }
 
+/* DISABLED: /*@
+  @ assigns \nothing;
+  @*\/ */
 static void internal_itoa(int n, char s[], int radix) {
   static char const HEXDIGITS[0x10] = {'0', '1', '2', '3', '4', '5', '6', '7',
                                        '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -181,6 +184,9 @@ m3ApiRawFunction(m3_libc_clock_ms) {
 #endif
 }
 
+/* DISABLED: /*@
+  @ assigns \nothing;
+  @*\/ */
 static M3Result SuppressLookupFailure(M3Result i_result) {
   if (i_result == m3Err_functionLookupFailed)
     return m3Err_none;
@@ -190,6 +196,9 @@ static M3Result SuppressLookupFailure(M3Result i_result) {
 
 m3ApiRawFunction(m3_spectest_dummy) { m3ApiSuccess(); }
 
+/* DISABLED: /*@
+  @ assigns \nothing;
+  @*\/ */
 M3Result m3_LinkSpecTest(IM3Module module) {
   M3Result result = m3Err_none;
 
@@ -214,6 +223,9 @@ _catch:
   return result;
 }
 
+/* DISABLED: /*@
+  @ assigns \nothing;
+  @*\/ */
 M3Result m3_LinkLibC(IM3Module module) {
   M3Result result = m3Err_none;
 

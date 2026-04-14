@@ -41,15 +41,15 @@ u64int siphash(const void *data, usize len, const siphash_key_t *key);
 /* HalfSipHash functions - 32-bit output (for hash tables) */
 /*@
   @ requires \valid_read(key);
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   @*/
 u32int hsiphash_1u32(u32int a, const hsiphash_key_t *key);
 
 /*@
   @ requires \valid_read(key);
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   @*/
 u32int hsiphash_2u32(u32int a, u32int b, const hsiphash_key_t *key);
 
@@ -59,25 +59,25 @@ u32int hsiphash_2u32(u32int a, u32int b, const hsiphash_key_t *key);
   @ requires len <= 8192;
   @ requires len > 0 ==> \valid_read(((unsigned char*)data) + (0 .. len - 1));
   @ requires \valid_read(key);
-  @ assigns \nothing;
   @ terminates \true;
+  @ assigns \nothing;
   @*/
 u32int hsiphash(const void *data, usize len, const hsiphash_key_t *key);
 
 /* Secure RNG functions for key generation */
 /*@ requires len >= 0 && \valid(((unsigned char*)buffer) + (0 .. len-1));
-  @ assigns ((unsigned char*)buffer)[0 .. len-1];
   @ terminates \true;
+  @ assigns ((unsigned char*)buffer)[0 .. len-1];
   @*/
 extern int tpm_get_random(unsigned char *buffer, int len);
 
-/*@ assigns \nothing; terminates \true; */
+/*@ terminates \true; assigns \nothing; */
 extern u64int rdrand_u64(void);
 
-/*@ assigns \nothing; terminates \true; */
+/*@ terminates \true; assigns \nothing; */
 extern int crypto_hw_rdrand_available(void);
 
-/*@ assigns \nothing; terminates \true; */
+/*@ terminates \true; assigns \nothing; */
 extern u64int chacha20_csprng_u64(void);
 
 /*

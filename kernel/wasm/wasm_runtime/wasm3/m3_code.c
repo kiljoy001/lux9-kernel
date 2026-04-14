@@ -14,7 +14,7 @@
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 IM3CodePage  NewCodePage  (IM3Runtime i_runtime, u32 i_minNumLines)
 {
     IM3CodePage page;
@@ -70,7 +70,7 @@ IM3CodePage  NewCodePage  (IM3Runtime i_runtime, u32 i_minNumLines)
 /*@
   @ requires io_list == \null || \valid(io_list);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  FreeCodePages  (IM3CodePage * io_list)
 {
     IM3CodePage page = * io_list;
@@ -93,7 +93,7 @@ void  FreeCodePages  (IM3CodePage * io_list)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32  NumFreeLines  (IM3CodePage i_page)
 {
     d_m3Assert (i_page->info.lineIndex <= i_page->info.numLines);
@@ -105,7 +105,7 @@ u32  NumFreeLines  (IM3CodePage i_page)
 /*@
   @ requires i_word == \null || \valid(i_word);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  EmitWord_impl  (IM3CodePage i_page, void * i_word)
 {                                                                       d_m3Assert (i_page->info.lineIndex+1 <= i_page->info.numLines);
     i_page->code [i_page->info.lineIndex++] = i_word;
@@ -113,7 +113,7 @@ void  EmitWord_impl  (IM3CodePage i_page, void * i_word)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  EmitWord32  (IM3CodePage i_page, const u32 i_word)
 {                                                                       d_m3Assert (i_page->info.lineIndex+1 <= i_page->info.numLines);
     memcpy (& i_page->code[i_page->info.lineIndex++], & i_word, sizeof(i_word));
@@ -121,7 +121,7 @@ void  EmitWord32  (IM3CodePage i_page, const u32 i_word)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  EmitWord64  (IM3CodePage i_page, const u64 i_word)
 {
 #if M3_SIZEOF_PTR == 4
@@ -139,7 +139,7 @@ void  EmitWord64  (IM3CodePage i_page, const u64 i_word)
 #if d_m3RecordBacktraces
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  EmitMappingEntry  (IM3CodePage i_page, u32 i_moduleOffset)
 {
     M3CodeMappingPage * page = i_page->info.mapping;
@@ -155,7 +155,7 @@ void  EmitMappingEntry  (IM3CodePage i_page, u32 i_moduleOffset)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 pc_t  GetPageStartPC  (IM3CodePage i_page)
 {
     return & i_page->code [0];
@@ -164,7 +164,7 @@ pc_t  GetPageStartPC  (IM3CodePage i_page)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 pc_t  GetPagePC  (IM3CodePage i_page)
 {
     if (i_page)
@@ -177,7 +177,7 @@ pc_t  GetPagePC  (IM3CodePage i_page)
 /*@
   @ requires i_list == \null || \valid(i_list);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  PushCodePage  (IM3CodePage * i_list, IM3CodePage i_codePage)
 {
     IM3CodePage next = * i_list;
@@ -189,7 +189,7 @@ void  PushCodePage  (IM3CodePage * i_list, IM3CodePage i_codePage)
 /*@
   @ requires i_list == \null || \valid(i_list);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 IM3CodePage  PopCodePage  (IM3CodePage * i_list)
 {
     IM3CodePage page = * i_list;
@@ -204,7 +204,7 @@ IM3CodePage  PopCodePage  (IM3CodePage * i_list)
 /*@
   @ requires o_end == \null || \valid(o_end);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32  FindCodePageEnd  (IM3CodePage i_list, IM3CodePage * o_end)
 {
     u32 numPages = 0;
@@ -223,7 +223,7 @@ u32  FindCodePageEnd  (IM3CodePage i_list, IM3CodePage * o_end)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32  CountCodePages  (IM3CodePage i_list)
 {
     IM3CodePage unused;
@@ -233,7 +233,7 @@ u32  CountCodePages  (IM3CodePage i_list)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 IM3CodePage GetEndCodePage  (IM3CodePage i_list)
 {
     IM3CodePage end;
@@ -245,7 +245,7 @@ IM3CodePage GetEndCodePage  (IM3CodePage i_list)
 #if d_m3RecordBacktraces
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool  ContainsPC  (IM3CodePage i_page, pc_t i_pc)
 {
     return GetPageStartPC (i_page) <= i_pc && i_pc < GetPagePC (i_page);
@@ -255,7 +255,7 @@ bool  ContainsPC  (IM3CodePage i_page, pc_t i_pc)
 /*@
   @ requires o_moduleOffset == \null || \valid(o_moduleOffset);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool  MapPCToOffset  (IM3CodePage i_page, pc_t i_pc, u32 * o_moduleOffset)
 {
     M3CodeMappingPage * mapping = i_page->info.mapping;

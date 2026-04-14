@@ -1,6 +1,6 @@
-#include "u.h"
 #include "acsl_bounds.h"
 #include "portlib.h"
+#include "u.h"
 
 /*@
   @ requires valid_string(s);
@@ -19,31 +19,29 @@
   @ complete behaviors;
   @ disjoint behaviors;
   @*/
-char*
-strchr(char *s, int c)
-{
-	char r;
+char *strchr(const char *s, int c) {
+  char r;
 
-	if(c == 0)
-		/*@
-		  @ loop invariant s >= \at(s, Pre);
-		  @ loop invariant \valid_read(s);
-		  @ loop assigns s;
-		  @ loop variant \strlen(s);
-		  @*/
-		while(*s++)
-			;
-	else
-		/*@
-		  @ loop invariant s >= \at(s, Pre);
-		  @ loop invariant \valid_read(s);
-		  @ loop invariant \forall integer i; 0 <= i < (s - \at(s, Pre)) ==>
-		  @                  \at(s, Pre)[i] != (char)c && \at(s, Pre)[i] != '\0';
-		  @ loop assigns s, r;
-		  @ loop variant \strlen(s);
-		  @*/
-		while((r = *s++) != c)
-			if(r == 0)
-				return 0;
-	return s-1;
+  if (c == 0)
+    /*@
+      @ loop invariant s >= \at(s, Pre);
+      @ loop invariant \valid_read(s);
+      @ loop assigns s;
+      @ loop variant \strlen(s);
+      @*/
+    while (*s++)
+      ;
+  else
+    /*@
+      @ loop invariant s >= \at(s, Pre);
+      @ loop invariant \valid_read(s);
+      @ loop invariant \forall integer i; 0 <= i < (s - \at(s, Pre)) ==>
+      @                  \at(s, Pre)[i] != (char)c && \at(s, Pre)[i] != '\0';
+      @ loop assigns s, r;
+      @ loop variant \strlen(s);
+      @*/
+    while ((r = *s++) != c)
+      if (r == 0)
+        return 0;
+  return (char *)s - 1;
 }

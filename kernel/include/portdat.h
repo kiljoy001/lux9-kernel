@@ -39,11 +39,6 @@ typedef struct Pte Pte;
 typedef struct PMach PMach;
 typedef struct QLock QLock;
 typedef struct Queue Queue;
-#ifdef __FRAMAC__
-struct Queue {
-  int _frama_dummy;
-};
-#endif
 typedef struct Ref Ref;
 typedef struct Rendezq Rendezq;
 typedef struct Rgrp Rgrp;
@@ -60,6 +55,7 @@ typedef struct Waitq Waitq;
 typedef struct Walkqid Walkqid;
 typedef struct Watchpt Watchpt;
 typedef struct Watchdog Watchdog;
+typedef struct wasm_cap_table wasm_cap_table_t;
 typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
 
 #ifndef ERRMAX
@@ -71,6 +67,11 @@ typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
 #ifndef BY2WD
 #define BY2WD 8
 #endif
+
+typedef struct BString {
+  char *data;
+  int len;
+} BString;
 
 /* Qid, Dir, and Waitmsg are defined in portlib.h */
 
@@ -87,15 +88,23 @@ typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
 
 #include "fcall.h"
 
+#ifndef _REF_DEFINED_
+#define _REF_DEFINED_
 struct Ref {
   long ref;
 };
+#endif
 
+#ifndef _RENDEZ_DEFINED_
+#define _RENDEZ_DEFINED_
 struct Rendez {
   Lock lock;
   Proc *p;
 };
+#endif
 
+#ifndef _QLOCK_DEFINED_
+#define _QLOCK_DEFINED_
 struct QLock {
   Lock use;   /* to access Qlock structure */
   Proc *head; /* next process waiting for object */
@@ -103,6 +112,43 @@ struct QLock {
   uintptr pc; /* pc of owner */
   int locked; /* flag */
 };
+#endif
+
+/* Process Vault Structure */
+typedef struct ProcessVault ProcessVault;
+struct ProcessVault {
+  ProcessVault *next;
+  int id;                  /* Unique ID */
+  int pid;                 /* Owner PID */
+  QLock lock;              /* Protect concurrent access */
+  uchar *data;             /* Vault data (Pebble Black allocated) */
+  ulong size;              /* Vault size in bytes */
+  int locked;              /* 1 = locked (encrypted), 0 = unlocked */
+  int refcount;            /* Number of open channels */
+  uchar ephemeral_key[32]; /* Only present when unlocked. Wiped on lock. */
+  int has_key;             /* 1 = ephemeral_key is valid */
+
+  /* Holographic Header (Stateless):
+   * When locked:
+   *   header[0..15]  = Salt
+   *   header[16..47] = Elligator Rep (R)
+   *   header[48..71] = Nonce
+   *   header[72..87] = MAC (XChaCha20-Poly1305)
+   */
+
+  UserCapability capability; /* Pebble Black capability */
+  int initialized;           /* 1 = data allocated */
+  int dead;                  /* 1 = unlinked/zombie, waiting for refcount=0 */
+};
+
+/*@
+  @ type invariant refcount_inv(struct ProcessVault rd) =
+  @   rd.refcount >= 0;
+  @
+  @ type invariant nonce_storage_inv(struct ProcessVault rd) =
+  @   (rd.locked == 1 && rd.size >= 24 && \valid(rd.data)) ==>
+  @     \valid(rd.data + (0..23));
+  @*/
 
 struct Rendezq {
   QLock qlock;
@@ -242,9 +288,9 @@ struct Dev {
   Chan *(*create)(Chan *, char *, int, ulong);
   void (*close)(Chan *);
   long (*read)(Chan *, void *, long, vlong);
-  Block *(*bread)(Chan *, long, ulong);
   long (*write)(Chan *, void *, long, vlong);
-  long (*bwrite)(Chan *, Block *, ulong);
+  Block *(*bread)(Chan *, long, vlong); /* buffered block read */
+  long (*bwrite)(Chan *, Block *, vlong); /* buffered block write */
   void (*remove)(Chan *);
   int (*wstat)(Chan *, uchar *, int);
   void (*power)(int); /* power mgt: power(1) => on, power (0) => off */
@@ -407,6 +453,8 @@ enum {
   SG_DEVICE = 01000, /* Memory mapped device */
   SG_NOEXEC = 02000, /* No execute */
   SG_WASM = 04000,   /* WASM-isolated segment */
+  SG_PROCOWNED = 010000, /* Segment owns its Physseg allocation */
+  SG_POOL = 020000,      /* Segment backing page came from exchange pool */
 };
 
 #define PG_ONSWAP 1
@@ -542,17 +590,7 @@ struct Evalue {
   char name[];
 };
 
-struct Egrp {
-  Ref ref;
-  RWLock rwlock;
-  Evalue **ent;
-  int nent;              /* numer of slots in ent[] */
-  int low;               /* lowest free index in ent[] */
-  int alloc;             /* bytes allocated for env */
-  ulong path;            /* generator for qid path */
-  ulong vers;            /* of Egrp */
-  Evalue *hash[ENVHASH]; /* hashtable for name lookup */
-};
+/* struct Egrp removed - environment logic moved to userspace */
 
 struct Fgrp {
   Lock lock;
@@ -691,7 +729,8 @@ struct Schedq {
 };
 
 struct Proc {
-  Label sched; /* known to l.s - MUST BE FIRST for asm */
+  Label sched;        /* known to l.s - MUST BE FIRST for asm */
+  uintptr kstack_top; /* Top of kernel stack (base + size) for syscall entry */
 
   union {
     Timer timer; /* Timer state for tsleep/realtime */
@@ -762,7 +801,7 @@ struct Proc {
   Segment *seg[NSEG];
 
   Pgrp *pgrp; /* Process group for namespace */
-  Egrp *egrp; /* Environment group */
+  /* Egrp *egrp; REMOVED - Environment group moved to userspace */
   Fgrp *fgrp; /* File descriptor group */
   Rgrp *rgrp; /* Rendez group */
 
@@ -909,6 +948,7 @@ struct Proc {
     void *runtime;         /* IM3Runtime - wasm3 runtime for this process */
     void *module;          /* IM3Module - loaded WASM module */
     void *env;             /* IM3Environment - per-process wasm3 environment */
+    uintptr linear_slot_base; /* Stable arena slot for seg[LSEG] mappings */
     u8int *linear_memory;  /* WASM linear memory (mapped to seg[LSEG]) */
     u32int memory_size;    /* Size of linear memory in bytes */
     u32int memory_pages;   /* Number of 64KB WASM pages */
@@ -923,7 +963,7 @@ struct Proc {
     void *module_bytes;    /* Persistent WASM module bytecode */
     u32int module_bytes_len;
     u32int permissions; /* Active WASM capability permissions bitmask */
-    void *cap_table;    /* Capability handle table (wasm_cap_table_t) */
+    wasm_cap_table_t *cap_table; /* Capability handle table */
   } wasm;
 
   /* Spawn Capability - UUIDv8-based process creation control.
@@ -1159,12 +1199,12 @@ enum {
 
 #define DEVDOTDOT -1
 
-
+#ifndef __FRAMAC__
 #pragma varargck type "I" uchar *
 #pragma varargck type "V" uchar *
 #pragma varargck type "E" uchar *
 #pragma varargck type "M" uchar *
-
+#endif
 
 /*
  * Log console output so it can be retrieved via /dev/kmesg.
@@ -1178,4 +1218,4 @@ struct Kmesg {
 
 extern struct Kmesg kmesg;
 
- /* _PORTDAT_H_ */
+#endif /* _PORTDAT_H_ */

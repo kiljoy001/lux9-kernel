@@ -8,11 +8,11 @@
 
 /* format the output into f->to and return the number of characters fmted  */
 /* ACSL removed */
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires fmt == \null || \valid(fmt);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires fmt == \null || \valid(fmt);
+ * @ assigns \nothing;
+ */
 int dofmt(Fmt *f, char *fmt) {
   Rune rune, *rt, *rs;
   int r;
@@ -99,10 +99,10 @@ void *_fmtflush(Fmt *f, void *t, int len) {
  * buffer, left/right justified in a field of at least f->width charactes
  */
 /* ACSL removed */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _fmtpad(Fmt *f, int n) {
   char *t, *s;
   int i;
@@ -117,10 +117,10 @@ int _fmtpad(Fmt *f, int n) {
 }
 
 /* ACSL removed */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _rfmtpad(Fmt *f, int n) {
   Rune *t, *s;
   int i;
@@ -135,11 +135,11 @@ int _rfmtpad(Fmt *f, int n) {
 }
 
 /* ACSL removed */
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires vm == \null || \valid(vm);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires vm == \null || \valid(vm);
+ * @ assigns \nothing;
+ */
 int _fmtcpy(Fmt *f, void *vm, int n, int sz) {
   Rune *rt, *rs, r;
   char *t, *s, *m, *me;
@@ -195,11 +195,11 @@ int _fmtcpy(Fmt *f, void *vm, int n, int sz) {
 }
 
 /* ACSL removed */
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires vm == \null || \valid(vm);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires vm == \null || \valid(vm);
+ * @ assigns \nothing;
+ */
 int _fmtrcpy(Fmt *f, void *vm, int n) {
   Rune r, *m, *me, *rt, *rs;
   char *t, *s;
@@ -240,10 +240,10 @@ int _fmtrcpy(Fmt *f, void *vm, int n) {
 }
 
 /* fmt out one character */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _charfmt(Fmt *f) {
   char x[1];
 
@@ -253,10 +253,10 @@ int _charfmt(Fmt *f) {
 }
 
 /* fmt out one rune */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _runefmt(Fmt *f) {
   Rune x[1];
 
@@ -265,11 +265,11 @@ int _runefmt(Fmt *f) {
 }
 
 /* public helper routine: fmt out a null terminated string already in hand */
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires s == \null || \valid(s);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires s == \null || \valid(s);
+ * @ assigns \nothing;
+ */
 int fmtstrcpy(Fmt *f, char *s) {
   int i, j;
   Rune r;
@@ -288,10 +288,10 @@ int fmtstrcpy(Fmt *f, char *s) {
 }
 
 /* fmt out a null terminated utf string */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _strfmt(Fmt *f) {
   char *s;
 
@@ -301,11 +301,11 @@ int _strfmt(Fmt *f) {
 
 /* public helper routine: fmt out a null terminated rune string already in hand
  */
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires s == \null || \valid(s);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires s == \null || \valid(s);
+ * @ assigns \nothing;
+ */
 int fmtrunestrcpy(Fmt *f, Rune *s) {
   Rune *e;
   int n, p;
@@ -327,10 +327,10 @@ int fmtrunestrcpy(Fmt *f, Rune *s) {
 }
 
 /* fmt out a null terminated rune string */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _runesfmt(Fmt *f) {
   Rune *s;
 
@@ -339,10 +339,10 @@ int _runesfmt(Fmt *f) {
 }
 
 /* fmt a % */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _percentfmt(Fmt *f) {
   Rune x[1];
 
@@ -352,10 +352,10 @@ int _percentfmt(Fmt *f) {
 }
 
 /* fmt an integer */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _ifmt(Fmt *f) {
   char buf[70], *p, *conv;
   uvlong vu;
@@ -498,10 +498,10 @@ int _ifmt(Fmt *f) {
   return _fmtcpy(f, p + 1, n, n);
 }
 
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _countfmt(Fmt *f) {
   void *p;
   ulong fl;
@@ -522,10 +522,10 @@ int _countfmt(Fmt *f) {
   return 0;
 }
 
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _flagfmt(Fmt *f) {
   switch (f->r) {
   case ',':
@@ -566,10 +566,10 @@ int _flagfmt(Fmt *f) {
 }
 
 /* default error format */
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 int _badfmt(Fmt *f) {
   char x[2 + UTFmax];
   Rune r;

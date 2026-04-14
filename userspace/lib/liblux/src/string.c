@@ -24,6 +24,40 @@ void *memset(void *dst, int c, ulong n) {
   return dst;
 }
 
+void *memcpy(void *dst, const void *src, ulong n) {
+  char *d = dst;
+  const char *s = src;
+  while (n-- > 0)
+    *d++ = *s++;
+  return dst;
+}
+
+int strcmp(const char *s1, const char *s2) {
+  while (*s1 && *s1 == *s2) {
+    s1++;
+    s2++;
+  }
+  return (uchar)*s1 - (uchar)*s2;
+}
+
+int memcmp(const void *s1, const void *s2, ulong n) {
+  const uchar *p1 = s1, *p2 = s2;
+  while (n--) {
+    if (*p1 != *p2)
+      return *p1 - *p2;
+    p1++;
+    p2++;
+  }
+  return 0;
+}
+
+char *strcpy(char *dst, const char *src) {
+  char *d = dst;
+  while ((*d++ = *src++))
+    ;
+  return dst;
+}
+
 ulong strlen(const char *s) {
   const char *p = s;
   while (*p)
@@ -90,4 +124,13 @@ unsigned long long strtoull(const char *s, char **endptr, int base) {
   if (endptr)
     *endptr = (char *)s;
   return n;
+}
+
+char *strncpy(char *dst, const char *src, ulong n) {
+  char *d = dst;
+  while (n-- > 0 && (*d++ = *src++))
+    ;
+  while (n-- > 0)
+    *d++ = 0;
+  return dst;
 }

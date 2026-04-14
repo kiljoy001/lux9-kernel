@@ -30,6 +30,11 @@ typedef u32int wasm_cap_handle_t;
 /* Maximum capabilities per WASM process */
 #define WASM_CAP_TABLE_SIZE 256
 
+/*@ axiomatic WasmCapBounds {
+  @ logic integer WASM_CAP_INVALID_HANDLE = 0;
+  @ logic integer WASM_CAP_TABLE_SIZE = 256;
+  @} */
+
 /* ========== Per-Process Capability Handle Table ========== */
 /*
  * Each WASM process has its own capability handle table.
@@ -42,20 +47,54 @@ typedef struct wasm_cap_table {
 } wasm_cap_table_t;
 
 /* Initialize capability table for new WASM process */
+/*@
+  @ requires table == \null || \valid(table);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns table->caps[0..WASM_CAP_TABLE_SIZE-1], table->next_handle;
+  @*/
 void wasm_cap_table_init(wasm_cap_table_t *table);
 
 /* Clean up capability table on process exit */
+/*@
+  @ requires table == \null || \valid(table);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns table->caps[0..WASM_CAP_TABLE_SIZE-1], table->next_handle;
+  @*/
 void wasm_cap_table_destroy(wasm_cap_table_t *table);
 
 /* Insert capability and return handle */
+/*@
+  @ requires table == \null || \valid(table);
+  @ requires cap == \null || \valid(cap);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns table->caps[0..WASM_CAP_TABLE_SIZE-1];
+  @ ensures \result == WASM_CAP_INVALID_HANDLE ||
+  @         (0 < \result < WASM_CAP_TABLE_SIZE);
+  @*/
 wasm_cap_handle_t wasm_cap_table_insert(wasm_cap_table_t *table,
                                         lux_capability_t *cap);
 
 /* Lookup capability by handle */
+/*@
+  @ requires table == \null || \valid(table);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \result \from table->caps[0..WASM_CAP_TABLE_SIZE-1], handle;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 lux_capability_t *wasm_cap_table_lookup(wasm_cap_table_t *table,
                                         wasm_cap_handle_t handle);
 
 /* Remove capability from table */
+/*@
+  @ requires table == \null || \valid(table);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns table->caps[0..WASM_CAP_TABLE_SIZE-1];
+  @*/
 void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle);
 
 /* ========== WASM Import Functions ========== */
@@ -81,6 +120,10 @@ void wasm_cap_table_remove(wasm_cap_table_t *table, wasm_cap_handle_t handle);
  *
  * WASM signature: (i32, i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @*/
 wasm_cap_handle_t wasm_import_cap_create_module(
     wasm_cap_table_t *table, lux_capability_manager_t *manager,
     u8int *linear_mem, u32int mem_size, u32int name_ptr, u32int name_len);
@@ -100,6 +143,10 @@ wasm_cap_handle_t wasm_import_cap_create_module(
  *
  * WASM signature: (i32, i32, i32, i32, i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @*/
 wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
                                          lux_capability_manager_t *manager,
                                          wasm_cap_handle_t parent_handle,
@@ -116,6 +163,11 @@ wasm_cap_handle_t wasm_import_cap_derive(wasm_cap_table_t *table,
  *
  * WASM signature: (i32, i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 u32int wasm_import_cap_check(wasm_cap_table_t *table, wasm_cap_handle_t handle,
                              u32int required_perms);
 
@@ -128,6 +180,11 @@ u32int wasm_import_cap_check(wasm_cap_table_t *table, wasm_cap_handle_t handle,
  *
  * WASM signature: (i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 u32int wasm_import_cap_validate(wasm_cap_table_t *table,
                                 lux_capability_manager_t *manager,
                                 wasm_cap_handle_t handle);
@@ -140,6 +197,11 @@ u32int wasm_import_cap_validate(wasm_cap_table_t *table,
  *
  * WASM signature: (i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 u32int wasm_import_cap_get_perms(wasm_cap_table_t *table,
                                  wasm_cap_handle_t handle);
 
@@ -151,6 +213,10 @@ u32int wasm_import_cap_get_perms(wasm_cap_table_t *table,
  *
  * WASM signature: (i32) -> i32
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @*/
 u32int wasm_import_cap_revoke(wasm_cap_table_t *table,
                               wasm_cap_handle_t handle);
 
@@ -163,6 +229,12 @@ u32int wasm_import_cap_revoke(wasm_cap_table_t *table,
  * @param uuid_out: Output buffer for UUID (16 bytes)
  * @returns: 1 on success, 0 on error
  */
+/*@
+  @ requires uuid_out == \null || \valid(uuid_out);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns uuid_out[0..15];
+  @*/
 u32int wasm_cap_serialize_for_ipc(wasm_cap_table_t *table,
                                   wasm_cap_handle_t handle, uuid_t *uuid_out);
 
@@ -173,12 +245,21 @@ u32int wasm_cap_serialize_for_ipc(wasm_cap_table_t *table,
  * @param uuid: UUID from IPC message
  * @returns: New handle in receiver's table, or WASM_CAP_INVALID_HANDLE
  */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @*/
 wasm_cap_handle_t
 wasm_cap_deserialize_from_ipc(wasm_cap_table_t *table,
                               lux_capability_manager_t *manager,
                               const uuid_t *uuid);
 
 /* Link capability functions to WASM module */
+/*@
+  @ requires module != 0;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 M3Result LinkCapabilities(IM3Module module);
 
 #endif /* WASM_CAPABILITY_BINDINGS_H */

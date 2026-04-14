@@ -1,8 +1,0 @@
-#!/bin/rc
-# Simple command runner - call repeatedly from 9front
-if(test -f /n/interop/command.txt){
-    cmd=`{cat /n/interop/command.txt}
-    rm /n/interop/command.txt
-    echo Running: $cmd
-    rc -c $cmd >/n/interop/output.txt
-}

@@ -11,6 +11,8 @@
 
 #define MAX_PCI_DEVICES 256
 #define PCI_CONFIG_SPACE_SIZE 256
+#define PCI_SHARP_ROOT "#J"
+#define PCI_BUS_PATH "#J/bus"
 
 /* PCI Address */
 struct PCIAddress {
@@ -112,3 +114,11 @@ struct PCIFamilyContext {
 
 /* Ops */
 int pcifamily_init(void);
+int pcifamily_refresh(void);
+int pcifamily_device_count(void);
+int pci_config_read32(u8int bus, u8int dev, u8int func, u8int offset,
+                      u32int *data);
+int pci_config_read16(u8int bus, u8int dev, u8int func, u8int offset,
+                      u16int *data);
+int pci_config_read8(u8int bus, u8int dev, u8int func, u8int offset,
+                     u8int *data);

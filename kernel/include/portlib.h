@@ -3,18 +3,20 @@
 
 /* Include base types */
 #include "acsl_bounds.h"
+#include "core_types.h"
 #include "u.h"
-
-/*
- * functions (possibly) linked in, complete, from libc.
- */
 
 #include <stdarg.h>
 
 typedef unsigned int Rune;
 
+#ifndef nelem
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
-#define offsetof(s, m) (ulong)(&(((s *)0)->m))
+#endif
+
+#ifndef offsetof
+#define offsetof(s, m) (ulong)(&(((struct s *)0)->m))
+#endif
 #define assert(x)                                                              \
   if (x) {                                                                     \
   } else {                                                                     \
@@ -41,15 +43,18 @@ extern void *memset(void *s, int c, usize n);
   @ assigns \nothing;
   @*/
 extern int memcmp(const void *s1, const void *s2, usize n);
+#ifndef __FRAMAC_DECL_MEMMOVE
 /*@
   @ requires \valid(((char*)dest) + (0 .. (integer)n - 1));
   @ requires \valid_read(((char*)src) + (0 .. (integer)n - 1));
   @ terminates \true;
+  @ exits \false;
   @ assigns ((char*)dest)[0 .. (integer)n - 1];
   @ assigns \result \from dest;
   @ ensures \result == dest;
   @*/
 extern void *memmove(void *dest, const void *src, usize n);
+#endif
 extern void *memchr(const void *, int, usize);
 
 /*
@@ -58,52 +63,95 @@ extern void *memchr(const void *, int, usize);
 extern char *strcat(char *, const char *);
 extern char *strchr(const char *, int);
 extern char *strrchr(const char *, int);
+#ifndef __FRAMAC_DECL_STRCMP
 /*@ requires s1 == \null || valid_string(s1);
   @ requires s2 == \null || valid_string(s2);
   @ terminates \true;
+  @ exits \false;
   @ assigns \nothing;
-  */
+  @*/
 extern int strcmp(const char *s1, const char *s2);
-extern char *strcpy(char *, const char *);
+#endif
+#ifndef __FRAMAC_DECL_STRCPY
+/*@ requires s1 == \null || valid_string(s1);
+  @ requires s2 == \null || valid_string(s2);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns s1[0 .. ACSL_MAXSTR-1];
+  @ ensures valid_string(s1);
+  @*/
+extern char *strcpy(char *s1, const char *s2);
+#endif
+extern long strtol(const char *, char **, int);
+extern ulong strtoul(const char *, char **, int);
+extern vlong strtoll(const char *, char **, int);
+extern uvlong strtoull(const char *, char **, int);
+extern double strtod(const char *, char **);
+extern char *strdup(const char *s);
 extern char *strecpy(char *, char *, const char *);
-extern char *strncat(char *, const char *, long);
-extern char *strncpy(char *, const char *, long);
-extern int strncmp(const char *, const char *, long);
-/*@ requires s == \null || valid_string(s);
+extern char *strncat(char *, const char *, ulong);
+extern char *strncpy(char *, const char *, ulong);
+/*@ requires n >= 0;
+  @ requires \valid_read((char*)s1 + (0..n-1)) || valid_string(s1);
+  @ requires \valid_read((char*)s2 + (0..n-1)) || valid_string(s2);
   @ terminates \true;
   @ assigns \nothing;
+  @*/
+extern int strncmp(const char *s1, const char *s2, ulong n);
+#ifndef __FRAMAC_DECL_STRLEN
+/*@
+  @ requires s != \null;
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
   @ ensures \result >= 0;
-  */
-extern long strlen(const char *s);
+  @*/
+extern ulong strlen(const char *s);
+#endif
 extern char *strstr(const char *, const char *);
-extern int atoi(char *);
+extern int atoi(const char *);
 extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
-extern int cistrncmp(char *, char *, int);
+/*@ requires n >= 0;
+  @ requires \valid_read((char*)s1 + (0..n-1)) || valid_string(s1);
+  @ requires \valid_read((char*)s2 + (0..n-1)) || valid_string(s2);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+extern int cistrncmp(char *s1, char *s2, int n);
 
 #ifndef _LIBC_H_
-enum {
-  UTFmax = 4,         /* maximum bytes per rune */
-  Runesync = 0x80,    /* cannot represent part of a UTF sequence */
-  Runeself = 0x80,    /* rune and UTF sequences are the same (<) */
-  Runeerror = 0xFFFD, /* decoding error in UTF */
-  Runemax = 0x10FFFF, /* 21 bit rune */
-};
+/* UTF-8 constants moved to u.h */
 
 /*
  * rune routines
  */
 extern int runetochar(char *, Rune *);
-extern int chartorune(Rune *, char *);
-extern char *utfecpy(char *s1, char *es1, char *s2);
-/*@ requires s != \null;
-  @ assigns \nothing; 
+#ifndef __FRAMAC_DECL_CHARTORUNE
+/*@
+  @ requires r != \null;
+  @ requires s != \null;
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns *r \from s[0 .. ACSL_MAXSTR-1];
+  @ ensures 1 <= \result <= 4;
   @*/
-extern char *utfrune(char *s, long c);
+extern int chartorune(Rune *r, char *s);
+#endif
+/*@
+  @ requires \valid(s1 + (0 .. (es1 - s1)));
+  @ requires valid_string(s2);
+  @ assigns s1[0 .. (es1 - s1)];
+  @ ensures \valid(\result);
+  @*/
+extern char *utfecpy(char *s1, char *es1, char *s2);
 /*@ requires s != \null;
   @ assigns \nothing;
   @*/
-extern int utflen(char *s);
+extern char *utfrune(char *s, long c);
+extern int utflen(char *);
 extern int utfnlen(char *, long);
 extern int runelen(long);
 
@@ -120,10 +168,8 @@ extern int abs(int);
 /*
  * print routines
  */
-
-#ifndef _FMT_TYPEDEF_
-#define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
+typedef int (*Fmts)(Fmt *);
 struct Fmt {
   uchar runes;         /* output buffer is runes or chars? */
   void *start;         /* of buffer */
@@ -139,30 +185,49 @@ struct Fmt {
   ulong flags;
 };
 
-typedef int (*Fmts)(Fmt *);
-
+#ifndef __FRAMAC_DECL_PRINT
 /*@
   @ requires fmt != \null;
+  @ terminates \true;
+  @ exits \false;
   @ assigns \nothing;
   @*/
 extern int print(char *fmt, ...);
-extern char *seprint(char *, char *, char *, ...);
-extern char *vseprint(char *, char *, char *, va_list);
+#endif
+/*@
+  @ requires \valid(s + (0 .. ACSL_MAXSTR-1));
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. ACSL_MAXSTR-1];
+  @ ensures \valid(\result);
+  @*/
+extern char *seprint(char *s, char *e, char *fmt, ...);
+/*@
+  @ requires \valid(s + (0 .. ACSL_MAXSTR-1));
+  @ requires valid_string(fmt);
+  @ assigns s[0 .. ACSL_MAXSTR-1];
+  @ ensures \valid(\result);
+  @*/
+extern char *vseprint(char *s, char *e, const char *fmt, va_list args);
 /*@
   @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
   @ requires valid_string(fmt);
-  @ assigns s[0 .. (integer)n-1] \if (s != \null && n > 0);
   @ ensures \result >= 0;
+  @ behavior assigned:
+  @   assumes n > 0 && s != \null;
+  @   assigns s[0 .. (integer)n-1];
+  @   ensures \result < n ==> valid_string(s);
+  @ behavior nothing:
+  @   assumes n == 0 || s == \null;
+  @   assigns \nothing;
+  @ complete behaviors;
+  @ disjoint behaviors;
   @*/
 extern int snprint(char *s, int n, char *fmt, ...);
-/*@ requires s != \null;
-  @ requires \valid_read(s+(0..n-1));
-  @ assigns \nothing;
-  @*/
-extern int uartputs(char *s, int n);
+extern void uartputs(char *s, int n);
 extern int vsnprint(char *, int, char *, va_list);
 extern int sprint(char *, char *, ...);
 
+#ifndef __FRAMAC__
 #pragma varargck argpos fmtprint 2
 #pragma varargck argpos print 1
 #pragma varargck argpos seprint 3
@@ -174,13 +239,17 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "llx" vlong
 #pragma varargck type "llb" uvlong
 #pragma varargck type "lld" uvlong
+#pragma varargck type "llo" uvlong
 #pragma varargck type "llx" uvlong
-#pragma varargck type "lb" long
+#pragma varargck type "llb" uvlong
 #pragma varargck type "ld" long
+#pragma varargck type "lo" long
 #pragma varargck type "lx" long
-#pragma varargck type "lb" ulong
+#pragma varargck type "lb" long
 #pragma varargck type "ld" ulong
+#pragma varargck type "lo" ulong
 #pragma varargck type "lx" ulong
+#pragma varargck type "lb" ulong
 #pragma varargck type "zd" intptr
 #pragma varargck type "zo" intptr
 #pragma varargck type "zx" intptr
@@ -206,7 +275,7 @@ extern int sprint(char *, char *, ...);
 #pragma varargck type "p" uintptr
 #pragma varargck type "p" void *
 #pragma varargck flag ','
-/* __FRAMAC__ */
+#endif /* __FRAMAC__ */
 
 extern int fmtstrinit(Fmt *);
 extern int fmtinstall(int, int (*)(Fmt *));
@@ -221,24 +290,21 @@ extern char *fmtstrflush(Fmt *);
 extern char *cleanname(char *);
 extern uintptr getcallerpc(void *);
 
-extern double strtod(char *, char **);
-/*@
-  @ assigns \result, *endptr;
-  @ ensures \valid(endptr) ==> \valid(*endptr);
-  @*/
-extern long strtol(char *, char **, int);
-extern ulong strtoul(char *, char **, int);
-extern vlong strtoll(char *, char **, int);
-extern uvlong strtoull(char *, char **, int);
 extern char etext[];
 extern char edata[];
 extern char end[];
 extern int getfields(char *, char **, int, int, char *);
-extern int tokenize(char *, char **, int);
+/*@
+  @ requires valid_string(s);
+  @ requires \valid(args + (0..maxargs-1));
+  @ assigns args[0..maxargs-1], s[0 .. ACSL_MAXSTR-1];
+  @ ensures \result >= 0 && \result <= maxargs;
+  @*/
+extern int tokenize(char *s, char **args, int maxargs);
 extern int dec64(uchar *, int, char *, int);
 extern int dec16(uchar *, int, char *, int);
 extern int encodefmt(Fmt *);
-extern void qsort(void *, usize, usize, int (*)(void *, void *));
+extern void qsort(void *, ulong, ulong, int (*)(const void *, const void *));
 
 /*
  * Syscall data structures
@@ -265,78 +331,10 @@ extern void qsort(void *, usize, usize, int (*)(void *, void *));
 #define NSAVE 2 /* clear note but hold state */
 #define NRSTR 3 /* restore saved state */
 
-typedef struct Qid Qid;
-typedef struct Dir Dir;
-typedef struct OWaitmsg OWaitmsg;
-typedef struct Waitmsg Waitmsg;
+/* Qid and Dir are now in core_types.h */
 
-#define ERRMAX 128  /* max length of error string */
-#define KNAMELEN 28 /* max length of name held in kernel */
+/* OWaitmsg and Waitmsg are now in core_types.h */
 
-/* bits in Qid.type */
-#define QTDIR 0x80    /* type bit for directories */
-#define QTAPPEND 0x40 /* type bit for append only files */
-#define QTEXCL 0x20   /* type bit for exclusive use files */
-#define QTMOUNT 0x10  /* type bit for mounted channel */
-#define QTAUTH 0x08   /* type bit for authentication file */
-#define QTFILE 0x00   /* plain file */
-
-/* bits in Dir.mode */
-#define DMDIR 0x80000000    /* mode bit for directories */
-#define DMAPPEND 0x40000000 /* mode bit for append only files */
-#define DMEXCL 0x20000000   /* mode bit for exclusive use files */
-#define DMMOUNT 0x10000000  /* mode bit for mounted channel */
-#define DMREAD 0x4          /* mode bit for read permission */
-#define DMWRITE 0x2         /* mode bit for write permission */
-#define DMEXEC 0x1          /* mode bit for execute permission */
-
-#ifndef _QID_TYPEDEF_
-#define _QID_TYPEDEF_
-struct Qid {
-  uvlong path;
-  ulong vers;
-  uchar type;
-};
-
-#ifndef _DIR_TYPEDEF_
-#define _DIR_TYPEDEF_
-struct Dir {
-  /* system-modified data */
-  ushort type; /* server type */
-  uint dev;    /* server subtype */
-  /* file data */
-  Qid qid;      /* unique id from server */
-  ulong mode;   /* permissions */
-  ulong atime;  /* last read time */
-  ulong mtime;  /* last write time */
-  vlong length; /* file length: see <u.h> */
-  char *name;   /* last element of path */
-  char *uid;    /* owner name */
-  char *gid;    /* group name */
-  char *muid;   /* last modifier name */
-};
-
-struct OWaitmsg {
-  char pid[12];      /* of loved one */
-  char time[3 * 12]; /* of loved one and descendants */
-  char msg[64];      /* compatibility BUG */
-};
-
-#ifndef _WAITMSG_TYPEDEF_
-#define _WAITMSG_TYPEDEF_
-struct Waitmsg {
-  int pid;          /* of loved one */
-  ulong time[3];    /* of loved one and descendants */
-  char msg[ERRMAX]; /* actually variable-size in user mode */
-};
-
-/* _LIB_H_ */
-
-/* _PORTLIB_H_ */
-#endif
-#endif
-#endif
-#endif
-#endif
-#endif
-#endif
+#endif /* _LIBC_H_ */
+#endif /* _LIB_H_ */
+#endif /* _PORTLIB_H_ */

@@ -35,7 +35,7 @@ static ulong devregistry_generate_id(void) { return devregistry.next_id++; }
 
 /* Create a new device structure */
 static Device *devregistry_create_device(DevType type) {
-  Device *dev = malloc(sizeof(Device));
+  Device *dev = xalloc_resident(sizeof(Device));
   if (dev == nil) {
     return nil;
   }
@@ -308,7 +308,7 @@ int devregistry_unregister(Device *dev) {
   if (0)
     print("devregistry: unregistered device %s\n", dev->name);
 
-  free(dev);
+  xfree_resident(dev);
   return 0;
 }
 

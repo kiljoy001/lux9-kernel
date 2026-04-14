@@ -100,13 +100,53 @@ extern ulong pebble_total_system_tokens;   /* RAM/8, constant after init */
 #define PEBBLE_WAVE_3 3 /* Channel 3 */
 #define PEBBLE_WAVE_4 4 /* Channel 4 */
 #define PEBBLE_WAVE_5 5 /* Channel 5 */
-#define PEBBLE_WAVE_6 6 /* Channel 6 */
-#define PEBBLE_WAVE_7 7 /* Channel 7 */
+#define PEBBLE_WAVE_6 6 /* "Invisible Lock" - Elligator-hidden memory */
+#define PEBBLE_WAVE_7 7 /* "Distress" - OOB alert signal to resurrection */
 
 /* Holographic Projection */
 #define PEBBLE_PROJECT(p, wave)                                                \
   ((void *)((uintptr)PEBBLE_PTR_ADDR(p) | ((wave) & PEBBLE_WAVE_MASK)))
 #define PEBBLE_TUNED(p, wave) (PEBBLE_PTR_WAVE(p) == (wave))
+
+/*
+ * Wave 7 Distress Signal System
+ * =============================
+ * When a process encounters a critical fault, it signals distress.
+ * The resurrection server monitors /dev/distress and takes action.
+ */
+
+/* Distress Reason Codes */
+#define DISTRESS_MEMORY_CORRUPT 1   /* Memory corruption detected */
+#define DISTRESS_CAP_VIOLATION 2    /* Capability/permission violation */
+#define DISTRESS_PANIC_IMMINENT 3   /* Process about to panic */
+#define DISTRESS_RESOURCE_EXHAUST 4 /* Resource exhaustion (OOM, FD limit) */
+#define DISTRESS_USER_ABORT 5       /* User-initiated abort (Ctrl+C equiv) */
+#define DISTRESS_BORROW_FAULT 6     /* BorrowChecker ownership violation */
+#define DISTRESS_VAULT_BREACH 7     /* Vault integrity compromised */
+
+/* Distress Severity Levels */
+#define DISTRESS_SEV_INFO 0     /* Informational */
+#define DISTRESS_SEV_WARN 1     /* Warning - may recover */
+#define DISTRESS_SEV_ERROR 2    /* Error - needs intervention */
+#define DISTRESS_SEV_CRITICAL 3 /* Critical - immediate action required */
+
+/* Distress Event Structure - sent to resurrection server */
+typedef struct DistressEvent {
+  u64int timestamp; /* nsec() at signal time */
+  u32int pid;       /* Process ID */
+  u16int reason;    /* DISTRESS_* code */
+  u16int severity;  /* DISTRESS_SEV_* level */
+  u64int context;   /* Reason-specific data (address, cap hash, etc) */
+} DistressEvent;
+
+/* Distress Ring Buffer Configuration */
+#define DISTRESS_RING_SIZE 64 /* Max pending distress events */
+
+/* Distress Signal API */
+void pebble_signal_distress(struct Proc *p, int reason, u64int context);
+int pebble_read_distress(DistressEvent *out); /* For /dev/distress */
+int pebble_distress_pending(void);
+int pebble_clear_distress(void);
 
 #include "blind_ledger.h"
 #include "borrowchecker.h"
@@ -146,6 +186,9 @@ typedef struct PebbleBlack {
   struct PebbleBlack *next;
 } PebbleBlack;
 
+/* Process Vault structure moved to portdat.h to avoid circular dependency with
+ * QLock */
+
 /* Per-process Pebble state */
 typedef struct PebbleState {
   ulong colorless_bank; /* remaining bytes for this process (COLORLESS pool) */
@@ -165,6 +208,8 @@ typedef struct PebbleState {
   PebbleBlack *black_list;
   PebbleBlue *blue_list;
   PebbleRed *red_list;
+
+  void *vault_handle; /* Process-specific Holographic Vault (Wave 6) */
 
   /* State tracking */
   int in_syscall;    /* set when in Pebble syscalls */
@@ -247,10 +292,19 @@ int pebble_blue_discard(PebbleBlue *blue_obj); /* Use pebble_blue_free */
 
 /* Internal helper functions */
 PebbleState *pebble_state(void);
+PebbleState *pebble_kernel_state(void);
 int pebble_set_budget(ulong budget);
 ulong pebble_get_budget(void);
 int pebble_increase_budget(ulong size, u64int nonce);
 void pebble_auto_verify(Proc *p, Ureg *ureg);
+
+int pebble_black_alloc_in_state(PebbleState *ps, Proc *owner,
+                                PebbleWhite *white, void *buf, ulong size,
+                                UserCapability *out_cap);
+int pebble_black_free_in_state(PebbleState *ps, Proc *owner,
+                               const UserCapability *cap);
+int pebble_white_verify_in_state(PebbleState *ps, PebbleWhite *white_cap,
+                                 void **black_cap);
 
 void pebble_red_blue_exit(void);
 

@@ -30,7 +30,21 @@ struct P9Control {
   uint req_tail;
   uint rep_head;
   uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
+
+static void ring_doorbell(volatile struct P9Control *ctl) {
+  ctl->req_seq += 1;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
+  ctl->doorbell = 1;
+}
 
 static volatile uchar *exchange;
 static volatile struct P9Control *ctl;
@@ -100,7 +114,7 @@ static void print(const char *msg) {
   while (msg_len--)
     req[pos++] = *s++;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 }
 
@@ -123,7 +137,7 @@ static void sys_exit(void) {
   put_u16(req + pos, 0);
   pos += 2; /* status len 0 */
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
   for (;;)
     ;

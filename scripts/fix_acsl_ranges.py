@@ -41,6 +41,28 @@ def fix_acsl_infinite_ranges(filepath):
 
 if __name__ == '__main__':
     files_to_fix = [
+        # Current FAIL files from verification
+        'kernel/wasm/wasm_runtime/wasm3/m3_module.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_bind.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_function.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_code.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_env.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_compile.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_parse.c',
+        'kernel/wasm/wasm_runtime/wasm3/m3_core.c',
+        'kernel/crypto/sha2.c',
+        'kernel/crypto/blind_cap.c',
+        'kernel/crypto/monocypher.c',
+        'kernel/libc9/pool.c',
+        'kernel/libc9/pool_freelist.c',
+        'kernel/libc9/convM2S.c',
+        'kernel/libc9/convS2M.c',
+        'kernel/libc9/dofmt.c',
+        'kernel/libc9/fcallfmt.c',
+        'kernel/symbolic/mini-gmp.c',
+        'kernel/symbolic/minigmp_kernel.c',
+        'kernel/9front-pc64/aml.c',
+        # Original files from script
         'kernel/libc9/vsmprint.c',
         'kernel/libc9/fcallfmt.c',
         'kernel/libc9/fmtprint.c',

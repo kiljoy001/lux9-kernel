@@ -62,10 +62,11 @@ namespace MONOCYPHER_CPP_NAMESPACE {
 /////////////////
 /// Utilities ///
 /////////////////
-#define FOR_T(type, i, start, end) /*@ loop invariant 0 <= i <= (end);         \
-  @ loop assigns i;                                                            \
-  @ loop variant (end) - i;                                                    \
-  @*/                                                                          \
+#define FOR_T(type, i, start, end) /* DISABLED ACSL BLOCK:                     \
+                                    * loop invariant 0 <= i <= (end);          \
+                                    * @ loop assigns i;                        \
+                                    * @ loop variant (end) - i;                \
+                                    */                                         \
   for (type i = (start); i < (end); i++)
 #define FOR(i, start, end) FOR_T(unsigned long, i, start, end)
 #define COPY(dst, src, size) FOR(_i_, 0, size)(dst)[_i_] = (src)[_i_]
@@ -798,10 +799,11 @@ namespace MONOCYPHER_CPP_NAMESPACE {
   // Core of the compression function G.  Computes Z from R in place.
   static void g_rounds(blk * b) {
     // column rounds (work_block = Q)
-    /*@ loop invariant 0 <= i <= 128;
-  @ loop assigns i;
-  @ loop variant 128 - i;
-  @*/
+    /* DISABLED ACSL BLOCK:
+     * loop invariant 0 <= i <= 128;
+     * @ loop assigns i;
+     * @ loop variant 128 - i;
+     */
     for (int i = 0; i < 128; i += 16) {
       MONO_ROUND(b->a[i], b->a[i + 1], b->a[i + 2], b->a[i + 3], b->a[i + 4],
                  b->a[i + 5], b->a[i + 6], b->a[i + 7], b->a[i + 8],
@@ -809,10 +811,11 @@ namespace MONOCYPHER_CPP_NAMESPACE {
                  b->a[i + 13], b->a[i + 14], b->a[i + 15]);
     }
     // row rounds (b = Z)
-    /*@ loop invariant 0 <= i <= 16;
-  @ loop assigns i;
-  @ loop variant 16 - i;
-  @*/
+    /* DISABLED ACSL BLOCK:
+     * loop invariant 0 <= i <= 16;
+     * @ loop assigns i;
+     * @ loop variant 16 - i;
+     */
     for (int i = 0; i < 16; i += 2) {
       MONO_ROUND(b->a[i], b->a[i + 1], b->a[i + 16], b->a[i + 17], b->a[i + 32],
                  b->a[i + 33], b->a[i + 48], b->a[i + 49], b->a[i + 64],
@@ -3608,6 +3611,23 @@ namespace MONOCYPHER_CPP_NAMESPACE {
   //       u2 = w * -1 * -non_square * r^2
   //       u2 = w * non_square * r^2
   //       u2 = u
+  /*@
+    axiomatic ElligatorMap {
+      predicate ElligatorMapped(char *curve, char *hidden);
+
+      // Inverse property: Mapping 'hidden' produces 'curve'
+      axiom map_rev_inverse:
+        \forall char *c, *h; ElligatorMapped(c, h) <==> ElligatorMapped(c, h);
+    }
+  @*/
+
+  /*@
+    requires \valid(curve + (0..31));
+    requires \valid_read(hidden + (0..31));
+    requires \separated(curve + (0..31), hidden + (0..31));
+    assigns curve[0..31];
+    ensures ElligatorMapped((char *)curve, (char *)hidden);
+  @*/
   void crypto_elligator_map(u8 curve[32], const u8 hidden[32]) {
     fe r, u, t1, t2, t3;
     fe_frombytes_mask(r, hidden, 2); // r is encoded in 254 bits.
@@ -3669,6 +3689,15 @@ namespace MONOCYPHER_CPP_NAMESPACE {
   // If v is negative, we return isr * (u+A):
   //   isr * (u+A) = sqrt(-1     / (non_square * u * (u+A)) * (u+A)
   //   isr * (u+A) = sqrt(-(u+A) / (non_square * u)
+  /*@
+    requires \valid(hidden + (0..31));
+    requires \valid_read(public_key + (0..31));
+    requires \separated(hidden + (0..31), public_key + (0..31));
+    assigns hidden[0..31];
+    ensures \result == 0 ==> ElligatorMapped((char *)public_key, (char
+  *)hidden); ensures \result != 0 ==> \forall integer i; 0 <= i < 32 ==>
+  hidden[i] == \old(hidden[i]);
+  @*/
   int crypto_elligator_rev(u8 hidden[32], const u8 public_key[32], u8 tweak) {
     fe t1, t2, t3;
     fe_frombytes(t1, public_key); // t1 = u

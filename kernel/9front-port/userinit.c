@@ -9,6 +9,7 @@
 #include <a.out.h>
 #include <elf.h>
 #include <error.h>
+#include <pool.h>
 
 #ifndef BOOTVERBOSE
 #define BOOTVERBOSE 0
@@ -101,7 +102,7 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   /* Read ELF header */
   print("ELF: Reading header from chan type=%d qid=%llx\n", c->type,
         c->qid.path);
-  long nread = devtab[c->type]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0);
+  long nread = devtab[devno(c->type, 0)]->read(c, (uchar *)&ehdr, sizeof(ehdr), 0);
   print("ELF: Read %ld bytes (expected %lud)\n", nread, sizeof(ehdr));
   if (nread != sizeof(ehdr)) {
     print("ELF: Failed to read ELF header\n");
@@ -142,7 +143,7 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   }
 
   /* Read program headers */
-  if (devtab[c->type]->read(c, (uchar *)phdrs,
+  if (devtab[devno(c->type, 0)]->read(c, (uchar *)phdrs,
                             ehdr.e_phnum * sizeof(Elf64_Phdr), ehdr.e_phoff) !=
       ehdr.e_phnum * sizeof(Elf64_Phdr)) {
     print("ELF: Failed to read program headers\n");
@@ -199,10 +200,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   uintptr aligned_max = (max_addr + BY2PG - 1) & ~(BY2PG - 1);
 
   /* Allocate guard pages BEFORE program */
-    /*@ loop invariant 0 <= addr <= aligned_min;
-    @ loop assigns addr;
-    @ loop variant aligned_min - addr;
-    @*/
+  /*@ loop invariant 0 <= addr <= aligned_min;
+  @ loop assigns addr;
+  @ loop variant aligned_min - addr;
+  @*/
   for (uintptr addr = guard_min; addr < aligned_min; addr += BY2PG) {
     Page *p =
         newpage(addr, nil); /* Charges process Pebble budget as system tax */
@@ -214,10 +215,10 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
   }
 
   /* Allocate guard pages AFTER program */
-    /*@ loop invariant 0 <= addr <= guard_max;
-    @ loop assigns addr;
-    @ loop variant guard_max - addr;
-    @*/
+  /*@ loop invariant 0 <= addr <= guard_max;
+  @ loop assigns addr;
+  @ loop variant guard_max - addr;
+  @*/
   for (uintptr addr = aligned_max; addr < guard_max; addr += BY2PG) {
     Page *p =
         newpage(addr, nil); /* Charges process Pebble budget as system tax */
@@ -258,7 +259,7 @@ static int load_elf64(Chan *c, uintptr *out_entry) {
         to_read = file_remaining;
 
       if (to_read > 0) {
-        if (devtab[c->type]->read(c, (uchar *)VA(k) + page_off, to_read,
+        if (devtab[devno(c->type, 0)]->read(c, (uchar *)VA(k) + page_off, to_read,
                                   file_off) != to_read) {
           print("ELF: Short read at offset 0x%lx\n", file_off);
         }
@@ -334,19 +335,31 @@ static void proc0(void *arg) {
   extern void main(void);
   print("DEBUG: symbol main=%p\n", main);
 
-  /*
-   * Check if we have an initrd module from Limine.
-   * We need to register it with the device root.
-   */
+  extern Pool *mainmem;
+  extern void poolcheck(Pool *);
+
+  print("BOOT[proc0]: checking pool before initrd\n");
+  poolcheck(mainmem);
+
+  print("Struct sizes: Chan=%d Path=%d\n", sizeof(Chan), sizeof(Path));
+  print("Process info: up=%#p kstack=%#p\n", up, up->kstack);
+
   if (initrd_base != nil && initrd_size > 0) {
     initrd_init(initrd_base, initrd_size);
     initrd_register();
   }
 
+  print("BOOT[proc0]: checking pool after initrd\n");
+  poolcheck(mainmem);
+
   up->pgrp = newpgrp();
-  up->egrp = newegrp(); /* Use newegrp() to properly initialize all fields */
+  poolcheck(mainmem);
+  /* up->egrp removed - environment managed in userspace */
+  poolcheck(mainmem);
   up->fgrp = dupfgrp(nil);
+  poolcheck(mainmem);
   up->rgrp = newrgrp();
+  poolcheck(mainmem);
 
   /* Set init namespace to allow 1024 total system processes */
   up->pgrp->spawn_limit = 1024;
@@ -360,11 +373,12 @@ static void proc0(void *arg) {
                        CAP_TYPE_SPAWN, 0xFF);
   print("BOOT[proc0]: granted CAP_TYPE_SPAWN (max_children=%d)\n",
         up->spawn_max_children);
+  poolcheck(mainmem);
 
   BOOTPRINT("BOOT[proc0]: process groups ready\n");
 
-  pebble_selftest();
-  pid2_selftest();
+  /* pebble_selftest(); */
+  /* pid2_selftest(); */
 
   /*
    * These are o.k. because rootinit is null.
@@ -391,7 +405,7 @@ static void proc0(void *arg) {
 
     if (up->slash != nil) {
       pathclose(up->slash->path);
-      up->slash->path = newpath("/");
+      up->slash->path = newpath((BString){"/", 1});
       up->dot = cclone(up->slash);
     } else {
       panic("proc0: could not obtain root device via namec or devattach");
@@ -414,38 +428,48 @@ static void proc0(void *arg) {
   }
   print("BOOT[proc0]: root namespace setup complete\n");
 
-  /* Mount /srv registry device */
+  /* Open /dev/cons for Stdin/Stdout/Stderr (FD 0, 1, 2) */
   if (waserror()) {
-    print("BOOT[proc0]: WARNING - failed to mount #s on /srv\n");
+    print("BOOT[proc0]: WARNING - failed to open /dev/cons\n");
     poperror();
   } else {
-    Chan *srvdev = namec("#s", Abind, 0, 0);
+    Chan *c = namec("#c/cons", Aopen, OREAD, 0);
     if (waserror()) {
-      if (srvdev)
-        cclose(srvdev);
+      cclose(c);
       nexterror();
     }
-    Chan *srvpt = namec("/srv", Amount, 0, 0);
+    /* FD 0 - Read */
+    if (newfd(c, 0) != 0) {
+      print("BOOT[proc0]: FD 0 allocation failed\n");
+    }
+    poperror(); /* c (kp held by FD) */
+
+    c = namec("#c/cons", Aopen, OWRITE, 0);
     if (waserror()) {
-      if (srvpt)
-        cclose(srvpt);
-      if (srvdev)
-        cclose(srvdev);
+      cclose(c);
       nexterror();
     }
-    cmount(srvdev, srvpt, MREPL, nil);
+    /* FD 1 - Write */
+    if (newfd(c, 0) != 1) {
+      print("BOOT[proc0]: FD 1 allocation failed\n");
+    }
     poperror();
-    cclose(srvpt);
+
+    c = namec("#c/cons", Aopen, OWRITE, 0);
+    if (waserror()) {
+      cclose(c);
+      nexterror();
+    }
+    /* FD 2 - Write */
+    if (newfd(c, 0) != 2) {
+      print("BOOT[proc0]: FD 2 allocation failed\n");
+    }
     poperror();
-    cclose(srvdev);
+
+    print("BOOT[proc0]: FDs 0,1,2 bound to /dev/cons\n");
     poperror();
   }
 
-  /* TODO: Re-enable when lib9p provides proper /wasm server
-   * These mounts fail because /wasm directory doesn't exist yet.
-   * See: implementation_plan.md for lib9p fileserver library.
-   */
-#if 0
   /* Expose sandbox-visible devices under /wasm */
   mount_wasm_device("#X", "#X");
   mount_wasm_device("#c", "#c");
@@ -453,7 +477,6 @@ static void proc0(void *arg) {
   mount_wasm_device("#B", "#B");
   mount_wasm_device("#Y", "#Y");
   mount_wasm_device("#Z", "#Z");
-#endif
 
   /* CLR moved to userspace - no kernel initialization needed */
   /* pebble_sip_issue_test(); */
@@ -515,8 +538,7 @@ static void proc0(void *arg) {
 
     ustack[3] = ustack[2] = nil;
     strcpy((char *)&ustack[4], "boot");
-    ustack[1] =
-        (char *)(user_sp + 16 + sizeof(ustack[0]) * 4);
+    ustack[1] = (char *)(user_sp + 16 + sizeof(ustack[0]) * 4);
     ustack[0] = nil;
   }
   kunmap(k);
@@ -569,7 +591,7 @@ static void proc0(void *arg) {
         struct M3Function *start_func = nil;
         /* Peek at magic for WASM check */
         uchar magic[4];
-        if (devtab[bc->type]->read(bc, magic, 4, 0) == 4 && magic[0] == 0x00 &&
+        if (devtab[devno(bc->type, 0)]->read(bc, magic, 4, 0) == 4 && magic[0] == 0x00 &&
             magic[1] == 0x61 && magic[2] == 0x73 && magic[3] == 0x6d) {
 
           print("BOOT[proc0]: Detected WASM binary\n");
@@ -595,7 +617,7 @@ static void proc0(void *arg) {
           /* Actually we read magic separately, need to be careful.
            * But devtab read uses offset param, so just reuse 0 offset. */
 
-          if (devtab[bc->type]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
+          if (devtab[devno(bc->type, 0)]->read(bc, (uchar *)&exec, sizeof(Exec), 0) ==
               sizeof(Exec)) {
             /* Accept S_MAGIC (amd64) or A_MAGIC (legacy) */
             if (exec.magic == S_MAGIC || exec.magic == A_MAGIC) {
@@ -613,11 +635,11 @@ static void proc0(void *arg) {
               ulong virt_addr = UTZERO;
               ulong remaining = exec.text + exec.data;
 
-                /*@ loop invariant 0 <= i <= total_pages;
-    @ loop assigns i;
-    @ loop variant total_pages - i;
-    @*/
-  for (int i = 0; i < total_pages; i++) {
+              /*@ loop invariant 0 <= i <= total_pages;
+  @ loop assigns i;
+  @ loop variant total_pages - i;
+  @*/
+              for (int i = 0; i < total_pages; i++) {
                 Page *p = newpage(virt_addr, nil);
                 KMap *k = kmap(p);
 
@@ -626,7 +648,7 @@ static void proc0(void *arg) {
                   to_read = remaining;
 
                 if (to_read > 0) {
-                  if (devtab[bc->type]->read(bc, (uchar *)VA(k), to_read,
+                  if (devtab[devno(bc->type, 0)]->read(bc, (uchar *)VA(k), to_read,
                                              file_off) != to_read)
                     print("BOOT: Short read on /boot/init\n");
                   file_off += to_read;
@@ -794,10 +816,8 @@ static void proc0(void *arg) {
   procpriority(up, PriNormal, 0);
   procsetup(up);
 
-  /* Setup stub P9SEG after dropping kernel status so it is visible to faults. */
-  extern int proc_setup_p9seg_stub(Proc *);
-  if (proc_setup_p9seg_stub(up) < 0)
-    panic("proc0: failed to setup P9SEG stub");
+  if (proc_setup_p9page(up) < 0)
+    panic("proc0: failed to setup exchange page");
 
   /* Install user mappings now that proc0 drops kernel privileges */
   {

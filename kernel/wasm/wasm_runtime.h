@@ -17,6 +17,10 @@ typedef struct Proc Proc;
 #define PERM_WASM_POSIX (1 << 19)   /* Allow /wasm/posix preopen */
 #define PERM_WASM_FRUITY (1 << 20)  /* Allow Fruity IR generation */
 
+/*@
+  @ logic integer PERM_WASM_FRUITY = 1048576;
+  @*/
+
 /* Runtime initialization (called at boot) */
 void wasm_runtime_init(void);
 

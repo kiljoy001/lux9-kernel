@@ -27,6 +27,7 @@ extern long sys_write(int fd, void *buf, long n);
 
 /* Sartfs Externs */
 extern int sart_init(int disk_fd, int journal_fd, u64int total_blocks);
+extern void art_init(void);
 extern RecordData *art_search(const UUIDv8 *key);
 extern UUIDv8 *ns_art_search(const UUIDv8 *parent, const char *name);
 extern int ns_art_insert(const UUIDv8 *parent, const char *name,
@@ -52,6 +53,87 @@ typedef struct SophiaNode {
 #define EDGE_KEY_MAX 256
 static SophiaNode *root_node;
 static int g_shared_backing = 0;
+static int g_storage_ready = 0;
+
+static int
+parse_uint(const char *s)
+{
+  int v;
+
+  v = 0;
+  while (*s >= '0' && *s <= '9') {
+    v = v * 10 + (*s - '0');
+    s++;
+  }
+  return v;
+}
+
+static void
+make_path(char *buf, char *prefix, int id, char *suffix)
+{
+  int i;
+
+  i = 0;
+  while (*prefix)
+    buf[i++] = *prefix++;
+  if (id == 0)
+    buf[i++] = '0';
+  else {
+    char tmp[16];
+    int j;
+    int v;
+
+    j = 0;
+    v = id;
+    while (v > 0) {
+      tmp[j++] = (v % 10) + '0';
+      v /= 10;
+    }
+    while (j > 0)
+      buf[i++] = tmp[--j];
+  }
+  while (*suffix)
+    buf[i++] = *suffix++;
+  buf[i] = '\0';
+}
+
+static int
+write_endpoint_file(const char *path, const char *endpoint)
+{
+  char buf[128];
+  int fd;
+  int i;
+
+  i = 0;
+  while (endpoint[i] && i < (int)sizeof(buf) - 2) {
+    buf[i] = endpoint[i];
+    i++;
+  }
+  buf[i++] = '\n';
+
+  fd = sys_create((char *)path, OWRITE, 0666);
+  if (fd < 0)
+    fd = sys_open((char *)path, OWRITE);
+  if (fd < 0)
+    return -1;
+  if (sys_write(fd, buf, i) != i) {
+    sys_close(fd);
+    return -1;
+  }
+  sys_close(fd);
+  return 0;
+}
+
+static int
+open_rw_or_create(const char *path)
+{
+  int fd;
+
+  fd = sys_open((char *)path, ORDWR);
+  if (fd < 0)
+    fd = sys_create((char *)path, ORDWR, 0666);
+  return fd;
+}
 
 /*
  * Edge Index Lookup
@@ -100,26 +182,27 @@ static void free_node(SophiaNode *node) {
 
 /* Bootstrap the FS with persistent Sartfs backend */
 static void sophia_bootstrap(void) {
-  /* disk_fd = 3, journal_fd = 4 assigned by init */
-  int disk_fd = 3;
-  int journal_fd = 4;
+  int disk_fd = -1;
+  int journal_fd = -1;
+  int rc = SART_ERR_IO;
+
   if (g_shared_backing) {
     sart_set_backing_offsets(0, 1024 * SART_BLOCK_SIZE);
+    /*
+     * Shared-backing mode is the only configuration that expects pre-opened
+     * descriptors from the launcher.
+     */
+    disk_fd = 3;
+    journal_fd = 4;
+    rc = sart_init(disk_fd, journal_fd, 1024);
   }
-  int rc = sart_init(disk_fd, journal_fd, 1024);
+
   if (rc != SART_OK) {
     char disk_path[] = "/sophia.disk";
     char journal_path[] = "/sophia.journal";
 
-    disk_fd = sys_open(disk_path, ORDWR);
-    if (disk_fd < 0) {
-      disk_fd = sys_create(disk_path, ORDWR, 0666);
-    }
-
-    journal_fd = sys_open(journal_path, ORDWR);
-    if (journal_fd < 0) {
-      journal_fd = sys_create(journal_path, ORDWR, 0666);
-    }
+    disk_fd = open_rw_or_create(disk_path);
+    journal_fd = open_rw_or_create(journal_path);
     if (disk_fd >= 0 && journal_fd >= 0) {
       rc = sart_init(disk_fd, journal_fd, 1024);
     }
@@ -128,27 +211,21 @@ static void sophia_bootstrap(void) {
     char disk_path[] = "/tmp/sophia.disk";
     char journal_path[] = "/tmp/sophia.journal";
 
-    disk_fd = sys_open(disk_path, ORDWR);
-    if (disk_fd < 0) {
-      disk_fd = sys_create(disk_path, ORDWR, 0666);
-    }
-
-    journal_fd = sys_open(journal_path, ORDWR);
-    if (journal_fd < 0) {
-      journal_fd = sys_create(journal_path, ORDWR, 0666);
-    }
+    disk_fd = open_rw_or_create(disk_path);
+    journal_fd = open_rw_or_create(journal_path);
     if (disk_fd >= 0 && journal_fd >= 0) {
       rc = sart_init(disk_fd, journal_fd, 1024);
     }
   }
-  if (rc != SART_OK) {
-    char err[] = "Sophia: FATAL - sart_init failed\n";
-    sys_write(2, err, sizeof(err) - 1);
-    sys_exit("sart_init failure");
-  }
-  {
+  g_storage_ready = (rc == SART_OK);
+  if (g_storage_ready) {
     char ok[] = "Sophia: sart_init ok\n";
     sys_write(2, ok, sizeof(ok) - 1);
+  } else {
+    char warn[] =
+        "Sophia: WARNING - storage backend unavailable, starting empty\n";
+    sys_write(2, warn, sizeof(warn) - 1);
+    art_init();
   }
 
   /* Root Node bootstrap */
@@ -263,6 +340,11 @@ static void sophia_create(Req *r) {
   u32int perm = r->ifcall.perm;
   UUIDv8 child_id;
   int rc;
+
+  if (!g_storage_ready) {
+    srv_respond(r, "storage unavailable");
+    return;
+  }
 
   if (perm & DMDIR) {
     rc = sart_mkdir(&parent->cid, name, perm, &child_id);
@@ -402,6 +484,10 @@ static void sophia_read(Req *r) {
   }
 
   /* File read */
+  if (!g_storage_ready) {
+    srv_respond(r, "storage unavailable");
+    return;
+  }
   long n = sart_read(&node->cid, r->ofcall.data, r->ifcall.count);
   if (n < 0) {
     srv_respond(r, "read failed");
@@ -414,6 +500,10 @@ static void sophia_read(Req *r) {
 
 static void sophia_write(Req *r) {
   SophiaNode *node = r->fid->aux;
+  if (!g_storage_ready) {
+    srv_respond(r, "storage unavailable");
+    return;
+  }
   if (node->mode & DMDIR) {
     srv_respond(r, "cannot write to directory");
     return;
@@ -443,6 +533,11 @@ static void sophia_write(Req *r) {
 static void sophia_remove(Req *r) {
   SophiaNode *node = r->fid->aux;
   extern int ns_art_remove(const UUIDv8 *parent, const char *name);
+
+  if (!g_storage_ready) {
+    srv_respond(r, "storage unavailable");
+    return;
+  }
 
   /* Prevent removal of root directory */
   if (node == root_node) {
@@ -532,30 +627,13 @@ int main(int argc, char **argv) {
   char msg[] = "Sophia: starting up\n";
   sys_write(2, msg, sizeof(msg) - 1);
 
-  int pipe_fd = -1;
   g_shared_backing = 0;
-  if (argc > 1) {
-    int v = 0;
+  if (argc > 1 && argv[1] != nil) {
     char *p = argv[1];
-    while (*p >= '0' && *p <= '9') {
-      v = v * 10 + (*p - '0');
-      p++;
-    }
-    pipe_fd = v;
     if (*p == ',') {
       p++;
       g_shared_backing = (*p != '0' && *p != '\0');
     }
-  }
-  if (argc > 1) {
-    char prefix[] = "Sophia: argv1=";
-    sys_write(2, prefix, sizeof(prefix) - 1);
-    char *p = argv[1];
-    long len = 0;
-    while (p[len])
-      len++;
-    sys_write(2, p, len);
-    sys_write(2, "\n", 1);
   }
   {
     char shared_msg[] = "Sophia: shared backing = 0\n";
@@ -591,11 +669,53 @@ int main(int argc, char **argv) {
   char srv_msg[] = "Sophia: entering srv_loop\n";
   sys_write(2, srv_msg, sizeof(srv_msg) - 1);
 
-  if (argc > 1 && pipe_fd >= 0) {
-    srv_loop(&s, pipe_fd, pipe_fd);
-  } else {
-    /* Default: use stdin/stdout for testing */
-    srv_loop(&s, 0, 1);
+  {
+    int fd_clone;
+    int n;
+    int chan_id;
+    char buf[32];
+    char path_ctl[64];
+    char path_data[64];
+    char path_ring[64];
+
+    fd_clone = sys_open("#X/clone", OREAD);
+    if (fd_clone < 0) {
+      char err[] = "Sophia: #X clone failed\n";
+      sys_write(2, err, sizeof(err) - 1);
+      return 1;
+    }
+
+    n = sys_read(fd_clone, buf, sizeof(buf) - 1);
+    if (n <= 0) {
+      char err[] = "Sophia: failed to read #X channel id\n";
+      sys_write(2, err, sizeof(err) - 1);
+      sys_close(fd_clone);
+      return 1;
+    }
+    buf[n] = '\0';
+    chan_id = parse_uint(buf);
+
+    make_path(path_ctl, "#X/", chan_id, "/ctl");
+    {
+      int fd_ctl;
+
+      fd_ctl = sys_open(path_ctl, OWRITE);
+      sys_close(fd_clone);
+      if (fd_ctl >= 0) {
+        sys_write(fd_ctl, "mode service", 12);
+        sys_close(fd_ctl);
+      }
+    }
+
+    make_path(path_data, "#X/", chan_id, "/data");
+    if (write_endpoint_file("/srv/sophia.endpoint", path_data) < 0) {
+      char err[] = "Sophia: failed to publish endpoint\n";
+      sys_write(2, err, sizeof(err) - 1);
+      return 1;
+    }
+
+    make_path(path_ring, "#X/", chan_id, "/ipcring");
+    srv_loop_ring(&s, path_ring);
   }
   return 0;
 }

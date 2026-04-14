@@ -14,6 +14,25 @@ extern int vsnprint(char *buf, int len, const char *fmt, va_list args);
 extern void *malloc(unsigned long);
 extern void free(void *);
 
+#ifndef OREAD
+#define OREAD 0
+#endif
+#ifndef OWRITE
+#define OWRITE 1
+#endif
+#ifndef BIND
+#define BIND 2
+#endif
+#ifndef FD2PATH
+#define FD2PATH 23
+#endif
+#ifndef UNMOUNT
+#define UNMOUNT 35
+#endif
+
+static uchar *rx_exchange_data(Fcall *rx);
+int lux_call(struct Fcall *tx, struct Fcall *rx);
+
 /* Packing Helpers */
 static void pack8(uchar *p, int v) { p[0] = v; }
 static void pack16(uchar *p, int v) {
@@ -46,18 +65,158 @@ static int packstr(uchar *p, char *s) {
   return 2 + n;
 }
 
+static int path_under_srv(const char *path) {
+  if (!path)
+    return 0;
+  if (path[0] != '/' || path[1] != 's' || path[2] != 'r' || path[3] != 'v')
+    return 0;
+  return path[4] == 0 || path[4] == '/';
+}
+
+static int path_is_srv_publish(const char *path) {
+  const char *p;
+
+  if (!path_under_srv(path) || path[4] != '/')
+    return 0;
+  p = path + 5;
+  if (*p == 0)
+    return 0;
+  while (*p != 0) {
+    if (*p == '/')
+      return 0;
+    p++;
+  }
+  return 1;
+}
+
+static int srv_endpoint_path(const char *path, char *buf, int buflen) {
+  const char *name;
+
+  if (!path_is_srv_publish(path))
+    return -1;
+  name = path + 5;
+  if (snprint(buf, buflen, "/srv/%s.endpoint", name) >= buflen)
+    return -1;
+  return 0;
+}
+
+static int fd_to_path(int fd, char *buf, int buflen) {
+  uchar sbuf[16];
+  uchar *p = sbuf;
+  Fcall tx, rx;
+  uchar *src;
+  int n;
+
+  if (!buf || buflen <= 0)
+    return -1;
+
+  pack32(p, fd);
+  p += 4;
+  pack32(p, buflen);
+  p += 4;
+
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsyscall;
+  tx.tag = 1;
+  tx.scallnr = FD2PATH;
+  tx.sdata = sbuf;
+  tx.scount = p - sbuf;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  if (rx.scount <= 0)
+    return -1;
+
+  src = rx_exchange_data(&rx);
+  if (!src)
+    return -1;
+
+  n = (int)rx.scount;
+  if (n > buflen)
+    n = buflen;
+  memmove(buf, src, n);
+  buf[buflen - 1] = 0;
+  return 0;
+}
+
+static int mnt_ctl_write(const char *cmd) {
+  int fd, len;
+
+  fd = sys_open("/mnt/ctl", OWRITE);
+  if (fd < 0)
+    return -1;
+
+  len = (int)strlen(cmd);
+  if (sys_write(fd, (void *)cmd, len) != len) {
+    sys_close(fd);
+    return -1;
+  }
+  sys_close(fd);
+  return 0;
+}
+
+static int write_text_path(const char *path, const char *text) {
+  int fd, len;
+
+  fd = sys_open((char *)path, OWRITE);
+  if (fd < 0)
+    fd = sys_create((char *)path, OWRITE, 0666);
+  if (fd < 0)
+    return -1;
+
+  len = (int)strlen(text);
+  if (sys_write(fd, (void *)text, len) != len) {
+    sys_close(fd);
+    return -1;
+  }
+  sys_close(fd);
+  return 0;
+}
+
+static int srv_publish_fd(int fd, const char *srvpath) {
+  char endpoint[256];
+  char endpoint_file[320];
+
+  if (fd_to_path(fd, endpoint, sizeof(endpoint)) < 0)
+    return -1;
+  if (srv_endpoint_path(srvpath, endpoint_file, sizeof(endpoint_file)) < 0)
+    return -1;
+  return write_text_path(endpoint_file, endpoint);
+}
+
+int sys_srv_publish(char *path, int fd) {
+  if (path == nil)
+    return -1;
+  if (!path_is_srv_publish(path))
+    return -1;
+  return srv_publish_fd(fd, path);
+}
+
 int lux_call(struct Fcall *tx, struct Fcall *rx) {
   uchar *page = (uchar *)lux_exchange_page();
+  P9Control *ctl = (P9Control *)(page + P9_CONTROL_OFFSET);
+  u32int req_seq;
 
   /* 1. Marshal Request */
   int n = convS2M(tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
   if (n <= 0)
     return -100; /* convS2M failed */
 
-  /* 2. Ring Doorbell */
-  _syscall();
+  /* 2. Monotonic request: advance seq + mark pending */
+  req_seq = ctl->req_seq + 1;
+  ctl->req_seq = req_seq;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
 
-  /* 3. Unmarshal Reply */
+  /* 3. Ring Doorbell */
+  _syscall();
+  __asm__ volatile("mfence" ::: "memory");
+
+  if (ctl->status != P9_STATUS_COMPLETE || ctl->rep_seq != req_seq)
+    return -300; /* monotonicity violation */
+
+  /* 4. Unmarshal Reply */
   // Debug check: verify rx is a valid user pointer
   if ((u64int)rx > 0x7FFFFFFFFFFF) {
     return -2; // Return special error for bad pointer to avoid crash
@@ -84,18 +243,19 @@ static uchar *rx_exchange_data(Fcall *rx) {
   uintptr base = lux_exchange_page() + P9_MSG_OFFSET;
   uintptr end = base + P9_MSG_SIZE;
   uintptr p = (uintptr)rx->sdata;
-  if (p < base || p + rx->scount > end) {
-    uintptr fallback = base + (4 + 1 + 2 + 8 + 4);
-    if (fallback + rx->scount > end)
-      return nil;
+  uintptr fallback = base + (4 + 1 + 2 + 8 + 4);
+
+  if (p >= base && p <= end && rx->scount <= end - p)
+    return (uchar *)p;
+  if (fallback >= base && fallback <= end && rx->scount <= end - fallback)
     return (uchar *)fallback;
-  }
-  return (uchar *)p;
+  return nil;
 }
 
 /* Generic syscall wrapper with sdata buffer management */
 static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   Fcall tx, rx;
+  volatile u32int *trace;
 
   /* Clear structures to avoid any stack garbage */
   memset(&tx, 0, sizeof(Fcall));
@@ -107,6 +267,10 @@ static int do_syscall(int scallnr, uchar *sdata, int scount, u64int *retval) {
   tx.sflags = 0;
   tx.sdata = sdata;
   tx.scount = scount;
+
+  trace = (u32int *)(lux_exchange_page() + P9_MSG_OFFSET + P9_MSG_SIZE - 8);
+  trace[0] = 0x54535953; /* 'TSYS' */
+  trace[1] = (u32int)scallnr;
 
   int err = lux_call(&tx, &rx);
   if (err < 0)
@@ -162,6 +326,7 @@ long sys_read(int fd, void *buf, long n) {
   uchar sbuf[32];
   uchar *p = sbuf;
   Fcall tx, rx;
+  uchar *src;
 
   // [fd 4] [offset 8] [count 4]
   pack32(p, fd);
@@ -186,7 +351,7 @@ long sys_read(int fd, void *buf, long n) {
   if (rx.scount > n)
     rx.scount = n;
   if (rx.scount > 0) {
-    uchar *src = rx_exchange_data(&rx);
+    src = rx_exchange_data(&rx);
     if (!src)
       return -1;
     memmove(buf, src, rx.scount);
@@ -198,6 +363,11 @@ long sys_write(int fd, void *buf, long n) {
   uchar sbuf[1024];
   uchar *p, *allocbuf = nil;
   uchar *data_start;
+  volatile u32int *trace;
+
+  trace = (u32int *)(lux_exchange_page() + P9_MSG_OFFSET + P9_MSG_SIZE - 8);
+  trace[0] = 0x57524954; /* 'WRIT' */
+  trace[1] = (u32int)fd;
 
   int hdr_len = 4 + 8 + 4; // fid+off+cnt
   if (hdr_len + n <= sizeof(sbuf)) {
@@ -298,53 +468,62 @@ int sys_create(char *path, int mode, uint perm) {
 extern long _syscall(void);
 
 int sys_rfork(int flags) {
-  /* Special handling for rfork:
-     With PTE save/restore in kernel:
-     - Parent keeps its exchange page PTE (points to page with Rsysfork reply)
-     - Child inherits INVALID PTE, faults on first access, gets fresh empty page
-
-     Detection strategy:
-     1. Issue syscall
-     2. Try to parse exchange page
-     3. If parse succeeds with Rsysfork -> parent (has saved PTE with reply)
-     4. If parse fails -> child (has fresh empty page from fault)
-  */
-  uchar buf[16];
-  Fcall tx, rx;
-  uchar *p = buf;
-
+  Fcall tx;
   memset(&tx, 0, sizeof(Fcall));
   tx.type = Tsysfork;
   tx.tag = 1;
   tx.flags = flags;
 
   uchar *page = (uchar *)lux_exchange_page();
-
-  /* 1. Marshal Request */
+  P9Control *ctl = (P9Control *)(page + P9_CONTROL_OFFSET);
   int n = convS2M(&tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
   if (n <= 0)
-    return -100;
+    return -1;
 
-  /* 2. Syscall */
-  _syscall();
+  u32int req_seq = ctl->req_seq + 1;
+  ctl->req_seq = req_seq;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
 
-  /* 3. Parse exchange page to distinguish parent from child
-   * Parent: has restored PTE pointing to page with Rsysfork reply
-   * Child: has invalid PTE, faults to get fresh empty page */
-  memset(&rx, 0, sizeof(Fcall));
+  long ret = _syscall();
+  __asm__ volatile("mfence" ::: "memory");
 
-  uint parsed = convM2S(page + P9_MSG_OFFSET, P9_MSG_SIZE, &rx);
-
-  if (parsed == 0 || rx.type != Rsysfork) {
-    /* Potential Child: check if page is actually empty */
-    return 0;
-  }
-
-  /* Success case */
-  return (int)rx.pid;
+  /*
+   * Do not touch stack-resident exchange pointers after returning.
+   * With RFMEM/vfork-style forks the child may run on this same user stack
+   * until exec, so cached locals like 'page' and 'ctl' are not reliable.
+   * The kernel already returns the child pid (or 0/-errno) in AX.
+   */
+  return (int)ret;
 }
 
-int sys_bind(char *old, char *new, int flags) {
+int sys_rfork_stack(int flags, void *stack_top, void (*func)(void *), void *arg)
+{
+  Fcall tx;
+  uchar *page;
+  P9Control *ctl;
+  int n;
+  u32int req_seq;
+
+  memset(&tx, 0, sizeof(Fcall));
+  tx.type = Tsysfork;
+  tx.tag = 1;
+  tx.flags = flags;
+
+  page = (uchar *)lux_exchange_page();
+  ctl = (P9Control *)(page + P9_CONTROL_OFFSET);
+  n = convS2M(&tx, page + P9_MSG_OFFSET, P9_MSG_SIZE);
+  if (n <= 0)
+    return -1;
+
+  req_seq = ctl->req_seq + 1;
+  ctl->req_seq = req_seq;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
+  return (int)_syscall_rfork_stack(stack_top, func, arg);
+}
+
+int sys_bind_raw(char *old, char *new, int flags) {
   uchar buf[1024];
   uchar *p = buf;
 
@@ -353,18 +532,68 @@ int sys_bind(char *old, char *new, int flags) {
   pack32(p, flags);
   p += 4;
 
-  return do_syscall(SYS_BIND_RAW, buf, p - buf, nil);
+  return do_syscall(BIND, buf, p - buf, nil);
 }
 
-int sys_getpid2(void *out, ulong len) {
+int sys_bind(char *old, char *new, int flags) {
+  char cmd[512];
+
+  if (path_under_srv(new))
+    return -1;
+  if (snprint(cmd, sizeof(cmd), "bind %s %s %d", old, new, flags) >=
+      (int)sizeof(cmd))
+    return -1;
+  return mnt_ctl_write(cmd);
+}
+
+int sys_dup(int oldfd, int newfd) {
+  Fcall tx, rx;
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+
+  tx.type = Tsysdup;
+  tx.tag = 1;
+  tx.fid = oldfd;
+  tx.newfid = (u32int)newfd;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  if (rx.type != Rsysdup)
+    return -1;
+  return (int)rx.fid;
+}
+int sys_getpid2(uuid_t *out, ulong len) {
   uchar buf[32];
   uchar *p = buf;
 
-  pack64(p, (uvlong)out);
-  p += 8;
-  pack64(p, (uvlong)len);
-  p += 8;
+  if (len + 32 > sizeof(buf))
+    return -1;
+
+  *(void **)p = out;
+  p += sizeof(void *);
+  *(ulong *)p = len;
+  p += sizeof(ulong);
+
   return do_syscall(SYS_GETPID2, buf, p - buf, nil);
+}
+
+void *segattach(int attr, char *spec, void *addr, ulong len) {
+  uchar buf[64];
+  uchar *p = buf;
+
+  *(int *)p = attr;
+  p += sizeof(int);
+  *(char **)p = spec;
+  p += sizeof(char *);
+  *(void **)p = addr;
+  p += sizeof(void *);
+  *(ulong *)p = len;
+  p += sizeof(ulong);
+
+  u64int ret;
+  if (do_syscall(SYS_SEGATTACH, buf, p - buf, &ret) < 0)
+    return (void *)-1;
+  return (void *)ret;
 }
 
 /* Global to preserve error details across sys_exec call */
@@ -407,6 +636,49 @@ char *sys_exec_error(void) {
   }
   return "(no error message available)";
 }
+
+/*
+ * sys_spawnx - secure spawn interface.
+ *
+ * v1 supports atomic spawn+exec with kernel-side fresh-image setup.
+ * Extended pre-exec action vectors are reserved for future kernel support.
+ */
+int sys_spawnx(char *path, char *argv[], SpawnxSpec *spec) {
+  Fcall tx, rx;
+  int argc = 0;
+
+  if (path == nil)
+    return -1;
+
+  if (spec != nil) {
+    int default_flags = RFPROC | RFFDG;
+    if (spec->rfork_flags != 0 && spec->rfork_flags != default_flags)
+      return -1;
+    if (spec->nfd_actions != 0 || spec->nbind_actions != 0 || spec->do_mount)
+      return -1;
+  }
+
+  memset(&tx, 0, sizeof(Fcall));
+  memset(&rx, 0, sizeof(Fcall));
+  tx.type = Tsysspawn;
+  tx.tag = 1;
+  tx.path = path;
+  tx.argv = argv;
+
+  if (argv != nil) {
+    while (argv[argc] != nil)
+      argc++;
+  }
+  tx.argc = argc;
+
+  if (lux_call(&tx, &rx) < 0)
+    return -1;
+  if (rx.type != Rsysspawn)
+    return -1;
+  return (int)rx.pid;
+}
+
+int sys_spawn(char *path, char *argv[]) { return sys_spawnx(path, argv, nil); }
 
 int sys_pipe(int *fds) {
   Fcall tx, rx;
@@ -563,7 +835,7 @@ int sys_wstat(char *path, uchar *buf, int nbuf) {
   return 0;
 }
 
-int sys_mount(int fd, int afd, char *old, int flags, char *aname) {
+int sys_mount_raw(int fd, int afd, char *old, int flags, char *aname) {
   uchar buf[1024];
   uchar *p = buf;
 
@@ -583,6 +855,68 @@ int sys_mount(int fd, int afd, char *old, int flags, char *aname) {
   return 0;
 }
 
+int sys_nsroot_publish_raw(int fd, char *path, char *aname) {
+  uchar buf[1024];
+  uchar *p = buf;
+  u64int ret;
+
+  pack32(p, fd);
+  p += 4;
+  p += packstr(p, path);
+  p += packstr(p, aname ? aname : "");
+
+  if (do_syscall(SYS_NSROOT_PUBLISH, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_nsroot_unpublish_raw(char *path) {
+  uchar buf[256];
+  uchar *p = buf;
+  u64int ret;
+
+  p += packstr(p, path);
+
+  if (do_syscall(SYS_NSROOT_UNPUBLISH, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_mount(int fd, int afd, char *old, int flags, char *aname) {
+  char endpoint[256];
+  char cmd[768];
+
+  if (afd >= 0)
+    return -1;
+  if (path_under_srv(old))
+    return -1;
+  if (fd_to_path(fd, endpoint, sizeof(endpoint)) < 0)
+    return -1;
+  if (aname && aname[0]) {
+    if (snprint(cmd, sizeof(cmd), "mount %s %s %d %s", endpoint, old, flags,
+                aname) >= (int)sizeof(cmd))
+      return -1;
+  } else {
+    if (snprint(cmd, sizeof(cmd), "mount %s %s %d", endpoint, old, flags) >=
+        (int)sizeof(cmd))
+      return -1;
+  }
+  return mnt_ctl_write(cmd);
+}
+
+int sys_unmount_raw(char *name, char *old) {
+  uchar buf[1024];
+  uchar *p = buf;
+  u64int ret;
+
+  p += packstr(p, name ? name : "");
+  p += packstr(p, old ? old : "");
+
+  if (do_syscall(UNMOUNT, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
 int sys_sleep(long ms) {
   Fcall tx, rx;
   memset(&tx, 0, sizeof(Fcall));
@@ -597,6 +931,105 @@ int sys_sleep(long ms) {
 }
 
 /* Exchange Pool Syscalls */
+
+int sys_exchange_prepare(uintptr vaddr, ExchangeCapability *out_cap) {
+  uchar buf[sizeof(uintptr) * 2];
+  uchar *p = buf;
+  u64int ret;
+
+  if (!out_cap)
+    return -1;
+
+  pack64(p, vaddr);
+  p += sizeof(uintptr);
+  pack64(p, (uvlong)(uintptr)out_cap);
+  p += sizeof(uintptr);
+
+  if (do_syscall(SYS_EXCHANGE_PREPARE, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_exchange_prepare_range(uintptr vaddr, ulong len,
+                               ExchangeCapability *handles) {
+  uchar buf[sizeof(uintptr) * 3];
+  uchar *p = buf;
+  u64int ret;
+
+  if (!handles || len == 0)
+    return -1;
+
+  pack64(p, vaddr);
+  p += sizeof(uintptr);
+  pack64(p, len);
+  p += sizeof(uintptr);
+  pack64(p, (uvlong)(uintptr)handles);
+  p += sizeof(uintptr);
+
+  if (do_syscall(SYS_EXCHANGE_PREPARE_RANGE, buf, p - buf, &ret) < 0)
+    return -1;
+  return (int)ret;
+}
+
+int sys_exchange_accept(const ExchangeCapability *cap, uintptr dest_vaddr,
+                        int prot) {
+  uchar buf[sizeof(uintptr) * 2 + sizeof(uint)];
+  uchar *p = buf;
+  u64int ret;
+
+  if (!cap)
+    return -1;
+
+  pack64(p, (uvlong)(uintptr)cap);
+  p += sizeof(uintptr);
+  pack64(p, dest_vaddr);
+  p += sizeof(uintptr);
+  pack32(p, prot);
+  p += sizeof(uint);
+
+  if (do_syscall(SYS_EXCHANGE_ACCEPT, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_exchange_cancel(const ExchangeCapability *cap) {
+  uchar buf[sizeof(uintptr)];
+  uchar *p = buf;
+  u64int ret;
+
+  if (!cap)
+    return -1;
+
+  pack64(p, (uvlong)(uintptr)cap);
+  p += sizeof(uintptr);
+
+  if (do_syscall(SYS_EXCHANGE_CANCEL, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
+
+int sys_exchange_transfer(int from_pid, int to_pid,
+                          const ExchangeCapability *cap, uintptr dest_vaddr) {
+  uchar buf[sizeof(uint) * 2 + sizeof(uintptr) * 2];
+  uchar *p = buf;
+  u64int ret;
+
+  if (!cap)
+    return -1;
+
+  pack32(p, from_pid);
+  p += sizeof(uint);
+  pack32(p, to_pid);
+  p += sizeof(uint);
+  pack64(p, (uvlong)(uintptr)cap);
+  p += sizeof(uintptr);
+  pack64(p, dest_vaddr);
+  p += sizeof(uintptr);
+
+  if (do_syscall(SYS_EXCHANGE_TRANSFER, buf, p - buf, &ret) < 0)
+    return -1;
+  return 0;
+}
 
 ExchangeCapability *sys_exchange_alloc(void) {
   Fcall tx, rx;

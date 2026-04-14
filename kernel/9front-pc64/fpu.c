@@ -32,6 +32,8 @@ extern void _stts(void);
 
 static void mathemu(Ureg *ureg, void*);
 
+int fpu_ready = 0;
+
 static void
 fpssesave(FPsave *s)
 {
@@ -215,6 +217,7 @@ fpuinit(void)
 	u64int cr4;
 	ulong regs[4];
 
+	fpu_ready = 0;
 	uartputs("fpuinit: ENTRY\n", 15);
 	m->xcr0 = 0;
 	uartputs("fpuinit: xcr0 cleared\n", 22);
@@ -266,6 +269,7 @@ fpuinit(void)
 	m->fpstate = FPinit;
 	uartputs("fpuinit: calling _stts\n", 23);
 	_stts();
+	fpu_ready = 1;
 	uartputs("fpuinit: EXIT\n", 14);
 }
 

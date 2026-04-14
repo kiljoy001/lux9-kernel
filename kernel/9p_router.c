@@ -5,7 +5,6 @@
  */
 
 #include "error.h"
-#include "errstr.h" /* For Eisdir and other error string definitions */
 #include "portlib.h"
 #include "u.h"
 #include "ureg.h"
@@ -27,8 +26,6 @@ typedef struct Waitmsg Waitmsg;
 #include "wasm/wasm_fileserver.h"
 #include "wasm/wasm_runtime.h"
 
-/* Forward declaration for kstrlen (strlen wrapper from libc9) */
-extern long kstrlen(char *);
 
 /* Process FSM integration - use real FSM from proc_fsm.c */
 extern int proc_event(Proc *p, int event);
@@ -46,8 +43,6 @@ extern void lux9_error(char *s);
 /*@ assigns \nothing; exits \nothing; */
 extern void nexterror(void);
 
-/*@ assigns \nothing; exits \nothing; */
-extern void panic(char *fmt, ...) __attribute__((noreturn));
 /*@ assigns \nothing; terminates \true; */
 extern int print(char *fmt, ...);
 
@@ -68,7 +63,17 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static int rpipe_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 static void rpipe_clone_notify(void *aux);
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
-static int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
+int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf);
+extern int sys_vault_create_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_lock_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_unlock_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_read_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_write_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_wipe_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_export_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_import_handler(Fcall *tx, Fcall *rx);
+extern int sys_vault_status_handler(Fcall *tx, Fcall *rx);
+
 extern uintptr sysexec(void *list_void); /* System exec call */
 
 /*@ assigns \nothing; ensures \result == 0 || \result == -1; */
@@ -126,7 +131,7 @@ static int p9_exchange_contains(Proc *p, void *ptr, ulong len) {
   @ terminates \true;
   @*/
 static int path_match(char *path, char *pattern) {
-  int plen = kstrlen(pattern);
+  int plen = strlen(pattern);
   if (pattern[plen - 1] == '*') {
     return strncmp(path, pattern, plen - 1) == 0;
   }
@@ -209,7 +214,13 @@ static void rpipe_clone_notify(void *aux);
   @ requires caller->p9page != \null ==> \valid((uchar *)caller->p9page +
   (0..P9_PAGE_SIZE-1));
   @ assigns *r;
-  @ terminates \true;
+  @ behavior valid_session:
+  @   assumes t->type != Tattach;
+  @   ensures \result == 0 || \result == -1;
+  @ behavior attach:
+  @   assumes t->type == Tattach;
+  @   ensures \result == 0 || \result == -1;
+  @ complete behaviors valid_session, attach;
   @*/
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 
@@ -707,7 +718,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
   snprint(buf, sizeof(buf), "CONSOLE: p9_dispatch: ENTRY type=%d tag=%d\n",
           t->type, t->tag);
-  uartputs(buf, kstrlen(buf));
+  uartputs(buf, strlen(buf));
 
   /* Initialize reply data buffer to exchange page message area.
    * Handlers that generate read responses (Rread) will write to r->data. */
@@ -741,6 +752,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     Proc *proc = p;
     uchar *p = t->sdata;
     uchar *ep = t->sdata + t->scount;
+    static int tsyscall_trace_count;
 
     if (proc->wasm.initialized) {
       switch (t->scallnr) {
@@ -755,7 +767,14 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
     }
 
-    bprint("p9_dispatch: Tsyscall scallnr=%d\n", t->scallnr);
+    if (tsyscall_trace_count < 100) {
+      char trace_buf[96];
+      tsyscall_trace_count++;
+      snprint(trace_buf, sizeof(trace_buf),
+              "p9_dispatch: Tsyscall pid=%d scallnr=%d\n",
+              up ? up->pid : -1, t->scallnr);
+      uartputs(trace_buf, (int)strlen(trace_buf));
+    }
 
     switch (t->scallnr) {
     case SYS_OPEN: {
@@ -1121,6 +1140,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_WRITE: {
       /* Format: [fid 4] [offset 8] [count 4] [data...] */
+      static int write_trace_count;
       p = tsyscall_skip_argc(p, ep, 3);
       if (p + 4 + 8 + 4 > ep) {
         r->type = Rerror;
@@ -1136,9 +1156,14 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
         r->type = Rerror;
         return -1;
       }
-
-      bprint("p9_dispatch: SYS_WRITE fd=%d count=%d off=%lld\n", fid, count,
-             offset);
+      if (write_trace_count < 50) {
+        char trace_buf[120];
+        write_trace_count++;
+        snprint(trace_buf, sizeof(trace_buf),
+                "p9_dispatch: SYS_WRITE pid=%d fd=%d count=%d off=%lld\n",
+                up ? up->pid : -1, fid, count, offset);
+        uartputs(trace_buf, (int)strlen(trace_buf));
+      }
 
       extern Chan *fdtochan(int, int, int, int);
       Chan *c;
@@ -1156,7 +1181,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
       if (c->qid.type & QTDIR)
         error(Eisdir);
-      n = devtab[c->type]->write(c, p, count, offset);
+      n = devtab[devno(c->type, 0)]->write(c, p, count, offset);
       poperror();
       cclose(c);
       poperror();
@@ -1206,7 +1231,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
       if (c->qid.type & QTDIR)
         error(Eisdir);
-      n = devtab[c->type]->write(c, p, count, offset);
+      n = devtab[devno(c->type, 0)]->write(c, p, count, offset);
       poperror();
       cclose(c);
       poperror();
@@ -1261,7 +1286,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       }
 
       uchar *data = (uchar *)proc->p9page + P9_MSG_OFFSET + rsyscall_hdr;
-      n = devtab[c->type]->read(c, data, count, offset);
+      n = devtab[devno(c->type, 0)]->read(c, data, count, offset);
       poperror();
       cclose(c);
       poperror();
@@ -1332,7 +1357,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       extern Chan *fdtochan(int, int, int, int);
       int rsyscall_hdr = 4 + 1 + 2 + 8 + 4;
       uchar *data = (uchar *)proc->p9page + P9_MSG_OFFSET + rsyscall_hdr;
-      n = devtab[c->type]->stat(c, data, P9_REPLY_SIZE - rsyscall_hdr);
+      n = devtab[devno(c->type, 0)]->stat(c, data, P9_REPLY_SIZE - rsyscall_hdr);
       if (path)
         free(path);
       poperror();
@@ -1391,7 +1416,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
 
       validstat(p, nstat);
       c = namec(path, Aaccess, 0, 0);
-      devtab[c->type]->wstat(c, p, nstat);
+      devtab[devno(c->type, 0)]->wstat(c, p, nstat);
       poperror();
       cclose(c);
       free(path);
@@ -1606,7 +1631,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       r->type = Rsyscall;
       r->tag = t->tag;
       r->retval = pid;
-      r->scount = kstrlen(msg) + 1;
+      r->scount = strlen(msg) + 1;
       r->sdata = (uchar *)msg;
       return 0;
     }
@@ -1780,6 +1805,26 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    /* Vault Syscalls */
+    case SYS_VAULT_CREATE:
+      return sys_vault_create_handler(t, r);
+    case SYS_VAULT_LOCK:
+      return sys_vault_lock_handler(t, r);
+    case SYS_VAULT_UNLOCK:
+      return sys_vault_unlock_handler(t, r);
+    case SYS_VAULT_READ:
+      return sys_vault_read_handler(t, r);
+    case SYS_VAULT_WRITE:
+      return sys_vault_write_handler(t, r);
+    case SYS_VAULT_WIPE:
+      return sys_vault_wipe_handler(t, r);
+    case SYS_VAULT_EXPORT:
+      return sys_vault_export_handler(t, r);
+    case SYS_VAULT_IMPORT:
+      return sys_vault_import_handler(t, r);
+    case SYS_VAULT_STATUS:
+      return sys_vault_status_handler(t, r);
+
     default:
       r->type = Rerror;
       snprint(r->ename, sizeof(r->ename), "unknown syscall %d", t->scallnr);
@@ -1882,7 +1927,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       error("read count too large");
     }
 
-    n = devtab[c->type]->read(c, r->data, t->count, t->offset);
+    n = devtab[devno(c->type, 0)]->read(c, r->data, t->count, t->offset);
     poperror();
     cclose(c);
     poperror();
@@ -1919,7 +1964,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     if (c->qid.type & QTDIR)
       error(Eisdir);
 
-    n = devtab[c->type]->write(c, t->data, t->count, t->offset);
+    n = devtab[devno(c->type, 0)]->write(c, t->data, t->count, t->offset);
     poperror();
     cclose(c);
     poperror();
@@ -2199,6 +2244,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     r->type = Rsysfork;
     r->tag = t->tag;
     r->pid = ret;
+    r->retval = ret;
     return 0;
   }
 
@@ -2276,17 +2322,13 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     sysexec(args);
     poperror();
 
-    extern void noteret(void); /* Assembly label for exec return path */
-    if (up->dbgreg != nil && ((void **)up->dbgreg)[-1] == noteret) {
-      r->type = Rsysexec;
-      r->tag = t->tag;
-      return 0;
-    }
+    sysexec(args);
+    poperror();
 
-    r->type = Rerror;
-    r->ename = "exec returned unexpectedly";
-    bprint("p9_dispatch: Tsysexec error: exec returned unexpectedly\n");
-    return -1;
+    /* Success! Return Rsysexec flag for trap.c:syscall to handle */
+    r->type = Rsysexec;
+    r->tag = t->tag;
+    return 0;
   }
 
   if (t->type == Tsyswait) {
@@ -2746,7 +2788,7 @@ static void p9_route_reply_callback(OrdMsg *msg, int status, void *arg) {
   }
 
   /* Handle MSGORD status */
-  memset(&reply, 0, sizeof(reply));
+  reply = (Fcall){0};
   if (status == MSGORD_CB_ROLLBACK) {
     /* Transaction was rolled back - return error */
     reply.type = Rerror;
@@ -2799,6 +2841,42 @@ static char *get_fid_path(Proc *p, int fid) {
   return path;
 }
 
+static void p9_build_msgord_spec(Fcall *t, char *path, MsgOrdSpec *spec) {
+  msgord_spec_init(spec);
+  if (t == nil)
+    return;
+
+  switch (t->type) {
+  case Tversion:
+  case Tauth:
+  case Tflush:
+    return; /* explicit global barrier */
+  case Tattach:
+    msgord_spec_add(spec, msgord_key_root(path));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  case Twalk:
+  case Topen:
+  case Tread:
+    msgord_spec_add(spec, msgord_key_fid(t->fid));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  case Tcreate:
+  case Twrite:
+  case Tremove:
+  case Twstat:
+    msgord_spec_add(spec, msgord_key_fid(t->fid));
+    msgord_spec_add(spec, msgord_key_root(path));
+    msgord_spec_add(spec, msgord_key_parent(path));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  default:
+    msgord_spec_add(spec, msgord_key_op(t->type));
+    msgord_spec_add(spec, msgord_key_root(path));
+    return;
+  }
+}
+
 /*
  * Main entry point: Submit to MSGORD for async ordering.
  * Returns 0 on successful submission (reply will arrive via callback).
@@ -2806,6 +2884,7 @@ static char *get_fid_path(Proc *p, int fid) {
  */
 int p9_route(Proc *p, Fcall *t, Fcall *r) {
   char *path;
+  MsgOrdSpec spec;
   P9RouteContext *ctx;
   uint msg_id;
 
@@ -2821,6 +2900,8 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
       path = "/";
   }
 
+  p9_build_msgord_spec(t, path, &spec);
+
   /* Allocate callback context */
   ctx = xalloc(sizeof(P9RouteContext));
   if (ctx == nil) {
@@ -2833,7 +2914,8 @@ int p9_route(Proc *p, Fcall *t, Fcall *r) {
 
   /* Submit message asynchronously */
   msg_id =
-      msgord_submit_async(nil, p, t, path, p9_route_reply_callback, ctx, 0);
+      msgord_submit_async(nil, p, t, path, &spec, p9_route_reply_callback, ctx,
+                          0);
   if (msg_id == 0) {
     xfree(ctx);
     r->type = Rerror;
@@ -2894,6 +2976,10 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   enum BorrowError berr;
   P9Control ctl_saved;
 
+  /* CRITICAL: Set up->dbgreg so sysrfork/sysproc can access ureg for fork */
+  if (ureg != nil)
+    up->dbgreg = ureg;
+
   /* Validate exchange page exists and is coherent with P9SEG */
   if (p->seg[P9SEG] != nil && p->seg[P9SEG]->pseg != nil &&
       p->seg[P9SEG]->pseg->pa != 0) {
@@ -2926,13 +3012,23 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
    * Transfer ownership so kernel has exclusive access.
    */
   int s = splhi(); /* Block interrupts during critical ownership transfer */
-  berr = borrow_transfer(p, up, page_pa);
+  uintptr page_key = (uintptr)kaddr(page_pa);
+  if (!borrow_is_owned(page_key)) {
+    bprint("p9_handle_doorbell: borrow missing, acquiring for pid=%lud key=%#p\n",
+           p ? p->pid : 0, (void *)page_key);
+    berr = borrow_acquire(p, page_key);
+    if (berr != BORROW_OK && berr != BORROW_EALREADY) {
+      bprint("p9_handle_doorbell: borrow_acquire failed (berr=%d)\n", berr);
+    }
+  }
+
+  berr = borrow_transfer(p, up, page_key);
   if (berr != BORROW_OK) {
     /* First syscall after boot - process may not have formal ownership yet */
     bprint("p9_handle_doorbell: borrow_transfer failed (berr=%d), acquiring "
            "directly\n",
            berr);
-    berr = borrow_acquire(up, page_pa);
+    berr = borrow_acquire(up, page_key);
     if (berr != BORROW_OK && berr != BORROW_EALREADY) {
       bprint(
           "p9_handle_doorbell: FATAL - kernel can't acquire page (berr=%d)\n",
@@ -2978,7 +3074,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   }
 
   /* Parse request from message buffer */
-  memset(&t, 0, sizeof(t));
+  t = (Fcall){0};
 
   /* Memory barrier to ensure user writes are visible to kernel.
    * User writes to p9_user_base(p), kernel reads via HHDM at p->p9page.
@@ -3013,7 +3109,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   splx(s); /* Restore interrupts before long processing. */
 
   /* Dispatch through 9P router */
-  memset(&r, 0, sizeof(r));
+  r = (Fcall){0};
   result = p9_dispatch(p, &t, &r);
 
   /* Write reply to SAME buffer location (ownership-flip model) */
@@ -3032,17 +3128,11 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
 
   /* Set RAX to return value for ABI compatibility and efficient checking */
-  if (ureg != nil) {
+  /* DO NOT overwrite RAX on successful exec, as sysexec already set it up
+   * correctly */
+  if (ureg != nil && r.type != Rexec && r.type != Rsysexec) {
     ureg->ax = (ulong)r.retval;
   }
-
-  /* Success! Reply written to buffer.
-   * Even if p9_dispatch returned -1 (Rerror), from the perspective of the
-   * doorbell mechanism, we successfully processed the message and wrote a
-   * reply.
-   */
-  result = 0;
-
   /* Update control block */
   ctl->rep_seq++;
 
@@ -3056,14 +3146,14 @@ cleanup_ownership:
    * Kernel has finished processing. Transfer ownership back so
    * process can read the reply.
    */
-  berr = borrow_transfer(up, p, page_pa);
+  berr = borrow_transfer(up, p, page_key);
   if (berr != BORROW_OK) {
     bprint(
         "p9_handle_doorbell: WARNING - borrow_transfer back failed (berr=%d)\n",
         berr);
     /* Fall back to release/acquire */
-    borrow_release(up, page_pa);
-    berr = borrow_acquire(p, page_pa);
+    borrow_release(up, page_key);
+    berr = borrow_acquire(p, page_key);
     if (berr != BORROW_OK) {
       bprint("p9_handle_doorbell: FATAL - can't return page to process "
              "(berr=%d)\n",
@@ -3072,7 +3162,9 @@ cleanup_ownership:
     }
   }
 
-  return result;
+  /* Success! Return the reply type so the caller can identify special cases
+   * (like exec) */
+  return r.type;
 }
 
 /*
@@ -3343,7 +3435,7 @@ static int handle_proc_ctl_write(Proc *p, char *cmd, int len) {
      * In Plan 9 style, we pass arguments via /proc/n/args after exec.
      * For now, we just store the command name.
      */
-    char *file = smalloc((ulong)kstrlen(path) + 1);
+    char *file = smalloc((ulong)strlen(path) + 1);
     if (file == nil) {
       error("spawn: no memory");
       return -1;
@@ -3720,11 +3812,11 @@ int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
       return -1;
 
     Fcall t, r;
-    memset(&t, 0, sizeof(t));
+    t = (Fcall){0};
     if (convM2S(slot + P9_RING_HEADER_SIZE, req_size, &t) == 0)
       return -1;
 
-    memset(&r, 0, sizeof(r));
+    r = (Fcall){0};
     int disp = p9_dispatch(p, &t, &r);
     if (disp < 0)
       r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
@@ -4023,8 +4115,9 @@ static int random_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
  * Ramdisk handler: /dev/ram
  * Uses devram read/write paths.
  */
-extern long ramread(void *a, long n, vlong off);
-extern long ramwrite(void *va, long n, vlong off);
+extern long ram9pread(void *va, long n, vlong off);
+extern long ram9pwrite(void *va, long n, vlong off);
+extern ulong ram9psize(void);
 
 static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   r->tag = t->tag;
@@ -4040,7 +4133,7 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       r->ename = "write permission denied";
       return -1;
     }
-    r->count = (u32int)ramwrite(t->data, t->count, t->offset);
+    r->count = (u32int)ram9pwrite(t->data, t->count, t->offset);
     r->type = Rwrite;
     return 0;
 
@@ -4051,7 +4144,7 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
     r->type = Rread;
-    r->count = (u32int)ramread(caller->genbuf, t->count, t->offset);
+    r->count = (u32int)ram9pread(caller->genbuf, t->count, t->offset);
     r->data = (char *)caller->genbuf;
     return 0;
 
@@ -4071,7 +4164,7 @@ static int ram_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
 
   case Tstat:
     /* 0666 = read/write for all */
-    return handle_device_stat(t, r, "ram", 7, 0666, 0);
+    return handle_device_stat(t, r, "ram", 7, 0666, (vlong)ram9psize());
 
   default:
     r->type = Rerror;
@@ -4446,7 +4539,7 @@ static SrvEntry *srv_alloc(void) {
 int srv_create_entry(Proc *caller, const char *name) {
   SrvEntry *e;
 
-  if (!name || name[0] == 0 || kstrlen((char *)name) >= SRV_NAME_SIZE)
+  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
     return -1;
 
   srv_init();
@@ -4479,7 +4572,7 @@ int srv_post_fd(Proc *caller, const char *name, int fd) {
   SrvEntry *e;
   Chan *c;
 
-  if (!name || name[0] == 0 || kstrlen((char *)name) >= SRV_NAME_SIZE)
+  if (!name || name[0] == 0 || strlen((char *)name) >= SRV_NAME_SIZE)
     return -1;
 
   if (waserror())
@@ -4688,7 +4781,7 @@ int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
     name = t->aname + 5;
-    if (kstrlen(name) == 0 || kstrlen(name) >= SRV_NAME_SIZE) {
+    if (strlen(name) == 0 || strlen(name) >= SRV_NAME_SIZE) {
       r->type = Rerror;
       r->ename = "invalid service name";
       return -1;
@@ -5009,6 +5102,7 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
   AsyncP9Op *op;
   uint op_id;
   ConsensusDepth depth;
+  MsgOrdSpec spec;
 
   if (p == nil || t == nil)
     return 0;
@@ -5029,6 +5123,7 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
 
   /* Classify operation to determine consensus depth */
   depth = classify_operation(t, path);
+  p9_build_msgord_spec(t, path, &spec);
 
   /* For DEPTH_NONE operations, execute immediately (optimistic) */
   if (depth == DEPTH_NONE) {
@@ -5041,7 +5136,8 @@ uint p9_submit_async(Proc *p, Fcall *t, char *path, P9CompletionCallback cb,
   }
 
   /* Submit to MsgOrd */
-  op_id = msgord_submit_async(msgord, p, t, path, p9_msgord_callback, op, 0);
+  op_id =
+      msgord_submit_async(msgord, p, t, path, &spec, p9_msgord_callback, op, 0);
   if (op_id == 0) {
     xfree(op);
     return 0;
@@ -5105,7 +5201,7 @@ int p9_handle_doorbell_async(Proc *p) {
 
   /* Parse request from exchange page */
   reqbuf = (uchar *)p->p9page + P9_REQUEST_OFFSET;
-  memset(&t, 0, sizeof(t));
+  t = (Fcall){0};
   n = (int)convM2S(reqbuf, P9_REQUEST_SIZE, &t);
   if (n <= 0) {
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
@@ -5123,7 +5219,7 @@ int p9_handle_doorbell_async(Proc *p) {
 
   /* For immediate/local operations, use synchronous path */
   if (depth == DEPTH_NONE) {
-    memset(&r, 0, sizeof(r));
+    r = (Fcall){0};
     p9_dispatch(p, &t, &r);
 
     /* Write reply to exchange page */
@@ -5588,7 +5684,7 @@ int fd_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     }
 
     /* devtab[c->type]->read(c, data, count, offset) */
-    long n = devtab[c->type]->read(c, r->data, t->count, t->offset);
+    long n = devtab[devno(c->type, 0)]->read(c, r->data, t->count, t->offset);
     r->count = (u32int)n;
     r->type = Rread;
     poperror();
@@ -5615,7 +5711,7 @@ int fd_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       return -1;
     }
 
-    long cnt = devtab[c->type]->write(c, t->data, t->count, t->offset);
+    long cnt = devtab[devno(c->type, 0)]->write(c, t->data, t->count, t->offset);
     r->count = (u32int)cnt;
     r->type = Rwrite;
     poperror();
@@ -5830,7 +5926,7 @@ static int wasm_unregister_server(const char *name) {
 static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
   wasm_9p_session_t *session = nil;
   u32int session_id = 0;
-  const char *server_name = "/boot/server.wasm"; /* Default server */
+  const char *server_name = "/boot/resurrection.wasm"; /* Resurrection server */
 
   r->tag = t->tag;
 
@@ -5903,9 +5999,57 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
     return 0;
   }
 
-  case Twalk:
-  case Topen:
+  case Twalk: {
+    if (!session) {
+      r->type = Rerror;
+      r->ename = "no active wasm session for fid";
+      return -1;
+    }
+
+    /* Check if any path component is a capability UUID (#<uuid>) */
+    for (int i = 0; i < t->nwname; i++) {
+      uuid_t walk_uuid;
+      if (wasm_9p_extract_path_uuid(t->wname[i], &walk_uuid) == 0) {
+        /* Step into a new capability! */
+        wasm_9p_session_t *new_s =
+            wasm_9p_create_session(&walk_uuid, session->wasm_server);
+        if (new_s) {
+          /* Succesfully switched session for this walk */
+          session = new_s;
+          session_id = session->session_id;
+
+          /* Update the fid subtype to the new session ID
+           * if the fid isn't clunked or if it's newfid
+           */
+          lock(&caller->fgrp->lock);
+          Chan *c = (t->fid == t->newfid) ? caller->fgrp->fd[t->fid]
+                                          : caller->fgrp->fd[t->newfid];
+          if (c) {
+            c->qid.vers = session_id;
+          }
+          unlock(&caller->fgrp->lock);
+
+          /* For Twalk, we might need to properly handle the remaining
+           * components after the intercept. For now, we allow the WASM server
+           * to handle the '#' components as 'success/identity' walks.
+           */
+        }
+      }
+    }
+
+    /* Route to WASM via integration layer (performs permission checks) */
+    if (wasm_9p_route_to_wasm(t, r, session) < 0) {
+      if (r->type != Rerror) {
+        r->type = Rerror;
+        r->ename = "wasm routing failed";
+      }
+      return -1;
+    }
+    return 0;
+  }
+
   case Tcreate:
+  case Topen:
   case Tread:
   case Twrite:
   case Tstat:
@@ -5915,6 +6059,17 @@ static int wasm_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
       r->type = Rerror;
       r->ename = "no active wasm session for fid";
       return -1;
+    }
+
+    /* For Tcreate, check if the name contains a capability UUID */
+    if (t->type == Tcreate) {
+      uuid_t create_uuid;
+      if (wasm_9p_extract_path_uuid(t->name, &create_uuid) == 0) {
+        /* Create with special name resets capability for that fid?
+         * No, creation usually creates a file. But we could use it as a
+         * trigger. For now, we only support Twalk interception for Option 2.
+         */
+      }
     }
 
     /* Route to WASM via integration layer (performs permission checks) */

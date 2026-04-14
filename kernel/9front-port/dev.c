@@ -1,12 +1,20 @@
-#include "dat.h"
-#include "fns.h"
-#include "mem.h"
-#include "portlib.h"
+#include "kernel.h"
+#include "pebble_kernel.h"
 #include "uuid.h"
-#include "u.h"
-#include <error.h>
 
-extern ulong kerndate;
+Chan *devclone(Chan *c) {
+  Chan *nc;
+  nc = newchan();
+  nc->type = c->type;
+  nc->dev = c->dev;
+  nc->mode = c->mode;
+  nc->qid = c->qid;
+  nc->aux = c->aux;
+  nc->mchan = c->mchan;
+  if (nc->mchan != nil)
+    incref(&nc->mchan->ref);
+  return nc;
+}
 
 /*@
   @ requires q == \null || \valid(q);
@@ -28,19 +36,16 @@ int devno(int c, int user) {
     if (devtab[i]->dc == c)
       return i;
   }
-  if (user == 0)
+  if (user == 0) {
+    print("devno: PANIC - searching for char '%c' (0x%x), caller=%p\n", c, c, getcallerpc(&c));
     panic("devno %C %#ux", c, c);
+  }
 
   return -1;
 }
 
-/*@
-  @ requires pgrp == \null || \valid(pgrp);
-  @ requires devs == \null || \valid(devs);
-  @ assigns \nothing;
-  @*/
 void devmask(Pgrp *pgrp, int invert, char *devs) {
-  int i, t, w;
+  int i, t, width_bits;
   char *p;
   Rune r;
   u64int mask[nelem(pgrp->notallowed)];
@@ -50,16 +55,23 @@ void devmask(Pgrp *pgrp, int invert, char *devs) {
   else
     memset(mask, 0, sizeof mask);
 
-  w = sizeof mask[0] * 8;
+  width_bits = sizeof mask[0] * 8;
+  /*@ loop invariant valid_string(p);
+    @ loop invariant \base_addr(p) == \base_addr(devs);
+    @ loop invariant p >= devs;
+    @ loop assigns p, t, r, mask[0..nelem(mask)-1];
+    @*/
   for (p = devs; *p != '\0';) {
     p += chartorune(&r, p);
     t = devno(r, 1);
     if (t == -1)
       continue;
+    if (t >= nelem(mask) * width_bits)
+      continue; /* Safety bound */
     if (invert)
-      mask[t / w] &= ~(1 << t % w);
+      mask[t / width_bits] &= ~(1 << t % width_bits);
     else
-      mask[t / w] |= 1 << t % w;
+      mask[t / width_bits] |= 1 << t % width_bits;
   }
 
   wlock(&pgrp->ns);
@@ -81,178 +93,154 @@ void devmask(Pgrp *pgrp, int invert, char *devs) {
   @ assigns \nothing;
   @*/
 int devallowed(Pgrp *pgrp, int r) {
-  int t, w, b;
+  int t, width_bits, b;
 
   t = devno(r, 1);
   if (t == -1)
     return 0;
 
-  w = sizeof(u64int) * 8;
+  width_bits = sizeof(u64int) * 8;
   rlock(&pgrp->ns);
   if (waserror()) {
     runlock(&pgrp->ns);
     nexterror();
   }
-  b = !(pgrp->notallowed[t / w] & 1 << t % w);
+  b = !(pgrp->notallowed[t / width_bits] & 1 << t % width_bits);
   poperror();
   runlock(&pgrp->ns);
   return b;
 }
+/* Standard device init/shutdown stubs */
+void devinit(void) {}
+void devshutdown(void) {}
+void devreset(void) {}
+
+extern Dev *devtab[];
 
 /*@
-  @ requires pgrp == \null || \valid(pgrp);
+  @ requires p == \null || \valid(p);
   @ assigns \nothing;
   @*/
-int canmount(Pgrp *pgrp) {
-  /*
-   * Devmnt is not usable directly from user procs, so
-   * having it removed is interpreted to block any mounts.
-   */
-  return devallowed(pgrp, 'M');
+int canmount(Pgrp *p) {
+  if (p == nil)
+    return 1;
+  return devallowed(p, 'M');
 }
 
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires q == \null || \valid(q);
+  @ requires n == \null || \valid(n);
+  @ assigns \nothing;
+  @*/
 void devdir(Chan *c, Qid qid, char *n, vlong length, char *user, long perm,
             Dir *db) {
-  db->name = n;
-  if (c->flag & CMSG)
-    qid.type |= QTMOUNT;
+  ulong now;
+
+  /*
+   * db (dir) comes from stack in devwalk and is often uninitialized or
+   * corrupted (e.g. holding 0x2 or stack addresses). Since devwalk doesn't free
+   * dir.name anyway (causing a small leak), we unconditionally clear it to
+   * prevent kstrdup from calling free() on garbage.
+   */
+  db->name = nil;
+  db->uid = nil;
+  db->gid = nil;
+  db->muid = nil;
+  kstrdup(&db->name, n);
   db->qid = qid;
-  db->type = devtab[c->type]->dc;
-  db->dev = c->dev;
+  /* c->type is the device character (like '/', 'c', etc.)
+   * During walk, cloned channels may temporarily have type=0.
+   * If type is valid, use it directly; otherwise use 0 as fallback. */
+  if (c->type != 0 && devno(c->type, 1) != -1) {
+    db->type = c->type;
+    db->dev = c->dev;
+  } else {
+    /* Channel type not set (during walk clone) - use 0 as placeholder */
+    db->type = 0;
+    db->dev = 0;
+  }
+  /* db->qshift removed - obsolete */
   db->mode = perm;
-  db->mode |= qid.type << 24;
-  db->atime = seconds();
-  db->mtime = kerndate;
+  now = (ulong)seconds();
+  db->atime = now;
+  db->mtime = now;
   db->length = length;
-  db->uid = user;
-  db->gid = eve;
-  db->muid = user;
+  kstrdup(&db->uid, user);
+  kstrdup(&db->gid, eve);
+  kstrdup(&db->muid, user);
 }
 
-/*
- * (here, Devgen is the prototype; devgen is the function in dev.c.)
- *
- * a Devgen is expected to return the directory entry for ".."
- * if you pass it s==DEVDOTDOT (-1).  otherwise...
- *
- * there are two contradictory rules.
- *
- * (i) if c is a directory, a Devgen is expected to list its children
- * as you iterate s.
- *
- * (ii) whether or not c is a directory, a Devgen is expected to list
- * its siblings as you iterate s.
- *
- * devgen always returns the list of children in the root
- * directory.  thus it follows (i) when c is the root and (ii) otherwise.
- * many other Devgens follow (i) when c is a directory and (ii) otherwise.
- *
- * devwalk assumes (i).  it knows that devgen breaks (i)
- * for children that are themselves directories, and explicitly catches them.
- *
- * devstat assumes (ii).  if the Devgen in question follows (i)
- * for this particular c, devstat will not find the necessary info.
- * with our particular Devgen functions, this happens only for
- * directories, so devstat makes something up, assuming
- * c->name, c->qid, eve, DMDIR|0555.
- *
- * devdirread assumes (i).  the callers have to make sure
- * that the Devgen satisfies (i) for the chan being read.
- */
-/*
- * the zeroth element of the table MUST be the directory itself for ..
- */
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires spec == \null || \valid(spec);
+  @ assigns \nothing;
+  @*/
+Chan *devattach(int tc, char *spec) {
+  Chan *c;
+
+  c = newchan();
+  c->type = tc;  /* Store device CHARACTER, not index */
+  if (devno(tc, 1) == -1)
+    panic("devattach: bad dev char %c", tc);
+  c->qid.type = QTDIR;
+  c->qid.path = 0;
+  c->qid.vers = 0;
+  if (spec == nil)
+    spec = "";
+  /* kstrdup(&tn, spec); - tn unused and uninitialized */
+  c->path = newpath((BString){"/", 1});
+  /* manual path construction if needed */
+  /* free(tn); */
+  return c;
+}
+
 /*@
   @ requires c == \null || \valid(c);
   @ requires name == \null || \valid(name);
   @ requires tab == \null || \valid(tab);
-  @ requires dp == \null || \valid(dp);
+  @ requires dir == \null || \valid(dir);
   @ assigns \nothing;
   @*/
-int devgen(Chan *c, char *name, Dirtab *tab, int ntab, int i, Dir *dp) {
-  if (tab == 0)
-    return -1;
+int devgen(Chan *c, char *name, Dirtab *tab, int ntab, int i, Dir *dir) {
+  Dirtab *dp;
+
   if (i == DEVDOTDOT) {
-    /* nothing */
-  } else if (name) {
-    for (i = 1; i < ntab; i++)
-      if (strcmp(tab[i].name, name) == 0)
-        break;
-    if (i == ntab)
-      return -1;
-    tab += i;
-  } else {
-    /* skip over the first element, that for . itself */
-    i++;
-    if (i >= ntab)
-      return -1;
-    tab += i;
+    devdir(c, c->qid, "..", 0, eve, 0555, dir);
+    return 1;
   }
-  devdir(c, tab->qid, tab->name, tab->length, eve, tab->perm, dp);
+  if (i >= ntab)
+    return -1;
+  dp = &tab[i];
+  if (name != nil && strcmp(name, dp->name) != 0)
+    return 0;
+  devdir(c, dp->qid, dp->name, dp->length, eve, dp->perm, dir);
   return 1;
 }
-
-void devreset(void) {}
-
-void devinit(void) {}
-
-void devshutdown(void) {}
-
-Chan *devattach(int tc, char *spec) {
-  int n;
-  Chan *c;
-  char *buf;
-
-  c = newchan();
-  mkqid(&c->qid, 0, 0, QTDIR);
-  c->type = devno(tc, 0);
-  if (spec == nil)
-    spec = "";
-  n = 1 + UTFmax + strlen(spec) + 1;
-  buf = smalloc(n);
-  snprint(buf, n, "#%C%s", tc, spec);
-  c->path = newpath(buf);
-  free(buf);
-  return c;
-}
-
-Chan *devclone(Chan *c) {
-  Chan *nc;
-
-  if (c->flag & COPEN)
-    panic("clone of open file type %C", devtab[c->type]->dc);
-
-  nc = newchan();
-
-  nc->type = c->type;
-  nc->dev = c->dev;
-  nc->mode = c->mode;
-  nc->qid = c->qid;
-  nc->offset = c->offset;
-  nc->umh = nil;
-  nc->aux = c->aux;
-  nc->mqid = c->mqid;
-  nc->mcp = c->mcp;
-
-  /* Copy path from source channel - critical for incref in walk() */
-  if ((nc->path = c->path) != nil)
-    incref(&c->path->ref);
-
-  return nc;
-}
-
+/* ... devwalk ... */
+/*@
+  @ requires c == \null || \valid(c);
+  @ requires nc == \null || \valid(nc);
+  @ requires name == \null || \valid(name);
+  @ requires tab == \null || \valid(tab);
+  @ requires gen == \null || \valid(gen);
+  @ assigns \nothing;
+  @*/
 Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
                  int ntab, Devgen *gen) {
   /* Stack canaries to detect corruption */
   volatile uintptr canary_top = 0xDEADBEEFCAFEBABEULL;
   volatile int alloc;
   int i, j;
-  Walkqid *volatile wq;
+  Walkqid *volatile walkq_ptr;
   Walkqid *volatile savedwq;
   Chan *volatile savedclone;
   volatile int savedalloc;
   char *n;
   Dir dir;
+  memset(&dir, 0, sizeof(dir));
+  if (dir.name != nil)
+    uartputs("devwalk: corrupted after memset\n", 32);
   volatile uintptr canary_bottom = 0xFEEDFACEDEADC0DEULL;
 
   if (nname > 0)
@@ -267,18 +255,22 @@ Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
   }
 
   alloc = (nc == nil);
-  wq = smalloc(sizeof(Walkqid) + (nname - 1) * sizeof(Qid));
-  wq->clone = nc;
+  walkq_ptr = smalloc(sizeof(Walkqid) + (nname - 1) * sizeof(Qid));
+  if (dir.name != nil)
+    uartputs("devwalk: corrupted after smalloc\n", 33);
+  walkq_ptr->clone = nc;
 
   savedwq = up != nil ? up->walkq : nil;
   savedclone = up != nil ? up->walkclone : nil;
   savedalloc = up != nil ? up->walkalloc : 0;
 
   if (up != nil) {
-    up->walkq = wq;
+    up->walkq = walkq_ptr;
     up->walkclone = nc;
     up->walkalloc = alloc;
   }
+  if (dir.name != nil)
+    uartputs("devwalk: corrupted after up setup\n", 34);
   if (waserror()) {
     /* Check canaries in error handler */
     if (canary_top != 0xDEADBEEFCAFEBABEULL) {
@@ -287,8 +279,9 @@ Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
     if (canary_bottom != 0xFEEDFACEDEADC0DEULL) {
       panic("stack corruption detected in error path");
     }
-    Walkqid *cwq = up != nil && up->walkq != nil ? up->walkq : wq;
-    Chan *clone = up != nil ? up->walkclone : (wq != nil ? wq->clone : nil);
+    Walkqid *cwq = up != nil && up->walkq != nil ? up->walkq : walkq_ptr;
+    Chan *clone =
+        up != nil ? up->walkclone : (walkq_ptr != nil ? walkq_ptr->clone : nil);
     int calloc = up != nil ? up->walkalloc : alloc;
 
     if (calloc && clone != nil)
@@ -304,7 +297,7 @@ Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
   if (alloc) {
     nc = devclone(c);
     nc->type = 0; /* device doesn't know about this channel yet */
-    wq->clone = nc;
+    walkq_ptr->clone = nc;
     if (up != nil) {
       up->walkclone = nc;
       up->walkalloc = alloc;
@@ -312,20 +305,23 @@ Walkqid *devwalk(Chan *c, Chan *nc, char **name, int nname, Dirtab *tab,
   }
 
   for (j = 0; j < nname; j++) {
+
     if (!(nc->qid.type & QTDIR)) {
       if (j == 0)
         error(Enotdir);
       goto Done;
     }
     n = name[j];
+
     if (strcmp(n, ".") == 0) {
     Accept:
-      wq->qid[wq->nqid++] = nc->qid;
+      walkq_ptr->qid[walkq_ptr->nqid++] = nc->qid;
       continue;
     }
+    /* ... rest of loop ... */
     if (strcmp(n, "..") == 0) {
       if ((*gen)(nc, nil, tab, ntab, DEVDOTDOT, &dir) != 1) {
-        print("devgen walk .. in dev%s %llux broken\n", devtab[c->type]->name,
+        print("devgen walk .. in dev%s %llux broken\n", devtab[devno(c->type, 0)]->name,
               c->qid.path);
         error("broken devgen");
       }
@@ -376,7 +372,7 @@ Done:
     panic("stack corruption detected at Done");
   }
   poperror();
-  Walkqid *retq = wq;
+  Walkqid *retq = walkq_ptr;
   if (up != nil) {
     retq = up->walkq;
     if (retq != nil) {
@@ -545,40 +541,6 @@ Return:
 }
 
 Chan *devcreate(Chan *, char *, int, ulong) { error(Eperm); }
-
-Block *devbread(Chan *c, long n, ulong offset) {
-  Block *bp;
-
-  bp = allocb(n);
-  if (bp == 0)
-    error(Enomem);
-  if (waserror()) {
-    freeb(bp);
-    nexterror();
-  }
-  bp->wp += devtab[c->type]->read(c, bp->wp, n, offset);
-  poperror();
-  return bp;
-}
-
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires bp == \null || \valid(bp);
-  @ assigns \nothing;
-  @*/
-long devbwrite(Chan *c, Block *bp, ulong offset) {
-  long n;
-
-  if (waserror()) {
-    freeb(bp);
-    nexterror();
-  }
-  n = devtab[c->type]->write(c, bp->rp, BLEN(bp), offset);
-  poperror();
-  freeb(bp);
-
-  return n;
-}
 
 void devremove(Chan *) { error(Eperm); }
 

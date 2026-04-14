@@ -50,13 +50,7 @@ extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
-enum {
-  UTFmax = 4,         /* maximum bytes per rune */
-  Runesync = 0x80,    /* cannot represent part of a UTF sequence */
-  Runeself = 0x80,    /* rune and UTF sequences are the same (<) */
-  Runeerror = 0xFFFD, /* decoding error in UTF */
-  Runemax = 0x10FFFF, /* 21 bit rune */
-};
+/* UTF-8 constants moved to u.h */
 
 /*
  * rune routines
@@ -101,7 +95,7 @@ struct Fmt {
 /*@ assigns \result \from fmt; */
 extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
-extern char *vseprint(char *, char *, char *, va_list);
+extern char *vseprint(char *, char *, const char *, va_list);
 /*@
   @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
   @ requires valid_string(fmt);

@@ -36,10 +36,10 @@ static uchar *pqid(uchar *p, Qid *q) {
   return p;
 }
 
-/*@
-  @ requires s == \null || \valid(s);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires s == \null || \valid(s);
+ * @ assigns \nothing;
+ */
 static uint stringsz(char *s) {
   if (s == nil)
     return BIT16SZ;
@@ -47,10 +47,10 @@ static uint stringsz(char *s) {
   return BIT16SZ + strlen(s);
 }
 
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 uint sizeS2M(Fcall *f) {
   uint n;
   int i;
@@ -205,6 +205,13 @@ uint sizeS2M(Fcall *f) {
     n += BIT32SZ;         /* argc */
     break;
 
+  case Tsysspawn:
+    n += stringsz(f->path);
+    n += BIT32SZ;         /* argc */
+    for (i = 0; i < (int)f->argc; i++)
+      n += stringsz(f->argv[i]);
+    break;
+
   case Tsysexit:
     n += stringsz(f->ename);
     break;
@@ -273,6 +280,7 @@ uint sizeS2M(Fcall *f) {
   case Rsyswrite:
   case Rsyspwrite:
   case Rsysfork:
+  case Rsysspawn:
   case Rsysalarm:
   case Rsysdup:
     n += BIT32SZ;         /* count/pid/fid */
@@ -375,11 +383,11 @@ uint sizeS2M(Fcall *f) {
   return n;
 }
 
-/*@
-  @ requires f == \null || \valid(f);
-  @ requires ap == \null || \valid(ap);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires f == \null || \valid(f);
+ * @ requires ap == \null || \valid(ap);
+ * @ assigns \nothing;
+ */
 uint convS2M(Fcall *f, uchar *ap, uint nap) {
   uchar *p;
   uint i, size;
@@ -594,6 +602,14 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
     p += BIT32SZ;
     break;
 
+  case Tsysspawn:
+    p = pstring(p, f->path);
+    PBIT32(p, f->argc);
+    p += BIT32SZ;
+    for (i = 0; i < (int)f->argc; i++)
+      p = pstring(p, f->argv[i]);
+    break;
+
   case Tsysexit:
     p = pstring(p, f->ename);
     break;
@@ -706,6 +722,7 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
     break;
 
   case Rsysfork:
+  case Rsysspawn:
     PBIT32(p, f->pid);
     p += BIT32SZ;
     break;

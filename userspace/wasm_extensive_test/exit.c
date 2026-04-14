@@ -21,7 +21,14 @@ struct P9Control {
   uint req_tail;
   uint rep_head;
   uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
 
 static void put_u32(uchar *p, uint val) {
   p[0] = val;
@@ -63,6 +70,9 @@ void _exit(int status) {
   req[pos] = 0; /* Empty status string (null terminator) */
 
   /* Ring doorbell */
+  ctl->req_seq += 1;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
   ctl->doorbell = 1;
 
   /* Trigger syscall */

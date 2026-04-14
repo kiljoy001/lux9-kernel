@@ -1,3 +1,4 @@
+#pragma once
 #include "dat.h"
 #include <stdarg.h>
 
@@ -7,23 +8,28 @@ Timer *addclock0link(void (*)(void), int);
 Physseg *addphysseg(Physseg *);
 void addbootfile(char *, uchar *, ulong);
 void addwatchdog(Watchdog *);
-Block *adjustblock(Block *, int);
 void alarmkproc(void *);
-Block *allocb(int);
 int anyhigher(void);
 int anyready(void);
 Image *attachimage(Chan *, ulong size);
 ulong beswal(ulong);
 uvlong beswav(uvlong);
-int blocklen(Block *);
 void bootlinks(void);
 void cachedel(Image *, uintptr);
 void cachepage(Page *, Image *);
 void callwithureg(void (*)(Ureg *));
 char *chanpath(Chan *);
-int canlock(Lock *);
+/*@ requires \valid(l);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+int canlock(Lock *l);
 int canpage(Proc *);
-int canqlock(QLock *);
+/*@ requires \valid(q);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+int canqlock(QLock *q);
 int cmpswap486(long *, long, long);
 #define cmpswap(addr, old, new)                                                \
   cmpswap486((long *)(addr), (long)(old), (long)(new))
@@ -34,11 +40,10 @@ void chandevshutdown(void);
 void chanfree(Chan *);
 void checkalarms(void);
 void checkpages(void);
-void checkb(Block *, char *);
 void cinit(void);
 Chan *cclone(Chan *);
 void cclose(Chan *);
-void ccloseq(Chan *);
+Chan *cunique(Chan *);
 void closeegrp(Egrp *);
 void closefgrp(Fgrp *);
 void closepgrp(Pgrp *);
@@ -52,8 +57,6 @@ extern void (*consdebug)(void);
 void cpushutdown(void);
 int copen(Chan *);
 void cclunk(Chan *);
-Block *concatblock(Block *);
-Block *copyblock(Block *, int);
 void copypage(Page *, Page *);
 void countpagerefs(ulong *, int);
 int cread(Chan *, uchar *, int, vlong);
@@ -63,14 +66,18 @@ void cupdate(Chan *, uchar *, int, vlong);
 void cwrite(Chan *, uchar *, int, vlong);
 uintptr dbgpc(Proc *);
 Page *deadpage(Page *);
-long decref(Ref *);
+/*@ requires \valid(r);
+  @ terminates \true;
+  @ assigns r->ref;
+  @ ensures r->ref < \old(r->ref);
+  @*/
+long decref(Ref *r);
 int decrypt(void *, void *, int);
 void delay(int);
 Proc *dequeueproc(Schedq *, Proc *);
+int delphysseg(char *);
 /*@ assigns \nothing; */
 Chan *devattach(int, char *spec);
-Block *devbread(Chan *, long, ulong);
-long devbwrite(Chan *, Block *, ulong);
 Chan *devclone(Chan *);
 int devconfig(int, char *, DevConf *);
 Chan *devcreate(Chan *, char *, int, ulong);
@@ -153,6 +160,8 @@ _Noreturn void error(char *e);
 #endif
 
 void eqlock(QLock *);
+void qlock(QLock *);
+void qunlock(QLock *);
 uintptr execregs(uintptr, ulong, ulong);
 void exhausted(char *);
 void exit(int);
@@ -173,10 +182,17 @@ void fpunotify(Proc *);
 void fpunoted(Proc *);
 /*@ terminates \true;
   @ assigns \nothing;
-  */
+  @ behavior null:
+  @   assumes p == \null;
+  @   assigns \nothing;
+  @ behavior valid:
+  @   assumes p != \null;
+  @   requires \freeable(p);
+  @   assigns \nothing;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @*/
 void free(void *p);
-void freeb(Block *);
-void freeblist(Block *);
 int freebroken(void);
 void freenote(Note *);
 void freenotes(Proc *);
@@ -191,13 +207,10 @@ _Noreturn void gotolabel(Label *);
   @*/
 char *getconf(char *name);
 char *getconfenv(void);
-void growbp(Bpool *, int);
 long hostdomainwrite(char *, int);
 long hostownerwrite(char *, int);
 extern void (*hwrandbuf)(void *, ulong);
 void hzsched(void);
-Block *iallocb(int);
-Block *iallocbp(Bpool *);
 uintptr ibrk(uintptr, int);
 /*@ requires l != \null;
   @ terminates \true;
@@ -212,14 +225,31 @@ _Noreturn void interrupted(void);
 void iunlock(Lock *l);
 ulong imagecached(void);
 ulong imagereclaim(ulong);
-long incref(Ref *);
+/*@ requires \valid(r);
+  @ terminates \true;
+  @ assigns r->ref;
+  @ ensures r->ref > \old(r->ref);
+  @*/
+long incref(Ref *r);
 void init0(void);
 void initseg(void);
-int ioalloc(ulong, ulong, ulong, char *);
+/*@
+  @ requires name == \null || valid_string(name);
+  @ assigns \nothing;
+  @*/
+int ioalloc(ulong addr, ulong size, ulong align, char *name);
 void iofree(ulong);
 void iomapinit(ulong);
-int ioreserve(ulong, ulong, ulong, char *);
-int ioreservewin(ulong, ulong, ulong, ulong, char *);
+/*@
+  @ requires name == \null || valid_string(name);
+  @ assigns \nothing;
+  @*/
+int ioreserve(ulong addr, ulong size, ulong align, char *name);
+/*@
+  @ requires name == \null || valid_string(name);
+  @ assigns \nothing;
+  @*/
+int ioreservewin(ulong addr, ulong size, ulong align, ulong win, char *name);
 int iounused(ulong, ulong);
 /*@
   @ requires valid_string(fmt);
@@ -253,7 +283,7 @@ void ksetenv(char *, char *, int);
 int kopen(char *, int);
 void kstrcpy(char *, char *, int);
 void kstrdup(char **, char *);
-/*@ requires l != \null;
+/*@ requires \valid(l);
   @ terminates \true;
   @ assigns *l;
   @*/
@@ -269,33 +299,32 @@ Page *lookpage(Image *, uintptr);
 #define MS2NS(n) (((vlong)(n)) * 1000000LL)
 void machinit(void);
 /*@ terminates \true;
+  @ assigns \result \from size;
+  @ behavior success:
+  @   assumes size > 0;
+  @   assigns \result \from size;
+  @   ensures \result != \null && \valid((char *)\result + (0 .. size - 1));
+  @ behavior failure:
+  @   assumes size > 0;
+  @   assigns \result \from size;
+  @   ensures \result == \null;
   @ behavior zero:
   @   assumes size == 0;
-  @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid((char *)\result);
-  @ behavior nonzero:
-  @   assumes size > 0;
-  @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
-  - 1));
+  @   assigns \result \from size;
+  @   ensures \result == \null;
   @ complete behaviors;
   @ disjoint behaviors;
-  */
-void *mallocz(ulong size, int clr);
-/*@ terminates \true;
-  @ behavior zero:
-  @   assumes size == 0;
-  @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid((char *)\result);
-  @ behavior nonzero:
-  @   assumes size > 0;
-  @   assigns \result \from \nothing;
-  @   ensures \result == \null || \valid(((char *)\result) + (0 .. (integer)size
-  - 1));
-  @ complete behaviors;
-  @ disjoint behaviors;
-  */
+  @*/
 void *malloc(ulong size);
+/*@ terminates \true;
+  @ assigns \result \from size;
+  @ behavior success:
+  @   assumes size > 0;
+  @   assigns \result \from size;
+  @   ensures \result != \null && \valid((char *)\result + (0 .. size - 1));
+  @   ensures \forall integer i; 0 <= i < size ==> ((char *)\result)[i] == 0;
+  @*/
+void *mallocz(ulong size, int clr);
 /*@ terminates \true;
   @ behavior zero:
   @   assumes size == 0;
@@ -342,6 +371,7 @@ Egrp *newegrp(void);
 int growfd(Fgrp *, int);
 void unlockfgrp(Fgrp *);
 int newfd(Chan *, int);
+Chan *fdtochan_fgrp(Fgrp *, int, int, int, int);
 Mhead *newmhead(Chan *);
 Mhead *newmhead(Chan *);
 /*@ requires spec != \null;
@@ -352,7 +382,13 @@ Mhead *newmhead(Chan *);
 Mount *newmount(Chan *, int, char *spec);
 Image *newimage(ulong);
 Page *newpage(uintptr, Segment *);
-Path *newpath(char *);
+/*@
+  @ requires s.len >= 0;
+  @ requires s.data == \null || \valid(s.data + (0..s.len-1));
+  @ assigns \nothing;
+  @ ensures \valid(\result);
+  @*/
+Path *newpath(BString s);
 Pgrp *newpgrp(void);
 Rgrp *newrgrp(void);
 Proc *newproc(void);
@@ -364,16 +400,9 @@ ulong nkpages(Confmem *);
 uvlong ns2fastticks(uvlong);
 int okaddr(uintptr, ulong, int);
 int openmode(ulong);
-Block *packblock(Block *);
-Block *padblock(Block *, int);
 void pageinit(void);
 ulong pagereclaim(Image *);
-/*@ requires fmt != \null;
-  @ terminates \true;
-  @ assigns \nothing;
-  @ ensures \false;
-  */
-_Noreturn void panic(char *fmt, ...);
+_Noreturn void panic(const char *fmt, ...);
 Cmdbuf *parsecmd(char *a, int n);
 void pathclose(Path *);
 ulong perfticks(void);
@@ -389,7 +418,10 @@ char *popnote(Ureg *);
 /*@ requires s == \null || valid_string(s); */
 int postnote(Proc *, int, char *s, int);
 void postnotepg(ulong, char *, int);
-int pprint(char *, ...);
+/*@ requires valid_string(fmt);
+  @ assigns \nothing;
+  @*/
+int pprint(char *fmt, ...);
 void preempted(int);
 void prflush(void);
 void printinit(void);
@@ -418,9 +450,6 @@ Proc *proctab(int);
 extern void (*proctrace)(Proc *, int, vlong);
 void procwired(Proc *, int);
 Pte *ptealloc(void);
-int pullblock(Block **, int);
-Block *pullupblock(Block *, int);
-Block *pullupqueue(Queue *, int);
 int pushnote(Proc *, Note *);
 void putimage(Image *);
 void putmhead(Mhead *);
@@ -430,73 +459,39 @@ void putseg(Segment *);
 void putstrn(char *, int);
 void putswap(Page *);
 ulong pwait(Waitmsg *);
-int qaddlist(Queue *, Block *);
-Block *qbread(Queue *, int);
-long qbwrite(Queue *, Block *);
-Queue *qbypass(void (*)(void *, Block *), void *);
-int qcanread(Queue *);
-/*@ requires q != \null;
-  @ terminates \true;
-  @ assigns \nothing;
-  */
-void qclose(Queue *q);
-int qconsume(Queue *, void *, int);
-Block *qcopy(Queue *, int, ulong);
-int qdiscard(Queue *, int);
-void qflush(Queue *);
-/*@ requires q != \null;
-  @ terminates \true;
-  @ assigns \nothing;
-  */
+
+/* Queue I/O functions (qio.c) */
+Queue *qopen(int limit, int msg, void (*kick)(void *), void *arg);
+Queue *qbypass(void (*bypass)(void *, Block *), void *arg);
 void qfree(Queue *q);
-int qfull(Queue *);
-Block *qget(Queue *);
-void qhangup(Queue *, char *);
-int qisclosed(Queue *);
-int qiwrite(Queue *, void *, int);
-/*@ requires q != \null;
-  @ terminates \true;
-  @ assigns \nothing;
-  */
+void qclose(Queue *q);
+void qreopen(Queue *q);
+void qhangup(Queue *q, char *msg);
+void qflush(Queue *q);
 int qlen(Queue *q);
-/*@ requires l != \null;
-  @ terminates \true;
-  @ assigns *l;
-  */
-void qlock(QLock *l);
-/*@ terminates \true;
-  @ assigns \result \from \nothing;
-  @ ensures \result == \null || \valid(\result);
-  */
-Queue *qopen(int, int, void (*)(void *), void *);
-int qpass(Queue *, Block *);
-int qpassnolim(Queue *, Block *);
-int qproduce(Queue *, void *, int);
-void qputback(Queue *, Block *);
-/*@ requires q != \null;
-  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
-  @ terminates \true;
-  @ assigns ((char *)buf)[0..n-1];
-  */
-long qread(Queue *q, void *buf, int n);
-Block *qremove(Queue *);
-void qreopen(Queue *);
-void qsetlimit(Queue *, int);
-/*@ requires l != \null;
-  @ terminates \true;
-  @ assigns *l;
-  */
-void qunlock(QLock *l);
-/*@ requires q != \null;
-  @ requires buf == \null || (n >= 0 && \valid(((char *)buf) + (0..n-1)));
-  @ terminates \true;
-  @ assigns \nothing;
-  */
-int qwrite(Queue *q, void *buf, int n);
-void qnoblock(Queue *, int);
-void qsetnoblock_early(Queue *, int);
+int qcanread(Queue *q);
+int qisclosed(Queue *q);
+Block *qbread(Queue *q, int len);
+long qread(Queue *q, void *vp, int len);
+long qbwrite(Queue *q, Block *b);
+int qwrite(Queue *q, void *vp, int len);
+int qiwrite(Queue *q, void *vp, int len);
+int qproduce(Queue *q, void *vp, int len);
+int qconsume(Queue *q, void *vp, int len);
+int qpass(Queue *q, Block *b);
+int qpassnolim(Queue *q, Block *b);
+int qdiscard(Queue *q, int len);
+Block *qget(Queue *q);
+Block *qremove(Queue *q);
+void qputback(Queue *q, Block *b);
+Block *qcopy(Queue *q, int len, ulong offset);
+int qaddlist(Queue *q, Block *b);
+
 void randominit(void);
 ulong randomread(void *, ulong);
+long ram9pread(void *, long, vlong);
+long ram9pwrite(void *, long, vlong);
+ulong ram9psize(void);
 void rdb(void);
 long readblist(Block *, uchar *, long, ulong);
 int readnum(ulong, char *, ulong, ulong, int);
@@ -534,7 +529,13 @@ void setregisters(Ureg *, char *, char *, int);
 void setupwatchpts(Proc *, Watchpt *, int);
 char *skipslash(char *);
 void sleep(Rendez *, int (*)(void *), void *);
-void *smalloc(ulong);
+/*@
+  @ requires size > 0;
+  @ assigns \nothing;
+  @ ensures \valid((char*)\result + (0 .. size-1));
+  @ ensures \fresh(\result, size);
+  @*/
+void *smalloc(ulong size);
 void *pebble_meta_alloc(ulong);
 void pebble_meta_free(void *);
 int splhi(void);
@@ -546,8 +547,8 @@ void srvrenameuser(char *, char *);
 void shrrenameuser(char *, char *);
 int swapcount(uintptr);
 int swapfull(void);
-void syscallfmt(ulong syscallno, uintptr pc, va_list list);
-void sysretfmt(ulong syscallno, va_list list, uintptr ret, uvlong start,
+void syscallfmt(ulong syscallno, uintptr pc, ulong *list);
+void sysretfmt(ulong syscallno, ulong *list, uintptr ret, uvlong start,
                uvlong stop);
 void timeradd(Timer *);
 void timerdel(Timer *);
@@ -561,8 +562,18 @@ vlong todget(vlong *, vlong *);
 void todsetfreq(vlong);
 void todinit(void);
 void todset(vlong, vlong, int);
-Block *trimblock(Block *, int, int);
-void tsleep(Rendez *, int (*)(void *), void *, ulong);
+/*@
+  @ requires \valid(r);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+void tsleep(Rendez *r, int (*fn)(void *), void *arg, ulong ms);
+/*@
+  @ requires \valid(r);
+  @ terminates \true;
+  @ assigns \nothing;
+  @*/
+void sleep(Rendez *r, int (*fn)(void *), void *arg);
 void twakeup(Ureg *, Timer *);
 int uartctl(Uart *, char *);
 int uartgetc(void);
@@ -576,9 +587,9 @@ int uartstageoutput(Uart *);
 void unbreak(Proc *);
 void uncachepage(Page *);
 long unionread(Chan *, void *, long);
-/*@ requires l != \null;
+/*@ requires \valid(l);
   @ terminates \true;
-  @ assigns *l;
+  @ assigns \nothing;
   @*/
 void unlock(Lock *l);
 uvlong us2fastticks(uvlong);
@@ -586,8 +597,21 @@ void userinit(void);
 uintptr userpc(void);
 long userwrite(char *, int);
 void validaddr(uintptr, ulong, int);
-void validname(char *, int);
-char *validnamedup(char *, int);
+/*@
+  @ requires aname != \null;
+  @ requires valid_string(aname);
+  @ assigns \nothing;
+  @ ensures p9_name_ok_slash(aname, slashok);
+  @*/
+void validname(char *aname, int slashok);
+/*@
+  @ requires aname != \null;
+  @ requires valid_string(aname);
+  @ assigns \result \from aname[0..];
+  @ ensures \result != \null ==> valid_string(\result);
+  @ ensures \result != \null ==> p9_name_ok_slash(\result, slashok);
+  @*/
+char *validnamedup(char *aname, int slashok);
 void validstat(uchar *, int);
 void *vmemchr(void *, int, ulong);
 Proc *wakeup(Rendez *);
@@ -595,24 +619,28 @@ int walk(Chan **, char **, int, int, int *);
 void wlock(RWLock *);
 void wunlock(RWLock *);
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *xalloc(ulong size);
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *xalloc_raw(ulong size);
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *xallocz(ulong size, int zero);
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
@@ -625,8 +653,10 @@ void *xallocz_raw(ulong size, int zero);
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *xalloc_driver(ulong size);
+void *xalloc_resident(ulong size);
 
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size, zero;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
@@ -634,14 +664,22 @@ void *xalloc_driver(ulong size);
 void *xallocz_driver(ulong size, int zero);
 
 /*@ terminates \true;
+    exits \false;
     allocates \result;
     assigns \result \from size;
     ensures \result == \null || \valid((char*)\result + (0..size-1));
 */
 void *smalloc_driver(ulong size);
+void *smalloc_resident(ulong size);
 
-void xfree_driver(void *p);
 /*@ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+*/
+void xfree_driver(void *p);
+void xfree_resident(void *p);
+/*@ terminates \true;
+  @ exits \false;
   @ assigns \nothing;
 */
 void xfree(void *p);
@@ -657,7 +695,7 @@ void yield(void);
 Page *fillpage(Page *, int);
 void zeroprivatepages(void);
 Segment *data2txt(Segment *);
-Segment *dupseg(Segment **, int, int);
+Segment *dupseg(Segment **, int, int, Proc *);
 Segment *newseg(int, uintptr, ulong);
 Segment *seg(Proc *, uintptr, int);
 Segment *txt2data(Segment *);
@@ -690,29 +728,31 @@ extern int (*pcicfgrw32)(int, int, int, int);
 #pragma varargck argpos panic 1
 #pragma varargck argpos pprint 1
 
-
 /* Platform-specific address macros - must be provided by arch */
 #ifndef KADDR
 extern void *kaddr(uintptr);
 #define KADDR(a) kaddr(a)
+#endif
 
 #ifndef PADDR
 extern uintptr paddr(void *);
 #define PADDR(a) paddr((void *)(a))
+#endif
 
 #ifndef evenaddr
 #define evenaddr(x) /* x86 doesn't care about alignment */
+#endif
 
 #ifndef userureg
 int userureg(Ureg *);
-
+#endif
 
 KMap *kmap(Page *);
 void kunmap(KMap *);
 
 #ifndef kmapinval
 #define kmapinval() /* Invalidate kmap cache */
-
+#endif
 
 void setuppagetables(void); /* Setup kernel page tables */
 
@@ -753,13 +793,14 @@ void pageown_cleanup_process(Proc *); /* Clean up page ownership for process */
 
 /* Architecture-specific process functions - declarations handled in
  * arch-specific fns.h */
-void procsave(Proc *);             /* Save process state */
-void procrestore(Proc *);          /* Restore process state */
-void procsetup(Proc *);            /* Setup process state */
+void procsave(Proc *);    /* Save process state */
+void procrestore(Proc *); /* Restore process state */
+void procsetup(Proc *);   /* Setup process state */
 #endif
 void procfork(Proc *);             /* Fork process state */
-int proc_setup_p9page(Proc *);     /* Setup 9P exchange page (deprecated) */
-int proc_setup_p9seg_stub(Proc *); /* Setup stub P9SEG for lazy allocation */
+int proc_setup_p9page(Proc *);     /* Setup 9P exchange page */
+void proc_teardown_p9page(Proc *); /* Release 9P exchange page */
+int proc_setup_p9seg_stub(Proc *); /* Compatibility wrapper for old callers */
 uintptr p9_pick_uaddr(Proc *, const UserCapability *);
 void *kernel_setup_init_exchange(
     Proc *); /* Kernel boot: setup #X exchange channel for init */
@@ -815,3 +856,17 @@ int bprint(const char *fmt, ...);
   @ terminates \false;
   @*/
 void bpanic(const char *fmt, ...) __attribute__((noreturn));
+
+/* Buffered device I/O stubs (from mntrah_stub.c) */
+long devbread(Chan *c, void *buf, long n, vlong off);
+long devbwrite(Chan *c, void *buf, long n, vlong off);
+
+/* Queue I/O forward declarations (from qio.c) */
+Block *allocb(int size);
+Block *iallocb(int size);
+void freeb(Block *b);
+void freeblist(Block *b);
+Block *copyblock(Block *bp, int count);
+Block *pullupqueue(Queue *q, int n);
+Block *pullupblock(Block *bp, int n);
+Block *qremove(Queue *q);

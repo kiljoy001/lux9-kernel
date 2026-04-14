@@ -16,18 +16,16 @@ struct ResourcePool {
 };
 
 ResourcePool *resource_pool_create(int count) {
-  ResourcePool *p = malloc(sizeof(ResourcePool));
+  ResourcePool *p = family_alloc_zero(sizeof(ResourcePool));
   if (!p)
     return nil;
-
-  memset(p, 0, sizeof(ResourcePool));
   p->total_resources = count;
   return p;
 }
 
 void resource_pool_destroy(ResourcePool *p) {
   if (p)
-    free(p);
+    family_free(p);
 }
 
 int resource_pool_alloc(ResourcePool *p) {

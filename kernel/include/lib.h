@@ -30,16 +30,17 @@ extern void *memccpy(void *, const void *, int, usize);
   @*/
 extern void *memset(void *s, int c, usize n);
 extern int memcmp(const void *, const void *, usize);
+#ifndef __FRAMAC_DECL_MEMMOVE
 /*@
-  @ requires (n > 0 ==> \valid((char*)dest + (0 .. (integer)n-1))) || (n == 0);
-  @ requires (n > 0 ==> \valid_read((char*)src + (0 .. (integer)n-1))) || (n ==
-  0);
+  @ requires \valid((char *)dest + (0..n-1));
+  @ requires \valid_read((char *)src + (0..n-1));
   @ terminates \true;
-  @ assigns ((char*)dest)[0 .. (integer)n-1] \if (n > 0);
-  @ assigns \result \from dest;
+  @ exits \false;
+  @ assigns ((char *)dest)[0..n-1];
   @ ensures \result == dest;
   @*/
 extern void *memmove(void *dest, const void *src, usize n);
+#endif
 extern void *memchr(const void *, int, usize);
 
 /*
@@ -48,42 +49,71 @@ extern void *memchr(const void *, int, usize);
 extern char *strcat(char *, const char *);
 extern char *strchr(const char *, int);
 extern char *strrchr(const char *, int);
-/*@ requires s1 == \null || valid_string(s1);
-  @ requires s2 == \null || valid_string(s2);
-  @ assigns \nothing;
+#ifndef __FRAMAC_DECL_STRCMP
+/*@
+  @ requires valid_string((char *)s1);
+  @ requires valid_string((char *)s2);
   @ terminates \true;
-  */
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 extern int strcmp(const char *s1, const char *s2);
-extern char *strcpy(char *, const char *);
+#endif
+/*@
+  @ requires valid_string((char *)src);
+  @ requires \valid(dst + (0..ACSL_MAXSTR-1));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns dst[0..ACSL_MAXSTR-1];
+  @ ensures \result == dst;
+  @*/
+#ifndef __FRAMAC_DECL_STRCPY
+extern char *strcpy(char *dst, const char *src);
+#endif
 extern char *strecpy(char *, char *, const char *);
 extern char *strncat(char *, const char *, long);
 extern char *strncpy(char *, const char *, long);
 extern int strncmp(const char *s1, const char *s2, long);
-/*@ requires s == \null || valid_string(s);
+#ifndef __FRAMAC_DECL_STRLEN
+/*@
+  @ requires valid_string((char *)s);
+  @ terminates \true;
+  @ exits \false;
   @ assigns \nothing;
   @ ensures \result >= 0;
-  @ terminates \true;
-  */
-extern long strlen(const char *s);
+  @*/
+extern ulong strlen(const char *s);
+#endif
 extern char *strstr(const char *, const char *);
-extern int atoi(char *);
+extern int atoi(const char *);
 extern int fullrune(char *, int);
 extern int cistrcmp(char *, char *);
 extern int cistrncmp(char *, char *, int);
 
-enum {
-  UTFmax = 4,         /* maximum bytes per rune */
-  Runesync = 0x80,    /* cannot represent part of a UTF sequence */
-  Runeself = 0x80,    /* rune and UTF sequences are the same (<) */
-  Runeerror = 0xFFFD, /* decoding error in UTF */
-  Runemax = 0x10FFFF, /* 21 bit rune */
-};
+/* UTF-8 constants moved to u.h */
 
 /*
  * rune routines
  */
 extern int runetochar(char *, Rune *);
-extern int chartorune(Rune *, char *);
+#ifndef __FRAMAC_DECL_CHARTORUNE
+/*@
+  @ requires r != \null;
+  @ requires s != \null;
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns *r \from s[0 .. ACSL_MAXSTR-1];
+  @ ensures 1 <= \result <= 4;
+  @*/
+extern int chartorune(Rune *r, char *s);
+#endif
+/*@
+  @ requires \valid(s1 + (0 .. (es1 - s1)));
+  @ requires valid_string(s2);
+  @ assigns s1[0 .. (es1 - s1)];
+  @ ensures \valid(\result);
+  @*/
 extern char *utfecpy(char *s1, char *es1, char *s2);
 extern char *utfrune(char *, long);
 extern int utflen(char *);
@@ -121,13 +151,17 @@ struct Fmt {
   ulong flags;
 };
 #endif
+#ifndef __FRAMAC_DECL_PRINT
 /*@
-  @ requires valid_string(fmt);
+  @ requires fmt != \null;
+  @ terminates \true;
+  @ exits \false;
   @ assigns \nothing;
   @*/
 extern int print(char *fmt, ...);
+#endif
 extern char *seprint(char *, char *, char *, ...);
-extern char *vseprint(char *, char *, char *, va_list);
+extern char *vseprint(char *, char *, const char *, va_list);
 /*@
   @ requires (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
   @ requires valid_string(fmt);
@@ -201,10 +235,10 @@ extern char *fmtstrflush(Fmt *);
 extern char *cleanname(char *);
 extern uintptr getcallerpc(void *);
 
-extern long strtol(char *, char **, int);
-extern ulong strtoul(char *, char **, int);
-extern vlong strtoll(char *, char **, int);
-extern uvlong strtoull(char *, char **, int);
+extern long strtol(const char *, char **, int);
+extern ulong strtoul(const char *, char **, int);
+extern vlong strtoll(const char *, char **, int);
+extern uvlong strtoull(const char *, char **, int);
 extern char etext[];
 extern char edata[];
 extern char end[];
@@ -246,59 +280,14 @@ typedef struct Dir Dir;
 typedef struct OWaitmsg OWaitmsg;
 typedef struct Waitmsg Waitmsg;
 
-#define ERRMAX 128          /* max length of error string */
-#define KNAMELEN 28         /* max length of name held in kernel */
+#define ERRMAX 128  /* max length of error string */
+#define KNAMELEN 28 /* max length of name held in kernel */
 
 /* bits in Qid.type */
-#define QTDIR 0x80          /* type bit for directories */
-#define QTAPPEND 0x40       /* type bit for append only files */
-#define QTEXCL 0x20         /* type bit for exclusive use files */
-#define QTMOUNT 0x10        /* type bit for mounted channel */
-#define QTAUTH 0x08         /* type bit for authentication file */
-#define QTFILE 0x00         /* plain file */
+/* QT and DM bits moved to core_types.h */
 
-/* bits in Dir.mode */
-#define DMDIR 0x80000000    /* mode bit for directories */
-#define DMAPPEND 0x40000000 /* mode bit for append only files */
-#define DMEXCL 0x20000000   /* mode bit for exclusive use files */
-#define DMMOUNT 0x10000000  /* mode bit for mounted channel */
-#define DMREAD 0x4          /* mode bit for read permission */
-#define DMWRITE 0x2         /* mode bit for write permission */
-#define DMEXEC 0x1          /* mode bit for execute permission */
+/* Dir, OWaitmsg, and Waitmsg moved to core_types.h */
 
-struct Qid {
-  uvlong path;
-  ulong vers;
-  uchar type;
-};
-
-struct Dir {
-  /* system-modified data */
-  ushort type; /* server type */
-  uint dev;    /* server subtype */
-  /* file data */
-  Qid qid;      /* unique id from server */
-  ulong mode;   /* permissions */
-  ulong atime;  /* last read time */
-  ulong mtime;  /* last write time */
-  vlong length; /* file length: see <u.h> */
-  char *name;   /* last element of path */
-  char *uid;    /* owner name */
-  char *gid;    /* group name */
-  char *muid;   /* last modifier name */
-};
-
-struct OWaitmsg {
-  char pid[12];      /* of loved one */
-  char time[3 * 12]; /* of loved one and descendants */
-  char msg[64];      /* compatibility BUG */
-};
-
-struct Waitmsg {
-  int pid;          /* of loved one */
-  ulong time[3];    /* of loved one and descendants */
-  char msg[ERRMAX]; /* actually variable-size in user mode */
-};
 #endif
 
 #endif /* _PORTLIB_H_ not defined - end of lib.h definitions */

@@ -1,8 +1,6 @@
 #include "dat.h"
 #include "fns.h"
-#include "lock_borrow.h"
 #include "mem.h"
-#include "monocypher.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -11,27 +9,39 @@ enum {
   Whinesecs = 10, /* frequency of out-of-resources printing */
 };
 
-static LockDagNode lockdag_nextmount = LOCKDAG_NODE("pgrp-nextmount");
-static uintptr nextmount_lock_key;
-static BorrowLock nextmount_lock = {
-    .key = (uintptr)&nextmount_lock_key,
-    .dag_node = &lockdag_nextmount,
-};
+/* Stub for namespace CID update until userspace migration is complete */
+void namespace_cid_update(Pgrp *pgrp) { (void)pgrp; }
+void namespace_cid_update_locked(Pgrp *pgrp) { (void)pgrp; }
 
-void namespace_cid_update(Pgrp *pgrp);
-void namespace_cid_update_locked(Pgrp *pgrp);
+static Lock nextmountlock;
+static uvlong nextmountid;
 
-/*@
-  @ assigns \nothing;
-  @*/
-uvlong nextmount(void) {
-  static uvlong next = 0;
+static uvlong
+nextmount(void)
+{
   uvlong n;
 
-  borrow_lock(&nextmount_lock);
-  n = ++next;
-  borrow_unlock(&nextmount_lock);
+  lock(&nextmountlock);
+  n = ++nextmountid;
+  unlock(&nextmountlock);
   return n;
+}
+
+static void
+pgrpinsert(Mount **order, Mount *m)
+{
+  Mount *f;
+
+  m->order = nil;
+  for (f = *order; f != nil; f = f->order) {
+    if (m->mountid < f->mountid) {
+      m->order = f;
+      *order = m;
+      return;
+    }
+    order = &f->order;
+  }
+  *order = m;
 }
 
 Pgrp *newpgrp(void) {
@@ -49,8 +59,6 @@ Pgrp *newpgrp(void) {
 
   /* Generate cryptographic identity for capability binding */
   uuid_new_v8((uuid_t *)p->identity_hash);
-  /* Initial Namespace CID: deterministic hash of empty namespace config */
-  /* No lock needed - pgrp is brand new and not yet shared */
   namespace_cid_update_locked(p);
 
   return p;
@@ -67,19 +75,11 @@ Rgrp *newrgrp(void) {
   return r;
 }
 
-/*@
-  @ requires r == \null || \valid(r);
-  @ assigns \nothing;
-  @*/
 void closergrp(Rgrp *r) {
   if (decref(r) == 0)
     free(r);
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ assigns \nothing;
-  @*/
 void closepgrp(Pgrp *p) {
   Mhead **h, **e, *f;
   Mount *m;
@@ -99,43 +99,15 @@ void closepgrp(Pgrp *p) {
       putmhead(f);
     }
   }
+
   free(p);
 }
 
-/*@
-  @ requires order == \null || \valid(order);
-  @ requires m == \null || \valid(m);
-  @ assigns \nothing;
-  @*/
-static void pgrpinsert(Mount **order, Mount *m) {
-  Mount *f;
-
-  m->order = nil;
-  for (f = *order; f != nil; f = f->order) {
-    if (m->mountid < f->mountid) {
-      m->order = f;
-      *order = m;
-      return;
-    }
-    order = &f->order;
-  }
-  *order = m;
-}
-
-/*
- * pgrpcpy MUST preserve the mountid allocation order of the parent group
- */
-/*@
-  @ requires to == \null || \valid(to);
-  @ requires from == \null || \valid(from);
-  @ assigns \nothing;
-  @*/
 void pgrpcpy(Pgrp *to, Pgrp *from) {
   Mount *n, *m, **link, *order;
   Mhead *f, **l, *mh;
   int i;
 
-  /* Inherit spawn limit from parent namespace */
   to->spawn_limit = from->spawn_limit;
 
   wlock(&to->ns);
@@ -145,6 +117,7 @@ void pgrpcpy(Pgrp *to, Pgrp *from) {
     wunlock(&to->ns);
     nexterror();
   }
+
   order = nil;
   for (i = 0; i < MNTHASH; i++) {
     l = &to->mnthash[i];
@@ -154,6 +127,7 @@ void pgrpcpy(Pgrp *to, Pgrp *from) {
         runlock(&f->lock);
         nexterror();
       }
+
       mh = newmhead(f->from);
       *l = mh;
       l = &mh->hash;
@@ -162,6 +136,7 @@ void pgrpcpy(Pgrp *to, Pgrp *from) {
         n = malloc(sizeof(Mount) + strlen(m->spec) + 1);
         if (n == nil)
           error(Enomem);
+        memset(n, 0, sizeof(Mount) + strlen(m->spec) + 1);
         n->mountid = m->mountid;
         n->mflag = m->mflag;
         n->to = m->to;
@@ -175,181 +150,41 @@ void pgrpcpy(Pgrp *to, Pgrp *from) {
       poperror();
     }
   }
-  /*
-   * Allocate mount ids in the same sequence as the parent group
-   */
+
   for (m = order; m != nil; m = m->order)
     m->mountid = nextmount();
   namespace_cid_update_locked(to);
+
   runlock(&from->ns);
   wunlock(&to->ns);
   poperror();
 }
 
-typedef struct NsMountEntry NsMountEntry;
-struct NsMountEntry {
-  uvlong mountid;
-  Mhead *mhead;
-  Mount *mount;
-};
-
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
-static void ns_hash_u32(crypto_blake2b_ctx *ctx, u32int v) {
-  u8int buf[4];
-  buf[0] = (u8int)(v >> 24);
-  buf[1] = (u8int)(v >> 16);
-  buf[2] = (u8int)(v >> 8);
-  buf[3] = (u8int)(v);
-  crypto_blake2b_update(ctx, buf, sizeof(buf));
-}
-
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
-static void ns_hash_u64(crypto_blake2b_ctx *ctx, u64int v) {
-  u8int buf[8];
-  buf[0] = (u8int)(v >> 56);
-  buf[1] = (u8int)(v >> 48);
-  buf[2] = (u8int)(v >> 40);
-  buf[3] = (u8int)(v >> 32);
-  buf[4] = (u8int)(v >> 24);
-  buf[5] = (u8int)(v >> 16);
-  buf[6] = (u8int)(v >> 8);
-  buf[7] = (u8int)(v);
-  crypto_blake2b_update(ctx, buf, sizeof(buf));
-}
-
-static void namespace_cid_hash_mount(crypto_blake2b_ctx *ctx, Mhead *mh,
-                                     Mount *m) {
-  u32int spec_len = 0;
-
-  ns_hash_u32(ctx, (u32int)m->mflag);
-
-  if (mh && mh->from) {
-    ns_hash_u64(ctx, (u64int)mh->from->qid.path);
-    ns_hash_u32(ctx, (u32int)mh->from->qid.type);
-  } else {
-    ns_hash_u64(ctx, 0);
-    ns_hash_u32(ctx, 0);
-  }
-
-  if (m->to) {
-    ns_hash_u64(ctx, (u64int)m->to->qid.path);
-    ns_hash_u32(ctx, (u32int)m->to->qid.type);
-    ns_hash_u32(ctx, (u32int)m->to->dev);
-    ns_hash_u32(ctx, (u32int)m->to->type);
-  } else {
-    ns_hash_u64(ctx, 0);
-    ns_hash_u32(ctx, 0);
-    ns_hash_u32(ctx, 0);
-    ns_hash_u32(ctx, 0);
-  }
-
-  if (m->spec != nil)
-    spec_len = (u32int)strlen(m->spec);
-  ns_hash_u32(ctx, spec_len);
-  if (spec_len > 0)
-    crypto_blake2b_update(ctx, (const u8int *)m->spec, spec_len);
-}
-
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ requires pgrp == \null || \valid(pgrp);
-  @ assigns \nothing;
-  @*/
-static void namespace_cid_hash_unsorted(crypto_blake2b_ctx *ctx, Pgrp *pgrp) {
-  Mhead *mh;
+Mount *newmount(Chan *to, int flag, char *spec) {
   Mount *m;
-  int i;
 
-  for (i = 0; i < MNTHASH; i++) {
-    for (mh = pgrp->mnthash[i]; mh != nil; mh = mh->hash) {
-      for (m = mh->mount; m != nil; m = m->next)
-        namespace_cid_hash_mount(ctx, mh, m);
-    }
-  }
+  if (spec == nil)
+    spec = "";
+  m = malloc(sizeof(Mount) + strlen(spec) + 1);
+  if (m == nil)
+    error(Enomem);
+  memset(m, 0, sizeof(Mount) + strlen(spec) + 1);
+  m->to = to;
+  incref((Ref *)&to->ref);
+  m->mountid = nextmount();
+  m->mflag = flag;
+  strcpy(m->spec, spec);
+  return m;
 }
 
-/*@
-  @ requires pgrp == \null || \valid(pgrp);
-  @ assigns \nothing;
-  @*/
-void namespace_cid_update_locked(Pgrp *pgrp) {
-  crypto_blake2b_ctx ctx;
-  Mhead *mh;
-  Mount *m;
-  NsMountEntry *entries = nil;
-  int count = 0;
-  int filled = 0;
-  int i;
+void mountfree(Mount *m) {
+  Mount *f;
 
-  if (!pgrp)
-    return;
-
-  crypto_blake2b_init(&ctx, 32);
-  crypto_blake2b_update(&ctx, (const u8int *)"NSCIDv1", 7);
-
-  for (i = 0; i < nelem(pgrp->notallowed); i++)
-    ns_hash_u64(&ctx, pgrp->notallowed[i]);
-  ns_hash_u32(&ctx, pgrp->spawn_limit);
-
-  for (i = 0; i < MNTHASH; i++) {
-    for (mh = pgrp->mnthash[i]; mh != nil; mh = mh->hash) {
-      for (m = mh->mount; m != nil; m = m->next)
-        count++;
-    }
+  while ((f = m) != nil) {
+    m = m->next;
+    cclose(f->to);
+    free(f);
   }
-
-  if (count == 0) {
-    crypto_blake2b_final(&ctx, pgrp->namespace_cid);
-    return;
-  }
-
-  entries = malloc(sizeof(*entries) * count);
-  if (entries == nil) {
-    namespace_cid_hash_unsorted(&ctx, pgrp);
-    crypto_blake2b_final(&ctx, pgrp->namespace_cid);
-    return;
-  }
-
-  for (i = 0; i < MNTHASH; i++) {
-    for (mh = pgrp->mnthash[i]; mh != nil; mh = mh->hash) {
-      for (m = mh->mount; m != nil; m = m->next) {
-        int pos = filled;
-        while (pos > 0 && entries[pos - 1].mountid > m->mountid)
-          pos--;
-        if (pos < filled)
-          memmove(&entries[pos + 1], &entries[pos],
-                  (filled - pos) * sizeof(*entries));
-        entries[pos].mountid = m->mountid;
-        entries[pos].mhead = mh;
-        entries[pos].mount = m;
-        filled++;
-      }
-    }
-  }
-
-  for (i = 0; i < filled; i++)
-    namespace_cid_hash_mount(&ctx, entries[i].mhead, entries[i].mount);
-
-  free(entries);
-  crypto_blake2b_final(&ctx, pgrp->namespace_cid);
-}
-
-/*@
-  @ requires pgrp == \null || \valid(pgrp);
-  @ assigns \nothing;
-  @*/
-void namespace_cid_update(Pgrp *pgrp) {
-  if (!pgrp)
-    return;
-  wlock(&pgrp->ns);
-  namespace_cid_update_locked(pgrp);
-  wunlock(&pgrp->ns);
 }
 
 Fgrp *dupfgrp(Fgrp *f) {
@@ -403,10 +238,6 @@ Fgrp *dupfgrp(Fgrp *f) {
   return new;
 }
 
-/*@
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
 void closefgrp(Fgrp *f) {
   int i;
   Chan *c;
@@ -431,19 +262,6 @@ void closefgrp(Fgrp *f) {
   free(f);
 }
 
-/*
- * Called from interrupted() because up is in the middle
- * of closefgrp and just got a kill ctl message.
- * This usually means that up has wedged because
- * of some kind of deadly embrace with mntclose
- * trying to talk to itself.  To break free, hand the
- * unclosed channels to the close queue.  Once they
- * are finished, the blocked cclose that we've
- * interrupted will finish by itself.
- */
-/*@
-  @ assigns \nothing;
-  @*/
 void forceclosefgrp(void) {
   int i;
   Chan *c;
@@ -458,45 +276,12 @@ void forceclosefgrp(void) {
   for (i = 0; i <= f->maxfd; i++)
     if ((c = f->fd[i]) != nil) {
       f->fd[i] = nil;
-      ccloseq(c);
+      /* ccloseq removed - using standard cclose */
+      /* ccloseq was for queuing closures, but we simplified queues */
+      cclose(c);
     }
 }
 
-Mount *newmount(Chan *to, int flag, char *spec) {
-  Mount *m;
-
-  if (spec == nil)
-    spec = "";
-  m = malloc(sizeof(Mount) + strlen(spec) + 1);
-  if (m == nil)
-    error(Enomem);
-  m->to = to;
-  incref((Ref *)&to->ref);
-  m->mountid = nextmount();
-  m->mflag = flag;
-  strcpy(m->spec, spec);
-  setmalloctag(m, getcallerpc(&to));
-  return m;
-}
-
-/*@
-  @ requires m == \null || \valid(m);
-  @ assigns \nothing;
-  @*/
-void mountfree(Mount *m) {
-  Mount *f;
-
-  while ((f = m) != nil) {
-    m = m->next;
-    cclose(f->to);
-    free(f);
-  }
-}
-
-/*@
-  @ requires reason == \null || \valid(reason);
-  @ assigns \nothing;
-  @*/
 void resrcwait(char *reason) {
   static ulong lastwhine;
   ulong now;

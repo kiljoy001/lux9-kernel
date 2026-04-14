@@ -261,7 +261,7 @@ static void addirq(int gsi, int type, int busno, int irq, int flags) {
     if (bus->type == type && bus->busno == busno)
       goto Foundbus;
 
-  if ((bus = xalloc(sizeof(Bus))) == nil)
+  if ((bus = xalloc_resident(sizeof(Bus))) == nil)
     panic("addirq: no memory for Bus");
   bus->busno = busno;
   bus->type = type;
@@ -285,7 +285,7 @@ Foundbus:
     if (ai->intr->irq == irq)
       return;
 
-  if ((pi = xalloc(sizeof(PCMPintr))) == nil)
+  if ((pi = xalloc_resident(sizeof(PCMPintr))) == nil)
     panic("addirq: no memory for PCMPintr");
   pi->type = PcmpIOINTR;
   pi->intr = PcmpINT;
@@ -295,7 +295,7 @@ Foundbus:
   pi->apicno = a->apicno;
   pi->intin = intin;
 
-  if ((ai = xalloc(sizeof(Aintr))) == nil)
+  if ((ai = xalloc_resident(sizeof(Aintr))) == nil)
     panic("addirq: no memory for Aintr");
   ai->intr = pi;
   ai->apic = a;
@@ -629,7 +629,7 @@ static void acpiinit(void) {
     case 0x00: /* Processor Local APIC */
       if (p[3] > MaxAPICNO)
         break;
-      if ((a = xalloc(sizeof(Apic))) == nil)
+      if ((a = xalloc_resident(sizeof(Apic))) == nil)
         panic("acpiinit: no memory for Apic");
       a->type = PcmpPROCESSOR;
       a->apicno = p[3];
@@ -641,7 +641,7 @@ static void acpiinit(void) {
 
       /* skip disabled processors */
       if ((a->flags & PcmpEN) == 0 || mpapic[a->apicno] != nil) {
-        xfree(a);
+        xfree_resident(a);
         break;
       }
       a->machno = machno++;
@@ -658,7 +658,7 @@ static void acpiinit(void) {
     case 0x01: /* I/O APIC */
       if (p[2] > MaxAPICNO)
         break;
-      if ((a = xalloc(sizeof(Apic))) == nil)
+      if ((a = xalloc_resident(sizeof(Apic))) == nil)
         panic("acpiinit: no memory for io Apic");
       a->type = PcmpIOAPIC;
       a->apicno = p[2];
@@ -1054,12 +1054,12 @@ void amlunmapio(Amlio *io) {
 void *amlalloc(int n) {
   void *p;
 
-  if ((p = malloc(n)) == nil)
+  if ((p = xalloc_resident(n)) == nil)
     panic("amlalloc: no memory");
   memset(p, 0, n);
   return p;
 }
 
-void amlfree(void *p) { free(p); }
+void amlfree(void *p) { xfree_resident(p); }
 
 void amldelay(int us) { microdelay(us); }

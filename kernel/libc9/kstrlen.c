@@ -1,6 +1,6 @@
-#include "u.h"
 #include "acsl_bounds.h"
 #include "portlib.h"
+#include "u.h"
 
 /*@
   @ requires valid_string(s);
@@ -12,19 +12,17 @@
   @ ensures \forall integer i; 0 <= i < \result ==> s[i] != '\0';
   @ ensures \result == \strlen(s);
   @*/
-long
-strlen(char *s)
-{
-	char *p;
-	p = s;
-	/*@
-	  @ loop invariant s <= p;
-	  @ loop invariant \forall integer i; 0 <= i < (p - s) ==> s[i] != '\0';
-	  @ loop invariant \valid_read(p);
-	  @ loop assigns p;
-	  @ loop variant \strlen(s) - (p - s);
-	  @*/
-	while(*p)
-		p++;
-	return p - s;
+ulong strlen(const char *s) {
+  const char *p;
+  p = s;
+  /*@
+    @ loop invariant s <= p;
+    @ loop invariant \forall integer i; 0 <= i < (p - s) ==> s[i] != '\0';
+    @ loop invariant \valid_read(p);
+    @ loop assigns p;
+    @ loop variant \strlen(s) - (p - s);
+    @*/
+  while (*p)
+    p++;
+  return p - s;
 }

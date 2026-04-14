@@ -56,12 +56,44 @@ static char *boot_state_names[] = {
     "MSGORD",  "CRYPTO",        "CHANDEV_INIT", "USERINIT",  "SCHED",
     "COMPLETE"};
 
-/* Boot state transition rules */
+static void boot_state_require(BootState required, BootState next,
+                               const char *reason) {
+  if (current_boot_state < required) {
+    panic("BOOT_STATE: %s requires %s (%s)", boot_state_names[next],
+          boot_state_names[required], reason);
+  }
+}
+
+/* Boot state transition rules (strict enforcement) */
 void set_boot_state(BootState s) {
-  if (s <= current_boot_state && s != BOOT_START) {
-    print("BOOT_WARNING: Validating state regression %s -> %s\n",
+  if (s < current_boot_state && s != BOOT_START) {
+    panic("BOOT_STATE: Invalid regression %s -> %s",
           boot_state_names[current_boot_state], boot_state_names[s]);
   }
+  if (s == current_boot_state)
+    return;
+
+  switch (s) {
+  case BOOT_CHANDEV_INIT:
+    boot_state_require(BOOT_CRYPTO, s,
+                       "crypto must be initialized before devices");
+    break;
+  case BOOT_USERINIT:
+    boot_state_require(BOOT_CHANDEV_INIT, s,
+                       "devices must be initialized before userspace");
+    break;
+  case BOOT_SCHED:
+    boot_state_require(BOOT_USERINIT, s,
+                       "userspace must be initialized before scheduler");
+    break;
+  case BOOT_COMPLETE:
+    boot_state_require(BOOT_SCHED, s,
+                       "scheduler must be running before boot complete");
+    break;
+  default:
+    break;
+  }
+
   current_boot_state = s;
 
   if (boot_verbose) {
@@ -315,9 +347,36 @@ void main_after_cr3(void) {
   mathinit();
   if (i8237alloc != nil)
     i8237alloc();
-  boot_log("main_after_cr3: calling pcicfginit\n");
-  pcicfginit();
-  boot_log("DEBUG: pcicfginit RETURNED\n");
+  /* pcicfginit removed - Moved to userspace resurrection server */
+  // boot_log("main_after_cr3: calling pcicfginit\n");
+  // pcicfginit();
+  // boot_log("DEBUG: pcicfginit RETURNED\n");
+
+  /* LATE DEBUG: Check InitRD and Memory Map */
+  {
+    extern uintptr initrd_physaddr;
+    extern usize initrd_size;
+    uartputs("DEBUG_LATE: InitRD phys=", 22);
+    print("%#p size=%#lux\n", (void *)initrd_physaddr, (uvlong)initrd_size);
+
+    uartputs("DEBUG_LATE: Checking conf.mem overlap...\n", 37);
+    for (int i = 0; i < nelem(conf.mem); i++) {
+      if (conf.mem[i].npage == 0)
+        continue;
+      uintptr base = conf.mem[i].base;
+      uintptr end = base + conf.mem[i].npage * BY2PG;
+      print("  Region %d: %#p - %#p\n", i, (void *)base, (void *)end);
+
+      if (initrd_size > 0) {
+        uintptr istart = initrd_physaddr;
+        uintptr iend = istart + initrd_size;
+        if ((istart >= base && istart < end) || (iend > base && iend <= end)) {
+          uartputs("CRITICAL: InitRD OVERLAPS with Region!\n", 37);
+        }
+      }
+    }
+  }
+
   boot_log("main_after_cr3: calling bootscreeninit\n");
   bootscreeninit();
   boot_log("DEBUG: bootscreeninit RETURNED\n");
@@ -522,6 +581,9 @@ void main_after_cr3(void) {
  * clears FPU state, raises interrupt level, and finally enters user mode by
  * calling touser() with the prepared stack frame.
  */
+// test_hybrid_batching declaration/call usually here
+void test_hybrid_batching(void) {} // Stub
+
 void init0(void) {
   /* Run hybrid IPC batching tests */
   extern void test_hybrid_batching(void);
@@ -568,8 +630,8 @@ void init0(void) {
     print("BOOT[init0]: environment setup failed: %r\n");
   }
 
-  uartputs("init0: calling kproc(alarm)\n", 26);
-  kproc("alarm", alarmkproc, 0);
+  /* uartputs("init0: calling kproc(alarm)\n", 26); */
+  /* kproc("alarm", alarmkproc, 0); */
 
   uintptr *stack = (uintptr *)(USTKTOP - sizeof(Tos) - 16 - sizeof(sp[0]) * 4);
   print("BOOT[init0]: using prebuilt user stack at %#p (p9uaddr=%#p)\n", stack,
@@ -588,7 +650,9 @@ void init0(void) {
   }
 
   splhi();
+  uartputs("init0: calling fpukexit\n", 25);
   fpukexit(nil);
+  uartputs("init0: fpukexit returned\n", 25);
   if (m->proc == nil)
     panic("BOOT[init0]: m->proc is NULL before touser()!");
   uartputs("init0: calling touser\n", 22);
@@ -610,9 +674,22 @@ void main(void) {
   extern void uartprintf(char *,
                          ...); /* Formatted UART output before prbuf is ready */
 
+#include "../../limine.h"
+
   mach0init();
   i8250console();
   uartputs("TEST: main() started\n", 21);
+
+  /* Initialize Limine HHDM offset - REQUIRED for KADDR() */
+  extern struct limine_hhdm_request *limine_hhdm;
+  if (limine_hhdm && limine_hhdm->response) {
+    saved_limine_hhdm_offset = limine_hhdm->response->offset;
+    uartprintf("init: HHDM offset set to %#p\n",
+               (void *)saved_limine_hhdm_offset);
+  } else {
+    uartprintf("init: WARNING - No HHDM response found!\n");
+  }
+
   bootargsinit();
   trapinit0();
   ioinit();
@@ -682,21 +759,42 @@ void main(void) {
         initrd_base = (void *)(addr + saved_limine_hhdm_offset);
       }
       initrd_size = initrd->size;
-      uartprintf("initrd: limine reports module (%lld bytes)\n",
-                 (uvlong)initrd_size);
+      uartprintf(
+          "initrd: limine reports module at %#p (phys %#p) size %lld bytes\n",
+          (void *)addr, (void *)initrd_physaddr, (uvlong)initrd_size);
+    } else {
+      uartprintf("initrd: limine module entry has no address!\n");
     }
+  } else {
+    uartprintf("initrd: no limine modules found\n");
   }
 
+  uartprintf("CHECK: calling meminit0()\n");
   meminit0();
+  uartprintf("CHECK: meminit0() returned\n");
 
+  uartprintf("CHECK: calling archinit()\n");
   archinit();
+  uartprintf("CHECK: archinit() returned\n");
+
   if (arch->clockinit) {
+    uartprintf("CHECK: calling arch->clockinit()\n");
     arch->clockinit();
+    uartprintf("CHECK: arch->clockinit() returned\n");
   }
 
+  uartprintf("CHECK: calling meminit()\n");
   meminit(); // CRITICAL: Populates conf.mem and initializes palloc
+  uartprintf("CHECK: meminit() returned\n");
+
+  uartprintf("CHECK: calling confinit()\n");
   confinit();
-  pebbleinit();
+  xinit();
+  // poolinit(); // Not needed/defined
+  uartputs("DEBUG: Testing free(0)\n", 22);
+  volatile void *ptr = 0;
+  free((void *)ptr);
+  uartputs("DEBUG: free(0) survived\n", 23);
   pebble_enabled = 1;
   if ((p = getconf("pebble")) != nil)
     pebble_enabled = *p != '0';

@@ -1,6 +1,6 @@
-#include <u.h>
-#include <libc.h>
 #include <acsl_bounds.h>
+#include <libc.h>
+#include <u.h>
 
 /*@
   @ requires \valid(buf + (0..65535));
@@ -9,23 +9,21 @@
   @ assigns buf[0..65535];
   @ ensures 0 <= \result <= 65536;
   @*/
-char*
-vseprint(char *buf, char *e, char *fmt, va_list args)
-{
-Fmt f;
+char *vseprint(char *buf, char *e, const char *fmt, va_list args) {
+  Fmt f;
 
-if(e <= buf)
- nil;
-f.runes = 0;
-f.start = buf;
-f.to = buf;
-f.stop = e - 1;
-f.flush = nil;
-f.farg = nil;
-f.nfmt = 0;
-va_copy(f.args, args);
-dofmt(&f, fmt);
-va_end(f.args);
-*(char*)f.to = '\0';
-return (char*)f.to;
+  if (e <= buf)
+    return nil;
+  f.runes = 0;
+  f.start = buf;
+  f.to = buf;
+  f.stop = e - 1;
+  f.flush = nil;
+  f.farg = nil;
+  f.nfmt = 0;
+  va_copy(f.args, args);
+  dofmt(&f, fmt);
+  va_end(f.args);
+  *(char *)f.to = '\0';
+  return (char *)f.to;
 }

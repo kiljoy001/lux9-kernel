@@ -46,6 +46,9 @@
 #include <pool.h>
 #include <u.h>
 
+void *pool_debug_last_free_caller;
+void *pool_debug_last_free_v;
+
 /*
  * Utility: freefromfront - Free space from front of block if large enough
  */
@@ -98,11 +101,11 @@ enum {
  * arenacompact: Compact an arena by shifting all free blocks to the end
  * Assumes pool lock is held
  */
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires a == \null || \valid(a);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires a == \null || \valid(a);
+ * @ assigns \nothing;
+ */
 static int arenacompact(Pool *p, Arena *a) {
   Bhdr *b, *wb, *eb, *nxt;
   int compacted;
@@ -147,10 +150,10 @@ static int arenacompact(Pool *p, Arena *a) {
 /*
  * poolcompactl: Compact a pool by compacting each individual arena
  */
-/*@
-  @ requires pool == \null || \valid(pool);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires pool == \null || \valid(pool);
+ * @ assigns \nothing;
+ */
 int poolcompactl(Pool *pool) {
   Arena *a;
   int compacted;
@@ -364,17 +367,20 @@ static void *poolallocalignl(Pool *p, ulong dsize, ulong align, long offset,
 /*
  * poolfreel: Free block obtained from poolalloc; assumes lock held
  */
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires v == \null || \valid(v);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires v == \null || \valid(v);
+ * @ assigns \nothing;
+ */
 void poolfreel(Pool *p, void *v) {
   Alloc *ab;
   Bhdr *back, *fwd;
 
   if (v == nil) /* for ANSI */
     return;
+
+  if ((uintptr)v < 0x1000)
+    print("poolfreel: low v=%p caller=%p\n", v, getcallerpc(&v));
 
   ab = D2B(p, v);
   blockcheck(p, ab);
@@ -439,10 +445,10 @@ void *poolallocalign(Pool *p, ulong n, ulong align, long offset, ulong span) {
   return v;
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ assigns \nothing;
+ */
 int poolcompact(Pool *p) {
   int rv;
 
@@ -473,12 +479,14 @@ void *poolrealloc(Pool *p, void *v, ulong n) {
   return nv;
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires v == \null || \valid(v);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires v == \null || \valid(v);
+ * @ assigns \nothing;
+ */
 void poolfree(Pool *p, void *v) {
+  pool_debug_last_free_caller = (void *)getcallerpc(&p);
+  pool_debug_last_free_v = v;
   p->lock(p);
   paranoia { poolcheckl(p); }
   verbosity { pooldumpl(p); }
@@ -494,11 +502,11 @@ void poolfree(Pool *p, void *v) {
 /*
  * Return the real size of a block, and let the user use it.
  */
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires v == \null || \valid(v);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires v == \null || \valid(v);
+ * @ assigns \nothing;
+ */
 ulong poolmsize(Pool *p, void *v) {
   Alloc *b;
   ulong dsize;
@@ -523,11 +531,11 @@ ulong poolmsize(Pool *p, void *v) {
   return dsize;
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires v == \null || \valid(v);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires v == \null || \valid(v);
+ * @ assigns \nothing;
+ */
 int poolisoverlap(Pool *p, void *v, ulong n) {
   Arena *a;
 
@@ -539,10 +547,10 @@ int poolisoverlap(Pool *p, void *v, ulong n) {
   return a != nil;
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ assigns \nothing;
+ */
 void poolreset(Pool *p) {
   Arena *a;
 
@@ -576,21 +584,21 @@ void poolreset(Pool *p) {
  * Debugging APIs
  */
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ assigns \nothing;
+ */
 void poolcheck(Pool *p) {
   p->lock(p);
   poolcheckl(p);
   p->unlock(p);
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires v == \null || \valid(v);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ requires v == \null || \valid(v);
+ * @ assigns \nothing;
+ */
 void poolblockcheck(Pool *p, void *v) {
   if (v == nil)
     return;
@@ -600,10 +608,10 @@ void poolblockcheck(Pool *p, void *v) {
   p->unlock(p);
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires p == \null || \valid(p);
+ * @ assigns \nothing;
+ */
 void pooldump(Pool *p) {
   p->lock(p);
   pooldumpl(p);

@@ -1,5 +1,7 @@
 #include "router.h"
 
+extern uintptr syssleep(void *list_void);
+
 uintptr p9_user_base(Proc *p) {
   if (p && p->p9uaddr)
     return p->p9uaddr;
@@ -85,13 +87,17 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     }
   }
 
+  if (proc_9p_can_handle(p, t))
+    return proc_9p_handle(p, t, r);
+
   /* Handle Generic Tsyscall (130) */
   if (t->type == Tsyscall) {
-    /* DEBUG: Diagnose routing issues */
-    if (t->scallnr == 160 || t->scallnr == SYS_WASM_COMPILE) {
-      print("p9_dispatch: Tsyscall scallnr=%d (SYS_WASM_COMPILE=%d)\n",
-            t->scallnr, SYS_WASM_COMPILE);
-    }
+    /*
+     * Legacy raw syscall numbers overlap with split-router SYS_* aliases.
+     * Route them before the grouped switch so fs.c can still serve the old ABI.
+     */
+    if (t->scallnr == BIND || t->scallnr == FD2PATH || t->scallnr == UNMOUNT)
+      return router_dispatch_fs(p, t, r);
 
     /* Dispatch based on syscall number groups */
     switch (t->scallnr) {
@@ -117,6 +123,7 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_BRK:
     case SYS_PEBBLE_ALLOC:
     case SYS_PEBBLE_FREE:
+    case SYS_SEGATTACH:
       return router_dispatch_proc(p, t, r);
 
     /* IPC & Exchange */
@@ -127,7 +134,16 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
     case SYS_EXCHANGE_SUBSCRIBE:
     case SYS_EXCHANGE_UNSUBSCRIBE:
     case SYS_EXCHANGE_RECEIVE:
+    case SYS_EXCHANGE_PREPARE:
+    case SYS_EXCHANGE_PREPARE_RANGE:
+    case SYS_EXCHANGE_ACCEPT:
+    case SYS_EXCHANGE_CANCEL:
+    case SYS_EXCHANGE_TRANSFER:
       return router_dispatch_ipc(p, t, r);
+
+    case SYS_NSROOT_PUBLISH:
+    case SYS_NSROOT_UNPUBLISH:
+      return router_dispatch_fs(p, t, r);
 
     /* WASM */
     case SYS_WASM_COMPILE:
@@ -141,7 +157,6 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
          Original 9p_router.c handled it inline.
          Let's put it in fs.c or separate misc?
          For now, let's keep it here but fix the implicit decl. */
-      print("p9_dispatch: SYS_NSEC\n");
       r->type = Rsyscall;
       r->tag = t->tag;
       r->retval = nsec();
@@ -162,7 +177,6 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
       } else {
         r->ename = "unknown syscall (no proc)";
       }
-      print("p9_dispatch: REJECTED unknown syscall %d\n", t->scallnr);
       return -1;
     }
   }
@@ -176,9 +190,53 @@ int p9_dispatch(Proc *p, Fcall *t, Fcall *r) {
   if (t->type >= Tsysopen && t->type <= Tsysremove) {
     return router_dispatch_fs(p, t, r);
   }
+  if (t->type == Tsysbind || t->type == Tsysmount || t->type == Tsysunmount ||
+      t->type == Tsysfd2path) {
+    return router_dispatch_fs(p, t, r);
+  }
+  if (t->type == Tsyswait) {
+    Waitmsg w;
+    char *msg;
+    ulong msgmax;
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+
+    r->pid = pwait(&w);
+    poperror();
+
+    msg = (char *)p->p9page + P9_MSG_OFFSET + 64;
+    msgmax = P9_MSG_SIZE - 64;
+    snprint(msg, msgmax, "%s", w.msg);
+
+    r->type = Rsyswait;
+    r->tag = t->tag;
+    r->ename = msg;
+    return 0;
+  }
   if (t->type == Tsysexit || t->type == Tsysbrk || t->type == Tsysfork ||
-      t->type == Tsysexec) {
+      t->type == Tsysexec || t->type == Tsysspawn) {
     return router_dispatch_proc(p, t, r);
+  }
+  if (t->type == Tsyssleep) {
+    ulong args[1];
+
+    if (waserror()) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+
+    args[0] = t->count;
+    syssleep(args);
+    poperror();
+
+    r->type = Rsyssleep;
+    r->tag = t->tag;
+    return 0;
   }
   if (t->type == Tsysdup) {
     return router_dispatch_fs(p, t, r); /* FD op */

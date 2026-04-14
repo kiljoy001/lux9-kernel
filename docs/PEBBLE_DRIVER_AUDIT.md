@@ -1,81 +1,88 @@
-# Pebble Tracking Audit for Driver Allocations
+# Pebble Audit for Kernel-Resident Allocations
 
-## Issue
-Driver allocations in `kernel/family/` are using `xalloc()` and `malloc()` which do NOT track pebble budgets. This violates the economic security model where all memory allocations should be accounted.
+## Goal
+Track long-lived ring-0 allocations with Pebble instead of leaving them on the
+generic raw allocator.
 
-## Current State
+This audit is about **kernel-resident objects**: structures that remain owned by
+the kernel after the creating call returns. It is not a blanket requirement that
+every temporary syscall scratch buffer be charged to the kernel Pebble state.
 
-### Proper Pebble-Tracked Allocation
-`kernel/9front-port/alloc.c` provides:
-- `pebble_arena_alloc()` - Properly tracks allocations via WHITE→BLACK token conversion
-- `pebble_meta_alloc()` - For internal pebble metadata (uses metamem pool)
+## Implemented
 
-### Untracked Driver Allocations (19 instances found)
+### Allocator surface
+- `kernel/9front-port/alloc.c`
+  - Added `xalloc_resident()`, `smalloc_resident()`, and `xfree_resident()`.
+  - Kept `xalloc_driver()` / `xfree_driver()` for process-charged ring-0 work.
+  - Pre-proc bootstrap resident allocations still fall back to `xallocz_raw()`
+    on purpose; Pebble metadata is not reliable that early.
 
-#### kernel/family/pci_resource_pool.c
-- Line 206: `pool = xalloc(sizeof(struct PCIResourcePool))`
-- Line 219: `pool->bar_resources = xalloc(...)`
-- Line 220: `pool->irq_resources = xalloc(...)`
-- Line 221: `pool->dma_resources = xalloc(...)`
+### Pebble state-aware helpers
+- `kernel/pebble.c`
+  - Added `pebble_kernel_state()`.
+  - Added `pebble_black_alloc_in_state()` and
+    `pebble_black_free_in_state()` so resident allocations can use a kernel
+    Pebble state instead of the current process state.
+  - Added `pebble_white_verify_in_state()` so WHITE token verification uses the
+    same Pebble state that issued the token.
+  - Kernel Pebble state is lazily initialized on first tracked resident use.
 
-#### kernel/family/pci_family.c
-- Line 279: `malloc(sizeof(struct PCIDeviceDescriptor))`
-- Line 372: `global_pci_ctx = xalloc(sizeof(struct PCIFamilyContext))`
+### Converted resident call sites
+- `kernel/9front-pc64/irq.c`
+  - `Vctl` allocations now use `xalloc_resident()` / `xfree_resident()`.
+- `kernel/9front-pc64/archacpi.c`
+  - `Bus`, `PCMPintr`, `Aintr`, `Apic`, and AML heap allocations now use the
+    resident allocator.
+- `kernel/9front-port/devregistry.c`
+  - `Device` registry nodes now use the resident allocator.
+- `kernel/9front-port/pci_stubs.c`
+  - PCI device records, sizing tables, and the framework device array now use
+    the resident allocator.
+- `kernel/9front-port/devdma.c`
+  - `DMAAlloc` tracking nodes now use `smalloc_resident()`.
+- `kernel/9front-port/vault_syscalls.c`
+  - `ProcessVault` objects now use `xalloc_resident()` / `xfree_resident()`.
+- `kernel/9front-port/kernel_stubs.c`
+  - Vault cleanup now frees resident `ProcessVault` objects correctly.
+  - Argon2 scratch memory now uses `xalloc_driver()` / `xfree_driver()` rather
+    than bypassing Pebble entirely.
 
-#### kernel/family/pci_channel.c
-- Line 264: `channel = xalloc(sizeof(struct PCIChannel))`
-- Line 555: `mgr = xalloc(sizeof(struct PCIEChannelManager))`
-- Line 566: `mgr->channels = xalloc(...)`
-- Line 567: `mgr->channel_ids = xalloc(...)`
-- Line 677: `bar_res = xalloc(...)`
+## Deliberate boundary
 
-#### kernel/family/pci_9p.c
-- Line 151: `p = smalloc(4096)`
-- Line 183: `p = smalloc(512)`
+### In scope
+- Kernel-owned registries
+- Driver/framework tables that outlive the creating call
+- Shared kernel bookkeeping objects
+- Kernel-only vault metadata
 
-#### kernel/family/pci_9p.h
-- Line 208: `ctx = xalloc(sizeof(*driver))`
+### Out of scope for this pass
+- Temporary syscall response buffers
+- Short-lived per-request scratch allocations
+- Pure bootstrap allocations created before proc0 exists
 
-#### kernel/family/family.c
-- Line 114: `family = xalloc(sizeof(struct FamilyExchangePage))`
+Those remaining cases should be handled separately if the kernel later wants
+full transient accounting, but they are not the same problem as long-lived
+resident ownership.
 
-#### kernel/family/secure_element_family.c
-- Line 105: `ctx = malloc(sizeof(TPMFamilyContext))`
-- Line 125: `ctx->tpm_ctx = malloc(sizeof(TPMContext))`
-- Line 206: `tpm_channel = malloc(sizeof(TPMChannel))`
-
-#### kernel/family/pci_transactions.c
-- Line 117: `chain = xalloc(sizeof(struct MultiDevicePebbleChain))`
-
-## Recommended Solutions
-
-### Option 1: Make xalloc pebble-aware
-Add pebble budget checking to `xalloc_internal()` in `kernel/9front-port/xalloc.c`:
-- Check if current process has pebble budget
-- Deduct from colorless bank on allocation
-- Return to bank on free
-
-**Pros:** Automatic coverage for all existing code
-**Cons:** May track kernel-internal allocations that shouldn't be user-charged
-
-### Option 2: Replace driver xalloc with pebble_arena_alloc
-Change all driver allocations to use `pebble_arena_alloc()`.
-
-**Pros:** Explicit control, clear separation of tracked vs untracked
-**Cons:** Requires touching 19+ call sites, error-prone
-
-### Option 3: Create driver-specific pebble allocator
-Add `driver_pebble_alloc()` that wraps pebble tracking with driver-appropriate defaults.
-
-**Pros:** Clean API, easy to audit driver resource usage
-**Cons:** Yet another allocator function
-
-## Recommendation
-**Option 1** with a flag to distinguish kernel-internal from driver allocations. Add `xalloc_driver()` that routes to pebble-tracked path.
-
-## Next Steps
-1. Decide on approach
-2. Implement chosen solution
-3. Update all driver allocation sites
-4. Add tests to verify pebble accounting
-5. Update TODO_MASTER_LIST.md when complete
+## Verification
+- Focused object rebuild:
+  - `kernel/9front-port/alloc.o`
+  - `kernel/pebble.o`
+  - `kernel/9front-port/devregistry.o`
+  - `kernel/9front-port/pci_stubs.o`
+  - `kernel/9front-pc64/irq.o`
+  - `kernel/9front-pc64/archacpi.o`
+  - `kernel/9front-port/kernel_stubs.o`
+  - `kernel/9front-port/vault_syscalls.o`
+  - `kernel/9front-port/devdma.o`
+- Full rebuild:
+  - `make -f GNUmakefile iso`
+- Full QEMU ISO boot:
+  - `build/qemu-pebble-resident.log`
+  - Reached `BOOT[proc0]: root namespace setup complete`
+  - Reached `RESURRECTION: Started procd`
+  - Reached `RESURRECTION: Started hal`
+  - Reached `RESURRECTION: Started sophia`
+  - Reached `RESURRECTION: Entering dynamic monitoring loop`
+  - No `panic`, `PANIC`, `kernel fault`, `general protection`,
+    `errstack underflow`, or `D2B: magic bad`

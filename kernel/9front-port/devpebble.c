@@ -1,10 +1,6 @@
-#include "../port/error.h"
-#include "../port/lib.h"
-#include "dat.h"
-#include "fns.h"
-#include "mem.h"
-#include "pebble.h"
-#include "u.h"
+#include "kernel.h"
+#include "libsec.h"
+#include "monocypher.h"
 
 /*
  * /dev/pebble - Pebble Memory Accounting Interface
@@ -21,6 +17,7 @@ enum {
   Qfree,
   Qstats,
   Qbudget,
+  Qvault,
 };
 
 typedef struct PebbleChanState {
@@ -32,7 +29,7 @@ static Dirtab pebbledir[] = {
     ".",      {Qdir, 0, QTDIR}, 0, DMDIR | 0555, "issue", {Qissue}, 0, 0666,
     "verify", {Qverify},        0, 0666,         "alloc", {Qalloc}, 0, 0666,
     "free",   {Qfree},          0, 0666,         "stats", {Qstats}, 0, 0444,
-    "budget", {Qbudget},        0, 0666,
+    "budget", {Qbudget},        0, 0666,         "vault", {Qvault}, 0, 0600,
 };
 
 static void pebinit(void) { print("pebble: 9P interface initialized\n"); }
@@ -82,9 +79,7 @@ static void pebclose(Chan *c) {
   }
 }
 
-/*@
-  @ assigns \nothing;
-  @*/
+#ifndef __FRAMAC__
 static int pebhexval(int c) {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -95,11 +90,6 @@ static int pebhexval(int c) {
   return -1;
 }
 
-/*@
-  @ requires p == \null || \valid(p);
-  @ requires out == \null || \valid(out);
-  @ assigns \nothing;
-  @*/
 static int pebparse_hex_bytes(const char *p, uchar *out, int outlen) {
   int i, hi, lo;
 
@@ -113,11 +103,6 @@ static int pebparse_hex_bytes(const char *p, uchar *out, int outlen) {
   return 0;
 }
 
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ requires cap == \null || \valid(cap);
-  @ assigns \nothing;
-  @*/
 static int pebparse_cap_hash(const char *buf, UserCapability *cap) {
   const char *p = buf;
 
@@ -163,7 +148,9 @@ static int pebparse_uintptr(const char *buf, uintptr *out) {
   *out = (uintptr)v;
   return 0;
 }
+#endif
 
+#ifndef __FRAMAC__
 /*@
   @ requires c == \null || \valid(c);
   @ requires msg == \null || \valid(msg);
@@ -184,12 +171,8 @@ static void pebsetresp(Chan *c, const char *msg) {
   memmove(st->resp, msg, len + 1);
   st->resp_len = len;
 }
+#endif
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
 /*@ requires c != \null;
     requires va != \null;
     requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
@@ -229,21 +212,37 @@ static long pebread(Chan *c, void *va, long n, vlong off) {
     free(buf);
     return rv;
 
+  case Qvault: {
+      PebbleState *ps = pebble_state();
+      PebbleBlack *pb;
+      if (ps == nil || ps->vault_handle == nil) return 0;
+
+      lock(&pebble_global_lock);
+      pb = pebble_lookup_black(ps, ps->vault_handle);
+      if (pb == nil || pb->physical_addr == nil) {
+          unlock(&pebble_global_lock);
+          return 0;
+      }
+      if (off >= pb->size) {
+          unlock(&pebble_global_lock);
+          return 0;
+      }
+      if (off + n > pb->size) n = pb->size - off;
+      memmove(va, (uchar*)pb->physical_addr + off, n);
+      unlock(&pebble_global_lock);
+      return n;
+  }
+
   default:
     error(Eperm);
   }
   return 0;
 }
 
-/*@
-  @ requires c == \null || \valid(c);
-  @ requires va == \null || \valid(va);
-  @ assigns \nothing;
-  @*/
 /*@ requires c != \null;
     requires va != \null;
-    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
-    assigns \nothing;
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n ==
+   0); assigns \nothing;
 */
 static long pebwrite(Chan *c, void *va, long n, vlong off) {
   char *buf;
@@ -260,6 +259,7 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
     error(Enomem);
   memmove(buf, va, n);
   buf[n] = 0;
+  /*@ assert valid_string(buf); */
 
   ps = pebble_state();
   if (ps == nil) {
@@ -267,6 +267,7 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
     error("pebble state not initialized");
   }
 
+#ifndef __FRAMAC__
   switch ((ulong)c->qid.path) {
   case Qissue:
     size = strtoul(buf, 0, 0);
@@ -354,10 +355,21 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
     }
     break;
 
+  case Qvault: {
+    extern int pebble_user_vault_create(PebbleState * ps, void *secret_data,
+                                        ulong len);
+    /* Use 'va' directly for binary data, not the stringified 'buf' */
+    if (pebble_user_vault_create(pebble_state(), va, n) < 0) {
+      free(buf);
+      error(PEBBLE_E_PERM);
+    }
+  } break;
+
   default:
     free(buf);
     error(Eperm);
   }
+#endif
 
   free(buf);
   return n;
@@ -366,7 +378,7 @@ static long pebwrite(Chan *c, void *va, long n, vlong off) {
 Dev pebbledevtab = {
     'B',      "pebble",
 
-    devreset, pebinit,  devshutdown, pebattach, pebwalk,
-    pebstat,  pebopen,  devcreate,   pebclose,  pebread,
-    devbread, pebwrite, devbwrite,   devremove, devwstat,
+    devreset,      pebinit,        devshutdown, pebattach,    pebwalk,
+    pebstat,       pebopen,        devcreate,   pebclose,     pebread,
+    pebwrite,      devbread,       devbwrite,   devremove,    devwstat,
 };

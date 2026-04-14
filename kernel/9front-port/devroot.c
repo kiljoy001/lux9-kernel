@@ -5,9 +5,26 @@
 #include "u.h"
 #include <error.h>
 
+/* Stub for rootinit - called during device initialization */
+static void rootinit(void) {
+  /* Root device initialization - minimal stub for boot */
+}
+
 enum {
   Qdir = 0,
   Qboot = 0x1000,
+  Qbin = 3,
+  Qdev,
+  Qenv,
+  Qfd,
+  Qnet,
+  Qnetalt,
+  Qproc,
+  Qroot,
+  Qsrv,
+  Qmnt,
+  Qwasm,
+  Qtmp,
 
   Nrootfiles = 32,
   Nbootfiles = 32,
@@ -25,21 +42,21 @@ struct Dirlist {
 static Dirtab rootdir[Nrootfiles] = {
     "#/",      {Qdir, 0, QTDIR},  0, DMDIR | 0555,
     "boot",    {Qboot, 0, QTDIR}, 0, DMDIR | 0555,
-    "bin",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "dev",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "env",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "fd",      {0, 0, QTDIR},     0, DMDIR | 0555,
-    "net",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "net.alt", {0, 0, QTDIR},     0, DMDIR | 0555,
-    "proc",    {0, 0, QTDIR},     0, DMDIR | 0555,
-    "root",    {0, 0, QTDIR},     0, DMDIR | 0555,
-    "srv",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "mnt",     {0, 0, QTDIR},     0, DMDIR | 0555,
-    "wasm",    {0, 0, QTDIR},     0, DMDIR | 0555,
-    "tmp",     {0, 0, QTDIR},     0, DMDIR | 0777,
+    "bin",     {Qbin, 0, QTDIR},  0, DMDIR | 0555,
+    "dev",     {Qdev, 0, QTDIR},  0, DMDIR | 0555,
+    "env",     {Qenv, 0, QTDIR},  0, DMDIR | 0555,
+    "fd",      {Qfd, 0, QTDIR},   0, DMDIR | 0555,
+    "net",     {Qnet, 0, QTDIR},  0, DMDIR | 0555,
+    "net.alt", {Qnetalt, 0, QTDIR}, 0, DMDIR | 0555,
+    "proc",    {Qproc, 0, QTDIR}, 0, DMDIR | 0555,
+    "root",    {Qroot, 0, QTDIR}, 0, DMDIR | 0555,
+    "srv",     {Qsrv, 0, QTDIR},  0, DMDIR | 0555,
+    "mnt",     {Qmnt, 0, QTDIR},  0, DMDIR | 0555,
+    "wasm",    {Qwasm, 0, QTDIR}, 0, DMDIR | 0555,
+    "tmp",     {Qtmp, 0, QTDIR},  0, DMDIR | 0777,
 };
 static uchar *rootdata[Nrootfiles];
-static Dirlist rootlist = {0, rootdir, rootdata, 15, Nrootfiles};
+static Dirlist rootlist = {0, rootdir, rootdata, 14, Nrootfiles};
 
 static Dirtab bootdir[Nbootfiles] = {
     "boot",
@@ -229,16 +246,12 @@ static long rootread(Chan *c, void *buf, long n, vlong off) {
 
   d = &l->dir[t];
   data = l->data[t];
+  if (data == nil)
+    error(Eio);
   if (offset >= d->length)
     return 0;
   if (offset + n > d->length)
     n = d->length - offset;
-#ifdef asdf
-  print("[%d] kaddr %.8ulx base %.8ulx offset %ld (%.8ulx), n %d %.8ulx %.8ulx "
-        "%.8ulx\n",
-        t, buf, data, offset, offset, n, ((ulong *)(data + offset))[0],
-        ((ulong *)(data + offset))[1], ((ulong *)(data + offset))[2]);
-#endif
   memmove(buf, data + offset, n);
   return n;
 }
@@ -246,9 +259,23 @@ static long rootread(Chan *c, void *buf, long n, vlong off) {
 static long rootwrite(Chan *, void *, long, vlong) { error(Egreg); }
 
 Dev rootdevtab = {
-    '/',       "root",
-
-    rootreset, devinit,   devshutdown, rootattach, rootwalk,
-    rootstat,  rootopen,  devcreate,   rootclose,  rootread,
-    devbread,  rootwrite, devbwrite,   devremove,  devwstat,
+    .dc = '/',
+    .name = "root",
+    .reset = devreset,
+    .init = rootinit,
+    .shutdown = devshutdown,
+    .attach = rootattach,
+    .walk = rootwalk,
+    .stat = rootstat,
+    .open = rootopen,
+    .create = devcreate,
+    .close = rootclose,
+    .read = rootread,
+    .write = rootwrite,
+    .bread = nil,    /* No buffered block read */
+    .bwrite = nil,   /* No buffered block write */
+    .remove = devremove,
+    .wstat = devwstat,
+    .power = nil,
+    .config = nil,
 };

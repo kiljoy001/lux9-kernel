@@ -7,15 +7,16 @@
 
 /*@
   @ requires \valid(fmt);
+  @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= 0 && \result < BPRINT_MAX;
-  @ terminates \true;
   @*/
 int bprint(const char *fmt, ...);
 
 /*@
   @ requires \valid(fmt);
+  @ terminates \false;
+  @ exits \true;
   @ assigns \nothing;
-  @ exits \nothing;
   @*/
 void bpanic(const char *fmt, ...) __attribute__((noreturn));

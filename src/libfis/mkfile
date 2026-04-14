@@ -1,9 +1,0 @@
-</$objtype/mkfile
-
-LIB=/$objtype/lib/libfis.a
-OFILES=\
-	fis.$O\
-
-HFILES=/sys/include/fis.h
-
-</sys/src/cmd/mksyslib

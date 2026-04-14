@@ -2,6 +2,10 @@
 #ifndef _U_H_
 #define _U_H_
 
+#ifdef __FRAMAC__
+#include "framac_stubs.h"
+#endif
+
 /* Add static_assert support for compile-time checks */
 #ifndef static_assert
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
@@ -41,10 +45,26 @@ typedef struct {
   u8int data[16];
 } uuid_t;
 
-#define nelem(x) (sizeof(x) / sizeof((x)[0]))
-#define offsetof(s, m) (ulong)(&(((s *)0)->m))
+/* UTF-8 constants (standard Plan 9) */
+enum {
+  UTFmax = 4,         /* maximum bytes per rune */
+  Runesync = 0x80,    /* cannot represent part of a UTF sequence */
+  Runeself = 0x80,    /* rune and UTF sequences are the same (<) */
+  Runeerror = 0xFFFD, /* decoding error in UTF */
+  Runemax = 0x10FFFF, /* 21 bit rune */
+};
 
+#ifndef nelem
+#define nelem(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+
+#ifndef offsetof
+#define offsetof(s, m) (ulong)(&(((struct s *)0)->m))
+#endif
+
+#ifndef nil
 #define nil ((void *)0)
+#endif
 
 /* USED macro to suppress unused warnings */
 #define USED(...)                                                              \

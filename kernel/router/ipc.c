@@ -38,6 +38,11 @@
   @     scallnr == SYS_PIPE ||
   @     scallnr == SYS_EXCHANGE_ALLOC ||
   @     scallnr == SYS_EXCHANGE_FREE ||
+  @     scallnr == SYS_EXCHANGE_PREPARE ||
+  @     scallnr == SYS_EXCHANGE_PREPARE_RANGE ||
+  @     scallnr == SYS_EXCHANGE_ACCEPT ||
+  @     scallnr == SYS_EXCHANGE_CANCEL ||
+  @     scallnr == SYS_EXCHANGE_TRANSFER ||
   @     scallnr == SYS_EXCHANGE_PUBLISH ||
   @     scallnr == SYS_EXCHANGE_SUBSCRIBE ||
   @     scallnr == SYS_EXCHANGE_UNSUBSCRIBE ||
@@ -144,8 +149,7 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
         if (up->pebble.colorless_bank < PEBBLE_PIPE_COST) {
           unlock(&pebble_global_lock);
           r->type = Rerror;
-          snprint(r->ename, sizeof(r->ename),
-                  "pebble: insufficient budget for pipe");
+          r->ename = "pebble: insufficient budget for pipe";
           return -1;
         }
         up->pebble.colorless_bank -= PEBBLE_PIPE_COST;
@@ -163,7 +167,7 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
 
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
       syspipe(args);
@@ -200,11 +204,10 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_ALLOC: {
       extern uintptr sys_exchange_alloc(void *);
-      print("router_ipc: SYS_EXCHANGE_ALLOC\n");
 
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
       uintptr cap = sys_exchange_alloc(nil);
@@ -244,7 +247,6 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_FREE: {
       extern uintptr sys_exchange_free(void *);
-      print("router_ipc: SYS_EXCHANGE_FREE\n");
 
       /* Format: [cap_ptr 8] */
       ptr = tsyscall_skip_argc(ptr, ep, 1);
@@ -258,10 +260,162 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       ulong args[1] = {cap_ptr};
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
       sys_exchange_free(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_PREPARE: {
+      extern uintptr sys_exchange_prepare(void *);
+
+      ptr = tsyscall_skip_argc(ptr, ep, 2);
+      if (ptr + 16 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      ulong args[2];
+      args[0] = (ulong)GBIT64(ptr);
+      args[1] = (ulong)GBIT64(ptr + 8);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      sys_exchange_prepare(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_PREPARE_RANGE: {
+      extern uintptr sys_exchange_prepare_range(void *);
+
+      ptr = tsyscall_skip_argc(ptr, ep, 3);
+      if (ptr + 24 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      ulong args[3];
+      args[0] = (ulong)GBIT64(ptr);
+      args[1] = (ulong)GBIT64(ptr + 8);
+      args[2] = (ulong)GBIT64(ptr + 16);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      r->retval = sys_exchange_prepare_range(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_ACCEPT: {
+      extern uintptr sys_exchange_accept(void *);
+
+      ptr = tsyscall_skip_argc(ptr, ep, 3);
+      if (ptr + 20 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      ulong args[3];
+      args[0] = (ulong)GBIT64(ptr);
+      args[1] = (ulong)GBIT64(ptr + 8);
+      args[2] = (ulong)GBIT32(ptr + 16);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      sys_exchange_accept(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_CANCEL: {
+      extern uintptr sys_exchange_cancel(void *);
+
+      ptr = tsyscall_skip_argc(ptr, ep, 1);
+      if (ptr + 8 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      ulong args[1];
+      args[0] = (ulong)GBIT64(ptr);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      sys_exchange_cancel(args);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = 0;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
+    case SYS_EXCHANGE_TRANSFER: {
+      extern uintptr sys_exchange_transfer(void *);
+
+      ptr = tsyscall_skip_argc(ptr, ep, 4);
+      if (ptr + 24 > ep) {
+        r->type = Rerror;
+        r->ename = "short msg";
+        return -1;
+      }
+
+      ulong args[4];
+      args[0] = (ulong)GBIT32(ptr);
+      args[1] = (ulong)GBIT32(ptr + 4);
+      args[2] = (ulong)GBIT64(ptr + 8);
+      args[3] = (ulong)GBIT64(ptr + 16);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      sys_exchange_transfer(args);
       poperror();
 
       r->type = Rsyscall;
@@ -298,13 +452,12 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_PUBLISH: {
       extern uintptr sys_exchange_publish(void *);
-      print("router_ipc: SYS_EXCHANGE_PUBLISH\n");
 
       /* Format: [topic_name s] [data_ptr 8] [len 8] */
       /* But sdata already contains the packed data from userspace */
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
 
@@ -377,12 +530,11 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_SUBSCRIBE: {
       extern uintptr sys_exchange_subscribe(void *);
-      print("router_ipc: SYS_EXCHANGE_SUBSCRIBE\n");
 
       /* sdata contains topic name as null-terminated string */
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
 
@@ -424,12 +576,11 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_UNSUBSCRIBE: {
       extern uintptr sys_exchange_unsubscribe(void *);
-      print("router_ipc: SYS_EXCHANGE_UNSUBSCRIBE\n");
 
       /* sdata contains topic name as null-terminated string */
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
 
@@ -467,11 +618,10 @@ int router_dispatch_ipc(Proc *p, Fcall *t, Fcall *r) {
       @*/
     case SYS_EXCHANGE_RECEIVE: {
       extern uintptr sys_exchange_receive(void *);
-      print("router_ipc: SYS_EXCHANGE_RECEIVE\n");
 
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
 

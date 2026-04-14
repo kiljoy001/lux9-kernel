@@ -3,6 +3,12 @@
  *
  * Implements "Softwar" constraints: Operations require energy expenditure
  * proportional to their risk and system load.
+ *
+ * FORMAL SPECIFICATION:
+ * - PoW difficulty scales with operation risk and system load
+ * - TCB processes (kp == 1) MUST be exempted at call sites to prevent
+ *   circular dependencies and self-DoS
+ * - Verification is O(1) and bound to specific transaction context
  */
 
 #include "dat.h"
@@ -20,7 +26,42 @@ struct KineticState {
 } kinetic;
 
 /*@
-  @ assigns \nothing;
+  @ // Global predicates for state validity
+  @
+  @ predicate valid_kinetic_state =
+  @   kinetic.base_load_factor >= 0;
+  @
+  @ predicate valid_difficulty(integer d) =
+  @   0 <= d <= 32;
+  @
+  @ predicate valid_op_class(integer op) =
+  @   op == POW_OP_ALLOC ||
+  @   op == POW_OP_SPAWN ||
+  @   op == POW_OP_NET_BIND ||
+  @   op == POW_OP_REALTIME ||
+  @   op == POW_OP_STACK_ALLOC ||
+  @   op == POW_OP_MSGORD;
+  @
+  @ // Hash-based PoW verification predicate
+  @ // Specifies that a hash value has at least 'zeros' leading zero bits
+  @ predicate has_leading_zeros(u64int hash, integer zeros) =
+  @   zeros == 64 ? hash == 0 :
+  @   zeros == 0 ? \true :
+  @   (hash >> (64 - zeros)) == 0;
+  @
+  @ // Global invariant: kinetic state is always valid
+  @ global invariant kinetic_state_valid:
+  @   valid_kinetic_state;
+  @*/
+
+/*@
+  @ requires \true;
+  @ assigns kinetic.seed_key[0..1], kinetic.base_load_factor;
+  @ ensures kinetic.base_load_factor == 0;
+  @ ensures valid_kinetic_state;
+  @ behavior initialization:
+  @   ensures kinetic.seed_key[0] != \old(kinetic.seed_key[0]) ||
+  @           kinetic.seed_key[1] != \old(kinetic.seed_key[1]);
   @*/
 void pow_gate_init(void) {
   /* Initialize with random seed */
@@ -40,7 +81,44 @@ void pow_gate_init(void) {
  * Returns number of leading zeros required (0-64).
  */
 /*@
+  @ requires valid_op_class(op_class);
+  @ requires magnitude >= 0;
+  @ requires \valid_read(MACHP(0));
   @ assigns \nothing;
+  @ ensures valid_difficulty(\result);
+  @ ensures 0 <= \result <= 32;
+  @
+  @ behavior msgord_healthy:
+  @   assumes op_class == POW_OP_MSGORD;
+  @   assumes magnitude <= 10;
+  @   ensures \result == 0;
+  @
+  @ behavior msgord_contested:
+  @   assumes op_class == POW_OP_MSGORD;
+  @   assumes magnitude > 10;
+  @   ensures \result >= 1;
+  @   ensures \result == \min(32, 1 + ((magnitude - 10) / 5) + (MACHP(0)->load /
+  100));
+  @
+  @ behavior spawn:
+  @   assumes op_class == POW_OP_SPAWN;
+  @   ensures \result == \min(32, 12 + (MACHP(0)->load / 100));
+  @
+  @ behavior net_bind:
+  @   assumes op_class == POW_OP_NET_BIND;
+  @   ensures \result == \min(32, 8 + (MACHP(0)->load / 100));
+  @
+  @ behavior realtime:
+  @   assumes op_class == POW_OP_REALTIME;
+  @   ensures \result == \min(32, 16 + (MACHP(0)->load / 100));
+  @
+  @ behavior stack_alloc_tiny:
+  @   assumes op_class == POW_OP_STACK_ALLOC;
+  @   assumes magnitude < 1024;
+  @   ensures \result == 1;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
   @*/
 int pow_calculate_difficulty(int op_class, ulong magnitude) {
   int diff = 0;
@@ -56,6 +134,13 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
     if (magnitude < (64 * 1024 * 1024)) {
       ulong bucket = magnitude;
       int penalty = 0;
+      /*@
+        @ loop invariant 0 <= penalty <= 6;
+        @ loop invariant bucket == magnitude << penalty;
+        @ loop invariant penalty < 6 ==> bucket < (64 * 1024 * 1024);
+        @ loop assigns bucket, penalty;
+        @ loop variant 6 - penalty;
+        @*/
       while (bucket < (64 * 1024 * 1024) && penalty < 6) {
         penalty++;
         bucket <<= 1;
@@ -96,7 +181,7 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
      */
     if (magnitude <= 10)
       return 0; /* No PoW required if healthy */
-    
+
     diff = 1 + ((magnitude - 10) / 5);
     break;
 
@@ -122,9 +207,39 @@ int pow_calculate_difficulty(int op_class, ulong magnitude) {
  * nonce: The value the client found
  * context: The data being operated on (e.g., ptr address, size)
  * required_diff: Result from pow_calculate_difficulty
+ *
+ * SECURITY INVARIANT:
+ * - Hash binds nonce to context, preventing replay attacks
+ * - Verification is deterministic and constant-time for given difficulty
  */
 /*@
+  @ requires valid_difficulty(required_diff);
+  @ requires valid_kinetic_state;
   @ assigns \nothing;
+  @ ensures required_diff <= 0 ==> \result == 1;
+  @ ensures \result == 0 || \result == 1;
+  @
+  @ behavior fast_path:
+  @   assumes required_diff <= 0;
+  @   ensures \result == 1;
+  @
+  @ behavior verification:
+  @   assumes required_diff > 0;
+  @   ensures \result == 1 ==>
+  @     \exists integer lz; has_leading_zeros(hsiphash((uchar *)input,
+  sizeof(input),
+  @                                            (hsiphash_key_t
+  *)kinetic.seed_key), lz) &&
+  @                           lz >= required_diff;
+  @   ensures \result == 0 ==>
+  @     \forall integer lz; has_leading_zeros(hsiphash((uchar *)input,
+  sizeof(input),
+  @                                            (hsiphash_key_t
+  *)kinetic.seed_key), lz) ==>
+  @                           lz < required_diff;
+  @
+  @ complete behaviors;
+  @ disjoint behaviors;
   @*/
 int pow_verify(u64int nonce, u64int context, int required_diff) {
   if (required_diff <= 0)
@@ -153,6 +268,15 @@ int pow_verify(u64int nonce, u64int context, int required_diff) {
     /* Generic fallback if builtin not available in this env */
     /* Assuming we have access to standard bit ops */
     u64int mask = 1ULL << 63;
+    /*@
+      @ loop invariant 0 <= zeros <= 64;
+      @ loop invariant zeros < 64 ==> mask == (1ULL << (63 - zeros));
+      @ loop invariant zeros == 64 ==> mask == 0;
+      @ loop invariant \forall integer i; 0 <= i < zeros ==>
+      @                  ((hash >> (63 - i)) & 1) == 0;
+      @ loop assigns zeros, mask;
+      @ loop variant (mask > 0 ? 64 - zeros : 0);
+      @*/
     while ((hash & mask) == 0 && mask > 0) {
       zeros++;
       mask >>= 1;
@@ -165,9 +289,23 @@ int pow_verify(u64int nonce, u64int context, int required_diff) {
 /*
  * Rotate the seed to prevent "Long Range Attacks" (Pre-mining)
  * Called by timer interrupt every N seconds.
+ *
+ * SECURITY INVARIANT:
+ * - Seed rotation invalidates pre-computed nonces
+ * - Periodic rotation prevents long-range mining attacks
+ * - Lock ensures atomic update visible to all CPUs
  */
 /*@
-  @ assigns \nothing;
+  @ requires valid_kinetic_state;
+  @ requires \valid(&kinetic.lock);
+  @ assigns kinetic.seed_key[0..1];
+  @ ensures valid_kinetic_state;
+  @ ensures kinetic.seed_key[0] != \old(kinetic.seed_key[0]) ||
+  @         kinetic.seed_key[1] != \old(kinetic.seed_key[1]);
+  @
+  @ behavior atomic_rotation:
+  @   ensures \forall integer i; 0 <= i < 2 ==>
+  @     kinetic.seed_key[i] != \old(kinetic.seed_key[i]);
   @*/
 void pow_rotate_epoch(void) {
   extern void genrandom(uchar * buf, int nbytes);

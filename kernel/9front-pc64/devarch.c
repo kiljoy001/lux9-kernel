@@ -1,4 +1,5 @@
 #include "dat.h"
+#include "error.h"
 #include "fns.h"
 #include "io.h"
 #include "mem.h"
@@ -6,7 +7,9 @@
 #include "u.h"
 #include "ureg.h"
 #include "vmdetect.h"
-#include <error.h>
+
+extern char Ebadarg[128];
+extern char Eperm[128];
 
 /* Helper for formatted UART output (used before print buffer is ready) */
 /*@
@@ -82,6 +85,37 @@ static PCArch *knownarch[] = {
  * and you get a pointer to the Dirtab entry so you can do things
  * * like change the Qid version.  Changing the Qid path is disallowed.
  */
+/*@
+  @ // Model Link: proofs/devarch/devarch_model.v
+  @ // Logic: device_registration
+  @
+  @ requires valid_string(name);
+  @ requires rdfn == \null || \true;
+  @ requires wrfn == \null || \true;
+  @ assigns archdir[narchdir..Qmax-1], readfn[narchdir..Qmax-1],
+  writefn[narchdir..Qmax-1], narchdir, archwlock;
+  @
+  @ behavior success:
+  @   assumes narchdir < Qmax;
+  @   assumes \forall integer j; 0 <= j < narchdir ==>
+  !valid_string(&archdir[j].name[0]) || !equal_strings(&archdir[j].name[0],
+  name);
+  @   ensures \result != \null && \valid(\result);
+  @   ensures narchdir == \old(narchdir) + 1;
+  @
+  @ behavior full:
+  @   assumes narchdir >= Qmax;
+  @   ensures \result == \null;
+  @   ensures narchdir == \old(narchdir);
+  @ behavior duplicate:
+  @   assumes \exists integer j; 0 <= j < narchdir &&
+  equal_strings(&archdir[j].name[0], name);
+  @   ensures \result == \null;
+  @   ensures narchdir == \old(narchdir);
+  @
+  @ complete behaviors success, full, duplicate;
+  @ disjoint behaviors success, full, duplicate;
+  @*/
 Dirtab *addarchfile(char *name, int perm, Rdwrfn *rdfn, Rdwrfn *wrfn) {
   int i;
   Dirtab d;
@@ -154,8 +188,38 @@ void ioinit(void) {
   }
 }
 
+/*@ axiomatic Iounused {
+      logic integer iounused_logic(integer start, integer end);
+    }
+*/
+
 /*@
-  @ assigns \nothing;
+  @ // Model Link: proofs/devarch/devarch_model.v
+  @ // Logic: is_allowed_port_range
+  @
+  @ requires end >= start;
+  @
+    @ assigns \nothing;
+  @
+  @ behavior valid_vga:
+  @   assumes (start >= 0x2b0 && end <= 0x2df + 1) || (start >= 0x3c0 && end <=
+  0x3da + 1);
+  @   ensures \true;
+  @
+  @ behavior unused_port:
+  @   assumes !((start >= 0x2b0 && end <= 0x2df + 1) || (start >= 0x3c0 && end
+  <= 0x3da + 1));
+  @   assumes iounused_logic(start, end) == 1;
+  @   ensures \true;
+  @
+  @ behavior invalid_port:
+  @   assumes !((start >= 0x2b0 && end <= 0x2df + 1) || (start >= 0x3c0 && end
+  <= 0x3da + 1));
+  @   assumes iounused_logic(start, end) == 0 || end > 0x10000;
+  @   ensures \false; // Should call error()
+  @
+  @ complete behaviors valid_vga, unused_port, invalid_port;
+  @ disjoint behaviors valid_vga, unused_port, invalid_port;
   @*/
 static void checkport(ulong start, ulong end) {
   if (end < start || end > 0x10000)
@@ -194,9 +258,45 @@ static Chan *archopen(Chan *c, int omode) {
 static void archclose(Chan *) {}
 
 /*@
-  @ requires c == \null || \valid(c);
-  @ requires a == \null || \valid(a);
-  @ assigns \nothing;
+  @ // Model Link: proofs/devarch/devarch_model.v
+  @ // Theorem: archread_safety
+  @
+  @ requires \valid(c);
+  @ requires \valid((char*)a + (0..n-1));
+  @
+  @ assigns ((char*)a)[0..n-1];
+  @
+  @ behavior read_dir:
+  @   assumes c->qid.path == Qdir;
+  @   ensures \result >= 0;
+  @
+  @ behavior read_port_byte:
+  @   assumes c->qid.path == Qiob;
+  @   requires \valid((uchar*)a + (0..n-1));
+  @   ensures \result == n;
+  @
+  @ behavior read_port_short:
+  @   assumes c->qid.path == Qiow;
+  @   requires (n % 2) == 0;
+  @   requires \valid((ushort*)a + (0..(n/2)-1));
+  @   ensures \result == n;
+  @
+  @ behavior read_port_long:
+  @   assumes c->qid.path == Qiol;
+  @   requires (n % 4) == 0;
+  @   requires \valid((ulong*)a + (0..(n/4)-1));
+  @   ensures \result == n;
+  @
+  @ behavior read_msr:
+  @   assumes c->qid.path == Qmsr;
+  @   requires (n % 8) == 0;
+  @   requires \valid((vlong*)a + (0..(n/8)-1));
+  @   ensures \result == n;
+  @
+  @ complete behaviors read_dir, read_port_byte, read_port_short,
+  read_port_long, read_msr;
+  @ disjoint behaviors read_dir, read_port_byte, read_port_short,
+  read_port_long, read_msr;
   @*/
 static long archread(Chan *c, void *a, long n, vlong offset) {
   ulong port, end;
@@ -237,10 +337,12 @@ static long archread(Chan *c, void *a, long n, vlong offset) {
   case Qmsr:
     if (n & 7)
       error(Ebadarg);
-    if ((ulong)n / 8 > -port)
+    /* Cast to ulong for safe bounds check on port (MSR index) */
+    if ((ulong)n / 8 > (0xFFFFFFFFUL - (ulong)port))
       error(Ebadarg);
     end = port + (n / 8);
-    for (vp = a; port != end; port++)
+    vp = a;
+    for (; (ulong)port != (ulong)end; port++)
       if (rdmsr(port, vp++) < 0)
         error(Ebadarg);
     return n;
@@ -253,9 +355,41 @@ static long archread(Chan *c, void *a, long n, vlong offset) {
 }
 
 /*@
-  @ requires c == \null || \valid(c);
-  @ requires a == \null || \valid(a);
+  @ // Model Link: proofs/devarch/devarch_model.v
+  @ // Theorem: archwrite_safety
+  @
+  @ requires \valid(c);
+  @ requires \valid_read((char*)a + (0..n-1));
+  @
   @ assigns \nothing;
+  @
+  @ behavior write_port_byte:
+  @   assumes c->qid.path == Qiob;
+  @   requires \valid_read((uchar*)a + (0..n-1));
+  @   ensures \result == n;
+  @
+  @ behavior write_port_short:
+  @   assumes c->qid.path == Qiow;
+  @   requires (n % 2) == 0;
+  @   requires \valid_read((ushort*)a + (0..(n/2)-1));
+  @   ensures \result == n;
+  @
+  @ behavior write_port_long:
+  @   assumes c->qid.path == Qiol;
+  @   requires (n % 4) == 0;
+  @   requires \valid_read((ulong*)a + (0..(n/4)-1));
+  @   ensures \result == n;
+  @
+  @ behavior write_msr:
+  @   assumes c->qid.path == Qmsr;
+  @   requires (n % 8) == 0;
+  @   requires \valid_read((vlong*)a + (0..(n/8)-1));
+  @   ensures \result == n;
+  @
+  @ complete behaviors write_port_byte, write_port_short, write_port_long,
+  write_msr;
+  @ disjoint behaviors write_port_byte, write_port_short, write_port_long,
+  write_msr;
   @*/
 static long archwrite(Chan *c, void *a, long n, vlong offset) {
   ulong port, end;
@@ -293,10 +427,11 @@ static long archwrite(Chan *c, void *a, long n, vlong offset) {
   case Qmsr:
     if (n & 7)
       error(Ebadarg);
-    if ((ulong)n / 8 > -port)
+    if ((ulong)n / 8 > (0xFFFFFFFFUL - (ulong)port))
       error(Ebadarg);
     end = port + (n / 8);
-    for (vp = a; port != end; port++)
+    vp = a;
+    for (; (ulong)port != (ulong)end; port++)
       if (wrmsr(port, *vp++) < 0)
         error(Ebadarg);
     return n;
@@ -312,9 +447,9 @@ static long archwrite(Chan *c, void *a, long n, vlong offset) {
 Dev archdevtab = {
     'P',      "arch",
 
-    devreset, devinit,   devshutdown, archattach, archwalk,
-    archstat, archopen,  devcreate,   archclose,  archread,
-    devbread, archwrite, devbwrite,   devremove,  devwstat,
+    devreset,      archinit,       devshutdown, archattach, archwalk,
+    archstat,      archopen,       devcreate,   archclose,  archread,
+    archwrite,     devbread,       devbwrite,   devremove,  devwstat,
 };
 
 /*
@@ -331,8 +466,24 @@ static void nop(void) {}
  * Run it with interrupts turned off instead.
  */
 /*@
-  @ requires addr == \null || \valid(addr);
-  @ assigns \nothing;
+  @ // Model Link: proofs/devarch/devarch_model.v
+  @ // Theorem: cmpswap_atomic_masking
+  @
+  @ requires \valid(addr);
+  @ assigns *addr;
+  @
+  @ behavior hit:
+  @   assumes *addr == old;
+  @   ensures *addr == new;
+  @   ensures \result == 1;
+  @
+  @ behavior miss:
+  @   assumes *addr != old;
+  @   ensures *addr == \old(*addr);
+  @   ensures \result == 0;
+  @
+  @ complete behaviors hit, miss;
+  @ disjoint behaviors hit, miss;
   @*/
 static int cmpswap386(long *addr, long old, long new) {
   int r, s;
@@ -843,11 +994,9 @@ int cpuidentify(void) {
   u32int regs[4]; /* CRITICAL: Must be u32int to match cpuid() assembly */
   uintptr cr4;
 
-  uartprintf("cpuidentify: start (m=%p m->machno=%d)\n", m, m ? m->machno : -1);
   /* Zero regs array to ensure clean state */
   regs[0] = regs[1] = regs[2] = regs[3] = 0;
   cpuid(Highstdfunc, 0, regs);
-  uartprintf("cpuidentify: after highstdfunc\n");
   /* CPUID result order: EAX, EBX, ECX, EDX */
   /* Vendor string order: EBX, EDX, ECX */
   for (i = 0; i < 4; i++)
@@ -858,33 +1007,17 @@ int cpuidentify(void) {
     m->cpuidid[8 + i] = (regs[2] >> (i * 8)) & 0xFF;
   m->cpuidid[12] = '\0';
 
-  uartprintf("cpuidentify: calling cpuid(Procsig=%d, 0, regs)\n", Procsig);
   /* Zero regs before CPUID */
   regs[0] = regs[1] = regs[2] = regs[3] = 0;
   cpuid(Procsig, 0, regs);
-  uartprintf(
-      "cpuidentify: cpuid returned: EAX=%#lx EBX=%#lx ECX=%#lx EDX=%#lx\n",
-      (unsigned long)regs[0], (unsigned long)regs[1], (unsigned long)regs[2],
-      (unsigned long)regs[3]);
-  uartprintf(
-      "cpuidentify: addresses: &m->cpuidax=%p &m->cpuidcx=%p &m->cpuiddx=%p\n",
-      &m->cpuidax, &m->cpuidcx, &m->cpuiddx);
   m->cpuidax = regs[0];
   m->cpuidcx = regs[2];
   m->cpuiddx = regs[3];
-  uartprintf("cpuidentify: stored cpuidax=%#lx cpuidcx=%#lx cpuiddx=%#lx\n",
-             (unsigned long)m->cpuidax, (unsigned long)m->cpuidcx,
-             (unsigned long)m->cpuiddx);
 
   /* WORKAROUND: x86-64 mandates TSC, but QEMU+KVM may not report it in CPUID.
    * If we're running in 64-bit mode and TSC isn't reported, force it. */
   if (sizeof(uintptr) == 8 && !(m->cpuiddx & Tsc)) {
-    uartprintf("WORKAROUND: CPUID didn't report TSC (EDX=%#lx), forcing it "
-               "(x86-64 requirement)\n",
-               (unsigned long)m->cpuiddx);
     m->cpuiddx |= Tsc | Cpumsr; /* Force TSC and MSR support */
-    uartprintf("WORKAROUND: Corrected cpuiddx=%#lx\n",
-               (unsigned long)m->cpuiddx);
   }
 
   m->cpuidfamily = m->cpuidax >> 8 & 0xf;
@@ -932,19 +1065,11 @@ int cpuidentify(void) {
   /*
    *  if there is one, set tsc to a known value
    */
-  uartprintf("cpuidentify: checking TSC\n");
-  uartprintf("cpuidentify: m->cpuiddx = %#x, Tsc bit = %#x\n", m->cpuiddx, Tsc);
-  uartprintf("cpuidentify: m->cpuiddx & Tsc = %#x (should be non-zero if TSC "
-             "present)\n",
-             m->cpuiddx & Tsc);
   if (m->cpuiddx & Tsc) {
     m->havetsc = 1;
     cycles = _cycles;
-    uartprintf("cpuidentify: TSC found, checking MSR\n");
     if (m->cpuiddx & Cpumsr) {
-      uartprintf("cpuidentify: writing MSR 0x10\n");
       wrmsr(0x10, 0);
-      uartprintf("cpuidentify: MSR 0x10 written\n");
     }
 
     /*
@@ -964,7 +1089,6 @@ int cpuidentify(void) {
         if (tsc_hz != 0) {
           m->cpuhz = tsc_hz;
           m->cpumhz = tsc_hz / 1000000ULL;
-          uartprintf("cpuidentify: CPUID 0x15 reports %llud Hz\n", tsc_hz);
         }
       }
     }
@@ -975,12 +1099,9 @@ int cpuidentify(void) {
         uvlong mhz = regs16[0];
         m->cpumhz = mhz;
         m->cpuhz = mhz * 1000000ULL;
-        uartprintf("cpuidentify: CPUID 0x16 reports %llu MHz\n", mhz);
       }
     }
     if (m->cpuhz == 0) {
-      uartprintf("WORKAROUND: cpuidentify could not determine cpuhz, forcing "
-                 "2GHz default\n");
       m->cpumhz = 2000;
       m->cpuhz = 2000000000ULL;
     }
@@ -991,8 +1112,6 @@ int cpuidentify(void) {
    * If running under KVM, disable MCE support to be safe.
    */
   if (vm_info.type == VM_KVM || vm_info.skip_msr_writes) {
-    uartprintf(
-        "cpuidentify: KVM/VM detected, skipping MCE/MCA init to prevent GPF\n");
     m->cpuiddx &= ~Mce;
     m->cpuiddx &= ~Mca;
   }
@@ -1001,36 +1120,21 @@ int cpuidentify(void) {
    * If machine check exception, page size extensions or page global bit
    * are supported enable them in CR4 and clear any other set extensions.
    */
-  uartprintf("cpuidentify: checking CR4 features\n");
   if (m->cpuiddx & (Pge | Mce | Pse)) {
     vlong mca, mct;
 
-    uartprintf("cpuidentify: getting CR4\n");
     cr4 = getcr4();
-    uartprintf("cpuidentify: CR4 = %#p\n", cr4);
-
-    uartprintf("cpuidentify: checking PSE (cpuiddx & Pse = %d)\n",
-               !!(m->cpuiddx & Pse));
     if (m->cpuiddx & Pse)
       cr4 |= 0x10; /* page size extensions */
 
-    uartprintf("cpuidentify: checking MCE (cpuiddx & Mce = %d)\n",
-               !!(m->cpuiddx & Mce));
-    uartprintf("cpuidentify: calling getconf(*nomce)\n");
     char *nomce = getconf("*nomce");
-    uartprintf("cpuidentify: getconf returned %p\n", nomce);
     if ((m->cpuiddx & Mce) != 0 && nomce == nil) {
-      uartprintf("cpuidentify: MCE enabled, checking MCA\n");
-      uartprintf("cpuidentify: cpuiddx & Mca = %d\n", !!(m->cpuiddx & Mca));
       if ((m->cpuiddx & Mca) != 0) {
         vlong cap;
         int bank;
 
-        uartprintf("cpuidentify: MCA supported, reading MSR 0x179\n");
         cap = 0;
         rdmsr(0x179, &cap);
-        uartprintf("cpuidentify: MSR 0x179 = %#llx, banks = %d\n", cap,
-                   (int)(cap & 0xFF));
 
         if (cap & 0x100)
           wrmsr(0x17B, ~0ULL); /* enable all mca features */
@@ -1050,15 +1154,11 @@ int cpuidentify(void) {
 
         wrmsr(0x401, 0);
       } else if (family == 5) {
-        uartprintf("cpuidentify: family 5, reading legacy MCE MSRs\n");
         rdmsr(0x00, &mca);
         rdmsr(0x01, &mct);
       } else {
-        uartprintf("cpuidentify: MCE but no MCA, family = %d\n", family);
       }
-      uartprintf("cpuidentify: enabling CR4.MCE\n");
       cr4 |= 0x40; /* machine check enable */
-      uartprintf("cpuidentify: CR4.MCE enabled\n");
     }
 
     /*
@@ -1076,62 +1176,35 @@ int cpuidentify(void) {
      * the PGE bit in CR4, writing to CR3, and then
      * restoring the PGE bit.
      */
-    uartprintf("cpuidentify: checking PGE\n");
     if (m->cpuiddx & Pge) {
-      uartprintf("cpuidentify: PGE supported, enabling\n");
       cr4 |= 0x80; /* page global enable bit */
       m->havepge = 1;
     }
-    uartprintf("cpuidentify: writing CR4 = %#p\n", cr4);
     putcr4(cr4);
-    uartprintf("cpuidentify: CR4 written successfully\n");
-
-    uartprintf("cpuidentify: checking for legacy MCE\n");
     if ((m->cpuiddx & (Mca | Mce)) == Mce) {
-      uartprintf("cpuidentify: reading legacy MSR 0x01\n");
       rdmsr(0x01, &mct);
-      uartprintf("cpuidentify: legacy MSR read complete\n");
     }
   }
 
-  uartprintf("cpuidentify: done with CR4 setup\n");
-
 #ifdef PATWC
   /* IA32_PAT write combining */
-  uartprintf("cpuidentify: checking PAT\n");
   if ((m->cpuiddx & Pat) != 0) {
     vlong pat;
 
-    uartprintf("cpuidentify: PAT supported, configuring WC\n");
-    uartprintf("cpuidentify: reading PAT MSR 0x277\n");
     if (rdmsr(0x277, &pat) != -1) {
-      uartprintf("cpuidentify: PAT MSR read successful, value = %#llx\n", pat);
       vlong newpat = pat;
       newpat &= ~(255LL << (PATWC * 8));
       newpat |= 1LL << (PATWC * 8); /* WC */
-      uartprintf("cpuidentify: old PAT = %#llx, new PAT = %#llx\n", pat,
-                 newpat);
-      uartprintf("cpuidentify: writing PAT MSR (skipping for now due to KVM "
-                 "issues)\n");
       // TEMPORARY: Skip PAT write on KVM as it causes triple fault
       // wrmsr(0x277, newpat);
-      uartprintf("cpuidentify: PAT configuration skipped\n");
-    } else {
-      uartprintf("cpuidentify: PAT MSR read failed\n");
     }
   }
 #endif
 
-  uartprintf("cpuidentify: checking MTRR\n");
-  uartprintf("cpuidentify: cpuiddx & Mtrr = %d\n", !!(m->cpuiddx & Mtrr));
   if ((m->cpuiddx & Mtrr) != 0) {
-    uartprintf("cpuidentify: checking getconf(*nomtrr)\n");
     char *nomtrr = getconf("*nomtrr");
-    uartprintf("cpuidentify: getconf(*nomtrr) = %p\n", nomtrr);
     if (nomtrr == nil) {
-      uartprintf("cpuidentify: calling mtrrsync\n");
       mtrrsync();
-      uartprintf("cpuidentify: mtrrsync done\n");
     }
   }
 
@@ -1141,7 +1214,6 @@ int cpuidentify(void) {
     hwrandbuf = nil;
 
   /* Detect crypto hardware acceleration */
-  uartprintf("cpuidentify: checking crypto acceleration\n");
   m->haveaes = 0;
   m->havesha = 0;
   m->havepclmul = 0;
@@ -1149,17 +1221,14 @@ int cpuidentify(void) {
 
   if (m->cpuidcx & Aes) {
     m->haveaes = 1;
-    uartprintf("cpuidentify: AES-NI detected\n");
   }
 
   if (m->cpuidcx & Pclmulqdq) {
     m->havepclmul = 1;
-    uartprintf("cpuidentify: PCLMULQDQ detected\n");
   }
 
   if (m->cpuidcx & Rdrnd) {
     m->haverdrand = 1;
-    uartprintf("cpuidentify: RDRAND detected\n");
   }
 
   /* SHA extensions are in CPUID leaf 7, subleaf 0, EBX bit 29 */
@@ -1168,8 +1237,11 @@ int cpuidentify(void) {
     cpuid(7, 0, regs);         /* Extended features */
     if (regs[1] & (1 << 29)) { /* EBX bit 29 */
       m->havesha = 1;
-      uartprintf("cpuidentify: SHA extensions detected\n");
     }
+  }
+
+  if (m->havesha && (vm_info.type == VM_QEMU_TCG || vm_info.type == VM_UNKNOWN)) {
+    m->havesha = 0;
   }
 
   if (sizeof(uintptr) == 8) {
@@ -1190,9 +1262,6 @@ int cpuidentify(void) {
          */
         m->havenx = 1;
         if (vm_info.skip_msr_writes) {
-          uartprintf("cpuidentify: NX supported; skipping EFER.NXE write "
-                     "(vm_type=%d skip=%d)\n",
-                     vm_info.type, vm_info.skip_msr_writes);
         } else if (rdmsr(Efer, &efer) != -1) {
           if (efer & (1ull << 11)) {
             m->havenx = 1;
@@ -1200,13 +1269,8 @@ int cpuidentify(void) {
             efer |= 1ull << 11;
             if (wrmsr(Efer, efer) != -1) {
               m->havenx = 1;
-              uartprintf("cpuidentify: NXE set successfully\n");
-            } else {
-              uartprintf("cpuidentify: wrmsr(EFER) failed; NX remains off\n");
             }
           }
-        } else {
-          uartprintf("cpuidentify: rdmsr(EFER) failed; leaving NX disabled\n");
         }
       }
     }
@@ -1231,8 +1295,7 @@ int cpuidentify(void) {
 }
 
 /*@
-  @ requires  == \null || \valid();
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..n-1));
   @ assigns \nothing;
   @*/
 static long cputyperead(Chan *, void *a, long n, vlong offset) {
@@ -1243,8 +1306,7 @@ static long cputyperead(Chan *, void *a, long n, vlong offset) {
 }
 
 /*@
-  @ requires  == \null || \valid();
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..nn-1));
   @ assigns \nothing;
   @*/
 static long archctlread(Chan *, void *a, long nn, vlong offset) {
@@ -1295,8 +1357,7 @@ static Cmdtab archctlmsg[] = {
 };
 
 /*@
-  @ requires  == \null || \valid();
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..n-1));
   @ assigns \nothing;
   @*/
 static long archctlwrite(Chan *, void *a, long n, vlong) {
@@ -1359,7 +1420,7 @@ static long archctlwrite(Chan *, void *a, long n, vlong) {
 }
 
 /*@
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..n-1));
   @ assigns \nothing;
   @*/
 static long rmemrw(int isr, void *a, long n, vlong off) {
@@ -1384,8 +1445,7 @@ static long rmemrw(int isr, void *a, long n, vlong off) {
 }
 
 /*@
-  @ requires  == \null || \valid();
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..n-1));
   @ assigns \nothing;
   @*/
 static long rmemread(Chan *, void *a, long n, vlong off) {
@@ -1393,8 +1453,7 @@ static long rmemread(Chan *, void *a, long n, vlong off) {
 }
 
 /*@
-  @ requires  == \null || \valid();
-  @ requires a == \null || \valid(a);
+  @ requires a == \null || \valid((char*)a + (0..n-1));
   @ assigns \nothing;
   @*/
 static long rmemwrite(Chan *, void *a, long n, vlong off) {
@@ -1565,7 +1624,6 @@ void dumpmcregs(void) {
 
 /*@
   @ requires ureg == \null || \valid(ureg);
-  @ requires  == \null || \valid();
   @ assigns \nothing;
   @*/
 static void nmihandler(Ureg *ureg, void *) {

@@ -84,10 +84,13 @@ typedef struct ProcAllocation {
 
 /* Global exchange pool structure */
 typedef struct GlobalExchangePool {
-  /* Fixed-size arrays (will be converted to dynamic later) */
+  /* Fixed ceiling; active slots grow and shrink within this bound. */
   UserCapability pages[POOL_SIZE];
   uint free_list[POOL_SIZE];
   uint free_count;
+  uint total_pages;
+  uint min_pages;
+  uint low_watermark;
 
   /* Process allocation tracking */
   ProcAllocation *proc_allocs;

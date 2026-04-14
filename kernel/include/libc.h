@@ -23,7 +23,9 @@ typedef long jmp_buf[16];
 #include <stdarg.h>
 
 #define nelem(x) (sizeof(x) / sizeof((x)[0]))
+#ifndef offsetof
 #define offsetof(s, m) (ulong)(&(((s *)0)->m))
+#endif
 #define assert(x)                                                              \
   if (x) {                                                                     \
   } else {                                                                     \
@@ -38,28 +40,66 @@ extern void *memccpy(void *, const void *, int, usize);
 extern void *memset(void *, int, usize);
 extern int memcmp(const void *, const void *, usize);
 extern void *memcpy(void *, const void *, usize);
-extern void *memmove(void *, const void *, usize);
+#ifndef __FRAMAC_DECL_MEMMOVE
+/*@
+  @ requires \valid((char *)dest + (0..n-1));
+  @ requires \valid_read((char *)src + (0..n-1));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns ((char *)dest)[0..n-1];
+  @ ensures \result == dest;
+  @*/
+extern void *memmove(void *dest, const void *src, usize n);
+#endif
 extern void *memchr(const void *, int, usize);
 
 /*
  * string routines
  */
-extern char *strcat(char *, char *);
-extern char *strchr(char *, int);
-extern int strcmp(char *, char *);
-extern char *strcpy(char *, char *);
-extern char *strecpy(char *, char *, char *);
-extern char *strdup(char *);
-extern char *strncat(char *, char *, long);
-extern char *strncpy(char *, char *, long);
-extern int strncmp(char *, char *, long);
-extern char *strpbrk(char *, char *);
-extern char *strrchr(char *, int);
+extern char *strcat(char *, const char *);
+extern char *strchr(const char *, int);
+#ifndef __FRAMAC_DECL_STRCMP
+/*@
+  @ requires valid_string(s1);
+  @ requires valid_string(s2);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
+extern int strcmp(const char *s1, const char *s2);
+#endif
+#ifndef __FRAMAC_DECL_STRCPY
+/*@
+  @ requires valid_string(src);
+  @ requires \valid(dst + (0..ACSL_MAXSTR-1));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns dst[0..ACSL_MAXSTR-1];
+  @ ensures \result == dst;
+  @*/
+extern char *strcpy(char *dst, const char *src);
+#endif
+extern char *strecpy(char *, char *, const char *);
+extern char *strdup(const char *);
+extern char *strncat(char *, const char *, ulong);
+extern char *strncpy(char *, const char *, ulong);
+extern int strncmp(const char *, const char *, ulong);
+extern char *strpbrk(const char *, const char *);
+extern char *strrchr(const char *, int);
 extern char *strtok(char *, char *);
-extern long strlen(char *);
+#ifndef __FRAMAC_DECL_STRLEN
+/*@
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @ ensures \result >= 0;
+  @*/
+extern ulong strlen(const char *s);
+#endif
 extern long strspn(char *, char *);
 extern long strcspn(char *, char *);
-extern char *strstr(char *, char *);
+extern char *strstr(const char *, const char *);
 extern int cistrncmp(char *, char *, int);
 extern int cistrcmp(char *, char *);
 extern char *cistrstr(char *, char *);
@@ -67,11 +107,6 @@ extern int tokenize(char *, char **, int);
 
 #ifndef _PORTLIB_H_
 enum {
-  UTFmax = 4,          /* maximum bytes per rune */
-  Runesync = 0x80,     /* cannot represent part of a UTF sequence (<) */
-  Runeself = 0x80,     /* rune and UTF sequences are the same (<) */
-  Runeerror = 0xFFFD,  /* decoding error in UTF */
-  Runemax = 0x10FFFF,  /* 21 bit rune */
   Runemask = 0x1FFFFF, /* bits used by runes (see grep) */
 };
 #endif
@@ -79,8 +114,24 @@ enum {
 /*
  * rune routines
  */
+/*@
+  @ requires s == \null || \valid_read(s + (0..UTFmax-1));
+  @ assigns \nothing;
+  @ ensures \result >= 1 && \result <= UTFmax;
+  @*/
 extern int runetochar(char *, Rune *);
-extern int chartorune(Rune *, char *);
+#ifndef __FRAMAC_DECL_CHARTORUNE
+/*@
+  @ requires r != \null;
+  @ requires s != \null;
+  @ requires valid_string(s);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns *r \from s[0 .. ACSL_MAXSTR-1];
+  @ ensures 1 <= \result <= 4;
+  @*/
+extern int chartorune(Rune *r, char *s);
+#endif
 extern int runelen(long);
 extern int runenlen(Rune *, int);
 extern int fullrune(char *, int);
@@ -89,7 +140,14 @@ extern int utfnlen(char *, long);
 extern char *utfrune(char *, long);
 extern char *utfrrune(char *, long);
 extern char *utfutf(char *, char *);
-extern char *utfecpy(char *, char *, char *);
+/*@
+  @ requires s1 <= es1;
+  @ requires \valid(s1 + (0 .. (integer)(es1 - s1) - 1));
+  @ requires valid_string(s2);
+  @ assigns s1[0 .. (integer)(es1 - s1) - 1];
+  @ ensures \valid(\result);
+  @*/
+extern char *utfecpy(char *s1, char *es1, char *s2);
 
 extern Rune *runestrcat(Rune *, Rune *);
 extern Rune *runestrchr(Rune *, Rune);
@@ -158,6 +216,7 @@ extern void *malloctopoolblock(void *);
 /*
  * print routines
  */
+#ifndef _PORTLIB_H_
 #ifndef _FMT_TYPEDEF_
 #define _FMT_TYPEDEF_
 typedef struct Fmt Fmt;
@@ -175,6 +234,7 @@ struct Fmt {
   int prec;            /* precision of format */
   ulong flags;
 };
+#endif
 #endif
 
 enum {
@@ -195,10 +255,10 @@ enum {
   FmtFlag = FmtByte << 1
 };
 
-/*@ assigns \result \from fmt; */
-extern int print(char *, ...);
+#ifndef _PORTLIB_H_
+extern int print(char *fmt, ...);
 extern char *seprint(char *, char *, char *, ...);
-extern char *vseprint(char *, char *, char *, va_list);
+extern char *vseprint(char *out, char *eout, const char *fmt, va_list v);
 extern int snprint(char *, int, char *, ...);
 extern int vsnprint(char *, int, char *, va_list);
 extern char *smprint(char *, ...);
@@ -214,6 +274,7 @@ extern Rune *runeseprint(Rune *, Rune *, char *, ...);
 extern Rune *runevseprint(Rune *, Rune *, char *, va_list);
 extern Rune *runesmprint(char *, ...);
 extern Rune *runevsmprint(char *, va_list);
+#endif
 
 extern int fmtfdinit(Fmt *, int, char *, int);
 extern int fmtfdflush(Fmt *);
@@ -445,7 +506,7 @@ extern int atexit(void (*)(void));
 extern void atexitdont(void (*)(void));
 extern int atnotify(int (*)(void *, char *), int);
 extern double atof(char *);
-extern int atoi(char *);
+extern int atoi(const char *);
 extern long atol(char *);
 extern vlong atoll(char *);
 extern double charstod(int (*)(void *), void *);
@@ -493,15 +554,15 @@ extern void perror(char *);
 extern int postnote(int, int, char *);
 extern double pow10(int);
 extern int putenv(char *, char *);
-extern void qsort(void *, usize, usize, int (*)(void *, void *));
+extern void qsort(void *, usize, usize, int (*)(const void *, const void *));
 #ifndef __FRAMAC__
 extern int setjmp(jmp_buf);
 #endif
-extern double strtod(char *, char **);
-extern long strtol(char *, char **, int);
-extern ulong strtoul(char *, char **, int);
-extern vlong strtoll(char *, char **, int);
-extern uvlong strtoull(char *, char **, int);
+extern double strtod(const char *, char **);
+extern long strtol(const char *, char **, int);
+extern ulong strtoul(const char *, char **, int);
+extern vlong strtoll(const char *, char **, int);
+extern uvlong strtoull(const char *, char **, int);
 extern _Noreturn void sysfatal(char *, ...);
 #ifndef __FRAMAC__
 #pragma varargck argpos sysfatal 1
@@ -738,8 +799,8 @@ enum {
   RFNOMNT = (1 << 14)
 };
 
-#ifndef _QID_TYPEDEF_
-#define _QID_TYPEDEF_
+#ifndef _QID_DEFINED_
+#define _QID_DEFINED_
 typedef struct Qid {
   uvlong path;
   ulong vers;
@@ -747,8 +808,8 @@ typedef struct Qid {
 } Qid;
 #endif
 
-#ifndef _DIR_TYPEDEF_
-#define _DIR_TYPEDEF_
+#ifndef _DIR_DEFINED_
+#define _DIR_DEFINED_
 typedef struct Dir {
   /* system-modified data */
   ushort type; /* server type */
@@ -766,8 +827,8 @@ typedef struct Dir {
 } Dir;
 #endif
 
-#ifndef _WAITMSG_TYPEDEF_
-#define _WAITMSG_TYPEDEF_
+#ifndef _WAITMSG_DEFINED_
+#define _WAITMSG_DEFINED_
 typedef struct Waitmsg {
   int pid;       /* of loved one */
   ulong time[3]; /* of loved one & descendants */

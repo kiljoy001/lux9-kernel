@@ -18,6 +18,8 @@
 #include "pageown.h"
 #include "borrowchecker.h"
 
+extern void uartputs(char *, int);
+
 /* Dummy pageownpool for compatibility - not actually used */
 struct PageOwnPool pageownpool;
 
@@ -62,12 +64,27 @@ enum PageOwnError
 pageown_acquire(Proc *p, uintptr pa, u64int vaddr)
 {
 	enum BorrowError err;
+	static int own_acquire_count;
+
+	(void)vaddr; /* Key is now PA-based */
 
 	if(p == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	/* Use vaddr (HHDM VA) as key - this is what kernel uses to access page */
-	err = borrow_acquire(p, vaddr);
+	/* Standardize on Physical Address (pa) as the Borrow Checker key */
+	err = borrow_acquire(p, pa);
+	if(boot_verbose) {
+		own_acquire_count++;
+		if(err != BORROW_OK || own_acquire_count <= 20 || own_acquire_count % 200 == 0) {
+			print("OWN-ACQ: pid=%ld pa=%#p err=%d\n",
+				p->pid, pa, err);
+			if(own_acquire_count <= 5) {
+				char buf[64];
+				int n = snprint(buf, sizeof(buf), "OWN-ACQ: pa=%#p\n", pa);
+				uartputs(buf, n);
+			}
+		}
+	}
 	return borrow_to_pageown_error(err);
 }
 
@@ -79,13 +96,25 @@ enum PageOwnError
 pageown_release(Proc *p, uintptr pa)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
+	static int own_release_count;
 
 	if(p == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_release(p, hhdm_va);
+	/* Standardize on Physical Address (pa) as the Borrow Checker key */
+	err = borrow_release(p, pa);
+	if(boot_verbose) {
+		own_release_count++;
+		if(err != BORROW_OK || own_release_count <= 20 || own_release_count % 200 == 0) {
+			print("OWN-REL: pid=%ld pa=%#p err=%d\n",
+				p->pid, pa, err);
+			if(own_release_count <= 5) {
+				char buf[64];
+				int n = snprint(buf, sizeof(buf), "OWN-REL: pa=%#p\n", pa);
+				uartputs(buf, n);
+			}
+		}
+	}
 	return borrow_to_pageown_error(err);
 }
 
@@ -97,15 +126,14 @@ enum PageOwnError
 pageown_transfer(Proc *from, Proc *to, uintptr pa, u64int new_vaddr)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
 
-	(void)new_vaddr;  /* Not needed */
+	(void)new_vaddr;  /* Not needed, key is PA-based */
 
 	if(from == nil || to == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_transfer(from, to, hhdm_va);
+	/* Standardize on Physical Address (pa) as the Borrow Checker key */
+	err = borrow_transfer(from, to, pa);
 	return borrow_to_pageown_error(err);
 }
 
@@ -117,15 +145,13 @@ enum PageOwnError
 pageown_borrow_shared(Proc *owner, Proc *borrower, uintptr pa, u64int vaddr)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
 
-	(void)vaddr;  /* Not needed - we calculate it from pa */
+	(void)vaddr;  /* Standardize on PA-based keys */
 
 	if(owner == nil || borrower == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_borrow_shared(owner, borrower, hhdm_va);
+	err = borrow_borrow_shared(owner, borrower, pa);
 	return borrow_to_pageown_error(err);
 }
 
@@ -137,15 +163,13 @@ enum PageOwnError
 pageown_borrow_mut(Proc *owner, Proc *borrower, uintptr pa, u64int vaddr)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
 
-	(void)vaddr;  /* Not needed - we calculate it from pa */
+	(void)vaddr;  /* Standardize on PA-based keys */
 
 	if(owner == nil || borrower == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_borrow_mut(owner, borrower, hhdm_va);
+	err = borrow_borrow_mut(owner, borrower, pa);
 	return borrow_to_pageown_error(err);
 }
 
@@ -157,13 +181,11 @@ enum PageOwnError
 pageown_return_shared(Proc *borrower, uintptr pa)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
 
 	if(borrower == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_return_shared(borrower, hhdm_va);
+	err = borrow_return_shared(borrower, pa);
 	return borrow_to_pageown_error(err);
 }
 
@@ -175,13 +197,11 @@ enum PageOwnError
 pageown_return_mut(Proc *borrower, uintptr pa)
 {
 	enum BorrowError err;
-	uintptr hhdm_va;
 
 	if(borrower == nil || (pa & (BY2PG-1)) != 0)
 		return POWN_EINVAL;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	err = borrow_return_mut(borrower, hhdm_va);
+	err = borrow_return_mut(borrower, pa);
 	return borrow_to_pageown_error(err);
 }
 
@@ -192,38 +212,41 @@ pageown_return_mut(Proc *borrower, uintptr pa)
 int
 pageown_is_owned(uintptr pa)
 {
-	uintptr hhdm_va;
-
 	if((pa & (BY2PG-1)) != 0)
 		return 0;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	return borrow_is_owned(hhdm_va);
+	return borrow_is_owned(pa);
 }
 
 Proc*
 pageown_get_owner(uintptr pa)
 {
-	uintptr hhdm_va;
+	Proc *owner;
+	static int own_owner_count;
 
 	if((pa & (BY2PG-1)) != 0)
 		return nil;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	return borrow_get_owner(hhdm_va);
+	owner = borrow_get_owner(pa);
+	if(boot_verbose) {
+		own_owner_count++;
+		if(owner == nil || owner->pid < 0 || own_owner_count <= 20 || own_owner_count % 500 == 0) {
+			print("OWN-OWN: pa=%#p hhdm=%#p owner=%p pid=%d\n",
+				pa, (uintptr)kaddr(pa), owner, owner ? owner->pid : -1);
+		}
+	}
+	return owner;
 }
 
 enum PageOwnerState
 pageown_get_state(uintptr pa)
 {
 	enum BorrowState state;
-	uintptr hhdm_va;
 
 	if((pa & (BY2PG-1)) != 0)
 		return POWN_FREE;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	state = borrow_get_state(hhdm_va);
+	state = borrow_get_state(pa);
 
 	/* Map BorrowState to PageOwnerState */
 	switch(state) {
@@ -238,25 +261,19 @@ pageown_get_state(uintptr pa)
 int
 pageown_can_borrow_shared(uintptr pa)
 {
-	uintptr hhdm_va;
-
 	if((pa & (BY2PG-1)) != 0)
 		return 0;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	return borrow_can_borrow_shared(hhdm_va);
+	return borrow_can_borrow_shared(pa);
 }
 
 int
 pageown_can_borrow_mut(uintptr pa)
 {
-	uintptr hhdm_va;
-
 	if((pa & (BY2PG-1)) != 0)
 		return 0;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	return borrow_can_borrow_mut(hhdm_va);
+	return borrow_can_borrow_mut(pa);
 }
 
 /*
@@ -283,15 +300,12 @@ pageown_stats(void)
 void
 pageown_dump_page(uintptr pa)
 {
-	uintptr hhdm_va;
-
 	if((pa & (BY2PG-1)) != 0) {
 		print("pageown_dump_page: invalid pa=%#p (not page aligned)\n", pa);
 		return;
 	}
 
-	hhdm_va = (uintptr)kaddr(pa);
-	borrow_dump_resource(hhdm_va);
+	borrow_dump_resource(pa);
 }
 
 /* --------------------------------------------------------------------
@@ -306,13 +320,11 @@ pa2owner(uintptr pa)
 	static struct PageOwner buf[32];  /* Support up to 32 CPUs */
 	int cpu;
 	struct PageOwner *p;
-	uintptr hhdm_va;
 
 	if((pa & (BY2PG-1)) != 0)
 		return nil;
 
-	hhdm_va = (uintptr)kaddr(pa);
-	if(!borrow_get_owner_snapshot(hhdm_va, &snapshot))
+	if(!borrow_get_owner_snapshot(pa, &snapshot))
 		return nil;
 
 	cpu = 0;

@@ -164,6 +164,11 @@ static ProcTransition fsm_transitions[] = {
     /* Break (error) - from any running state */
     {PS_Running, EV_BREAK, PS_Broken, nil},
 
+    /* Broken process cleanup - allow graceful exit after crash */
+    {PS_Broken, EV_EXIT, PS_Moribund, nil},
+    /* Broken process: ignore spurious EV_READY (stays broken, won't schedule) */
+    {PS_Broken, EV_READY, PS_Broken, nil},
+
     /* Sentinel */
     {-1, -1, -1, nil}};
 

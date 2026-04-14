@@ -2,6 +2,7 @@
 #include "fns.h"
 #include "lock_borrow.h"
 #include "mem.h"
+#include "monocypher.h"
 #include "portlib.h"
 #include "u.h"
 #include <error.h>
@@ -13,7 +14,9 @@ extern void (*hwrandbuf)(void *, ulong);
 
 static struct {
   QLock qlock;
-  Chachastate chacha;
+  uchar key[32];
+  uchar nonce[12];
+  u32int counter;
 } *rs;
 static int random_initialized;
 static LockDagNode lockdag_random_lrand = LOCKDAG_NODE("random-lrand");
@@ -28,6 +31,26 @@ struct Seedbuf {
 
   SHA2_512state ds;
 };
+
+static u32int
+load32le(const uchar *p)
+{
+  return (u32int)p[0] | ((u32int)p[1] << 8) | ((u32int)p[2] << 16) |
+         ((u32int)p[3] << 24);
+}
+
+static void
+randomrekey_locked(uchar key[32], uchar nonce[12], u32int counter)
+{
+  uchar rekey[44];
+  u32int nextctr;
+
+  nextctr = crypto_chacha20_ietf(rekey, nil, sizeof(rekey), key, nonce, counter);
+  memmove(rs->key, rekey, sizeof(rs->key));
+  memmove(rs->nonce, rekey + sizeof(rs->key), sizeof(rs->nonce));
+  rs->counter = nextctr != 0 ? nextctr : 1;
+  memset(rekey, 0, sizeof(rekey));
+}
 
 /*@
   @ requires  == \null || \valid();
@@ -55,6 +78,7 @@ static void randomsample(Ureg *, Timer *t) {
   @*/
 static void randomseed(void *) {
   Seedbuf *s;
+  uchar seed[64];
 
   s = secalloc(sizeof(Seedbuf));
 
@@ -77,10 +101,15 @@ static void randomseed(void *) {
   }
   timerdel(&up->timer);
 
-  sha2_512(s->buf, sizeof(s->buf), s->buf, &s->ds);
-  setupChachastate(&rs->chacha, s->buf, 32, s->buf + 32, 12, 20);
+  crypto_blake2b(seed, sizeof(seed), s->buf, sizeof(s->buf));
+  memmove(rs->key, seed, sizeof(rs->key));
+  memmove(rs->nonce, seed + sizeof(rs->key), sizeof(rs->nonce));
+  rs->counter = load32le(seed + sizeof(rs->key) + sizeof(rs->nonce));
+  if (rs->counter == 0)
+    rs->counter = 1;
   qunlock(&rs->qlock);
 
+  memset(seed, 0, sizeof(seed));
   secfree(s);
 
   pexit("", 1);
@@ -105,28 +134,34 @@ void randominit(void) {
   @ assigns \nothing;
   @*/
 ulong randomread(void *p, ulong n) {
-  Chachastate c;
+  uchar key[32];
+  uchar nonce[12];
+  u32int counter;
+  uchar *buf;
 
-  if (n == 0)
+  if (p == nil || n == 0)
     return 0;
+  buf = p;
+
+  if (rs == nil) {
+    extern void chacha20_csprng_fill(u8int * buf, ulong len);
+    chacha20_csprng_fill(buf, n);
+    return n;
+  }
 
   if (hwrandbuf != nil)
     (*hwrandbuf)(p, n);
 
-  /* copy chacha state, rekey and increment iv */
   qlock(&rs->qlock);
-  c = rs->chacha;
-  chacha_encrypt((uchar *)&rs->chacha.input[4], 32, &c);
-  if (++rs->chacha.input[13] == 0)
-    if (++rs->chacha.input[14] == 0)
-      ++rs->chacha.input[15];
+  memmove(key, rs->key, sizeof(key));
+  memmove(nonce, rs->nonce, sizeof(nonce));
+  counter = rs->counter;
+  randomrekey_locked(key, nonce, counter);
   qunlock(&rs->qlock);
 
-  /* encrypt the buffer, can fault */
-  chacha_encrypt((uchar *)p, n, &c);
-
-  /* prevent state leakage */
-  memset(&c, 0, sizeof(c));
+  crypto_chacha20_ietf(buf, hwrandbuf != nil ? buf : nil, n, key, nonce, counter);
+  memset(key, 0, sizeof(key));
+  memset(nonce, 0, sizeof(nonce));
 
   return n;
 }

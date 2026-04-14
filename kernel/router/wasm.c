@@ -60,11 +60,12 @@
   @ terminates \true;
   @*/
 int router_dispatch_wasm(Proc *p, Fcall *t, Fcall *r) {
-  print("router_wasm: dispatching scallnr=%d\n", t->scallnr);
-
   if (waserror()) {
     r->type = Rerror;
-    snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+    if (up != nil)
+      r->ename = up->errstr;
+    else
+      r->ename = "wasm dispatch failed";
     return -1;
   }
 

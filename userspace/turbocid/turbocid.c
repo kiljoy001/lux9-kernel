@@ -77,7 +77,21 @@ struct P9Control {
   uint req_tail;
   uint rep_head;
   uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
+
+static void ring_doorbell(volatile struct P9Control *ctl) {
+  ctl->req_seq += 1;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
+  ctl->doorbell = 1;
+}
 
 static volatile uchar *exchange;
 static volatile struct P9Control *ctl;
@@ -203,7 +217,7 @@ static int do_write(int fd, const void *buf, int count) {
   pos += 4;
   memcpy(req + pos, buf, count);
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("push %%rbx; syscall; pop %%rbx" ::
                        : "rax", "rcx", "r11", "memory");
 

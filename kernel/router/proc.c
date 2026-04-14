@@ -1,17 +1,399 @@
 #include "../include/proc_packet.h"
 #include "router.h"
+#include <error.h>
 
 /*
  * Process control server: /proc/
  * Integrates with our FSM!
  */
-/* Proc file types for routing */
-#define PROC_ROOT 0
-#define PROC_CTL 1
-#define PROC_WAIT 2
-#define PROC_STATUS 3
-#define PROC_NS 4
-#define PROC_SEGMENT 5
+enum { PROC9_MAX_FIDS = 1024 };
+
+typedef struct Proc9Fid {
+  Proc *owner;
+  ulong owner_pid;
+  u32int fid;
+  char *path;
+  Qid qid;
+  uchar open_mode;
+  uchar inuse;
+} Proc9Fid;
+
+static Proc9Fid proc9fids[PROC9_MAX_FIDS];
+static Lock proc9fidlk;
+
+static int proc9_raw_attach_match(const char *path) {
+  return path != nil && strncmp(path, "#p", 2) == 0;
+}
+
+static int proc9_path_match(const char *path) {
+  if (path == nil)
+    return 0;
+  if (strncmp(path, "/proc", 5) != 0)
+    return 0;
+  return path[5] == 0 || path[5] == '/';
+}
+
+static int proc9_bootstrap_attach_match(const char *aname) {
+  if (aname == nil || aname[0] == 0)
+    return 1;
+  if (proc9_path_match(aname))
+    return 1;
+  if (aname[0] == '/')
+    return 0;
+  return 1;
+}
+
+static char *proc9_dupstr(const char *s) {
+  ulong len;
+  char *dup;
+
+  if (s == nil)
+    return nil;
+  len = strlen(s) + 1;
+  dup = malloc(len);
+  if (dup == nil)
+    return nil;
+  memmove(dup, s, len);
+  return dup;
+}
+
+static char *proc9_normalize_attach_path(const char *aname) {
+  char *path;
+  ulong len;
+
+  if (aname == nil || aname[0] == 0)
+    return proc9_dupstr("/proc");
+
+  if (strncmp(aname, "#p", 2) == 0) {
+    len = strlen(aname + 2) + strlen("/proc") + 1;
+    path = malloc(len);
+    if (path == nil)
+      return nil;
+    snprint(path, len, "/proc%s", aname + 2);
+  } else if (proc9_path_match(aname)) {
+    path = proc9_dupstr(aname);
+  } else if (aname[0] == '/') {
+    return nil;
+  } else {
+    len = strlen(aname) + strlen("/proc/") + 1;
+    path = malloc(len);
+    if (path == nil)
+      return nil;
+    snprint(path, len, "/proc/%s", aname);
+  }
+
+  if (path != nil)
+    cleanname(path);
+  if (!proc9_path_match(path)) {
+    free(path);
+    return nil;
+  }
+  return path;
+}
+
+static char *proc9_walk_path(const char *base, const char *elem) {
+  char *path;
+  ulong len;
+
+  if (base == nil || elem == nil)
+    return nil;
+  if (elem[0] == 0)
+    return nil;
+
+  len = strlen(base) + 1 + strlen(elem) + 1;
+  path = malloc(len);
+  if (path == nil)
+    return nil;
+  snprint(path, len, "%s/%s", base, elem);
+  cleanname(path);
+  if (!proc9_path_match(path)) {
+    free(path);
+    return nil;
+  }
+  return path;
+}
+
+static char *proc9_device_path(const char *path) {
+  char *devpath;
+  ulong len;
+
+  if (!proc9_path_match(path))
+    return nil;
+  if (strcmp(path, "/proc") == 0)
+    return proc9_dupstr("#p");
+
+  len = strlen(path) - strlen("/proc") + strlen("#p") + 1;
+  devpath = malloc(len);
+  if (devpath == nil)
+    return nil;
+  snprint(devpath, len, "#p%s", path + strlen("/proc"));
+  return devpath;
+}
+
+static Proc9Fid *proc9fid_lookup(Proc *owner, u32int fid) {
+  for (int i = 0; i < PROC9_MAX_FIDS; i++) {
+    if (!proc9fids[i].inuse)
+      continue;
+    if (proc9fids[i].owner != owner || proc9fids[i].owner_pid != owner->pid)
+      continue;
+    if (proc9fids[i].fid == fid)
+      return &proc9fids[i];
+  }
+  return nil;
+}
+
+static int proc9fid_inuse_locked(Proc *owner, u32int fid) {
+  return proc9fid_lookup(owner, fid) != nil;
+}
+
+static int proc9fid_set(Proc *owner, u32int fid, const char *path, Qid qid) {
+  Proc9Fid *slot = nil;
+  char *dup = nil;
+
+  if (owner == nil || path == nil)
+    return -1;
+
+  dup = proc9_dupstr(path);
+  if (dup == nil)
+    return -1;
+
+  lock(&proc9fidlk);
+  slot = proc9fid_lookup(owner, fid);
+  if (slot == nil) {
+    for (int i = 0; i < PROC9_MAX_FIDS; i++) {
+      if (!proc9fids[i].inuse) {
+        slot = &proc9fids[i];
+        break;
+      }
+    }
+  }
+  if (slot == nil) {
+    unlock(&proc9fidlk);
+    free(dup);
+    return -1;
+  }
+
+  if (slot->path != nil)
+    free(slot->path);
+  slot->owner = owner;
+  slot->owner_pid = owner->pid;
+  slot->fid = fid;
+  slot->path = dup;
+  slot->qid = qid;
+  slot->open_mode = 0;
+  slot->inuse = 1;
+  unlock(&proc9fidlk);
+  return 0;
+}
+
+static void proc9fid_clunk(Proc *owner, u32int fid) {
+  Proc9Fid *slot;
+
+  if (owner == nil)
+    return;
+
+  lock(&proc9fidlk);
+  slot = proc9fid_lookup(owner, fid);
+  if (slot != nil) {
+    if (slot->path != nil)
+      free(slot->path);
+    memset(slot, 0, sizeof(*slot));
+  }
+  unlock(&proc9fidlk);
+}
+
+static void proc9fid_clunk_all(Proc *owner) {
+  if (owner == nil)
+    return;
+
+  lock(&proc9fidlk);
+  for (int i = 0; i < PROC9_MAX_FIDS; i++) {
+    if (!proc9fids[i].inuse)
+      continue;
+    if (proc9fids[i].owner != owner || proc9fids[i].owner_pid != owner->pid)
+      continue;
+    if (proc9fids[i].path != nil)
+      free(proc9fids[i].path);
+    memset(&proc9fids[i], 0, sizeof(proc9fids[i]));
+  }
+  unlock(&proc9fidlk);
+}
+
+static int proc9_lookup_qid(const char *path, Qid *qid) {
+  Chan *c;
+  char *devpath;
+  int ok;
+
+  devpath = proc9_device_path(path);
+  if (devpath == nil)
+    return -1;
+
+  c = nil;
+  ok = -1;
+  if (waserror()) {
+    if (c != nil)
+      cclose(c);
+    free(devpath);
+    return -1;
+  }
+
+  c = namec(devpath, Aaccess, 0, 0);
+  if (qid != nil)
+    *qid = c->qid;
+  cclose(c);
+  ok = 0;
+
+  poperror();
+  free(devpath);
+  return ok;
+}
+
+static int proc9_open_path(const char *path, int mode, Qid *qid, long *iounit) {
+  Chan *c;
+  char *devpath;
+  int ok;
+
+  devpath = proc9_device_path(path);
+  if (devpath == nil)
+    return -1;
+
+  c = nil;
+  ok = -1;
+  if (waserror()) {
+    if (c != nil)
+      cclose(c);
+    free(devpath);
+    return -1;
+  }
+
+  openmode((ulong)mode);
+  c = namec(devpath, Aopen, mode & ~OCEXEC, 0);
+  if (qid != nil)
+    *qid = c->qid;
+  if (iounit != nil)
+    *iounit = c->iounit;
+  cclose(c);
+  ok = 0;
+
+  poperror();
+  free(devpath);
+  return ok;
+}
+
+static long proc9_read_path(const char *path, void *buf, long n, vlong off) {
+  Chan *c;
+  char *devpath;
+  long nr;
+
+  devpath = proc9_device_path(path);
+  if (devpath == nil)
+    return -1;
+
+  c = nil;
+  nr = -1;
+  if (waserror()) {
+    if (c != nil)
+      cclose(c);
+    free(devpath);
+    return -1;
+  }
+
+  c = namec(devpath, Aopen, OREAD, 0);
+  nr = devtab[devno(c->type, 0)]->read(c, buf, n, off);
+  cclose(c);
+
+  poperror();
+  free(devpath);
+  return nr;
+}
+
+static long proc9_write_path(const char *path, void *buf, long n, vlong off) {
+  Chan *c;
+  char *devpath;
+  long nw;
+
+  devpath = proc9_device_path(path);
+  if (devpath == nil)
+    return -1;
+
+  c = nil;
+  nw = -1;
+  if (waserror()) {
+    if (c != nil)
+      cclose(c);
+    free(devpath);
+    return -1;
+  }
+
+  c = namec(devpath, Aopen, OWRITE, 0);
+  nw = devtab[devno(c->type, 0)]->write(c, buf, n, off);
+  cclose(c);
+
+  poperror();
+  free(devpath);
+  return nw;
+}
+
+static long proc9_stat_path(const char *path, uchar *buf, long maxn) {
+  Chan *c;
+  char *devpath;
+  long n;
+
+  devpath = proc9_device_path(path);
+  if (devpath == nil)
+    return -1;
+
+  c = nil;
+  n = -1;
+  if (waserror()) {
+    if (c != nil)
+      cclose(c);
+    free(devpath);
+    return -1;
+  }
+
+  c = namec(devpath, Aaccess, 0, 0);
+  n = devtab[devno(c->type, 0)]->stat(c, buf, maxn);
+  cclose(c);
+
+  poperror();
+  free(devpath);
+  return n;
+}
+
+int proc_9p_can_handle(Proc *caller, Fcall *t) {
+  int ok;
+
+  if (caller == nil || t == nil)
+    return 0;
+
+  switch (t->type) {
+  case Tattach:
+    if (proc9_raw_attach_match(t->aname))
+      return 1;
+    if (p9_ns_root_available("/proc"))
+      return 0;
+    return proc9_bootstrap_attach_match(t->aname);
+  case Twalk:
+  case Topen:
+  case Tread:
+  case Twrite:
+  case Tclunk:
+  case Tcreate:
+  case Tremove:
+  case Tstat:
+  case Twstat:
+  case Tflush:
+    lock(&proc9fidlk);
+    ok = proc9fid_lookup(caller, t->fid) != nil;
+    unlock(&proc9fidlk);
+    return ok;
+  default:
+    return 0;
+  }
+}
+
+void proc_9p_cleanup(Proc *caller) { proc9fid_clunk_all(caller); }
 
 /*@
   @ requires \valid(caller) && \valid(t) && \valid(r);
@@ -20,33 +402,259 @@
   @ ensures \result == 0 || \result == -1;
   @*/
 int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r) {
-  Proc *target = caller; /* Default to self */
-  int type = 0;
+  Proc9Fid *fidstate;
+  char *path;
+  char *next;
+  Qid qid;
+  long iounit;
+  long n;
+  char *data;
+  uchar *statbuf;
+  int walked;
 
   r->tag = t->tag;
 
-  /* Retrieve file type from FID (stored in Qid.vers during Walk) */
-  if (t->type != Tattach) {
-    /* Need helper to get subtype */
-    // type = get_fid_subtype((int)t->fid); // Not available here yet, need to
-    // export or reimplement For now stub
-    type = PROC_ROOT;
-  }
-
-  /* Stub implementation for verification purposes */
-  /* Real implementation needs Fgrp access which is in core/doorbell context */
-
   switch (t->type) {
   case Tattach:
+    lock(&proc9fidlk);
+    walked = proc9fid_inuse_locked(caller, t->fid);
+    unlock(&proc9fidlk);
+    if (walked) {
+      r->type = Rerror;
+      r->ename = Einuse;
+      return -1;
+    }
+    path = proc9_normalize_attach_path(t->aname);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = "bad /proc attach path";
+      return -1;
+    }
+    if (proc9_lookup_qid(path, &qid) < 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = Enonexist;
+      return -1;
+    }
+    if (proc9fid_set(caller, t->fid, path, qid) < 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    free(path);
     r->type = Rattach;
-    r->qid.type = QTDIR;
-    r->qid.path = PROC_ROOT;
-    r->qid.vers = PROC_ROOT;
+    r->qid = qid;
     return 0;
 
+  case Twalk:
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate == nil) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Ebadarg;
+      return -1;
+    }
+    if (t->newfid != t->fid && proc9fid_inuse_locked(caller, t->newfid)) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Einuse;
+      return -1;
+    }
+    path = proc9_dupstr(fidstate->path);
+    qid = fidstate->qid;
+    unlock(&proc9fidlk);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+
+    r->type = Rwalk;
+    if (t->nwname == 0) {
+      if (proc9fid_set(caller, t->newfid, path, qid) < 0) {
+        free(path);
+        r->type = Rerror;
+        r->ename = Enomem;
+        return -1;
+      }
+      free(path);
+      r->nwqid = 0;
+      return 0;
+    }
+
+    walked = 0;
+    for (int i = 0; i < t->nwname; i++) {
+      next = proc9_walk_path(path, t->wname[i]);
+      if (next == nil)
+        break;
+      if (proc9_lookup_qid(next, &qid) < 0) {
+        free(next);
+        break;
+      }
+      free(path);
+      path = next;
+      r->wqid[walked++] = qid;
+    }
+
+    if (walked == 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = Enonexist;
+      return -1;
+    }
+    if (proc9fid_set(caller, t->newfid, path, qid) < 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    free(path);
+    r->nwqid = walked;
+    return 0;
+
+  case Topen:
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate == nil) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Ebadarg;
+      return -1;
+    }
+    path = proc9_dupstr(fidstate->path);
+    unlock(&proc9fidlk);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    if (proc9_open_path(path, t->mode, &qid, &iounit) < 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+    if (proc9fid_set(caller, t->fid, path, qid) < 0) {
+      free(path);
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    free(path);
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate != nil)
+      fidstate->open_mode = t->mode;
+    unlock(&proc9fidlk);
+    r->type = Ropen;
+    r->qid = qid;
+    r->iounit = iounit;
+    return 0;
+
+  case Tread:
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate == nil) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Ebadarg;
+      return -1;
+    }
+    path = proc9_dupstr(fidstate->path);
+    unlock(&proc9fidlk);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    data = (char *)caller->p9page + P9_MSG_OFFSET + 11;
+    if (t->count > P9_REPLY_SIZE - 11)
+      t->count = P9_REPLY_SIZE - 11;
+    n = proc9_read_path(path, data, (long)t->count, t->offset);
+    free(path);
+    if (n < 0) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+    r->type = Rread;
+    r->data = data;
+    r->count = n;
+    return 0;
+
+  case Twrite:
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate == nil) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Ebadarg;
+      return -1;
+    }
+    path = proc9_dupstr(fidstate->path);
+    unlock(&proc9fidlk);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    n = proc9_write_path(path, t->data, (long)t->count, t->offset);
+    free(path);
+    if (n < 0) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+    r->type = Rwrite;
+    r->count = n;
+    return 0;
+
+  case Tstat:
+    lock(&proc9fidlk);
+    fidstate = proc9fid_lookup(caller, t->fid);
+    if (fidstate == nil) {
+      unlock(&proc9fidlk);
+      r->type = Rerror;
+      r->ename = Ebadarg;
+      return -1;
+    }
+    path = proc9_dupstr(fidstate->path);
+    unlock(&proc9fidlk);
+    if (path == nil) {
+      r->type = Rerror;
+      r->ename = Enomem;
+      return -1;
+    }
+    statbuf = (uchar *)caller->p9page + P9_MSG_OFFSET + 9;
+    n = proc9_stat_path(path, statbuf, P9_REPLY_SIZE - 9);
+    free(path);
+    if (n < 0) {
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+    r->type = Rstat;
+    r->nstat = n;
+    r->stat = statbuf;
+    return 0;
+
+  case Tclunk:
+    proc9fid_clunk(caller, t->fid);
+    r->type = Rclunk;
+    return 0;
+
+  case Tflush:
+    r->type = Rflush;
+    return 0;
+
+  case Tremove:
+  case Tcreate:
+  case Twstat:
   default:
     r->type = Rerror;
-    r->ename = "not implemented";
+    r->ename = "operation not supported on /proc";
     return -1;
   }
 }
@@ -206,7 +814,11 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     case SYS_RFORK: {
       extern uintptr sysrfork(void *list_void);
 
-      print("router_proc: SYS_RFORK case entered, kp=%d\n", up ? up->kp : -1);
+      Chan *pm_chan = srv_clone_chan("pm");
+      if (pm_chan != nil) {
+        cclose(pm_chan);
+        print("router_proc: userspace PM present; using kernel rfork fallback\n");
+      }
 
       /* Two-Level Spawn Capability Check (userspace only).
        * Level 1: Namespace (Pgrp) limit - shared by all procs in namespace
@@ -271,8 +883,6 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       }
       ulong flags = GBIT32(ptr);
 
-      print("router_proc: Tsyscall SYS_RFORK flags=0x%lx\n", flags);
-
       ulong args[1] = {flags};
       uintptr ret;
       if (waserror()) {
@@ -282,7 +892,6 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
         return -1;
       }
       ret = sysrfork(args);
-      print("DEBUG: sysrfork returned ret=%#p\n", ret);
       poperror();
 
       r->type = Rsyscall;
@@ -325,6 +934,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
 
     case SYS_EXIT: {
       extern void pexit(char *, int);
+      static int exit_trace_count;
       /* Format: [status s] ? Or [status 4]?
        * sys_exit(char *msg). So treat as string.
        */
@@ -339,7 +949,14 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
         }
       }
 
-      print("router_proc: Tsyscall SYS_EXIT '%s'\n", ename ? ename : "");
+      if (exit_trace_count < 50) {
+        char trace_buf[160];
+        exit_trace_count++;
+        snprint(trace_buf, sizeof(trace_buf),
+                "router_proc: SYS_EXIT pid=%d msg='%s'\n",
+                up ? up->pid : -1, ename ? ename : "");
+        uartputs(trace_buf, (int)strlen(trace_buf));
+      }
       pexit(ename ? ename : "", 1);
       return 0;
     }
@@ -350,7 +967,7 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
 
       if (waserror()) {
         r->type = Rerror;
-        snprint(r->ename, sizeof(r->ename), "%s", up->errstr);
+        r->ename = up->errstr;
         return -1;
       }
       ulong pid = pwait(&w);
@@ -399,7 +1016,12 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
        * we map a page that is EXCLUSIVELY owned by this allocation, avoiding
        * accidental clobbering of the pool header in the preceding shared page.
        */
-      uintptr pa = PADDR(handle);
+      /*
+       * Use architecture paddr() directly here.
+       * router.h includes mem.h before fns.h, so PADDR may resolve to the
+       * simple KZERO macro variant, which is incorrect for HHDM addresses.
+       */
+      uintptr pa = paddr(handle);
       uintptr aligned_pa = PGROUND(pa);
       ulong map_size = PGROUND(size);
       uintptr uva = p->pebble.vbase;
@@ -499,6 +1121,37 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
       return 0;
     }
 
+    case SYS_SEGATTACH: {
+      /* Format: [attr 4] [spec ptr 8] [addr ptr 8] [len 8] */
+      extern uintptr segattach(int attr, char *name, uintptr va, uintptr len);
+      if (ptr + 4 + 8 + 8 + 8 > ep) {
+        r->type = Rerror;
+        r->ename = "segattach: bad args";
+        return -1;
+      }
+      int attr = GBIT32(ptr);
+      char *spec = *(char **)(ptr + 4);
+      uintptr va = *(uintptr *)(ptr + 12);
+      uintptr len = *(uintptr *)(ptr + 20);
+
+      if (waserror()) {
+        r->type = Rerror;
+        r->ename = up->errstr;
+        return -1;
+      }
+      char *namedup = validnamedup(spec, 1);
+      uintptr ret = segattach(attr, namedup, va, len);
+      free(namedup);
+      poperror();
+
+      r->type = Rsyscall;
+      r->tag = t->tag;
+      r->retval = ret;
+      r->scount = 0;
+      r->sdata = nil;
+      return 0;
+    }
+
     default:
       r->type = Rerror;
       r->ename = "Proc syscall not found";
@@ -564,56 +1217,6 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
 
     print("router_proc: Tsysfork flags=0x%x -> pid=%d retval=%lld\n", t->flags,
           (int)ret, (long long)r->retval);
-
-    /* vfork synchronization: Block parent if sharing stack (RFMEM) */
-    if (t->flags & RFMEM) {
-      Proc *child = nil;
-      /* Find the child process to set up vforkp */
-      /* Note: sysrfork already returned the pid. We need to find the Proc* */
-      extern Proc *proctab(int);
-      /* extern void procswitch(void); -- Inlined below */
-      for (int i = 0; i < conf.nproc; i++) {
-        Proc *tmp = proctab(i);
-        if (tmp && tmp->pid == (ulong)ret) {
-          child = tmp;
-          break;
-        }
-      }
-      if (child != nil) {
-        child->vforkp = p;
-        proc_event(p, EV_VFORK);
-        print("VFORK[Tsys]: Blocking parent pid %lud until child pid %lud "
-              "execs/exits\n",
-              p->pid, child->pid);
-        int s = splhi();
-
-        /* Inline procswitch logic to avoid FSM panic from sched() and linker
-         * errors */
-        {
-          uvlong timestamp;
-          m->cs++;
-          cycles(&timestamp);
-          up->kentry -= timestamp;
-          up->pcycles += timestamp;
-          procsave(up);
-          if (!setlabel(&up->sched)) {
-            /* CRITICAL: Clear m->proc so scheduler doesn't see us as
-             * running/yielding. This prevents sched() from generating spurious
-             * EV_YIELD. schedinit() usually does this, but might skip it if
-             * restored up/r14 is nil.
-             */
-            m->proc = nil;
-            up = nil;
-            gotolabel(&m->sched);
-          }
-          procrestore(up);
-          cycles(&timestamp);
-          up->kentry += timestamp;
-          up->pcycles -= timestamp;
-        }
-        splx(s);
-      }
-    }
 
     return 0;
   }
@@ -734,16 +1337,140 @@ int router_dispatch_proc(Proc *p, Fcall *t, Fcall *r) {
     sysexec(args);
     poperror();
 
-    /* vfork synchronization: Unblock parent after successful exec */
-    if (p->vforkp != nil) {
-      print("VFORK[Tsys]: Unblocking parent pid %lud after child pid %lud "
-            "execs\n",
-            p->vforkp->pid, p->pid);
-      proc_event(p->vforkp, EV_VFORK_DONE);
-      ready(p->vforkp);
-      p->vforkp = nil;
+    /* Success! Return Rsysexec flag for trap.c:syscall to handle */
+    r->type = Rsysexec;
+    r->tag = t->tag;
+    return 0;
+  }
+
+  if (t->type == Tsysspawn) {
+    /* SECURE spawn - atomic fork+exec without stack data leakage */
+    ulong args[2];
+    uintptr kpage = (uintptr)p->p9page;
+    uintptr kpath = (uintptr)t->path;
+    int i;
+
+    print("router_proc: Tsysspawn entered for '%s'\n", t->path);
+
+    /* Enforce same two-level spawn policy as SYS_RFORK for userspace tasks. */
+    if (up != nil && up->kp == 0) {
+      Pgrp *pg = up->pgrp;
+
+      if (uuid_is_null(&up->spawn_cap)) {
+        print("router_proc: Tsysspawn FAILED - spawn_cap is null\n");
+        r->type = Rerror;
+        snprint(up->errstr, ERRMAX, "no spawn capability");
+        r->ename = up->errstr;
+        return -1;
+      }
+
+      if (pg != nil) {
+        lock(&pg->spawn_lock);
+        if (pg->spawn_count >= pg->spawn_limit) {
+          print("router_proc: Tsysspawn FAILED - namespace limit %d/%d\n",
+                pg->spawn_count, pg->spawn_limit);
+          unlock(&pg->spawn_lock);
+          r->type = Rerror;
+          snprint(up->errstr, ERRMAX, "namespace spawn limit (%d/%d)",
+                  pg->spawn_count, pg->spawn_limit);
+          r->ename = up->errstr;
+          return -1;
+        }
+        {
+          u8int cap_hash[16];
+          uuid_get_pa_hash_bits(&up->spawn_cap, cap_hash);
+          if (memcmp(cap_hash, pg->identity_hash, 6) != 0) {
+            print("router_proc: Tsysspawn FAILED - spawn cap not bound\n");
+            unlock(&pg->spawn_lock);
+            r->type = Rerror;
+            snprint(up->errstr, ERRMAX, "spawn cap not bound to namespace");
+            r->ename = up->errstr;
+            return -1;
+          }
+        }
+        unlock(&pg->spawn_lock);
+      }
+
+      if (up->spawn_children >= up->spawn_max_children) {
+        print("router_proc: Tsysspawn FAILED - process limit %d/%d\n",
+              up->spawn_children, up->spawn_max_children);
+        r->type = Rerror;
+        snprint(up->errstr, ERRMAX, "process spawn limit (%d/%d)",
+                up->spawn_children, up->spawn_max_children);
+        r->ename = up->errstr;
+        return -1;
+      }
     }
 
+    /* Validate path is in exchange page */
+    if (kpath < kpage || kpath >= kpage + P9_PAGE_SIZE) {
+      r->type = Rerror;
+      r->ename = "Tsysspawn: path outside buffer";
+      return -1;
+    }
+    uintptr path_offset = kpath - kpage;
+    uintptr upath = ubase + path_offset;
+
+    ulong arg_count = t->argc;
+    if (arg_count > MAXWELEM)
+      arg_count = MAXWELEM;
+
+    /* Build argv array in exchange page */
+    uchar *msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
+    uint msg_size = GBIT32(msg_buf);
+    uintptr argvp = (uintptr)msg_buf + msg_size;
+    argvp = (argvp + 7) & ~7ULL;
+    if (argvp + (arg_count + 1) * sizeof(uintptr) >
+        (uintptr)p->p9page + P9_MSG_OFFSET + P9_MSG_SIZE) {
+      r->type = Rerror;
+      r->ename = "Tsysspawn: argv out of exchange page";
+      return -1;
+    }
+
+    char **kargvp = (char **)argvp;
+    for (i = 0; i < (int)arg_count; i++) {
+      if (t->args[i] != nil) {
+        uintptr karg = (uintptr)t->args[i];
+        if (karg < kpage || karg >= kpage + P9_PAGE_SIZE) {
+          r->type = Rerror;
+          r->ename = "Tsysspawn: arg outside buffer";
+          return -1;
+        }
+        uintptr arg_offset = karg - kpage;
+        kargvp[i] = (char *)(ubase + arg_offset);
+      } else {
+        kargvp[i] = nil;
+      }
+    }
+    kargvp[arg_count] = nil;
+
+    uintptr uargvp = ubase + P9_MSG_OFFSET + msg_size;
+    uargvp = (uargvp + 7) & ~7ULL;
+
+    args[0] = (ulong)upath;
+    args[1] = (ulong)uargvp;
+
+    print("router_proc: Tsysspawn calling sysspawn('%s', argv=%#p)\n",
+          (char *)upath, (void *)uargvp);
+
+    /* Call secure spawn - creates child with NO parent stack exposure */
+    extern uintptr sysspawn(void *);
+    if (waserror()) {
+      print("router_proc: Tsysspawn ERROR: %s\n", up->errstr);
+      r->type = Rerror;
+      r->ename = up->errstr;
+      return -1;
+    }
+
+    uintptr child_pid = sysspawn((void *)args);
+    poperror();
+
+    print("router_proc: Tsysspawn SUCCESS child_pid=%lld\n", child_pid);
+
+    /* Return child PID to parent */
+    r->type = Rsysspawn;
+    r->tag = t->tag;
+    r->pid = (u32int)child_pid;
     return 0;
   }
 

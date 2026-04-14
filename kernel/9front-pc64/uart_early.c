@@ -1,8 +1,8 @@
-#include "../port/lib.h"
 #include "dat.h"
 #include "fns.h"
 #include "mem.h"
-#include "u.h"
+#include <lib.h>
+#include <u.h>
 
 /* Direct UART hardware access for early boot */
 #define COM1_PORT 0x3F8

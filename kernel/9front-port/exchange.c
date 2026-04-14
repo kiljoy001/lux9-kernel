@@ -123,7 +123,7 @@ BlindLedgerError exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap) {
   }
 
   // --- Release borrow checker ownership ---
-  borrow_err = borrow_release(up, pa);
+  borrow_err = borrow_release(up, (uintptr)kaddr(pa));
   if (borrow_err != BORROW_OK) {
     // Critical consistency failure: Ledger burn succeeded, but borrow release
     // failed. State is now inconsistent between Ledger and Borrow Checker.
@@ -142,7 +142,7 @@ BlindLedgerError exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap) {
   ledger_err = ledger_generate_secret(mint_secret);
   if (ledger_err != BLIND_LEDGER_OK) {
     // Failed to generate secret
-    borrow_acquire(up, pa); // Re-acquire borrow
+    borrow_acquire(up, (uintptr)kaddr(pa)); // Re-acquire borrow
     return BLIND_LEDGER_EFAULT;
   }
 
@@ -176,7 +176,7 @@ BlindLedgerError exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap) {
     // Atomic rollback: burn the newly minted capability and re-acquire borrow
     // ownership
     ledger_burn(out_cap, up); // Burn the newly minted capability
-    borrow_acquire(up, pa); // Re-acquire borrow ownership for original process
+    borrow_acquire(up, (uintptr)kaddr(pa)); // Re-acquire borrow ownership for original process
     // Note: The original capability is now gone, but the borrow checker state
     // is consistent
     return BLIND_LEDGER_ENOMEM;
@@ -283,7 +283,7 @@ int exchange_accept(const ExchangeHandle *handle, uintptr dest_vaddr,
   memmove(&new_cap, &entry.capability, sizeof(UserCapability));
 
   // Acquire borrow checker ownership for the current process
-  borrow_err = borrow_acquire(up, pa);
+  borrow_err = borrow_acquire(up, (uintptr)kaddr(pa));
   if (borrow_err != BORROW_OK) {
     // If acquire fails, unmap the page and rollback ledger_transfer
     u64int *pte = mmuwalk(m->pml4, dest_vaddr, 0, 0);
@@ -360,7 +360,7 @@ int exchange_cancel(const ExchangeHandle *handle) {
   }
 
   // --- Release borrow checker ownership ---
-  borrow_err = borrow_release(pp->owner, pa);
+  borrow_err = borrow_release(pp->owner, (uintptr)kaddr(pa));
   if (borrow_err != BORROW_OK) {
     // Severe inconsistency. Borrow not released.
     panic(
@@ -427,7 +427,7 @@ int exchange_transfer(Proc *from, Proc *to, const ExchangeHandle *handle,
   memmove(&new_cap, &entry.capability, sizeof(UserCapability));
 
   // --- Transfer ownership via borrow checker ---
-  borrow_err = borrow_transfer(from, to, pa);
+  borrow_err = borrow_transfer(from, to, (uintptr)kaddr(pa));
   if (borrow_err != BORROW_OK) {
     // CRITICAL ATOMIC ROLLBACK: Restore original owner in ledger
     BlindLedgerError rollback_err =

@@ -18,6 +18,16 @@ typedef ulong *syscall_va_list;
 
 /* STUB FUNCTIONS - Enabled */
 
+static Proc *exchange_pid_to_proc(int pid) {
+  int slot;
+
+  if (pid <= 0)
+    return nil;
+  slot = procindex((ulong)pid);
+  if (slot < 0)
+    return nil;
+  return proctab(slot);
+}
 
 /*
  * sys_exchange_prepare - Prepare a page for exchange
@@ -34,10 +44,17 @@ typedef ulong *syscall_va_list;
 uintptr sys_exchange_prepare(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   uintptr vaddr;
+  UserCapability *out_cap;
   UserCapability cap;
   BlindLedgerError err;
 
   vaddr = SYSCALL_ARG(list, uintptr);
+  out_cap = SYSCALL_ARG(list, UserCapability *);
+
+  if(out_cap == nil)
+    error("exchange_prepare: null output capability");
+
+  validaddr((uintptr)out_cap, sizeof(UserCapability), 1);
 
   /* Call kernel exchange_prepare function */
   err = exchange_prepare(vaddr, &cap);
@@ -45,8 +62,7 @@ uintptr sys_exchange_prepare(void *list_void) {
   /* Convert BlindLedgerError to syscall return code */
   switch(err) {
   case BLIND_LEDGER_OK:
-    /* Return the capability through userspace (would need to copyout) */
-    /* For now, we'll return success and let higher level handle capability return */
+    memmove(out_cap, &cap, sizeof(UserCapability));
     return 0;
   case BLIND_LEDGER_EINVAL:
     error("exchange_prepare: invalid address");
@@ -144,6 +160,68 @@ uintptr sys_exchange_cancel(void *list_void) {
     break;
   }
   
+  return -1;
+}
+
+/*
+ * sys_exchange_transfer - Transfer a prepared page to another process
+ *
+ * Usage: exchange_transfer(from_pid, to_pid, cap, dest_vaddr)
+ *
+ * The source pid must match the current process unless the caller is a kernel
+ * process.
+ */
+uintptr sys_exchange_transfer(void *list_void) {
+  syscall_va_list list = (syscall_va_list)list_void;
+  int from_pid;
+  int to_pid;
+  UserCapability *cap;
+  uintptr dest_vaddr;
+  Proc *from;
+  Proc *to;
+  int err;
+
+  from_pid = SYSCALL_ARG(list, int);
+  to_pid = SYSCALL_ARG(list, int);
+  cap = SYSCALL_ARG(list, UserCapability *);
+  dest_vaddr = SYSCALL_ARG(list, uintptr);
+
+  if (up == nil)
+    error("exchange_transfer: no current process");
+  if (cap == nil)
+    error("exchange_transfer: null capability");
+  if ((dest_vaddr & (BY2PG - 1)) != 0)
+    error("exchange_transfer: destination not page-aligned");
+
+  validaddr((uintptr)cap, sizeof(UserCapability), 0);
+
+  from = up;
+  if (up->kp == 0 && from_pid != (int)up->pid)
+    error("exchange_transfer: source pid mismatch");
+  if (up->kp != 0)
+    from = exchange_pid_to_proc(from_pid);
+  if (from == nil)
+    error("exchange_transfer: invalid source process");
+
+  to = exchange_pid_to_proc(to_pid);
+  if (to == nil)
+    error("exchange_transfer: invalid target process");
+
+  err = exchange_transfer(from, to, cap, dest_vaddr);
+  switch(err) {
+  case EXCHANGE_OK:
+    return 0;
+  case EXCHANGE_ENOTOWNER:
+    error("exchange_transfer: not owner");
+    break;
+  case EXCHANGE_EBORROWED:
+    error("exchange_transfer: page is borrowed");
+    break;
+  default:
+    error("exchange_transfer: failed");
+    break;
+  }
+
   return -1;
 }
 

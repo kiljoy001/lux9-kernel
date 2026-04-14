@@ -97,7 +97,21 @@ struct P9Control {
   uint32_t req_tail;
   uint32_t rep_head;
   uint32_t rep_tail;
+  uint32_t req_seq;
+  uint32_t rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
+
+static void ring_doorbell(volatile struct P9Control *ctl) {
+  ctl->req_seq += 1;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
+  ctl->doorbell = 1;
+}
 
 static void *lux_memcpy(void *dst, const void *src, size_t n) {
   uint8_t *d = (uint8_t *)dst;
@@ -183,7 +197,7 @@ static int lux_send_tsyscall(uint32_t scallnr, const void *data,
   if (data_len > 0 && data)
     lux_memcpy(page + 19, data, data_len);
 
-  ((volatile struct P9Control *)(page + P9_CONTROL_OFFSET))->doorbell = 1;
+  ring_doorbell((volatile struct P9Control *)(page + P9_CONTROL_OFFSET));
   lux_syscall();
 
   uint32_t rsize = get_u32(page + 0);
@@ -222,7 +236,7 @@ static int lux_send_tsyssleep(uint32_t ms) {
   put_u16(page + 5, 1);
   put_u32(page + 7, ms);
 
-  ((volatile struct P9Control *)(page + P9_CONTROL_OFFSET))->doorbell = 1;
+  ring_doorbell((volatile struct P9Control *)(page + P9_CONTROL_OFFSET));
   lux_syscall();
 
   uint32_t rsize = get_u32(page + 0);
@@ -244,7 +258,7 @@ static int lux_send_tsysfork(uint32_t flags, uint32_t *pid) {
   put_u16(page + 5, 1);
   put_u32(page + 7, flags);
 
-  ((volatile struct P9Control *)(page + P9_CONTROL_OFFSET))->doorbell = 1;
+  ring_doorbell((volatile struct P9Control *)(page + P9_CONTROL_OFFSET));
   lux_syscall();
 
   uint32_t rsize = get_u32(page + 0);

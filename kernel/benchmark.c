@@ -30,10 +30,41 @@ static const char* category_names[] = {
 	"DEVICE_IO"
 };
 
+static void benchresult_init(BenchResult *result)
+{
+	if(result == nil)
+		return;
+	for(int i = 0; i < (int)sizeof(result->name); i++)
+		result->name[i] = 0;
+	result->category = 0;
+	result->start_tsc = 0;
+	result->end_tsc = 0;
+	result->duration_ns = 0;
+	result->iterations = 0;
+	result->min_ns = 0;
+	result->max_ns = 0;
+	result->avg_ns = 0;
+	result->passed = 0;
+}
+
+static void benchstate_init(BenchState *state)
+{
+	if(state == nil)
+		return;
+	state->enabled = 0;
+	for(int i = 0; i < BOOT_STAGE_MAX; i++)
+		state->boot_stages[i] = 0;
+	for(int i = 0; i < 256; i++)
+		benchresult_init(&state->results[i]);
+	state->result_count = 0;
+	state->boot_start_tsc = 0;
+	state->boot_end_tsc = 0;
+}
+
 void
 benchmark_init(void)
 {
-	memset(&benchstate, 0, sizeof(benchstate));
+	benchstate_init(&benchstate);
 	benchstate.enabled = 1;
 	benchstate.result_count = 0;
 }
@@ -87,7 +118,7 @@ benchmark_start(BenchResult *result, const char *name, BenchCategory cat)
 	if(!benchstate.enabled || !result)
 		return;
 
-	memset(result, 0, sizeof(BenchResult));
+	benchresult_init(result);
 	strncpy(result->name, (char*)name, sizeof(result->name)-1);
 	result->name[sizeof(result->name)-1] = '\0';
 	result->category = cat;

@@ -232,7 +232,13 @@ idle:
     hlt
     ret
 
-/* Interrupt control - TODO: need to understand 9front's interrupt model */
+/* Interrupt control.
+ *
+ * These follow the normal Plan 9 spl* contract on amd64:
+ * splhi/spllo return the pre-change RFLAGS snapshot in RAX, and splx() only
+ * restores the IF state from that saved value. Callers are using these as
+ * interrupt masks, not as full flag-save/restore helpers.
+ */
 .global splhi
 splhi:
     pushfq
@@ -245,17 +251,7 @@ spllo:
 _spllo:
     pushfq
     popq %rax
-   testq $0x200, %rax  /* Test Interrupt Flag */
-    jnz _alreadylo      /* If already enabled, skip */
-
-    /* About to enable interrupts */
     sti
-
-    /* Add a nop to ensure we can handle any immediate interrupt */
-    nop
-    nop
-
-_alreadylo:
     ret
 
 .global splx
@@ -435,9 +431,9 @@ gotolabel:
  * --------------------------------------------------------------------- */
 .global touser
 touser:
-    /* NOTE: Do NOT swapgs here! GS must remain pointing to Mach structure
-     * so that interrupts and syscalls from userspace can access it.
-     * The swapgs in syscallentry/trap handlers will handle the swap. */
+    /* We are leaving kernel mode directly, so restore the user GS base now.
+     * syscallentry/_intrcommon will swap back to the per-CPU Mach pointer. */
+    swapgs
 
     /* Save user SP and entry point in registers before setting up IRET frame */
     movq %rdi, %r12             /* r12 = user SP */
@@ -447,7 +443,7 @@ touser:
     	 * We need (from top to bottom): SS, RSP, RFLAGS, CS, RIP */
     	pushq $UD64SEL              /* SS - user data segment 64-bit (0x2B) */
     	pushq %r12                  /* RSP - user stack pointer */
-    	pushq $0x002                /* RFLAGS - interrupts disabled */
+    	pushq $0x202                /* RFLAGS - interrupts enabled */
     	pushq $UESEL                /* CS - user code segment */
     	pushq %r13                  /* RIP - entry point from parameter (was r13) */
     /* Seed user rax/rdi with p9uaddr for _start */
@@ -485,8 +481,7 @@ _debug_syscallentry_msg:
 .global syscallentry
 syscallentry:
     swapgs
-    /* WORKAROUND: KVM/QEMU might lose GS base, use global m pointer */
-    movq m(%rip), %rax          /* m */
+    movq %gs:0, %rax            /* m */
     movq %rbx, 24(%rax)         /* SAVE USER RBX to m->rbx_restore (scratch) */
     movq 16(%rax), %rbx         /* up */
 
@@ -496,15 +491,16 @@ syscallentry:
     testq %rbx, %rbx            /* test sign bit */
     jns halt_up_not_kernel      /* if bit 63 not set, halt with code 0xDEAD0002 */
 
-    movq %rsp, %r13             /* save user stack */
-    movq %rbx, %rsp             /* switch to kernel stack */
+    movq 64(%rbx), %rbx         /* load kernel stack top */
 
     /* DEBUG: Verify RSP actually switched to kernel address */
-    testq %rsp, %rsp            /* test sign bit */
+    testq %rbx, %rbx            /* test sign bit */
     jns halt_rsp_not_kernel     /* if bit 63 not set, halt with code 0xDEAD0003 */
 
+    xchgq %rbx, %rsp            /* switch to kernel stack, keep user SP in RBX */
+
     pushq $UD64SEL              /* ss - user data segment 64-bit */
-    pushq %r13                  /* user sp */
+    pushq %rbx                  /* user sp */
     pushq %r11                  /* rflags */
     pushq $UESEL                /* cs */
     pushq %rcx                  /* user pc - RCX holds return addr from syscall */
@@ -557,13 +553,15 @@ syscallentry:
     leaq 8(%rsp), %rdi          /* &ureg */
     call syscall
 
-    /* Return path: check stack slot ((void**)&ureg)[-1] at (%rsp)
-     * If noteret is set, jump directly to noteret.
-     * Otherwise jump to syscallret (both use IRETQ). */
-    movq (%rsp), %rax           /* load stack slot */
-    testq %rax, %rax            /* check if noteret address is set */
-    jnz noteret                 /* if set, use IRETQ path */
+    /* Return path: check RAX return value from syscall()
+     * If RAX is non-zero, it's the address of a special return handler (like noteret).
+     * This is safer than the stack marker which was overwritten by the call. */
+    testq %rax, %rax            /* check if return handler address is set */
+    jnz jump_to_handler         /* if set, jump to it */
     jmp syscallret              /* normal return via IRETQ */
+
+jump_to_handler:
+    jmp *%rax                   /* Jump to the handler returned by syscall() */
 
 halt_up_null:
     movq $0xDEAD0001, %rax
@@ -686,33 +684,15 @@ _intrcommon:
     movq %r14, 0(%rsp)
     movq %r15, 8(%rsp)
     swapgs
-    /* WORKAROUND: KVM doesn't virtualize GS base - use global m */
-    movq m(%rip), %r15      /* Load m into r15 from global variable */
-
-    /* DEBUG: Check m is valid - COMMENTED OUT TO SEE PANIC
-    testq %r15, %r15
-    jz halt_trap_m_null
-    */
-
+    movq %gs:0, %r15
     movq 16(%r15), %r14     /* Load up into r14 */
-
-    /* DEBUG: Check up is valid - COMMENTED OUT TO TEST
-    testq %r14, %r14
-    jz halt_trap_up_null
-    testq %r14, %r14
-    jns halt_trap_up_not_kernel
-    */
-
-    /* DEBUG: If we get here, m was valid. Store r14 value at a known location */
     movq %r14, intr_frame_r14(%rip)
 
     jmp 2f
 
 1:
-    /* Kernel-mode trap - GS already points at Mach */
-    /* WORKAROUND: KVM doesn't properly virtualize GS base MSR, so use global m */
-    /* TODO: Check if we can use GS on bare metal for better performance */
-    movq m(%rip), %r15      /* Use global m pointer instead of %gs:0 */
+    /* Kernel-mode trap - GS already points at Mach. */
+    movq %gs:0, %r15
     movq 16(%r15), %r14
 
 2:

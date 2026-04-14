@@ -7,6 +7,27 @@
 extern uint convM2S(uchar *, uint, Fcall *);
 extern uint convS2M(Fcall *, uchar *, uint);
 
+static void zero_bytes(uchar *buf, uint n) {
+  if (buf == nil)
+    return;
+  for (uint i = 0; i < n; i++)
+    buf[i] = 0;
+}
+
+static int p9_debug_enabled(Proc *p) {
+  return p != nil && p->pid == 4;
+}
+
+static void dump_ctl_state(const char *label, Proc *p, P9Control *ctl) {
+  if (!p9_debug_enabled(p) || ctl == nil)
+    return;
+  uint status = atomic_load(&ctl->status, ORDER_RELAXED);
+  uint doorbell = atomic_load(&ctl->doorbell, ORDER_RELAXED);
+  print("%s pid=%lud status=%ud doorbell=%ud req=%ud/%ud rep=%ud/%ud seq=%ud/%ud\n",
+        label, p->pid, status, doorbell, ctl->req_head, ctl->req_tail,
+        ctl->rep_head, ctl->rep_tail, ctl->req_seq, ctl->rep_seq);
+}
+
 /*@
   @ requires \valid(p) && p->p9page != \null;
   @ requires \valid_read(reply + (0..reply_size-1));
@@ -23,11 +44,11 @@ void scrub_exchange_page(Proc *p, const uchar *reply, uint reply_size,
   if (p == nil || p->p9page == nil)
     return;
 
-  memset(reply_copy, 0, sizeof(reply_copy));
+  zero_bytes(reply_copy, sizeof(reply_copy));
   if (reply != nil && reply_size > 0 && reply_size <= P9_MSG_SIZE)
     memmove(reply_copy, reply, reply_size);
 
-  memset(p->p9page, 0, P9_PAGE_SIZE);
+  zero_bytes((uchar *)p->p9page, P9_PAGE_SIZE);
 
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
@@ -102,16 +123,21 @@ int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
       return -1;
 
     Fcall t, r;
-    memset(&t, 0, sizeof(t));
+    t = (Fcall){0};
     if (convM2S(slot + P9_RING_HEADER_SIZE, req_size, &t) == 0)
       return -1;
 
-    memset(&r, 0, sizeof(r));
+    r = (Fcall){0};
     /* Need to declare p9_dispatch in router.h or extern here */
     extern int p9_dispatch(Proc * p, Fcall * t, Fcall * r);
-    int disp = p9_dispatch(p, &t, &r);
-    if (disp < 0)
-      r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
+    if (waserror()) {
+      r = (Fcall){.type = Rerror, .tag = t.tag, .ename = up->errstr};
+    } else {
+      int disp = p9_dispatch(p, &t, &r);
+      poperror();
+      if (disp < 0 && r.type != Rerror)
+        r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
+    }
 
     u32int rep_size =
         convS2M(&r, slot + P9_RING_HEADER_SIZE, P9_RING_DATA_SIZE);
@@ -119,15 +145,14 @@ int p9_handle_ring(Proc *p, P9Control *ctl, uchar *msg_buf) {
       return -1;
     PBIT32(slot + 4, rep_size);
     /* Zero out the remainder of the slot data for security */
-    memset(slot + P9_RING_HEADER_SIZE + rep_size, 0,
-           P9_RING_DATA_SIZE - rep_size);
+    zero_bytes(slot + P9_RING_HEADER_SIZE + rep_size,
+               P9_RING_DATA_SIZE - rep_size);
 
     u32int next_rep = (rep_tail + 1) % P9_RING_SLOTS;
     if (next_rep == rep_head)
       return -1;
     rep_tail = next_rep;
     head = (head + 1) % P9_RING_SLOTS;
-    ctl->rep_seq++;
   }
 
   ctl->req_head = head;
@@ -155,6 +180,11 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   uintptr page_pa;
   enum BorrowError berr;
   P9Control ctl_saved;
+  u32int req_seq;
+
+  /* CRITICAL: Set up->dbgreg so sysrfork/sysproc can access ureg for fork */
+  if (ureg != nil)
+    up->dbgreg = ureg;
 
   /* Validate exchange page exists and is coherent with P9SEG */
   if (p->seg[P9SEG] != nil && p->seg[P9SEG]->pseg != nil &&
@@ -166,6 +196,11 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     return -1;
   }
 
+  if (p9_debug_enabled(p)) {
+    print("p9_handle_doorbell: entry pid=%lud p9page=%#p p9seg=%#p\n", p->pid,
+          p->p9page, p->seg[P9SEG]);
+  }
+
   /* Get physical address of the single exchange page */
   if (p->seg[P9SEG] != nil && p->seg[P9SEG]->pseg != nil &&
       p->seg[P9SEG]->pseg->pa != 0)
@@ -173,12 +208,19 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   else
     page_pa = PADDR(p->p9page);
 
+  if (p9_debug_enabled(p)) {
+    print("p9_handle_doorbell: ubase=%#p page_pa=%#p\n",
+          (void *)p9_user_base(p), (void *)page_pa);
+  }
+
   /* Ensure exchange page is mapped into userspace */
   uintptr ubase = p9_user_base(p);
   uintptr *pte = mmuwalk(m->pml4, ubase, 0, 0);
   if (pte == nil || (*pte & PTEVALID) == 0) {
     print("p9_handle_doorbell: remapping exchange page for pid %lud\n", p->pid);
     userpmap(ubase, page_pa, PTEVALID | PTEUSER | PTEWRITE);
+  } else if (p9_debug_enabled(p)) {
+    print("p9_handle_doorbell: ubase pte=%#p pa=%#p\n", *pte, PPN(*pte));
   }
 
   /*
@@ -188,19 +230,42 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
    * Transfer ownership so kernel has exclusive access.
    */
   int s = splhi(); /* Block interrupts during critical ownership transfer */
-  berr = borrow_transfer(p, up, page_pa);
+  uintptr page_key = (uintptr)kaddr(page_pa);
+  if (p9_debug_enabled(p)) {
+    print("p9_handle_doorbell: borrow key pid=%lud pa=%#p key=%#p p9page=%#p "
+          "p9page_phys=%#llx pseg_pa=%#p\n",
+          p ? p->pid : 0, (void *)page_pa, (void *)page_key, p->p9page,
+          (unsigned long long)p->p9page_phys,
+          p && p->seg[P9SEG] && p->seg[P9SEG]->pseg ?
+              (void *)p->seg[P9SEG]->pseg->pa : 0);
+  }
+  if (!borrow_is_owned(page_key)) {
+    if (p9_debug_enabled(p)) {
+      print("p9_handle_doorbell: borrow missing, acquiring for pid=%lud "
+            "key=%#p\n",
+            p ? p->pid : 0, (void *)page_key);
+    }
+    berr = borrow_acquire(p, page_key);
+    if (berr != BORROW_OK && berr != BORROW_EALREADY) {
+      print("p9_handle_doorbell: borrow_acquire failed (berr=%d)\n", berr);
+    }
+  }
+
+  berr = borrow_transfer(p, up, page_key);
   if (berr != BORROW_OK) {
     /* First syscall after boot - process may not have formal ownership yet */
     print("p9_handle_doorbell: borrow_transfer failed (berr=%d), acquiring "
           "directly\n",
           berr);
-    berr = borrow_acquire(up, page_pa);
+    berr = borrow_acquire(up, page_key);
     if (berr != BORROW_OK && berr != BORROW_EALREADY) {
       print("p9_handle_doorbell: FATAL - kernel can't acquire page (berr=%d)\n",
             berr);
       splx(s);
       return -1;
     }
+  } else if (p9_debug_enabled(p)) {
+    print("p9_handle_doorbell: borrow_transfer ok pid=%lud\n", p->pid);
   }
 
   /* Kernel now has exclusive access to the page */
@@ -210,14 +275,31 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
   memmove(&ctl_saved, ctl, sizeof(ctl_saved));
 
-  /* Mark as pending */
-  atomic_store(&ctl->status, P9_STATUS_PENDING, ORDER_RELAXED);
+  dump_ctl_state("p9_handle_doorbell: ctl before", p, ctl);
 
-  /* ALWAYS DUMP REQUEST FOR DEBUG */
-  dump_bytes("p9_handle_doorbell: REQUEST msg[0..31]:", msg_buf, 32);
+  req_seq = ctl->req_seq;
+  if (atomic_load(&ctl->status, ORDER_RELAXED) != P9_STATUS_PENDING ||
+      req_seq == ctl->rep_seq) {
+    if (p9_debug_enabled(p)) {
+      print("p9_handle_doorbell: skip stale req seq=%ud rep=%ud status=%ud "
+            "pid=%lud\n",
+            req_seq, ctl->rep_seq, atomic_load(&ctl->status, ORDER_RELAXED),
+            p ? p->pid : 0);
+    }
+    result = -1;
+    splx(s);
+    goto cleanup_ownership;
+  }
+
+  if (p9_debug_enabled(p))
+    dump_bytes("p9_handle_doorbell: REQUEST msg[0..31]:", msg_buf, 32);
 
   /* Ring-buffer mode for small messages */
   if (ctl->req_head != ctl->req_tail) {
+    if (p9_debug_enabled(p)) {
+      print("p9_handle_doorbell: ring mode req_head=%ud req_tail=%ud\n",
+            ctl->req_head, ctl->req_tail);
+    }
     /* Memory barrier to ensure user writes are visible to kernel */
     __asm__ volatile("mfence" ::: "memory");
     result = p9_handle_ring(p, ctl, msg_buf);
@@ -233,16 +315,18 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     ctl->req_tail = req_tail;
     ctl->rep_head = rep_head;
     ctl->rep_tail = rep_tail;
-    if (result < 0)
+    if (result < 0) {
       atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
-    else
+    } else {
+      ctl->rep_seq = req_seq;
       atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
+    }
     splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
 
   /* Parse request from message buffer */
-  memset(&t, 0, sizeof(t));
+  t = (Fcall){0};
 
   /* Memory barrier to ensure user writes are visible to kernel.
    * User writes to EXCHANGE_PAGE_ADDR, kernel reads via HHDM at p->p9page.
@@ -251,12 +335,15 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
 
   /* Get message size from 9P header (first 4 bytes) */
   msg_size = GBIT32(msg_buf);
+  if (p9_debug_enabled(p))
+    print("p9_handle_doorbell: msg_size=%ud first=%02x\n", msg_size, msg_buf[0]);
   if (msg_size < 7 || msg_size > P9_MSG_SIZE) {
     print("p9_handle_doorbell: invalid message size %ud\n", msg_size);
     print("p9_handle_doorbell: ctl req_head=%ud req_tail=%ud rep_head=%ud "
           "rep_tail=%ud\n",
           ctl->req_head, ctl->req_tail, ctl->rep_head, ctl->rep_tail);
-    dump_bytes("p9_handle_doorbell: BAD SIZE msg[0..31]:", msg_buf, 32);
+    if (p9_debug_enabled(p))
+      dump_bytes("p9_handle_doorbell: BAD SIZE msg[0..31]:", msg_buf, 32);
     atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
     result = -1;
     splx(s); /* Restore interrupts */
@@ -266,16 +353,25 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   if (convM2S(msg_buf, msg_size, &t) == 0) {
     print("p9_handle_doorbell: failed to parse Fcall (first byte: 0x%02x)\n",
           msg_buf[0]);
-    dump_bytes("p9_handle_doorbell: PARSE FAIL msg[0..31]:", msg_buf, 32);
+    if (p9_debug_enabled(p))
+      dump_bytes("p9_handle_doorbell: PARSE FAIL msg[0..31]:", msg_buf, 32);
     splx(s); /* Restore interrupts */
     goto cleanup_ownership;
   }
   splx(s); /* Restore interrupts before long processing. */
 
   /* Dispatch through 9P router */
-  memset(&r, 0, sizeof(r));
+  r = (Fcall){0};
   extern int p9_dispatch(Proc * p, Fcall * t, Fcall * r);
-  result = p9_dispatch(p, &t, &r);
+  if (waserror()) {
+    r = (Fcall){.type = Rerror, .tag = t.tag, .ename = up->errstr};
+    result = -1;
+  } else {
+    result = p9_dispatch(p, &t, &r);
+    poperror();
+    if (result < 0 && r.type != Rerror)
+      r = (Fcall){.type = Rerror, .tag = t.tag, .ename = "dispatch failed"};
+  }
 
   /* Write reply to SAME buffer location (ownership-flip model) */
   uchar reply_copy[P9_MSG_SIZE];
@@ -288,18 +384,30 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
     goto cleanup_ownership;
   }
 
-  /* ALWAYS DUMP REPLY FOR DEBUG */
-  dump_bytes("p9_handle_doorbell: REPLY msg[0..31]:", reply_copy, 32);
+  if (p9_debug_enabled(p))
+    dump_bytes("p9_handle_doorbell: REPLY msg[0..31]:", reply_copy, 32);
   memmove(&ctl_saved, ctl, sizeof(ctl_saved));
   scrub_exchange_page(p, reply_copy, rep_size, &ctl_saved, 0, 0, 0);
   ctl = (P9Control *)((uintptr)p->p9page + P9_CONTROL_OFFSET);
   msg_buf = (uchar *)p->p9page + P9_MSG_OFFSET;
 
-  dump_bytes("p9_handle_doorbell: PAGEDUMP msg[0..31]:", msg_buf, 32);
+  if (p9_debug_enabled(p))
+    dump_bytes("p9_handle_doorbell: PAGEDUMP msg[0..31]:", msg_buf, 32);
 
   /* Set RAX to return value for ABI compatibility and efficient checking */
+  /* DO NOT overwrite RAX on successful exec, as sysexec already set it up
+   * correctly */
   if (ureg != nil) {
-    ureg->ax = (ulong)r.retval;
+    if (r.type == Rexec || r.type == Rsysexec) {
+      print(
+          "DOORBELL: detected exec (type=%d), PRESERVING RAX=%#p for pid %ld\n",
+          r.type, (void *)ureg->ax, p->pid);
+    } else {
+      ureg->ax = (ulong)r.retval;
+      if (r.type == Rsysfork)
+        print("DOORBELL: Rsysfork pid=%ld rax=%#p ureg=%p\n", p->pid,
+              (void *)ureg->ax, ureg);
+    }
   }
 
   /* Success! Reply written to buffer.
@@ -310,7 +418,7 @@ int p9_handle_doorbell(Proc *p, Ureg *ureg) {
   result = 0;
 
   /* Update control block */
-  ctl->rep_seq++;
+  ctl->rep_seq = req_seq;
 
   /* Mark as complete with Release semantics */
   atomic_store(&ctl->status, P9_STATUS_COMPLETE, ORDER_RELEASE);
@@ -322,14 +430,14 @@ cleanup_ownership:
    * Kernel has finished processing. Transfer ownership back so
    * process can read the reply.
    */
-  berr = borrow_transfer(up, p, page_pa);
+  berr = borrow_transfer(up, p, page_key);
   if (berr != BORROW_OK) {
     print(
         "p9_handle_doorbell: WARNING - borrow_transfer back failed (berr=%d)\n",
         berr);
     /* Fall back to release/acquire */
-    borrow_release(up, page_pa);
-    berr = borrow_acquire(p, page_pa);
+    borrow_release(up, page_key);
+    berr = borrow_acquire(p, page_key);
     if (berr != BORROW_OK) {
       print("p9_handle_doorbell: FATAL - can't return page to process "
             "(berr=%d)\n",
@@ -338,6 +446,8 @@ cleanup_ownership:
     }
   }
 
-  return result;
+  /* Success! Return the reply type so the caller can identify special cases
+   * (like exec) */
+  return r.type;
 }
 #endif

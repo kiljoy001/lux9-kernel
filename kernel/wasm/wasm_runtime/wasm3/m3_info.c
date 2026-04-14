@@ -14,7 +14,7 @@
 /*@
   @ requires o_string == \null || \valid(o_string);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 size_t  SPrintArg  (char * o_string, size_t i_stringBufferSize, voidptr_t i_sp, u8 i_type)
 {
     int len = 0;
@@ -40,7 +40,7 @@ size_t  SPrintArg  (char * o_string, size_t i_stringBufferSize, voidptr_t i_sp, 
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  SPrintFunctionArgList  (IM3Function i_function, m3stack_t i_sp)
 {
     int ret;
@@ -62,7 +62,7 @@ cstr_t  SPrintFunctionArgList  (IM3Function i_function, m3stack_t i_sp)
           /*@ loop invariant 0 <= i <= numArgs;
     @ loop assigns i;
     @ loop variant numArgs - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < numArgs; ++i)
         {
             u8 type = d_FuncArgType(funcType, i);
@@ -93,7 +93,7 @@ cstr_t  SPrintFunctionArgList  (IM3Function i_function, m3stack_t i_sp)
 // a central function you can be breakpoint:
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void ExceptionBreakpoint (cstr_t i_exception, cstr_t i_message)
 {
     printf ("\nexception: '%s' @ %s\n", i_exception, i_message);
@@ -110,7 +110,7 @@ OpInfo;
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  m3_PrintM3Info  ()
 {
     printf ("\n-- m3 configuration --------------------------------------------\n");
@@ -126,7 +126,7 @@ void  m3_PrintM3Info  ()
   @ requires io_index == \null || \valid(io_index);
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void *  v_PrintEnvModuleInfo  (IM3Module i_module, u32 * io_index)
 {
     printf (" module [%u]  name: '%s'; funcs: %d  \n", * io_index++, i_module->name, i_module->numFunctions);
@@ -137,7 +137,7 @@ void *  v_PrintEnvModuleInfo  (IM3Module i_module, u32 * io_index)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  m3_PrintRuntimeInfo  (IM3Runtime i_runtime)
 {
     printf ("\n-- m3 runtime -------------------------------------------------\n");
@@ -153,7 +153,7 @@ void  m3_PrintRuntimeInfo  (IM3Runtime i_runtime)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  GetTypeName  (u8 i_m3Type)
 {
     if (i_m3Type < 5)
@@ -168,7 +168,7 @@ cstr_t  GetTypeName  (u8 i_m3Type)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  SPrintFuncTypeSignature  (IM3FuncType i_funcType)
 {
     static char string [256];
@@ -178,7 +178,7 @@ cstr_t  SPrintFuncTypeSignature  (IM3FuncType i_funcType)
       /*@ loop invariant 0 <= i <= i_funcType->numArgs;
     @ loop assigns i;
     @ loop variant i_funcType->numArgs - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < i_funcType->numArgs; ++i)
     {
         if (i != 0)
@@ -192,7 +192,7 @@ cstr_t  SPrintFuncTypeSignature  (IM3FuncType i_funcType)
       /*@ loop invariant 0 <= i <= i_funcType->numRets;
     @ loop assigns i;
     @ loop variant i_funcType->numRets - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < i_funcType->numRets; ++i)
     {
         if (i != 0)
@@ -208,7 +208,7 @@ cstr_t  SPrintFuncTypeSignature  (IM3FuncType i_funcType)
 /*@
   @ requires i_value == \null || \valid(i_value);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  SPrintValue  (void * i_value, u8 i_type)
 {
     static char string [100];
@@ -219,7 +219,7 @@ cstr_t  SPrintValue  (void * i_value, u8 i_type)
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 OpInfo find_operation_info  (IM3Operation i_operation)
 {
     OpInfo opInfo = { NULL, 0 };
@@ -230,7 +230,7 @@ OpInfo find_operation_info  (IM3Operation i_operation)
       /*@ loop invariant 0 <= i <= = 0xff;
     @ loop assigns i;
     @ loop variant = 0xff - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i <= 0xff; ++i)
     {
         IM3OpInfo oi = GetOpInfo (i);
@@ -240,7 +240,7 @@ OpInfo find_operation_info  (IM3Operation i_operation)
               /*@ loop invariant 0 <= o <= 4;
     @ loop assigns o;
     @ loop variant 4 - o;
-    @*/
+    @*\/ */
   for (u32 o = 0; o < 4; ++o)
             {
                 if (oi->operations [o] == i_operation)
@@ -314,7 +314,7 @@ d_m3Decoder  (BranchTable)
       /*@ loop invariant 0 <= i <= targets;
     @ loop assigns i;
     @ loop variant targets - i;
-    @*/
+    @*\/ */
   for (i32 i = 0; i < targets; ++i)
     {
         pc_t addr = fetch (pc_t);
@@ -339,7 +339,7 @@ d_m3Decoder  (Const)
   @ requires o_string == \null || \valid(o_string);
   @ requires o_pc == \null || \valid(o_pc);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  DecodeOperation  (char * o_string, u8 i_opcode, IM3Operation i_operation, IM3OpInfo i_opInfo, pc_t * o_pc)
 {
     #define d_m3Decode(OPCODE, FUNC) case OPCODE: Decode_##FUNC (o_string, i_opcode, i_operation, i_opInfo, o_pc); break;
@@ -359,7 +359,7 @@ void  DecodeOperation  (char * o_string, u8 i_opcode, IM3Operation i_operation, 
 // and, if an operation happens to missing from the c_operations table it won't be recognized here
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  dump_code_page  (IM3CodePage i_codePage, pc_t i_startPC)
 {
         m3log (code, "code page seq: %d", i_codePage->info.sequence);
@@ -397,7 +397,7 @@ void  dump_code_page  (IM3CodePage i_codePage, pc_t i_startPC)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  dump_type_stack  (IM3Compilation o)
 {
     /* Reminders about how the stack works! :)
@@ -427,7 +427,7 @@ void  dump_type_stack  (IM3Compilation o)
       /*@ loop invariant 0 <= p <= = 2;
     @ loop assigns p;
     @ loop variant = 2 - p;
-    @*/
+    @*\/ */
   for (u32 p = 1; p <= 2; ++p)
     {
         d_m3Log(stack, "        ");
@@ -435,7 +435,7 @@ void  dump_type_stack  (IM3Compilation o)
           /*@ loop invariant 0 <= i <= o->stackIndex;
     @ loop assigns i;
     @ loop variant o->stackIndex - i;
-    @*/
+    @*\/ */
   for (u16 i = 0; i < o->stackIndex; ++i)
         {
             if (i > 0 and i == o->stackFirstDynamicIndex)
@@ -497,7 +497,7 @@ void  dump_type_stack  (IM3Compilation o)
 //      /*@ loop invariant 0 <= r <= 2;
     @ loop assigns r;
     @ loop variant 2 - r;
-    @*/
+    @*\/ */
   for (u32 r = 0; r < 2; ++r)
 //        d_m3Assert (regAllocated [r] == 0);         // reg allocation & stack out of sync
 
@@ -510,7 +510,7 @@ void  dump_type_stack  (IM3Compilation o)
           /*@ loop invariant 0 <= i <= maxSlot;
     @ loop assigns i;
     @ loop variant maxSlot - i;
-    @*/
+    @*\/ */
   for (u16 i = o->slotFirstDynamicIndex; i < maxSlot; ++i)
             printf ("----");
 
@@ -520,7 +520,7 @@ void  dump_type_stack  (IM3Compilation o)
           /*@ loop invariant 0 <= i <= maxSlot;
     @ loop assigns i;
     @ loop variant maxSlot - i;
-    @*/
+    @*\/ */
   for (u16 i = o->slotFirstDynamicIndex; i < maxSlot; ++i)
             printf ("%3d|", i);
 
@@ -530,7 +530,7 @@ void  dump_type_stack  (IM3Compilation o)
           /*@ loop invariant 0 <= i <= maxSlot;
     @ loop assigns i;
     @ loop variant maxSlot - i;
-    @*/
+    @*\/ */
   for (u16 i = o->slotFirstDynamicIndex; i < maxSlot; ++i)
         {
             printf ("%3d|", o->m3Slots [i]);
@@ -545,7 +545,7 @@ void  dump_type_stack  (IM3Compilation o)
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 static const char *  GetOpcodeIndentionString  (i32 blockDepth)
 {
     blockDepth += 1;
@@ -566,7 +566,7 @@ static const char *  GetOpcodeIndentionString  (i32 blockDepth)
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 const char *  get_indention_string  (IM3Compilation o)
 {
     return GetOpcodeIndentionString (o->block.depth+4);
@@ -575,7 +575,7 @@ const char *  get_indention_string  (IM3Compilation o)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  log_opcode  (IM3Compilation o, m3opcode_t i_opcode)
 {
     i32 depth = o->block.depth;
@@ -588,7 +588,7 @@ void  log_opcode  (IM3Compilation o, m3opcode_t i_opcode)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  log_emit  (IM3Compilation o, IM3Operation i_operation)
 {
     OpInfo i = find_operation_info (i_operation);
@@ -617,7 +617,7 @@ static M3ProfilerSlot s_opProfilerCounts [d_m3ProfilerSlotMask + 1] = {};
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  ProfileHit  (cstr_t i_operationName)
 {
     u64 ptr = (u64) i_operationName;
@@ -639,7 +639,7 @@ void  ProfileHit  (cstr_t i_operationName)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  m3_PrintProfilerInfo  ()
 {
     M3ProfilerSlot dummy;
@@ -652,7 +652,7 @@ void  m3_PrintProfilerInfo  ()
           /*@ loop invariant 0 <= i <= = d_m3ProfilerSlotMask;
     @ loop assigns i;
     @ loop variant = d_m3ProfilerSlotMask - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i <= d_m3ProfilerSlotMask; ++i)
         {
             M3ProfilerSlot * slot = & s_opProfilerCounts [i];

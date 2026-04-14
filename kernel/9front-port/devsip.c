@@ -6,6 +6,11 @@
 #include "u.h"
 #include <lib.h>
 
+/* Stub for sipinit - called during device initialization */
+static void sipinit(void) {
+  /* SIP device initialization - minimal stub for boot */
+}
+
 /*
  * /dev/sip - Universal Capability-Based Security Manager
  *
@@ -29,31 +34,71 @@
  */
 
 enum {
-  Qdir = 0,
+  Qtopdir = 0,
   Qclone,
   Qctl,      /* Control file for accessing process */
-  Qprocbase, /* Base for per-process directories */
+  Qprocdir,
+  Qstatus,
 };
 
 #define TYPE(q) ((q).path & 0xff)
 #define PID(q) (((q).path >> 8) & 0xffffff)
 #define QID(pid, type) (((pid) << 8) | (type))
 
+static Proc *sipfindproc(ulong pid) {
+  int i;
+  Proc *p;
+
+  if (pid == 0)
+    return nil;
+
+  for (i = 0; (p = proctab(i)) != nil; i++) {
+    if (p->pid == pid && p->state != Dead)
+      return p;
+  }
+  return nil;
+}
+
 static int sipgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
   Qid q;
   Proc *p;
   char buf[32];
+  ulong pid;
+  char *ename;
 
   USED(tab, ntab, name);
 
   if (s == DEVDOTDOT) {
-    mkqid(&q, Qdir, 0, QTDIR);
+    mkqid(&q, Qtopdir, 0, QTDIR);
     devdir(c, q, "#Y", 0, eve, 0555, dp);
     return 1;
   }
 
   switch (TYPE(c->qid)) {
-  case Qdir:
+  case Qtopdir:
+    if (name != nil) {
+      if (strcmp(name, "clone") == 0) {
+        mkqid(&q, Qclone, 0, QTFILE);
+        devdir(c, q, "clone", 0, eve, 0666, dp);
+        return 1;
+      }
+      if (strcmp(name, "ctl") == 0) {
+        mkqid(&q, Qctl, 0, QTFILE);
+        devdir(c, q, "ctl", 0, eve, 0666, dp);
+        return 1;
+      }
+      pid = strtoul(name, &ename, 10);
+      if (pid == 0 || ename[0] != '\0')
+        return -1;
+      p = sipfindproc(pid);
+      if (p == nil)
+        return -1;
+      mkqid(&q, QID(pid, Qprocdir), pid, QTDIR);
+      snprint(buf, sizeof(buf), "%lud", pid);
+      devdir(c, q, buf, 0, eve, 0555, dp);
+      return 1;
+    }
+
     /* Top-level directory: clone, ctl */
     if (s == 0) {
       mkqid(&q, Qclone, 0, QTFILE);
@@ -70,11 +115,11 @@ static int sipgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
     {
       int i;
       for (i = 0; (p = proctab(i)) != nil; i++) {
-        if (p->state == Dead)
+        if (p->state == Dead || p->pid == 0)
           continue;
         if (s-- == 0) {
-          snprint(buf, sizeof(buf), "%d", p->pid);
-          mkqid(&q, QID(p->pid, Qdir), 0, QTDIR);
+          snprint(buf, sizeof(buf), "%lud", p->pid);
+          mkqid(&q, QID(p->pid, Qprocdir), p->pid, QTDIR);
           devdir(c, q, buf, 0, eve, 0555, dp);
           return 1;
         }
@@ -82,11 +127,29 @@ static int sipgen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
     }
     return -1;
 
-  case Qprocbase:
+  case Qprocdir:
     /* Per-process directory: ctl, status */
+    if (name != nil) {
+      if (strcmp(name, "ctl") == 0) {
+        mkqid(&q, QID(PID(c->qid), Qctl), PID(c->qid), QTFILE);
+        devdir(c, q, "ctl", 0, eve, 0666, dp);
+        return 1;
+      }
+      if (strcmp(name, "status") == 0) {
+        mkqid(&q, QID(PID(c->qid), Qstatus), PID(c->qid), QTFILE);
+        devdir(c, q, "status", 0, eve, 0444, dp);
+        return 1;
+      }
+      return -1;
+    }
     if (s == 0) {
       mkqid(&q, QID(PID(c->qid), Qctl), 0, QTFILE);
       devdir(c, q, "ctl", 0, eve, 0666, dp);
+      return 1;
+    }
+    if (s == 1) {
+      mkqid(&q, QID(PID(c->qid), Qstatus), 0, QTFILE);
+      devdir(c, q, "status", 0, eve, 0444, dp);
       return 1;
     }
     return -1;
@@ -138,8 +201,8 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
   ulong caps;
 
   switch (TYPE(c->qid)) {
-  case Qdir:
-  case Qprocbase:
+  case Qtopdir:
+  case Qprocdir:
     return devdirread(c, va, n, nil, 0, sipgen);
 
   case Qclone:
@@ -158,9 +221,8 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
     if (pid == 0)
       p = up; /* Current process */
     else {
-      /* Find target process */
-      p = proctab(pid);
-      if (p == nil || p->state == Dead)
+      p = sipfindproc((ulong)pid);
+      if (p == nil)
         error("process not found");
     }
 
@@ -181,6 +243,37 @@ static long sipread(Chan *c, void *va, long n, vlong off) {
                   !!(caps & PEBBLE_CAP_IRQ), !!(caps & PEBBLE_CAP_DMA),
                   !!(caps & PEBBLE_CAP_PCI), !!(caps & PEBBLE_CAP_FS),
                   !!(caps & PEBBLE_CAP_ADMIN));
+
+    if (off >= len)
+      return 0;
+    if (off + n > len)
+      n = len - off;
+    memmove(va, buf + off, n);
+    return n;
+
+  case Qstatus:
+    pid = PID(c->qid);
+    if (pid == 0)
+      p = up;
+    else {
+      p = sipfindproc((ulong)pid);
+      if (p == nil)
+        error("process not found");
+    }
+
+    len = snprint(buf, sizeof(buf),
+                  "pid: %lud\n"
+                  "text: %s\n"
+                  "user: %s\n"
+                  "state: %s\n"
+                  "parent: %lud\n"
+                  "noteid: %lud\n"
+                  "pages_kb: %lud\n"
+                  "capabilities: %#lux\n",
+                  p->pid, p->text ? p->text : "", p->user ? p->user : "",
+                  statename[p->state], p->parent ? p->parent->pid : 0,
+                  p->noteid, (ulong)(procpagecount(p) * BY2PG / 1024),
+                  p->capabilities);
 
     if (off >= len)
       return 0;
@@ -221,8 +314,8 @@ static long sipwrite(Chan *c, void *va, long n, vlong off) {
       if (!has_capability(up, PEBBLE_CAP_ADMIN))
         error(PEBBLE_E_PERM);
 
-      p = proctab(pid);
-      if (p == nil || p->state == Dead)
+      p = sipfindproc((ulong)pid);
+      if (p == nil)
         error("process not found");
     }
 
@@ -286,7 +379,7 @@ static long sipwrite(Chan *c, void *va, long n, vlong off) {
 Dev sipdevtab = {
     'Y',      "sip",
 
-    devreset, devinit,  devshutdown, sipattach, sipwalk,
-    sipstat,  sipopen,  devcreate,   sipclose,  sipread,
-    devbread, sipwrite, devbwrite,   devremove, devwstat,
+    devreset,      sipinit,        devshutdown, sipattach, sipwalk,
+    sipstat,       sipopen,        devcreate,   sipclose,  sipread,
+    sipwrite,      devbread,       devbwrite,   devremove, devwstat,
 };

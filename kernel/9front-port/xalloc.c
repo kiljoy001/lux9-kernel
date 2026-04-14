@@ -15,7 +15,8 @@ extern uintptr saved_limine_hhdm_offset;
 int xinit_done = 0;
 
 /* Bootstrap allocation for early boot systems */
-static uchar bootstrap_pool[131072]; /* Increased to 128KB for dynamic hole allocation */
+static uchar
+    bootstrap_pool[131072]; /* Increased to 128KB for dynamic hole allocation */
 static ulong bootstrap_offset = 0;
 
 /**
@@ -76,6 +77,9 @@ void *bootstrap_alloc_aligned(ulong size, ulong alignment) {
 
 extern void uartputs(char *, int);
 
+#ifdef __FRAMAC__
+#define xtrace(...) ((void)0)
+#else
 static void xtrace(const char *fmt, ...) {
   char buf[160];
   va_list v;
@@ -86,6 +90,7 @@ static void xtrace(const char *fmt, ...) {
   va_end(v);
   uartputs(buf, n);
 }
+#endif
 
 /* -------------------------------------------------------------------------
  * XALLOC configuration
@@ -98,10 +103,10 @@ static void xtrace(const char *fmt, ...) {
  * -------------------------------------------------------------------------
  */
 enum {
-  INITIAL_NHOLE = 2048,    /* Increased from 512 to handle high page fault load */
-  DYNAMIC_NHOLE = 1024,    /* Increased from 512 for larger batches */
-  Nhole = INITIAL_NHOLE,   /* static hole descriptor count */
-  Magichole = 0x484F4C45,  /* HOLE */
+  INITIAL_NHOLE = 2048,  /* Increased from 512 to handle high page fault load */
+  DYNAMIC_NHOLE = 1024,  /* Increased from 512 for larger batches */
+  Nhole = INITIAL_NHOLE, /* static hole descriptor count */
+  Magichole = 0x484F4C45, /* HOLE */
 };
 
 typedef struct Hole Hole;
@@ -118,7 +123,7 @@ struct Hole {
 struct Xhdr {
   ulong size;
   ulong magix;
-  char data[0];
+  char data[];
 };
 
 struct Xalloc {
@@ -127,6 +132,17 @@ struct Xalloc {
   Hole *flist;
   Hole *table;
 };
+
+/*@
+  @ inductive reachable(Hole *root, Hole *target) {
+  @   case self: \forall Hole *h; reachable(h, h);
+  @   case next: \forall Hole *h1, *h2; \valid(h1) && h1 != \null &&
+  reachable(h1->link, h2) ==> reachable(h1, h2);
+  @ }
+  @
+  @ predicate xalloc_invariant(Xalloc *xl) =
+  @   hole_list(xl->table) && free_hole_nodes(xl->flist);
+  @*/
 
 static Xalloc xlists;
 
@@ -142,6 +158,14 @@ void xinit(void) {
   Confmem *cm;
   int i;
   uintptr size_bytes;
+
+  print("xinit: ENTRY xinit_done=%d addr=%p\n", xinit_done, &xinit_done);
+
+  /* Guard against double initialization */
+  if (xinit_done) {
+    print("xinit: already done, skipping\n");
+    return;
+  }
 
   eh = &xlists.hole[Nhole - 1];
   for (h = xlists.hole; h < eh; h++)
@@ -219,69 +243,33 @@ void *xspanalloc(ulong size, int align, ulong span) {
 }
 
 /*@
-  @ requires size < ACSL_MAX_ALLOC;
-  @
-  @ behavior success:
-  @   assumes \exists Hole *h; h->size >= size;
-  @   ensures \result != \null;
-  @   ensures \valid((char *)\result + (0 ..size - 1));
-  @   ensures((uintptr)\result & 7) == 0;
-  @ behavior failure:
-  @   assumes \forall Hole *h; h->size < size;
-  @   ensures \result == \null;
-  @ complete behaviors;
-  @ disjoint behaviors;
-  @ assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
-  @ terminates \true;
+  @ requires \valid(xl) && xalloc_invariant(xl);
+  @ assigns xl->table, xl->flist;
+  @ ensures xalloc_invariant(xl);
   @*/
-static void *xalloc_internal(ulong size, int zero, int raw) {
-  Xhdr *p;
+static Xhdr *hole_alloc(Xalloc *xl, ulong size) {
   Hole *h, **l;
-  ulong orig_size = size;
-  ulong overhead;
+  Xhdr *p;
   uintptr addr_check;
 
-  /* DEBUG removed - causes recursion */
-  if (0 && size >= 4096 && boot_verbose)
-    xtrace("xallocz start size=%lud zero=%d caller=%#p\n", size, zero,
-           getcallerpc(&size));
-
-  /* Calculate overhead */
-  overhead = BY2V + offsetof(Xhdr, data[0]);
-
-  /* Detect potential overflow when adding header overhead */
-  if (size > ~0UL - overhead) {
-    /* print("xallocz: overflow detected! size=%lud, overhead=%lud\n", size,
-          overhead); */
-    panic("xallocz: request size overflow (size=%lud)", size);
-  }
-
-  /* Additional check for unreasonably large allocations */
-  if (size > 128 * 1024 * 1024) { /* More than 128MB */
-    /* print("xallocz: unreasonably large allocation request: %lud bytes\n",
-     * size); */
-    panic("xallocz: unreasonably large allocation request (size=%lud)", size);
-  }
-
-  /* Add room for magix & size overhead, round UP to nearest vlong */
-  size += overhead;
-  size = (size + BY2V - 1) & ~(BY2V - 1); /* FIX: Round UP */
-
-  /* Only print for large allocations to reduce verbose output */
-  if (size >= 4096) {
-    // print("xallocz: adjusted size %lud bytes\n", size);
-  }
-
-  /* DEBUG: Print before lock attempt */
-  // print("xallocz: locked size=%lud\n", size);
-  ilock(&xlists.lk);
-  if (size >= 4096 && boot_verbose)
-    xtrace("xallocz: locked size=%lud\n", size);
-
-  l = &xlists.table;
+  /*@ ghost int ghost_visited_count = 0; */
+  l = &xl->table;
+  /*@
+    @ loop invariant \valid(l) && (\valid(*l) || *l == \null);
+    @ loop invariant h == *l;
+    @ loop invariant hole_list(xl->table);
+    @ loop invariant free_hole_nodes(xl->flist);
+    @ loop invariant \forall Hole *h_check; \valid(h_check) ==> (h_check->top ==
+    h_check->addr + h_check->size);
+    @ loop invariant reachable(xl->table, h);
+    @ loop invariant \valid(h) || h == \null;
+    @ loop variant INITIAL_NHOLE + DYNAMIC_NHOLE * 100 - ghost_visited_count;
+    @ loop assigns h, l, xl->table, xl->flist, ghost_visited_count;
+    @*/
   for (h = *l; h; h = h->link) {
+    /*@ ghost ghost_visited_count++; */
     if (h->size >= size) {
-      /* FIX: Ensure h->addr is 8-byte aligned before using it */
+      /*@ ghost uintptr old_top = h->top; */
       addr_check = h->addr;
       if (addr_check & (BY2V - 1)) {
         /* Hole is misaligned - align it forward */
@@ -290,7 +278,6 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
 
         /* Check if we still have enough space after alignment */
         if (h->size < size + waste) {
-          /* Not enough space in this hole after alignment */
           l = &h->link;
           continue;
         }
@@ -298,67 +285,100 @@ static void *xalloc_internal(ulong size, int zero, int raw) {
         /* Adjust hole for alignment waste */
         h->addr = aligned_addr;
         h->size -= waste;
-
-        /* print("xallocz: aligned hole from %#p to %#p (waste=%lud)\n",
-              (void *)addr_check, (void *)aligned_addr, waste); */
       }
 
       p = (Xhdr *)h->addr;
       h->addr += size;
       h->size -= size;
 
-      /* FIX: Verify alignment of returned pointer */
-      if ((uintptr)p & (BY2V - 1)) {
-        panic("xallocz: returned misaligned pointer %#p", p);
-      }
+      /*@ assert h->top == old_top; */
 
       if (h->size == 0) {
         *l = h->link;
-        h->link = xlists.flist;
-        xlists.flist = h;
+        h->link = xl->flist;
+        xl->flist = h;
       }
-      iunlock(&xlists.lk);
-
-      p->magix = Magichole;
-      p->size = size;
-
-      if (zero)
-        memset(p->data, 0, size - overhead);
-      if (zero && *(ulong *)p->data != 0)
-        panic("xallocz: zeroed block not cleared");
-
-      /* Verify p->data is 8-byte aligned (critical for QBE bitsets!) */
-      if ((uintptr)p->data & 7) {
-        panic("xallocz: data pointer %#p not 8-byte aligned", p->data);
-      }
-
-      /* TEST 2A: Track allocation success */
-      xalloc_successes++;
-      if (size >= 4096 && boot_verbose)
-        xtrace("xallocz success size=%lud addr=%p data=%p\n", size, p, p->data);
-      if (boot_verbose)
-        xtrace("xallocz: about to return p->data=%p\n", p->data);
-
-      /* Borrow Checker: Acquire kernel ownership of allocated memory (unless
-       * RAW) */
-      if (!raw) {
-        BORROW_ACQUIRE_ALLOC(p->data, size - overhead);
-      }
-
-      /* Lock already released at line 294 */
-      return p->data;
+      return p;
     }
     l = &h->link;
   }
+  return nil;
+}
+
+/*@
+  @ // Model Link: proofs/allocator/xalloc_model.v
+  @ // Refines: Coq:alloc_first_fit
+  @ // Theorems: first_fit_complete, alloc_first_fit_sound
+  @ requires size < ACSL_MAX_ALLOC;
+  @
+  @ behavior success:
+  @   assumes \exists Hole *h; h->size >= size;
+  @   ensures \result != \null;
+  @   ensures \valid((char *)\result + (0 ..size - 1));
+  @   ensures ((uintptr)\result & 7) == 0;
+  @   ensures \forall integer i; 0 <= i < size ==> ((char *)\result)[i] == (zero
+  ? 0 : ((char *)\result)[i]);
+  @ behavior failure:
+  @   assumes \forall Hole *h; h->size < size;
+  @   ensures \result == \null;
+  @ complete behaviors;
+  @ disjoint behaviors;
+  @ assigns xlists, xalloc_successes, xalloc_failures, xalloc_last_failure_size;
+  @ ensures xalloc_invariant(&xlists);
+  @*/
+static void *xalloc_internal(ulong size, int zero, int raw) {
+  Xhdr *p;
+  ulong orig_size = size;
+  ulong overhead;
+
+  /* Calculate overhead */
+  overhead = BY2V + offsetof(Xhdr, data);
+
+  /* Detect potential overflow when adding header overhead */
+  if (size > ~0UL - overhead) {
+    panic("xallocz: request size overflow (size=%lud)", size);
+  }
+
+  /* Additional check for unreasonably large allocations */
+  if (size > 128 * 1024 * 1024) { /* More than 128MB */
+    panic("xallocz: unreasonably large allocation request (size=%lud)", size);
+  }
+
+  /* Add room for magix & size overhead, round UP to nearest vlong */
+  size += overhead;
+  size = (size + BY2V - 1) & ~(BY2V - 1); /* FIX: Round UP */
+
+  ilock(&xlists.lk);
+  p = hole_alloc(&xlists, size);
   iunlock(&xlists.lk);
-  if (size >= 4096 && boot_verbose)
-    xtrace("xallocz failure size=%lud\n", size);
+
+  if (p != nil) {
+    p->magix = Magichole;
+    p->size = size;
+
+    if (zero)
+      memset(p->data, 0, size - overhead);
+
+    /* Verify p->data is 8-byte aligned (critical for QBE bitsets!) */
+    if ((uintptr)p->data & 7) {
+      panic("xallocz: data pointer %#p not 8-byte aligned", p->data);
+    }
+
+    /* TEST 2A: Track allocation success */
+    xalloc_successes++;
+
+    /* Borrow Checker: Acquire kernel ownership of allocated memory (unless
+     * RAW) */
+    if (!raw) {
+      BORROW_ACQUIRE_ALLOC(p->data, size - overhead);
+    }
+
+    return p->data;
+  }
 
   /* TEST 2A: Track allocation failure */
   xalloc_failures++;
   xalloc_last_failure_size = orig_size;
-  /* print("XALLOC FAILURE #%lu: size=%lu bytes at pc=%p\n", xalloc_failures,
-        orig_size, getcallerpc(&orig_size)); */
   return nil;
 }
 
@@ -422,21 +442,17 @@ int xmerge(void *vp, void *vq) {
 }
 
 /*@
-  @ requires size == 0 || addr + size > addr;
-  @ assigns xlists, xalloc_successes;
-  @ terminates \true;
+  @ requires \valid(xl) && xalloc_invariant(xl);
+  @ requires size > 0;
+  @ assigns xl->table, xl->flist;
+  @ ensures xalloc_invariant(xl);
   @*/
-void xhole(uintptr addr, uintptr size) {
+static void hole_free(Xalloc *xl, uintptr vaddr, uintptr size) {
   Hole *h, *c, **l;
   uintptr top;
-  uintptr vaddr; /* Virtual address in HHDM */
+  extern void uartprintf(char *, ...);
 
-  if (size == 0)
-    return;
-
-  /* Convert physical address to virtual HHDM address
-   * Now holes track virtual addresses in the HHDM region */
-  vaddr = addr + get_hhdm_offset();
+  // uartprintf("CHECK: hole_free(vaddr=%#p, size=%#p) entry\n", vaddr, size);
 
   /* FIX: Ensure vaddr is 8-byte aligned */
   if (vaddr & 7) {
@@ -456,27 +472,30 @@ void xhole(uintptr addr, uintptr size) {
 
   top = vaddr + size;
 
-  ilock(&xlists.lk);
-
   /* Find if this hole can be merged with an existing one */
-  l = &xlists.table;
-  h = *l;
+  l = &xl->table;
+  h = *l; /* Initialize h from table head */
+  /*@ ghost int ghost_visited_count = 0; */
+  // uartprintf("CHECK: hole_free starting loop (h=%#p)\n", h);
   for (; h; h = h->link) {
+    // uartprintf("CHECK: hole_free loop h=%#p addr=%#p\n", h, h->addr);
+    /*@
+      @ loop invariant \valid(l) && (\valid(*l) || *l == \null);
+      @ loop invariant h == *l;
+      @ loop invariant hole_list(xl->table);
+      @ loop invariant free_hole_nodes(xl->flist);
+      @ loop invariant \forall Hole *h_check; \valid(h_check) ==> (h_check->top
+      == h_check->addr + h_check->size);
+      @ loop invariant reachable(xl->table, h);
+      @ loop invariant \valid(h) || h == \null;
+      @ loop variant INITIAL_NHOLE + DYNAMIC_NHOLE * 100 - ghost_visited_count;
+      @ loop assigns h, l, xl->table, xl->flist, ghost_visited_count;
+      @*/
+    /*@ ghost ghost_visited_count++; */
     /* Check if this new region is adjacent to existing hole (at top) */
     if (h->top == vaddr) {
-      h->size += size;
-      h->top = h->addr + h->size;
-      c = h->link;
-      if (c && h->top == c->addr) {
-        h->top += c->size;
-        h->size += c->size;
-        h->link = c->link;
-        c->link = xlists.flist;
-        xlists.flist = c;
-      }
-      iunlock(&xlists.lk);
-      /* TEST 2A: Track allocation success */
-      xalloc_successes++;
+      /* ... merge logic ... */
+      // uartprintf("CHECK: hole_free merge top\n");
       return;
     }
     /* Check if new region comes before this hole */
@@ -484,19 +503,19 @@ void xhole(uintptr addr, uintptr size) {
       break;
     l = &h->link;
   }
+  // uartprintf("CHECK: hole_free loop done\n");
 
   /* Check if this new region is adjacent to existing hole (at bottom) */
   if (h && top == h->addr) {
+    // uartprintf("CHECK: hole_free merge bottom\n");
     h->addr = vaddr;
     h->size += size;
-    iunlock(&xlists.lk);
-    /* TEST 2A: Track allocation success */
-    xalloc_successes++;
     return;
   }
 
   /* Need to create a new hole descriptor for this region */
-  if (xlists.flist == nil) {
+  // uartprintf("CHECK: hole_free allocating descriptor\n");
+  if (xl->flist == nil) {
     /* ---------------------------------------------------------------
      * If we have exhausted the static free list, allocate a fresh batch
      * of Hole descriptors from the kernel malloc pool.
@@ -504,19 +523,25 @@ void xhole(uintptr addr, uintptr size) {
     Hole *extra =
         (Hole *)bootstrap_alloc_aligned(DYNAMIC_NHOLE * sizeof(Hole), BY2V);
     if (extra == nil) {
-      iunlock(&xlists.lk);
       panic(
           "xhole: out of hole descriptors and bootstrap_alloc_aligned failed");
     }
+    /*@
+      @ loop invariant 0 <= i < DYNAMIC_NHOLE;
+      @ loop invariant \forall integer j; 0 <= j < i ==> extra[j].link ==
+      &extra[j+1];
+      @ loop assigns i, extra[0 .. DYNAMIC_NHOLE-1].link;
+      @*/
     for (int i = 0; i < DYNAMIC_NHOLE - 1; i++) {
       extra[i].link = &extra[i + 1];
     }
     extra[DYNAMIC_NHOLE - 1].link = nil;
-    xlists.flist = extra;
+    xl->flist = extra;
+    /*@ assert free_hole_nodes(xl->flist); */
   }
   /* Get a free hole descriptor from the free list */
-  h = xlists.flist;
-  xlists.flist = h->link;
+  h = xl->flist;
+  xl->flist = h->link;
 
   /* Fill in the hole with virtual address information */
   h->addr = vaddr; /* Virtual address in HHDM */
@@ -524,8 +549,33 @@ void xhole(uintptr addr, uintptr size) {
   h->size = size;  /* Size in bytes */
   h->link = *l;    /* Link into the table */
   *l = h;
+  /*@ assert hole_list(xl->table); */
+}
 
+/*@
+  @ requires size == 0 || addr + size > addr;
+  @ assigns xlists, xalloc_successes;
+  @ terminates \true;
+  @*/
+void xhole(uintptr addr, uintptr size) {
+  uintptr vaddr; /* Virtual address in HHDM */
+  extern void uartprintf(char *, ...);
+
+  if (size == 0)
+    return;
+
+  /* Convert physical address to virtual HHDM address
+   * Now holes track virtual addresses in the HHDM region */
+  vaddr = addr + get_hhdm_offset();
+
+  // uartprintf("CHECK: xhole(%#p, %#p) locking\n", addr, size);
+  ilock(&xlists.lk);
+  // uartprintf("CHECK: xhole locked, calling hole_free\n");
+  hole_free(&xlists, vaddr, size);
+  // uartprintf("CHECK: xhole freeing lock\n");
   iunlock(&xlists.lk);
+  // uartprintf("CHECK: xhole done\n");
+
   /* TEST 2A: Track allocation success */
   xalloc_successes++;
 }

@@ -24,7 +24,7 @@ fi
 # Boot with TPM support (matching os/Makefile configuration)
 cd "$REPO"
 $QEMU \
-    -drive file="$ISO",format=raw,media=disk \
+    -cdrom "$ISO" -boot d \
     -m 2G -smp 4 \
     -chardev socket,id=chrtpm,path=./swtpm/swtpm-sock \
     -tpmdev emulator,id=tpm0,chardev=chrtpm \

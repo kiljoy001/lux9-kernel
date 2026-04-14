@@ -30,7 +30,7 @@ enum {
 };
 
 static Dirtab consdir[] = {
-    {'.', {Qdir, 0, QTDIR}, 0, DMDIR | 0555}, {"cons", {Qcons}, 0, 0660},
+    {".", {Qdir, 0, QTDIR}, 0, DMDIR | 0555}, {"cons", {Qcons}, 0, 0660},
     {"sysname", {Qsysname}, 0, 0664},         {"kmesg", {Qkmesg}, 0, 0440},
     {"kprint", {Qkprint}, 0, 0440},           {"consctl", {Qcmd}, 0, 0220},
 };
@@ -38,10 +38,15 @@ static Dirtab consdir[] = {
 /* Kernel message buffer (kmesg) */
 struct Kmesg kmesg;
 
-/* Queue for console input */
-Queue *kbdq;
 /* kprintoq defined in rdb.c */
 Queue *serialoq;
+enum {
+  KprintQMin = 128 * 1024,
+  KprintQMax = 2 * 1024 * 1024,
+  KprintQDefault = 128 * 1024,
+};
+static ulong kprintqsize = KprintQDefault;
+static int sysnameowned;
 
 static struct {
   QLock lk;
@@ -52,6 +57,34 @@ static struct {
 static void kprintinit(void);
 static void devcons_screenputs(char *s, int n);
 
+int consactive(void) {
+  if (serialoq != nil)
+    return qlen(serialoq) > 0;
+  return 0;
+}
+
+void setkprintqsize(char *s) {
+  char *p;
+  ulong size;
+
+  if (s == nil)
+    return;
+
+  size = strtoul(s, &p, 0);
+  if (p != nil && *p != 0) {
+    if (*p == 'k' || *p == 'K')
+      size *= 1024;
+    else if (*p == 'm' || *p == 'M')
+      size *= 1024 * 1024;
+  }
+
+  if (size < KprintQMin)
+    size = KprintQMin;
+  if (size > KprintQMax)
+    size = KprintQMax;
+  kprintqsize = size;
+}
+
 /*
  * Device Operations
  */
@@ -61,8 +94,14 @@ static void devcons_screenputs(char *s, int n);
   @*/
 static void consinit(void) {
   kprintinit();
-  screenputs = devcons_screenputs; /* Assign our screen output function */
-  /* Initialize UART if not already done by arch */
+  /*
+   * CRITICAL FIX: Do not overwrite screenputs if already set by fbconsole.
+   * Overwriting with devcons_screenputs kills graphical output because
+   * devcons_screenputs only writes to UART/KVBuffer.
+   */
+  if (screenputs == nil) {
+    screenputs = devcons_screenputs;
+  }
 }
 
 static Chan *consattach(char *spec) { return devattach('c', spec); }
@@ -92,7 +131,7 @@ static Chan *consopen(Chan *c, int omode) {
     qlock(&kprintq.lk);
     if (kprintq.opens == 0) {
       if (kprintoq == nil) {
-        kprintoq = qopen(8 * 1024, Qcoalesce, 0, 0);
+        kprintoq = qopen((int)kprintqsize, Qcoalesce, 0, 0);
         if (kprintoq == nil) {
           qunlock(&kprintq.lk);
           error(Enomem);
@@ -158,10 +197,21 @@ static long consread(Chan *c, void *va, long n, vlong offset) {
     return n;
 
   case Qcons:
-    /* Read directly from UART via polling/interrupts */
-    /* In this minimal driver, we rely on the architecture's UART integration */
-    /* For now, just return EOF to prevent hangs if not implemented */
-    return 0;
+    n = 0;
+    for (;;) {
+      int uartc = uartgetc();
+      if (uartc < 0) {
+        if (n > 0)
+          return n;
+        tsleep(&up->sleep, return0, nil, 10);
+        continue;
+      }
+      if (uartc == '\r')
+        uartc = '\n';
+      p[n++] = (char)uartc;
+      if (n >= 1)
+        return n;
+    }
 
   default:
     error(Egreg);
@@ -176,57 +226,39 @@ static long consread(Chan *c, void *va, long n, vlong offset) {
   @*/
 static long conswrite(Chan *c, void *va, long n, vlong offset) {
   char *p = va;
+  static int cons_write_trace;
 
   if (n <= 0)
     return n;
 
   switch ((ulong)c->qid.path) {
   case Qcons:
-    /* Write directly to system console (screenputs/uart) */
-    /* This bypasses all line discipline */
-    if (waserror()) {
-      /* Catch errors during output */
-      nexterror();
+    /* Write directly to UART for guaranteed serial output */
+    cons_write_trace++;
+    if (cons_write_trace <= 10) {
+      print("conswrite: Qcons n=%ld\n", n);
     }
-
-    /* Using the lowest level print function available */
-    /* Write byte by byte or chunk */
-    /* Note: kprint will eventually call uart output */
-    /* To avoid recursion or formatting, we use a raw put function if available
-     */
-    /* For now, print() is safe enough for boot */
-
-    /* We need to be careful not to format 'va' if it has % characters */
-    /* Direct UART write loop would be cleaner, but architecture dependent */
-
-    /* Minimal implementation: assume 'va' is a string chunk */
-    /* In a real microkernel, this writes to the UART driver channel */
-
-    /* Hack for minimal boot output */
     {
-      char tmp[128];
-      long left = n;
-      char *ptr = p;
-      while (left > 0) {
-        int chunk = (left < sizeof(tmp) - 1) ? left : sizeof(tmp) - 1;
-        memmove(tmp, ptr, chunk);
-        tmp[chunk] = 0;
-        print("%s", tmp); // Use kernel print
-        ptr += chunk;
-        left -= chunk;
+      char *buf = (char *)va;
+      for (int i = 0; i < n; i++) {
+        uartputc(buf[i]);
       }
     }
-    poperror();
     return n;
 
   case Qsysname:
     /* Update system name */
     if (offset != 0)
       error(Ebadarg);
-    if (n >= sizeof(sysname) - 1)
-      n = sizeof(sysname) - 1;
-    memmove(sysname, va, n);
-    sysname[n] = 0;
+    {
+      char *buf = smalloc((ulong)n + 1);
+      memmove(buf, va, n);
+      buf[n] = 0;
+      if (sysnameowned && sysname != nil)
+        free(sysname);
+      sysname = buf;
+      sysnameowned = 1;
+    }
     return n;
 
   case Qcmd:
@@ -244,7 +276,7 @@ Dev consdevtab = {
 
     devreset, consinit,  devshutdown, consattach, conswalk,
     consstat, consopen,  devcreate,   consclose,  consread,
-    devbread, conswrite, devbwrite,   devremove,  devwstat,
+    conswrite, devbread, devbwrite,   devremove,  devwstat,
 };
 
 /*
@@ -271,11 +303,11 @@ static void devcons_screenputs(char *s, int n) {
   /* Check if uart is available globally */
   extern Uart *consuart;
   if (consuart && consuart->phys && consuart->phys->putc) {
-      /*@ loop invariant 0 <= i <= n;
-    @ loop assigns i;
-    @ loop variant n - i;
-    @*/
-  for (int i = 0; i < n; i++)
+    /*@ loop invariant 0 <= i <= n;
+  @ loop assigns i;
+  @ loop variant n - i;
+  @*/
+    for (int i = 0; i < n; i++)
       consuart->phys->putc(consuart, s[i]);
   }
 

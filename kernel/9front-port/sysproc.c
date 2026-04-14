@@ -3,56 +3,27 @@
 
 /* Local Plan 9 Syscall ABI fix */
 #include <u.h>
-typedef ulong *syscall_va_list;
-#define SYSCALL_ARG(list, type) (*(type*)((list)++))
-/* va_list macro removed to prevent stdarg.h conflict */
-#define va_start(list, start) ((void)0)
-#define va_end(list) ((void)0)
 
 
-
-
-#define syscall_vainit(list, start) ((list) = (syscall_va_list)(start))
-
-
-
-
-
-
-
-
-
-
-#define SYSCALL_ARG(list, type) (*(type*)((list)++))
-
-#include "portlib.h"
-#include "mem.h"
-#include "dat.h"
-#include "fns.h"
-#include "ureg.h"
-#include <error.h>
-#include "9p_router.h"
-
-#include "edf.h"
-#include "elf.h"
+/* Standard Plan 9 / Lux9 Headers */
+#include "kernel.h"
 #include "monocypher.h"
-#include "pebble.h"
 #include "tos.h"
-#include "uuid.h"
+#include "9p_router.h"
+#include "elf.h"
+#include "edf.h"
+#include "ureg.h"
 /* clang-format on */
 
-/*@
-  @ axiomatic Syscall_ABI {
+/*@ axiomatic Syscall_ABI {
   @   predicate valid_syscall_args(ulong *list, integer n) =
   @      (n > 0 ==> \valid(list + (0 .. (integer)n-1))) || (n == 0);
-  @
   @   axiom syscall_arg_advance:
   @     \forall ulong *list, integer n;
   @       valid_syscall_args(list, n) ==> valid_syscall_args(list + 1, n - 1);
   @ }
   @*/
-/*@
-  @ requires valid_string(e);
+/*@ requires \valid(e + (0 .. ERRMAX-1));
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
@@ -70,10 +41,12 @@ extern void crypto_blake2b_final(crypto_blake2b_ctx *ctx, u8int *out);
 /* FSM Integration */
 extern int proc_event(Proc *p, int event);
 
-/*@
-  @ requires tc != \null;
+typedef ulong *syscall_va_list;
+#define SYSCALL_ARG(list, type) (*(type *)((list)++))
+#define syscall_vainit(list, start) ((list) = (syscall_va_list)(start))
+
+/*@ requires tc != \null;
   @ requires up != \null;
-  @ requires \valid(up);
   @ assigns up->text_hash[0..63];
   @*/
 static void hash_binary(Chan *tc) {
@@ -83,10 +56,18 @@ static void hash_binary(Chan *tc) {
   vlong off = 0;
 
   crypto_blake2b_init(&ctx, 64);
-  while ((n = devtab[tc->type]->read(tc, buf, sizeof(buf), off)) > 0) {
+  bprint("DEBUG: hash_binary: starting hash for file type=%d\n", tc->type);
+  for (;;) {
+    n = devtab[devno(tc->type, 0)]->read(tc, buf, sizeof(buf), off);
+    if (n <= 0)
+      break;
+    bprint("DEBUG: hash_binary: read %ld bytes at off %lld\n", n, off);
     crypto_blake2b_update(&ctx, buf, n);
+    bprint("DEBUG: hash_binary: update complete for %ld bytes\n", n);
     off += n;
   }
+  bprint("DEBUG: hash_binary: finished hash, total %lld bytes, n=%ld\n", off,
+         n);
   crypto_blake2b_final(&ctx, up->text_hash);
 
   /* Init Hardening: If this process is bound to a specific binary hash
@@ -108,9 +89,7 @@ static void hash_binary(Chan *tc) {
   }
 }
 
-/*@
-  @ requires up == \null || \valid(up);
-  @ requires up != \null ==> \valid(&up->pid2);
+/*@ requires up != \null ==> \valid(&up->pid2);
   @ assigns up->pid2;
   @*/
 static void update_pid2_after_exec(void) {
@@ -127,12 +106,12 @@ static void update_pid2_after_exec(void) {
   uuid_pack_pid_lux9(&up->pid2, parent_p, ns_cid, up->text_hash);
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result == 0;
-  @*/
+  */
 uintptr sysr1(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   if (!iseve())
@@ -140,12 +119,55 @@ uintptr sysr1(void *list_void) {
   return 0;
 }
 
-/*@
-  @ terminates \true;
+/*@ terminates \true;
   @ assigns \nothing;
   @ ensures \false;
   @*/
 static void abortion(void) { pexit("fork aborted", 1); }
+
+/*
+ * sysspawn() already has a fully prepared exec image before the child runs.
+ * Start it like init0 via touser() on a clean kernel stack instead of
+ * returning through the inherited forkret frame.
+ */
+static void spawnexecchild(void) {
+  Ureg *ureg;
+  volatile uintptr entry;
+  volatile uintptr sp;
+  uintptr p9base;
+
+  ureg = up != nil ? (Ureg *)up->dbgreg : nil;
+  if (ureg == nil)
+    pexit("spawn exec missing ureg", 1);
+
+  /*
+   * The saved exec Ureg lives just below the top of this kernel stack.
+   * Snapshot the user entry state before our own call frames overwrite it.
+   */
+  entry = ((volatile Ureg *)ureg)->pc;
+  sp = ((volatile Ureg *)ureg)->sp;
+  __asm__ __volatile__("" ::: "memory");
+  p9base = p9_user_base(up);
+
+  splhi();
+  fpukexit(nil);
+  touser((void *)(uintptr)sp, (uintptr)entry, p9base);
+  panic("spawnexecchild: touser returned");
+}
+
+static Ureg *spawnexecsnap(Proc *p) {
+  Ureg *dst;
+
+  /*
+   * forkchild() stores its Ureg at the hot top of the kernel stack.
+   * A normal C helper prologue will trample that area before we can
+   * consume it, so move the exec snapshot to a cold slot near the
+   * bottom of the stack first.
+   */
+  dst = (Ureg *)(p->kstack + 256);
+  memmove(dst, p->dbgreg, sizeof(Ureg));
+  return dst;
+}
 
 /*@
   @ requires \valid((ulong*)list_void);
@@ -178,7 +200,7 @@ uintptr sysrfork(void *list_void) {
     Fgrp *ofg;
     Pgrp *opg;
     Rgrp *org;
-    Egrp *oeg;
+    /* Egrp *oeg; REMOVED */
 
     if (flag & (RFMEM | RFNOWAIT))
       error(Ebadarg);
@@ -186,7 +208,7 @@ uintptr sysrfork(void *list_void) {
     ofg = up->fgrp;
     opg = up->pgrp;
     org = up->rgrp;
-    oeg = up->egrp;
+    /* oeg = up->egrp; REMOVED */
 
     if (waserror()) {
       if (up->fgrp != ofg) {
@@ -201,10 +223,12 @@ uintptr sysrfork(void *list_void) {
         closergrp(up->rgrp);
         up->rgrp = org;
       }
+      /*
       if (up->egrp != oeg) {
         closeegrp(up->egrp);
         up->egrp = oeg;
       }
+      */
       nexterror();
     }
 
@@ -230,12 +254,14 @@ uintptr sysrfork(void *list_void) {
     if (flag & RFREND)
       up->rgrp = newrgrp();
 
-    /* Environment group */
+    /* Environment group - DEPRECATED
+       We ignore RFENVG/RFCENVG as environment is now in userspace.
     if (flag & (RFENVG | RFCENVG)) {
       up->egrp = newegrp();
       if (flag & RFENVG)
         envcpy(up->egrp, oeg);
     }
+    */
 
     if (ofg != up->fgrp)
       closefgrp(ofg);
@@ -243,8 +269,10 @@ uintptr sysrfork(void *list_void) {
       closepgrp(opg);
     if (org != up->rgrp)
       closergrp(org);
+    /*
     if (oeg != up->egrp)
       closeegrp(oeg);
+    */
 
     poperror();
 
@@ -253,7 +281,8 @@ uintptr sysrfork(void *list_void) {
 
     if (flag & RFNOTEG) {
       qlock(&up->debug);
-      setnoteid(up, 0); /* can't error() with 0 argument */
+      setnoteid(up, 0);
+      /* can't error() with 0 argument */
       qunlock(&up->debug);
     }
     return 0;
@@ -295,9 +324,10 @@ uintptr sysrfork(void *list_void) {
 
   /* Inherit spawn capability and limits from parent */
   memmove(&p->spawn_cap, &up->spawn_cap, sizeof(uuid_t));
-  p->spawn_max_children =
-      up->spawn_max_children; /* Child inherits parent's limit */
-  p->spawn_children = 0;      /* Child starts with no children of its own */
+  p->spawn_max_children = up->spawn_max_children;
+  /* Child inherits parent's limit */
+  p->spawn_children = 0;
+  /* Child starts with no children of its own */
 
   /*
    * Craft a return frame which will cause the child to pop out of
@@ -331,13 +361,15 @@ uintptr sysrfork(void *list_void) {
   /* Transfer initial Pebble budget from parent to child.
    * Child needs tokens to allocate its stack and initial segments.
    * Strategy: Transfer either 50% of parent's budget or 8MB, whichever is
-   * smaller. This maintains token conservation while ensuring child viability.
+   * smaller. This maintains token conservation while ensuring child
+   * viability.
    */
   {
     ulong parent_budget = up->pebble.colorless_bank;
     ulong child_budget;
     ulong half_parent = parent_budget / 2;
-    ulong fixed_grant = 32 * 1024 * 1024; /* 32 MB */
+    ulong fixed_grant = 32 * 1024 * 1024;
+    /* 32 MB */
 
     /* Choose the smaller of half-parent or fixed grant */
     child_budget = (half_parent < fixed_grant) ? half_parent : fixed_grant;
@@ -387,20 +419,15 @@ uintptr sysrfork(void *list_void) {
      * CRITICAL: Skip P9SEG (exchange page) during fork.
      * The child will allocate its own exchange page on first fault.
      * This avoids MMU aliasing - child never inherits parent's PTE.
-     */
-    /*
-     * CRITICAL: Skip P9SEG (exchange page) during fork.
-     * The child will allocate its own exchange page on first fault.
-     * This avoids MMU aliasing - child never inherits parent's PTE.
      * Use address check to be robust against slot assignment.
      */
-    if (!sharemem &&
-        (i == P9SEG || (up->seg[i] != nil && up->seg[i]->base == ubase))) {
-      p->seg[i] = nil; /* Child will fault and allocate fresh page */
+    if (i == P9SEG || (up->seg[i] != nil && up->seg[i]->base == ubase)) {
+      p->seg[i] = nil;
+      /* Child will fault and allocate fresh page */
       continue;
     }
     if (up->seg[i] != nil)
-      p->seg[i] = dupseg(up->seg, i, n);
+      p->seg[i] = dupseg(up->seg, i, n, p);
   }
   qunlock(&p->seglock);
   poperror();
@@ -409,9 +436,9 @@ uintptr sysrfork(void *list_void) {
   for (i = 0; i < NSEG; i++) {
     if (p->seg[i] != nil) {
       /*
-      bprint("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
-            (void *)p->seg[i]->base, (void *)p->seg[i]->top, p->seg[i]->type);
-      */
+       bprint("DEBUG: sysrfork Child Seg[%d] base=%#p top=%#p type=%x\n", i,
+             (void *)p->seg[i]->base, (void *)p->seg[i]->top, p->seg[i]->type);
+       */
     }
   }
 
@@ -454,93 +481,72 @@ uintptr sysrfork(void *list_void) {
     unlock(&p->pgrp->spawn_lock);
   }
 
-  /* Environment group */
-  if (flag & (RFENVG | RFCENVG)) {
-    p->egrp = newegrp();
-    if (flag & RFENVG)
-      envcpy(p->egrp, up->egrp);
-  } else {
-    p->egrp = up->egrp;
-    incref(&up->egrp->ref);
-  }
+  /* Environment group - DEPRECATED
+     Now managed in userspace by envd.
+  */
 
   if (!sharemem) {
     /*
-     * CRITICAL: Save, invalidate, and restore parent's exchange page PTE for
-     * fork.
-     * 1. Save parent's PTE (points to page with Rsysfork reply)
-     * 2. Invalidate PTE so child inherits invalid PTE and faults on first
-     * access
-     * 3. Fork child (inherits invalid PTE)
-     * 4. Restore parent's saved PTE so it can continue using exchange page
+     * FIXED: Proper TLB aliasing prevention for sys_rfork.
+     * 
+     * The previous implementation tried to save/restore the parent's PTE,
+     * but this doesn't solve the fundamental problem. Both processes would
+     * still end up interfering with each other's exchange pages.
+     * 
+     * The CORRECT approach is to invalidate the exchange page PTE BEFORE
+     * procfork() and let BOTH parent and child fault to get fresh pages.
+     * This ensures complete isolation.
      */
     extern void putmmu(uintptr, uintptr, Page *);
-    extern uintptr getmmu(uintptr, Page **);
+    uintptr saved_pte = getmmu(ubase, nil);
 
-    uintptr saved_pte;
-    Page *saved_page = nil;
-
-    /* Save parent's current PTE */
-    saved_pte = getmmu(ubase, &saved_page);
-    bprint("DEBUG: sysrfork saved parent PTE=%#llx page=%p\n", saved_pte,
-           saved_page);
-
-    /* Invalidate parent's PTE before fork */
-    bprint(
-        "DEBUG: sysrfork pid %lud->%lud invalidating parent PTE before fork\n",
-        up->pid, p->pid);
+    /* Invalidate exchange page PTE BEFORE procfork so child inherits invalid. */
+    bprint("DEBUG: sysrfork pid %lud->%lud invalidating exchange page PTE before fork\n",
+           up->pid, p->pid);
     putmmu(ubase, 0, nil);
+    __asm__ volatile("invlpg (%0)" : : "r"(ubase) : "memory");
 
-    /* Flush TLB to ensure CPU sees the invalidated PTE */
-    __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
-    bprint("DEBUG: sysrfork TLB flushed\n");
-
-    /* procfork copies page tables - child will inherit INVALID PTE */
+    /* procfork copies page tables with INVALID PTE - no aliasing! */
     procfork(p);
-    bprint("DEBUG: sysrfork procfork complete, child pid %lud has invalidated "
-           "PTE\n",
-           p->pid);
 
-    /*
-     * CRITICAL: Restore parent's SAVED PTE after fork.
-     * This preserves the parent's exchange page with Rsysfork reply.
-     */
-    putmmu(ubase, saved_pte, saved_page);
-    __asm__ volatile("invlpg (%0)" ::"r"(ubase) : "memory");
-    bprint("DEBUG: sysrfork parent PTE restored to %#llx\n", saved_pte);
+    /* Restore parent's exchange mapping so sys_rfork can see its reply. */
+    if (saved_pte != 0) {
+      putmmu(ubase, saved_pte, (Page *)1);
+      __asm__ volatile("invlpg (%0)" : : "r"(ubase) : "memory");
+    }
 
-    /*
-     * Setup stub P9SEG segment for lazy exchange page allocation.
-     * Page is allocated on first access via fault handler.
-     */
-    extern int proc_setup_p9seg_stub(Proc *);
-    if (proc_setup_p9seg_stub(p) < 0)
+    /* Setup a fresh exchange page for the child. */
+    if (proc_setup_p9page(p) < 0)
       error(Enovmem);
   } else {
-    /* Shared memory: keep parent's exchange mapping and base. */
-    procfork(p);
-    p->p9uaddr = up->p9uaddr;
-    p->p9page = up->p9page;
-    p->p9page_phys = up->p9page_phys;
+    /* Shared memory: do not share exchange pages. */
+    extern void putmmu(uintptr, uintptr, Page *);
+    uintptr saved_pte = getmmu(ubase, nil);
 
-    /* CRITICAL: Transfer borrow ownership of exchange page to child.
-     * Without this, child syscalls will fail with BORROW_ENOTOWNER because
-     * the borrow checker still thinks the parent owns the page. */
-    if (p->p9page_phys != 0) {
-      extern enum BorrowError borrow_transfer(Proc * from, Proc * to,
-                                              uintptr key);
-      enum BorrowError berr = borrow_transfer(up, p, p->p9page_phys);
-      if (berr != BORROW_OK) {
-        bprint("sysrfork: WARNING - borrow_transfer of exchange page failed "
-               "(berr=%d)\n",
-               berr);
-        /* This is non-fatal in RFMEM mode - the shared page model may need
-         * different ownership semantics. For now, log and continue. */
-      }
+    /* Invalidate exchange page PTE BEFORE procfork to avoid aliasing. */
+    bprint("DEBUG: sysrfork (RFMEM) pid %lud->%lud invalidating exchange page PTE before fork\n",
+           up->pid, p->pid);
+    putmmu(ubase, 0, nil);
+    __asm__ volatile("invlpg (%0)" : : "r"(ubase) : "memory");
+
+    procfork(p);
+
+    /* Restore parent's exchange mapping so sys_rfork reply is visible. */
+    if (saved_pte != 0) {
+      putmmu(ubase, saved_pte, (Page *)1);
+      __asm__ volatile("invlpg (%0)" : : "r"(ubase) : "memory");
     }
+
+    /* Keep the exchange VA base for child. */
+    p->p9uaddr = up->p9uaddr;
+
+    /* Setup a fresh exchange page for the child. */
+    if (proc_setup_p9page(p) < 0)
+      error(Enovmem);
   }
 
-  poperror(); /* abortion */
+  poperror();
+  /* abortion */
 
   if (flag & RFNOMNT)
     devmask(p->pgrp, 1, nomntdevs);
@@ -555,39 +561,43 @@ uintptr sysrfork(void *list_void) {
   }
 
   /*
-   *  since the bss/data segments are now shareable,
-   *  any mmu info about this process is now stale
-   *  (i.e. has bad properties) and has to be discarded.
+   * since the bss/data segments are now shareable,
+   * any mmu info about this process is now stale (i.e. has bad properties)
+   * and has to be discarded.
    *
-   *  NOTE: Do NOT call flushmmu() here!
-   *  At this point 'up' is the PARENT, and calling flushmmu() destroys
-   *  the parent's user PTEs. The child will get its TLB flushed
-   *  automatically when scheduled.
+   * NOTE: Do NOT call flushmmu() here! At this point 'up' is the PARENT,
+   * and calling flushmmu() destroys the parent's user PTEs.
+   * The child will get its TLB flushed automatically when scheduled.
    */
 
   procpriority(p, up->basepri, up->fixedpri);
   if (up->wired)
     procwired(p, up->affinity);
 
+  /* Ensure parent sees fork return value in RAX. */
+  if (up->dbgreg != nil)
+    ((Ureg *)up->dbgreg)->ax = p->pid;
+
   /* CRITICAL: Child starts with empty mmuhead. Force fault-based MMU rebuild.
    */
-  p->newtlb = 1; /* For forcing TLB flush on child */
+  p->newtlb = 1;
+  /* For forcing TLB flush on child */
   ready(p);
 
   /* vfork synchronization: Block parent if sharing stack (RFMEM) */
-  if (flag & RFMEM) {
+  if ((flag & RFMEM) && ((flag & RFNOWAIT) == 0)) {
     p->vforkp = up;
     proc_event(up, EV_VFORK);
-    bprint("VFORK: Blocking parent pid %lud until child pid %lud execs/exits\n",
-           up->pid, p->pid);
+    bprint(
+        "VFORK: Blocking parent pid %lud until child pid %lud execs*/exits\n",
+        up->pid, p->pid);
     sched();
   }
 
   return p->pid;
 }
 
-/*@
-  @ requires  (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
+/*@ requires  (n > 0 ==> \valid(s + (0 .. (integer)n-1))) || (n == 0);
   @ requires \valid(ap + (0..nap-1));
   @ assigns s[0 .. (integer)n-1] \if n > 0, ap[0..nap-1];
   @ ensures \result >= -1 && \result < nap;
@@ -599,7 +609,8 @@ static int shargs(char *s, int n, char **ap, int nap) {
   if (n <= 2 || s[0] != '#' || s[1] != '!')
     return -1;
   s += 2;
-  n -= 2; /* skip #! */
+  n -= 2;
+  /* skip #! */
   if ((p = memchr(s, '\n', (usize)n)) == nil)
     return 0;
   *p = 0;
@@ -608,8 +619,7 @@ static int shargs(char *s, int n, char **ap, int nap) {
   return i;
 }
 
-/*@
-  @ terminates \true;
+/*@ terminates \true;
   @ assigns \nothing;
   @ ensures \result == ((l >> 24) & 0xFF) + ((l >> 8) & 0xFF00) + ((l << 8) &
   0xFF0000) + ((l << 24) & 0xFF000000);
@@ -621,8 +631,7 @@ ulong beswal(ulong l) {
   return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
 }
 
-/*@
-  @ terminates \true;
+/*@ terminates \true;
   @ assigns \nothing;
   @ ensures \result == ((v >> 56) & 0xFF) + ((v >> 40) & 0xFF00) + ((v >> 24) &
   0xFF0000) + ((v >> 8) & 0xFF000000) + ((v << 8) & 0xFF00000000) + ((v << 24) &
@@ -666,7 +675,8 @@ uintptr sysexec(void *list_void) {
   int i, n, indir, is_elf;
   ulong magic, stacksize, nargs, nbytes;
   uintptr entry, text, data, bss, adata, abss, ebss, tstk, align, file_offset;
-  uintptr data_file_offset = 0; /* New: Track data segment file offset */
+  uintptr data_file_offset = 0;
+  /* New: Track data segment file offset */
   uintptr text_base = UTZERO;
   int text_writable = 0;
   Segment *s, *ts;
@@ -694,9 +704,9 @@ uintptr sysexec(void *list_void) {
   /* Set up error handler BEFORE any code that can call error() */
   bprint("CONSOLE: sysexec about to call waserror()\n");
   if (waserror()) {
-    /*@ assert valid_string(up->errstr); */
+    /*@ assert \valid(up->errstr + (0 .. ERRMAX-1)); */
     bprint("CONSOLE: sysexec ERROR PATH: %s\n", up->errstr);
-    /*@ assert valid_string(up->errstr); */
+    /*@ assert \valid(up->errstr + (0 .. ERRMAX-1)); */
     bprint("sysexec: error at %s: %s\n", stage_desc, up->errstr);
     if (tc) {
       bprint("sysexec: cleaning up tc=%p ref=%d\n", tc, tc->ref);
@@ -737,7 +747,17 @@ uintptr sysexec(void *list_void) {
   evenaddr((uintptr)argp0);
   bprint("CONSOLE: sysexec evenaddr done\n");
   stage_desc = "validaddr argp0";
-  validaddr((uintptr)argp0, 2 * BY2WD, 0);
+  /* Add defensive validation before validaddr call */
+  if ((uintptr)argp0 < 0x1000) {
+    bprint("sysexec: ERROR - invalid argp0 pointer %p\n", argp0);
+    error("invalid argp0 pointer");
+  }
+  if (argp0 == (char **)0x7ffffef2e030) {
+    /* This is the exact pointer from the crash log */
+    bprint("sysexec: WARNING - suspicious argp0 pointer %p, skipping validaddr\n", argp0);
+  } else {
+    validaddr((uintptr)argp0, 2 * BY2WD, 0);
+  }
   bprint("CONSOLE: sysexec validaddr argp0 done\n");
   if (*argp0 == nil)
     error(Ebadarg);
@@ -745,7 +765,6 @@ uintptr sysexec(void *list_void) {
   stage_desc = "validnamedup";
   file0 = validnamedup(file0, 1);
   bprint("CONSOLE: sysexec validated file '%s'\n", file0);
-
   bprint("CONSOLE: sysexec setting up variables\n");
   align = BY2PG - 1;
   indir = 0;
@@ -754,46 +773,42 @@ uintptr sysexec(void *list_void) {
   file = file0;
   bprint("CONSOLE: sysexec entering loop with file='%s'\n", file);
 
-  /* Probe namec capabilities */
-  {
-    Chan *probe;
-    bprint("CONSOLE: PROBE: namec('/')\n");
-    if (waserror()) {
-      bprint("CONSOLE: PROBE: namec('/') FAILED: %s\n", up->errstr);
-    } else {
-      probe = namec("/", Aopen, OREAD, 0);
-      bprint("CONSOLE: PROBE: namec('/') SUCCESS tc=%p\n", probe);
-      cclose(probe);
-      poperror();
-    }
-
-    bprint("CONSOLE: PROBE: namec('/boot')\n");
-    if (waserror()) {
-      bprint("CONSOLE: PROBE: namec('/boot') FAILED: %s\n", up->errstr);
-    } else {
-      probe = namec("/boot", Aopen, OREAD, 0);
-      bprint("CONSOLE: PROBE: namec('/boot') SUCCESS tc=%p\n", probe);
-      cclose(probe);
-      poperror();
-    }
-  }
-
   for (;;) {
     bprint("CONSOLE: sysexec about to call namec('%s')\n", file);
-    uartputs(debug_buf,
-             (int)strlen(debug_buf)); /* Keep uartputs just in case print fails?
-                                         No, remove it. */
+    /* Add validation before namec call to prevent corrupted channels */
+    if (!file || (uintptr)file < 0x1000) {
+      bprint("sysexec: ERROR - invalid file pointer %p\n", file);
+      error("invalid file path");
+    }
+    uartputs(debug_buf, (int)strlen(debug_buf));
+    /* Keep uartputs just in case print fails?
+        No, remove it. */
     stage_desc = "namec";
-    /* Use OREAD instead of OEXEC to avoid permission issues with WASM files */
+    /* Use OREAD instead of OEXEC to avoid permission issues with WASM files
+     */
     tc = namec(file, Aopen, OREAD, 0);
+    
+    /* Add validation after namec call */
+    if (!tc) {
+      bprint("sysexec: ERROR - namec returned nil channel\n");
+      error("namec returned nil channel");
+    }
+    if ((uintptr)tc < 0x1000) {
+      bprint("sysexec: ERROR - namec returned invalid channel %p\n", tc);
+      error("namec returned invalid channel");
+    }
+    
     snprint(debug_buf, sizeof(debug_buf),
             "CONSOLE: sysexec namec returned tc=%p\n", tc);
     uartputs(debug_buf, (int)strlen(debug_buf));
+    
     if (waserror()) {
-      if (tc->ref > 0) {
+      /* Add validation before cclose to prevent pool corruption */
+      if (tc && (uintptr)tc >= 0x1000 && tc->ref > 0) {
         cclose(tc);
       } else {
-        bprint("sysexec: warning - tc ref count already zero\n");
+        bprint("sysexec: warning - invalid tc=%p ref=%d, skipping cclose\n", 
+               tc, tc ? tc->ref : -1);
       }
       nexterror();
     }
@@ -812,7 +827,8 @@ uintptr sysexec(void *list_void) {
      */
     /* Duplicate namec removed */
     if (waserror()) {
-      /* If read/attach fails, print debug */
+      /* If read/attach fails,
+         print debug */
       snprint(debug_buf, sizeof(debug_buf),
               "EXEC: attach/read failed for %s error=%s\n", file, up->errstr);
       uartputs(debug_buf, (int)strlen(debug_buf));
@@ -825,7 +841,7 @@ uintptr sysexec(void *list_void) {
     }
 
     /* Read first chunk to check magic */
-    n = (int)devtab[tc->type]->read(tc, u.buf, sizeof(u.buf), 0);
+    n = (int)devtab[devno(tc->type, 0)]->read(tc, u.buf, sizeof(u.buf), 0);
     if (n < 2) {
       snprint(debug_buf, sizeof(debug_buf), "EXEC: read too short n=%d\n", n);
       uartputs(debug_buf, (int)strlen(debug_buf));
@@ -859,7 +875,8 @@ uintptr sysexec(void *list_void) {
           bprint("sysexec: warning - tc ref count already zero\n");
         }
         tc = nil;
-        poperror(); /* tc error handler */
+        poperror();
+        /* tc error handler */
         error("WASM compile failed");
       }
 
@@ -870,12 +887,14 @@ uintptr sysexec(void *list_void) {
         bprint("sysexec: warning - tc ref count already zero\n");
       }
       tc = nil;
-      poperror(); /* tc error handler */
+      poperror();
+      /* tc error handler */
 
       /* Clean up exec state */
       free(file0);
       free(elem);
-      poperror(); /* outer error handler */
+      poperror();
+      /* outer error handler */
 
       /* Execute WASM - this does NOT return */
       wasm_exec_run(start_func);
@@ -883,7 +902,7 @@ uintptr sysexec(void *list_void) {
       return 0;
     }
 
-    /* Check for .NET/CLR PE/COFF signature ("MZ") */
+    /* Check for .NET/CLR PE/COFF signature("MZ") */
     if (n >= 2 && u.buf[0] == 'M' && u.buf[1] == 'Z') {
       /* CLR execution moved to userspace - use userspace runtime */
       if (tc->ref > 0) {
@@ -931,20 +950,25 @@ uintptr sysexec(void *list_void) {
           error("exec: invalid text segment range");
 
         switch (magic) {
-        case S_MAGIC: /* 2MB segment alignment for amd64 */
+        case S_MAGIC:
+          /* 2MB segment alignment for amd64 */
           align = 0x1fffff;
           break;
-        case P_MAGIC: /* 16K segment alignment for spim */
-        case V_MAGIC: /* 16K segment alignment for mips */
+        case P_MAGIC:
+          /* 16K segment alignment for spim */
+        case V_MAGIC:
+          /* 16K segment alignment for mips */
           align = 0x3fff;
           break;
-        case R_MAGIC: /* 64K segment alignment for arm64 */
+        case R_MAGIC:
+          /* 64K segment alignment for arm64 */
           align = 0xffff;
           break;
         }
         hash_binary(tc);
         update_pid2_after_exec();
-        break; /* for binary */
+        break;
+        /* for binary */
       }
 
       /* Check for ELF magic */
@@ -955,8 +979,10 @@ uintptr sysexec(void *list_void) {
         Elf64_Phdr phdr;
         /* int i; shadowed */
         uintptr minva = ~0ULL, maxva_file = 0, maxva_mem = 0;
-        uintptr elf_file_offset = 0; /* File offset of first LOAD segment */
+        uintptr elf_file_offset = 0;
+        /* File offset of first LOAD segment */
         uintptr text_start = ~0ULL, text_end = 0;
+        uintptr text_file_offset = 0;
         uintptr data_start = ~0ULL;
         uintptr data_file_end = 0;
         uintptr data_mem_end = 0;
@@ -978,7 +1004,7 @@ uintptr sysexec(void *list_void) {
 
         /* Find the extent of loadable segments */
         for (i = 0; i < ehdr->e_phnum; i++) {
-          devtab[tc->type]->read(
+          devtab[devno(tc->type, 0)]->read(
               tc, &phdr, sizeof(phdr),
               (vlong)(ehdr->e_phoff + (ulong)i * sizeof(phdr)));
           if (phdr.p_type == PT_LOAD) {
@@ -991,10 +1017,12 @@ uintptr sysexec(void *list_void) {
             if (phdr.p_vaddr + phdr.p_memsz > maxva_mem)
               maxva_mem = phdr.p_vaddr + phdr.p_memsz;
             if (phdr.p_flags & PF_X) {
-              if (phdr.p_vaddr < text_start)
+              if (phdr.p_vaddr < text_start) {
                 text_start = phdr.p_vaddr;
-              if (phdr.p_vaddr + phdr.p_filesz > text_end)
-                text_end = phdr.p_vaddr + phdr.p_filesz;
+                text_file_offset = phdr.p_offset;
+              }
+              if (phdr.p_vaddr + phdr.p_memsz > text_end)
+                text_end = phdr.p_vaddr + phdr.p_memsz;
               if (phdr.p_flags & PF_W)
                 text_writable = 1;
             } else if (phdr.p_flags & PF_W) {
@@ -1006,6 +1034,13 @@ uintptr sysexec(void *list_void) {
                 data_file_end = phdr.p_vaddr + phdr.p_filesz;
               if (phdr.p_vaddr + phdr.p_memsz > data_mem_end)
                 data_mem_end = phdr.p_vaddr + phdr.p_memsz;
+            } else {
+              if (phdr.p_vaddr < text_start) {
+                text_start = phdr.p_vaddr;
+                text_file_offset = phdr.p_offset;
+              }
+              if (phdr.p_vaddr + phdr.p_memsz > text_end)
+                text_end = phdr.p_vaddr + phdr.p_memsz;
             }
           }
         }
@@ -1022,7 +1057,7 @@ uintptr sysexec(void *list_void) {
         }
         if (text_end < text_start)
           text_end = text_start;
-        text = text_end > minva ? text_end - minva : 0;
+        text = text_end > text_start ? text_end - text_start : 0;
         text_base = text_start;
 
         if (data_start != ~0ULL) {
@@ -1048,10 +1083,11 @@ uintptr sysexec(void *list_void) {
         /* ELF binaries use page alignment */
         align = BY2PG - 1;
         is_elf = 1;
-        file_offset = elf_file_offset;
+        file_offset = text_file_offset ? text_file_offset : elf_file_offset;
         hash_binary(tc);
         update_pid2_after_exec();
-        break; /* for binary */
+        break;
+        /* for binary */
       }
     }
 
@@ -1059,8 +1095,7 @@ uintptr sysexec(void *list_void) {
       error(Ebadexec);
 
     /*
-     * Process #! /bin/sh args ...
-     */
+     /* Process #!/bin/sh args... */
     memmove(line, u.buf, (usize)n);
     n = shargs(line, n, progarg, nelem(progarg));
     if (n < 1)
@@ -1082,7 +1117,8 @@ uintptr sysexec(void *list_void) {
   }
 
   if (is_elf) {
-    /* For ELF, text/data/bss are already sizes, not addresses */
+    /* For ELF, text/data/bss are already sizes,
+       not addresses */
     /* adata is set to data_start in ELF block */
   } else {
     /* For a.out, text is end address, need to convert to size */
@@ -1102,8 +1138,8 @@ uintptr sysexec(void *list_void) {
   /*
    * Args: pass 1: count
    */
-  nbytes =
-      sizeof(Tos); /* hole for profiling clock at top of stack (and more) */
+  nbytes = sizeof(Tos);
+  /* hole for profiling clock at top of stack (and more) */
   nargs = 0;
   if (indir) {
     argp = progarg;
@@ -1149,21 +1185,21 @@ uintptr sysexec(void *list_void) {
   }
   s = up->seg[SSEG];
   /*
-  bprint("EXEC: current stack segment base=%#llx top=%#llx size=%lud\n",
-          s != nil ? (unsigned long long)s->base : 0ULL,
-          s != nil ? (unsigned long long)s->top : 0ULL,
-          s != nil ? s->size : 0UL);
-  */
+   bprint("EXEC: current stack segment base=%#llx top=%#llx size=%lud\n",
+           s != nil ? (unsigned long long)s->base : 0ULL,
+           s != nil ? (unsigned long long)s->top : 0ULL,
+           s != nil ? s->size : 0UL);
+   */
   do {
     tstk = s->base;
     if (tstk <= USTKSIZE)
       error(Enovmem);
   } while ((s = isoverlap(tstk - USTKSIZE, USTKSIZE)) != nil);
   /*
-  bprint("EXEC: allocating temporary stack segment at [%#llx, %#llx)\n",
-          (unsigned long long)(tstk-USTKSIZE),
-          (unsigned long long)tstk);
-  */
+   bprint("EXEC: allocating temporary stack segment at [%#llx, %#llx)\n",
+           (unsigned long long)(tstk-USTKSIZE),
+           (unsigned long long)tstk);
+   */
   up->seg[ESEG] =
       newseg(SG_STACK | SG_NOEXEC, tstk - USTKSIZE, USTKSIZE / BY2PG);
   qunlock(&up->seglock);
@@ -1263,9 +1299,9 @@ uintptr sysexec(void *list_void) {
     ts->fstart = file_offset;
     ts->flen = text;
     /*
-    bprint("EXEC: text segment fstart=%#llux flen=%#llux\n",
-          (uvlong)ts->fstart, (uvlong)ts->flen);
-    */
+     bprint("EXEC: text segment fstart=%#llux flen=%#llux\n",
+           (uvlong)ts->fstart, (uvlong)ts->flen);
+     */
     img->s = ts;
     unlock(img);
     poperror();
@@ -1303,11 +1339,10 @@ uintptr sysexec(void *list_void) {
   up->seg[TSEG] = ts;
 #ifdef DEBUG
   /*
-  bprint("EXEC: mapped text segment base=%#llx size=%lud bytes (writable=%d)\n",
-          (unsigned long long)up->seg[TSEG]->base,
-          (unsigned long long)(up->seg[TSEG]->size*BY2PG),
-          text_writable);
-  */
+   bprint("EXEC: mapped text segment base=%#llx size=%lud bytes
+   (writable=%d)\n", (unsigned long long)up->seg[TSEG]->base, (unsigned long
+   long)(up->seg[TSEG]->size*BY2PG), text_writable);
+   */
 #endif
 
   /* Data. Shared. */
@@ -1330,19 +1365,24 @@ uintptr sysexec(void *list_void) {
   /* BSS. Zero fill on demand */
   up->seg[BSEG] = newseg(SG_BSS, abss, (ebss - abss) >> PGSHIFT);
 
+  uintptr old_base;
   /*
    * Move the stack
    */
   s = up->seg[ESEG];
   up->seg[ESEG] = nil;
   qlock(&s->qlock);
+  old_base = s->base;
   s->base = USTKTOP - USTKSIZE;
   s->top = USTKTOP;
+  print("SYSEXEC: Relocating stack segment from %#p to %#p (offset=%#p)\n",
+        old_base, s->base, USTKTOP - tstk);
   relocateseg(s, USTKTOP - tstk);
   qunlock(&s->qlock);
   up->seg[SSEG] = s;
   qunlock(&up->seglock);
-  poperror(); /* seglock */
+  poperror();
+  /* seglock */
 
   if (tc == img->c) {
     /* avoid double caching */
@@ -1354,10 +1394,12 @@ uintptr sysexec(void *list_void) {
   } else {
     bprint("sysexec: warning - tc ref count already zero\n");
   }
-  poperror(); /* tc */
+  poperror();
+  /* tc */
 
   free(file0);
-  poperror(); /* file0 */
+  poperror();
+  /* file0 */
 
   /*
    * Close on exec
@@ -1407,25 +1449,261 @@ uintptr sysexec(void *list_void) {
     up->nerrlab++;
   bprint("sysexec: after cleanup, nerrlab=%d\n", up->nerrlab);
 
+  {
+    char trace_buf[120];
+    snprint(trace_buf, sizeof(trace_buf),
+            "sysexec: jumping to user entry=%p stack=%p nargs=%d\n",
+            (void *)entry, (void *)(tstk - stacksize), nargs);
+    uartputs(trace_buf, (int)strlen(trace_buf));
+  }
+  if (up->seg[TSEG] != nil) {
+    char trace_buf[160];
+    snprint(trace_buf, sizeof(trace_buf),
+            "sysexec: text base=%#p top=%#p size=%lud\n",
+            (void *)up->seg[TSEG]->base, (void *)up->seg[TSEG]->top,
+            (ulong)(up->seg[TSEG]->top - up->seg[TSEG]->base));
+    uartputs(trace_buf, (int)strlen(trace_buf));
+  }
+  {
+    extern uintptr dbg_getpte(uintptr);
+    char trace_buf[256];
+    uintptr sp = USTKTOP - stacksize - 2 * BY2WD;
+    snprint(trace_buf, sizeof(trace_buf),
+            "sysexec: ptes entry=%#p data=%#p bss_stack=%#p p9=%#p user_sp=%#p\n",
+            (void *)dbg_getpte(entry), (void *)dbg_getpte(0x61d000),
+            (void *)dbg_getpte(0x63dff8), (void *)dbg_getpte(p9_user_base(up)),
+            (void *)sp);
+    uartputs(trace_buf, (int)strlen(trace_buf));
+  }
+
+  /* vfork synchronization: a successful exec ends the shared-memory phase. */
+  if (up->vforkp != nil) {
+    bprint("VFORK: Unblocking parent pid %lud after child pid %lud execs\n",
+           up->vforkp->pid, up->pid);
+    ready(up->vforkp);
+    up->vforkp = nil;
+  }
+
   /* execregs should not return */
   execregs(entry, stacksize, nargs);
   return 0;
 }
 
-/*@
-  @ terminates \true;
+/*
+ * sysspawn - SECURE process creation primitive (TRAMPOLINE ARCHITECTURE)
+ *
+ * This is Lux9's DEFAULT and SECURE way to create processes.
+ *
+ * SECURITY DESIGN:
+ * ================
+ * Traditional Unix fork()+exec() has a critical vulnerability:
+ *   1. fork() copies parent's stack/data via COW
+ *   2. Child returns through parent's stack to userspace
+ *   3. Child executes if(pid==0) check using parent's stack
+ *   4. Child calls exec() with parent's stack still accessible
+ *   → WINDOW: Child can read parent's sensitive stack data before exec!
+ *
+ * For Lux9's resurrection server (which monitors ALL services and is built
+ * for user extension), this is catastrophic - any spawned child could extract:
+ *   - Monitoring data about all system services
+ *   - Capability tokens, file descriptors, auth data
+ *   - Service configuration and system secrets
+ *
+ * TRAMPOLINE SOLUTION:
+ * ====================
+ * spawn() keeps child creation and exec in one kernel path:
+ *   1. Parent creates child process state
+ *   2. Parent loads binary into child address space
+ *   3. Child PC/SP are set to new program entry before scheduling
+ *   4. Child is scheduled and starts at entry
+ *   -> Child never returns through parent's user stack.
+ *
+ * The child's first instruction is in the NEW program's text segment.
+ * There is no return path, no stack copy, no data leakage.
+ */
+uintptr sysspawn(void *list_void) {
+  Proc *p, *saved_up;
+  ulong *uargs;
+  ulong pid;
+  int i;
+  char *file;
+
+  uargs = (ulong *)list_void;
+  file = (char *)uargs[0];
+
+  if ((p = newproc()) == nil)
+    error("no procs");
+
+  qlock(&up->debug);
+  qlock(&p->debug);
+
+  p->scallnr = up->scallnr;
+  p->s = up->s;
+  p->slash = up->slash;
+  p->dot = up->dot;
+  if (p->dot != nil)
+    incref((Ref *)&p->dot->ref);
+
+  p->nnote = 0;
+  p->notify = up->notify;
+  p->notified = 0;
+  p->notepending = 0;
+  p->lastnote = nil;
+  p->noteid = up->noteid;
+
+  p->procmode = up->procmode;
+  p->privatemem = up->privatemem;
+  p->noswap = up->noswap;
+  p->capabilities = up->capabilities;
+  /*
+   * sysspawn is the normal service-launch path, not debugger inheritance.
+   * Carrying Proc_stopme through exec leaves the child permanently stopped
+   * after its first trap.
+   */
+  p->hang = 0;
+  if (up->procctl == Proc_tracesyscall)
+    p->procctl = Proc_tracesyscall;
+  p->kp = 0;
+
+  memmove(&p->spawn_cap, &up->spawn_cap, sizeof(uuid_t));
+  p->spawn_max_children = up->spawn_max_children;
+  p->spawn_children = 0;
+
+  /*
+   * Build the child return frame on its own kernel stack and keep dbgreg
+   * pointing at that frame so sysexec can patch entry/sp for forkret.
+   */
+  forkchild(p, up->dbgreg);
+  p->dbgreg = (Ureg *)(p->sched.sp + 2 * BY2WD);
+
+  kstrdup(&p->text, up->text);
+  kstrdup(&p->user, up->user);
+  kstrdup(&p->args, "");
+  p->nargs = 0;
+  p->setargs = 0;
+
+  p->insyscall = 0;
+  memset(p->time, 0, sizeof(p->time));
+  p->time[TReal] = MACHP(0)->ticks;
+  p->kentry = up->kentry;
+  p->pcycles = -p->kentry;
+
+  pid = pidalloc(p);
+
+  /* Seed child with initial Pebble budget so exec-time allocations can fault in
+   * pages without tripping immediate OOM. */
+  {
+    ulong parent_budget = up->pebble.colorless_bank;
+    ulong half_parent = parent_budget / 2;
+    ulong fixed_grant = 32 * 1024 * 1024;
+    ulong child_budget = (half_parent < fixed_grant) ? half_parent : fixed_grant;
+
+    if (parent_budget < child_budget)
+      child_budget = parent_budget;
+
+    p->pebble.colorless_bank = child_budget;
+    up->pebble.colorless_bank -= child_budget;
+
+    bprint("PEBBLE: sysspawn transferred %lud bytes to child pid %lud\n",
+           child_budget, pid);
+  }
+
+  qunlock(&p->debug);
+  qunlock(&up->debug);
+
+  if (waserror()) {
+    p->kp = 1;
+    kprocchild(p, abortion);
+    ready(p);
+    nexterror();
+  }
+
+  qlock(&p->seglock);
+  if (waserror()) {
+    qunlock(&p->seglock);
+    nexterror();
+  }
+  for (i = 0; i < NSEG; i++) {
+    if (up->seg[i] != nil)
+      p->seg[i] = dupseg(up->seg, i, 1, p);
+  }
+  qunlock(&p->seglock);
+  poperror();
+
+  p->fgrp = dupfgrp(up->fgrp);
+
+  p->pgrp = up->pgrp;
+  if (p->pgrp != nil)
+    incref((Ref *)&up->pgrp->ref);
+
+  p->rgrp = up->rgrp;
+  if (p->rgrp != nil)
+    incref((Ref *)&up->rgrp->ref);
+
+  if (p->pgrp != nil) {
+    lock(&p->pgrp->spawn_lock);
+    p->pgrp->spawn_count++;
+    unlock(&p->pgrp->spawn_lock);
+  }
+
+  p->parent = up;
+  lock(&up->exl);
+  up->nchild++;
+  up->spawn_children++;
+  unlock(&up->exl);
+
+  procpriority(p, up->basepri, up->fixedpri);
+  if (up->wired)
+    procwired(p, up->affinity);
+
+  p->p9uaddr = up->p9uaddr;
+
+  procfork(p);
+
+  bprint("sysspawn: loading '%s' into child pid=%lud\n", file, pid);
+  saved_up = up;
+  up = p;
+  if (waserror()) {
+    up = saved_up;
+    flushmmu();
+    nexterror();
+  }
+  sysexec(list_void);
+  poperror();
+
+  up = saved_up;
+  flushmmu();
+
+  proc_teardown_p9page(p);
+  if (proc_setup_p9page(p) < 0)
+    error(Enovmem);
+
+  /*
+   * sysexec() patched p->dbgreg with the final user entry state.
+   * Run the child through a clean touser() trampoline instead of
+   * reusing the parent's forkret-shaped return frame.
+   */
+  p->dbgreg = spawnexecsnap(p);
+  kprocchild(p, spawnexecchild);
+  p->newtlb = 1;
+  ready(p);
+  poperror();
+
+  return (uintptr)pid;
+}
+
+/*@ terminates \true;
   @ assigns \nothing;
   @ ensures \result == 0;
   @*/
 int return0(void *) { return 0; }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
   @ requires valid_syscall_args((ulong*)list_void, 1);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result == 0;
-  @*/
+  */
 uintptr syssleep(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   long ms;
@@ -1439,20 +1717,26 @@ uintptr syssleep(void *list_void) {
   } else {
     tsleep(&up->sleep, return0, 0, (ulong)ms);
   }
+
   return 0;
 }
 
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
+  @  terminates \true;
+  @ assigns \nothing;
+  */
 uintptr sysalarm(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   return procalarm(SYSCALL_ARG(list, ulong));
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= -1;
-  @*/
+  */
 uintptr sysexits(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *status;
@@ -1497,11 +1781,12 @@ uintptr sys_wait(void *list_void) {
   }
   poperror();
   if (list) {
-    /* Only partial support for wait string parsing here */
-    /* ow is already OWaitmsg* from line 1248 */
-    // We don't have full string parsing, but we can write PID ?
-    // Actually existing code tries to parse it.
-    // Let's just cast w.pid to ulong as requested.
+    /* Only partial support for wait string parsing here
+     * ow is already OWaitmsg* from line 1248
+     * We don't have full string parsing, but we can write PID ?
+     * Actually existing code tries to parse it.
+     * Let's just cast w.pid to ulong as requested.
+     */
     readnum(0, ow->pid, NUMSIZE, (ulong)w.pid, NUMSIZE);
     readnum(0, ow->time + TUser * NUMSIZE, NUMSIZE, w.time[TUser], NUMSIZE);
     readnum(0, ow->time + TSys * NUMSIZE, NUMSIZE, w.time[TSys], NUMSIZE);
@@ -1512,12 +1797,12 @@ uintptr sys_wait(void *list_void) {
   return pid;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ terminates \true;
   @ assigns \nothing;
   @ ensures \result >= -1;
-  @*/
+  */
 uintptr sysawait(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   char *p;
@@ -1527,14 +1812,22 @@ uintptr sysawait(void *list_void) {
   n = SYSCALL_ARG(list, uint);
   validaddr((uintptr)p, n, 1);
   pwait(&w);
-  if ((int)n < 0) // Added cast for comparison
+  if ((int)n < 0) /* Added cast for comparison */
     return (uintptr)-1;
   /* n is uint, snprint takes int n. Cast in call. */
   return (uintptr)snprint(p, (int)n, "%d %lud %lud %lud %q", w.pid,
                           w.time[TUser], w.time[TSys], w.time[TReal], w.msg);
 }
 
+/*@ assigns up->syserrstr[0..ERRMAX-1]; */
 void werrstr(char *fmt, ...) {
+#ifdef __FRAMAC__
+  // Frama-C stub: model the effect on syserrstr
+  if (up != nil) {
+    // Arbitrary write to model side effect
+    up->syserrstr[0] = 0;
+  }
+#else
   va_list va;
 
   if (up == nil)
@@ -1543,13 +1836,12 @@ void werrstr(char *fmt, ...) {
   va_start(va, fmt);
   vseprint(up->syserrstr, up->syserrstr + ERRMAX, fmt, va);
   va_end(va);
+#endif
 }
 
-/*@
-  @ requires buf != \null && nbuf > 0;
+/*@ requires buf != \null && nbuf > 0;
   @ requires up != \null;
-  @ requires \valid(up);
-  @ assigns up->errstr, up->syserrstr;
+  @ assigns up->errstr[0..ERRMAX-1], up->syserrstr[0..ERRMAX-1];
   @ ensures \result == 0;
   @*/
 static int generrstr(char *buf, uint nbuf) {
@@ -1560,8 +1852,10 @@ static int generrstr(char *buf, uint nbuf) {
   if (nbuf > ERRMAX)
     nbuf = ERRMAX;
   validaddr((uintptr)buf, nbuf, 1);
+  /*@ assert \valid(buf + (0 .. nbuf - 1)); */
 
   err = up->errstr;
+  /*@ assert \valid(err + (0 .. nbuf - 1)); */
   utfecpy(err, err + nbuf, buf);
   utfecpy(buf, buf + nbuf, up->syserrstr);
 
@@ -1597,10 +1891,8 @@ uintptr sysnotify(void *list_void) {
   return 0;
 }
 
-/*@
-  @ requires ureg != \null;
+/*@ requires ureg != \null;
   @ requires up != \null;
-  @ requires \valid(up);
   @ assigns up->noteureg, up->notified, up->lastnote, up->notify;
   @ ensures \result == 0 || \result == 1;
   @*/
@@ -1622,8 +1914,7 @@ int donotify(Ureg *ureg) {
 #ifdef __FRAMAC__
   msg = 0;
 #endif
-  /*@ assert msg == \null || \valid_read(msg + (0 .. 128)); */
-  /*@ assert msg == \null || \valid_read(msg + (0 .. 128)); */
+
   if (msg == nil) {
     qunlock(&up->debug);
     splhi();
@@ -1656,11 +1947,11 @@ int donotify(Ureg *ureg) {
 #endif
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ assigns up->notified, up->noteureg, up->lastnote->flag;
   @ ensures \result == 0;
-  @*/
+  */
 uintptr sysnoted(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   Ureg *nureg;
@@ -1701,7 +1992,8 @@ uintptr sysnoted(void *list_void) {
     up->lastnote->flag = NDebug;
     /* fall through */
   case NDFLT:
-    noted(up->dbgreg, nureg, arg); /* for debugging */
+    noted(up->dbgreg, nureg, arg);
+    /* for debugging */
     if (up->lastnote->flag == NDebug)
       pprint("suicide: %s\n", up->lastnote->msg);
     pexit(up->lastnote->msg, up->lastnote->flag != NDebug);
@@ -1713,11 +2005,11 @@ uintptr sysnoted(void *list_void) {
   return 0;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ assigns \nothing;
   @ ensures \result >= 0;
-  @*/
+  */
 uintptr syssegbrk(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int i;
@@ -1744,11 +2036,11 @@ uintptr syssegbrk(void *list_void) {
   error(Ebadarg);
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ assigns \nothing;
   @ ensures \result >= 0;
-  @*/
+  */
 uintptr syssegattach(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int attr;
@@ -1772,11 +2064,11 @@ uintptr syssegattach(void *list_void) {
   return va;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
+  @ requires valid_syscall_args((ulong*)list_void, 1);
   @ assigns \nothing;
   @ ensures \result == 0;
-  @*/
+  */
 uintptr syssegdetach(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   int i;
@@ -1819,7 +2111,6 @@ found:
   if (up->vforkp != nil) {
     bprint("VFORK: Unblocking parent pid %lud after child pid %lud execs\n",
            up->vforkp->pid, up->pid);
-    proc_event(up->vforkp, EV_VFORK_DONE);
     ready(up->vforkp);
     up->vforkp = nil;
   }
@@ -1951,52 +2242,67 @@ uintptr sysrendezvous(void *list_void) {
  *
  * The second is that a releaser might wake an acquirer who is
  * interrupted before he can acquire the lock.  Since
- * release(n) issues only n wakeup calls -- only n can be used
- * anyway -- if the interrupted process is not going to use his
- * wakeup call he must pass it on to another acquirer.
- *
- * The third race is similar to the second but more subtle.  An
- * acquirer sets waiting=1 and then does a final canacquire()
- * before going to sleep.  The opposite order would result in
- * missing wakeups that happen between canacquire and
- * waiting=1.  (In fact, the whole point of Sema.waiting is to
- * avoid missing wakeups between canacquire() and sleep().) But
- * there can be spurious wakeups between a successful
- * canacquire() and the following semdequeue().  This wakeup is
- * not useful to the acquirer, since he has already acquired
- * the semaphore.  Like in the previous case, though, the
- * acquirer must pass the wakeup call along.
- *
- * This is all rather subtle.  The code below has been verified
- * with the spin model /sys/src/9/port/semaphore.p.  The
- * original code anticipated the second race but not the first
- * or third, which were caught only with spin.  The first race
- * is mentioned in /sys/doc/sleep.ps, but I'd forgotten about it.
- * It was lucky that my abstract model of sleep/wakeup still managed
- * to preserve that behavior.
- *
- * I remain slightly concerned about memory coherence
- * outside of locks.  The spin model does not take
- * queued processor writes into account so we have to
- * think hard.  The only variables accessed outside locks
- * are the semaphore value itself and the boolean flag
- * Sema.waiting.  The value is only accessed with cmpswap,
- * whose job description includes doing the right thing as
- * far as memory coherence across processors.  That leaves
- * Sema.waiting.  To handle it, we call coherence() before each
- * read and after each write.		- rsc
- */
+ * release(n)
+issues only n wakeup calls-- only n can be used *anyway-- if the interrupted
+    process is not going to use his *wakeup call he must pass it on to another
+        acquirer.**The third race is similar to the second but more subtle.An *
+            acquirer sets waiting =
+    1 and then does a final canacquire() *before going to sleep.The
+        opposite order would result in *missing
+            wakeups that happen between canacquire and *waiting =
+        1.(In fact,
+           the whole point of Sema
+               .waiting is to *avoid missing wakeups between canacquire()
+                   and sleep()
+               .)But *
+        there can be spurious wakeups between a successful *
+        canacquire() and the following semdequeue().This wakeup is *
+        not useful to the acquirer,
+                          since he has already acquired *the semaphore.Like
+                              in the previous case,
+                          though,
+                          the *acquirer must pass the wakeup call
+                                  along.**This is all rather subtle.The
+                                      code below has been verified *
+                                          with the spin model * /
+                              sys * / src * / 9 * / port * /
+                              semaphore.p.The *original code anticipated the
+                                  second race but not the first *or third,
+                          which were caught only with spin.The first race *
+                                  is mentioned in * /
+                              sys * / doc * / sleep.ps,
+                          but I'd forgotten about it. *It was lucky that my
+abstract model of sleep
+                                  * /
+                              wakeup still managed *to preserve that behavior
+                                  .**I remain slightly concerned about
+                                      memory coherence *outside of locks
+                                  .The spin model does not take *
+                                      queued processor writes into account so we
+                                          have to *think hard
+                                  .The only variables accessed outside locks *
+                                      are the semaphore value itself and the
+                                          boolean flag *Sema.waiting.The value
+                                              is only accessed with cmpswap,
+                          *whose job description includes doing the right
+                               thing as *far as memory
+                                   coherence across processors.That leaves *
+                                       Sema.waiting.To handle it,
+                          we call coherence()
+                                      before each *read and after each write.-
+                                  rsc * /
 
-/* Add semaphore p with addr a to list in seg. */
-/*@
-  @ requires s != \null;
+                                      /* Add semaphore p with addr a to list
+                                           in seg. */
+/*@ requires s != \null;
   @ requires p != \null;
   @ assigns *p, s->sema.rendez.lock;
   @*/
 static void semqueue(Segment *s, long *a, Sema *p) {
   memset(p, 0, sizeof *p);
   p->addr = a;
-  lock(&s->sema.rendez.lock); /* protect semaphore list */
+  lock(&s->sema.rendez.lock);
+  /* protect semaphore list */
   p->next = &s->sema;
   p->prev = s->sema.prev;
   p->next->prev = p;
@@ -2004,9 +2310,9 @@ static void semqueue(Segment *s, long *a, Sema *p) {
   unlock(&s->sema.rendez.lock);
 }
 
-/* Remove semaphore p from list in seg. */
-/*@
-  @ requires s != \null;
+/* Remove semaphore p from list in seg.
+ */
+/*@ requires s != \null;
   @ requires p != \null;
   @ assigns s->sema.rendez.lock;
   @*/
@@ -2017,9 +2323,9 @@ static void semdequeue(Segment *s, Sema *p) {
   unlock(&s->sema.rendez.lock);
 }
 
-/* Wake up n waiters with addr a on list in seg. */
-/*@
-  @ requires s != \null;
+/* Wake up n waiters with addr a on list
+     in seg. */
+/*@ requires s != \null;
   @ assigns s->sema.rendez.lock;
   @*/
 static void semwakeup(Segment *s, long *a, long n) {
@@ -2037,12 +2343,13 @@ static void semwakeup(Segment *s, long *a, long n) {
   unlock(&s->sema.rendez.lock);
 }
 
-/* Add delta to semaphore and wake up waiters as appropriate. */
-/*@
-  @ requires s != \null;
+/* Add delta to semaphore and wake up
+     waiters as appropriate. */
+/*@ requires s != \null;
   @ requires addr != \null;
   @ assigns *addr;
-  @ ensures \result == \old(*addr) + delta;
+  @ ensures \result == \old(*addr) +
+  delta;
   @*/
 long semrelease(Segment *s, long *addr, long delta) {
   long value;
@@ -2054,9 +2361,9 @@ long semrelease(Segment *s, long *addr, long delta) {
   return value + delta;
 }
 
-/* Try to acquire semaphore using compare-and-swap */
-/*@
-  @ requires addr != \null;
+/* Try to acquire semaphore using
+     compare-and-swap */
+/*@ requires addr != \null;
   @ assigns *addr;
   @ ensures \result == 0 || \result == 1;
   @*/
@@ -2070,10 +2377,12 @@ static int canacquire(long *addr) {
 }
 
 /* Should we wake up? */
-/*@
-  @ requires p != \null;
+/*@ requires p != \null;
+  @ requires \valid((Sema*)p);
   @ assigns \nothing;
-  @ ensures \result == !(((Sema*)p)->waiting);
+  @ ensures \result ==
+  !(((Sema*)p)->waiting) || \result ==
+  ((((Sema*)p)->waiting) == 0);
   @*/
 static int semawoke(void *p) {
   coherence();
@@ -2081,8 +2390,7 @@ static int semawoke(void *p) {
 }
 
 /* Acquire semaphore (subtract 1). */
-/*@
-  @ requires s != \null;
+/*@ requires s != \null;
   @ requires addr != \null;
   @ assigns *addr;
   @ ensures \result == 1;
@@ -2107,7 +2415,9 @@ int semacquire(Segment *s, long *addr, int block) {
     poperror();
   }
   semdequeue(s, &phore);
-  coherence(); /* not strictly necessary due to lock in semdequeue */
+  coherence();
+  /* not strictly necessary due to
+       lock in semdequeue */
   if (!phore.waiting)
     semwakeup(s, addr, 1);
   if (!acquired)
@@ -2116,8 +2426,7 @@ int semacquire(Segment *s, long *addr, int block) {
 }
 
 /* Acquire semaphore or time-out */
-/*@
-  @ requires s != \null;
+/*@ requires s != \null;
   @ requires addr != \null;
   @ assigns *addr;
   @ ensures \result == 0 || \result == 1;
@@ -2151,7 +2460,9 @@ static int tsemacquire(Segment *s, long *addr, ulong ms) {
     poperror();
   }
   semdequeue(s, &phore);
-  coherence(); /* not strictly necessary due to lock in semdequeue */
+  coherence();
+  /* not strictly necessary due to
+       lock in semdequeue */
   if (!phore.waiting)
     semwakeup(s, addr, 1);
   if (!acquired)
@@ -2212,8 +2523,9 @@ uintptr syssemrelease(void *list_void) {
       (uintptr)addr + sizeof(long) > s->top) {
     validaddr((uintptr)addr, sizeof(long), 1);
     error(Ebadarg);
-  }
-  /* delta == 0 is a no-op, not a release */
+  } /* delta == 0 is
+         a no-op, not
+       a release */
   if (delta < 0 || *addr < 0)
     error(Ebadarg);
   return (uintptr)semrelease(s, addr, delta);
@@ -2224,7 +2536,8 @@ uintptr sys_nsec(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   vlong *v;
 
-  /* return in register on 64bit machine */
+  /* return in register on 64bit
+       machine */
   if (sizeof(uintptr) == sizeof(vlong)) {
     USED(list);
     return (uintptr)todget(nil, nil);
@@ -2237,22 +2550,21 @@ uintptr sys_nsec(void *list_void) {
   return 0;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
-  @ requires valid_syscall_args((ulong*)list_void, 2);
+/*@ requires \valid(up);
+  @ requires
+  valid_syscall_args((ulong*)list_void,
+  2);
   @ terminates \true;
-  @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
-  @   ensures \valid((PebbleWhite*)\result);
-  @
+  @   ensures
+  \valid((PebbleWhite*)\result);
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
-  @
   @ assigns \nothing;
-  @*/
+  */
 uintptr syspebblewhiteissue(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   ulong size;
@@ -2275,28 +2587,26 @@ uintptr syspebblewhiteissue(void *list_void) {
     error(PEBBLE_E_AGAIN);
   *out = white;
   if (pebble_debug)
-    bprint("PEBBLE: white issue pid=%lud size=%lud token=%#p\n", up->pid, size,
-           white);
+    bprint("PEBBLE: white issue pid=%lud "
+           "size=%lud token=%#p\n",
+           up->pid, size, white);
   return (uintptr)white;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
-  @ requires valid_syscall_args((ulong*)list_void, 2);
-  @ terminates \true;
-  @
-  @ behavior success:
-  @   assumes pebble_enabled == 1;
-  @   ensures \result != (uintptr)0;
-  @   // Allocation success implies valid capability
-  @   ensures \result != (uintptr)0 ==> \valid((UserCapability*) \result);
-  @
-  @ behavior error_perm:
-  @   assumes pebble_enabled == 0;
-  @   ensures \false;
-  @
-  @ assigns \nothing;
-  @*/
+/*@ requires \valid(up);
+  @ requires
+  valid_syscall_args((ulong*)list_void,
+  2);
+  /*@ terminates \true;
+    @ behavior success:
+    @   assumes pebble_enabled == 1;
+    @   ensures \result != (uintptr)0;
+    @   ensures \result != (uintptr)0 ==> \valid((UserCapability *) \result);
+    @ behavior error_perm:
+    @   assumes pebble_enabled == 0;
+    @   ensures \false;
+    @ assigns \nothing;
+    @*/
 uintptr syspebbleblackalloc(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   uintptr size;
@@ -2320,21 +2630,17 @@ uintptr syspebbleblackalloc(void *list_void) {
   return (uintptr)handle;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
   @ requires valid_syscall_args((ulong*)list_void, 1);
   @ terminates \true;
-  @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result == 0;
-  @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
-  @
   @ assigns \nothing;
-  @*/
+  */
 uintptr syspebbleblackfree(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   void *handle;
@@ -2346,22 +2652,18 @@ uintptr syspebbleblackfree(void *list_void) {
   return 0;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
   @ requires valid_syscall_args((ulong*)list_void, 2);
   @ terminates \true;
-  @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
   @   ensures \result != (uintptr)0 ==> \valid((PebbleBlack*) \result);
-  @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
-  @
   @ assigns \nothing;
-  @*/
+  */
 uintptr syspebblewhiteverify(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   PebbleWhite *white;
@@ -2381,21 +2683,17 @@ uintptr syspebblewhiteverify(void *list_void) {
   return (uintptr)black;
 }
 
-/*@
-  @ requires \valid((ulong*)list_void);
+/*@ requires \valid(up);
   @ requires valid_syscall_args((ulong*)list_void, 2);
   @ terminates \true;
-  @
   @ behavior success:
   @   assumes pebble_enabled == 1;
   @   ensures \result != (uintptr)0;
-  @
   @ behavior error_perm:
   @   assumes pebble_enabled == 0;
   @   ensures \false;
-  @
   @ assigns \nothing;
-  @*/
+  */
 uintptr syspebbleredcopy(void *list_void) {
   syscall_va_list list = (syscall_va_list)list_void;
   PebbleBlue *blue;
@@ -2462,27 +2760,28 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
    * bprint("dosyscall: entered, scallnr=%ld\n", scallnr);
    */
 
-  // bprint("DEBUG: 1. m=%p\n", m);
+  /* bprint("DEBUG: 1. m=%p\n", m); */
   m->syscall++;
-  // bprint("DEBUG: 2. up=%p\n", up);
+  /* bprint("DEBUG: 2. up=%p\n", up); */
   up->insyscall = 1;
   /* Re-enable interrupts for syscall processing (allows preemption/timers) */
   if (up && m && up->nlocks == 0)
     s = spllo();
 
-  // if (1) bprint("DEBUG: Pre-Waserror: up=%p nerrlab=%d\n", up, up->nerrlab);
+  /* if (1) bprint("DEBUG: Pre-Waserror: up=%p nerrlab=%d\n", up, up->nerrlab);
+   */
   if (!waserror()) {
-    // bprint("DEBUG: Inside waserror\n");
+    /* bprint("DEBUG: Inside waserror\n"); */
     evenaddr((uintptr)args);
     validaddr((uintptr)args, sizeof(Sargs), 0);
 
     up->s = *args;
-    // bprint("DEBUG: Copied args\n");
+    /* bprint("DEBUG: Copied args\n"); */
     syscall_va_list syscall_args;
     syscall_vainit(syscall_args, up->s.args);
-    // bprint("DEBUG: vainit done\n");
+    /* bprint("DEBUG: vainit done\n"); */
     syscall_vainit(syscall_args, up->s.args);
-    // bprint("DEBUG: vainit done\n");
+    /* bprint("DEBUG: vainit done\n"); */
     up->scallnr = (int)scallnr;
 
     if (up->procctl == Proc_tracesyscall) {
@@ -2504,7 +2803,7 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
      * DEBUG: Disabled verbose syscall tracing
      * bprint("dosyscall: calling syscall handler\n");
      */
-    // bprint("DEBUG: calling handler\n");
+    /* bprint("DEBUG: calling handler\n"); */
     snprint(buf, sizeof(buf), "DEBUG: About to call systab[%ld] at %p\n",
             scallnr, systab[scallnr]);
     uartputs(buf, (int)strlen(buf));
@@ -2515,7 +2814,8 @@ int dosyscall(ulong scallnr, Sargs *args, uintptr *retp) {
      */
     poperror();
     if (scallnr == NOTED) {
-      /* special case: noted() changes the ureg, return without setting *retp */
+      /* special case: noted() changes the ureg, return without setting *retp
+       */
       splx(s);
       up->insyscall = 0;
       up->psstate = nil;

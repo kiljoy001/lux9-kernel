@@ -1,4 +1,0 @@
-TEXT	fabs(SB), $0
-	FMOVD	x+0(FP), F0
-	FABSD	F0, F0
-	RETURN

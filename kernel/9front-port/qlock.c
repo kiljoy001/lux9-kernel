@@ -19,6 +19,10 @@ void eqlock(QLock *q) {
   uintptr pc;
 
   pc = getcallerpc(&q);
+  if (q == nil) {
+    print("eqlock(nil) called from %#p\n", pc);
+    panic("eqlock(nil)");
+  }
 
   lock(&q->use);
   if (!q->locked) {
@@ -63,6 +67,10 @@ void qlock(QLock *q) {
   uintptr pc;
 
   pc = getcallerpc(&q);
+  if (q == nil) {
+    print("qlock(nil) called from %#p\n", pc);
+    panic("qlock(nil)");
+  }
 
   lock(&q->use);
   if (!q->locked) {
@@ -115,7 +123,9 @@ void qunlock(QLock *q) {
   lock(&q->use);
   if (!q->locked) {
     unlock(&q->use);
+#ifndef __FRAMAC__
     print("qunlock called with qlock not held, from %#p\n", getcallerpc(&q));
+#endif
     return;
   }
   p = q->head;

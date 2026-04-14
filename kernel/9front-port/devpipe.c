@@ -12,12 +12,8 @@
  *   - Write to q[id], read from q[1-id] (write_read_duality)
  */
 
-#include "dat.h"
-#include "fns.h"
-#include "mem.h"
-#include "portlib.h"
-#include "u.h"
-#include <error.h>
+#include "kernel.h"
+#include "pebble_kernel.h"
 
 #define PIPESIZE (4096)
 
@@ -115,6 +111,8 @@ static int pipegen(Chan *c, char *name, Dirtab *tab, int ntab, int s, Dir *dp) {
   USED(ntab);
 
   p = c->aux;
+  if (p == nil || (uintptr)p < 0xffff800000000000ULL)
+    return -1;
   if (s == DEVDOTDOT) {
     devdir(c, c->qid, "#|", 0, eve, 0555, dp);
     return 1;
@@ -164,6 +162,7 @@ static Walkqid *pipewalk(Chan *c, Chan *nc, char **name, int nname) {
 
   wq = devwalk(c, nc, name, nname, 0, 0, pipegen);
   if (wq != nil && wq->clone != nil && wq->clone != c) {
+    wq->clone->aux = c->aux;
     p = c->aux;
     qlock(&p->l);
     p->ref++;
@@ -247,63 +246,20 @@ static void pipeclose(Chan *c) {
   } else {
     id = c->qid.path - 1;
     if (id >= 0 && id <= 1) {
-      /* Standard pipe logic:
-         If we are closing one end, we should close the queue
-         so the other end gets EOF or Epipe.
-         But multiple fds can point to one end (dup).
-         So we need qref.
-      */
-      // p->qref[id]--; /* We incremented in walk */
-      // Actually, sysfile.c calls walk then open.
-      // walk clone increments ref.
-      // open keeps ref.
-      // close decrements.
-      // Wait, syspipe does NOT clone for the open?
-      // It clones c[0] to c[1].
-      // c[0] is the dir.
-      // walk(&c[0]...) turns c[0] into the file.
-      // So c[0] transitions from dir to file.
-      // The ref count on Pipe is handled.
-      // But we need to track how many readers/writers on each Q.
-
-      // Simplified: Just check if this is the last ref to the channel?
-      // Chan c has c->ref. When c->ref goes to 0, pipeclose is called.
-      // So we are closing THIS channel reference.
-
-      /* We need to know if we should send EOF to the *other* side.
-         If we close write end, other side gets EOF.
-         If we close read end, other side gets Epipe.
-      */
-
-      /* Implementation detail:
-         We don't have easy access to "total refs to this queue".
-         But we can cheat: if (c->flag & COPEN), we are closing an open file.
-         If (c->mode == OWRITE || c->mode == ORDWR) -> we are writer.
-         If (c->mode == OREAD || c->mode == ORDWR) -> we are reader.
-      */
-
       if (c->flag & COPEN) {
-        if (c->mode == OWRITE || c->mode == ORDWR) {
-          qclose(p->q[id]); // Close the queue we write to?
-          // No, we write to the *other* queue usually?
-          // Standard pipe: write to q[0] goes to q[1]?
-          // Or write to q[0] goes to q[0] and read from q[0] gets it?
-          // Plan 9 pipes:
-          // data -> q[0]
-          // data1 -> q[1]
-          // Write to data puts in q[0]. Read from data1 takes from q[0].
-          // Write to data1 puts in q[1]. Read from data takes from q[1].
-
-          // So if we close data (id=0) for write:
-          // We should close q[0] so readers of data1 get EOF.
-          qclose(p->q[id]);
-        }
-        if (c->mode == OREAD || c->mode == ORDWR) {
-          // If we close read end of data (id=0),
-          // We read from q[1]. We should close q[1] so writers to data1 get
-          // broken pipe?
-          qclose(p->q[1 - id]);
-        }
+        /*
+         * Pipe queue layout:
+         *   data  (id=0): write to q[0], read from q[1]
+         *   data1 (id=1): write to q[1], read from q[0]
+         *
+         * When the last fd for a channel is closed, we close q[id]
+         * (the queue this channel writes to) so the other channel's
+         * readers get EOF. We do NOT close q[1-id] here because the
+         * other channel may still be open for writing.
+         *
+         * This is only reached when c->ref hits 0 (last holder closed).
+         */
+        qclose(p->q[id]);
       }
     }
   }
@@ -352,7 +308,8 @@ static long piperead(Chan *c, void *va, long n, vlong offset) {
     // COQ_PROOF_REF: proofs/pipe/safety.v:closed_queue_no_write
     // COQ_PROOF_REF: proofs/pipe/safety.v:write_preserves_ref
     // COQ_PROOF_REF: proofs/pipe/safety.v:close_irreversible
-    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n ==
+   0);
 */
 static long pipewrite(Chan *c, void *va, long n, vlong offset) {
   Pipe *p;
@@ -374,6 +331,6 @@ Dev pipedevtab = {
 
     pipeinit, devinit,   devshutdown, pipeattach, pipewalk,
     pipestat, pipeopen,  devcreate,   pipeclose,  piperead,
-    devbread, pipewrite, devbwrite,   devremove,  devwstat,
+    pipewrite, devbread, devbwrite,   devremove,  devwstat,
 };
 #endif

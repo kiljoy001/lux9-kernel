@@ -1,6 +1,7 @@
 #!/bin/bash
-qemu-system-x86_64 -cdrom lux9.iso -m 512M -serial stdio -display none -no-reboot -d int,cpu_reset -D /tmp/qemu_int.log > boot_capture.log 2>&1 &
+qemu-system-x86_64 -cdrom os/lux9.iso -m 512M -serial file:boot_capture.log -display none -no-reboot -d int,cpu_reset -D /tmp/qemu_int.log &
 PID=$!
-sleep 15
+sleep 180
+kill $PID
+sleep 2
 kill -9 $PID
-

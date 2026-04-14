@@ -1,3 +1,0 @@
-> 		case ASLQ:	/* 6 and 57 */
-> 		case ASRAQ:	/* sraw Rb,Rs,Ra; srawi sh,Rs,Ra */	/* 6 and 56 */
-> 		case ARLQMI:	/* unique, also clear, clearleft clearright*/

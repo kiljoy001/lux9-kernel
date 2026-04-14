@@ -8,6 +8,8 @@
 #include "u.h"
 #include <error.h>
 
+extern int boot_verbose;
+
 extern uintptr saved_limine_hhdm_offset;
 extern uintptr *mmuwalk(uintptr *, uintptr, int, int);
 
@@ -189,6 +191,17 @@ void freepages(Page *head, Page *tail, ulong np) {
   Page *p = head;
   while (p != nil) {
     if (up != nil && p->pa != 0) {
+      if (boot_verbose) {
+        static int freepages_debug_count;
+        freepages_debug_count++;
+        if (freepages_debug_count <= 20 || freepages_debug_count % 500 == 0) {
+          Proc *owner = pageown_get_owner(p->pa);
+          int sys_owned = borrow_is_owned_by_system(hhdm_virt(p->pa), OWNER_KERNEL);
+          print("FREEPAGES: pa=%#p owner=%p pid=%d current=%d sys=%d\n",
+                p->pa, owner, owner ? owner->pid : -1, up ? up->pid : -2,
+                sys_owned);
+        }
+      }
       /* Update per-process color counters before freeing */
       lock(&pebble_global_lock);
       switch (p->token_color) {
@@ -377,7 +390,7 @@ Page *newpage(uintptr va, Segment *seg) {
   /* Minimal debug - just show VA and free count */
   static int newpage_count = 0;
   newpage_count++;
-  if (newpage_count <= 5 || newpage_count % 100 == 0)
+  if (boot_verbose && (newpage_count <= 4 || newpage_count % 200 == 0))
     print("newpage[%d]: va=%p free=%lud\n", newpage_count, va,
           palloc.freecount);
 
@@ -470,13 +483,24 @@ Page *newpage(uintptr va, Segment *seg) {
   }
 
   /* Automatically acquire ownership for the current process */
-  if (up != nil && p->pa != 0) {
+  /* Skip ownership for demand-paged shared pages (seg==nil means image/cache page) */
+  if (up != nil && p->pa != 0 && seg != nil) {
     extern uintptr saved_limine_hhdm_offset;
     uintptr hhdm_va = p->pa + saved_limine_hhdm_offset;
-    if (seg && (seg->type & SG_WASM)) {
+    if (seg->type & SG_WASM) {
       if (borrow_acquire_system(hhdm_va, OWNER_KERNEL) != BORROW_OK)
         panic("newpage: failed to acquire wasm ownership pa=%#p", p->pa);
     } else {
+      if (boot_verbose) {
+        static int newpage_own_count;
+        newpage_own_count++;
+        if (newpage_own_count <= 20 || newpage_own_count % 200 == 0) {
+          uintptr kaddr_va = (uintptr)kaddr(p->pa);
+          print("OWN-ACQ: pid=%lud pa=%#p hhdm=%#p kaddr=%#p delta=%#p\n",
+                up->pid, p->pa, hhdm_va, kaddr_va,
+                (uintptr)(kaddr_va - p->pa));
+        }
+      }
       if (pageown_acquire(up, p->pa, hhdm_va) != POWN_OK)
         panic("newpage: failed to acquire page ownership pa=%#p", p->pa);
     }
@@ -517,28 +541,31 @@ Page *deadpage(Page *p) {
   @ assigns \everything;
   @*/
 void putpage(Page *p) {
-  /* Release ownership before freeing */
-  /* TEMPORARILY DISABLED - pageown lock is broken */
-  if (0 && p != nil && up != nil && p->pa != 0) {
-    pageown_release(up, p->pa);
-  }
+  Page *freed;
 
-  p = deadpage(p);
-  if (p != nil)
-    freepages(p, p, 1);
+  /* Only release ownership if page will actually be freed */
+  freed = deadpage(p);
+  if (freed != nil) {
+    /* Page is being freed - release ownership if it was tracked
+     * (image pages don't have per-process ownership) */
+    if (up != nil && freed->pa != 0 && freed->token_color != PEBBLE_COLOR_COLORLESS)
+      pageown_release(up, freed->pa);
+    freepages(freed, freed, 1);
+  }
+  /* If freed==nil, page stays in cache, no ownership change needed */
 }
 
 /*
+ * copypage implementation restored for COW
+ */
 void copypage(Page *f, Page *t) {
   KMap *ks, *kd;
-
   ks = kmap(f);
   kd = kmap(t);
   memmove((void *)VA(kd), (void *)VA(ks), BY2PG);
   kunmap(ks);
   kunmap(kd);
 }
-*/
 
 /*@ requires p == \null || \valid(p);
     assigns \everything;
@@ -629,7 +656,6 @@ Page *lookpage(Image *i, uintptr daddr) {
     l = &p->next;
   }
   unlock(i);
-
   return nil;
 }
 

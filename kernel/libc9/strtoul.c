@@ -23,8 +23,8 @@
   @   ensures endptr != \null ==> *endptr >= nptr;
   @ complete behaviors;
   @*/
-ulong strtoul(char *nptr, char **endptr, int base) {
-  char *p;
+ulong strtoul(const char *nptr, char **endptr, int base) {
+  const char *p;
   ulong n, nn, m;
   int c, ovfl, neg, v, ndig;
 
@@ -121,7 +121,7 @@ Return:
   if (ndig == 0)
     p = nptr;
   if (endptr)
-    *endptr = p;
+    *endptr = (char *)p;
   if (ovfl)
     return ULONG_MAX;
   if (neg)

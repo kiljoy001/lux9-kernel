@@ -3,6 +3,11 @@
 #include "fns.h"
 #include "uuid.h"
 
+/*@ requires valid_string(devs);
+    assigns \nothing;
+*/
+extern void devmask(Pgrp *pgrp, int invert, char *devs);
+
 /*@
   @ requires pid2 == \null || \valid(pid2);
   @ assigns \nothing;
@@ -28,9 +33,6 @@ static u64int hash_extract_u64(const u8int *hash) {
   return v;
 }
 
-/*@
-  @ assigns \nothing;
-  @*/
 void pid2_selftest(void) {
   uuid_t parent;
   uuid_t pid2;

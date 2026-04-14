@@ -113,7 +113,7 @@ d_m3TraceLocal(set_f64, "set f64", double,  "%" PRIf64)
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result SuppressLookupFailure(M3Result i_result)
 {
     if (i_result == m3Err_none) {
@@ -130,7 +130,7 @@ M3Result SuppressLookupFailure(M3Result i_result)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  m3_LinkTracer  (IM3Module module)
 {
     M3Result result = m3Err_none;

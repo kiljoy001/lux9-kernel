@@ -286,6 +286,78 @@ ConsensusDepth classify_operation(Fcall *t, char *path) {
  * Rollback Registry Implementation
  */
 
+static void rollback_registry_init_struct(RollbackRegistry *reg,
+                                          uint max_entries) {
+  reg->head = nil;
+  reg->tail = nil;
+  reg->count = 0;
+  reg->max_entries = max_entries;
+  reg->total_optimistic = 0;
+  reg->total_committed = 0;
+  reg->total_rollbacks = 0;
+}
+
+static OpRollbackEntry *rollback_entry_alloc(void) {
+  return xallocz(sizeof(OpRollbackEntry), 1);
+}
+
+static void rollback_entry_init(OpRollbackEntry *entry, RollbackRegistry *reg,
+                                uint op_id, ConsensusDepth depth, Proc *caller,
+                                Fcall *t, Fcall *r) {
+  entry->op_id = op_id;
+  entry->state = ROLLBACK_PENDING;
+  entry->required_depth = depth;
+  entry->op_type = (t != nil) ? get_operation_type(t, nil) : OP_TYPE_UNKNOWN;
+  entry->caller = caller;
+  entry->original_request = t;
+  entry->executed_reply = r;
+  entry->submit_time = (uvlong)seconds();
+  entry->execute_time = entry->submit_time;
+  entry->next = nil;
+  entry->prev = reg->tail;
+}
+
+static void rollback_registry_append_unsafe(RollbackRegistry *reg,
+                                            OpRollbackEntry *entry) {
+  if (reg->tail != nil)
+    reg->tail->next = entry;
+  else
+    reg->head = entry;
+  reg->tail = entry;
+  reg->count++;
+  reg->total_optimistic++;
+}
+
+static void rollback_registry_append(RollbackRegistry *reg,
+                                     OpRollbackEntry *entry) {
+  if (reg == nil || entry == nil)
+    return;
+  rollback_registry_append_unsafe(reg, entry);
+}
+
+static void rollback_unlink_unsafe(RollbackRegistry *reg,
+                                   OpRollbackEntry *entry) {
+  if (entry->prev != nil)
+    entry->prev->next = entry->next;
+  else
+    reg->head = entry->next;
+
+  if (entry->next != nil)
+    entry->next->prev = entry->prev;
+  else
+    reg->tail = entry->prev;
+
+  reg->count--;
+  entry->next = entry->prev = nil;
+}
+
+static void rollback_unlink_entry(RollbackRegistry *reg,
+                                  OpRollbackEntry *entry) {
+  if (reg == nil || entry == nil)
+    return;
+  rollback_unlink_unsafe(reg, entry);
+}
+
 /*@
   @ requires reg == \null || \valid(reg);
   @ assigns \nothing;
@@ -294,8 +366,7 @@ void rollback_registry_init(RollbackRegistry *reg, uint max_entries) {
   if (reg == nil)
     return;
 
-  memset(reg, 0, sizeof(RollbackRegistry));
-  reg->max_entries = max_entries;
+  rollback_registry_init_struct(reg, max_entries);
 
   /* Initialize global registry if this is it */
   if (reg == &_global_registry) {
@@ -306,14 +377,7 @@ void rollback_registry_init(RollbackRegistry *reg, uint max_entries) {
 /*
  * Allocate rollback entry
  */
-static OpRollbackEntry *rollback_alloc(void) {
-  OpRollbackEntry *entry = xalloc(sizeof(OpRollbackEntry));
-  if (entry == nil)
-    return nil;
-
-  memset(entry, 0, sizeof(OpRollbackEntry));
-  return entry;
-}
+static OpRollbackEntry *rollback_alloc(void) { return rollback_entry_alloc(); }
 
 /*
  * Register optimistic execution for potential rollback
@@ -343,27 +407,9 @@ OpRollbackEntry *rollback_register(RollbackRegistry *reg, uint op_id,
   if (entry == nil)
     return nil;
 
-  entry->op_id = op_id;
-  entry->state = ROLLBACK_PENDING;
-  entry->required_depth = depth;
-  entry->op_type = (t != nil) ? get_operation_type(t, nil) : OP_TYPE_UNKNOWN;
-  entry->caller = caller;
-  entry->original_request = t;
-  entry->executed_reply = r;
-  entry->submit_time = (uvlong)seconds();
-  entry->execute_time = entry->submit_time;
-
-  /* Link into registry */
   lock(&registry_lock);
-  entry->next = nil;
-  entry->prev = reg->tail;
-  if (reg->tail != nil)
-    reg->tail->next = entry;
-  else
-    reg->head = entry;
-  reg->tail = entry;
-  reg->count++;
-  reg->total_optimistic++;
+  rollback_entry_init(entry, reg, op_id, depth, caller, t, r);
+  rollback_registry_append_unsafe(reg, entry);
   unlock(&registry_lock);
 
   return entry;
@@ -401,18 +447,7 @@ OpRollbackEntry *rollback_find(RollbackRegistry *reg, uint op_id) {
   @ assigns \nothing;
   @*/
 static void rollback_unlink(RollbackRegistry *reg, OpRollbackEntry *entry) {
-  if (entry->prev != nil)
-    entry->prev->next = entry->next;
-  else
-    reg->head = entry->next;
-
-  if (entry->next != nil)
-    entry->next->prev = entry->prev;
-  else
-    reg->tail = entry->prev;
-
-  reg->count--;
-  entry->next = entry->prev = nil;
+  rollback_unlink_entry(reg, entry);
 }
 
 /*
@@ -633,26 +668,71 @@ void verify_pending_operations(RollbackRegistry *reg, MsgOrd *dag) {
  * Depth-Based Routing
  */
 
+static void consensus_depth_build_spec(Fcall *t, char *path, MsgOrdSpec *spec) {
+  msgord_spec_init(spec);
+  if (t == nil)
+    return;
+
+  switch (t->type) {
+  case Tversion:
+  case Tauth:
+  case Tflush:
+    return; /* explicit global barrier */
+  case Tattach:
+    msgord_spec_add(spec, msgord_key_root(path));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  case Twalk:
+  case Topen:
+  case Tread:
+    msgord_spec_add(spec, msgord_key_fid(t->fid));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  case Tcreate:
+  case Twrite:
+  case Tremove:
+  case Twstat:
+    msgord_spec_add(spec, msgord_key_fid(t->fid));
+    msgord_spec_add(spec, msgord_key_root(path));
+    msgord_spec_add(spec, msgord_key_parent(path));
+    msgord_spec_add(spec, msgord_key_path(path));
+    return;
+  default:
+    msgord_spec_add(spec, msgord_key_op(t->type));
+    msgord_spec_add(spec, msgord_key_root(path));
+    return;
+  }
+}
+
 int route_with_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r, char *path,
-                     RollbackRegistry *reg) {
+                     const MsgOrdSpec *spec, RollbackRegistry *reg) {
   ConsensusDepth depth = classify_operation(t, path);
-  return route_with_explicit_depth(dag, caller, t, r, path, depth, reg);
+  return route_with_explicit_depth(dag, caller, t, r, path, spec, depth, reg);
 }
 
 int route_with_explicit_depth(MsgOrd *dag, Proc *caller, Fcall *t, Fcall *r,
-                              char *path, ConsensusDepth depth,
+                              char *path, const MsgOrdSpec *spec,
+                              ConsensusDepth depth,
                               RollbackRegistry *reg) {
   uint msg_id;
   int result;
+  MsgOrdSpec local_spec;
+  const MsgOrdSpec *submit_spec;
 
   if (dag == nil)
     dag = msgord;
   if (reg == nil)
     reg = global_rollback_registry;
+  if (spec == nil) {
+    consensus_depth_build_spec(t, path, &local_spec);
+    submit_spec = &local_spec;
+  } else {
+    submit_spec = spec;
+  }
 
   /* Submit to MSGORD with optimistic execution */
-  result = msgord_submit_async_depth(dag, caller, t, r, path, depth, &msg_id,
-                                     chacha20_csprng_u64());
+  result = msgord_submit_async_depth(dag, caller, t, r, path, submit_spec,
+                                     depth, &msg_id, chacha20_csprng_u64());
   if (result < 0)
     return result;
 

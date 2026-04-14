@@ -309,6 +309,8 @@ lux_capability_t *lux_cap_derive_class(lux_capability_manager_t *manager,
     print("cap: SECURITY: rejected derivation - requested perms 0x%x "
           "exceed parent perms 0x%x\n",
           permission_mask, parent->permissions);
+    /* Wave 7: Signal capability violation to resurrection */
+    pebble_signal_distress(up, DISTRESS_CAP_VIOLATION, parent->cap_id);
     return nil;
   }
 

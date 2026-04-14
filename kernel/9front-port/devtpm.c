@@ -189,9 +189,9 @@ static long tpmwrite(Chan *c, void *va, long n, vlong off) {
 }
 
 Dev tpmdevtab = {
-    'Ϯ',      "tpm",
+    'T',      "tpm",
 
     devreset, tpminit_dev, devshutdown, tpmattach, tpmwalk,
     tpmstat,  tpmopen,     devcreate,   tpmclose,  tpmread,
-    devbread, tpmwrite,    devbwrite,   devremove, devwstat,
+    tpmwrite, devbread,    devbwrite,   devremove, devwstat,
 };

@@ -79,7 +79,6 @@ SECTIONS
         . += 131072;  /* 128KB stack */
         stack_top = .;
 
-        end = .;
         cpu0data_end = .;
     } :data
 
@@ -97,6 +96,7 @@ SECTIONS
 .rodata : {
     *(.rodata .rodata.*)
     kend = .;
+    end = .;
 } :rodata
 
     /DISCARD/ : {

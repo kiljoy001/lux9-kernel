@@ -51,6 +51,19 @@ typedef enum {
   FRUITY_OP_TASKLET, /* Tasklet ID (for GRAPE) */
 } fruity_operand_type_t;
 
+#ifdef __FRAMAC__
+typedef struct {
+  s32int i32;
+  s64int i64;
+  float r32;
+  double r64;
+  u32int index;                 /* Local/arg/field index */
+  u32int token;                 /* Type/method token */
+  fruity_basic_block_t *target; /* Branch target */
+  fruity_switch_targets_t *switch_targets; /* Switch targets */
+  tasklet_id_t tasklet;         /* For GRAPE opcode */
+} fruity_operand_value_t;
+#else
 typedef union {
   s32int i32;
   s64int i64;
@@ -62,6 +75,7 @@ typedef union {
   fruity_switch_targets_t *switch_targets; /* Switch targets */
   tasklet_id_t tasklet;         /* For GRAPE opcode */
 } fruity_operand_value_t;
+#endif
 
 typedef struct {
   fruity_operand_type_t type;
@@ -207,46 +221,260 @@ struct fruity_module {
   } stats;
 };
 
+/* ===== ACSL Predicates ===== */
+/*@
+  @ predicate fruity_instruction_chain_valid(fruity_instruction_t *instr) =
+  @   instr == \null ||
+  @   (\valid(instr) && fruity_instruction_chain_valid(instr->next));
+  @
+  @ predicate fruity_basic_block_chain_valid(fruity_basic_block_t *block) =
+  @   block == \null ||
+  @   (\valid(block) && fruity_basic_block_chain_valid(block->next));
+  @
+  @ predicate fruity_function_chain_valid(fruity_function_t *func) =
+  @   func == \null ||
+  @   (\valid(func) && fruity_function_chain_valid(func->next));
+  @
+  @ predicate fruity_function_chain_named_valid(fruity_function_t *func) =
+  @   func == \null ||
+  @   (\valid(func) && valid_string(func->name) &&
+  @    fruity_function_chain_named_valid(func->next));
+  @
+  @ predicate fruity_function_list_tail_valid(fruity_module_t *module) =
+  @   module != \null &&
+  @   ((module->functions_head == \null && module->functions_tail == \null) ||
+  @    (module->functions_tail != \null &&
+  @     \valid(module->functions_tail) &&
+  @     module->functions_tail->next == \null));
+  @
+  @ predicate fruity_block_list_tail_valid(fruity_function_t *func) =
+  @   func != \null &&
+  @   ((func->blocks_head == \null && func->blocks_tail == \null) ||
+  @    (func->blocks_tail != \null &&
+  @     \valid(func->blocks_tail) &&
+  @     func->blocks_tail->next == \null));
+  @
+  @ predicate fruity_instruction_list_tail_valid(fruity_basic_block_t *block) =
+  @   block != \null &&
+  @   ((block->instructions_head == \null &&
+  @     block->instructions_tail == \null) ||
+  @    (block->instructions_tail != \null &&
+  @     \valid(block->instructions_tail) &&
+  @     block->instructions_tail->next == \null));
+  @
+  @ predicate fruity_block_edges_valid(fruity_basic_block_t *block) =
+  @   block != \null &&
+  @   (block->successor_capacity == 0 ? block->successors == \null :
+  @     \valid(block->successors + (0 .. block->successor_capacity - 1))) &&
+  @   block->successor_count <= block->successor_capacity &&
+  @   (block->predecessor_capacity == 0 ? block->predecessors == \null :
+  @     \valid(block->predecessors + (0 .. block->predecessor_capacity - 1))) &&
+  @   block->predecessor_count <= block->predecessor_capacity;
+  @
+  @ predicate fruity_module_constants_valid(fruity_module_t *module) =
+  @   module != \null &&
+  @   (module->constants.string_count == 0 ?
+  @     module->constants.strings == \null :
+  @     \valid(module->constants.strings +
+  @            (0 .. module->constants.string_count - 1))) &&
+  @   (\forall integer i; 0 <= i < module->constants.string_count ==>
+  @     valid_string_or_null(module->constants.strings[i]));
+  @*/
+
 /* ===== IR Construction Functions ===== */
 
 /* Module management */
+/*@
+  @ requires name != \null;
+  @ requires valid_string((char *)name);
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result, \result->name;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 fruity_module_t *fruity_module_create(const char *name);
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_valid(module->functions_head) &&
+  @          fruity_module_constants_valid(module));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_module_destroy(fruity_module_t *module);
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_valid(module->functions_head) &&
+  @          fruity_function_list_tail_valid(module));
+  @ requires name != \null;
+  @ requires valid_string((char *)name);
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result, \result->name;
+  @*/
 fruity_function_t *fruity_module_add_function(fruity_module_t *module,
                                               const char *name,
                                               u32int method_token);
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_named_valid(module->functions_head));
+  @ requires name != \null;
+  @ requires valid_string((char *)name);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 fruity_function_t *fruity_module_find_function(fruity_module_t *module,
                                                const char *name);
 
 /* Function management */
+/*@
+  @ requires name != \null;
+  @ requires valid_string((char *)name);
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result, \result->name;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 fruity_function_t *fruity_function_create(const char *name,
                                           u32int method_token);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head) &&
+  @          fruity_block_list_tail_valid(func));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_function_destroy(fruity_function_t *func);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head) &&
+  @          fruity_block_list_tail_valid(func));
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result;
+  @*/
 fruity_basic_block_t *fruity_function_add_block(fruity_function_t *func);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 fruity_basic_block_t *fruity_function_find_block(fruity_function_t *func,
                                                  u32int block_id);
 
 /* Basic block management */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 fruity_basic_block_t *fruity_basic_block_create(u32int block_id);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) &&
+  @          fruity_instruction_chain_valid(block->instructions_head) &&
+  @          fruity_block_edges_valid(block));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_basic_block_destroy(fruity_basic_block_t *block);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) &&
+  @          fruity_instruction_chain_valid(block->instructions_head) &&
+  @          fruity_instruction_list_tail_valid(block));
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @*/
 void fruity_basic_block_add_instruction(fruity_basic_block_t *block,
                                         fruity_instruction_t *instr);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) && fruity_block_edges_valid(block));
+  @ requires successor == \null || \valid(successor);
+  @ terminates \true;
+  @ exits \false;
+  @ allocates block->successors;
+  @*/
 void fruity_basic_block_add_successor(fruity_basic_block_t *block,
                                       fruity_basic_block_t *successor);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) && fruity_block_edges_valid(block));
+  @ requires predecessor == \null || \valid(predecessor);
+  @ terminates \true;
+  @ exits \false;
+  @ allocates block->predecessors;
+  @*/
 void fruity_basic_block_add_predecessor(fruity_basic_block_t *block,
                                         fruity_basic_block_t *predecessor);
 
 /* Instruction construction */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ allocates \result;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 fruity_instruction_t *fruity_instruction_create(fruity_opcode_t opcode);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_instruction_destroy(fruity_instruction_t *instr);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns instr->operand;
+  @*/
 void fruity_instruction_set_operand_i32(fruity_instruction_t *instr,
                                         s32int val);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns instr->operand;
+  @*/
 void fruity_instruction_set_operand_i64(fruity_instruction_t *instr,
                                         s64int val);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns instr->operand;
+  @*/
 void fruity_instruction_set_operand_local(fruity_instruction_t *instr,
                                           u32int idx);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns instr->operand;
+  @*/
 void fruity_instruction_set_operand_branch(fruity_instruction_t *instr,
                                            fruity_basic_block_t *target);
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ terminates \true;
+  @ exits \false;
+  @ assigns instr->operand;
+  @*/
 void fruity_instruction_set_operand_tasklet(fruity_instruction_t *instr,
                                             tasklet_id_t tasklet);
 
@@ -263,8 +491,114 @@ int fruity_function_verify_white_balance(fruity_function_t *func);
 int fruity_function_verify_transaction_nesting(fruity_function_t *func);
 
 /* Verification */
+/*@
+  @ axiomatic FruityLists {
+  @   logic integer fruity_function_list_len(fruity_function_t *f);
+  @   logic integer fruity_block_list_len(fruity_basic_block_t *b);
+  @   logic integer fruity_instr_list_len(fruity_instruction_t *i);
+  @
+  @   axiom fruity_function_list_len_nil:
+  @     fruity_function_list_len(\null) == 0;
+  @   axiom fruity_function_list_len_cons:
+  @     \forall fruity_function_t *f;
+  @       f != \null ==> fruity_function_list_len(f) ==
+  @                     1 + fruity_function_list_len(f->next);
+  @   axiom fruity_function_list_len_nonneg:
+  @     \forall fruity_function_t *f;
+  @       fruity_function_list_len(f) >= 0;
+  @
+  @   axiom fruity_block_list_len_nil:
+  @     fruity_block_list_len(\null) == 0;
+  @   axiom fruity_block_list_len_cons:
+  @     \forall fruity_basic_block_t *b;
+  @       b != \null ==> fruity_block_list_len(b) ==
+  @                     1 + fruity_block_list_len(b->next);
+  @   axiom fruity_block_list_len_nonneg:
+  @     \forall fruity_basic_block_t *b;
+  @       fruity_block_list_len(b) >= 0;
+  @
+  @   axiom fruity_instr_list_len_nil:
+  @     fruity_instr_list_len(\null) == 0;
+  @   axiom fruity_instr_list_len_cons:
+  @     \forall fruity_instruction_t *i;
+  @       i != \null ==> fruity_instr_list_len(i) ==
+  @                     1 + fruity_instr_list_len(i->next);
+  @   axiom fruity_instr_list_len_nonneg:
+  @     \forall fruity_instruction_t *i;
+  @       fruity_instr_list_len(i) >= 0;
+  @
+  @   predicate fruity_block_list_ok(fruity_basic_block_t *b, ulong count) =
+  @     (count == 0 ==> b == \null) &&
+  @     (count > 0 ==> b != \null);
+  @
+  @   predicate fruity_instr_list_ok(fruity_basic_block_t *b) =
+  @     (b->instruction_count == 0 ==> b->instructions_head == \null &&
+  @                                     b->instructions_tail == \null) &&
+  @     (b->instruction_count > 0 ==> b->instructions_head != \null &&
+  @                                    b->instructions_tail != \null &&
+  @                                    b->instructions_head->prev == \null &&
+  @                                    b->instructions_tail->next == \null &&
+  @                                    fruity_instr_list_len(b->instructions_head) ==
+  @                                    (integer)b->instruction_count);
+  @
+  @   predicate fruity_block_edge_ok(fruity_basic_block_t *b) =
+  @     (b->successor_count == 0 ==> b->successors == \null) &&
+  @     (b->predecessor_count == 0 ==> b->predecessors == \null);
+  @
+  @   predicate fruity_block_ok(fruity_basic_block_t *b) =
+  @     b != \null && fruity_instr_list_ok(b) && fruity_block_edge_ok(b);
+  @
+  @   predicate fruity_function_ok(fruity_function_t *f) =
+  @     f != \null &&
+  @     (f->block_count == 0 ==> f->blocks_head == \null &&
+  @                               f->blocks_tail == \null &&
+  @                               f->entry_block == \null) &&
+  @     (f->block_count > 0 ==> f->blocks_head != \null &&
+  @                              f->blocks_tail != \null &&
+  @                              f->blocks_head->prev == \null &&
+  @                              f->blocks_tail->next == \null &&
+  @                              f->entry_block != \null &&
+  @                              fruity_block_list_len(f->blocks_head) ==
+  @                              (integer)f->block_count);
+  @
+  @   predicate fruity_module_ok(fruity_module_t *m) =
+  @     m != \null &&
+  @     (m->function_count == 0 ==> m->functions_head == \null &&
+  @                                  m->functions_tail == \null) &&
+  @     (m->function_count > 0 ==> m->functions_head != \null &&
+  @                                 m->functions_tail != \null &&
+  @                                 m->functions_head->prev == \null &&
+  @                                 m->functions_tail->next == \null &&
+  @                                 fruity_function_list_len(m->functions_head) ==
+  @                                 (integer)m->function_count);
+  @ }
+  @*/
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_valid(module->functions_head));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_module_verify(fruity_module_t *module);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_function_verify(fruity_function_t *func);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) &&
+  @          fruity_instruction_chain_valid(block->instructions_head));
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_basic_block_verify(fruity_basic_block_t *block);
 
 /* ===== IR Traversal ===== */
@@ -277,12 +611,39 @@ typedef int (*fruity_basic_block_visitor_t)(fruity_basic_block_t *block,
 typedef int (*fruity_function_visitor_t)(fruity_function_t *func, void *ctx);
 
 /* Traversal functions */
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_valid(module->functions_head));
+  @ requires visitor != \null;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_module_foreach_function(fruity_module_t *module,
                                     fruity_function_visitor_t visitor,
                                     void *ctx);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head));
+  @ requires visitor != \null;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_function_foreach_block(fruity_function_t *func,
                                    fruity_basic_block_visitor_t visitor,
                                    void *ctx);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) &&
+  @          fruity_instruction_chain_valid(block->instructions_head));
+  @ requires visitor != \null;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 void fruity_basic_block_foreach_instruction(
     fruity_basic_block_t *block, fruity_instruction_visitor_t visitor,
     void *ctx);
@@ -294,9 +655,31 @@ void fruity_module_compute_stats(fruity_module_t *module);
 void fruity_module_print_stats(fruity_module_t *module);
 
 /* Debugging */
+/*@
+  @ requires instr == \null || \valid(instr);
+  @ assigns \nothing;
+  @*/
 void fruity_instruction_print(fruity_instruction_t *instr);
+/*@
+  @ requires block == \null ||
+  @         (\valid(block) &&
+  @          fruity_instruction_chain_valid(block->instructions_head));
+  @ assigns \nothing;
+  @*/
 void fruity_basic_block_print(fruity_basic_block_t *block);
+/*@
+  @ requires func == \null ||
+  @         (\valid(func) &&
+  @          fruity_basic_block_chain_valid(func->blocks_head));
+  @ assigns \nothing;
+  @*/
 void fruity_function_print(fruity_function_t *func);
+/*@
+  @ requires module == \null ||
+  @         (\valid(module) &&
+  @          fruity_function_chain_named_valid(module->functions_head));
+  @ assigns \nothing;
+  @*/
 void fruity_module_print(fruity_module_t *module);
 
 /* ===== CBOR Serialization ===== */

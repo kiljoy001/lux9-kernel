@@ -1,8 +1,8 @@
 /*
  * Lux9 MSGORD Kernel
  *
- * MSGORD consensus for 9P message ordering.
- * Provides total ordering of all kernel operations without locks.
+ * MSGORD conflict-frontier ordering for 9P messages.
+ * Provides bounded concurrent ordering of conflicting operations.
  *
  * Based on PHANTOM MSGORD adapted for microkernel 9P.
  */
@@ -21,6 +21,9 @@
 #define MSGORD_MAX_PARENTS 8   /* Max parents per message */
 #define MSGORD_GENESIS_ID 0    /* Genesis message ID */
 #define MSGORD_MAX_DAGS 64     /* Max number of DAG instances */
+#define MSGORD_MAX_RESOURCE_KEYS 4
+#define MSGORD_TIP_SLOTS 128
+#define MSGORD_ID_SLOTS 256
 
 /*
  * MSGORD Message Colors
@@ -42,6 +45,17 @@
 #define MSGORD_MSG_9P 0
 #define MSGORD_MSG_RAW 1
 #define MSGORD_MSG_EXCHANGE 2
+
+/*
+ * Explicit conflict specification
+ *
+ * Callers name the resources an operation conflicts on. An empty spec means
+ * "serialize globally".
+ */
+typedef struct MsgOrdSpec {
+  uchar resource_count;
+  uvlong resource_keys[MSGORD_MAX_RESOURCE_KEYS];
+} MsgOrdSpec;
 
 /*
  * MSGORD Message Payload
@@ -80,6 +94,8 @@ typedef struct OrdMsg {
   /* DAG relationships */
   uint gm_parent_count;
   uint gm_parents[MSGORD_MAX_PARENTS];
+  uchar gm_resource_count;
+  uvlong gm_resource_keys[MSGORD_MAX_RESOURCE_KEYS];
 
   /* Consensus state */
   uchar gm_color; /* BLUE or RED */
@@ -129,6 +145,19 @@ typedef struct MsgOrd {
 
   /* State */
   int gd_initialized;
+
+  /* Conflict frontiers: latest accepted tip per tracked resource key */
+  uvlong gd_tip_keys[MSGORD_TIP_SLOTS];
+  uint gd_tip_msgs[MSGORD_TIP_SLOTS];
+  uchar gd_tip_used[MSGORD_TIP_SLOTS];
+  uint gd_global_tip;
+  uint gd_barrier_tip;
+  int gd_tip_overflow;
+
+  /* Active message lookup by message ID */
+  uint gd_index_ids[MSGORD_ID_SLOTS];
+  OrdMsg *gd_index_msgs[MSGORD_ID_SLOTS];
+  uchar gd_index_used[MSGORD_ID_SLOTS];
 } MsgOrd;
 
 /*
@@ -143,6 +172,16 @@ extern MsgOrd *msgord;
 /* Initialize MSGORD subsystem (called by kernel main) */
 void msgord_init(uint k_param);
 
+/* Explicit conflict specification helpers */
+void msgord_spec_init(MsgOrdSpec *spec);
+int msgord_spec_add(MsgOrdSpec *spec, uvlong key);
+uvlong msgord_key_op(uchar op_type);
+uvlong msgord_key_fid(u32int fid);
+uvlong msgord_key_root(char *path);
+uvlong msgord_key_path(char *path);
+uvlong msgord_key_parent(char *path);
+uvlong msgord_key_exchange(const ExchangeHandle *handle);
+
 /* Create a new dynamic DAG instance */
 MsgOrd *msgord_create_instance(uint k_param);
 
@@ -152,15 +191,16 @@ void msgord_destroy_instance(MsgOrd *dag);
 /* Get DAG instance by ID */
 MsgOrd *msgord_get(int id);
 
-/* Submit 9P message for ordering - REPLACES p9_route() */
+/* Submit 9P message for ordering with explicit conflict metadata */
 int msgord_submit(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
-                  u64int nonce);
+                  const MsgOrdSpec *spec, u64int nonce);
 
 /* Submit raw data for ordering */
 int msgord_submit_raw(MsgOrd *dag, Proc *caller, void *data, ulong len,
-                      u64int nonce);
+                      const MsgOrdSpec *spec, u64int nonce);
 uint msgord_submit_exchange(MsgOrd *dag, Proc *caller, ExchangeHandle handle,
-                            ulong offset, ulong len, char *path, u64int nonce);
+                            ulong offset, ulong len, char *path,
+                            const MsgOrdSpec *spec, u64int nonce);
 
 /* Get next ordered message ready for delivery */
 OrdMsg *msgord_next(MsgOrd *dag);
@@ -209,7 +249,8 @@ typedef MsgOrd msgord_state_t;
 
 /* Create/destroy for CLR compatibility */
 msgord_state_t *msgord_state_create(uint k_param);
-uint msgord_add_message(msgord_state_t *state, Proc *p, Fcall *t, char *path);
+uint msgord_add_message(msgord_state_t *state, Proc *p, Fcall *t, char *path,
+                        const MsgOrdSpec *spec);
 
 /*
  * Completion Callback API
@@ -218,7 +259,8 @@ typedef void (*MsgordCallback)(OrdMsg *msg, int status, void *arg);
 
 /* Submit 9P message with completion callback */
 uint msgord_submit_async(MsgOrd *dag, Proc *caller, Fcall *t, char *path,
-                         MsgordCallback cb, void *cb_arg, u64int nonce);
+                         const MsgOrdSpec *spec, MsgordCallback cb,
+                         void *cb_arg, u64int nonce);
 
 /* Find message by ID */
 OrdMsg *msgord_find_by_id(MsgOrd *dag, uint id);
@@ -251,8 +293,8 @@ int msgord_check_consensus_depth(MsgOrd *dag, uint op_id, int required_depth,
  * consensus_depth.c)
  * t and r are Fcall* but declared as void* for header independence */
 int msgord_submit_async_depth(MsgOrd *dag, Proc *caller, void *t, void *r,
-                              char *path, int depth, uint *msg_id_out,
-                              u64int nonce);
+                              char *path, const MsgOrdSpec *spec, int depth,
+                              uint *msg_id_out, u64int nonce);
 
 /* Macro alias for backwards compatibility */
 #define msgord_submit_async_ex msgord_submit_async_depth

@@ -14,6 +14,7 @@ extern struct limine_module_request *limine_module;
 extern struct limine_kernel_address_request *limine_kernel_address;
 extern struct limine_kernel_file_request *limine_executable_file;
 extern uintptr limine_bootloader_info;
+extern int boot_verbose;
 
 /* Global HHDM offset from Limine - used by kaddr()
  * Limine maps all physical memory starting at HHDM offset
@@ -57,6 +58,14 @@ void bootargsinit(void) {
   extern uintptr hhdm_base;
   hhdm_base = limine_hhdm_offset;
   saved_limine_hhdm_offset = limine_hhdm_offset;
+  if (boot_verbose) {
+    char buf[128];
+    int n = snprint(buf, sizeof(buf),
+                    "BOOT: HHDM offset=%#p saved=%#p\n",
+                    (void *)limine_hhdm_offset,
+                    (void *)saved_limine_hhdm_offset);
+    uartputs(buf, n);
+  }
 
   /* Parse Kernel Command Line */
   if (limine_executable_file && limine_executable_file->response) {

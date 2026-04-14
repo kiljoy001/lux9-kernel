@@ -13,7 +13,7 @@ readn(Chan *c, void *vp, long n)
 	long nn;
 
 	while(n > 0) {
-		nn = devtab[c->type]->read(c, p, n, c->offset);
+		nn = devtab[devno(c->type, 0)]->read(c, p, n, c->offset);
 		if(nn == 0)
 			error(Eshort);
 		c->offset += nn;

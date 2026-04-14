@@ -78,7 +78,7 @@ static int resurrection_blind_sign(CapBlindResponse *resp,
   /* Use current epoch's signing key */
   u8int full_key[64];
   memcpy(full_key, resurrection_keys.signing_seed, 32);
-  memset(full_key + 32, 0, 32);
+  memcpy(full_key + 32, resurrection_keys.signing_pubkey, 32);
 
   return cap_blind_sign(resp, req, full_key);
 }

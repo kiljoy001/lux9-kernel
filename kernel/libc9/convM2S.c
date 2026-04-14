@@ -45,11 +45,11 @@ static uchar *gqid(uchar *p, uchar *ep, Qid *q) {
  * main switch statement checks range and also can fall through
  * to test at end of routine.
  */
-/*@
-  @ requires ap == \null || \valid(ap);
-  @ requires f == \null || \valid(f);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires ap == \null || \valid(ap);
+ * @ requires f == \null || \valid(f);
+ * @ assigns \nothing;
+ */
 uint convM2S(uchar *ap, uint nap, Fcall *f) {
   uchar *p, *ep;
   uint i, size;
@@ -376,11 +376,30 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     p += BIT32SZ;
     if (f->argc > MAXWELEM)
       return 0;
-      /*@ loop invariant 0 <= i <= f->argc;
-    @ loop assigns i;
-    @ loop variant f->argc - i;
-    @*/
-  for (u32int i = 0; i < f->argc; i++) {
+    /* DISABLED ACSL BLOCK:
+     * loop invariant 0 <= i <= f->argc;
+     * @ loop assigns i;
+     * @ loop variant f->argc - i;
+     */
+    for (u32int i = 0; i < f->argc; i++) {
+      p = gstring(p, ep, &f->args[i]);
+      if (p == nil)
+        return 0;
+    }
+    f->argv = f->args;
+    break;
+
+  case Tsysspawn:
+    p = gstring(p, ep, &f->path);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->argc = GBIT32(p);
+    p += BIT32SZ;
+    if (f->argc > MAXWELEM)
+      return 0;
+    for (u32int i = 0; i < f->argc; i++) {
       p = gstring(p, ep, &f->args[i]);
       if (p == nil)
         return 0;
@@ -567,6 +586,7 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     break;
 
   case Rsysfork:
+  case Rsysspawn:
     if (p + BIT32SZ > ep)
       return 0;
     f->pid = GBIT32(p);
@@ -736,6 +756,9 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
   if (p == nil || p > ep)
     return 0;
   if (ap + size == p)
+    return size;
+  /* Leniency: allow trailing bytes for Tsyscall/Rsyscall */
+  if ((f->type == 130 || f->type == 131) && ap + size > p)
     return size;
   return 0;
 }

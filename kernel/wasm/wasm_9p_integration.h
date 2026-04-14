@@ -57,16 +57,24 @@ typedef struct Chan Chan;
  * Each 9P session (attach) is associated with a validated capability.
  * The session carries the Pebble capability that grants access to resources.
  */
+#include "../include/rbtree.h"
+
+/* ========== 9P Session with Capability ========== */
+
+/*
+ * Each 9P session (attach) is associated with a validated capability.
+ * The session carries the Pebble capability that grants access to resources.
+ */
 typedef struct wasm_9p_session {
+  struct rb_node rb;         /* RB-Tree node for registry */
   uuid_t cap_uuid;           /* Capability UUID from attach */
   UserCapability pebble_cap; /* Validated Pebble capability */
   u32int permissions;        /* Effective permissions */
   u32int session_id;         /* Unique session identifier */
   int ref;                   /* Reference count */
+  char *name;                /* Optional session name (e.g. "echo") */
   void *wasm_server;         /* WASM server handling this session */
 } wasm_9p_session_t;
-
-/* ========== 9P Message Validation ========== */
 
 /*
  * Extract capability UUID from 9P Tattach message.
@@ -77,6 +85,16 @@ typedef struct wasm_9p_session {
  * @returns: 0 on success, -1 on error
  */
 int wasm_9p_extract_cap_uuid(const char *aname, uuid_t *uuid_out);
+
+/*
+ * Extract capability UUID from a path component (Twalk/Topen).
+ * Looks for "#<uuid-hex>" in the component string.
+ *
+ * @param path_comp: A single path component (e.g., "#xxxxxxxx-xxxx...")
+ * @param uuid_out: Output UUID
+ * @returns: 0 on success, -1 on error
+ */
+int wasm_9p_extract_path_uuid(const char *path_comp, uuid_t *uuid_out);
 
 /*
  * Validate capability for 9P operation.
@@ -136,10 +154,22 @@ typedef enum {
  */
 u32int wasm_9p_required_perms(wasm_9p_operation_t op, u32int mode);
 
-#define MAX_WASM_SESSIONS 1024
+/* MAX_WASM_SESSIONS removed - using dynamic RB-Tree */
 
+/*@
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 wasm_9p_session_t *wasm_9p_get_session(u32int session_id);
+
+/*@
+  @ assigns \nothing;
+  @*/
 void wasm_9p_session_ref(u32int session_id);
+
+/*@
+  @ assigns \nothing;
+  @*/
 void wasm_9p_session_unref(u32int session_id);
 
 /* ========== 9P → WASM Routing ========== */
@@ -153,6 +183,40 @@ void wasm_9p_session_unref(u32int session_id);
  * @param session: Active session with capability
  * @returns: 0 on success, error code otherwise
  */
+/*@
+  @ requires \valid(t);
+  @ requires \valid(r);
+  @ requires \valid(session);
+  @ assigns *r;
+  @ ensures \result == 0 || \result < 0;
+  @*/
 int wasm_9p_route_to_wasm(Fcall *t, Fcall *r, wasm_9p_session_t *session);
+
+/* Exposed for wasm_dev_srv.c */
+extern struct rb_root session_tree;
+extern Lock session_lock;
+
+/* Register a named alias for a session */
+int wasm_router_register(u32int session_id, char *name);
+
+#ifdef __FRAMAC__
+/*@ ghost
+  @   struct GhostEntry {
+  @     int id;
+  @     char *name;
+  @     int valid;
+  @   };
+  @
+  @   // Global Ghost State (Shared)
+  @   extern struct GhostEntry ghost_registry[1024];
+  @   extern int ghost_count;
+  @*/
+
+/*@
+  @   logic integer Ghost_Find(integer n) =
+  @     \let entry = ghost_registry[n];
+  @     (entry.valid) ? entry.id : -1;
+  @*/
+#endif
 
 #endif /* WASM_9P_INTEGRATION_H */

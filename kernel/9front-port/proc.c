@@ -1,9 +1,10 @@
 #ifndef __FRAMAC__
 #ifndef __FRAMAC__
 #include "../include/u.h"
+#include "../include/exchange_pool.h"
+#include "../wasm/wasm_runtime.h"
 #include "9p_router.h" /* For P9Control structure */
 #include "dat.h"
-#include "../wasm/wasm_runtime.h"
 #include "edf.h"
 #include "fns.h"
 #include "mem.h"
@@ -159,7 +160,7 @@ void kexit(Ureg *ureg) {
   tos->pid = up->pid;
 }
 
-static void procswitch(void) {
+void procswitch(void) {
   uvlong t;
 
   /* statistics */
@@ -184,8 +185,12 @@ static void procswitch(void) {
 void sched(void) {
   int s;
 
-  /* Force clear up if we are yielding from vfork wait or broken state */
-  if (up && (up->state == PS_Waitrelease || up->state == PS_Broken)) {
+  /*
+   * Broken processes should never be rescheduled.
+   * Waitrelease still needs its kernel continuation saved so it can resume
+   * after the child exec/exit path wakes it.
+   */
+  if (up && up->state == PS_Broken) {
     up = nil;
   }
 
@@ -219,10 +224,13 @@ void sched(void) {
     s = splhi();
     up->delaysched = 0;
 
-    /* If process is exiting (Moribund), do NOT re-queue it.
-     * Just switch away to the scheduler.
+    /* If process is exiting (Moribund) or waiting for an event (Queueing,
+     * Wakeme, etc.), do NOT re-queue it. Just switch away to the scheduler.
      */
-    if (up->state != Moribund) {
+    if (up->state != Moribund && up->state != Queueing &&
+        up->state != QueueingR && up->state != QueueingW &&
+        up->state != Wakeme && up->state != Rendezvous &&
+        up->state != Stopped && up->state != Waitrelease) {
       /* Set state to Ready and re-queue before switching */
       /* up->state = Scheding; -- REPLACED BY FSM */
       proc_event(up, EV_YIELD); /* Transitions to Scheding */
@@ -397,10 +405,28 @@ static int reprioritize(Proc *p) {
   return ratio;
 }
 
+/*@
+    predicate valid_schedq(Schedq *rq) =
+        \valid(rq) &&
+        (rq->n == 0 <==> rq->head == \null) &&
+        (rq->n == 0 <==> rq->tail == \null) &&
+        (rq->head != \null ==> \valid(rq->head)) &&
+        (rq->tail != \null ==> \valid(rq->tail)) &&
+        (rq->n >= 0);
+*/
+
 /*
  * add a process to a scheduling queue
  */
-static int queueproc(Schedq *rq, Proc *p) {
+/*@
+    requires valid_schedq(rq);
+    requires \valid(p);
+    requires p->state != Ready; // Implicit requirement from switch
+    requires rq->n < 2147483647; // Max int bounds
+    ensures valid_schedq(rq);
+    ensures rq->n == \old(rq->n) + 1 || \result == -1;
+*/
+int queueproc(Schedq *rq, Proc *p) {
   int pri = rq - runq;
 
   lock(rq); /* Lock THIS queue, not runq[0]! */
@@ -413,6 +439,7 @@ static int queueproc(Schedq *rq, Proc *p) {
   case Broken:
   case Stopped:
   case Rendezvous:
+  case Waitrelease:
     if (p != up)
       break;
     /* wet floor */
@@ -420,7 +447,6 @@ static int queueproc(Schedq *rq, Proc *p) {
   case Moribund:
   case Ready:
   case Running:
-  case Waitrelease:
     unlock(rq);
     return -1;
   }
@@ -451,6 +477,9 @@ static int queueproc(Schedq *rq, Proc *p) {
     break;
   case Rendezvous:
     event = EV_RENDEZ_DONE;
+    break;
+  case Waitrelease:
+    event = EV_VFORK_DONE;
     break;
   case Scheding:
     event = EV_READY;
@@ -484,6 +513,10 @@ static int queueproc(Schedq *rq, Proc *p) {
 
     /* insert in queue in earliest deadline order */
     l = nil;
+    /*@
+        loop invariant \valid(rq);
+        loop invariant pp == \null || \valid(pp);
+    */
     for (pp = rq->head; pp != nil; pp = pp->rnext) {
       if (pp->edf->d > p->edf->d)
         break;
@@ -528,11 +561,19 @@ static int queueproc(Schedq *rq, Proc *p) {
   requires \valid(p);
   // DAG Precondition: machine must be cleared for New->Ready
   requires p->state == New ==> p->mach == \null;
+  requires p->state != Ready; // Cannot ready a ready process
   assigns p->state, nrdy;
+  // Ensures we end in a runnable state (Ready or Waitrelease)
   ensures p->state == Ready || p->state == Waitrelease;
  */
 void ready(Proc *p) {
   int s, pri;
+
+  if (boot_verbose > 1 && p->pid == 1 /* || p->pid == 2 */) {
+    print("DEBUG: ready pid %lud (%s) state %s pri %d caller %p\n", p->pid,
+          p->text ? p->text : "nil", statename[p->state], p->priority,
+          getcallerpc(&p));
+  }
 
   s = splhi();
   switch (edfready(p)) {
@@ -551,8 +592,10 @@ void ready(Proc *p) {
   /* FAILSAFE: Ensure p->mach is nil before queueing */
   p->mach = nil;
   if (queueproc(&runq[pri], p) < 0) {
-    iprint("ready %s %lud %s pc %p\n", p->text, p->pid, statename[p->state],
-           getcallerpc(&p));
+    iprint("ready: queueproc failed pid %lud (%s) state %s pri %d pc %p "
+           "up->pid %lud\n",
+           p->pid, p->text ? p->text : "nil", statename[p->state], pri,
+           getcallerpc(&p), up ? up->pid : 0);
   }
   {
     void (*pt)(Proc *, int, vlong);
@@ -566,6 +609,13 @@ void ready(Proc *p) {
 /*
  *  try to remove a process from a scheduling queue (called splhi)
  */
+/*@
+    requires valid_schedq(rq);
+    requires tp == \null || \valid(tp);
+    ensures valid_schedq(rq);
+    ensures \result == \null || \result == tp;
+    ensures \result != \null ==> \valid(\result);
+*/
 Proc *dequeueproc(Schedq *rq, Proc *tp) {
   Proc *l, *p;
 
@@ -582,6 +632,12 @@ Proc *dequeueproc(Schedq *rq, Proc *tp) {
   if ((uintptr)rq->head >= (uintptr)runq &&
       (uintptr)rq->head < (uintptr)(runq + Nrq)) {
   }
+
+  /*@
+      loop invariant valid_schedq(rq);
+      loop invariant p == \null || \valid(p);
+      loop invariant l == \null || \valid(l);
+  */
   for (p = rq->head; p != nil; p = p->rnext) {
     if (p == tp)
       break;
@@ -655,6 +711,10 @@ static void rebalance(void) {
 
   assert(!islo());
 
+  /*@
+      loop invariant 0 <= pri <= Npriq;
+      loop invariant rq == runq + pri;
+  */
   for (pri = 0, rq = runq; pri < Npriq; pri++, rq++) {
   another:
     p = rq->head;
@@ -711,13 +771,23 @@ loop:
    *  or one that can be moved to this processor.
    */
   spllo();
+  /*@
+      loop invariant i >= 0;
+  */
   for (i = 0;; i++) {
     /*
      *  find the highest priority target process that this
      *  processor can run given affinity constraints.
      *
      */
+    /*@
+        loop invariant rq >= runq - 1; // Decrementing loop
+        loop invariant rq <= runq + Nrq - 1;
+    */
     for (rq = &runq[Nrq - 1]; rq >= runq; rq--) {
+      /*@
+         loop invariant p == \null || \valid(p);
+      */
       for (p = rq->head; p != nil; p = p->rnext) {
         if (p->affinity < 0 || p->affinity == m->machno || (!p->wired && i > 0))
           goto found;
@@ -787,6 +857,7 @@ Proc *newproc(void) {
     p->index = procalloc.nextindex++;
     procalloc.tab[p->index] = p;
     p->kstack = (uchar *)b;
+    p->kstack_top = (uintptr)p; /* Stack grows down from p */
   }
   assert(p->state == Dead);
   procalloc.free = p->qnext;
@@ -870,6 +941,8 @@ Proc *newproc(void) {
    * instead of fixed allocation. Processes open #X/clone to get an
    * exchange channel with ring buffer and page pool. */
   p->p9page = nil;           /* Legacy fixed page (deprecated) */
+  p->p9uaddr = 0;
+  p->p9page_phys = 0;
   p->exchange_channel = nil; /* ExchangeChannel from #X device */
   p->seg[P9SEG] = nil;
 
@@ -1351,11 +1424,28 @@ void freenotes(Proc *p) {
 }
 
 _Noreturn void pexit(char *exitstr, int freemem) {
+  if (up != nil) {
+    print("DEBUG: pexit pid=%lud text=%s exitstr=%s\n", up->pid,
+          up->text ? up->text : "nil", exitstr ? exitstr : "nil");
+  } else {
+    print("DEBUG: pexit with nil up! exitstr=%s\n", exitstr ? exitstr : "nil");
+  }
+
+  if (exitstr != nil && strcmp(exitstr, "no work") == 0) {
+    if (up != nil) {
+      print("CRITICAL: 'no work' pexit triggered by pid %lud (%s)\n", up->pid,
+            up->text ? up->text : "nil");
+    } else {
+      print("CRITICAL: 'no work' pexit triggered with nil up\n");
+    }
+    dumpstack();
+  }
+
   Proc *p;
   ulong utime, stime;
   Waitq *wq;
   Fgrp *fgrp;
-  Egrp *egrp;
+  /* Egrp *egrp; REMOVED */
   Rgrp *rgrp;
   Pgrp *pgrp;
   Chan *dot;
@@ -1403,8 +1493,8 @@ _Noreturn void pexit(char *exitstr, int freemem) {
    * Whether the process exited normally (exits) or crashed (sysfatal/error),
    * all its tokens (assets) must be liquidated and returned to the global pool.
    */
-  pebble_cleanup(up);
   vault_cleanup_process(up->pid);
+  pebble_cleanup(up);
 
   /* Decrement namespace spawn count */
   if (up->pgrp != nil) {
@@ -1427,8 +1517,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   qlock(&up->debug);
   fgrp = up->fgrp;
   up->fgrp = nil;
-  egrp = up->egrp;
-  up->egrp = nil;
+  /* egrp = up->egrp; up->egrp = nil; REMOVED */
   rgrp = up->rgrp;
   up->rgrp = nil;
   pgrp = up->pgrp;
@@ -1439,8 +1528,6 @@ _Noreturn void pexit(char *exitstr, int freemem) {
 
   if (fgrp != nil)
     closefgrp(fgrp);
-  if (egrp != nil)
-    closeegrp(egrp);
   if (rgrp != nil)
     closergrp(rgrp);
   if (dot != nil)
@@ -1448,10 +1535,10 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   if (pgrp != nil)
     closepgrp(pgrp);
 
-  if (up->parentpid == 0) {
+  if (up->pid == 1) {
     if (exitstr == nil)
       exitstr = "unknown";
-    panic("boot process died: %s", exitstr);
+    panic("boot process (PID 1) died: %s", exitstr);
   }
 
   p = up->parent;
@@ -1539,6 +1626,7 @@ _Noreturn void pexit(char *exitstr, int freemem) {
   up->nwatchpt = 0;
   qunlock(&up->debug);
 
+  proc_teardown_p9page(up);
   qlock(&up->seglock);
   for (i = 0; i < NSEG; i++) {
     s = up->seg[i];
@@ -1548,6 +1636,9 @@ _Noreturn void pexit(char *exitstr, int freemem) {
     }
   }
   qunlock(&up->seglock);
+
+  exchange_cleanup_process(up);
+  proc_9p_cleanup(up);
 
   edfstop(up);
   if (up->edf != nil) {
@@ -1726,6 +1817,13 @@ int kproc(char *name, void (*func)(void *), void *arg) {
     freebroken();
     resrcwait("no procs for kproc");
   }
+  print("DEBUG: kproc (PRE-FIX) p=%p p->text=%p p->user=%p\n", p, p->text,
+        p->user);
+  /* REVERT: memset(p, 0) wiped newproc initialization (state, kstack, etc.)
+   * causing scheduling failure. relying on newproc() to initialize p.
+   */
+  // memset(p, 0, sizeof(Proc));
+  print("DEBUG: kproc (POST-FIX) p=%p p->text=%p\n", p, p->text);
 
   qlock(&p->debug);
   if (up != nil) {
@@ -2193,7 +2291,10 @@ ulong pidalloc(Proc *p) {
   } else
     pidadd(p->noteid);
 
-  return p->pid = i->pid;
+  p->pid = i->pid;
+  if (boot_verbose && p->pid <= 4)
+    print("pidalloc: pid=%lud text=%s\n", p->pid, p->text ? p->text : "nil");
+  return p->pid;
 }
 
 /*

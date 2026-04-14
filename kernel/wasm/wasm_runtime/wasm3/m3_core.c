@@ -26,7 +26,7 @@
 /*@
   @ requires message == \null || \valid(message);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void m3_Abort(const char *message) {
 #ifdef DEBUG
   fprintf(stderr, "Error: %s\n", message);
@@ -48,7 +48,7 @@ static uint64_t initial_ts = -1;
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 uint64_t m3_GetTimestamp() {
   if (initial_ts == -1) {
     initial_ts = 0;
@@ -96,7 +96,7 @@ void *m3_Malloc_Impl(size_t i_size) {
 /*@
   @ requires i_ptr == \null || \valid(i_ptr);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void m3_Free_Impl(void *i_ptr) {
   // Handle the last chunk
   if (i_ptr && i_ptr == fixedHeapLast) {
@@ -142,8 +142,13 @@ void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
 
 #include "../../../include/portlib.h"
 #include "../../../include/u.h"
+#include "../wasm_kernel_alloc.h"
 
 void *m3_Malloc_Impl(size_t i_size) {
+  if (up && up->wasm.initialized) {
+    return wasm_heap_alloc(i_size);
+  }
+
   extern void *xalloc_driver(unsigned long);
   return xalloc_driver((unsigned long)i_size);
 }
@@ -151,27 +156,37 @@ void *m3_Malloc_Impl(size_t i_size) {
 /*@
   @ requires io_ptr == \null || \valid(io_ptr);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void m3_Free_Impl(void *io_ptr) {
+  if (io_ptr && up && up->wasm.initialized && wasm_heap_owned_ptr(io_ptr)) {
+    wasm_heap_free(io_ptr);
+    return;
+  }
+
   extern void xfree_driver(void *);
   if (io_ptr)
     xfree_driver(io_ptr);
 }
 
 void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize) {
-  extern void *xalloc_driver(unsigned long);
-  extern void xfree_driver(void *);
-  /* Explicitly declare memcpy to avoid implicit declaration warnings */
-  extern void *memcpy(void *, const void *, unsigned long);
+  if (up && up->wasm.initialized &&
+      (i_ptr == nil || wasm_heap_owned_ptr(i_ptr))) {
+    return wasm_heap_realloc(i_ptr, i_newSize, i_oldSize);
+  }
 
   if (i_newSize == 0) {
     if (i_ptr)
-      xfree_driver(i_ptr);
+      m3_Free_Impl(i_ptr);
     return nil;
   }
 
   if (i_newSize <= i_oldSize)
     return i_ptr;
+
+  extern void *xalloc_driver(unsigned long);
+  extern void xfree_driver(void *);
+  /* Explicitly declare memcpy to avoid implicit declaration warnings */
+  extern void *memcpy(void *, const void *, unsigned long);
 
   void *new_ptr = xalloc_driver((unsigned long)i_newSize);
   if (!new_ptr)
@@ -204,7 +219,7 @@ static size_t stack_end;
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void m3StackCheckInit() {
   char stack;
   stack_end = stack_start = (size_t)&stack;
@@ -212,7 +227,7 @@ void m3StackCheckInit() {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void m3StackCheck() {
   char stack;
   size_t addr = (size_t)&stack;
@@ -233,7 +248,7 @@ int m3StackGetMax() { return stack_start - stack_end; }
 /*@
   @ requires o_type == \null || \valid(o_type);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result NormalizeType(u8 *o_type, i8 i_convolutedWasmType) {
   M3Result result = m3Err_none;
 
@@ -251,21 +266,21 @@ M3Result NormalizeType(u8 *o_type, i8 i_convolutedWasmType) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool IsFpType(u8 i_m3Type) {
   return (i_m3Type == c_m3Type_f32 or i_m3Type == c_m3Type_f64);
 }
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool IsIntType(u8 i_m3Type) {
   return (i_m3Type == c_m3Type_i32 or i_m3Type == c_m3Type_i64);
 }
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool Is64BitType(u8 i_m3Type) {
   if (i_m3Type == c_m3Type_i64 or i_m3Type == c_m3Type_f64)
     return true;
@@ -278,7 +293,7 @@ bool Is64BitType(u8 i_m3Type) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32 SizeOfType(u8 i_m3Type) {
   if (i_m3Type == c_m3Type_i32 or i_m3Type == c_m3Type_f32)
     return sizeof(i32);
@@ -293,7 +308,7 @@ u32 SizeOfType(u8 i_m3Type) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_u64(u64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
   ptr += sizeof(u64);
@@ -311,7 +326,7 @@ M3Result Read_u64(u64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_u32(u32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
   ptr += sizeof(u32);
@@ -331,7 +346,7 @@ M3Result Read_u32(u32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_f64(f64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
   ptr += sizeof(f64);
@@ -349,7 +364,7 @@ M3Result Read_f64(f64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_f32(f32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
   ptr += sizeof(f32);
@@ -369,7 +384,7 @@ M3Result Read_f32(f32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_u8(u8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
 
@@ -386,7 +401,7 @@ M3Result Read_u8(u8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_opcode(m3opcode_t *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   const u8 *ptr = *io_bytes;
 
@@ -484,7 +499,7 @@ M3Result ReadLebSigned(i64 *o_value, u32 i_maxNumBits, bytes_t *io_bytes,
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ReadLEB_u32(u32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   u64 value;
   M3Result result = ReadLebUnsigned(&value, 32, io_bytes, i_end);
@@ -497,7 +512,7 @@ M3Result ReadLEB_u32(u32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ReadLEB_u7(u8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   u64 value;
   M3Result result = ReadLebUnsigned(&value, 7, io_bytes, i_end);
@@ -510,7 +525,7 @@ M3Result ReadLEB_u7(u8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ReadLEB_i7(i8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   i64 value;
   M3Result result = ReadLebSigned(&value, 7, io_bytes, i_end);
@@ -523,7 +538,7 @@ M3Result ReadLEB_i7(i8 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ReadLEB_i32(i32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   i64 value;
   M3Result result = ReadLebSigned(&value, 32, io_bytes, i_end);
@@ -536,7 +551,7 @@ M3Result ReadLEB_i32(i32 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_value == \null || \valid(o_value);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ReadLEB_i64(i64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   i64 value;
   M3Result result = ReadLebSigned(&value, 64, io_bytes, i_end);
@@ -549,7 +564,7 @@ M3Result ReadLEB_i64(i64 *o_value, bytes_t *io_bytes, cbytes_t i_end) {
   @ requires o_utf8 == \null || \valid(o_utf8);
   @ requires io_bytes == \null || \valid(io_bytes);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result Read_utf8(cstr_t *o_utf8, bytes_t *io_bytes, cbytes_t i_end) {
   *o_utf8 = NULL;
 
@@ -583,7 +598,7 @@ M3Result Read_utf8(cstr_t *o_utf8, bytes_t *io_bytes, cbytes_t i_end) {
 #if d_m3RecordBacktraces
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32 FindModuleOffset(IM3Runtime i_runtime, pc_t i_pc) {
   // walk the code pages
   IM3CodePage curr = i_runtime->pagesOpen;
@@ -621,7 +636,7 @@ u32 FindModuleOffset(IM3Runtime i_runtime, pc_t i_pc) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void PushBacktraceFrame(IM3Runtime io_runtime, pc_t i_pc) {
   // don't try to push any more frames if we've already had an alloc failure
   if (M3_UNLIKELY(io_runtime->backtrace.lastFrame == M3_BACKTRACE_TRUNCATED))
@@ -645,7 +660,7 @@ void PushBacktraceFrame(IM3Runtime io_runtime, pc_t i_pc) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void FillBacktraceFunctionInfo(IM3Runtime io_runtime, IM3Function i_function) {
   // If we've had an alloc failure then the last frame doesn't refer to the
   // frame we want to fill in the function info for.
@@ -660,7 +675,7 @@ void FillBacktraceFunctionInfo(IM3Runtime io_runtime, IM3Function i_function) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void ClearBacktrace(IM3Runtime io_runtime) {
   M3BacktraceFrame *currentFrame = io_runtime->backtrace.frames;
   while (currentFrame) {

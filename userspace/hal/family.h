@@ -10,6 +10,23 @@
 #include <libc.h>
 #include <u.h>
 
+extern int pebble_alloc(ulong size, void **addr);
+extern int pebble_free(void *addr);
+
+static inline void *family_alloc_zero(ulong size) {
+  void *p;
+
+  if (pebble_alloc(size, &p) < 0)
+    return nil;
+  memset(p, 0, size);
+  return p;
+}
+
+static inline void family_free(void *p) {
+  if (p != nil)
+    pebble_free(p);
+}
+
 /* Family type identifiers */
 enum DeviceFamily {
   FAMILY_NONE = 0,
@@ -20,6 +37,7 @@ enum DeviceFamily {
   FAMILY_DMA = 5,
   FAMILY_IRQ = 6,
   FAMILY_SECURE_ELEMENT = 7,
+  FAMILY_PROC = 8,
   FAMILY_MAX
 };
 
@@ -110,3 +128,7 @@ int family_register(int type, FamilyOps *ops, char *name);
 int family_unregister(int type);
 FamilyExchangePage *family_lookup(int type);
 void family_init_registry(void);
+int family_registry_count(void);
+int family_registry_snapshot(char *buf, int nbuf);
+ResourcePool *resource_pool_create(int count);
+void resource_pool_destroy(ResourcePool *p);

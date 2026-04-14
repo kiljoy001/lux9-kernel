@@ -13,6 +13,9 @@ static void punlock(Pool *);
 
 extern void uartputs(char *, int);
 
+void *alloc_debug_last_free_caller;
+void *alloc_debug_last_free_v;
+
 #define MALLOC_TRACE_THRESHOLD (4 * 1024)
 
 /*@
@@ -49,22 +52,11 @@ static Private pmainpriv;
  * Charges the allocation against the current process's Pebble budget.
  * Returns zeroed memory.
  */
-void *xalloc_driver(ulong size) {
+static void *xalloc_pebble_owned(PebbleState *ps, Proc *owner, ulong size) {
   UserCapability cap;
   void *addr;
   PebbleWhite *white;
-  PebbleState *ps;
 
-  /*
-   * Early-boot bypass: Before the first process (up) exists, Pebble
-   * infrastructure (meta pool, ledger) may not be ready.
-   * Use raw xalloc for initial pool arena allocations.
-   */
-  if (up == nil) {
-    return xallocz_raw(size, 1);
-  }
-
-  ps = pebble_state();
   if (ps == nil)
     return nil;
 
@@ -83,7 +75,7 @@ void *xalloc_driver(ulong size) {
   /* 3. Bind and Verify WHITE */
   white->data_ptr = addr;
   void *black_handle;
-  if (pebble_white_verify(white, &black_handle) != 0) {
+  if (pebble_white_verify_in_state(ps, white, &black_handle) != 0) {
     /* Verification failed - cleanup resources */
     xfree(addr);
     pebble_return_white(ps, white);
@@ -91,7 +83,7 @@ void *xalloc_driver(ulong size) {
   }
 
   /* 4. Convert to BLACK token */
-  if (pebble_black_alloc(white, addr, size, &cap) < 0) {
+  if (pebble_black_alloc_in_state(ps, owner, white, addr, size, &cap) < 0) {
     /* pebble_black_alloc frees buf on error if it fails later steps?
      * Checking pebble_black_alloc implementation:
      * It calls borrow_release and xfree on error.
@@ -105,16 +97,16 @@ void *xalloc_driver(ulong size) {
    * Only done after BOOT_USERINIT (state 18) when borrow checker is active.
    */
   extern int current_boot_state;
-  if (current_boot_state >= 18) {
+  if (current_boot_state >= 18 && owner != nil) {
     extern uintptr saved_limine_hhdm_offset;
     /* Register each page in the allocation */
     uintptr pa = PADDR(addr);
     uintptr end_pa = pa + size;
-      /*@ loop invariant 0 <= page_pa <= end_pa;
-    @ loop assigns page_pa;
-    @ loop variant end_pa - page_pa;
-    @*/
-  for (uintptr page_pa = pa & ~(BY2PG - 1); page_pa < end_pa;
+    /*@ loop invariant 0 <= page_pa <= end_pa;
+  @ loop assigns page_pa;
+  @ loop variant end_pa - page_pa;
+  @*/
+    for (uintptr page_pa = pa & ~(BY2PG - 1); page_pa < end_pa;
          page_pa += BY2PG) {
       uintptr hhdm_va = page_pa + saved_limine_hhdm_offset;
       /* Don't panic on failure - page may already be tracked by another
@@ -126,6 +118,27 @@ void *xalloc_driver(ulong size) {
   return addr;
 }
 
+void *xalloc_driver(ulong size) {
+  /*
+   * Early-boot bypass: Before the first process (up) exists, Pebble
+   * infrastructure (meta pool, ledger) may not be ready.
+   * Use raw xalloc for initial pool arena allocations.
+   */
+  if (up == nil)
+    return xallocz_raw(size, 1);
+  return xalloc_pebble_owned(pebble_state(), up, size);
+}
+
+void *xalloc_resident(ulong size) {
+  /*
+   * Bootstrap kernel-resident objects created before proc0 still need the raw
+   * allocator; Pebble metadata/ledger state is not reliable that early.
+   */
+  if (up == nil)
+    return xallocz_raw(size, 1);
+  return xalloc_pebble_owned(pebble_kernel_state(), nil, size);
+}
+
 void *xallocz_driver(ulong size, int zero) {
   /* xalloc_driver always zeroes, so we ignore 'zero' param for now or assert
    * it's 1 */
@@ -133,6 +146,7 @@ void *xallocz_driver(ulong size, int zero) {
 }
 
 void *smalloc_driver(ulong size) { return xalloc_driver(size); }
+void *smalloc_resident(ulong size) { return xalloc_resident(size); }
 
 /*@
   @ requires p == \null || \valid(p);
@@ -161,6 +175,27 @@ void xfree_driver(void *p) {
     pebble_black_free(&pb->capability);
   } else {
     /* Fallback for untracked allocations (e.g. early boot leftovers) */
+    xfree(p);
+  }
+}
+
+void xfree_resident(void *p) {
+  PebbleState *ps;
+  PebbleBlack *pb;
+
+  if (p == nil)
+    return;
+
+  ps = pebble_kernel_state();
+  if (ps == nil) {
+    xfree(p);
+    return;
+  }
+
+  pb = pebble_lookup_black_by_addr(ps, p);
+  if (pb != nil) {
+    pebble_black_free_in_state(ps, nil, &pb->capability);
+  } else {
     xfree(p);
   }
 }
@@ -452,8 +487,22 @@ void *mallocalign(ulong size, ulong align, long offset, ulong span) {
   @ assigns \nothing;
   @*/
 void free(void *v) {
-  if (v != nil)
+  /*
+   * Critical workaround: Ignore frees of invalid pointers (stack, text, etc).
+   * This prevents D2B panics caused by devwalk/devdir corruption
+   * passing bad addresses to kstrdup -> free.
+   */
+  if (v != nil && (((uintptr)v > 0xffff800002000000 &&
+                    (uintptr)v < 0xffff800003000000) || /* Stack */
+                   ((uintptr)v >= 0xffffffff80000000) /* Kernel Text/Data/BSS */
+                   )) {
+    return;
+  }
+  if (v != nil) {
+    alloc_debug_last_free_caller = (void *)getcallerpc(&v);
+    alloc_debug_last_free_v = v;
     poolfree(mainmem, (ulong *)v - Npadlong);
+  }
 }
 
 void *realloc(void *v, ulong size) {

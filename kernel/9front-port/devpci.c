@@ -4,6 +4,9 @@
  * Provides 9P-based access to PCI configuration space for userspace
  * device drivers to enumerate and configure PCI devices.
  *
+ * The sharp-device entry point is #J rather than #P because #P is already
+ * owned by the architecture device on pc64.
+ *
  * Filesystem:
  *   /dev/pci/
  *   ├── ctl           - Control and status
@@ -142,19 +145,53 @@ static int pcigen(Chan *c, char *name, Dirtab *tab, int ntab, int pos,
   Qid qid;
   PCIDev *pd;
   int n;
-  char buf[64];
 
-  USED(c, tab, ntab);
+  USED(tab, ntab);
 
-  if (pos == 0) {
+  if (name != nil)
+    print("pcigen: qpath=%#llux name='%s'\n", c->qid.path, name);
+
+  if (name != nil && strcmp(name, ".") == 0) {
+    devdir(c, (Qid){Qdir, 0, QTDIR}, ".", 0, eve, 0555, dp);
+    return 1;
+  }
+
+  if (name == nil && pos == 0) {
     /* "." */
     devdir(c, (Qid){Qdir, 0, QTDIR}, ".", 0, eve, 0555, dp);
     return 1;
   }
-  pos--;
+  if (name == nil)
+    pos--;
 
   /* Root directory */
   if ((c->qid.path & 0xFFFF0000) == 0) {
+    if (name != nil) {
+      if (strcmp(name, "ctl") == 0) {
+        devdir(c, (Qid){Qctl, 0, 0}, "ctl", 0, eve, 0444, dp);
+        return 1;
+      }
+      if (strcmp(name, "bus") == 0) {
+        devdir(c, (Qid){Qbus, 0, 0}, "bus", 0, eve, 0444, dp);
+        return 1;
+      }
+
+      n = 0;
+      lock(&pcistate.lock);
+      for (pd = pcistate.devlist; pd != nil; pd = pd->next, n++) {
+        if (strcmp(pd->name, name) == 0) {
+          qid.path = Qdevbase + n;
+          qid.vers = 0;
+          qid.type = QTDIR;
+          unlock(&pcistate.lock);
+          devdir(c, qid, pd->name, 0, eve, 0555, dp);
+          return 1;
+        }
+      }
+      unlock(&pcistate.lock);
+      return -1;
+    }
+
     if (pos == 0) {
       devdir(c, (Qid){Qctl, 0, 0}, "ctl", 0, eve, 0444, dp);
       return 1;
@@ -188,6 +225,25 @@ static int pcigen(Chan *c, char *name, Dirtab *tab, int ntab, int pos,
 
   /* Device subdirectory */
   if (c->qid.path >= Qdevbase && c->qid.path < Qdevbase + 0x1000) {
+    if (name != nil) {
+      if (strcmp(name, "config") == 0 || strcmp(name, "raw") == 0) {
+        qid.path = Qdevconfig + (c->qid.path - Qdevbase);
+        qid.vers = 0;
+        qid.type = 0;
+        devdir(c, qid, strcmp(name, "config") == 0 ? "config" : "raw", 256,
+               eve, 0444, dp);
+        return 1;
+      }
+      if (strcmp(name, "ctl") == 0) {
+        qid.path = Qdevctl + (c->qid.path - Qdevbase);
+        qid.vers = 0;
+        qid.type = 0;
+        devdir(c, qid, "ctl", 0, eve, 0666, dp);
+        return 1;
+      }
+      return -1;
+    }
+
     if (pos == 0) {
       qid.path = Qdevconfig + (c->qid.path - Qdevbase);
       qid.vers = 0;
@@ -227,7 +283,7 @@ static Chan *pciattach(char *spec) {
   if (pcistate.ndevs == 0)
     pci_enumerate();
 
-  return devattach('P', spec);
+  return devattach('J', spec);
 }
 
 static Walkqid *pciwalk(Chan *c, Chan *nc, char **name, int nname) {
@@ -239,6 +295,8 @@ static int pcistat(Chan *c, uchar *dp, int n) {
 }
 
 static Chan *pciopen(Chan *c, int omode) {
+  print("pciopen: qpath=%#llux type=%d omode=%d\n", c->qid.path, c->qid.type,
+        omode);
   checkcap(CapPCI);
 
   c = devopen(c, omode, nil, 0, pcigen);
@@ -255,6 +313,7 @@ static void pciclose(Chan *c) { USED(c); }
 */
 static long pciread(Chan *c, void *va, long n, vlong off) {
   char buf[4096];
+  char *p, *e;
   int len, devno;
   PCIDev *pd;
   uchar *config;
@@ -281,48 +340,33 @@ static long pciread(Chan *c, void *va, long n, vlong off) {
 
   case Qbus:
     /* List all PCI devices */
-    len = 0;
+    p = buf;
+    e = buf + sizeof(buf);
     lock(&pcistate.lock);
     for (pd = pcistate.devlist; pd != nil; pd = pd->next) {
-      /* Check if we have enough space for device line */
-      int device_len = snprint(
-          nil, 0,
-          "%s vendor=0x%04x device=0x%04x class=%02x.%02x.%02x irq=%d\n",
-          pd->name, pd->pci->vid, pd->pci->did, pd->pci->ccrb, pd->pci->ccru,
-          pd->pci->ccrp, pd->pci->intl);
-
-      /* Stop if we don't have enough space for this device */
-      if (len + device_len >= sizeof(buf) - 1)
+      p = seprint(p, e,
+                  "%s vendor=0x%04x device=0x%04x class=%02x.%02x.%02x "
+                  "irq=%d\n",
+                  pd->name, pd->pci->vid, pd->pci->did, pd->pci->ccrb,
+                  pd->pci->ccru, pd->pci->ccrp, pd->pci->intl);
+      if (p >= e)
         break;
-
-      len += snprint(
-          buf + len, sizeof(buf) - len,
-          "%s vendor=0x%04x device=0x%04x class=%02x.%02x.%02x irq=%d\n",
-          pd->name, pd->pci->vid, pd->pci->did, pd->pci->ccrb, pd->pci->ccru,
-          pd->pci->ccrp, pd->pci->intl);
 
       /* Add BAR information */
       for (i = 0; i < nelem(pd->pci->mem); i++) {
         if (pd->pci->mem[i].size > 0) {
-          /* Check if we have enough space for BAR line */
-          int bar_len = snprint(nil, 0, "  bar%d: addr=0x%llux size=0x%llux\n",
-                                i, pd->pci->mem[i].bar, pd->pci->mem[i].size);
-
-          /* Stop if we don't have enough space for this BAR */
-          if (len + bar_len >= sizeof(buf) - 1)
+          p = seprint(p, e, "  bar%d: addr=0x%llux size=0x%llux\n", i,
+                      pd->pci->mem[i].bar, pd->pci->mem[i].size);
+          if (p >= e)
             break;
-
-          len += snprint(buf + len, sizeof(buf) - len,
-                         "  bar%d: addr=0x%llux size=0x%llux\n", i,
-                         pd->pci->mem[i].bar, pd->pci->mem[i].size);
         }
       }
 
-      /* Check if we've run out of buffer space */
-      if (len >= sizeof(buf) - 1)
+      if (p >= e)
         break;
     }
     unlock(&pcistate.lock);
+    len = (int)(p - buf);
 
     if (off >= len)
       return 0;
@@ -444,9 +488,9 @@ static long pciwrite(Chan *c, void *va, long n, vlong off) {
 }
 
 Dev pcidevtab = {
-    'P',         "pci",
+    'J',         "pci",
 
-    devpcireset, devinit,  devshutdown, pciattach, pciwalk,
-    pcistat,     pciopen,  devcreate,   pciclose,  pciread,
-    devbread,    pciwrite, devbwrite,   devremove, devwstat,
+    devpcireset,   devinit,        devshutdown, pciattach, pciwalk,
+    pcistat,       pciopen,        devcreate,   pciclose,  pciread,
+    pciwrite,      devbread,       devbwrite,   devremove, devwstat,
 };

@@ -1,34 +1,19 @@
-/*
- * Unified borrow checker for kernel primitives
- * Provides Rust-style ownership and borrowing for locks, memory, I/O, etc.
- *
- * SMT: Validated by proofs/borrow/borrow_core.v
- * Description: Implements ownership tracking and FSM transitions
- */
-
-#include "dat.h"
-#include "mem.h"
-#include "portlib.h"
-#include "u.h"
+#include "borrowchecker.h"
+#include "hhdm.h"
+#include "kernel.h" /* MUST BE FIRST */
+#include "lock_dag.h"
+#include "pebble.h"
+#include "pebble_kernel.h"
+#include <lib.h>
+#include <siphash.h>
 
 /* External declarations for CR3 switch memory system checks */
 extern uintptr saved_limine_hhdm_offset;
 extern struct MemoryCoordination mem_coord;
 extern struct BorrowPool borrowpool;
 extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
-#include "acsl_bounds.h"
-#include "borrowchecker.h"
-#include "fns.h"
-#include "hhdm.h"
-#include "lock_dag.h"
-#include "pebble.h"
-#include "siphash.h" /* For DoS-resistant hash table hashing */
 
 /* ACSL specifications for error handling functions */
-/*@ requires valid_string(s);
-  @ assigns \nothing;
-  @ exits \nothing;
-  @*/
 /*@
   @ requires valid_string(s);
   @ terminates \true;
@@ -37,12 +22,7 @@ extern int xinit_done; /* Defined in xalloc.c, set after xinit() completes */
   @*/
 extern void lux9_error(char *s);
 
-/*@ requires \valid((char*)dst+(0..n-1));
-  @ requires \valid_read((char*)src+(0..n-1));
-  @ assigns ((char*)dst)[0..n-1];
-  @ terminates \true;
-  @*/
-extern void *memcpy(void *dst, const void *src, usize n);
+/* memcpy is in kernel.h */
 
 /*@ requires valid_string((char *)fmt);
   @ assigns \nothing;
@@ -414,9 +394,10 @@ static struct BorrowOwner *create_owner(uintptr key) {
 
   /* Use xalloc after initialization, bootstrap during early boot */
   if (xinit_done) {
-    owner = xalloc(sizeof(struct BorrowOwner));
+    /* Use xalloc_raw to avoid infinite recursion (don't track the tracker) */
+    owner = xalloc_raw(sizeof(struct BorrowOwner));
     if (owner == nil) {
-      bprint("create_owner: xalloc failed for BorrowOwner\n");
+      bprint("create_owner: xalloc_raw failed for BorrowOwner\n");
       return nil;
     }
     owner->alloc_source = ALLOC_XALLOC;
@@ -563,6 +544,8 @@ enum BorrowError borrow_release(Proc *p, uintptr key) {
 
   if (owner->owner != p) {
     iunlock(&borrowpool.lock);
+    /* Wave 7: Signal ownership violation to resurrection */
+    pebble_signal_distress(p, DISTRESS_BORROW_FAULT, key);
     return BORROW_ENOTOWNER;
   }
 
@@ -851,7 +834,8 @@ enum BorrowError borrow_borrow_shared(Proc *owner, Proc *borrower,
 
   /* Allocate new shared borrower node - use xalloc after initialization */
   if (xinit_done) {
-    sb = xalloc(sizeof(struct SharedBorrower));
+    /* Use xalloc_raw to avoid infinite recursion */
+    sb = xalloc_raw(sizeof(struct SharedBorrower));
     if (sb == nil) {
       iunlock(&borrowpool.lock);
       return BORROW_ENOMEM;
@@ -1680,7 +1664,8 @@ void memory_range_add_discovered(uintptr start, uintptr end,
 
   /* Dynamically allocate range entry */
   if (xinit_done) {
-    range = xalloc(sizeof(struct MemoryRange));
+    /* Use xalloc_raw to avoid infinite recursion */
+    range = xalloc_raw(sizeof(struct MemoryRange));
   } else {
     range = bootstrap_alloc(sizeof(struct MemoryRange));
   }

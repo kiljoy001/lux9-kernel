@@ -7,37 +7,31 @@
 
 #ifdef __FRAMAC__
 
-/* GCC Builtins Stubs */
+#include "acsl_bounds.h"
+
+/* Minimal Rune definition for Frama-C stubs */
+#ifndef _RUNE_DEFINED
+#define _RUNE_DEFINED
+typedef unsigned int Rune;
+#endif
+
+/* Frama-C requires a definition for __builtin_va_list if used in typedef */
+#ifndef __builtin_va_list
+#define __builtin_va_list void *
+#endif
+
+/* GCC Builtins Stubs - Frama-C now provides many of these via
+ * __fc_gcc_builtins.h */
 #define __builtin_expect(x, y) (x)
 #define __builtin_unreachable()
 #define __builtin_constant_p(x) 0
 #define __builtin_prefetch(x, ...) ((void)0)
-#define __builtin_clz(x) 0
-#define __builtin_ctz(x) 0
-#define __builtin_clzl(x) 0
-#define __builtin_ctzl(x) 0
-#define __builtin_clzll(x) 0
-#define __builtin_ctzll(x) 0
-#define __builtin_popcount(x) 0
-#define __builtin_popcountl(x) 0
-#define __builtin_popcountll(x) 0
-#define __builtin_bswap16(x) (x)
-#define __builtin_bswap32(x) (x)
-#define __builtin_bswap64(x) (x)
-#define __builtin_isnan(x) 0
-#define __builtin_signbit(x) 0
-#define __builtin_huge_valf() (1.0f / 0.0f)
-#define __builtin_huge_val() (1.0 / 0.0)
-#define __builtin_ceilf(x) (x)
-#define __builtin_ceil(x) (x)
-#define __builtin_floorf(x) (x)
-#define __builtin_floor(x) (x)
-#define __builtin_truncf(x) (x)
-#define __builtin_trunc(x) (x)
-#define __builtin_rintf(x) (x)
-#define __builtin_rint(x) (x)
+static inline unsigned long getcallerpc(void *p) {
+  (void)p;
+  return 0;
+}
 
-/* Math Builtins */
+/* Attributes */
 double __builtin_fabs(double x);
 float __builtin_fabsf(float x);
 double __builtin_inf(void);
@@ -48,13 +42,23 @@ float __builtin_nanf(const char *str);
 /* Attributes */
 #define __attribute__(x)
 
-/* Types */
+/* Types - provided by native Plan 9 headers during preprocessing */
+#ifdef __FRAMAC__
+typedef void *va_list; // Direct definition for Frama-C
+#else
 #ifndef __builtin_va_list
 typedef __builtin_va_list va_list;
 #endif
+#endif
 
-/* Frama-C Specific */
+/* Frama-C Specific - Must be guarded to prevent GCC pre-pass failure */
+#ifdef __FRAMAC__
+#ifndef __GCC_PREPROCESS__
 #include "__fc_builtin.h"
+#endif
+#endif
+
+/* Frama-C stubs are limited to compiler builtins and basic types. */
 
 #endif /* __FRAMAC__ */
 #endif /* _FRAMAC_STUBS_H_ */
