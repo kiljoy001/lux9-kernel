@@ -23,15 +23,6 @@
  *   0x400-0x4FF: Control flow (CALL, RET, JUMP, BRANCH)
  *   0x500-0x5FF: Stack and local operations
  */
-#define FRUITY_BEQ    0x410
-#define FRUITY_BNE    0x411
-#define FRUITY_BLT    0x412
-#define FRUITY_BLE    0x413
-#define FRUITY_BGT    0x414
-#define FRUITY_BGE    0x415
-#define FRUITY_BTRUE  0x416
-#define FRUITY_BFALSE 0x417
-
 typedef enum {
   /* ===== Standard Operations (0x000-0x0FF) ===== */
   FRUITY_NOP = 0x000, /* No operation */
@@ -211,6 +202,28 @@ typedef enum {
   FRUITY_LDVIRTFTN = 0x406,
 
   /* Branch instructions (conditional jumps) */
+  FRUITY_BEQ = 0x410,
+  FRUITY_BNE = 0x411,
+  FRUITY_BLT = 0x412,
+  FRUITY_BLE = 0x413,
+  FRUITY_BGT = 0x414,
+  FRUITY_BGE = 0x415,
+  FRUITY_BTRUE = 0x416,
+  FRUITY_BFALSE = 0x417,
+
+  /* Bulk Memory (WebAssembly 1.1) */
+  FRUITY_MEMINIT = 0x510,
+  FRUITY_DATADROP = 0x511,
+  FRUITY_MEMCOPY_BULK = 0x512,
+  FRUITY_MEMFILL = 0x513,
+
+  /* Table Operations (WebAssembly 1.1) */
+  FRUITY_TABLEINIT = 0x520,
+  FRUITY_ELEMDROP = 0x521,
+  FRUITY_TABLECOPY = 0x522,
+  FRUITY_TABLEGROW = 0x523,
+  FRUITY_TABLESIZE = 0x524,
+  FRUITY_TABLEFILL = 0x525,
 
   /* ===== Stack and Local Operations (0x500-0x5FF) ===== */
 
@@ -463,10 +476,36 @@ typedef struct {
 extern const fruity_opcode_metadata_t fruity_opcode_table[];
 
 /* Opcode query functions */
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @ ensures \result != \null;
+  @*/
 const char *fruity_opcode_name(fruity_opcode_t opcode);
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_opcode_creates_white(fruity_opcode_t opcode);
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_opcode_burns_white(fruity_opcode_t opcode);
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_opcode_may_free(fruity_opcode_t opcode);
+/*@
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 int fruity_opcode_is_terminator(fruity_opcode_t opcode);
 
 #endif /* FRUITY_OPCODES_H */

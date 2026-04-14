@@ -23,6 +23,7 @@ GCC_ERR="/tmp/framac_gcc_$$.err"
 
 # Step 2: Preprocess with GCC, letting Plan 9 headers define everything
 gcc -D__FRAMAC__ \
+    -D__GCC_PREPROCESS__ \
     -D__PLAN9_KERNEL__ \
     -D_PLAN9_SOURCE \
     -DKERNEL \
@@ -45,7 +46,6 @@ sed \
     -e 's/\\U000000b5/u/g' \
     -e 's/µs/us/g' \
     -e '/µs/d' \
-    -e 's/@\*\//\*\//g' \
     -e '/#pragma varargck/d' \
     -e '/#pragma lib/d' \
     -e '/#pragma src/d' \
@@ -53,13 +53,16 @@ sed \
     -e '/#pragma pack/d' \
     -e '/#pragma textflag/d' \
     -e '/#pragma profile/d' \
-    -e 's/_Float128/long double/g' \
+    -e '/^\*\/\*[[:space:]]\+Local/d' \
+    -e '/^\*\/\*[[:space:]].*/d' \
+    -e '/"uintptr must match pointer size");/d' \
+    -e '/"ulong must match pointer size");/d' \
+    -e '/"usize must match pointer size");/d' \
+    -e '/"ssize must match pointer size");/d' \
+    -e '/_Static_assert/d' \
     -e 's/__builtin_expect(\([^,]*\), [^)]*)/(\1)/g' \
-    -e 's/typedef[[:space:]]\+.*__gnuc_va_list;//g' \
-    -e 's/typedef[[:space:]]\+.*va_list[[:space:]]\+va_list;//g' \
-    -e 's/__builtin_va_list/va_list/g' \
-    -e 's/__gnuc_va_list/va_list/g' \
-    -e '1itypedef __builtin_va_list va_list;' \
+    -e '/\/\*[[:space:]]\+clang-format/d' \
+    -e 's/_Float128/long double/g' \
     -e 's/__attribute__(([a-zA-Z0-9_, ]*))//g' \
     -e 's/__attribute__((__noinline__))//g' \
     -e 's/__attribute__((noinline))//g' \
@@ -72,6 +75,7 @@ sed \
 sed '/^$/d' \
 > "$TEMP_OUTPUT"
 
+
 # Step 5: Check what types are actually missing
 HAS_FMT=$(grep -c "struct Fmt {" "$TEMP_OUTPUT" 2>/dev/null || true)
 HAS_QID=$(grep -c "struct Qid {" "$TEMP_OUTPUT" 2>/dev/null || true)
@@ -80,101 +84,34 @@ HAS_DIR=$(grep -c "struct Dir {" "$TEMP_OUTPUT" 2>/dev/null || true)
 HAS_WAITMSG=$(grep -c "struct Waitmsg {" "$TEMP_OUTPUT" 2>/dev/null || true)
 HAS_UUID=$(grep -E -c "typedef[[:space:]].*uuid_t|} uuid_t;" "$TEMP_OUTPUT" 2>/dev/null || true)
 
-# Step 6: Build minimal header with ONLY truly missing types
+# Step 6: Identify missing types for detection flags
+HAS_FMT=$(grep -c "struct Fmt {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_QID=$(grep -c "struct Qid {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_DIR=$(grep -c "struct Dir {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_WAITMSG=$(grep -c "struct Waitmsg {" "$TEMP_OUTPUT" 2>/dev/null || true)
+HAS_UUID=$(grep -E -c "typedef[[:space:]].*uuid_t|} uuid_t;" "$TEMP_OUTPUT" 2>/dev/null || true)
+
+# Step 6.4: Add detection flags
+DETECTION_FLAGS=""
+if [ "$HAS_FMT" -eq 1 ]; then DETECTION_FLAGS="-DHAS_FMT"; fi
+if [ "$HAS_QID" -eq 1 ]; then DETECTION_FLAGS="$DETECTION_FLAGS -DHAS_QID"; fi
+if [ "$HAS_DIR" -eq 1 ]; then DETECTION_FLAGS="$DETECTION_FLAGS -DHAS_DIR"; fi
+if [ "$HAS_WAITMSG" -eq 1 ]; then DETECTION_FLAGS="$DETECTION_FLAGS -DHAS_WAITMSG"; fi
+if [ "$HAS_UUID" -eq 1 ]; then DETECTION_FLAGS="$DETECTION_FLAGS -DHAS_UUID"; fi
+
+# Step 7: Final Assembly
 cat > "$OUTPUT_FILE" << 'HEADER_START'
-/* Frama-C Missing Types - types excluded by #ifndef __FRAMAC__ in Plan 9 headers */
+/* Frama-C Preprocessed Plan 9 Code */
 HEADER_START
 
-# Conditionally add uuid_t only if missing.
-if [ "$HAS_UUID" -eq 0 ]; then
-    cat >> "$OUTPUT_FILE" << 'UUID_DEF'
-
-/* UUID type - not in Plan 9 headers */
-typedef unsigned char uuid_t[16];
-UUID_DEF
-fi
-
-if [ "$HAS_FMT" -eq 0 ]; then
-    cat >> "$OUTPUT_FILE" << 'FMT_DEF'
-
-/* Types excluded by #ifndef __FRAMAC__ in portlib.h */
-typedef struct Fmt Fmt;
-typedef int (*Fmts)(Fmt *);
-struct Fmt {
-    unsigned char runes;
-    void *start;
-    void *to;
-    void *stop;
-    int (*flush)(Fmt *);
-    void *farg;
-    int nfmt;
-    __builtin_va_list args;
-    int r;
-    int width;
-    int prec;
-    unsigned long flags;
-};
-FMT_DEF
-fi
-
-if [ "$HAS_QID" -eq 0 ]; then
-    cat >> "$OUTPUT_FILE" << 'QID_DEF'
-
-typedef struct Qid Qid;
-struct Qid {
-    unsigned long long path;
-    unsigned long vers;
-    unsigned char type;
-};
-QID_DEF
-fi
-
-if [ "$HAS_DIR" -eq 0 ]; then
-    cat >> "$OUTPUT_FILE" << 'DIR_DEF'
-
-typedef struct Dir Dir;
-struct Dir {
-    unsigned short type;
-    unsigned int dev;
-    Qid qid;
-    unsigned long mode;
-    unsigned long atime;
-    unsigned long mtime;
-    long long length;
-    char *name;
-    char *uid;
-    char *gid;
-    char *muid;
-};
-DIR_DEF
-fi
-
-if [ "$HAS_WAITMSG" -eq 0 ]; then
-    cat >> "$OUTPUT_FILE" << 'WAITMSG_DEF'
-
-typedef struct Waitmsg Waitmsg;
-struct Waitmsg {
-    int pid;
-    unsigned long time[3];
-    char msg[128]; /* ERRMAX */
-};
-WAITMSG_DEF
-fi
-
-# Step 6.5: Include Frama-C Stubs (must be before any code uses them)
-if [ -f "kernel/include/framac_stubs.h" ]; then
-    echo '#include "kernel/include/framac_stubs.h"' | cat - "$TEMP_OUTPUT" > "${TEMP_OUTPUT}.tmp" && mv "${TEMP_OUTPUT}.tmp" "$TEMP_OUTPUT"
-fi
-
-
-# Note: Dirtab is NOT excluded by __FRAMAC__ in Plan 9 headers, so do not redefine it
+# Frama-C stubs are included via kernel headers (u.h) during preprocessing.
 
 # Append the preprocessed Plan 9 code
 cat "$TEMP_OUTPUT" >> "$OUTPUT_FILE"
 
 # Final cleanup: normalize ACSL comment terminators. (Modified to preserve @*/ for Frama-C)
 # sed -i 's/@\*\//\*\//g' "$OUTPUT_FILE"
-rm -f "$TEMP_OUTPUT" "$GCC_OUTPUT" "$GCC_ERR"
+# rm -f "$TEMP_OUTPUT" "$GCC_OUTPUT" "$GCC_ERR"
 
 # Step 4: Check for any remaining problematic constructs
 PRAGMA_COUNT=$(grep -c "^#pragma" "$OUTPUT_FILE" 2>/dev/null || true)
@@ -190,6 +127,7 @@ echo "   Output: $OUTPUT_FILE"
 echo ""
 echo "To verify with Frama-C:"
 echo "  frama-c -eva -machdep gcc_x86_64 \\"
+echo "    $DETECTION_FLAGS \\"
 echo "    -no-cpp-frama-c-compliant \\"
 echo "    -cpp-command 'cat' \\"
 echo "    $OUTPUT_FILE"

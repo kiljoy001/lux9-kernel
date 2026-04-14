@@ -277,7 +277,7 @@ static void memreset(void) {}
 Dev memdevtab = {
     'm',      "mem",
 
-    memreset, devinit,  devshutdown, memattach, memwalk,
-    memstat,  memopen,  devcreate,   memclose,  memread,
-    devbread, memwrite, devbwrite,   devremove, devwstat,
+    devreset,      devinit,        devshutdown, memattach, memwalk,
+    memstat,       memopen,        devcreate,   memclose,  memread,
+    memwrite,      devbread,       devbwrite,   devremove, devwstat,
 };

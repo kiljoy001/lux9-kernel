@@ -18,7 +18,7 @@ fi
 # Boot WITHOUT TPM support for testing
 cd "$REPO"
 $QEMU \
-    -drive file="$ISO",format=raw,media=disk \
+    -cdrom "$ISO" -boot d \
     -m 2G -smp 4 \
     -nographic \
     -serial mon:stdio

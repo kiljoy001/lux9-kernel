@@ -14,6 +14,7 @@
 #include "pebble.h"
 /* clang-format on */
 
+extern int boot_verbose;
 extern int irqhandled(Ureg *, int);
 extern void irqinit(void);
 extern int dosyscall(ulong, Sargs *, uintptr *);
@@ -46,6 +47,21 @@ static void faultamd64(Ureg *, void *);
 static void doublefault(Ureg *, void *);
 static void unexpected(Ureg *, void *);
 static void _dumpstack(Ureg *);
+
+static int
+expected_kexit_tos_fault(Ureg *ureg, uintptr addr, int user)
+{
+  uintptr pc;
+
+  if (user || up == nil || ureg == nil)
+    return 0;
+
+  if (addr < USTKTOP - BY2PG || addr >= USTKTOP)
+    return 0;
+
+  pc = (uintptr)ureg->pc;
+  return pc >= (uintptr)kexit && pc < (uintptr)sched;
+}
 
 /* Temporary IDT until we can set up proper page tables */
 Segdesc temp_idt[512] __attribute__((aligned(16)));
@@ -210,13 +226,7 @@ void trap(Ureg *ureg) {
 
   vno = ureg->type;
 
-  /* DEBUG: Show first few traps during boot */
   trap_count++;
-  if ((trap_count <= 256 || vno < 32 || trap_count % 100 == 0)) {
-    uintptr pc = ureg->pc;
-    print("trap[%d]: vno=%d pc=%#p sp=%#p user=%d\n", trap_count, vno, pc,
-          ureg->sp, userureg(ureg));
-  }
 
   post_exec_trap++;
   (void)trap_count;
@@ -226,6 +236,21 @@ void trap(Ureg *ureg) {
     pebble_auto_verify(up, ureg);
   if (vno != VectorCNA)
     fpukenter(ureg);
+
+  if (vno == VectorGPF && boot_verbose) {
+    print("GPF: pc=%#p sp=%#p cs=%#llx err=%#llx user=%d pid=%ld\n",
+          ureg->pc, ureg->sp, (uvlong)ureg->cs, (uvlong)ureg->error, user,
+          up ? up->pid : -1);
+    if (user) {
+      uintptr *pte = mmuwalk(m->pml4, ureg->pc, 0, 0);
+      if (pte != nil && (*pte & PTEVALID) != 0) {
+        print("GPF: pc pte=%#p pa=%#p flags=%#p\n", *pte, PPN(*pte),
+              *pte & 0xFFF);
+      } else {
+        print("GPF: pc pte missing for pc=%#p\n", ureg->pc);
+      }
+    }
+  }
 
   if (!irqhandled(ureg, vno) && (!user || !usertrap(ureg, vno))) {
     if (!user) {
@@ -423,7 +448,7 @@ void dumpstack(void) { callwithureg(_dumpstack); }
   @ assigns \nothing;
   @*/
 static void debugexc(Ureg *ureg, void *) {
-  u64int dr6, m;
+  u64int dr6, dr7_mask;
   char buf[ERRMAX];
   char *p, *e;
   int i;
@@ -436,11 +461,13 @@ static void debugexc(Ureg *ureg, void *) {
     qlock(&up->debug);
   else if (!canqlock(&up->debug))
     return;
-  m = up->dr[7];
-  m = (m >> 4 | m >> 3) & 8 | (m >> 3 | m >> 2) & 4 | (m >> 2 | m >> 1) & 2 |
-      (m >> 1 | m) & 1;
-  m &= dr6;
-  if (m == 0) {
+  dr7_mask = up->dr[7];
+  dr7_mask = (dr7_mask >> 4 | dr7_mask >> 3) & 8 |
+             (dr7_mask >> 3 | dr7_mask >> 2) & 4 |
+             (dr7_mask >> 2 | dr7_mask >> 1) & 2 |
+             (dr7_mask >> 1 | dr7_mask) & 1;
+  dr7_mask &= dr6;
+  if (dr7_mask == 0) {
     snprint(buf, sizeof(buf), "sys: debug exception dr6=%#.8ullx", dr6);
     postnote(up, 0, buf, NDebug);
   } else {
@@ -448,8 +475,8 @@ static void debugexc(Ureg *ureg, void *) {
     e = buf + sizeof(buf);
     p = seprint(p, e, "sys: watchpoint ");
     for (i = 0; i < 4; i++)
-      if ((m & 1 << i) != 0)
-        p = seprint(p, e, "%d%s", i, (m >> i + 1 != 0) ? "," : "");
+      if ((dr7_mask & 1 << i) != 0)
+        p = seprint(p, e, "%d%s", i, (dr7_mask >> i + 1 != 0) ? "," : "");
     postnote(up, 0, buf, NDebug);
   }
   qunlock(&up->debug);
@@ -477,6 +504,7 @@ static void faultamd64(Ureg *ureg, void *) {
   uintptr addr;
   int read, user;
   static int fault_count = 0;
+  static int user_fault_trace_count = 0;
   extern int borrow_is_owned(uintptr key);
   extern Proc *borrow_get_owner(uintptr key);
 
@@ -484,9 +512,22 @@ static void faultamd64(Ureg *ureg, void *) {
   read = !(ureg->error & 2);
   user = userureg(ureg);
 
+  if (user && user_fault_trace_count < 8) {
+    char trace_buf[200];
+    user_fault_trace_count++;
+    snprint(trace_buf, sizeof(trace_buf),
+            "userfault: pid=%d pc=%#p sp=%#p addr=%#p err=%#lux tseg=%#p-%#p\n",
+            up ? up->pid : -1, ureg->pc, ureg->sp, addr, ureg->error,
+            up && up->seg[TSEG] ? (void *)up->seg[TSEG]->base : 0,
+            up && up->seg[TSEG] ? (void *)up->seg[TSEG]->top : 0);
+    uartputs(trace_buf, (int)strlen(trace_buf));
+  }
+
   /* Enhanced debug - show detailed fault info */
   fault_count++;
-  if ((fault_count <= 20 || fault_count % 100 == 0) && boot_verbose) {
+  if (boot_verbose && !user &&
+      (fault_count <= 8 || fault_count % 100 == 0) &&
+      !expected_kexit_tos_fault(ureg, addr, user)) {
     print("\n=== PAGE FAULT #%d ===\n", fault_count);
     print("  Address:    %#p\n", addr);
     print("  PC:         %#p\n", ureg->pc);
@@ -527,8 +568,8 @@ static void faultamd64(Ureg *ureg, void *) {
       }
     }
 
-    if (pa != 0 && borrow_is_owned(pa)) {
-      Proc *owner = borrow_get_owner(pa);
+    if (pa != 0 && borrow_is_owned((uintptr)kaddr(pa))) {
+      Proc *owner = borrow_get_owner((uintptr)kaddr(pa));
       if (owner)
         print("  Borrow:     Page owned by proc '%s' (pid=%lu)\n",
               owner->text ? owner->text : "???", owner->pid);
@@ -571,7 +612,9 @@ static void faultamd64(Ureg *ureg, void *) {
   if (fault(addr, ureg->pc, read) < 0) {
     if (!user) {
       /* If kernel touched a user VA, blame the process instead of panicking */
-      if (up != nil && addr < USTKTOP) {
+      /* DISABLE to avoid deadlock if fault happens while holding locks (malloc)
+       */
+      if (0 && up != nil && addr < USTKTOP) {
         faultnote("fault", read ? "read" : "write", addr);
         poperror();
         return;
@@ -611,9 +654,6 @@ static void faultamd64(Ureg *ureg, void *) {
     faultnote("fault", read ? "read" : "write", addr);
   }
 
-  print("faultamd64: DONE pid=%ld addr=%#llx user=%d\n", up ? up->pid : -1,
-        (unsigned long long)addr, user);
-
   if (!user)
     poperror();
 }
@@ -639,7 +679,7 @@ static char *syscallnames[] = {
   @ requires ureg == \null || \valid(ureg);
   @ assigns \nothing;
   @*/
-void syscall(Ureg *ureg) {
+void *syscall(Ureg *ureg) {
   static int syscall_count = 0;
 
   syscall_count++;
@@ -651,27 +691,64 @@ void syscall(Ureg *ureg) {
 
   /* PURE MESSAGE-BASED ARCHITECTURE
    * ===============================
-   * Syscall instruction is ONLY a doorbell trigger.
    * All operations come from 9P messages in exchange page.
-   * NO RBP reading - NO legacy Plan 9 syscall ABI.
    */
 
-  /* Print clean syscall entry */
-  if ((syscall_count <= 50 || syscall_count % 100 == 0) && boot_verbose)
-    print("SYSCALL[%d]: PURE-9P-DOORBELL pid=%ld\n", syscall_count,
-          up ? up->pid : -1);
+  if (up == nil)
+    panic("syscall: no current process for doorbell");
 
-  /* PURE DOORBELL TRIGGER - No RBP reading */
-  int result = p9_handle_doorbell(up, ureg);
+  if (up->nerrlab != 0) {
+    print("SYSCALL: resetting leaked errstack pid=%lud depth=%d before doorbell\n",
+          up->pid, up->nerrlab);
+    up->nerrlab = 0;
+  }
+
+  up->insyscall = 1;
+  up->psstate = "9pdoorbell";
+  up->scallnr = -1;
+
+  /* P9_handle_doorbell now returns the reply message type */
+  int result;
+  if (waserror()) {
+    char *e = up->syserrstr;
+    up->syserrstr = up->errstr;
+    up->errstr = e;
+    if (up->p9page != nil) {
+      P9Control *ctl = (P9Control *)((uchar *)up->p9page + P9_CONTROL_OFFSET);
+      atomic_store(&ctl->status, P9_STATUS_ERROR, ORDER_RELEASE);
+    }
+    result = -1;
+  } else {
+    result = p9_handle_doorbell(up, ureg);
+    poperror();
+  }
+
+  if (up->nerrlab != 0) {
+    print("SYSCALL: clearing leaked errstack pid=%lud depth=%d after doorbell\n",
+          up->pid, up->nerrlab);
+    up->nerrlab = 0;
+  }
+
+  up->insyscall = 0;
+  up->psstate = nil;
 
   if (result < 0) {
-    /* No valid message in exchange page */
     print("SYSCALL: Pure 9P mode - no valid message\n");
     ureg->ax = -1;
+    return nil;
+  }
+
+  /* message type values are in include/fcall.h */
+  extern void noteret(void);
+  if (result == Rsysexec || result == Rexec) {
+    print("SYSCALL: 9P exec successful (result=%d, Rsysexec=%d, Rexec=%d), "
+          "returning via noteret\n",
+          result, Rsysexec, Rexec);
+    result = Rsysexec;
   } else {
-    /* Message processed via 9P - result written to reply */
-    print("SYSCALL: 9P message processed successfully\n");
-    /* ureg->ax already set by p9_handle_doorbell */
+    /* print("SYSCALL: 9P message processed successfully (result=%d)\n",
+     * result); */
+    result = 0;
   }
 
   /* FORCE INTERRUPTS ENABLED ON RETURN */
@@ -691,6 +768,13 @@ void syscall(Ureg *ureg) {
 
   kexit(ureg);
   fpukexit(ureg);
+
+  if (result == Rsysexec) {
+    print("SYSCALL: switching to exec image via touser sp=%#p pc=%#p p9=%#p\n",
+          (void *)ureg->sp, (void *)ureg->pc, (void *)p9_user_base(up));
+    touser((void *)ureg->sp, (void *)ureg->pc, p9_user_base(up));
+  }
+  return nil;
 }
 
 Ureg *notify(Ureg *ureg, char *msg) {
@@ -782,6 +866,7 @@ uintptr execregs(uintptr entry, ulong ssize, ulong nargs) {
   print("execregs: ureg=%#p ureg->pc=%#p UESEL=%#x UD64SEL=%#x\n", ureg,
         ureg->pc, UESEL, UD64SEL);
 
+  /* Returning returns results to userspace in AX/DX */
   return (uintptr)USTKTOP -
          sizeof(Tos); /* address of kernel/user shared data */
 }
@@ -832,8 +917,11 @@ void kprocchild(Proc *p, void (*entry)(void)) {
    * to linkproc().
    * Stack grows down from p->kstack + KSTACK.
    */
+  memset(&p->sched, 0, sizeof(p->sched));
   p->sched.pc = (uintptr)entry;
   p->sched.sp = (uintptr)p->kstack + KSTACK - BY2WD;
+  p->sched.r14 = (uintptr)p;
+  p->sched.r15 = (uintptr)m;
 }
 
 /*@

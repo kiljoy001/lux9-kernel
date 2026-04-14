@@ -35,7 +35,7 @@ fi
 
 # Create temporary preprocessed file
 TEMP_FILE=$(mktemp /tmp/framac_plan9_XXXXXX.c)
-trap "rm -f $TEMP_FILE" EXIT
+# # trap "rm -f $TEMP_FILE" EXIT
 
 # Preprocess the Plan 9 file
 echo "📋 [frama-c-plan9] Preprocessing $INPUT_FILE..." >&2
@@ -47,14 +47,35 @@ for arg in "${@:1:$(($#-1))}"; do
     FRAMA_C_ARGS+=("$arg")
 done
 
+# Allow users to override annot-error handling.
+HAS_ANNOT_ERROR=0
+HAS_WP=0
+HAS_WP_TIMEOUT=0
+for arg in "${FRAMA_C_ARGS[@]}"; do
+    if [[ "$arg" == *"annot-error"* ]]; then
+        HAS_ANNOT_ERROR=1
+    fi
+    if [[ "$arg" == "-wp" ]]; then
+        HAS_WP=1
+    fi
+    if [[ "$arg" == "-wp-timeout" ]]; then
+        HAS_WP_TIMEOUT=1
+    fi
+done
+
 # Add required Frama-C options
 FRAMA_C_ARGS+=(
     "-machdep" "gcc_x86_64"
     "-no-cpp-frama-c-compliant"
     "-cpp-command" "$SCRIPT_DIR/frama_noop_cpp.sh"
-    "-kernel-warn-key" "annot-error=inactive"
     "$TEMP_FILE"
 )
+if [ "$HAS_ANNOT_ERROR" -eq 0 ]; then
+    FRAMA_C_ARGS+=("-kernel-warn-key" "annot-error=inactive")
+fi
+if [ "$HAS_WP" -eq 1 ] && [ "$HAS_WP_TIMEOUT" -eq 0 ]; then
+    FRAMA_C_ARGS+=("-wp-timeout" "120")
+fi
 
 # Run Frama-C
 echo "🔍 [frama-c-plan9] Running Frama-C analysis..." >&2

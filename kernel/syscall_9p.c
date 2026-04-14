@@ -16,6 +16,10 @@
 #include "ureg.h"
 #include <error.h>
 
+/* Limit for user buffers to satisfy verification */
+#define MAX_SYS_BUF 4096
+#define MAX_SYS_PATH 1024
+
 /* Legacy syscall numbers for translation */
 enum {
   RFORK = 19,
@@ -53,84 +57,109 @@ enum {
  * Returns: result in ureg->ax, -1 on error
  */
 /*@
-  @ requires ureg == \null || \valid(ureg);
+  @ requires \valid(ureg);
   @ assigns \nothing;
   @*/
 void syscall_to_9p(Ureg *ureg) {
-  Fcall t, r;
-  ulong scallnr;
   uintptr *args;
+  Fcall t, r;
   long result;
+  ulong scallnr;
 
-  scallnr = ureg->bp;                   /* RARG - syscall number */
-  args = (uintptr *)(ureg->sp + BY2WD); /* Skip return address slot */
+  if (ureg == nil)
+    return;
 
-  memset(&t, 0, sizeof(t));
-  memset(&r, 0, sizeof(r));
-
-  /* Default error response */
+  args = (uintptr *)(ureg + 1);
   result = -1;
+  scallnr = ureg->ax;
+
+  if (up == nil)
+    return;
+
+  /* Initialize common Fcall fields */
+  t = (Fcall){0};
+  r = (Fcall){0};
+  t.tag = 0;
 
   switch (scallnr) {
   case OPEN:
     /* OPEN(path, mode) -> Tattach(aname=path) */
-    t.type = Tattach;
-    t.aname = (char *)args[0];
-    t.fid = up->fid_counter++; /* Allocate fid */
-    t.afid = NOFID;
-    t.uname = up->user;
+    {
+      char kname[256];
+      /*@ assert \valid_read((char *)args[0] + (0 .. MAX_SYS_PATH-1)); */
+      strncpy(kname, (char *)args[0], sizeof(kname) - 1);
+      kname[sizeof(kname) - 1] = 0;
 
-    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
-      break;
+      t.type = Tattach;
+      t.aname = kname;
+      t.fid = up->fid_counter++; /* Allocate fid */
+      t.afid = NOFID;
+      t.uname = up->user;
 
-    result = t.fid; /* Return fid as fd */
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
+
+      result = t.fid; /* Return fid as fd */
+    }
     break;
 
   case READ:
     /* READ(fd, buf, count) -> Tread(fid, offset, count) */
-    t.type = Tread;
-    t.fid = (u32int)args[0];
-    t.offset = up->fid_offsets[t.fid]; /* Track offset per-fid */
-    t.count = (u32int)args[2];
+    {
+      t.type = Tread;
+      t.fid = (u32int)args[0];
+      t.offset = up->fid_offsets[t.fid]; /* Track offset per-fid */
+      u32int count = (u32int)args[2];
+      if (count > MAX_SYS_BUF)
+        count = MAX_SYS_BUF;
+      /*@ assert \valid((char*)args[1] + (0 .. MAX_SYS_BUF-1)); */
+      t.count = count;
 
-    /* Allocate response buffer */
-    r.data = smalloc(t.count);
-    if (r.data == nil)
-      error(Enomem);
+      /* Allocate response buffer */
+      r.data = smalloc(t.count);
+      if (r.data == nil)
+        error(Enomem);
 
-    if (waserror()) {
-      free(r.data);
-      nexterror();
-    }
+      if (waserror()) {
+        free(r.data);
+        nexterror();
+      }
 
-    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror) {
+        poperror();
+        free(r.data);
+        break;
+      }
+
+      /* Copy data to userspace */
+      memmove((void *)args[1], r.data, r.count);
+      up->fid_offsets[t.fid] += r.count;
+      result = r.count;
+
       poperror();
       free(r.data);
-      break;
     }
-
-    /* Copy data to userspace */
-    memmove((void *)args[1], r.data, r.count);
-    up->fid_offsets[t.fid] += r.count;
-    result = r.count;
-
-    poperror();
-    free(r.data);
     break;
 
   case WRITE:
     /* WRITE(fd, buf, count) -> Twrite(fid, offset, count, data) */
-    t.type = Twrite;
-    t.fid = (u32int)args[0];
-    t.offset = up->fid_offsets[t.fid];
-    t.count = (u32int)args[2];
-    t.data = (char *)args[1];
+    {
+      t.type = Twrite;
+      t.fid = (u32int)args[0];
+      t.offset = up->fid_offsets[t.fid];
+      u32int count = (u32int)args[2];
+      if (count > MAX_SYS_BUF)
+        count = MAX_SYS_BUF;
+      /*@ assert \valid_read((char *)args[1] + (0 .. MAX_SYS_BUF-1)); */
+      t.count = count;
+      t.data = (char *)args[1];
 
-    if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
-      break;
+      if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
+        break;
 
-    up->fid_offsets[t.fid] += r.count;
-    result = r.count;
+      up->fid_offsets[t.fid] += r.count;
+      result = r.count;
+    }
     break;
 
   case CLOSE:
@@ -158,9 +187,10 @@ void syscall_to_9p(Ureg *ureg) {
     /* Write "exec <path>" command */
     {
       char cmd[256];
-      snprint(cmd, sizeof(cmd), "exec %s", (char *)args[0]);
+      /*@ assert \valid_read((char *)args[0] + (0 .. MAX_SYS_PATH-1)); */
+      snprint(cmd, sizeof(cmd), "exec %.*s", 1024, (char *)args[0]);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path; /* Use fid from attach */
       t.offset = 0;
@@ -187,7 +217,7 @@ void syscall_to_9p(Ureg *ureg) {
 
     /* Write "exit" command */
     {
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -197,7 +227,12 @@ void syscall_to_9p(Ureg *ureg) {
       p9_dispatch(up, &t, &r);
     }
 
-    pexit((char *)args[0], 1);
+    {
+      char exitmsg[64];
+      strncpy(exitmsg, (char *)args[0], sizeof(exitmsg) - 1);
+      exitmsg[sizeof(exitmsg) - 1] = 0;
+      pexit(exitmsg, 1);
+    }
     /* NOTREACHED */
     break;
 
@@ -217,7 +252,7 @@ void syscall_to_9p(Ureg *ureg) {
       char cmd[64];
       snprint(cmd, sizeof(cmd), "rfork %lud", args[0]);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -270,7 +305,7 @@ void syscall_to_9p(Ureg *ureg) {
       wfid = up->fid_counter++;
 
       /* Walk to clone the fid for write end */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twalk;
       t.fid = up->fid_counter - 3; /* Original pipe fid */
       t.newfid = wfid;
@@ -298,9 +333,10 @@ void syscall_to_9p(Ureg *ureg) {
       int i, len;
 
       /* Extract filename from path */
-      len = strlen(path);
+      /*@ assert \valid_read(path + (0 .. MAX_SYS_PATH-1)); */
       strncpy(pathbuf, path, sizeof(pathbuf) - 1);
       pathbuf[sizeof(pathbuf) - 1] = 0;
+      len = strlen(pathbuf);
 
       name = pathbuf + len;
       while (name > pathbuf && name[-1] != '/')
@@ -324,7 +360,7 @@ void syscall_to_9p(Ureg *ureg) {
         break;
 
       /* Create file */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Tcreate;
       t.fid = up->fid_counter - 1;
       t.name = name;
@@ -342,9 +378,17 @@ void syscall_to_9p(Ureg *ureg) {
   case STAT:
     /* STAT(path, buf, nbuf) -> Tattach + Tstat */
     {
-      char *path = (char *)args[0];
+      char kname[256];
+      strncpy(kname, (char *)args[0], sizeof(kname) - 1);
+      kname[sizeof(kname) - 1] = 0;
+      char *path = kname;
       uchar *buf = (uchar *)args[1];
       int nbuf = (int)args[2];
+      if (nbuf < 0)
+        nbuf = 0;
+      if (nbuf > MAX_SYS_BUF)
+        nbuf = MAX_SYS_BUF;
+      /*@ assert \valid(buf + (0 .. MAX_SYS_BUF-1)); */
 
       t.type = Tattach;
       t.aname = path;
@@ -356,7 +400,7 @@ void syscall_to_9p(Ureg *ureg) {
         break;
 
       /* Get stat */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Tstat;
       t.fid = up->fid_counter - 1;
 
@@ -373,7 +417,7 @@ void syscall_to_9p(Ureg *ureg) {
       }
 
       /* Clunk the fid */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Tclunk;
       t.fid = up->fid_counter - 1;
       p9_dispatch(up, &t, &r);
@@ -386,6 +430,11 @@ void syscall_to_9p(Ureg *ureg) {
       u32int fid = (u32int)args[0];
       uchar *buf = (uchar *)args[1];
       int nbuf = (int)args[2];
+      if (nbuf < 0)
+        nbuf = 0;
+      if (nbuf > MAX_SYS_BUF)
+        nbuf = MAX_SYS_BUF;
+      /*@ assert \valid(buf + (0 .. MAX_SYS_BUF-1)); */
 
       t.type = Tstat;
       t.fid = fid;
@@ -420,7 +469,7 @@ void syscall_to_9p(Ureg *ureg) {
         up->fid_offsets[fid] += offset;
         break;
       case 2: /* SEEK_END - need stat to get size */
-        memset(&t, 0, sizeof(t));
+        t = (Fcall){0};
         t.type = Tstat;
         t.fid = fid;
         if (p9_dispatch(up, &t, &r) < 0 || r.type == Rerror)
@@ -468,7 +517,10 @@ void syscall_to_9p(Ureg *ureg) {
   case 3: /* CHDIR */
     /* CHDIR(path) -> Tattach and update up->dot */
     {
-      char *path = (char *)args[0];
+      char kname[256];
+      strncpy(kname, (char *)args[0], sizeof(kname) - 1);
+      kname[sizeof(kname) - 1] = 0;
+      char *path = kname;
 
       t.type = Tattach;
       t.aname = path;
@@ -488,7 +540,11 @@ void syscall_to_9p(Ureg *ureg) {
   case 25: /* REMOVE */
     /* REMOVE(path) -> Tattach + Tremove */
     {
-      char *path = (char *)args[0];
+      char kname[256];
+      /*@ assert \valid_read((char *)args[0] + (0 .. MAX_SYS_PATH-1)); */
+      strncpy(kname, (char *)args[0], sizeof(kname) - 1);
+      kname[sizeof(kname) - 1] = 0;
+      char *path = kname;
 
       t.type = Tattach;
       t.aname = path;
@@ -516,10 +572,12 @@ void syscall_to_9p(Ureg *ureg) {
 
     {
       char cmd[512];
-      snprint(cmd, sizeof(cmd), "bind %s %s %d", (char *)args[0],
-              (char *)args[1], (int)args[2]);
+      /*@ assert \valid_read((char *)args[0] + (0 .. MAX_SYS_PATH-1)); */
+      /*@ assert \valid_read((char *)args[1] + (0 .. MAX_SYS_PATH-1)); */
+      snprint(cmd, sizeof(cmd), "bind %.*s %.*s %d", 1024, (char *)args[0],
+              1024, (char *)args[1], (int)args[2]);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -550,10 +608,12 @@ void syscall_to_9p(Ureg *ureg) {
       if (aname == nil)
         aname = "";
 
-      snprint(cmd, sizeof(cmd), "mount %d %s %d %s", (int)args[0],
-              (char *)args[1], (int)args[2], aname);
+      /*@ assert \valid_read((char *)args[1] + (0 .. MAX_SYS_PATH-1)); */
+      /*@ assert \valid_read(aname + (0 .. MAX_SYS_PATH-1)); */
+      snprint(cmd, sizeof(cmd), "mount %d %.*s %d %.*s", (int)args[0], 1024,
+              (char *)args[1], (int)args[2], 1024, aname);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -587,9 +647,11 @@ void syscall_to_9p(Ureg *ureg) {
       if (old == nil)
         old = "";
 
-      snprint(cmd, sizeof(cmd), "unmount %s %s", name, old);
+      /*@ assert \valid_read(name + (0 .. MAX_SYS_PATH-1)); */
+      /*@ assert \valid_read(old + (0 .. MAX_SYS_PATH-1)); */
+      snprint(cmd, sizeof(cmd), "unmount %.*s %.*s", 1024, name, 1024, old);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -606,9 +668,17 @@ void syscall_to_9p(Ureg *ureg) {
   case WSTAT:
     /* WSTAT(path, buf, n) -> Tattach + Twstat */
     {
-      char *path = (char *)args[0];
+      char kname[256];
+      strncpy(kname, (char *)args[0], sizeof(kname) - 1);
+      kname[sizeof(kname) - 1] = 0;
+      char *path = kname;
       uchar *buf = (uchar *)args[1];
       int nbuf = (int)args[2];
+      if (nbuf < 0)
+        nbuf = 0;
+      if (nbuf > MAX_SYS_BUF)
+        nbuf = MAX_SYS_BUF;
+      /*@ assert \valid_read(buf + (0 .. MAX_SYS_BUF-1)); */
 
       t.type = Tattach;
       t.aname = path;
@@ -620,7 +690,7 @@ void syscall_to_9p(Ureg *ureg) {
         break;
 
       /* Twstat */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twstat;
       t.fid = up->fid_counter - 1;
       t.stat = buf;
@@ -632,7 +702,7 @@ void syscall_to_9p(Ureg *ureg) {
       result = nbuf;
 
       /* Clunk */
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Tclunk;
       t.fid = up->fid_counter - 1;
       p9_dispatch(up, &t, &r);
@@ -660,7 +730,7 @@ void syscall_to_9p(Ureg *ureg) {
       /* Format: segbrk <addr_hex> <seg_idx> */
       snprint(cmd, sizeof(cmd), "segbrk %p %d", addr, seg);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -708,7 +778,7 @@ void syscall_to_9p(Ureg *ureg) {
       snprint(cmd, sizeof(cmd), "attach %d %s %p %lud", attr,
               class ? class : "memory", va, len);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -744,7 +814,7 @@ void syscall_to_9p(Ureg *ureg) {
 
       snprint(cmd, sizeof(cmd), "detach %p", addr);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -780,7 +850,7 @@ void syscall_to_9p(Ureg *ureg) {
 
       snprint(cmd, sizeof(cmd), "free %p %lud", addr, len);
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Twrite;
       t.fid = r.qid.path;
       t.offset = 0;
@@ -802,8 +872,13 @@ void syscall_to_9p(Ureg *ureg) {
       u32int fid = (u32int)args[0];
       char *buf = (char *)args[1];
       int nbuf = (int)args[2];
+      if (nbuf < 0)
+        nbuf = 0;
+      if (nbuf > MAX_SYS_BUF)
+        nbuf = MAX_SYS_BUF;
+      /*@ assert \valid(buf + (0 .. MAX_SYS_BUF-1)); */
 
-      memset(&t, 0, sizeof(t));
+      t = (Fcall){0};
       t.type = Tstat;
       t.fid = fid;
 
@@ -821,6 +896,8 @@ void syscall_to_9p(Ureg *ureg) {
           int namelen = GBIT16(r.stat + nameoff);
           if (namelen > 0 && nameoff + 2 + namelen <= r.nstat) {
             int n = namelen < nbuf - 1 ? namelen : nbuf - 1;
+            if (n < 0)
+              n = 0;
             memmove(buf, r.stat + nameoff + 2, n);
             buf[n] = 0;
             result = n;

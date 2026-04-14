@@ -463,10 +463,36 @@ typedef struct {
 extern const fruity_opcode_metadata_t fruity_opcode_table[];
 
 /* Opcode query functions */
+/*@
+  @ assigns \nothing;
+  @ ensures \result != \null;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 const char *fruity_opcode_name(fruity_opcode_t opcode);
+/*@
+  @ assigns \nothing;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 int fruity_opcode_creates_white(fruity_opcode_t opcode);
+/*@
+  @ assigns \nothing;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 int fruity_opcode_burns_white(fruity_opcode_t opcode);
+/*@
+  @ assigns \nothing;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 int fruity_opcode_may_free(fruity_opcode_t opcode);
+/*@
+  @ assigns \nothing;
+  @ terminates \true;
+  @ exits \false;
+  @*/
 int fruity_opcode_is_terminator(fruity_opcode_t opcode);
 
 #endif /* FRUITY_OPCODES_H */

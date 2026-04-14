@@ -40,6 +40,8 @@ typedef struct Vctl Vctl;
 
 /* For Frama-C: don't alias bprint to print to avoid declaration conflicts */
 
+#ifndef _LABEL_DEFINED_
+#define _LABEL_DEFINED_
 struct Label {
   uintptr sp;  /* offset 0 */
   uintptr pc;  /* offset 8 */
@@ -50,6 +52,7 @@ struct Label {
   uintptr r14; /* offset 48 - callee-saved */
   uintptr r15; /* offset 56 - callee-saved */
 };
+#endif
 
 struct FPssestate {
   u16int fcw;       /* x87 control word */
@@ -254,6 +257,8 @@ struct Active {
 };
 
 extern struct Active active;
+
+extern int fpu_ready;
 
 /*
  *  routines for things outside the PC model, like power management

@@ -4,6 +4,7 @@
 #include "fns.h"
 #include "io.h"
 #include "mem.h"
+#include "9p_router.h"
 #include "pci.h"
 #include "u.h"
 #include "ureg.h"
@@ -13,6 +14,7 @@
 extern u64int MemMin; /* set by bootargsinit() */
 
 extern uvlong rdtsc(void);
+extern void uartputs(char *, int);
 
 /* Format flags - from libc.h */
 enum {
@@ -119,69 +121,54 @@ uintptr getcallerpc(void *v) {
 /* Error strings */
 char Etoolong[] = "name too long";
 
-/* Utility stubs */
-/*@
-  @ requires old == \null || \valid(old);
-  @ requires new == \null || \valid(new);
-  @ assigns \nothing;
-  @*/
-void srvrenameuser(char *old, char *new) {
-  (void)old;
-  (void)new;
-}
-
-/*@
-  @ requires old == \null || \valid(old);
-  @ requires new == \null || \valid(new);
-  @ assigns \nothing;
-  @*/
-void shrrenameuser(char *old, char *new) {
-  (void)old;
-  (void)new;
-}
-
 /*@
   @ requires v == \null || \valid(v);
   @ assigns \nothing;
   @*/
 int needpages(void *v) {
+  int noswap;
+
   (void)v;
-  return 0;
+  noswap = (up != nil && up->noswap);
+  return !(palloc.freecount > swapalloc.highwater ||
+           (noswap && palloc.freecount > 0));
 }
 
 char *configfile = "";
 
 /* Device table - array of device drivers */
-extern Dev consdevtab;
-extern Dev envdevtab;
 extern Dev rootdevtab;
 extern Dev archdevtab;
-extern Dev mntdevtab;
 extern Dev procdevtab;
 extern Dev exchdevtab;
 extern Dev memdevtab;
 extern Dev irqdevtab;
 extern Dev dmadevtab;
 extern Dev pcidevtab;
+extern Dev consdevtab;
 
-extern Dev ramdevtab;
 extern Dev sipdevtab;
 extern Dev pebbledevtab;
 extern Dev ringdevtab;
-extern Dev pipedevtab;
 extern Dev tpmdevtab;
 extern Dev consensusdevtab;
-extern Dev srvdevtab;
 extern Dev symdevtab;
 extern Dev wasmdevtab;
+extern Dev distressdevtab;
+extern Dev pipedevtab;
+extern Dev mntdevtab;
+extern Dev srvdevtab;
 
 Dev *devtab[] = {
-    &rootdevtab,   &archdevtab, &consdevtab,      &envdevtab, &mntdevtab,
-    &procdevtab,   &exchdevtab, &memdevtab,       &ramdevtab, &sipdevtab,
-    &pebbledevtab, &ringdevtab, &irqdevtab,       &dmadevtab, &pcidevtab,
-    &pipedevtab,   &tpmdevtab,  &consensusdevtab, &srvdevtab, &symdevtab,
-    &wasmdevtab,   nil,
-};
+    &rootdevtab, &archdevtab,      &consdevtab,
+    &procdevtab,  &exchdevtab,     &memdevtab,
+    &sipdevtab,   &pebbledevtab,  &ringdevtab,
+	    &irqdevtab,   &dmadevtab,      &pcidevtab,
+	    &tpmdevtab,   &consensusdevtab,
+	    /* &symdevtab, */
+	    &wasmdevtab,  &distressdevtab, &pipedevtab,
+	    &mntdevtab,   &srvdevtab,      nil,
+	};
 
 /* Additional stubs for console/device support */
 int cpuserver = 0;
@@ -245,23 +232,9 @@ char *cleanname(char *name) {
 
 /* cycles pointer initialised in devarch/mp code */
 
-void kerndate(long secs) { (void)secs; }
-
 extern char end[]; /* End of kernel - defined by linker */
 
 /* Memory address conversion functions provided by mmu.c */
-
-/* Swap system stubs */
-Image *swapimage = nil; /* Global variable, not function */
-void putswap(Page *p) { (void)p; }
-/*@
-  @ assigns \nothing;
-  @*/
-int swapcount(uintptr pa) {
-  (void)pa;
-  return 0;
-}
-void kickpager(void) { wakeup(&swapalloc.r); }
 
 /* Random number - must match portlib.h signature */
 /*@
@@ -282,58 +255,6 @@ void SET(void *x) { (void)x; }
 
 /* qsort implementation */
 static int (*qsort_cmp)(void *, void *);
-
-/*@
-  @ requires a == \null || \valid(a);
-  @ requires b == \null || \valid(b);
-  @ assigns \nothing;
-  @*/
-static void qsort_swap(char *a, char *b, ulong n) {
-  char t;
-  while (n--) {
-    t = *a;
-    *a++ = *b;
-    *b++ = t;
-  }
-}
-
-/*@
-  @ requires a == \null || \valid(a);
-  @ assigns \nothing;
-  @*/
-static void qsort_r(char *a, ulong n, ulong es) {
-  char *i, *j;
-  if (n < 2)
-    return;
-  qsort_swap(a, a + n / 2 * es, es);
-  i = a;
-  j = a + n * es;
-  for (;;) {
-    do
-      i += es;
-    while (i < j && qsort_cmp(i, a) < 0);
-    do
-      j -= es;
-    while (j > a && qsort_cmp(j, a) > 0);
-    if (i >= j)
-      break;
-    qsort_swap(i, j, es);
-  }
-  qsort_swap(a, j, es);
-  qsort_r(a, (j - a) / es, es);
-  qsort_r(j + es, n - (j - a) / es - 1, es);
-}
-
-/*@
-  @ requires va == \null || \valid(va);
-  @ requires  == \null || \valid();
-  @ requires ) == \null || \valid());
-  @ assigns \nothing;
-  @*/
-void qsort(void *va, ulong n, ulong es, int (*cmp)(void *, void *)) {
-  qsort_cmp = cmp;
-  qsort_r(va, n, es);
-}
 
 /* Architecture globals */
 extern int cpuserver;
@@ -357,27 +278,60 @@ char *conffile = "";
   @ assigns \nothing;
   @*/
 uchar nvramread(int addr) {
-  (void)addr;
-  return 0;
+  outb(0x70, addr & 0x7F);
+  return (uchar)inb(0x71);
 }
 /*@
   @ assigns \nothing;
   @*/
 void nvramwrite(int addr, uchar val) {
-  (void)addr;
-  (void)val;
+  outb(0x70, addr & 0x7F);
+  outb(0x71, val);
 }
 
-void i8042reset(void) {}
+enum {
+  I8042Data = 0x60,
+  I8042Status = 0x64,
+  I8042Outbusy = 0x02,
+  I8042Cmd = 0x64,
+};
+
+static int i8042outready(void) {
+  int tries;
+
+  for (tries = 0; (inb(I8042Status) & I8042Outbusy) != 0; tries++) {
+    if (tries > 500)
+      return -1;
+    delay(2);
+  }
+  return 0;
+}
+
+void i8042reset(void) {
+  int i, x;
+
+  *(ushort *)KADDR(0x472) = 0x1234;
+
+  if (i8042outready() == 0) {
+    outb(I8042Cmd, 0xFE);
+    i8042outready();
+  }
+
+  x = 0xDF;
+  for (i = 0; i < 5; i++) {
+    x ^= 1;
+    if (i8042outready() < 0)
+      break;
+    outb(I8042Cmd, 0xD1);
+    if (i8042outready() < 0)
+      break;
+    outb(I8042Data, x);
+    delay(100);
+  }
+}
 
 /* DMA controller - function pointer (nil = not available) */
 void (*i8237alloc)(void) = nil;
-
-/* Boot screen */
-void bootscreeninit(void) {}
-
-/* Links function - defined by bootlinks */
-void links(void) {}
 
 /* Memory initialization functions provided by memory_9front.c */
 
@@ -395,16 +349,16 @@ void (*fpsave)(FPsave *) = nil;
 
 /* Architecture reset */
 /* String functions */
-char *strrchr(char *s, int c) {
-  char *last = nil;
+char *strrchr(const char *s, int c) {
+  const char *last = nil;
   while (*s) {
     if (*s == c)
       last = s;
     s++;
   }
   if (c == '\0')
-    return s;
-  return last;
+    return (char *)s;
+  return (char *)last;
 }
 
 /* Error strings */
@@ -412,33 +366,7 @@ char Edirseek[] = "directory seek";
 char Eismtpt[] = "is a mount point";
 char Enegoff[] = "negative offset";
 
-/* Swap */
-void dupswap(Page *p) { (void)p; }
-
 /* Signal search provided by memory_9front.c */
-
-/* System call table - global array of syscall name strings */
-/*@
-  @ requires args == \null || \valid(args);
-  @ assigns \nothing;
-  @*/
-int nosyscall(Sargs *args) {
-  (void)args;
-  return -1;
-}
-char *sysctab[] = {nil};
-/*@
-  @ requires args == \null || \valid(args);
-  @ requires ret == \null || \valid(ret);
-  @ assigns \nothing;
-  @*/
-void sysexit(Sargs *args, uintptr *ret) {
-  (void)args;
-  (void)ret;
-}
-
-/* DTrace */
-void dtracytick(Ureg *u) { (void)u; }
 
 /* UART console - global pointer */
 Uart *consuart = nil;
@@ -464,37 +392,9 @@ void uartputc(int c) {
 /* Checksum provided by memory_9front.c */
 
 /* Delay loop */
-void delayloop(int ms) { (void)ms; }
-
-/* Format functions */
-/* Crypto */
-/*@
-  @ requires data == \null || \valid(data);
-  @ requires digest == \null || \valid(digest);
-  @ assigns \nothing;
-  @*/
-void sha2_512(uchar *data, ulong len, uchar *digest) {
-  (void)data;
-  (void)len;
-  (void)digest;
-}
-void setupChachastate(void *state, uchar *key, ulong keylen, uchar *iv,
-                      int ivlen) {
-  (void)state;
-  (void)key;
-  (void)keylen;
-  (void)iv;
-  (void)ivlen;
-}
-/*@
-  @ requires data == \null || \valid(data);
-  @ requires state == \null || \valid(state);
-  @ assigns \nothing;
-  @*/
-void chacha_encrypt(uchar *data, ulong len, void *state) {
-  (void)data;
-  (void)len;
-  (void)state;
+void delayloop(int loops) {
+  while (loops-- > 0)
+    __asm__ __volatile__("pause" ::: "memory");
 }
 
 /* Math */
@@ -513,49 +413,58 @@ char *utfecpy(char *to, char *e, char *from) {
 /* UPA (user programmable arrays) provided by memory_9front.c */
 
 /* Stubs for missing console/boot functions */
-void setkprintqsize(char *s) { (void)s; }
-void printinit(void) {}
+void printinit(void) {
+  prbuf_init();
+  if (kmesg.n > 0)
+    uartputs(kmesg.buf, (int)kmesg.n);
+}
 
 /* Stubs for exit/reboot functions */
-void cpushutdown(void) {}
-void vmxshutdown(void) {}
-void vmxprocrestore(Proc *p) { (void)p; }
+void cpushutdown(void) {
+  int ms, once;
 
+  once = active.machs[m->machno];
+  active.machs[m->machno] = 0;
+  active.exiting = 1;
+
+  if (once)
+    iprint("cpu%d: exiting\n", m->machno);
+
+  spllo();
+  for (ms = 5 * 1000; ms > 0; ms -= TK2MS(2)) {
+    delay(TK2MS(2));
+    if (memchr(active.machs, 1, MAXMACH) == nil && consactive() == 0)
+      break;
+  }
+}
 /* Console output stub */
 /*@
   @ requires str == \null || \valid(str);
   @ assigns \nothing;
   @*/
 void putstrn(char *str, int n) {
-  if (screenputs)
+  if (str == nil || n <= 0)
+    return;
+  if (screenputs != nil)
     screenputs(str, n);
+  else
+    uartputs(str, n);
 }
 
-/* 9P routing - stub for lux9_api.c */
-/*@
-  @ requires msg == \null || \valid(msg);
-  @ assigns \nothing;
-  @*/
-long p9_route_message(int pid, void *msg, ulong len) {
-  (void)pid;
-  (void)msg;
-  (void)len;
-  return 0; /* TODO: Wire to 9p_router when ready */
-}
 /* Stubs for missing symbols */
 /*@
   @ assigns \nothing;
   @*/
-uvlong nsec(void) { return 0; /* TODO: Implement proper time with TSC/HPET */ }
+uvlong nsec(void) { return fastticks2ns(fastticks(nil)); }
 
 /*@
   @ requires buf == \null || \valid((uchar*)buf + (0..n-1));
   @ assigns ((uchar*)buf)[0..n-1];
   @*/
 void randombytes(void *buf, long n) {
-  uchar *p = buf;
-  while (n-- > 0)
-    *p++ = 0; /* TODO: Wire to CSPRNG */
+  if (buf == nil || n <= 0)
+    return;
+  randomread(buf, (ulong)n);
 }
 
 /*@

@@ -253,11 +253,28 @@ fisrw(Sfis *f, uchar *c, int *nsect)
  * atapirwfis - Build ATAPI read/write FIS
  */
 int
-atapirwfis(Sfis *f, uchar *c, uchar *cmd, int len, int write)
+atapirwfis(Sfis *f, uchar *c, uchar *cmd, int len, int ndata)
 {
-	USED(f, cmd, len, write);
-	/* ATAPI not implemented yet */
-	return -1;
+	int fill, n;
+
+	fill = (f->feat & Datapi16) != 0 ? 16 : 12;
+	n = len;
+	if(n > fill)
+		n = fill;
+
+	memmove(c + 0x40, cmd, n);
+	memset(c + 0x40 + n, 0, fill - n);
+
+	c[Ftype] = H2dev;
+	c[Fflags] = Fiscmd;
+	c[Fcmd] = Ataobs;
+	c[Ffeat] = ndata != 0 ? 1 : 0;
+	c[Flba0] = 0;
+	c[Flba8] = ndata;
+	c[Flba16] = ndata >> 8;
+	c[Fdev] = Ataobs;
+	memset(c + 8, 0, Fissize - 8);
+	return P28|Ppkt;
 }
 
 /*

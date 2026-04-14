@@ -67,6 +67,27 @@ static struct {
   uvlong peak_black;
 } kernel_pebble_stats;
 
+static void pebble_kernel_stats_init(void) {
+  kernel_pebble_stats.total_reserves = 0;
+  kernel_pebble_stats.total_activates = 0;
+  kernel_pebble_stats.total_frees = 0;
+  kernel_pebble_stats.current_white = 0;
+  kernel_pebble_stats.current_black = 0;
+  kernel_pebble_stats.peak_white = 0;
+  kernel_pebble_stats.peak_black = 0;
+}
+
+static void pebble_kernel_lock_init(Lock *lock) {
+  if (lock == nil)
+    return;
+  lock->key = 0;
+  lock->isilock = 0;
+  lock->pc = 0;
+  lock->p = nil;
+  lock->m = nil;
+  lock->lockcycles = 0;
+}
+
 static void pebble_kernel_log_msgord_failure(const char *where, void *ptr,
                                              ulong size) {
   uvlong total = 0;
@@ -405,7 +426,7 @@ void pebble_kernel_free_ptr(void *ptr) {
 }
 
 void pebble_kernel_init(void) {
-  memset(&kernel_pebble_stats, 0, sizeof(kernel_pebble_stats));
-  memset(&kernel_allocs_lock, 0, sizeof(Lock));
+  pebble_kernel_stats_init();
+  pebble_kernel_lock_init(&kernel_allocs_lock);
   print("pebble_kernel: initialized (WHITE/BLACK tracking + MSGORD)\n");
 }

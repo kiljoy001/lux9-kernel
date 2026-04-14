@@ -127,7 +127,7 @@ void trapenable(int vno, void (*f)(Ureg *, void *), void *a, char *name) {
     return;
   }
 
-  v = xalloc(sizeof(Vctl));
+  v = xalloc_resident(sizeof(Vctl));
   if (v == nil)
     panic("trapenable: out of memory");
 
@@ -147,7 +147,7 @@ void trapenable(int vno, void (*f)(Ureg *, void *), void *a, char *name) {
     print("trapenable: vno %d assigned twice: %s %s\n", vno, vctl[vno]->name,
           v->name);
     iunlock(&vctllock);
-    xfree(v);
+    xfree_resident(v);
     return;
   }
   vctl[vno] = v;
@@ -185,7 +185,7 @@ void intrenable(int irq, void (*f)(Ureg *, void *), void *a, int tbdf,
   if (arch->intrirqno != nil)
     irq = arch->intrirqno(irq, tbdf);
 
-  v = xalloc(sizeof(Vctl));
+  v = xalloc_resident(sizeof(Vctl));
   if (v == nil)
     panic("intrenable: out of memory");
 
@@ -208,7 +208,7 @@ void intrenable(int irq, void (*f)(Ureg *, void *), void *a, int tbdf,
   Unlockandfree:
     iunlock(&vctllock);
     if (v != nil)
-      xfree(v);
+      xfree_resident(v);
     return;
   }
   pv = &vctl[v->vno];
@@ -284,7 +284,7 @@ void intrdisable(int irq, void (*f)(Ureg *, void *), void *a, int tbdf,
         v = delayfree(v);
       iunlock(&vctllock);
       if (v != nil)
-        xfree(v);
+        xfree_resident(v);
       return;
     }
   } while (irq == -1 && ++vno < nelem(vctl));

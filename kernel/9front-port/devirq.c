@@ -419,7 +419,7 @@ static long irqwrite(Chan *c, void *va, long n, vlong off) {
 Dev irqdevtab = {
     'I',      "irq",
 
-    irqreset, devinit,  devshutdown, irqattach, irqwalk,
-    irqstat,  irqopen,  devcreate,   irqclose,  irqread,
-    devbread, irqwrite, devbwrite,   devremove, devwstat,
+    irqreset,      devinit,        devshutdown, irqattach, irqwalk,
+    irqstat,       irqopen,        devcreate,   irqclose,  irqread,
+    irqwrite,      devbread,       devbwrite,   devremove, devwstat,
 };

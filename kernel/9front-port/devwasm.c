@@ -35,8 +35,9 @@ static void wasmclose(Chan *) {}
 
 /*@ requires c != \null;
     requires va != \null;
-    requires (n > 0 ==> \valid((char*)va + (0 .. (integer)n-1))) || (n == 0);
-    assigns ((char*)va)[0 .. (integer)n-1] \if n > 0;
+    requires (n > 0 ==> \valid((char*)va + (0 .. n-1))) || (n == 0);
+    assigns ((char*)va)[0 .. n-1] \if n > 0;
+    ensures \result == n || \result == 0 || \result == -1;
 */
 static long wasmread(Chan *c, void *va, long n, vlong offset) {
   if ((ulong)c->qid.path == Qctl)
@@ -46,8 +47,9 @@ static long wasmread(Chan *c, void *va, long n, vlong offset) {
 
 /*@ requires c != \null;
     requires va != \null;
-    requires (n > 0 ==> \valid_read((char*)va + (0 .. (integer)n-1))) || (n == 0);
+    requires (n > 0 ==> \valid_read((char*)va + (0 .. n-1))) || (n == 0);
     assigns \nothing;
+    ensures \result == n || \result == 0 || \result == -1;
 */
 static long wasmwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
@@ -57,8 +59,13 @@ static long wasmwrite(Chan *c, void *va, long n, vlong) {
   if (n <= 0)
     return 0;
 
+  /*@ assert \valid((char*)va + (0 .. n-1)); */
+
   if (n >= (long)sizeof(buf))
     n = sizeof(buf) - 1;
+
+  /*@ assert \valid(buf + (0 .. n-1)); */
+  /*@ assert \valid_read((char*)va + (0 .. n-1)); */
   memmove(buf, va, n);
   buf[n] = 0;
 

@@ -12,7 +12,7 @@
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result ParseType_Table(IM3Module io_module, bytes_t i_bytes, cbytes_t i_end) {
   M3Result result = m3Err_none;
 
@@ -69,7 +69,7 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
       /*@ loop invariant 0 <= i <= numTypes;
   @ loop assigns i;
   @ loop variant numTypes - i;
-  @*/
+  @*\/ */
       for (u32 i = 0; i < numTypes; ++i) {
         print("ParseSection_Type: loop %d\n", i);
         i8 form;
@@ -91,7 +91,7 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
         /*@ loop invariant 0 <= a <= numArgs;
   @ loop assigns a;
   @ loop variant numArgs - a;
-  @*/
+  @*\/ */
         for (u32 a = 0; a < numArgs; ++a) {
           i8 wasmType;
           u8 argType;
@@ -118,7 +118,7 @@ M3Result ParseSection_Type(IM3Module io_module, bytes_t i_bytes,
         /*@ loop invariant 0 <= r <= numRets;
   @ loop assigns r;
   @ loop variant numRets - r;
-  @*/
+  @*\/ */
         for (u32 r = 0; r < numRets; ++r) {
           i8 wasmType;
           u8 retType;
@@ -175,7 +175,7 @@ M3Result ParseSection_Function(IM3Module io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= i <= numFunctions;
   @ loop assigns i;
   @ loop variant numFunctions - i;
-  @*/
+  @*\/ */
   for (u32 i = 0; i < numFunctions; ++i) {
     u32 funcTypeIndex;
     _(ReadLEB_u32(&funcTypeIndex, &i_bytes, i_end));
@@ -205,7 +205,7 @@ M3Result ParseSection_Import(IM3Module io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= i <= numImports;
   @ loop assigns i;
   @ loop variant numImports - i;
-  @*/
+  @*\/ */
   for (u32 i = 0; i < numImports; ++i) {
     u8 importKind;
 
@@ -281,7 +281,7 @@ M3Result ParseSection_Export(IM3Module io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= i <= numExports;
   @ loop assigns i;
   @ loop variant numExports - i;
-  @*/
+  @*\/ */
   for (u32 i = 0; i < numExports; ++i) {
     u8 exportKind;
     u32 index;
@@ -380,6 +380,56 @@ M3Result ParseSection_Element(IM3Module io_module, bytes_t i_bytes,
   io_module->elementSectionEnd = i_end;
   io_module->numElementSegments = numSegments;
 
+  if (numSegments) {
+    io_module->elementSegments = m3_AllocArray(M3ElementSegment, numSegments);
+    _throwifnull(io_module->elementSegments);
+
+    /*@ loop invariant 0 <= i <= numSegments;
+    @ loop assigns i;
+    @ loop variant numSegments - i;
+    @*/
+    for (u32 i = 0; i < numSegments; ++i) {
+      M3ElementSegment *segment = &io_module->elementSegments[i];
+      u32 mode;
+      _(ReadLEB_u32(&mode, &i_bytes, i_end));
+
+      // Simplified parsing for now (MVP for Bulk Memory)
+      // Wasm Spec 1.1 Element Segments are complex (8 formats)
+      // Lux9: Support basic active/passive and indices for now.
+      if (mode == 0) { // Active
+        segment->tableIndex = 0;
+        segment->initExpr = i_bytes;
+        _(Parse_InitExpr(io_module, &i_bytes, i_end));
+        segment->initExprSize = (u32)(i_bytes - segment->initExpr);
+      } else if (mode == 1) { // Passive
+        u8 kind;
+        _(Read_u8(&kind, &i_bytes, i_end)); // 0x00 funcref
+        segment->tableIndex = 0;            // passive (unused)
+      } else if (mode == 2) {               // Active with table index
+        _(ReadLEB_u32(&segment->tableIndex, &i_bytes, i_end));
+        segment->initExpr = i_bytes;
+        _(Parse_InitExpr(io_module, &i_bytes, i_end));
+        segment->initExprSize = (u32)(i_bytes - segment->initExpr);
+        u8 kind;
+        _(Read_u8(&kind, &i_bytes, i_end)); // 0x00 funcref
+      } else {
+        // ... more complex formats ...
+        // For Lux9 Bulk Memory, we mainly care about passive segments for
+        // table.init
+        segment->tableIndex = 0;
+      }
+
+      _(ReadLEB_u32(&segment->numElements, &i_bytes, i_end));
+      segment->elements = i_bytes;
+      // Skip element indices
+      for (u32 e = 0; e < segment->numElements; ++e) {
+        u32 index;
+        _(ReadLEB_u32(&index, &i_bytes, i_end));
+      }
+      segment->dropped = false;
+    }
+  }
+
 _catch:
   return result;
 }
@@ -399,7 +449,7 @@ M3Result ParseSection_Code(M3Module *io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= f <= numFunctions;
   @ loop assigns f;
   @ loop variant numFunctions - f;
-  @*/
+  @*\/ */
   for (u32 f = 0; f < numFunctions; ++f) {
     const u8 *start = i_bytes;
 
@@ -411,18 +461,14 @@ M3Result ParseSection_Code(M3Module *io_module, bytes_t i_bytes,
       i_bytes += size;
 
       if (i_bytes <= i_end) {
-#if 0
+        /*
         u32 numLocalBlocks;
-_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end)); m3log (parse, " \
+_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end)); m3log (parse, "
 code size: %-4d", size);
 
         u32 numLocals = 0;
 
-          /*@ loop invariant 0 <= l <= numLocalBlocks;
-    @ loop assigns l;
-    @ loop variant numLocalBlocks - l;
-    @*/
-  for (u32 l = 0; l < numLocalBlocks; ++l)
+        for (u32 l = 0; l < numLocalBlocks; ++l)
         {
             u32 varCount;
             i8 wasmType;
@@ -435,7 +481,7 @@ _                   (NormalizeType (& normalType, wasmType));
             numLocals += varCount; m3log (parse, "      %2d locals; type: '%s'",
 varCount, c_waTypes [normalType]);
         }
-#endif
+        */
 
         IM3Function func =
             Module_GetFunction(io_module, f + io_module->numFuncImports);
@@ -475,7 +521,7 @@ M3Result ParseSection_Data(M3Module *io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= i <= numDataSegments;
   @ loop assigns i;
   @ loop variant numDataSegments - i;
-  @*/
+  @*\/ */
   for (u32 i = 0; i < numDataSegments; ++i) {
     M3DataSegment *segment = &io_module->dataSegments[i];
 
@@ -532,7 +578,7 @@ M3Result ParseSection_Global(M3Module *io_module, bytes_t i_bytes,
   /*@ loop invariant 0 <= i <= numGlobals;
   @ loop assigns i;
   @ loop variant numGlobals - i;
-  @*/
+  @*\/ */
   for (u32 i = 0; i < numGlobals; ++i) {
     i8 waType;
     u8 type, isMutable;
@@ -581,7 +627,7 @@ M3Result ParseSection_Name(M3Module *io_module, bytes_t i_bytes,
       /*@ loop invariant 0 <= i <= numNames;
   @ loop assigns i;
   @ loop variant numNames - i;
-  @*/
+  @*\/ */
       for (u32 i = 0; i < numNames; ++i) {
         u32 index;
         _(ReadLEB_u32(&index, &i_bytes, i_end));

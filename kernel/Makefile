@@ -1,367 +1,40 @@
-# kernel/Makefile - Kernel Build Configuration
-# Pure kernel build with no userspace dependencies
+# Legacy wrapper for the canonical root build.
 
-# Configuration
-KERNEL_NAME := lux9
-KERNEL_EXT := elf
-KERNEL_BINARY := $(KERNEL_NAME).$(KERNEL_EXT)
+ROOT_DIR := ..
+ROOT_MAKEFILE := GNUmakefile
 
-# Compiler and tools
-CC := gcc
-LD := ld
-AS := as
-OBJCOPY := objcopy
-STRIP := strip
+.PHONY: all clean iso run debug test install help
 
-# Build directories
-SRC_DIR := .
-INCLUDE_DIR := ../kernel/include
-PORT_DIR := ../kernel/9front-port
-PC64_DIR := ../kernel/9front-pc64
-LIBC_DIR := ../kernel/libc9
-PORT_DIR := ../kernel/9front-port
-AML_DIR := ../kernel/aml
+all:
+	@echo "Legacy wrapper: delegating kernel build to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) all
 
-# Source organization
-PORT_C := $(filter-out %_new.c,$(wildcard $(PORT_DIR)/*.c))
-PC64_C := $(wildcard $(PC64_DIR)/*.c)
-LIBC_C := $(wildcard $(LIBC_DIR)/*.c)
-AML_C := $(wildcard $(AML_DIR)/*.c)
-ASM_S := $(wildcard $(PC64_DIR)/*.S)
-
-# Additional sources
-BORROW_C := ../kernel/borrowchecker.c
-LOCKDAG_C := ../kernel/lock_dag.c
-PEBBLE_C := ../kernel/pebble.c
-PEBBLE_KERNEL_C := ../kernel/pebble_kernel.c
-CRYPTO_C := $(wildcard ../kernel/crypto/*.c)
-CRYPTO_S := ../kernel/crypto/hwcrypto.S
-REAL_DRIVERS_C := $(wildcard ../real_drivers/*.c)
-
-CLR_C := clr/fruity/fruity_ir.c clr/fruity/fruity_cbor.c clr/fruity/fruity_to_qbe.c clr/fruity/qbe_buffer.c clr/fruity/fruity_interp.c clr/qbe/qbe_kernel_wrapper.c clr/qbe/kernel_compat.c clr/qbe/exchange_io.c clr/qbe/clr_p9_internal.c clr/qbe/amd64/targ.c clr/qbe/qbe_globals.c clr/qbe/fruity_sljit.c clr/qbe/qbe_exec.c clr/clr_runtime.c clr/lux_runtime.c clr/il_parser.c clr/il_to_fruity.c clr/clr-kernel/clr_pebble_integration.c clr/clr_exchange_ops.c $(CBOR_C)
-SYMBOLIC_C := ../kernel/symbolic/minigmp_kernel.c
-
-# Object files
-PORT_O := $(patsubst $(PORT_DIR)/%.c,%.o,$(PORT_C))
-PC64_O := $(patsubst $(PC64_DIR)/%.c,%.o,$(PC64_C))
-LIBC_O := $(patsubst $(LIBC_DIR)/%.c,%.o,$(LIBC_C))
-ASM_O := $(patsubst $(PC64_DIR)/%.S,%.o,$(ASM_S))
-BORROW_O := $(patsubst ../kernel/%.c,%.o,$(BORROW_C)) borrow_enforce.o
-LOCKDAG_O := $(patsubst ../kernel/%.c,%.o,$(LOCKDAG_C))
-PEBBLE_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_C))
-PEBBLE_KERNEL_O := $(patsubst ../kernel/%.c,%.o,$(PEBBLE_KERNEL_C))
-CRYPTO_O := $(patsubst ../kernel/%.c,%.o,$(CRYPTO_C)) $(patsubst ../kernel/%.S,%.o,$(CRYPTO_S))
-REAL_DRIVERS_O := $(patsubst ../real_drivers/%.c,%.o,$(REAL_DRIVERS_C))
-
-AML_O := $(patsubst $(AML_DIR)/%.c,%.o,$(AML_C))
-CLR_FRUITY_O := fruity_ir.o fruity_cbor.o fruity_to_qbe.o qbe_buffer.o il_parser.o il_to_fruity.o fruity_interp.o
-CLR_CBOR_O := cbor_common.o cbor_decoder.o cbor_encoder.o cbor_helper.o cbor_ieee754.o cbor_parser.o
-CLR_QBE_O := qbe_compile.o clr_console.o clr_core.o clr_bcl_helpers.o clr_runtime.o clr_p9_internal.o clr_tasklet.o clr_channel.o clr_tasklet_execute.o clr_codepage.o clr_exchange_ops.o clr_vtable.o
-# fruity_sljit.o and qbe_exec.o temporarily disabled due to sljit/kernel header conflicts
-CLR_INTERP_O := execution_engine.o il_decoder.o clr_internal_calls.o
-MISC_KERNEL_O := msgord.o consensus_depth.o proc_fsm.o proc_state_dag.o syscall_9p.o pow_gate.o distributed_pebble.o uuid.o exchange_pool.o exchange_pool_ipc.o bprint.o test_hybrid_ipc.o
-ROUTER_O := router/core.o router/doorbell.o router/fs.o router/ipc.o router/proc.o router/srv.o router/wasm.o
-SYMBOLIC_O := $(patsubst ../kernel/%.c,%.o,$(SYMBOLIC_C))
-WASM_C := wasm/wasm_runtime.c wasm/wasm_fileserver.c wasm/wasm_9p_integration.c wasm/wasm_capability_bindings.c wasm/wasi_lux9_shim.c
-WASM_O := wasm_runtime.o wasm_fileserver.o wasm_9p_integration.o wasm_capability_bindings.o wasm_arena_test.o wasi_lux9_shim.o wasm_host_lux9.o wasm_host_fruity.o wasm/fruity_ir.o
-WASM3_O := wasm/wasm_runtime/wasm3/m3_core.o wasm/wasm_runtime/wasm3/m3_env.o wasm/wasm_runtime/wasm3/m3_code.o \
-           wasm/wasm_runtime/wasm3/m3_compile.o wasm/wasm_runtime/wasm3/m3_parse.o wasm/wasm_runtime/wasm3/m3_bind.o \
-           wasm/wasm_runtime/wasm3/m3_function.o wasm/wasm_runtime/wasm3/m3_module.o wasm/wasm_runtime/wasm3/m3_exec.o \
-           wasm/wasm_runtime/wasm3/m3_info.o wasm/wasm_runtime/wasm3/lux9_math.o
-CAP_O := capability/lux_capability.o
-
-ALL_O := $(PORT_O) $(PC64_O) $(LIBC_O) $(ASM_O) $(BORROW_O) $(PEBBLE_O) $(PEBBLE_KERNEL_O) $(CRYPTO_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(MISC_KERNEL_O) $(ROUTER_O) $(WASM_O) $(WASM3_O) $(CAP_O) $(SYMBOLIC_O)
-# AML_O removed temporarily to fix build
-# $(AML_O)
-
-# Compiler flags - Optimized for Plan 9 compatibility
-CFLAGS := -Wall -Wno-unused -Wno-unknown-pragmas \
-          -Wno-builtin-declaration-mismatch \
-          -Wno-discarded-qualifiers \
-          -Wno-missing-braces \
-          -Wno-incompatible-pointer-types \
-          -std=gnu11 \
-          -O0 -g3 -gdwarf-4 \
-          -ffreestanding -fno-stack-protector \
-          -fno-stack-check -fno-lto -fno-pie \
-          -fno-strict-aliasing \
-          -m64 -march=x86-64 -mcmodel=kernel \
-          -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
-          -mno-red-zone \
-          -I$(INCLUDE_DIR) \
-          -I../include \
-          -I../port \
-          -I.. \
-          -Iclr/libmcu-cbor \
-          -Iclr/qbe \
-          -Iclr/fruity \
-          -D_PLAN9_SOURCE \
-          -D__PLAN9_KERNEL__ \
-          -DKERNEL \
-          -DKTZERO=0xffffffff80110000
-
-# Linker configuration
-LDFLAGS := -m elf_x86_64 -nostdlib -static -no-pie \
-           --no-dynamic-linker \
-           -z max-page-size=0x1000 \
-           -T ../kernel/linker.ld
-
-# Targets
-.PHONY: all clean test run debug install help
-
-# Main kernel build
-all: $(KERNEL_BINARY)
-
-$(KERNEL_BINARY): $(ALL_O)
-	@echo "Linking kernel: $@"
-	$(LD) $(LDFLAGS) $(ALL_O) -o $@
-	@echo "Kernel build complete: $(KERNEL_BINARY)"
-	@ls -lh $(KERNEL_BINARY)
-
-# Object file compilation
-%.o: $(PORT_DIR)/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: $(PC64_DIR)/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: $(AML_DIR)/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: $(LIBC_DIR)/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: $(PC64_DIR)/%.S
-	@echo "AS $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: ../kernel/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: ../kernel/%.S
-	@echo "AS $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-crypto/%.o: crypto/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-%.o: ../real_drivers/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-
-# WASM compilation
-%.o: wasm/%.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -Iwasm/wasm_runtime -c $< -o $@
-
-# WASM3 interpreter with SSE enabled (WASMv1 requires float)
-wasm/wasm_runtime/wasm3/%.o: wasm/wasm_runtime/wasm3/%.c
-	@echo "CC (WASM3) $<"
-	@$(CC) $(filter-out -mno-sse -mno-sse2 -mno-80387 -mno-mmx,$(CFLAGS)) -Dd_m3HasFloat=1 -c $< -o $@
-
-
-# CLR Fruity IR compilation
-fruity_ir.o: clr/fruity/fruity_ir.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-fruity_cbor.o: clr/fruity/fruity_cbor.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-fruity_to_qbe.o: clr/fruity/fruity_to_qbe.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-qbe_buffer.o: clr/fruity/qbe_buffer.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-# CLR CBOR library compilation
-cbor_common.o: clr/libmcu-cbor/common.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-cbor_decoder.o: clr/libmcu-cbor/decoder.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-cbor_encoder.o: clr/libmcu-cbor/encoder.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-cbor_helper.o: clr/libmcu-cbor/helper.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-cbor_ieee754.o: clr/libmcu-cbor/ieee754_stub.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-cbor_parser.o: clr/libmcu-cbor/parser.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -DCBOR_NO_FLOAT -c $< -o $@
-
-# CLR QBE compiler
-qbe_compile.o: clr/qbe_compile.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_console.o: clr/qbe/clr_console.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_core.o: clr/qbe/clr_core.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_bcl_helpers.o: clr/qbe/clr_bcl_helpers.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_p9_internal.o: clr/qbe/clr_p9_internal.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-il_parser.o: clr/il_parser.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-il_to_fruity.o: clr/il_to_fruity.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_runtime.o: clr/clr_runtime.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_tasklet.o: clr/clr_tasklet.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_channel.o: clr/clr_channel.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_tasklet_execute.o: clr/clr_tasklet_execute.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_codepage.o: clr/clr_codepage.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-execution_engine.o: clr/CIL-Interpreter/src/execution_engine.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-il_decoder.o: clr/CIL-Interpreter/src/il_decoder.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_internal_calls.o: clr/clr-kernel/clr_internal_calls.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_vtable.o: clr/clr-kernel/clr_vtable.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-clr_exchange_ops.o: clr/clr_exchange_ops.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-test_hybrid_ipc.o: clr/qbe/test_hybrid_ipc.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-# New Interpreter and AOT Components
-fruity_interp.o: clr/fruity/fruity_interp.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-fruity_sljit.o: clr/qbe/fruity_sljit.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-qbe_exec.o: clr/qbe/qbe_exec.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-# IL Opcode test suite
-test_il_opcodes.o: test/test_il_opcodes.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-# Explicit rules for files in subdirectories
-uuid.o: ../kernel/lib/uuid.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-borrow_enforce.o: ../kernel/borrow_enforce.c
-	@echo "CC $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-
-# Testing targets (placeholder)
-
-
-# ISO Creation
-ISO_DIR := build/iso
-ISO_BINARY := lux9.iso
-
-iso: $(KERNEL_BINARY)
-	@echo "Creating ISO..."
-	@mkdir -p $(ISO_DIR)/boot/limine
-	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
-	@cp ../limine.conf $(ISO_DIR)/limine.conf
-	@cp ../limine.conf $(ISO_DIR)/boot/limine/limine.cfg
-	@cp ../initrd.tar $(ISO_DIR)/boot/initrd.tar
-	@cp ../boot/limine/bin/limine-bios.sys $(ISO_DIR)/boot/limine/
-	@cp ../boot/limine/bin/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
-	@cp ../boot/limine/bin/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/
-	@xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
-		-no-emul-boot -boot-load-size 4 -boot-info-table \
-		--efi-boot boot/limine/limine-uefi-cd.bin \
-		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		$(ISO_DIR) -o $(ISO_BINARY)
-	@#../boot/limine/bin/limine bios-install $(ISO_BINARY)
-	@echo "ISO created: $(ISO_BINARY)"
-	@ls -lh $(ISO_BINARY)
-
-run: iso
-	@echo "Running kernel in QEMU (UEFI)..."
-	@qemu-system-x86_64 -M q35 -m 2G -bios /usr/share/qemu/OVMF.fd -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio
-
-debug: iso
-	@echo "Running kernel in QEMU with GDB (ISO)..."
-	@qemu-system-x86_64 -M q35 -m 2G -cdrom $(ISO_BINARY) -boot d -no-reboot -display none -serial stdio -s -S &
-
-# Installation (for distribution builds)
-install: $(KERNEL_BINARY)
-	@mkdir -p $(DESTDIR)/boot
-	@cp $(KERNEL_BINARY) $(DESTDIR)/boot/
-	@echo "Kernel installed to $(DESTDIR)/boot/"
-
-# Cleanup
 clean:
-	@echo "Cleaning kernel build..."
-	@rm -f *.o
-	@rm -f $(KERNEL_BINARY) $(ISO_BINARY)
-	@rm -rf build
+	@echo "Legacy wrapper: delegating clean to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) clean
+
+iso:
+	@echo "Legacy wrapper: delegating ISO build to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) iso
+
+run:
+	@echo "Legacy wrapper: delegating run to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) run
+
+debug:
+	@echo "Legacy wrapper: root build has no dedicated debug target; using direct-run"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) direct-run
+
+test:
+	@echo "Legacy wrapper: delegating tests to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) test
+
+install:
+	@echo "No standalone install target. Use the repo root build workflow."
 
 help:
-	@echo "Kernel Build Targets:"
-	@echo "  all     - Build kernel binary"
-	@echo "  iso     - Build bootable ISO with Limine"
-	@echo "  run     - Run ISO in QEMU"
-	@echo "  debug   - Debug ISO in QEMU+GDB"
-	@echo "  install - Install kernel"
-	@echo "  clean   - Clean build artifacts"
+	@echo "Legacy kernel wrapper"
+	@echo "Use the repo root commands instead:"
+	@echo "  make clean"
+	@echo "  make"
+	@echo "  make iso"

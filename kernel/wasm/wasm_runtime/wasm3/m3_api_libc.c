@@ -21,6 +21,38 @@
 typedef uint32_t wasm_ptr_t;
 typedef uint32_t wasm_size_t;
 
+/* Definitions for math functions imported from lux9_math.c */
+#include "include/math.h"
+
+m3ApiRawFunction(m3_libc_sin) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(sin(x));
+}
+m3ApiRawFunction(m3_libc_cos) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(cos(x));
+}
+m3ApiRawFunction(m3_libc_pow) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiGetArg(double, y)
+      m3ApiReturn(pow(x, y));
+}
+m3ApiRawFunction(m3_libc_exp) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(exp(x));
+}
+m3ApiRawFunction(m3_libc_log) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(log(x));
+}
+m3ApiRawFunction(m3_libc_sqrt) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(sqrt(x));
+}
+m3ApiRawFunction(m3_libc_fabs) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(fabs(x));
+}
+m3ApiRawFunction(m3_libc_floor) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(floor(x));
+}
+m3ApiRawFunction(m3_libc_ceil) {
+  m3ApiReturnType(double) m3ApiGetArg(double, x) m3ApiReturn(ceil(x));
+}
+
 m3ApiRawFunction(m3_libc_abort) { m3ApiTrap(m3Err_trapAbort); }
 
 m3ApiRawFunction(m3_libc_exit) {
@@ -69,7 +101,7 @@ m3ApiRawFunction(m3_libc_print) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 static void internal_itoa(int n, char s[], int radix) {
   static char const HEXDIGITS[0x10] = {'0', '1', '2', '3', '4', '5', '6', '7',
                                        '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -186,7 +218,7 @@ m3ApiRawFunction(m3_libc_clock_ms) {
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 static M3Result SuppressLookupFailure(M3Result i_result) {
   if (i_result == m3Err_functionLookupFailed)
     return m3Err_none;
@@ -198,7 +230,7 @@ m3ApiRawFunction(m3_spectest_dummy) { m3ApiSuccess(); }
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result m3_LinkSpecTest(IM3Module module) {
   M3Result result = m3Err_none;
 
@@ -225,7 +257,7 @@ _catch:
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result m3_LinkLibC(IM3Module module) {
   M3Result result = m3Err_none;
 
@@ -248,6 +280,26 @@ M3Result m3_LinkLibC(IM3Module module) {
       m3_LinkRawFunction(module, env, "clock_ms", "i()", &m3_libc_clock_ms)));
   _(SuppressLookupFailure(
       m3_LinkRawFunction(module, env, "printf", "i(**)", &m3_libc_printf)));
+
+  /* Math Functions */
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "sin", "F(F)", &m3_libc_sin)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "cos", "F(F)", &m3_libc_cos)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "pow", "F(FF)", &m3_libc_pow)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "exp", "F(F)", &m3_libc_exp)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "log", "F(F)", &m3_libc_log)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "sqrt", "F(F)", &m3_libc_sqrt)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "fabs", "F(F)", &m3_libc_fabs)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "floor", "F(F)", &m3_libc_floor)));
+  _(SuppressLookupFailure(
+      m3_LinkRawFunction(module, env, "ceil", "F(F)", &m3_libc_ceil)));
 
 _catch:
   return result;

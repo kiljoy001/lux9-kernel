@@ -287,10 +287,35 @@ IM3Runtime m3_NewRuntime(IM3Environment io_environment,
 void m3_FreeRuntime(IM3Runtime i_runtime);
 
 // Wasm currently only supports one memory region. i_memoryIndex should be zero.
+/*@ axiomatic Wasm3Memory {
+  @ logic integer m3_memory_size(IM3Runtime runtime);
+  @} */
+
+/*@
+  @ requires i_runtime != 0;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @ ensures \result == \null ||
+  @         (m3_memory_size(i_runtime) == 0 ||
+  @          \valid(\result + (0 .. m3_memory_size(i_runtime) - 1)));
+  @*/
+#ifdef __FRAMAC__
+char *m3_GetMemory(IM3Runtime i_runtime, uint32_t *o_memorySizeInBytes,
+                   uint32_t i_memoryIndex);
+#else
 uint8_t *m3_GetMemory(IM3Runtime i_runtime, uint32_t *o_memorySizeInBytes,
                       uint32_t i_memoryIndex);
+#endif
 
 // This is used internally by Raw Function helpers
+/*@
+  @ requires i_runtime != 0;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @ ensures \result == m3_memory_size(i_runtime);
+  @*/
 uint32_t m3_GetMemorySize(IM3Runtime i_runtime);
 
 void *m3_GetUserData(IM3Runtime i_runtime);
@@ -326,11 +351,31 @@ M3Result m3_RunStart(IM3Module i_module);
 typedef const void *(*M3RawCall)(IM3Runtime runtime, IM3ImportContext _ctx,
                                  uint64_t *_sp, void *_mem);
 
+/*@
+  @ requires io_module != 0;
+  @ requires i_moduleName != \null;
+  @ requires i_functionName != \null;
+  @ requires i_signature != \null;
+  @ requires i_function != \null;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 M3Result m3_LinkRawFunction(IM3Module io_module, const char *const i_moduleName,
                             const char *const i_functionName,
                             const char *const i_signature,
                             M3RawCall i_function);
 
+/*@
+  @ requires io_module != 0;
+  @ requires i_moduleName != \null;
+  @ requires i_functionName != \null;
+  @ requires i_signature != \null;
+  @ requires i_function != \null;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @*/
 M3Result m3_LinkRawFunctionEx(IM3Module io_module,
                               const char *const i_moduleName,
                               const char *const i_functionName,

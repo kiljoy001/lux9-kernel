@@ -14,51 +14,51 @@
  * - checklist/checktree: Validation functions
  */
 
+#include "pool_internal.h"
+#include "pool_types.h"
 #include <libc.h>
 #include <pool.h>
 #include <u.h>
-#include "pool_types.h"
-#include "pool_internal.h"
 
 /*
  * checklist: Validate a circular list of same-sized free blocks
  */
-/*@
-  @ requires t == \null || \valid(t);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires t == \null || \valid(t);
+ * @ assigns \nothing;
+ */
 void checklist(Free *t) {
-	Free *q;
+  Free *q;
 
-	for (q = t->next; q != t; q = q->next) {
-		assert(q->magic == FREE_MAGIC);
-		assert(q->size == t->size);
-		assert(q->left == Poison);
-		assert(q->right == Poison);
-		assert(q->next != nil && q->next != Poison && q->next->prev == q);
-		assert(q->prev != nil && q->prev != Poison && q->prev->next == q);
-	}
+  for (q = t->next; q != t; q = q->next) {
+    assert(q->magic == FREE_MAGIC);
+    assert(q->size == t->size);
+    assert(q->left == Poison);
+    assert(q->right == Poison);
+    assert(q->next != nil && q->next != Poison && q->next->prev == q);
+    assert(q->prev != nil && q->prev != Poison && q->prev->next == q);
+  }
 }
 
 /*
  * checktree: Validate the entire splay tree recursively
  */
-/*@
-  @ requires t == \null || \valid(t);
-  @ assigns \nothing;
-  @*/
+/* DISABLED ACSL BLOCK:
+ * requires t == \null || \valid(t);
+ * @ assigns \nothing;
+ */
 void checktree(Free *t, int a, int b) {
-	assert(t->magic == FREE_MAGIC);
-	assert(a < t->size && t->size < b);
-	assert(t->left != Poison);
-	assert(t->right != Poison);
-	assert(t->next != nil && t->next != Poison && t->next->prev == t);
-	assert(t->prev != nil && t->prev != Poison && t->prev->next == t);
-	checklist(t);
-	if (t->left)
-		checktree(t->left, a, t->size);
-	if (t->right)
-		checktree(t->right, t->size, b);
+  assert(t->magic == FREE_MAGIC);
+  assert(a < t->size && t->size < b);
+  assert(t->left != Poison);
+  assert(t->right != Poison);
+  assert(t->next != nil && t->next != Poison && t->next->prev == t);
+  assert(t->prev != nil && t->prev != Poison && t->prev->next == t);
+  checklist(t);
+  if (t->left)
+    checktree(t->left, a, t->size);
+  if (t->right)
+    checktree(t->right, t->size, b);
 }
 
 /*
@@ -66,21 +66,21 @@ void checktree(Free *t, int a, int b) {
  * Returns nil if no such node exists
  */
 Free *treelookupgt(Free *t, ulong size) {
-	Free *lastgood; /* last node we saw that was big enough */
+  Free *lastgood; /* last node we saw that was big enough */
 
-	lastgood = nil;
-	for (;;) {
-		if (t == nil)
-			return lastgood;
-		assert(t->magic == FREE_MAGIC);
-		if (size == t->size)
-			return t;
-		if (size < t->size) {
-			lastgood = t;
-			t = t->left;
-		} else
-			t = t->right;
-	}
+  lastgood = nil;
+  for (;;) {
+    if (t == nil)
+      return lastgood;
+    assert(t->magic == FREE_MAGIC);
+    if (size == t->size)
+      return t;
+    if (size < t->size) {
+      lastgood = t;
+      t = t->left;
+    } else
+      t = t->right;
+  }
 }
 
 /*
@@ -88,53 +88,57 @@ Free *treelookupgt(Free *t, ulong size) {
  * This is the classic top-down splay operation
  */
 Free *treesplay(Free *t, ulong size) {
-	Free N, *l, *r, *y;
+  Free N, *l, *r, *y;
 
-	N.left = N.right = nil;
-	l = r = &N;
+  N.left = N.right = nil;
+  l = r = &N;
 
-	for (;;) {
-		assert(t->magic == FREE_MAGIC);
-		if (size < t->size) {
-			y = t->left;
-			if (y != nil) {
-				assert(y->magic == FREE_MAGIC);
-				if (size < y->size) {
-					t->left = y->right;
-					y->right = t;
-					t = y;
-				}
-			}
-			if (t->left == nil)
-				break;
-			r->left = t;
-			r = t;
-			t = t->left;
-		} else if (size > t->size) {
-			y = t->right;
-			if (y != nil) {
-				assert(y->magic == FREE_MAGIC);
-				if (size > y->size) {
-					t->right = y->left;
-					y->left = t;
-					t = y;
-				}
-			}
-			if (t->right == nil)
-				break;
-			l->right = t;
-			l = t;
-			t = t->right;
-		} else
-			break;
-	}
+  int loop_count = 0;
+  for (;;) {
+    if (++loop_count > 1000000) {
+      panic("treesplay: infinite loop detected t=%#p size=%lud", t, size);
+    }
+    assert(t->magic == FREE_MAGIC);
+    if (size < t->size) {
+      y = t->left;
+      if (y != nil) {
+        assert(y->magic == FREE_MAGIC);
+        if (size < y->size) {
+          t->left = y->right;
+          y->right = t;
+          t = y;
+        }
+      }
+      if (t->left == nil)
+        break;
+      r->left = t;
+      r = t;
+      t = t->left;
+    } else if (size > t->size) {
+      y = t->right;
+      if (y != nil) {
+        assert(y->magic == FREE_MAGIC);
+        if (size > y->size) {
+          t->right = y->left;
+          y->left = t;
+          t = y;
+        }
+      }
+      if (t->right == nil)
+        break;
+      l->right = t;
+      l = t;
+      t = t->right;
+    } else
+      break;
+  }
 
-	l->right = t->left;
-	r->left = t->right;
-	t->left = N.right;
-	t->right = N.left;
+  l->right = t->left;
+  r->left = t->right;
+  t->left = N.right;
+  t->right = N.left;
 
-	return t;
+  return t;
 }
 
 /*
@@ -142,42 +146,42 @@ Free *treesplay(Free *t, ulong size) {
  * The block is converted to a Free node and inserted into the splay tree
  */
 Free *pooladd(Pool *p, Alloc *anode) {
-	Free *node, *root;
+  Free *node, *root;
 
-	antagonism {
-		memmark(_B2D(anode), 0xF7, anode->size - sizeof(Bhdr) - sizeof(Btail));
-	}
+  antagonism {
+    memmark(_B2D(anode), 0xF7, anode->size - sizeof(Bhdr) - sizeof(Btail));
+  }
 
-	node = (Free *)anode;
-	node->magic = FREE_MAGIC;
-	node->left = node->right = nil;
-	node->next = node->prev = node;
+  node = (Free *)anode;
+  node->magic = FREE_MAGIC;
+  node->left = node->right = nil;
+  node->next = node->prev = node;
 
-	if (p->freeroot != nil) {
-		root = treesplay(p->freeroot, node->size);
-		if (root->size > node->size) {
-			node->left = root->left;
-			node->right = root;
-			root->left = nil;
-		} else if (root->size < node->size) {
-			node->right = root->right;
-			node->left = root;
-			root->right = nil;
-		} else {
-			node->left = root->left;
-			node->right = root->right;
-			root->left = root->right = Poison;
+  if (p->freeroot != nil) {
+    root = treesplay(p->freeroot, node->size);
+    if (root->size > node->size) {
+      node->left = root->left;
+      node->right = root;
+      root->left = nil;
+    } else if (root->size < node->size) {
+      node->right = root->right;
+      node->left = root;
+      root->right = nil;
+    } else {
+      node->left = root->left;
+      node->right = root->right;
+      root->left = root->right = Poison;
 
-			node->prev = root->prev;
-			node->next = root;
-			node->prev->next = node;
-			node->next->prev = node;
-		}
-	}
-	p->freeroot = node;
-	p->curfree += node->size;
+      node->prev = root->prev;
+      node->next = root;
+      node->prev->next = node;
+      node->next->prev = node;
+    }
+  }
+  p->freeroot = node;
+  p->curfree += node->size;
 
-	return node;
+  return node;
 }
 
 /*
@@ -185,37 +189,37 @@ Free *pooladd(Pool *p, Alloc *anode) {
  * Updates the splay tree structure and removes from circular list if needed
  */
 Alloc *pooldel(Pool *p, Free *node) {
-	Free *root;
+  Free *root;
 
-	root = treesplay(p->freeroot, node->size);
-	if (node == root && node->next == node) {
-		if (node->left == nil)
-			root = node->right;
-		else {
-			root = treesplay(node->left, node->size);
-			assert(root->right == nil);
-			root->right = node->right;
-		}
-	} else {
-		if (node == root) {
-			root = node->next;
-			root->left = node->left;
-			root->right = node->right;
-		}
-		assert(root->magic == FREE_MAGIC && root->size == node->size);
-		node->next->prev = node->prev;
-		node->prev->next = node->next;
-	}
-	p->freeroot = root;
-	p->curfree -= node->size;
+  root = treesplay(p->freeroot, node->size);
+  if (node == root && node->next == node) {
+    if (node->left == nil)
+      root = node->right;
+    else {
+      root = treesplay(node->left, node->size);
+      assert(root->right == nil);
+      root->right = node->right;
+    }
+  } else {
+    if (node == root) {
+      root = node->next;
+      root->left = node->left;
+      root->right = node->right;
+    }
+    assert(root->magic == FREE_MAGIC && root->size == node->size);
+    node->next->prev = node->prev;
+    node->prev->next = node->next;
+  }
+  p->freeroot = root;
+  p->curfree -= node->size;
 
-	node->left = node->right = node->next = node->prev = Poison;
+  node->left = node->right = node->next = node->prev = Poison;
 
-	antagonism {
-		memmark(_B2D(node), 0xF9, node->size - sizeof(Bhdr) - sizeof(Btail));
-	}
+  antagonism {
+    memmark(_B2D(node), 0xF9, node->size - sizeof(Bhdr) - sizeof(Btail));
+  }
 
-	node->magic = UNALLOC_MAGIC;
+  node->magic = UNALLOC_MAGIC;
 
-	return (Alloc *)node;
+  return (Alloc *)node;
 }

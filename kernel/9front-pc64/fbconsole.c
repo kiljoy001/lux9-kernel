@@ -392,11 +392,14 @@ void fbconsoleinit(void) {
   fbaddr = saved_fb_info.fb_phys_addr;
 
   char msg[128];
-  snprint(
-      msg, sizeof(msg),
-      "fbconsole: phys_addr=0x%llx width=%llu height=%llu pitch=%llu bpp=%u\n",
-      (unsigned long long)fbaddr, saved_fb_info.width, saved_fb_info.height,
-      saved_fb_info.pitch, saved_fb_info.bpp);
+  snprint(msg, sizeof(msg), "fbconsole: phys_addr=0x%llx\n",
+          (unsigned long long)fbaddr);
+  uartputs(msg, strlen(msg));
+  snprint(msg, sizeof(msg), "fbconsole: width=%llu height=%llu\n",
+          saved_fb_info.width, saved_fb_info.height);
+  uartputs(msg, strlen(msg));
+  snprint(msg, sizeof(msg), "fbconsole: pitch=%llu bpp=%u\n",
+          saved_fb_info.pitch, saved_fb_info.bpp);
   uartputs(msg, strlen(msg));
 
   /* Use vmap to create mapping for MMIO framebuffer */
@@ -432,17 +435,14 @@ void fbconsoleinit(void) {
   print("fbconsole: memset complete\n");
 
   /* Hook into screenputs - routes print() output to framebuffer */
-  /* SKIP in VM: MMIO framebuffer access is extremely slow in software emulation
-   */
+  /* ALWAYS hook, even in VM. User wants to see output. */
   if (vm_info.type != VM_NONE) {
-    uartputs("fbconsole: SKIPPING screenputs hook (VM detected - MMIO slow)\n",
-             63);
-    uartputs("fbconsole: UART remains primary output\n", 40);
-  } else {
-    print("fbconsole: PRE-HOOK\n");
-    screenputs = fbconsolescreenputs;
-    uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
+    uartputs("fbconsole: VM detected, but forcing screenputs hook\n", 48);
   }
+
+  uartputs("fbconsole: PRE-HOOK\n", 21);
+  screenputs = fbconsolescreenputs;
+  uartputs("fbconsole: screenputs hooked to framebuffer console\n", 52);
 }
 
 /*@

@@ -19,6 +19,22 @@ static struct {
   PreconditionFunc preconditions[dag_PROC_STATE_COUNT][dag_PROC_STATE_COUNT];
 } procstate_dag;
 
+static void procstate_dag_init_struct(void) {
+  procstate_dag.lock.key = 0;
+  procstate_dag.lock.isilock = 0;
+  procstate_dag.lock.pc = 0;
+  procstate_dag.lock.p = nil;
+  procstate_dag.lock.m = nil;
+  procstate_dag.lock.lockcycles = 0;
+  procstate_dag.initialized = 0;
+  for(int i = 0; i < dag_PROC_STATE_COUNT; i++) {
+    for(int j = 0; j < dag_PROC_STATE_COUNT; j++) {
+      procstate_dag.edges[i][j] = 0;
+      procstate_dag.preconditions[i][j] = nil;
+    }
+  }
+}
+
 /* Precondition: p->r must be nil */
 /*@
   @ requires p == \null || \valid(p);
@@ -82,7 +98,7 @@ void procstate_dag_init(void) {
   if (procstate_dag.initialized)
     return;
 
-  memset(&procstate_dag, 0, sizeof(procstate_dag));
+  procstate_dag_init_struct();
 
   /* Define all valid state transitions */
   /* Dead → New */

@@ -9,7 +9,11 @@
 #define WASM_HOST_FRUITY_H
 
 #include "../include/u.h"
-#include "../test/temp_src/fruity_ir.h"
+#include "../include/portlib.h"
+#include "../include/mem.h"
+#include "../include/dat.h"
+#include "../include/fns.h"
+#include "fruity_ir.h"
 #include "wasm_capability_bindings.h"
 #include "wasm_runtime/wasm3/wasm3.h"
 

@@ -9,8 +9,28 @@
 #define P9_MSG_SIZE 0xF00
 #define P9_CONTROL_OFFSET 0xF00
 
+/* Control block (matches kernel/include/9p_router.h) */
+typedef struct P9Control {
+  u32int doorbell;
+  u32int status;
+  u32int req_head;
+  u32int req_tail;
+  u32int rep_head;
+  u32int rep_tail;
+  u32int req_seq;
+  u32int rep_seq;
+  uchar session_pebble[64];
+  uchar reserved[160];
+} P9Control;
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
+
 /* Assembly doorbell trigger */
 long _syscall(void);
+long _syscall_rfork_stack(void *stack_top, void (*func)(void *), void *arg);
 
 /* Packing Macros */
 #define GBIT8(p) (((uchar *)(p))[0])

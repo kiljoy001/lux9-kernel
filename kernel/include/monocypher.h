@@ -55,8 +55,42 @@
 #ifndef MONOCYPHER_H
 #define MONOCYPHER_H
 
+#ifdef KERNEL
+#include "u.h"
+#ifndef _STDINT_KERNEL_H
+#define _STDINT_KERNEL_H
+#ifdef __UINT8_TYPE__
+typedef __UINT8_TYPE__ uint8_t;
+typedef __UINT16_TYPE__ uint16_t;
+typedef __UINT32_TYPE__ uint32_t;
+typedef __UINT64_TYPE__ uint64_t;
+typedef __INT8_TYPE__ int8_t;
+typedef __INT16_TYPE__ int16_t;
+typedef __INT32_TYPE__ int32_t;
+typedef __INT64_TYPE__ int64_t;
+#else
+typedef u8int uint8_t;
+typedef u16int uint16_t;
+typedef u32int uint32_t;
+typedef u64int uint64_t;
+typedef s8int int8_t;
+typedef s16int int16_t;
+typedef s32int int32_t;
+typedef s64int int64_t;
+#endif
+#endif
+#ifndef _SIZE_T_DEFINED_
+#define _SIZE_T_DEFINED_
+#if defined(__SIZE_TYPE__)
+typedef __SIZE_TYPE__ size_t;
+#else
+typedef ulong size_t;
+#endif
+#endif
+#else
 #include <stddef.h>
 #include <stdint.h>
+#endif
 
 #ifdef MONOCYPHER_CPP_NAMESPACE
 namespace MONOCYPHER_CPP_NAMESPACE {
@@ -136,11 +170,26 @@ typedef struct {
   size_t hash_size;
 } crypto_blake2b_ctx;
 
+/*@
+  @ requires \valid(ctx);
+  @ requires hash_size > 0 && hash_size <= 64;
+  @ assigns *ctx;
+  @*/
 void crypto_blake2b_init(crypto_blake2b_ctx *ctx, size_t hash_size);
 void crypto_blake2b_keyed_init(crypto_blake2b_ctx *ctx, size_t hash_size,
                                const uint8_t *key, size_t key_size);
+/*@
+  @ requires \valid(ctx);
+  @ requires \valid_read(message + (0 .. message_size - 1));
+  @ assigns *ctx;
+  @*/
 void crypto_blake2b_update(crypto_blake2b_ctx *ctx, const uint8_t *message,
                            size_t message_size);
+/*@
+  @ requires \valid(ctx);
+  @ requires \valid(hash + (0 .. 63));
+  @ assigns *ctx, hash[0 .. 63];
+  @*/
 void crypto_blake2b_final(crypto_blake2b_ctx *ctx, uint8_t *hash);
 
 // Password key derivation (Argon2)

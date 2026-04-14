@@ -241,6 +241,14 @@ enum {
   Rsysbrk,
   Tsyssleep = 170, /* sleep(millisecs) */
   Rsyssleep,
+  Tsysspawn = 172, /* spawn(path, argv) -> pid - SECURE fork+exec primitive */
+  Rsysspawn,
+  /*
+   * Compatibility aliases: some callers/documentation use Tsyspawn/Rsyspawn.
+   * Keep both spellings mapped to the same wire values.
+   */
+  Tsyspawn = Tsysspawn,
+  Rsyspawn = Rsysspawn,
 
   /* Namespace Operations */
   Tsysbind = 180, /* bind(name, old, flags) */
@@ -292,7 +300,7 @@ int read9pmsg(int, void *, uint);
 #pragma varargck type "D" Dir *
 #endif
 
-/* Syscall Numbers */
+/* Syscall Numbers - MUST match userspace liblux/inc/lux.h */
 enum {
   SYS_OPEN = 1,
   SYS_CLOSE,
@@ -302,6 +310,7 @@ enum {
   SYS_PWRITE,
   SYS_CREATE,
   SYS_REMOVE = 25,
+  SYS_SEGATTACH = 30,
   SYS_EXIT,
   SYS_FORK,
   SYS_STAT,
@@ -325,7 +334,25 @@ enum {
   SYS_EXCHANGE_SUBSCRIBE = 70,
   SYS_EXCHANGE_UNSUBSCRIBE = 71,
   SYS_EXCHANGE_RECEIVE = 72,
-  SYS_WAIT = 166
+  SYS_NSROOT_PUBLISH = 73,
+  SYS_NSROOT_UNPUBLISH = 74,
+  SYS_EXCHANGE_PREPARE = 75,
+  SYS_EXCHANGE_PREPARE_RANGE = 76,
+  SYS_EXCHANGE_ACCEPT = 77,
+  SYS_EXCHANGE_CANCEL = 78,
+  SYS_EXCHANGE_TRANSFER = 79,
+  SYS_WAIT = 166,
+
+  /* Process Vault syscalls (210-219) */
+  SYS_VAULT_CREATE = 210,
+  SYS_VAULT_LOCK = 211,
+  SYS_VAULT_UNLOCK = 212,
+  SYS_VAULT_READ = 213,
+  SYS_VAULT_WRITE = 214,
+  SYS_VAULT_WIPE = 215,
+  SYS_VAULT_EXPORT = 216,
+  SYS_VAULT_IMPORT = 217,
+  SYS_VAULT_STATUS = 218
 
 };
 

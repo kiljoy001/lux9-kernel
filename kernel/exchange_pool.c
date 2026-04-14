@@ -22,6 +22,155 @@
 // Global pool instance (accessible via exchange_pool.h extern declaration)
 GlobalExchangePool *global_pool = nil;
 
+enum {
+  ExchangePoolGrowMin = 8,
+  ExchangePoolLowWaterMin = 4,
+};
+
+static uint exchange_pool_recompute_low_water(uint total_pages) {
+  uint low;
+
+  if (total_pages == 0)
+    return 0;
+
+  low = total_pages / 8;
+  if (low < ExchangePoolLowWaterMin)
+    low = ExchangePoolLowWaterMin;
+  if (low >= total_pages)
+    low = total_pages - 1;
+  return low;
+}
+
+static int exchange_pool_slot_is_free(GlobalExchangePool *pool, uint slot,
+                                      uint *free_pos) {
+  uint i;
+
+  for (i = 0; i < pool->free_count; i++) {
+    if (pool->free_list[i] == slot) {
+      if (free_pos != nil)
+        *free_pos = i;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void exchange_pool_remove_free_pos(GlobalExchangePool *pool, uint pos) {
+  if (pos >= pool->free_count)
+    return;
+  pool->free_count--;
+  if (pos != pool->free_count)
+    pool->free_list[pos] = pool->free_list[pool->free_count];
+}
+
+static int exchange_pool_alloc_slot(GlobalExchangePool *pool, uint slot) {
+  void *page;
+  u8int vault_secret[BLIND_LEDGER_SECRET_SIZE];
+  BlindLedgerError err;
+
+  page = xspanalloc(BY2PG, BY2PG, 0);
+  if (page == nil)
+    return -1;
+
+  memset(page, 0, BY2PG);
+  err = ledger_generate_secret(vault_secret);
+  if (err != BLIND_LEDGER_OK) {
+    xfree(page);
+    return -1;
+  }
+
+  err = ledger_mint(&pool->pages[slot], hhdm_phys(page), BY2PG, nil,
+                    CAP_PERM_READ | CAP_PERM_WRITE, vault_secret);
+  if (err != BLIND_LEDGER_OK) {
+    memset(&pool->pages[slot], 0, sizeof(pool->pages[slot]));
+    xfree(page);
+    return -1;
+  }
+
+  return 0;
+}
+
+static void exchange_pool_release_slot(GlobalExchangePool *pool, uint slot) {
+  BlindLedgerEntry entry;
+
+  if (ledger_verify(&pool->pages[slot], &entry) != BLIND_LEDGER_OK) {
+    memset(&pool->pages[slot], 0, sizeof(pool->pages[slot]));
+    return;
+  }
+
+  memset(hhdm_virt(entry.physical_address), 0, BY2PG);
+  ledger_burn(&pool->pages[slot], entry.owner);
+  xfree(hhdm_virt(entry.physical_address));
+  memset(&pool->pages[slot], 0, sizeof(pool->pages[slot]));
+}
+
+static uint exchange_pool_grow_locked(GlobalExchangePool *pool) {
+  uint grow_by;
+  uint added;
+  uint slot;
+
+  if (pool->total_pages >= POOL_SIZE)
+    return 0;
+
+  grow_by = pool->total_pages / 2;
+  if (grow_by < ExchangePoolGrowMin)
+    grow_by = ExchangePoolGrowMin;
+  if (grow_by > POOL_SIZE - pool->total_pages)
+    grow_by = POOL_SIZE - pool->total_pages;
+
+  added = 0;
+  for (slot = pool->total_pages; slot < pool->total_pages + grow_by; slot++) {
+    if (exchange_pool_alloc_slot(pool, slot) < 0)
+      break;
+    pool->free_list[pool->free_count++] = slot;
+    added++;
+  }
+
+  pool->total_pages += added;
+  pool->low_watermark = exchange_pool_recompute_low_water(pool->total_pages);
+  if (added > 0) {
+    print("exchange_pool: grew from %ud to %ud pages\n",
+          pool->total_pages - added, pool->total_pages);
+  }
+  return added;
+}
+
+static uint exchange_pool_shrink_locked(GlobalExchangePool *pool) {
+  uint target;
+  uint released;
+
+  if (pool->total_pages <= pool->min_pages)
+    return 0;
+
+  if (pool->free_count * 4 < pool->total_pages * 3)
+    return 0;
+
+  target = (pool->total_pages * 3) / 4;
+  if (target < pool->min_pages)
+    target = pool->min_pages;
+
+  released = 0;
+  while (pool->total_pages > target) {
+    uint slot = pool->total_pages - 1;
+    uint pos;
+
+    if (!exchange_pool_slot_is_free(pool, slot, &pos))
+      break;
+
+    exchange_pool_remove_free_pos(pool, pos);
+    exchange_pool_release_slot(pool, slot);
+    pool->total_pages--;
+    released++;
+  }
+
+  pool->low_watermark = exchange_pool_recompute_low_water(pool->total_pages);
+  if (released > 0) {
+    print("exchange_pool: shrank from %ud to %ud pages\n",
+          pool->total_pages + released, pool->total_pages);
+  }
+  return released;
+}
+
 /*@ requires pool_size > 0;
   @ requires pool_size <= POOL_SIZE;
   @ ensures global_pool == \null || \valid(global_pool);
@@ -53,6 +202,9 @@ void exchange_pool_init(uint pool_size) {
     global_pool->free_list[i] = i;
   }
   global_pool->free_count = pool_size;
+  global_pool->total_pages = pool_size;
+  global_pool->min_pages = pool_size;
+  global_pool->low_watermark = exchange_pool_recompute_low_water(pool_size);
 
   // Allocate actual pages
   /*@ loop invariant 0 <= i <= pool_size;
@@ -60,30 +212,21 @@ void exchange_pool_init(uint pool_size) {
     @ loop variant pool_size - i;
     @*/
   for (i = 0; i < pool_size; i++) {
-    void *page = xspanalloc(BY2PG, BY2PG, 0);
-    if (page == nil) {
+    if (exchange_pool_alloc_slot(global_pool, i) < 0) {
       print("exchange_pool_init: failed to allocate page %d\n", i);
-      continue;
-    }
-
-    // Generate capability for this page
-    u8int vault_secret[BLIND_LEDGER_SECRET_SIZE];
-    BlindLedgerError err;
-
-    err = ledger_generate_secret(vault_secret);
-    if (err != BLIND_LEDGER_OK) {
-      print("exchange_pool_init: failed to generate secret for page %d\n", i);
-      continue;
-    }
-
-    err = ledger_mint(&global_pool->pages[i], hhdm_phys(page), BY2PG, nil,
-                      CAP_PERM_READ | CAP_PERM_WRITE, vault_secret);
-    if (err != BLIND_LEDGER_OK) {
-      print("exchange_pool_init: failed to mint capability for page %d\n", i);
+      global_pool->free_count = i;
+      global_pool->total_pages = i;
+      break;
     }
   }
+  if (global_pool->min_pages > global_pool->total_pages)
+    global_pool->min_pages = global_pool->total_pages;
+  global_pool->low_watermark =
+      exchange_pool_recompute_low_water(global_pool->total_pages);
 
-  print("exchange_pool_init: initialized with %d pages\n", pool_size);
+  print("exchange_pool_init: initialized with %d pages (%d min, low-water %d)\n",
+        global_pool->total_pages, global_pool->min_pages,
+        global_pool->low_watermark);
 }
 
 /*@ assigns global_pool;
@@ -98,16 +241,11 @@ void exchange_pool_shutdown(void) {
     @ loop assigns i, global_pool->pages[0..(POOL_SIZE-1)];
     @ loop variant POOL_SIZE - i;
     @*/
-  for (uint i = 0; i < POOL_SIZE; i++) {
-    BlindLedgerEntry entry;
-    if (ledger_verify(&global_pool->pages[i], &entry) == BLIND_LEDGER_OK) {
-      // Free the physical page
-      // Note: In a real system, we'd need proper page freeing
-      ledger_burn(&global_pool->pages[i], nil);
-    }
+  for (uint i = 0; i < global_pool->total_pages; i++) {
+    exchange_pool_release_slot(global_pool, i);
   }
 
-  free(global_pool);
+  xfree(global_pool);
   global_pool = nil;
 
   print("exchange_pool_shutdown: pool freed\n");
@@ -163,13 +301,18 @@ PoolError global_pool_alloc_page(Proc *p, UserCapability *out) {
   qlock(&global_pool->pool_lock);
 
   if (global_pool->free_count == 0) {
-    qunlock(&global_pool->pool_lock);
-    return POOL_ENOMEM;
+    if (exchange_pool_grow_locked(global_pool) == 0) {
+      qunlock(&global_pool->pool_lock);
+      return POOL_ENOMEM;
+    }
   }
 
   pool_idx = global_pool->free_list[--global_pool->free_count];
   //@ assert pool_idx < POOL_SIZE;
   *out = global_pool->pages[pool_idx];
+
+  if (global_pool->free_count <= global_pool->low_watermark)
+    exchange_pool_grow_locked(global_pool);
 
   // Scrub the page at the physical address for security
   BlindLedgerEntry entry_scrub;
@@ -223,12 +366,13 @@ PoolError global_pool_free_page(Proc *p, const UserCapability *cap) {
     @ loop assigns i, global_pool->free_count, global_pool->free_list[0..(POOL_SIZE-1)];
     @ loop variant POOL_SIZE - i;
     @*/
-  for (uint i = 0; i < POOL_SIZE; i++) {
+  for (uint i = 0; i < global_pool->total_pages; i++) {
     if (memcmp(global_pool->pages[i].hash, cap->hash, BLIND_LEDGER_CAP_SIZE) ==
         0) {
-      if (global_pool->free_count < POOL_SIZE) {
+      if (global_pool->free_count < global_pool->total_pages) {
         global_pool->free_list[global_pool->free_count++] = i;
       }
+      exchange_pool_shrink_locked(global_pool);
       qunlock(&global_pool->pool_lock);
       return POOL_OK;
     }
@@ -255,7 +399,7 @@ void exchange_cleanup_process(Proc *p) {
 
       // Remove from list
       *prev = pa->next;
-      free(pa);
+      xfree(pa);
       return;
     }
     prev = &pa->next;
@@ -335,7 +479,7 @@ void compute_target_allocations(GlobalExchangePool *pool) {
 
   // Calculate available pages for distribution
   qlock(&pool->pool_lock);
-  available_pages = pool->free_count;
+  available_pages = pool->total_pages;
   qunlock(&pool->pool_lock);
 
   // Reserve minimum allocation for all processes
@@ -433,6 +577,9 @@ PoolError pool_prepare_hybrid(Proc *p, ExchangeRequest *req,
     // No active ring or it was full. Allocate a fresh page from pool.
     uint pool_idx;
     if (global_pool->free_count == 0) {
+      exchange_pool_grow_locked(global_pool);
+    }
+    if (global_pool->free_count == 0) {
       qunlock(&global_pool->pool_lock);
       return POOL_ENOMEM;
     }
@@ -465,7 +612,7 @@ PoolError pool_prepare_hybrid(Proc *p, ExchangeRequest *req,
                                           &new_entry) == BLIND_LEDGER_OK) {
           // Synchronize borrow checker
           extern enum BorrowError borrow_acquire(Proc * p, uintptr pa);
-          borrow_acquire(p, entry.physical_address);
+          borrow_acquire(p, (uintptr)kaddr(entry.physical_address));
 
           *out = new_cap;
         }

@@ -15,6 +15,7 @@
 #ifndef LUX_CAPABILITY_H
 #define LUX_CAPABILITY_H
 
+#include "../include/types_fwd.h"
 #include "../include/uuid.h"
 
 /* Plan 9 types if not in kernel context */
@@ -64,12 +65,56 @@ typedef unsigned long long u64int;
 #define LUX_CAP_PERM_NONE 0x00
 #endif
 
+#ifdef __FRAMAC__
+/*@ axiomatic LuxCapPerms {
+  @ logic integer L_LUX_CAP_PERM_ALL;
+  @ logic integer lux_cap_perms_subset_logic(u32int a, u32int b);
+  @} */
+#endif
+
 /* ========== Capability Scope ========== */
 typedef enum {
   LUX_CAP_SCOPE_MODULE, /* Assembly-level capability (root for assembly) */
   LUX_CAP_SCOPE_CLASS,  /* Class-level capability (derived from module) */
   LUX_CAP_SCOPE_METHOD  /* Method-level capability (derived from class) */
 } lux_capability_scope_t;
+
+#ifdef __FRAMAC__
+typedef struct {
+  fruity_module_t *fruity_module;
+  fruity_function_t *fruity_function;
+  fruity_basic_block_t *fruity_block;
+  fruity_instruction_t *fruity_instruction;
+  void *raw;
+} lux_cap_aux_t;
+#else
+typedef void *lux_cap_aux_t;
+#endif
+
+#ifdef __FRAMAC__
+#define LUX_CAP_AUX_CLEAR(cap) ((cap)->aux.raw = (void *)0)
+#define LUX_CAP_AUX_IS_SET(cap) ((cap)->aux.raw != (void *)0)
+#define LUX_CAP_AUX_SET_MODULE(cap, ptr) ((cap)->aux.fruity_module = (ptr))
+#define LUX_CAP_AUX_GET_MODULE(cap) ((cap)->aux.fruity_module)
+#define LUX_CAP_AUX_SET_FUNCTION(cap, ptr) ((cap)->aux.fruity_function = (ptr))
+#define LUX_CAP_AUX_GET_FUNCTION(cap) ((cap)->aux.fruity_function)
+#define LUX_CAP_AUX_SET_BLOCK(cap, ptr) ((cap)->aux.fruity_block = (ptr))
+#define LUX_CAP_AUX_GET_BLOCK(cap) ((cap)->aux.fruity_block)
+#define LUX_CAP_AUX_SET_INSTRUCTION(cap, ptr)                                  \
+  ((cap)->aux.fruity_instruction = (ptr))
+#define LUX_CAP_AUX_GET_INSTRUCTION(cap) ((cap)->aux.fruity_instruction)
+#else
+#define LUX_CAP_AUX_CLEAR(cap) ((cap)->aux = (void *)0)
+#define LUX_CAP_AUX_IS_SET(cap) ((cap)->aux != (void *)0)
+#define LUX_CAP_AUX_SET_MODULE(cap, ptr) ((cap)->aux = (void *)(ptr))
+#define LUX_CAP_AUX_GET_MODULE(cap) ((fruity_module_t *)(cap)->aux)
+#define LUX_CAP_AUX_SET_FUNCTION(cap, ptr) ((cap)->aux = (void *)(ptr))
+#define LUX_CAP_AUX_GET_FUNCTION(cap) ((fruity_function_t *)(cap)->aux)
+#define LUX_CAP_AUX_SET_BLOCK(cap, ptr) ((cap)->aux = (void *)(ptr))
+#define LUX_CAP_AUX_GET_BLOCK(cap) ((fruity_basic_block_t *)(cap)->aux)
+#define LUX_CAP_AUX_SET_INSTRUCTION(cap, ptr) ((cap)->aux = (void *)(ptr))
+#define LUX_CAP_AUX_GET_INSTRUCTION(cap) ((fruity_instruction_t *)(cap)->aux)
+#endif
 
 /* ========== Monotonic Capability Structure ========== */
 /*
@@ -103,7 +148,7 @@ typedef struct lux_capability {
   char *bound_metadata;         /* Immutable binding: "assembly:class:method" */
   u8int is_validated;           /* Has chain been validated? */
   u8int is_revoked;             /* Revocation flag */
-  void *aux;                    /* Auxiliary data (e.g., Fruity IR object) */
+  lux_cap_aux_t aux;            /* Auxiliary data (e.g., Fruity IR object) */
 } lux_capability_t;
 
 /* ========== Capability Manager ========== */
@@ -148,7 +193,7 @@ lux_capability_manager_t *lux_cap_manager_create(void);
 /*@
   @ requires manager != \null;
   @ assigns manager->capabilities, manager->count \from manager->capabilities,
-  manager->count;
+  @         manager->count;
   @ ensures \true;
   @*/
 void lux_cap_manager_destroy(lux_capability_manager_t *manager);
@@ -156,8 +201,10 @@ void lux_cap_manager_destroy(lux_capability_manager_t *manager);
 /*@
   @ requires manager != \null;
   @ requires assembly_name != \null && \valid_read(assembly_name);
+  @ terminates \true;
+  @ exits \false;
   @ assigns manager->capabilities, manager->count \from manager->capabilities,
-  manager->count, assembly_name;
+  @         manager->count, assembly_name;
   @ ensures \result != \null ==> (
   @   \result->scope == LUX_CAP_SCOPE_MODULE &&
   @   \result->parent_id == 0 &&
@@ -172,8 +219,10 @@ lux_capability_t *lux_cap_create_module(lux_capability_manager_t *manager,
   @ requires parent != \null && \valid(parent);
   @ requires class_name != \null && \valid_read(class_name);
   @ requires (permission_mask & parent->permissions) == permission_mask;
+  @ terminates \true;
+  @ exits \false;
   @ assigns manager->capabilities, manager->count \from manager->capabilities,
-  manager->count, parent, class_name, permission_mask;
+  @         manager->count, parent, class_name, permission_mask;
   @ ensures \result != \null ==> (
   @   \result->scope == LUX_CAP_SCOPE_CLASS &&
   @   \result->parent_id == parent->cap_id &&
@@ -189,11 +238,13 @@ lux_capability_t *lux_cap_derive_class(lux_capability_manager_t *manager,
 /*@
   @ requires manager != \null;
   @ requires child != \null && \valid(child);
+  @ terminates \true;
+  @ exits \false;
   @ assigns \result \from manager->capabilities[0..manager->count-1], child;
   @ ensures \result == 1 ==> (
   @   \forall integer i; 0 <= i < child->derivation_depth ==>
-  @     lux_cap_perms_subset(child->permissions,
-  manager->capabilities[i].permissions)
+  @     lux_cap_perms_subset_logic(child->permissions,
+  @       manager->capabilities[i].permissions) != 0
   @ );
   @*/
 int lux_cap_validate_chain(lux_capability_manager_t *manager,
@@ -201,6 +252,8 @@ int lux_cap_validate_chain(lux_capability_manager_t *manager,
 
 /*@
   @ requires cap != \null && \valid(cap);
+  @ terminates \true;
+  @ exits \false;
   @ assigns \result \from cap->permissions, required;
   @ ensures \result == ((cap->permissions & required) == required);
   @*/
@@ -230,8 +283,10 @@ lux_capability_t *lux_cap_find_by_id(lux_capability_manager_t *manager,
 /* ========== Permission Utilities ========== */
 
 /*@
-  @ assigns \result \from a, b;
-  @ ensures \result == 1 <==> (a & b) == a;
+  @ terminates \true;
+  @ exits \false;
+  @ assigns \nothing;
+  @ ensures \result == lux_cap_perms_subset_logic(a, b);
   @*/
 int lux_cap_perms_subset(u32int a, u32int b);
 

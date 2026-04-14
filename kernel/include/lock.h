@@ -4,6 +4,8 @@
 #include "types_fwd.h"
 #include "u.h"
 
+#ifndef _LOCK_DEFINED_
+#define _LOCK_DEFINED_
 struct Lock {
   ulong key;
   ulong sr;
@@ -13,5 +15,6 @@ struct Lock {
   ushort isilock;
   long lockcycles;
 } __attribute__((aligned(64)));
+#endif
 
 #endif

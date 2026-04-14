@@ -8,6 +8,7 @@
 #include "../include/fns.h"
 #include "../include/ureg.h"
 #include "../include/fcall.h"
+#include "../include/sys.h"
 #include "../include/9p_router.h"
 
 /* Common utilities from 9p_router.c */
@@ -27,6 +28,11 @@ extern uintptr sys_exchange_publish(void *);
 extern uintptr sys_exchange_subscribe(void *);
 extern uintptr sys_exchange_unsubscribe(void *);
 extern uintptr sys_exchange_receive(void *);
+extern uintptr sys_exchange_prepare(void *);
+extern uintptr sys_exchange_prepare_range(void *);
+extern uintptr sys_exchange_accept(void *);
+extern uintptr sys_exchange_cancel(void *);
+extern uintptr sys_exchange_transfer(void *);
 extern uintptr syspipe(void *);
 extern uintptr sysrfork(void *);
 extern void pexit(char *, int);
@@ -35,5 +41,6 @@ extern ulong pwait(Waitmsg *);
 extern uintptr sysexec(void *);
 extern uvlong nsec(void);
 extern void userpmap(uintptr, uintptr, int);
+extern uintptr paddr(void *);
 
 #endif /* _KERNEL_ROUTER_H_ */

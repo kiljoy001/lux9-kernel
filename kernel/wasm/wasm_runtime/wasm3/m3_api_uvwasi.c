@@ -38,7 +38,7 @@ typedef struct wasi_iovec_t
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 const char* wasi_errno2str(uvwasi_errno_t err)
 {
     switch (err) {
@@ -126,7 +126,7 @@ const char* wasi_errno2str(uvwasi_errno_t err)
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 const char* wasi_whence2str(uvwasi_whence_t whence)
 {
     switch (whence) {
@@ -161,7 +161,7 @@ m3ApiRawFunction(m3_wasi_generic_args_get)
       /*@ loop invariant 0 <= i <= context->argc;
     @ loop assigns i;
     @ loop variant context->argc - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < context->argc; ++i)
     {
         m3ApiWriteMem32(&argv[i], m3ApiPtrToOffset(argv_buf));
@@ -194,7 +194,7 @@ m3ApiRawFunction(m3_wasi_generic_args_sizes_get)
       /*@ loop invariant 0 <= i <= context->argc;
     @ loop assigns i;
     @ loop variant context->argc - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < context->argc; ++i)
     {
         buf_len += strlen (context->argv[i]) + 1;
@@ -240,7 +240,7 @@ m3ApiRawFunction(m3_wasi_generic_environ_get)
       /*@ loop invariant 0 <= i <= env_count;
     @ loop assigns i;
     @ loop variant env_count - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < env_count; ++i)
     {
         uint32_t offset = environ_buf_offset +
@@ -795,7 +795,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_pread)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (uvwasi_size_t i = 0; i < iovs_len; ++i) {
         iovs[i].buf = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         iovs[i].buf_len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -837,7 +837,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (uvwasi_size_t i = 0; i < iovs_len; ++i) {
         iovs[i].buf = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         iovs[i].buf_len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -877,7 +877,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (uvwasi_size_t i = 0; i < iovs_len; ++i) {
         iovs[i].buf = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         iovs[i].buf_len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -917,7 +917,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_pwrite)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (uvwasi_size_t i = 0; i < iovs_len; ++i) {
         iovs[i].buf = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         iovs[i].buf_len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -1123,7 +1123,7 @@ m3ApiRawFunction(m3_wasi_generic_sched_yield)
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result SuppressLookupFailure(M3Result i_result)
 {
     if (i_result == m3Err_functionLookupFailed)
@@ -1135,7 +1135,7 @@ M3Result SuppressLookupFailure(M3Result i_result)
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 m3_wasi_context_t* m3_GetWasiContext()
 {
     return wasi_context;
@@ -1144,7 +1144,7 @@ m3_wasi_context_t* m3_GetWasiContext()
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  m3_LinkWASI  (IM3Module module)
 {
     #define ENV_COUNT       9
@@ -1180,7 +1180,7 @@ M3Result  m3_LinkWASI  (IM3Module module)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  m3_LinkWASIWithOptions  (IM3Module module, uvwasi_options_t init_options)
 {
     M3Result result = m3Err_none;
@@ -1211,7 +1211,7 @@ _   (SuppressLookupFailure (m3_LinkRawFunction (module, "wasi_snapshot_preview1"
       /*@ loop invariant 0 <= i <= 2;
     @ loop assigns i;
     @ loop variant 2 - i;
-    @*/
+    @*\/ */
   for (int i=0; i<2; i++)
     {
         const char* wasi = namespaces[i];

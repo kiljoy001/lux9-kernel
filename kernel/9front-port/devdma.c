@@ -103,7 +103,7 @@ alloc_dmaalloc(void)
 		dmapool.nfree--;
 	} else {
 		unlock(&dmapool.lock);
-		da = smalloc(sizeof(DMAAlloc));
+		da = smalloc_resident(sizeof(DMAAlloc));
 		lock(&dmapool.lock);
 	}
 	unlock(&dmapool.lock);
@@ -405,14 +405,6 @@ Dev dmadevtab = {
 	devshutdown,
 	dmaattach,
 	dmawalk,
-	dmastat,
-	dmaopen,
-	devcreate,
-	dmaclose,
-	dmaread,
-	devbread,
-	dmawrite,
-	devbwrite,
-	devremove,
-	devwstat,
+	    dmastat,       dmaopen,        devcreate,   dmaclose,  dmaread,
+	    dmawrite,      devbread,       devbwrite,   devremove, devwstat,
 };

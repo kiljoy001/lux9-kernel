@@ -56,4 +56,58 @@ typedef struct Ureg Ureg;
 typedef struct Rendez Rendez;
 #endif
 
+/* 9P Qid type */
+#ifndef _QID_DEFINED
+#define _QID_DEFINED
+typedef struct Qid Qid;
+#endif
+
+/* 9P Dir type */
+#ifndef _DIR_DEFINED
+#define _DIR_DEFINED
+typedef struct Dir Dir;
+#endif
+
+/* Dirtab type */
+#ifndef _DIRTAB_DEFINED
+#define _DIRTAB_DEFINED
+typedef struct Dirtab Dirtab;
+#endif
+
+/* Devgen type */
+#ifndef _DEVGEN_DEFINED
+#define _DEVGEN_DEFINED
+typedef struct Chan Chan;
+typedef struct Dirtab Dirtab;
+typedef struct Dir Dir;
+typedef int Devgen(Chan *, char *, Dirtab *, int, int, Dir *);
+#endif
+
+/* QLock type */
+#ifndef _QLOCK_DEFINED
+#define _QLOCK_DEFINED
+typedef struct QLock QLock;
+#endif
+
+/* RWLock type */
+#ifndef _RWLOCK_DEFINED
+#define _RWLOCK_DEFINED
+typedef struct RWLock RWLock;
+#endif
+
+/* Ref record */
+#ifndef _REF_DEFINED
+#define _REF_DEFINED
+typedef struct Ref Ref;
+#endif
+
+/* Fruity IR forward decls */
+#ifndef _FRUITY_TYPES_DEFINED
+#define _FRUITY_TYPES_DEFINED
+typedef struct fruity_module fruity_module_t;
+typedef struct fruity_function fruity_function_t;
+typedef struct fruity_basic_block fruity_basic_block_t;
+typedef struct fruity_instruction fruity_instruction_t;
+#endif
+
 #endif /* _TYPES_FWD_H_ */

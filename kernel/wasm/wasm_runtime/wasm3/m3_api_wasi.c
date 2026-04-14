@@ -99,7 +99,7 @@ Preopen preopen[PREOPEN_CNT] = {
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 __wasi_errno_t errno_to_wasi(int errnum) {
     APE_SWITCH_BEG
     APE_CASE_RET( EPERM   , __WASI_ERRNO_PERM   )
@@ -147,7 +147,7 @@ static inline
 /*@
   @ requires spec == \null || \valid(spec);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 int clock_gettime(int clk_id, struct timespec *spec)
 {
     __int64 wintime; GetSystemTimeAsFileTime((FILETIME*)&wintime);
@@ -161,7 +161,7 @@ static inline
 /*@
   @ requires spec == \null || \valid(spec);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 int clock_getres(int clk_id, struct timespec *spec) {
     return -1; // Defaults to 1000000
 }
@@ -171,7 +171,7 @@ int clock_getres(int clk_id, struct timespec *spec) {
 static inline
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 int convert_clockid(__wasi_clockid_t in) {
     return 0;
 }
@@ -181,7 +181,7 @@ int convert_clockid(__wasi_clockid_t in) {
 static inline
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 int convert_clockid(__wasi_clockid_t in) {
     switch (in) {
     case __WASI_CLOCKID_MONOTONIC:            return CLOCK_MONOTONIC;
@@ -198,7 +198,7 @@ static inline
 /*@
   @ requires ts == \null || \valid(ts);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 __wasi_timestamp_t convert_timespec(const struct timespec *ts) {
     if (ts->tv_sec < 0)
         return 0;
@@ -216,14 +216,14 @@ static inline
   @ requires wasi_iov == \null || \valid(wasi_iov);
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 const void* copy_iov_to_host(IM3Runtime runtime, void* _mem, struct iovec* host_iov, wasi_iovec_t* wasi_iov, int32_t iovs_len)
 {
     // Convert wasi memory offsets to host addresses
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (int i = 0; i < iovs_len; i++) {
         host_iov[i].iov_base = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iov[i].buf));
         host_iov[i].iov_len  = m3ApiReadMem32(&wasi_iov[i].buf_len);
@@ -253,7 +253,7 @@ m3ApiRawFunction(m3_wasi_generic_args_get)
       /*@ loop invariant 0 <= i <= context->argc;
     @ loop assigns i;
     @ loop variant context->argc - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < context->argc; ++i)
     {
         m3ApiWriteMem32(&argv[i], m3ApiPtrToOffset(argv_buf));
@@ -286,7 +286,7 @@ m3ApiRawFunction(m3_wasi_generic_args_sizes_get)
       /*@ loop invariant 0 <= i <= context->argc;
     @ loop assigns i;
     @ loop variant context->argc - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < context->argc; ++i)
     {
         buf_len += strlen (context->argv[i]) + 1;
@@ -632,7 +632,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (__wasi_size_t i = 0; i < iovs_len; i++) {
         void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -675,7 +675,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
       /*@ loop invariant 0 <= i <= iovs_len;
     @ loop assigns i;
     @ loop variant iovs_len - i;
-    @*/
+    @*\/ */
   for (__wasi_size_t i = 0; i < iovs_len; i++) {
         void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
@@ -817,7 +817,7 @@ m3ApiRawFunction(m3_wasi_generic_proc_exit)
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result SuppressLookupFailure(M3Result i_result)
 {
     if (i_result == m3Err_functionLookupFailed)
@@ -829,7 +829,7 @@ M3Result SuppressLookupFailure(M3Result i_result)
 /*@
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 m3_wasi_context_t* m3_GetWasiContext()
 {
     return wasi_context;
@@ -838,7 +838,7 @@ m3_wasi_context_t* m3_GetWasiContext()
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  m3_LinkWASI  (IM3Module module)
 {
     M3Result result = m3Err_none;
@@ -853,7 +853,7 @@ M3Result  m3_LinkWASI  (IM3Module module)
       /*@ loop invariant 0 <= i <= PREOPEN_CNT;
     @ loop assigns i;
     @ loop variant PREOPEN_CNT - i;
-    @*/
+    @*\/ */
   for (int i = 3; i < PREOPEN_CNT; i++) {
         preopen[i].fd = open(preopen[i].real_path, O_RDONLY);
     }
@@ -879,7 +879,7 @@ _   (SuppressLookupFailure (m3_LinkRawFunction (module, "wasi_snapshot_preview1"
       /*@ loop invariant 0 <= i <= 2;
     @ loop assigns i;
     @ loop variant 2 - i;
-    @*/
+    @*\/ */
   for (int i=0; i<2; i++)
     {
         const char* wasi = namespaces[i];

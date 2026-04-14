@@ -13,7 +13,7 @@ CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
 
 LDFLAGS = -nostdlib -static -no-pie --no-dynamic-linker -z max-page-size=0x1000
 
-OBJS = start.o exit.o hal.o family_registry.o channel_manager.o resource_pool.o \
+OBJS = start.o exit.o hal.o service.o family_registry.o channel_manager.o resource_pool.o \
        family_pci.o family_tpm.o transaction.o rump_integration.o
 
 EXIT_OBJ = ../lib9p_syscall/exit.o

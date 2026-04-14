@@ -21,5 +21,8 @@ typedef u8int uint8_t;
 void *wasm_heap_alloc(size_t size);
 void wasm_heap_free(void *ptr);
 void *wasm_heap_realloc(void *ptr, size_t new_size, size_t old_size);
+int wasm_heap_owned_ptr(void *ptr);
+void *wasm_linear_realloc(void *ptr, size_t new_size, size_t old_size);
+void wasm_linear_free(void *ptr);
 int wasm_linear_charge_reserve(uint32_t new_size, uint32_t old_size);
 void wasm_linear_charge_rollback(uint32_t old_size);

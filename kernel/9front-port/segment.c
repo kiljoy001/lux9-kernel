@@ -267,6 +267,11 @@ void putseg(Segment *s) {
   if (s->profile != nil)
     free(s->profile);
 
+  if (s->pseg != nil && (s->pseg->attr & SG_PROCOWNED) != 0) {
+    free(s->pseg);
+    s->pseg = nil;
+  }
+
   free(s);
 }
 
@@ -281,7 +286,44 @@ Pte *ptealloc(void) {
   return new;
 }
 
-static Pte *ptecpy(Pte *new, Pte *old) {
+static void
+pte_share(Page *entry, Proc *owner, Proc *borrower)
+{
+  enum BorrowError berr;
+  Proc *tracked_owner;
+
+  if (entry == nil || owner == nil || borrower == nil || entry->pa == 0)
+    return;
+  if (entry->token_color != PEBBLE_COLOR_BLACK &&
+      entry->token_color != PEBBLE_COLOR_RED)
+    return;
+  if (!borrow_is_owned(entry->pa))
+    return;
+
+  tracked_owner = borrow_get_owner(entry->pa);
+  if (tracked_owner == nil)
+    tracked_owner = owner;
+  if (tracked_owner == nil)
+    return;
+
+  berr = borrow_borrow_shared(tracked_owner, borrower, entry->pa);
+  if (berr != BORROW_OK) {
+    print("dupseg: borrow_borrow_shared failed pa=%#p owner=%p borrower=%p err=%d\n",
+          entry->pa, tracked_owner, borrower, berr);
+    error("dupseg shared borrow failed");
+  }
+
+  if (entry->token_color == PEBBLE_COLOR_BLACK) {
+    entry->token_color = PEBBLE_COLOR_RED;
+    lock(&pebble_global_lock);
+    if (tracked_owner->pebble.black_inuse >= BY2PG)
+      tracked_owner->pebble.black_inuse -= BY2PG;
+    tracked_owner->pebble.red_inuse += BY2PG;
+    unlock(&pebble_global_lock);
+  }
+}
+
+static Pte *ptecpy(Pte *new, Pte *old, Proc *owner, Proc *borrower) {
   Page **src, **dst, *entry;
 
   dst = &new->pages[old->first - old->pages];
@@ -292,30 +334,8 @@ static Pte *ptecpy(Pte *new, Pte *old) {
     if (onswap(entry))
       dupswap(entry);
     else {
-      /* Borrow Checker Integration for Shared Pages (SG_TEXT) */
-      /* Child borrows the page as SHARED & IMMUTABLE */
-      /* Parent retains ownership but cannot write while borrowed */
-      entry->token_color = PEBBLE_COLOR_RED; /* Mark shared */
       incref((Ref *)&entry->ref);
-
-      /* Enforce READ-ONLY for shared borrow */
-      /* Note: We don't have direct PTE bits here, but we pass entry.
-         The caller (dupseg) ensures types are correct. */
-
-      /* Transition BLACK → RED when page becomes shared */
-      if (entry->token_color == PEBBLE_COLOR_BLACK) {
-        entry->token_color = PEBBLE_COLOR_RED;
-        if (up != nil) {
-          lock(&pebble_global_lock);
-          up->pebble.black_inuse -= BY2PG;
-          up->pebble.red_inuse += BY2PG;
-          unlock(&pebble_global_lock);
-        }
-      }
-
-      /* TODO: Borrowchecker integration - need to find correct API */
-      /* Borrowchecker state should transition EXCLUSIVE → SHARED_OWNED */
-      /* This requires exposing the right interfaces from borrowchecker.c */
+      pte_share(entry, owner, borrower);
     }
     new->last = dst;
     *dst = entry;
@@ -326,7 +346,7 @@ static Pte *ptecpy(Pte *new, Pte *old) {
 /* Deep copy a PTE - used for fork to enforce private memory (since COW is
  * broken) */
 
-Segment *dupseg(Segment **seg, int segno, int share) {
+Segment *dupseg(Segment **seg, int segno, int share, Proc *borrower) {
   int i;
   Pte *pte;
   Segment *n, *s;
@@ -393,15 +413,14 @@ Segment *dupseg(Segment **seg, int segno, int share) {
       if (s->type == SG_TEXT) {
         /* Shared Code Pattern: Borrow Checker allows sharing immutable code */
         /* Use Copy-on-Write (Reference Copy) semantics */
-        n->map[i] = ptecpy(pte, s->map[i]);
+        n->map[i] = ptecpy(pte, s->map[i], up, borrower);
       } else {
-        /* Mutable Data Pattern: NO COPYING allowed.
-         * Child starts with FRESH, ZEROED state.
-         * Do not copy PTEs. Child will fault and alloc new pages on demand.
+        /* Mutable Data Pattern: Use COW for fork() compatibility.
+         * SECURITY NOTE: Child gets logical copy of parent's stack/data via COW.
+         * This is standard Unix fork() semantics - child can see parent's stack.
+         * Physical copy happens on write. If child calls exec(), all replaced anyway.
          */
-        /* n->map[i] = ptecpy(pte, s->map[i]); - DISABLED */
-        free(pte); /* Free the unused PTE table allocated above */
-        n->map[i] = nil;
+        n->map[i] = ptecpy(pte, s->map[i], up, borrower); /* RE-ENABLED for fork() */
       }
     }
   }
@@ -984,6 +1003,27 @@ static void removephysseg(Physseg *entry) {
 
   entry->prev = nil;
   entry->next = nil;
+}
+
+int delphysseg(char *name) {
+  Physseg *ps;
+
+  if (name == nil)
+    return -1;
+
+  borrow_lock(&physseglock);
+  for (ps = physseg_head; ps != nil; ps = ps->next) {
+    if (strcmp(ps->name, name) == 0) {
+      removephysseg(ps);
+      borrow_unlock(&physseglock);
+      free(ps->name);
+      free(ps);
+      return 0;
+    }
+  }
+  borrow_unlock(&physseglock);
+
+  return -1;
 }
 
 /*@

@@ -22,10 +22,10 @@ u8int mock_rand_seed = 0x55; /* Alias for integration tests */
 
 /* Time function - uses mock if set, else real time */
 vlong nsec(void) {
-  if (mock_nsec_value != 0)
-    return mock_nsec_value;
   if (mock_nsec != 0)
     return mock_nsec;
+  if (mock_nsec_value != 0)
+    return mock_nsec_value;
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (vlong)ts.tv_sec * 1000000000LL + ts.tv_nsec;

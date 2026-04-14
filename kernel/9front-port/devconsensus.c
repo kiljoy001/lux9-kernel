@@ -613,6 +613,6 @@ Dev consensusdevtab = {
     'G',           "consensus",
 
     devreset,      consensusinit,  devshutdown, consensusattach, consensuswalk,
-    consensusstat, consensusopen,  devcreate,   consensusclose,  consensusread,
-    devbread,      consensuswrite, devbwrite,   devremove,       devwstat,
+    consensusstat, consensusopen,  devcreate,   consensusclose, consensusread,
+    consensuswrite, devbread,      devbwrite,   devremove,      devwstat,
 };

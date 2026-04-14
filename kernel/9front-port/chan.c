@@ -1,19 +1,19 @@
-#include "dat.h"
 #include "devregistry.h"
-#include "fns.h"
-#include "mem.h"
+#include "kernel.h"
 #include "pci.h"
 #include "pciframework.h"
-#include "portlib.h"
-#include "u.h"
+#include "pebble_kernel.h"
+#include <pool.h>
+#include <u.h>
+
+extern Pool *mainmem;
 #include "uuid.h"
-#include <error.h>
 
 /* Forward declarations for functions used before definition */
 Chan *cclone(Chan *c);
 char *skipslash(char *name);
 char *validnamedup(char *aname, int slashok);
-Path *newpath(char *s);
+Path *newpath(BString s);
 /*@
   @ requires size > 0;
   @ allocates \result;
@@ -66,7 +66,7 @@ long incref(Ref *r) {
   long old, new;
 
   if (r == nil) {
-    panic("incref: NULL Ref from pc=%#p", (void *)0);
+    panic("incref: NULL Ref from pc=%#p", getcallerpc(&r));
     return 0;
   }
 
@@ -110,7 +110,7 @@ Path *pathincref(Path *p) {
   if (p == nil) {
     print("pathincref: WARNING path nil at boot_state=%d, creating default\n",
           current_boot_state);
-    p = newpath("/");
+    p = newpath((BString){"/", 1});
   }
   incref(&p->ref);
   return p;
@@ -235,8 +235,7 @@ void chandevinit(void) {
           devtab[i]->dc);
     devtab[i]->init();
   }
-  print("chandevinit: devices done, spawning closeproc\n");
-  kproc("closeproc", closeproc, nil);
+  print("chandevinit: devices done\n");
 }
 
 /*@
@@ -302,32 +301,6 @@ Chan *newchan(void) {
   return c;
 }
 
-Path *newpath(char *s) {
-  int i;
-  Path *p;
-
-  p = smalloc(sizeof(Path));
-  i = strlen(s);
-  p->len = i;
-  p->alen = i + PATHSLOP;
-  p->s = smalloc(p->alen);
-  memmove(p->s, s, i + 1);
-  p->ref = 1;
-
-  /*
-   * Cannot use newpath for arbitrary names because the mtpt
-   * array will not be populated correctly.  The names #/ and / are
-   * allowed, but other names with / in them draw warnings.
-   */
-  if (strchr(s, '/') != nil && strcmp(s, "#/") != 0 && strcmp(s, "/") != 0)
-    print("newpath: %s from %#p\n", s, (void *)0);
-
-  p->mlen = 1;
-  p->malen = PATHMSLOP;
-  p->mtpt = smalloc(p->malen * sizeof p->mtpt[0]);
-  return p;
-}
-
 static Path *copypath(Path *p) {
   int i;
   Path *pp;
@@ -350,6 +323,39 @@ static Path *copypath(Path *p) {
   }
 
   return pp;
+}
+
+Path *newpath(BString s) {
+  int i;
+  Path *p;
+
+  p = smalloc(sizeof(Path));
+  i = s.len;
+  p->len = i;
+  p->alen = i + PATHSLOP;
+  p->s = smalloc(p->alen);
+  memmove(p->s, s.data, i);
+  p->s[i] = '\0';
+  p->ref = 1;
+
+  {
+    int k;
+    int has_slash = 0;
+    for (k = 0; k < i; k++)
+      if (s.data[k] == '/')
+        has_slash = 1;
+
+    int is_root = (i == 1 && s.data[0] == '/');
+    int is_sharp_root = (i == 2 && s.data[0] == '#' && s.data[1] == '/');
+
+    if (has_slash && !is_root && !is_sharp_root)
+      print("newpath: %.*s from %#p\n", i, s.data, (void *)0);
+  }
+
+  p->mlen = 1;
+  p->malen = PATHMSLOP;
+  p->mtpt = smalloc(p->malen * sizeof p->mtpt[0]);
+  return p;
 }
 
 /*@
@@ -409,7 +415,7 @@ static void fixdotdotname(Path *p) {
       *r = '\0';
   } else
     /* cleanname(p->s); */
-  p->len = strlen(p->s);
+    p->len = strlen(p->s);
 }
 
 static Path *uniquepath(Path *p) {
@@ -534,6 +540,7 @@ struct {
   Chan *tail;
   ulong nqueued;
   ulong nclosed;
+  int nproc;
   Lock l;
   QLock q;
   Rendez r;
@@ -541,11 +548,26 @@ struct {
 
 static int clunkwork(void *) { return clunkq.head != nil; }
 
+static void closeprocspawn(void) {
+  if (!waserror()) {
+    kproc("closeproc", closeproc, nil);
+    poperror();
+    return;
+  }
+
+  lock(&clunkq.l);
+  if (clunkq.nproc > 0)
+    clunkq.nproc--;
+  unlock(&clunkq.l);
+}
+
 /*@
   @ requires c == \null || \valid(c);
   @ assigns \nothing;
   @*/
 static void closechanq(Chan *c) {
+  int spawn;
+
   lock(&clunkq.l);
   clunkq.nqueued++;
   c->next = nil;
@@ -554,7 +576,14 @@ static void closechanq(Chan *c) {
   else
     clunkq.head = c;
   clunkq.tail = c;
+  spawn = 0;
+  if (clunkq.nproc == 0) {
+    clunkq.nproc++;
+    spawn = 1;
+  }
   unlock(&clunkq.l);
+  if (spawn)
+    closeprocspawn();
   wakeup(&clunkq.r);
 }
 
@@ -589,6 +618,10 @@ static void closeproc(void *) {
       c = closechandeq();
       if (c == nil) {
         if (clunkq.q.head != nil) {
+          lock(&clunkq.l);
+          if (clunkq.nproc > 0)
+            clunkq.nproc--;
+          unlock(&clunkq.l);
           qunlock(&clunkq.q);
           pexit("no work", 1);
         }
@@ -596,15 +629,15 @@ static void closeproc(void *) {
         continue;
       }
       if (clunkq.q.head == nil) {
-        if (!waserror()) {
-          kproc("closeproc", closeproc, nil);
-          poperror();
-        }
+        lock(&clunkq.l);
+        clunkq.nproc++;
+        unlock(&clunkq.l);
+        closeprocspawn();
       }
       qunlock(&clunkq.q);
     }
     if (!waserror()) {
-      devtab[c->type]->close(c);
+      devtab[devno(c->type, 0)]->close(c);
       poperror();
     }
     chanfree(c);
@@ -616,9 +649,11 @@ static void closeproc(void *) {
   @ assigns \nothing;
   @*/
 void cclose(Chan *c) {
+  int di;
+
   if (c == nil)
     panic("cclose %#p", (void *)0);
-    /*@ assert c->type >= 0 && c->type < 64; */
+  /*@ assert c->type >= 0 && c->type < 64; */
   if (c->ref < 1)
     panic("cclose ref %#p", (void *)0);
   if (c->flag & CFREE)
@@ -627,7 +662,21 @@ void cclose(Chan *c) {
   if (decref(c))
     return;
 
-  if (devtab[c->type]->dc == L'M')
+  /* Handle uninitialized or special channels with type=0 */
+  if (c->type == 0) {
+    /* No device to call close on, just free the channel */
+    chanfree(c);
+    return;
+  }
+
+  di = devno(c->type, 1); /* Check if device exists without panicking */
+  if (di < 0) {
+    /* Unknown device type, can't call close */
+    chanfree(c);
+    return;
+  }
+
+  if (devtab[di]->dc == L'M')
     if ((c->flag & COPEN) == 0 || (c->flag & (CRCLOSE | CCACHE)) == CCACHE)
       if ((c->qid.type & (QTEXCL | QTMOUNT | QTAUTH)) == 0)
         if ((clunkq.nqueued - clunkq.nclosed) < 64) {
@@ -636,10 +685,10 @@ void cclose(Chan *c) {
         }
 
   if (!waserror()) {
-    devtab[c->type]->close(c);
+    devtab[di]->close(c);
     poperror();
   }
-  /* chanfree(c); */
+  chanfree(c);
 }
 
 /*@
@@ -818,7 +867,8 @@ int cmount(Chan *new, Chan *old, int flag, char *spec) {
        */
       f = nm;
       for (um = um->next; um != nil; um = um->next) {
-        f->next = newmount(um->to, order == MREPL ? MAFTER : order, (char *)um->spec);
+        f->next =
+            newmount(um->to, order == MREPL ? MAFTER : order, (char *)um->spec);
         f = f->next;
       }
     }
@@ -991,9 +1041,9 @@ Chan *cclone(Chan *c) {
   Chan *nc;
   Walkqid *wq;
 
-  if (c->ref != 1 && c->ref != 2 && (c->ref != 3 || m->machno != 0))
-    panic("cunique ref %#p", (void *)0);
-  wq = devtab[c->type]->walk(c, nil, nil, 0);
+  if (c == nil || c->ref < 1 || c->flag & CFREE)
+    panic("cclone: %#p", getcallerpc(&c));
+  wq = devtab[devno(c->type, 0)]->walk(c, nil, nil, 0);
   if (wq == nil)
     error("clone failed");
   nc = wq->clone;
@@ -1025,6 +1075,13 @@ int findmount(Chan **cp, Mhead **mp, int type, int dev, Qid qid) {
       if (mp != nil)
         incref((Ref *)&m->ref);
       rlock(&m->lock);
+      if (m->mount == nil || m->mount->to == nil) {
+        runlock(&m->lock);
+        runlock(&pg->ns);
+        print("findmount: m->mount=%p m->mount->to=%p\n",
+              m->mount, m->mount ? m->mount->to : nil);
+        return 0;  /* Mount target is invalid */
+      }
       to = m->mount->to;
       incref((Ref *)&to->ref);
       runlock(&m->lock);
@@ -1105,7 +1162,7 @@ static Walkqid *ewalk(Chan *c, Chan *nc, char **name, int nname) {
 
   if (waserror())
     return nil;
-  wq = devtab[c->type]->walk(c, nc, name, nname);
+  wq = devtab[devno(c->type, 0)]->walk(c, nc, name, nname);
   poperror();
   return wq;
 }
@@ -1486,6 +1543,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
   char *err;
   char *name;
 
+  poolcheck(mainmem);
+
   if (aname[0] == '\0')
     error("empty file name");
   aname = validnamedup(aname, 1);
@@ -1559,6 +1618,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
       print(
           "namec: WARNING attach returned chan type=%d with nil path for %s\n",
           t, aname);
+
+    poolcheck(mainmem);
     break;
 
   default:
@@ -1602,6 +1663,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
    */
   parsename(name, &e);
 
+  poolcheck(mainmem);
+
   /*
    * On create, ....
    */
@@ -1625,6 +1688,8 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     }
     nexterror();
   }
+
+  poolcheck(mainmem);
 
   if (e.mustbedir && (c->qid.type & QTDIR) == 0)
     error("not a directory");
@@ -1656,7 +1721,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
     if (path == nil) {
       /* Channel has no path (e.g., freshly attached device), create a default
        */
-      c->path = newpath("/");
+      c->path = newpath((BString){"/", 1});
       path = c->path;
     }
     path = pathincref(path);
@@ -1707,7 +1772,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
       /* save registers else error() in open has wrong value of c saved */
       saveregisters();
 
-      c = devtab[c->type]->open(c, omode & ~OCEXEC);
+      c = devtab[devno(c->type, 0)]->open(c, omode & ~OCEXEC);
       if (omode & ORCLOSE)
         c->flag |= CRCLOSE;
       break;
@@ -1824,7 +1889,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
       if (cnew->path != nil)
         pathclose(cnew->path);
       if (c->path == nil)
-        c->path = newpath("/");
+        c->path = newpath((BString){"/", 1});
       cnew->path = c->path;
       if (cnew->path == nil)
         panic("namec create: cnew->path still nil after c->path assignment, "
@@ -1832,7 +1897,7 @@ Chan *namec(char *aname, int amode, int omode, ulong perm) {
               c, c->type);
       incref((Ref *)&cnew->path->ref);
 
-      cnew = devtab[cnew->type]->create(cnew, e.elems[e.nelems - 1],
+      cnew = devtab[devno(cnew->type, 0)]->create(cnew, e.elems[e.nelems - 1],
                                         omode & ~(OEXCL | OCEXEC), perm);
       if (omode & ORCLOSE)
         cnew->flag |= CRCLOSE;
@@ -1962,9 +2027,7 @@ static char *validname0(char *aname, int slashok, int dup, uintptr pc) {
   @ requires aname == \null || \valid(aname);
   @ assigns \nothing;
   @*/
-void validname(char *aname, int slashok) {
-  validname0(aname, slashok, 0, 0);
-}
+void validname(char *aname, int slashok) { validname0(aname, slashok, 0, 0); }
 
 char *validnamedup(char *aname, int slashok) {
   return validname0(aname, slashok, 1, 0);
@@ -1998,7 +2061,7 @@ Dir *dirchanstat(Chan *c) {
       nexterror();
     }
     buf = (uchar *)&d[1];
-    n = devtab[c->type]->stat(c, buf, BIT16SZ + nd);
+    n = devtab[devno(c->type, 0)]->stat(c, buf, BIT16SZ + nd);
     if (n < BIT16SZ)
       error(Eshortstat);
     nd = GBIT16(buf); /* upper bound on size of Dir + strings */

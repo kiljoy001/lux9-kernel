@@ -3,11 +3,14 @@
 # Compiler settings
 CC=gcc
 KERNEL=../../../kernel
-CFLAGS=-Iinc -I$(KERNEL)/include -D_LOCK_H_ -fPIC -Wall -Wextra -nostdlib -ffreestanding
+CFLAGS=-Iinc -I$(KERNEL)/include -D_LOCK_H_ -Wall -Wextra -nostdlib \
+       -ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone \
+       -mcmodel=small -fno-pic -fno-pie -fcf-protection=none
 AR=ar
 
 # Source files
 SRC = src/syscalls.c \
+      src/exchange.c \
       src/string.c \
       src/pebble.c \
       src/msgord.c \
@@ -16,6 +19,7 @@ SRC = src/syscalls.c \
       src/server9p.c \
       src/printf.c \
       src/convD2M.c \
+      src/srv_ring.c \
       src/wasm_fileserver.c
 
 # Object files

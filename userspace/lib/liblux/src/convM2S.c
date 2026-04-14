@@ -1,6 +1,7 @@
 #include "../inc/lux.h"
 #include "../src/lux_internal.h" // For GBIT macros
 #include <stddef.h>              // For NULL if needed
+void *memmove(void *dst, const void *src, unsigned long n);
 
 static uchar *gstring(uchar *p, uchar *ep, char **s) {
   uint n;
@@ -365,6 +366,24 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     f->argv = f->args;
     break;
 
+  case Tsysspawn:
+    p = gstring(p, ep, &f->path);
+    if (p == nil)
+      break;
+    if (p + BIT32SZ > ep)
+      return 0;
+    f->argc = GBIT32(p);
+    p += BIT32SZ;
+    if (f->argc > 16)
+      return 0;
+    for (u32int i = 0; i < f->argc; i++) {
+      p = gstring(p, ep, &f->args[i]);
+      if (p == nil)
+        return 0;
+    }
+    f->argv = f->args;
+    break;
+
   case Tsysexit:
     p = gstring(p, ep, &f->ename);
     break;
@@ -544,6 +563,7 @@ uint convM2S(uchar *ap, uint nap, Fcall *f) {
     break;
 
   case Rsysfork:
+  case Rsysspawn:
     if (p + BIT32SZ > ep)
       return 0;
     f->pid = GBIT32(p);

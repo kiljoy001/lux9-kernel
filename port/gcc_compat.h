@@ -71,7 +71,7 @@ typedef u32int Rune;
 #define MACHP(n) (&mach)
 
 /* Simple mach structure for timing */
-typedef struct {
+typedef struct Mach {
   ulong ticks;
 } Mach;
 

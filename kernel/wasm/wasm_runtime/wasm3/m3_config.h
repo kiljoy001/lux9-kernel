@@ -144,6 +144,10 @@
   1 // if no floats, do not fail until flops are actually executed
 #endif
 
+#ifndef d_m3HasSIMD
+#define d_m3HasSIMD 1 // enable SIMD support
+#endif
+
 #ifndef d_m3SkipStackCheck
 #define d_m3SkipStackCheck 0 // skip stack overrun checks
 #endif

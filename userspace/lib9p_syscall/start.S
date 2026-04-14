@@ -35,6 +35,10 @@ fallback_p9uaddr:
     mov $0x7FFFFEEFF000, %rax
 p9uaddr_set:
     mov %rax, lux_exchange_base(%rip)
+    mov %rax, %rcx
+    add $0xEF8, %rcx
+    mov $0x41553950, %edx  # "P9UA"
+    mov %edx, (%rcx)
     # Derive argv/argc from the initial stack with validation.
     # Some kernels may not place argc at (%rsp), so validate argv list.
     lea 8(%rsp), %rsi         # argv candidate 1
@@ -98,6 +102,9 @@ p9uaddr_set:
 stack_bottom:
     .skip 131072  # 128KB spare stack
 stack_top:
+.align 8
+
+.section .data
 .align 8
 .globl lux_exchange_base
 lux_exchange_base:

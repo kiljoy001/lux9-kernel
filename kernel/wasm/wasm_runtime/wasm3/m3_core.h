@@ -73,6 +73,16 @@ typedef double f64;
 typedef float f32;
 #endif
 
+#if d_m3HasSIMD
+#if defined(__GNUC__) || defined(__clang__)
+typedef u64 v128 __attribute__((vector_size(16)));
+#else
+typedef struct {
+  u64 i[2];
+} v128; // Fallback
+#endif
+#endif
+
 #endif // d_m3ShortTypesDefined
 
 #define PRIf32 "f"
@@ -268,6 +278,9 @@ uint64_t m3_GetTimestamp();
 
 void m3_Abort(const char *message);
 void *m3_Malloc_Impl(size_t i_size);
+/*@
+  assigns \result;
+*/
 void *m3_Realloc_Impl(void *i_ptr, size_t i_newSize, size_t i_oldSize);
 void m3_Free_Impl(void *i_ptr);
 void *m3_CopyMem(const void *i_from, size_t i_size);

@@ -1,88 +1,32 @@
-# os/Makefile - OS Integration Build
-# Combines kernel and userspace into complete OS
+# Legacy wrapper for the canonical root OS build.
 
-# Configuration
-KERNEL_BINARY := ../kernel/lux9.elf
-USERSPACE_INITRD := ../userspace/build/initrd.tar
-BUILD_DIR := build
-ISO_DIR := $(BUILD_DIR)/iso
+ROOT_DIR := ..
+ROOT_MAKEFILE := GNUmakefile
+ISO := ../lux9.iso
 
-# Boot loader (requires limine)
-LIMINE_DIR := ../boot/limine
-LIMINE_BIOS := $(LIMINE_DIR)/bin/limine-bios.sys
-LIMINE_BIOS_CD := $(LIMINE_DIR)/bin/limine-bios-cd.bin
-LIMINE_UEFI_CD := $(LIMINE_DIR)/bin/limine-uefi-cd.bin
-# BOOTX64_EFI := $(LIMINE_DIR)/bin/BOOTX64.EFI
+.PHONY: all clean test run debug help
 
-# ISO tools
-XORRISO := xorriso
-GENISOIMAGE := genisoimage
+all:
+	@echo "Legacy wrapper: delegating OS build to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) iso
 
-# Targets
-.PHONY: all clean test run help
+clean:
+	@echo "Legacy wrapper: delegating clean to $(ROOT_DIR)/$(ROOT_MAKEFILE)"
+	@$(MAKE) -C $(ROOT_DIR) -f $(ROOT_MAKEFILE) clean
 
-# Main OS build
-all: lux9.iso
-
-# Create bootable ISO
-lux9.iso: $(KERNEL_BINARY) $(USERSPACE_INITRD) $(LIMINE_BIOS_CD) $(LIMINE_UEFI_CD)
-	@echo "Creating bootable ISO: $@"
-	@echo "Creating ISO directory structure..."
-	@rm -rf $(ISO_DIR)
-	@mkdir -p $(ISO_DIR)
-	@mkdir -p $(ISO_DIR)/boot/limine
-	@mkdir -p $(ISO_DIR)/EFI/BOOT
-	@echo "Directory structure created"
-	
-	# Copy kernel and initrd
-	@cp $(KERNEL_BINARY) $(ISO_DIR)/boot/
-	@cp $(USERSPACE_INITRD) $(ISO_DIR)/boot/
-	
-	# Copy boot loader files
-	@cp $(LIMINE_BIOS) $(ISO_DIR)/boot/limine/
-	@cp $(LIMINE_BIOS_CD) $(ISO_DIR)/boot/limine/
-	@cp $(LIMINE_UEFI_CD) $(ISO_DIR)/boot/limine/
-	# @cp $(BOOTX64_EFI) $(ISO_DIR)/EFI/BOOT/
-	
-	# Copy limine configuration
-	@cp ../limine.conf $(ISO_DIR)/boot/limine/
-	
-	# Create ISO with hybrid boot support
-	@$(XORRISO) -as mkisofs \
-		-b boot/limine/limine-bios-cd.bin \
-		-no-emul-boot -boot-load-size 4 -boot-info-table \
-		--efi-boot boot/limine/limine-uefi-cd.bin \
-		-efi-boot-part --efi-boot-image \
-		--protective-msdos-label \
-		-iso-level 3 \
-		-rock -joliet \
-		$(ISO_DIR) -o $@
-	
-	# Install boot loader (BIOS mode - will fail if limine built without BIOS support)
-	@if $(LIMINE_DIR)/bin/limine bios-install $@; then \
-		echo "✓ BIOS bootloader installed"; \
-	else \
-		echo "⚠ BIOS bootloader installation failed - ISO will only boot via UEFI"; \
-	fi
-	
-	@echo "OS image created: $@"
-	@ls -lh $@
-
-# Testing
-test: lux9.iso
-	@echo "Running OS integration test..."
+test: all
+	@echo "Running legacy OS smoke test against $(ISO)..."
 	@timeout 30s qemu-system-x86_64 \
-		-drive file=$<,format=raw,media=disk \
+		-cdrom $(ISO) -boot d \
 		-m 2G -smp 4 \
-		-nographic -serial stdio \
+		-nographic -serial mon:stdio \
 		-display none \
 		-no-reboot || echo "Test completed"
 
-# Run in QEMU
-run: lux9.iso
-	@echo "Running OS in QEMU..."
+run: all
+	@echo "Running legacy OS wrapper against $(ISO)..."
 	@qemu-system-x86_64 \
-		-drive file=$<,format=raw,media=disk \
+		-cdrom $(ISO) -boot d \
 		-m 2G -smp 4 \
 		-chardev socket,id=chrtpm,path=../swtpm/swtpm-sock \
 		-tpmdev emulator,id=tpm0,chardev=chrtpm \
@@ -90,26 +34,18 @@ run: lux9.iso
 		-nographic -serial stdio \
 		-display none
 
-# Debug mode
-debug: lux9.iso
-	@echo "Debugging OS in QEMU+GDB..."
+debug: all
+	@echo "Debugging legacy OS wrapper against $(ISO)..."
 	@qemu-system-x86_64 \
-		-drive file=$<,format=raw,media=disk \
+		-cdrom $(ISO) -boot d \
 		-m 2G -smp 4 \
 		-nographic -serial stdio \
 		-display none \
-		-s -S &
-
-# Cleanup
-clean:
-	@echo "Cleaning OS build..."
-	@rm -rf $(BUILD_DIR)
-	@rm -f lux9.iso
+		-s -S
 
 help:
-	@echo "OS Integration Targets:"
-	@echo "  all     - Create bootable ISO"
-	@echo "  test    - Run integration test"
-	@echo "  run     - Run in QEMU"
-	@echo "  debug   - Debug in QEMU+GDB"
-	@echo "  clean   - Clean build artifacts"
+	@echo "Legacy OS wrapper"
+	@echo "Use the repo root commands instead:"
+	@echo "  make clean"
+	@echo "  make"
+	@echo "  make iso"

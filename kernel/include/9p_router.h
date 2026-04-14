@@ -111,14 +111,27 @@ int p9_extract_pebble(uchar *data, ulong len, PebbleToken *out);
 int p9_validate_pebble(PebbleToken *tok, char *path, int access);
 
 /* 9P Service handlers */
+int proc_9p_can_handle(Proc *caller, Fcall *t);
 int proc_9p_handle(Proc *caller, Fcall *t, Fcall *r);
+void proc_9p_cleanup(Proc *caller);
 int dev_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int env_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int srv_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 int mnt_9p_handle(Proc *caller, Fcall *t, Fcall *r);
 
+/* Userspace-owned namespace root registry */
+int p9_ns_managed_path(const char *path);
+int p9_ns_root_exact(const char *path);
+int p9_ns_root_available(const char *path);
+void p9_ns_enforce_owner(const char *target, const char *other);
+void p9_ns_publish_root(const char *path, Chan *mchan, const char *spec);
+void p9_ns_unpublish_root(const char *path);
+Chan *p9_ns_attach_root(const char *path, char **rel);
+Chan *router_resolve_path(char *path, int amode, int omode);
+
 /* /srv registry helpers */
 void srv_init(void);
+int srv_post_chan(Proc *caller, const char *name, Chan *c);
 int srv_post_fd(Proc *caller, const char *name, int fd);
 int srv_create_entry(Proc *caller, const char *name);
 int srv_remove_entry(Proc *caller, const char *name);
@@ -126,6 +139,11 @@ int srv_get_by_index(int index, char *name, int namelen);
 int srv_index_of(const char *name);
 int srv_get_by_index_for_proc(Proc *caller, int index, char *name, int namelen);
 int srv_index_of_for_proc(Proc *caller, const char *name);
+int srv_get_info_for_proc(Proc *caller, int index, char *name, int namelen,
+                          char *owner, int ownerlen);
+int srv_lookup_info_for_proc(Proc *caller, const char *name, char *owner,
+                             int ownerlen);
+void srv_rename_user(const char *old, const char *new);
 Chan *srv_clone_chan(const char *name);
 
 /*

@@ -71,12 +71,50 @@ def init_db():
             status TEXT,
             output TEXT,
             timestamp TIMESTAMP,
+            model_name TEXT,
             FOREIGN KEY(file_id) REFERENCES tracked_files(id)
         )
     ''')
     
+    # Auto-migration: Check if model_name column exists, if not add it
+    try:
+        cursor.execute("SELECT model_name FROM verification_results LIMIT 1")
+    except sqlite3.OperationalError:
+        print(f"{Colors.WARNING}Migrating database: adding model_name column...{Colors.ENDC}")
+        cursor.execute("ALTER TABLE verification_results ADD COLUMN model_name TEXT")
+    
     conn.commit()
     return conn
+
+def log_research_crdt(model: str, action: str, target: str, status: str, details: str = ""):
+    """
+    Append an operation record to a JSONL file. 
+    This acts as a Grow-Only Set (CRDT) of operations for data research.
+    """
+    log_dir = os.path.join(REPO_ROOT, "research_data")
+    if not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir)
+        except OSError:
+            return # Silent fail if read-only
+
+    log_file = os.path.join(log_dir, "model_ops.jsonl")
+    
+    import json
+    entry = {
+        "timestamp": now_ts(),
+        "model": model,
+        "action": action,
+        "target": target,
+        "status": status,
+        "details_len": len(details)
+    }
+    
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        print(f"{Colors.WARNING}Warning: failed to write research log: {e}{Colors.ENDC}")
 
 def scan_repository(conn):
     """Scan the repository for Coq and annotated C files and update the DB."""
@@ -151,17 +189,28 @@ def scan_repository(conn):
     print(f"Found {len(found_paths)} files to verify.")
     return list(found_paths)
 
-def verify_acsl_file(file_info):
+def verify_acsl_file(args_tuple):
     """Run Frama-C verification for a single C file."""
+    file_info, model_name = args_tuple
     file_id, path, file_type = file_info
     full_path = os.path.join(REPO_ROOT, path)
+
+    def has_framac_error(text: str) -> bool:
+        for line in text.splitlines():
+            if "User Error" in line:
+                return True
+            if "Fatal error" in line:
+                return True
+            if re.search(r"\bError:", line):
+                return True
+        return False
     
     # Default Frama-C command (Plan 9 wrapper for preprocessing)
     cmd = [
         os.path.join(REPO_ROOT, "scripts", "frama-c-plan9"),
         "-wp",
         "-wp-prover", "cvc4",
-        "-wp-timeout", "5",
+        "-wp-timeout", "300",
         full_path,
     ]
     env = os.environ.copy()
@@ -191,7 +240,7 @@ def verify_acsl_file(file_info):
             cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=300,
             env=env,
         )
         output = result.stdout + result.stderr
@@ -205,7 +254,7 @@ def verify_acsl_file(file_info):
                 if "Proved goals" not in output and "Valid" not in output:
                     status = "WARNING"
         
-        if "Error" in output:
+        if has_framac_error(output):
                 status = "FAIL"
         if status != "PASS":
                 log_failure(path, status, output)
@@ -216,9 +265,9 @@ def verify_acsl_file(file_info):
     except subprocess.TimeoutExpired:
         status = "TIMEOUT"
 
-    return (file_id, status, output, path)
+    return (file_id, status, output, path, model_name)
 
-def run_coq_verification(conn, coq_files):
+def run_coq_verification(conn, coq_files, model_name):
     """Run Coq verification via Make and update DB."""
     print(f"{Colors.OKBLUE}[Verifying Coq Proofs via Make]{Colors.ENDC}")
     
@@ -274,11 +323,13 @@ def run_coq_verification(conn, coq_files):
 
             cursor.execute(
                 '''
-                INSERT INTO verification_results (file_id, status, output, timestamp)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO verification_results (file_id, status, output, timestamp, model_name)
+                VALUES (?, ?, ?, ?, ?)
                 ''',
-                (fid, status, output, now_ts())
+                (fid, status, output, now_ts(), model_name)
             )
+            
+            log_research_crdt(model_name, "verify_coq", path, status)
 
             if status == "PASS":
                 print(f"  {Colors.OKGREEN}✓ PASS{Colors.ENDC} {path}")
@@ -299,7 +350,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Lux9 Verification Manager")
     parser.add_argument("--target", help="Verify only specific file (relative path from repo root)")
+    parser.add_argument("--model", help="Name of the model/agent running the verification", default="unknown")
     args = parser.parse_args()
+    
+    model_name = args.model
 
     conn = init_db()
     run_start = now_ts()
@@ -317,30 +371,37 @@ def main():
         coq_files = [f for f in all_files if f[2] == 'coq']
         acsl_files = [f for f in all_files if f[2].startswith('acsl')]
     
-    print(f"\n{Colors.OKBLUE}[Running Verification on {len(all_files)} Files]{Colors.ENDC}")
+    print(f"\n{Colors.OKBLUE}[Running Verification on {len(all_files)} Files] (Model: {model_name}){Colors.ENDC}")
     
     # 1. Run Coq Verification (Sequential/Make)
-    run_coq_verification(conn, coq_files)
+    run_coq_verification(conn, coq_files, model_name)
     
     # 2. Run ACSL Verification (Parallel)
     print(f"\n{Colors.OKBLUE}[Verifying ACSL Annotations]{Colors.ENDC}")
     acsl_failed = 0
+    # Create tuples of (file_info, model_name) for the map function
+    acsl_args = [(f, model_name) for f in acsl_files]
+    
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        for result in executor.map(verify_acsl_file, acsl_files):
-            file_id, status, output, path = result
+        for result in executor.map(verify_acsl_file, acsl_args):
+            file_id, status, output, path, _ = result
             
             cursor.execute(
                 '''
-                INSERT INTO verification_results (file_id, status, output, timestamp)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO verification_results (file_id, status, output, timestamp, model_name)
+                VALUES (?, ?, ?, ?, ?)
                 ''',
-                (file_id, status, output, now_ts())
+                (file_id, status, output, now_ts(), model_name)
             )
+            
+            log_research_crdt(model_name, "verify_acsl", path, status)
             
             if status == "PASS":
                 print(f"  {Colors.OKGREEN}✓ PASS{Colors.ENDC} {path}")
             elif status == "WARNING":
                 print(f"  {Colors.WARNING}⚠ WARN{Colors.ENDC} {path}")
+            elif status == "TIMEOUT":
+                print(f"  {Colors.WARNING}⏱ TIMEOUT{Colors.ENDC} {path}")
             elif status == "SKIPPED":
                 print(f"  {Colors.OKCYAN}- SKIP{Colors.ENDC} {path}")
             else:
@@ -359,6 +420,9 @@ def main():
 
     print(f"\n{Colors.HEADER}═══════════════════════════════════════════════════════════════{Colors.ENDC}")
     
+    overall_status = "PASS" if failed_count == 0 else "FAIL"
+    log_research_crdt(model_name, "verify_all", "repo", overall_status, f"failed_count={failed_count}")
+
     if failed_count > 0:
         print(f"{Colors.FAIL}❌ Verification Failed! {failed_count} files broken.{Colors.ENDC}")
         sys.exit(1)

@@ -28,6 +28,7 @@ static Chan *srvattach(char *spec) { return devattach('s', spec); }
 static int srvgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
   Qid qid;
   char nbuf[64];
+  char owner[KNAMELEN];
 
   if (s == DEVDOTDOT) {
     mkqid(&qid, Qdir, 0, QTDIR);
@@ -42,16 +43,19 @@ static int srvgen(Chan *c, char *name, Dirtab *, int, int s, Dir *dp) {
     int idx = srv_index_of_for_proc(up, name);
     if (idx < 0)
       return -1;
-    mkqid(&qid, idx + 1, 0, QTDIR);
-    devdir(c, qid, name, 0, eve, DMDIR | 0777, dp);
+    if (srv_lookup_info_for_proc(up, name, owner, sizeof(owner)) < 0)
+      snprint(owner, sizeof(owner), "%s", eve);
+    mkqid(&qid, idx + 1, 0, QTFILE);
+    devdir(c, qid, name, 0, owner, 0666, dp);
     return 1;
   }
 
-  if (srv_get_by_index_for_proc(up, s, nbuf, sizeof(nbuf)) < 0)
+  if (srv_get_info_for_proc(up, s, nbuf, sizeof(nbuf), owner, sizeof(owner)) <
+      0)
     return -1;
 
-  mkqid(&qid, s + 1, 0, QTDIR);
-  devdir(c, qid, nbuf, 0, eve, DMDIR | 0777, dp);
+  mkqid(&qid, s + 1, 0, QTFILE);
+  devdir(c, qid, nbuf, 0, owner, 0666, dp);
   return 1;
 }
 
@@ -116,6 +120,8 @@ static long srvwrite(Chan *c, void *va, long n, vlong) {
   char buf[32];
   int fd;
   char *name;
+  char *fullpath;
+  Chan *target;
 
   if (c->qid.path == Qdir)
     error(Eperm);
@@ -126,24 +132,75 @@ static long srvwrite(Chan *c, void *va, long n, vlong) {
     n = sizeof(buf) - 1;
   memmove(buf, va, n);
   buf[n] = 0;
-  fd = (int)strtoul(buf, 0, 0);
 
   /* Extract service name from channel path */
   name = "unknown";
-  if (c->path && c->path->s)
-    name = c->path->s;
+  if (c->path && c->path->s) {
+    fullpath = c->path->s;
+    name = strrchr(fullpath, '/');
+    if (name != nil)
+      name++;
+    else
+      name = fullpath;
+  }
 
-  if (srv_post_fd(up, name, fd) < 0)
+  if ((buf[0] >= '0' && buf[0] <= '9') ||
+      ((buf[0] == '+' || buf[0] == '-') && buf[1] >= '0' && buf[1] <= '9')) {
+    fd = (int)strtoul(buf, 0, 0);
+    if (srv_post_fd(up, name, fd) < 0)
+      error(Eio);
+    return n;
+  }
+
+  target = nil;
+  if (waserror()) {
+    target = nil;
+  } else {
+    target = namec(buf, Aopen, ORDWR, 0);
+    poperror();
+  }
+  if (target == nil) {
+    if (waserror()) {
+      target = nil;
+    } else {
+      target = namec(buf, Aopen, OREAD, 0);
+      poperror();
+    }
+  }
+  if (target == nil) {
+    if (waserror()) {
+      target = nil;
+    } else {
+      target = namec(buf, Aopen, OWRITE, 0);
+      poperror();
+    }
+  }
+  if (target == nil)
     error(Eio);
+
+  if (srv_post_chan(up, name, target) < 0) {
+    cclose(target);
+    error(Eio);
+  }
   return n;
 }
 
 static Chan *srvcreate(Chan *c, char *name, int omode, ulong perm) {
+  int idx;
+
   if (c->qid.path != Qdir)
     error(Eperm);
   (void)perm;
   if (srv_create_entry(up, name) < 0)
     error(Eio);
+
+  idx = srv_index_of_for_proc(up, name);
+  if (idx < 0)
+    error(Eio);
+
+  c->qid.path = idx + 1;
+  c->qid.vers = 0;
+  c->qid.type = QTFILE;
   return devopen(c, omode, nil, 0, srvgen);
 }
 
@@ -153,14 +210,21 @@ static Chan *srvcreate(Chan *c, char *name, int omode, ulong perm) {
   @*/
 static void srvremove(Chan *c) {
   char *name;
+  char *fullpath;
 
   if (c->qid.path == Qdir)
     error(Eperm);
 
   /* Extract service name from channel path */
   name = "unknown";
-  if (c->path && c->path->s)
-    name = c->path->s;
+  if (c->path && c->path->s) {
+    fullpath = c->path->s;
+    name = strrchr(fullpath, '/');
+    if (name != nil)
+      name++;
+    else
+      name = fullpath;
+  }
 
   if (srv_remove_entry(up, name) < 0)
     error(Eperm);
@@ -169,7 +233,7 @@ static void srvremove(Chan *c) {
 Dev srvdevtab = {
     's',      "srv",
 
-    devreset, srvinit,  devshutdown, srvattach, srvwalk,
-    srvstat,  srvopen,  srvcreate,   srvclose,  srvread,
-    devbread, srvwrite, devbwrite,   srvremove, devwstat,
+    devreset,      srvinit,        devshutdown, srvattach, srvwalk,
+    srvstat,       srvopen,        srvcreate,   srvclose,  srvread,
+    srvwrite,      devbread,       devbwrite,   srvremove, devwstat,
 };

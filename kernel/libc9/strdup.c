@@ -1,12 +1,13 @@
 /*
  * strdup - duplicate a string
  */
-#include "u.h"
-#include "acsl_bounds.h"
 #include "../include/libc.h"
+#include "acsl_bounds.h"
+#include "u.h"
 
 /*@
-  @ requires s == \null || (valid_string(s) && \exists integer n; n >= 0 && s[n] == '\0');
+  @ requires s == \null || (valid_string(s) && \exists integer n; n >= 0 && s[n]
+  == '\0');
   @ assigns \nothing;
   @ behavior null_input:
   @   assumes s == \null;
@@ -23,20 +24,18 @@
   @ complete behaviors;
   @ disjoint behaviors;
   @*/
-char*
-strdup(char *s)
-{
-	char *new;
-	usize len;
+char *strdup(const char *s) {
+  char *new;
+  usize len;
 
-	if(s == nil)
-		return nil;
+  if (s == nil)
+    return nil;
 
-	len = strlen(s) + 1;
-	new = mallocz(len, 0);
-	if(new == nil)
-		return nil;
+  len = strlen(s) + 1;
+  new = mallocz(len, 0);
+  if (new == nil)
+    return nil;
 
-	memmove(new, s, len);
-	return new;
+  memmove(new, s, len);
+  return new;
 }

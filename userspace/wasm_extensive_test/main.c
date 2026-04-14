@@ -52,7 +52,21 @@ struct P9Control {
   uint req_tail;
   uint rep_head;
   uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
+
+static void ring_doorbell(volatile struct P9Control *ctl) {
+  ctl->req_seq += 1;
+  ctl->status = P9_STATUS_PENDING;
+  __asm__ volatile("mfence" ::: "memory");
+  ctl->doorbell = 1;
+}
 
 /* Global exchange page pointers */
 static volatile uchar *exchange;
@@ -159,7 +173,7 @@ static void sys_print(const char *msg) {
   memcpy(req + pos, msg, msg_len); // data
   pos += msg_len;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 }
 
@@ -245,7 +259,7 @@ static int wasm_compile(int fd) {
   put_u32(req + pos, (uint)fd);
   pos += 4;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   sys_print("[USER] Entering syscall...\n");
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
   sys_print("[USER] Returned from syscall.\n");
@@ -311,7 +325,7 @@ static u64int wasm_execute(const char *func_name) {
   memcpy(req + pos, func_name, len);
   pos += len;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
   pos = 0;
@@ -372,7 +386,7 @@ static int sys_open(const char *path, int mode) {
   put_u8(req + pos, mode);
   pos += 1;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
   pos = 0;
@@ -419,7 +433,7 @@ static int sys_read(int fd, void *buf, int count, u64int offset) {
   put_u32(req + pos, count);
   pos += 4;
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
   // CRITICAL: Parse reply and save data to local vars BEFORE any sys_print
@@ -470,7 +484,7 @@ static void sys_close(int fd) {
   pos += 4;
   put_u32(req + pos, fd);
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 }
 
@@ -576,7 +590,7 @@ static u64int sys_seek(int fd, u64int offset, int whence) {
   pos += 8;
   put_u32(req + pos, whence);
 
-  ctl->doorbell = 1;
+  ring_doorbell(ctl);
   __asm__ volatile("syscall" ::: "rax", "rcx", "r11", "memory");
 
   pos = 0;

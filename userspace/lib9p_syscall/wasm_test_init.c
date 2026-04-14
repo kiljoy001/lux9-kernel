@@ -23,13 +23,20 @@ typedef unsigned long long uvlong;
 
 /* P9 Control structure */
 struct P9Control {
-    uint doorbell;
-    uint status;
-    uint req_head;
-    uint req_tail;
-    uint rep_head;
-    uint rep_tail;
+  uint doorbell;
+  uint status;
+  uint req_head;
+  uint req_tail;
+  uint rep_head;
+  uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
 
 /* Embedded WASM module bytes (arena_test.wasm - 311 bytes) */
 static const uchar wasm_module[] = {
@@ -163,6 +170,9 @@ static int send_tsyscall(volatile uchar *exchange, volatile struct P9Control *ct
         memcpy(req + pos, sdata, sdata_len);
 
     /* Ring the doorbell */
+    ctl->req_seq += 1;
+    ctl->status = P9_STATUS_PENDING;
+    __asm__ volatile("mfence" ::: "memory");
     ctl->doorbell = 1;
 
     /* Issue syscall */

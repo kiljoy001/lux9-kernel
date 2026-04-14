@@ -12,7 +12,7 @@
 /*@
   @ requires o_functionType == \null || \valid(o_functionType);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result AllocFuncType (IM3FuncType * o_functionType, u32 i_numTypes)
 {
     *o_functionType = (IM3FuncType) m3_Malloc ("M3FuncType", sizeof (M3FuncType) + i_numTypes);
@@ -22,7 +22,7 @@ M3Result AllocFuncType (IM3FuncType * o_functionType, u32 i_numTypes)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 bool  AreFuncTypesEqual  (const IM3FuncType i_typeA, const IM3FuncType i_typeB)
 {
     if (i_typeA->numRets == i_typeB->numRets && i_typeA->numArgs == i_typeB->numArgs)
@@ -35,7 +35,7 @@ bool  AreFuncTypesEqual  (const IM3FuncType i_typeA, const IM3FuncType i_typeB)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u16  GetFuncTypeNumParams  (const IM3FuncType i_funcType)
 {
     return i_funcType ? i_funcType->numArgs : 0;
@@ -44,7 +44,7 @@ u16  GetFuncTypeNumParams  (const IM3FuncType i_funcType)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u8  GetFuncTypeParamType  (const IM3FuncType i_funcType, u16 i_index)
 {
     u8 type = c_m3Type_unknown;
@@ -64,7 +64,7 @@ u8  GetFuncTypeParamType  (const IM3FuncType i_funcType, u16 i_index)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u16  GetFuncTypeNumResults  (const IM3FuncType i_funcType)
 {
     return i_funcType ? i_funcType->numRets : 0;
@@ -73,7 +73,7 @@ u16  GetFuncTypeNumResults  (const IM3FuncType i_funcType)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u8  GetFuncTypeResultType  (const IM3FuncType i_funcType, u16 i_index)
 {
     u8 type = c_m3Type_unknown;
@@ -96,7 +96,7 @@ u8  GetFuncTypeResultType  (const IM3FuncType i_funcType, u16 i_index)
 /*@
   @ requires i_info == \null || \valid(i_info);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void FreeImportInfo (M3ImportInfo * i_info)
 {
     m3_Free (i_info->moduleUtf8);
@@ -106,7 +106,7 @@ void FreeImportInfo (M3ImportInfo * i_info)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  Function_Release  (IM3Function i_function)
 {
     m3_Free (i_function->constants);
@@ -114,7 +114,7 @@ void  Function_Release  (IM3Function i_function)
       /*@ loop invariant 0 <= i <= i_function->numNames;
     @ loop assigns i;
     @ loop variant i_function->numNames - i;
-    @*/
+    @*\/ */
   for (int i = 0; i < i_function->numNames; i++)
     {
         // name can be an alias of fieldUtf8
@@ -142,7 +142,7 @@ void  Function_Release  (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 void  Function_FreeCompiledCode (IM3Function i_function)
 {
 #   if (d_m3EnableCodePageRefCounting)
@@ -169,7 +169,7 @@ void  Function_FreeCompiledCode (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  m3_GetFunctionName  (IM3Function i_function)
 {
     u16 numNames = 0;
@@ -183,7 +183,7 @@ cstr_t  m3_GetFunctionName  (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 IM3Module  m3_GetFunctionModule  (IM3Function i_function)
 {
     return i_function ? i_function->module : NULL;
@@ -194,7 +194,7 @@ IM3Module  m3_GetFunctionModule  (IM3Function i_function)
   @ requires o_numNames == \null || \valid(o_numNames);
   @ ensures \result == \null || \valid(\result);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t *  GetFunctionNames  (IM3Function i_function, u16 * o_numNames)
 {
     if (!i_function || !o_numNames)
@@ -215,7 +215,7 @@ cstr_t *  GetFunctionNames  (IM3Function i_function, u16 * o_numNames)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 cstr_t  GetFunctionImportModuleName  (IM3Function i_function)
 {
     return (i_function->import.moduleUtf8) ? i_function->import.moduleUtf8 : "";
@@ -224,7 +224,7 @@ cstr_t  GetFunctionImportModuleName  (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u16  GetFunctionNumArgs  (IM3Function i_function)
 {
     u16 numArgs = 0;
@@ -240,7 +240,7 @@ u16  GetFunctionNumArgs  (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u8  GetFunctionArgType  (IM3Function i_function, u32 i_index)
 {
     u8 type = c_m3Type_none;
@@ -258,7 +258,7 @@ u8  GetFunctionArgType  (IM3Function i_function, u32 i_index)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u16  GetFunctionNumReturns  (IM3Function i_function)
 {
     u16 numReturns = 0;
@@ -275,7 +275,7 @@ u16  GetFunctionNumReturns  (IM3Function i_function)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u8  GetFunctionReturnType  (const IM3Function i_function, u16 i_index)
 {
     return i_function ? GetFuncTypeResultType (i_function->funcType, i_index) : c_m3Type_unknown;
@@ -284,7 +284,7 @@ u8  GetFunctionReturnType  (const IM3Function i_function, u16 i_index)
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u32  GetFunctionNumArgsAndLocals (IM3Function i_function)
 {
     if (i_function)

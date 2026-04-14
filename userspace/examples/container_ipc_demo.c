@@ -11,12 +11,7 @@
 #include <u.h>
 #include <libc.h>
 #include <fcall.h>
-
-/* Exchange page syscalls */
-extern int exchange_prepare(uintptr vaddr, void *out_cap);
-extern int exchange_accept(const void *handle, uintptr dest_vaddr, uint flags);
-extern int exchange_transfer(int from_pid, int to_pid, const void *handle,
-                             uintptr dest_vaddr);
+#include "../lib/liblux/inc/exchange_pool.h"
 
 /* Simplified WASM container runtime (userspace) */
 typedef struct {
@@ -24,6 +19,7 @@ typedef struct {
     int srv_fd;              /* /srv file descriptor */
     void *page_pool;         /* Exchange page pool */
     int num_pages;           /* Pool size */
+    ExchangePagePool pool;   /* Page pool view */
     void *wasm_runtime;      /* WASM3 runtime */
 } Container;
 
@@ -81,7 +77,6 @@ int db_container_main(void) {
     Container db;
     int fd;
     uintptr page_addr;
-    void exchange_cap;
 
     /* Initialize container */
     db.name = "database";
@@ -96,6 +91,11 @@ int db_container_main(void) {
 
     print("[DB] Allocated %d exchange pages at %p\n",
           db.num_pages, db.page_pool);
+    if (exchange_pool_init(&db.pool, db.page_pool,
+                           db.num_pages * EXCHANGE_PAGE_SIZE) < 0) {
+        fprint(2, "db: failed to initialize exchange pool\n");
+        return -1;
+    }
 
     /* Export service to /srv */
     fd = create("/srv/db", OWRITE, 0666);
@@ -111,7 +111,7 @@ int db_container_main(void) {
     for (;;) {
         /* Wait for RPC on exchange page */
         /* In real implementation, would use MSGORD to get next message */
-        page_addr = (uintptr)db.page_pool;
+        page_addr = (uintptr)exchange_pool_page(&db.pool, 0);
 
         /* Process message */
         db_container_handler((void *)page_addr);
@@ -133,7 +133,7 @@ int web_container_main(void) {
     Container web;
     int db_fd;
     uintptr send_page, recv_page;
-    void exchange_cap;
+    ExchangeCapability exchange_cap;
     ContainerMsg *msg;
     DbQuery *query;
     DbResult *result;
@@ -151,6 +151,11 @@ int web_container_main(void) {
 
     print("[WEB] Allocated %d exchange pages at %p\n",
           web.num_pages, web.page_pool);
+    if (exchange_pool_init(&web.pool, web.page_pool,
+                           web.num_pages * EXCHANGE_PAGE_SIZE) < 0) {
+        fprint(2, "web: failed to initialize exchange pool\n");
+        return -1;
+    }
 
     /* Mount database container */
     db_fd = open("/srv/db", ORDWR);
@@ -170,7 +175,7 @@ int web_container_main(void) {
     print("[WEB] Simulating GET /api/users...\n");
 
     /* Allocate exchange page for request */
-    send_page = (uintptr)web.page_pool;
+    send_page = (uintptr)exchange_pool_page(&web.pool, 0);
     msg = (ContainerMsg *)send_page;
 
     /* Build query message */
@@ -185,7 +190,7 @@ int web_container_main(void) {
     print("[WEB] Sending query via exchange page %p\n", (void *)send_page);
 
     /* Prepare exchange page for transfer */
-    if (exchange_prepare(send_page, &exchange_cap) < 0) {
+    if (exchange_pool_prepare(&web.pool, 0, &exchange_cap) < 0) {
         fprint(2, "web: failed to prepare exchange page\n");
         return -1;
     }
@@ -212,8 +217,8 @@ int web_container_main(void) {
     }
 
     /* Accept response page back */
-    recv_page = (uintptr)web.page_pool + 4096; /* Use next page */
-    if (exchange_accept(&exchange_cap, recv_page, 0) < 0) {
+    recv_page = (uintptr)exchange_pool_page(&web.pool, 1);
+    if (exchange_pool_accept(&web.pool, 1, &exchange_cap, 0) < 0) {
         fprint(2, "web: failed to accept response page\n");
         return -1;
     }

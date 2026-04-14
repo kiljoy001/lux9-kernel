@@ -576,10 +576,14 @@ static void ramscan(uintptr pa, uintptr top, uintptr chunk) {
 void meminit0(void) {
   extern char end[];
   extern char cpu0data_end[];
+  extern void uartprintf(char *, ...);
+
+  uartprintf("CHECK: meminit0: ENTRY\n");
 
   /* CRITICAL: Zero the memmap allocator structure
    * It's in .cpu0_data (not BSS), so it's not zeroed by boot code */
   extern void memmapzero(void);
+  uartprintf("CHECK: meminit0: calling memmapzero\n");
   memmapzero();
 
   /*
@@ -591,12 +595,14 @@ void meminit0(void) {
     panic("kernel too big: MemMin=%#llux end=%#p PADDR(end)=%#llux",
           (uvlong)MemMin, end, (uvlong)PADDR(PGROUND((uintptr)end)));
 
+  uartprintf("CHECK: meminit0: calling memmapadd(kernel_end)\n");
   memmapadd(PADDR(PGROUND((uintptr)end)), MemMin - PADDR(PGROUND((uintptr)end)),
             MemRAM);
 
   /*
    * Memory between KTZERO and end is the kernel itself.
    */
+  uartprintf("CHECK: meminit0: calling memreserve(kernel)\n");
   memreserve(PADDR(KTZERO), PADDR(PGROUND((uintptr)end)) - PADDR(KTZERO));
 
   /*
@@ -626,21 +632,40 @@ void meminit0(void) {
   /*
    * Discover conventional RAM, ROMs and UMBs.
    */
-  lowraminit();
+  // lowraminit();
 
   /*
    * Discover more RAM and map to KZERO.
    * Try Limine memory map first, then fall back to e820, then ramscan.
    */
-  if (liminescan() < 0)
-    if (e820scan() < 0)
+  uartprintf("CHECK: meminit0: calling liminescan\n");
+  if (liminescan() < 0) {
+    uartprintf("CHECK: meminit0: calling e820scan\n");
+    if (e820scan() < 0) {
+      uartprintf("CHECK: meminit0: calling ramscan\n");
       ramscan(MemMin, -((uintptr)MemMin), 4 * MB);
+    }
+  }
+
+  /* CRITICAL: Reserve InitRD memory if present */
+  extern uintptr initrd_physaddr;
+  extern usize initrd_size;
+  if (initrd_size > 0) {
+    uartprintf("CHECK: meminit0: reserving InitRD at %#p size %#lux\n",
+               (void *)initrd_physaddr, (uvlong)initrd_size);
+    /* Align properly */
+    uintptr start = initrd_physaddr & ~(BY2PG - 1);
+    uintptr end = (initrd_physaddr + initrd_size + BY2PG - 1) & ~(BY2PG - 1);
+    memreserve(start, end - start);
+  }
 
   /*
    * Exclude UMB's and UPA's with unusual cache attributes.
    */
-  mtrrexclude(MemUMB, "uc");
-  mtrrexclude(MemUPA, "uc");
+  uartprintf("CHECK: meminit0: calling mtrrexclude (SKIPPED)\n");
+  // mtrrexclude(MemUMB, "uc");
+  // mtrrexclude(MemUPA, "uc");
+  uartprintf("CHECK: meminit0: DONE\n");
 }
 
 /*
@@ -654,13 +679,26 @@ void meminit0(void) {
 /*@
   @ assigns \nothing;
   @*/
+/*@
+  @ assigns \nothing;
+  @*/
 void memreserve(uintptr pa, uintptr size) {
-  assert(conf.mem[0].npage == 0);
+  extern void uartprintf(char *, ...);
+  uartprintf("CHECK: memreserve(pa=%#p, size=%#p) ENTRY\n", (void *)pa,
+             (void *)size);
+  if (conf.mem[0].npage != 0) {
+    uartprintf("CHECK: memreserve ASSERT FAIL: conf.mem[0].npage = %ld\n",
+               conf.mem[0].npage);
+    panic("memreserve: conf.mem not zero");
+  }
 
-  size += (pa & BY2PG - 1);
+  size += (pa & (BY2PG - 1));
   size &= ~(BY2PG - 1);
   pa &= ~(BY2PG - 1);
+  uartprintf("CHECK: memreserve calling memmapadd(pa=%#p, size=%#p)\n",
+             (void *)pa, (void *)size);
   memmapadd(pa, size, MemReserved);
+  uartprintf("CHECK: memreserve DONE\n");
 }
 
 /**
@@ -677,9 +715,12 @@ void memreserve(uintptr pa, uintptr size) {
   @ assigns \nothing;
   @*/
 void meminit(void) {
+  extern void uartprintf(char *, ...);
   uintptr base, size;
   Confmem *cm;
   int cmidx = 0;
+
+  uartprintf("CHECK: meminit ENTRY\n");
 
   /*
    * DEBUG: Disabled verbose meminit tracing
@@ -693,6 +734,7 @@ void meminit(void) {
   } */
 
   cm = &conf.mem[0];
+  uartprintf("CHECK: meminit starting MemRAM loop\n");
   for (base = memmapnext(-1, MemRAM); base != -1;
        base = memmapnext(base, MemRAM)) {
     /*
@@ -736,10 +778,10 @@ void meminit(void) {
   }
 
   print("meminit: populated %d conf.mem[] entries\n", cmidx);
-    /*@ loop invariant 0 <= i <= cmidx && i;
-    @ loop assigns i;
-    @ loop variant cmidx && i - i;
-    @*/
+  /*@ loop invariant 0 <= i <= cmidx && i;
+  @ loop assigns i;
+  @ loop variant cmidx && i - i;
+  @*/
   for (int i = 0; i < cmidx && i < nelem(conf.mem); i++) {
     if (boot_verbose)
       print("meminit: conf.mem[%d]: base=%#p npage=%lu\n", i, conf.mem[i].base,

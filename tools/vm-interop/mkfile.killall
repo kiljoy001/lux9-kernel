@@ -1,7 +1,0 @@
-</$objtype/mkfile
-
-BIN=/usr/glenda/bin
-TARG=killall
-OFILES=killall.$O
-
-</sys/src/cmd/mkone

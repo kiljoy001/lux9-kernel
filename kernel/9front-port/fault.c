@@ -8,6 +8,8 @@
 #include "u.h"
 #include <error.h>
 
+extern int boot_verbose;
+
 struct Segment *seg(struct Proc *p, uintptr addr, int dolock) {
   struct Segment **s, **et, *n;
 
@@ -65,6 +67,45 @@ void faultnote(char *type, char *access, uintptr addr) {
   postnote(up, 1, buf, NDebug);
 }
 
+static void
+cow_restore_exclusive_page(Page *p)
+{
+  Proc *owner;
+
+  if (p == nil || p->pa == 0 || p->token_color != PEBBLE_COLOR_RED)
+    return;
+  if (pageown_get_state(p->pa) != POWN_EXCLUSIVE)
+    return;
+
+  owner = pageown_get_owner(p->pa);
+  p->token_color = PEBBLE_COLOR_BLACK;
+  if (owner != nil) {
+    lock(&pebble_global_lock);
+    if (owner->pebble.red_inuse >= BY2PG)
+      owner->pebble.red_inuse -= BY2PG;
+    owner->pebble.black_inuse += BY2PG;
+    unlock(&pebble_global_lock);
+  }
+}
+
+static void
+cow_return_shared_borrow(Page *p)
+{
+  enum PageOwnError err;
+
+  if (p == nil || up == nil || p->pa == 0 || p->token_color != PEBBLE_COLOR_RED)
+    return;
+
+  err = pageown_return_shared(up, p->pa);
+  if (err != POWN_OK) {
+    print("fixfault: pageown_return_shared failed pa=%#p pid=%lud err=%d\n",
+          p->pa, up->pid, err);
+    error("fixfault shared return failed");
+  }
+
+  cow_restore_exclusive_page(p);
+}
+
 /*@
   @ requires s == \null || \valid(s);
   @ requires p == \null || \valid(p);
@@ -83,8 +124,6 @@ retry:
   if (loadrec == nil) { /* from a text/data image */
     daddr = s->fstart + soff;
     image = s->image;
-    print("pio: soff=%#llux fstart=%#llux daddr=%#llux flen=%#llux\n",
-          (uvlong)soff, (uvlong)s->fstart, (uvlong)daddr, (uvlong)s->flen);
     new = lookpage(image, daddr);
     if (new != nil) {
       *p = new;
@@ -92,11 +131,18 @@ retry:
       return 0;
     }
 
+#define PAGING_IO_SIZE (64 * 1024)
+
     ask = image->c->iounit;
     if (ask == 0)
-      ask = qiomaxatomic;
+      ask = PAGING_IO_SIZE;
     ask &= -BY2PG;
     if (ask == 0)
+      ask = BY2PG;
+
+    /* Check if device supports bread BEFORE calculating daddr alignment */
+    c = image->c;
+    if (c != nil && devtab[devno(c->type, 0)]->bread == nil && ask > BY2PG)
       ask = BY2PG;
 
     daddr = soff & -ask;
@@ -120,13 +166,23 @@ retry:
   qunlock(&s->qlock);
 
   c = image->c;
+  if (c == nil)
+    error(Eio);
+
   if (waserror()) {
     if (strcmp(up->errstr, Eintr) == 0)
       return -1;
     faulterror(Eioload, c);
   }
+
+  /* If device doesn't support buffered reads (bread), limit to page size */
+  if (devtab[devno(c->type, 0)]->bread == nil && ask > BY2PG)
+    ask = BY2PG;
+
   if (ask <= BY2PG) {
     new = newpage(vaddr, nil);
+    if (new == nil)
+      error(Enomem);
     new->daddr = daddr;
     k = kmap(new);
     if (waserror()) {
@@ -134,24 +190,13 @@ retry:
       putpage(new);
       nexterror();
     }
-    n = devtab[c->type]->read(c, (uchar *)VA(k), ask, daddr);
+    n = devtab[devno(c->type, 0)]->read(c, (uchar *)VA(k), ask, daddr);
     if (n < 0)
       nexterror();
     if (n != ask)
       error(Eshort);
     if (n < BY2PG)
       memset((uchar *)VA(k) + n, 0, BY2PG - n);
-    /* Debug: print first bytes loaded */
-    {
-      uchar *data = (uchar *)VA(k);
-      print(
-          "pio: read %d bytes from offset %#llux, pa=%#llx, first 16: %02x "
-          "%02x %02x "
-          "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-          n, (uvlong)daddr, (uvlong)new->pa, data[0], data[1], data[2], data[3],
-          data[4], data[5], data[6], data[7], data[8], data[9], data[10],
-          data[11], data[12], data[13], data[14], data[15]);
-    }
     kunmap(k);
     settxtflush(new, s->flushme);
     cachepage(new, image);
@@ -161,7 +206,7 @@ retry:
     uintptr o;
     Block *b;
 
-    b = devtab[c->type]->bread(c, ask, daddr);
+    b = devtab[devno(c->type, 0)]->bread(c, ask, daddr);
     if (waserror()) {
       freeblist(b);
       nexterror();
@@ -214,12 +259,26 @@ int fixfault(Segment *s, uintptr addr, int read) {
   Pte **pte, *etp;
   uintptr soff, mmuphys;
   Page **pg, *old, *new;
+  static int seg_trace_count;
+  static int fixfault_trace_count;
+  int trace = 0;
 
-  print("fixfault: entry addr=%#llx type=%#x\n", (unsigned long long)addr,
-        s->type);
+  if (boot_verbose && fixfault_trace_count < 16) {
+    fixfault_trace_count++;
+    trace = 1;
+    print("fixfault: entry addr=%#llx type=%#x\n", (unsigned long long)addr,
+          s->type);
+  }
 
   addr &= ~(BY2PG - 1);
   soff = addr - s->base;
+  if (seg_trace_count < 50 &&
+      (addr == 0x617000 || addr == 0x617ff8 || addr == 0x7ffffef3aef8)) {
+    seg_trace_count++;
+    print("fixfault: seg pid=%lud addr=%#p type=%#x base=%#p top=%#p fstart=%#p flen=%#p image=%p\n",
+          up ? up->pid : 0, (void *)addr, s->type, (void *)s->base,
+          (void *)s->top, (void *)s->fstart, (void *)s->flen, s->image);
+  }
   pte = &s->map[soff / PTEMAPMEM];
   if ((etp = *pte) == nil) {
     etp = ptealloc();
@@ -232,8 +291,9 @@ int fixfault(Segment *s, uintptr addr, int read) {
       return -1;
     }
     *pte = etp;
-    print("ptealloc assign: s=%p idx=%ld pte=%p\n", s, (long)(pte - s->map),
-          etp);
+    if (trace)
+      print("ptealloc assign: s=%p idx=%ld pte=%p\n", s,
+            (long)(pte - s->map), etp);
   }
 
   pg = &etp->pages[(soff & (PTEMAPMEM - 1)) / BY2PG];
@@ -241,6 +301,18 @@ int fixfault(Segment *s, uintptr addr, int read) {
     etp->first = pg;
   if (pg > etp->last)
     etp->last = pg;
+
+  /* DEBUG: Trace potential corruption */
+  if (*pg != nil) {
+    uintptr ptrval = (uintptr)*pg;
+    /* Page structs are allocated via xalloc, so they should be in kernel space.
+     * We check if the pointer is in the canonical kernel address range. */
+    if (ptrval < 0xFFFF800000000000ULL) {
+      print("DEBUG: fixfault pid %lud addr=%#p etp=%p pg_ptr=%p *pg=%p "
+            "(ILLEGAL POINTER)\n",
+            up ? up->pid : 0, addr, etp, pg, *pg);
+    }
+  }
 
   switch (s->type & SG_TYPE) {
   default:
@@ -262,14 +334,29 @@ int fixfault(Segment *s, uintptr addr, int read) {
   case SG_BSS:
   case SG_SHARED: /* fill on demand */
   case SG_STACK:
-    print("fixfault: stack/bss addr=%#llx seg=%p type=%#x pg=%p\n",
-          (unsigned long long)addr, s, s->type, *pg);
+    if (boot_verbose) {
+      static int stack_fault_count;
+      stack_fault_count++;
+      if (stack_fault_count <= 20 || stack_fault_count % 200 == 0) {
+        print("FAULT-STACK: pid=%lud addr=%#p seg=%p type=%#x pg=%p\n",
+              up ? up->pid : 0, addr, s, s->type, *pg);
+      }
+    }
+    if (trace)
+      print("fixfault: stack/bss addr=%#llx seg=%p type=%#x pg=%p\n",
+            (unsigned long long)addr, s, s->type, *pg);
     if (*pg == nil) {
       new = newpage(addr, s);
       if (new == nil) {
         print("fixfault: newpage returned nil for addr=%#llx\n",
               (unsigned long long)addr);
         return -1;
+      }
+      if (boot_verbose && new != nil) {
+        extern uintptr saved_limine_hhdm_offset;
+        uintptr hhdm_va = new->pa + saved_limine_hhdm_offset;
+        print("FAULT-STACK: newpage pa=%#p hhdm=%#p kaddr=%#p\n",
+              new->pa, hhdm_va, kaddr(new->pa));
       }
       *pg = fillpage(new, (s->type & SG_TYPE) == SG_STACK ? 0xfe : 0);
       s->used++;
@@ -278,7 +365,14 @@ int fixfault(Segment *s, uintptr addr, int read) {
     /* fallthrough */
   case SG_DATA: /* Demand load/pagein/copy on write */
     if (pagedout(*pg)) {
-      if (pio(s, addr, soff, pg) < 0)
+      int pio_rc = pio(s, addr, soff, pg);
+      if (seg_trace_count < 50 &&
+          (addr == 0x617000 || addr == 0x617ff8 || addr == 0x7ffffef3aef8)) {
+        seg_trace_count++;
+        print("fixfault: pio addr=%#p soff=%#p rc=%d pg=%p\n",
+              (void *)addr, (void *)soff, pio_rc, *pg);
+      }
+      if (pio_rc < 0)
         return -1;
     }
     /*
@@ -287,7 +381,8 @@ int fixfault(Segment *s, uintptr addr, int read) {
      */
     if (read && conf.copymode == 0 && s->ref == 1) {
       mmuphys = PPN((*pg)->pa) | PTERONLY | PTECACHED | PTEVALID;
-      print("fixfault: SG_DATA mapping pa=%#llx\n", (uvlong)(*pg)->pa);
+      if (trace)
+        print("fixfault: SG_DATA mapping pa=%#llx\n", (uvlong)(*pg)->pa);
       (*pg)->modref |= PG_REF;
       break;
     }
@@ -297,17 +392,18 @@ int fixfault(Segment *s, uintptr addr, int read) {
         (old->ref + swapcount(old->daddr)) == 1)
       uncachepage(old);
     if (old->ref > 1 || old->image != nil) {
-      /* ZERO-COPY ENFORCEMENT:
-       * We cannot copy pages. If a page is shared (ref > 1) and a write occurs,
-       * it implies a violation of the pure Exchange/Borrow model unless it's
-       * SG_SHARED intent. But SG_DATA implies private data. If we are here, it
-       * means we have a write fault on a shared page. Previously we would copy.
-       * Now we must forbid it.
-       */
-      print("fixfault: COW attempt blocked on addr=%#p type=%d ref=%ld\n", addr,
-            s->type, old->ref);
-      panic("fixfault: Strict No-Copy Violation - Write to shared page");
-      /* copyptr(old, new); -- REMOVED */
+      /* ZERO-COPY ENFORCEMENT: (RELAXED FOR NOW) */
+      new = newpage(addr, s);
+      if (new == nil)
+        return -1;
+      copypage(old, new); /* RESTORED COPY-ON-WRITE FOR NOW */
+
+      /* After copy, update page table link */
+      putpage(old);
+      cow_return_shared_borrow(old);
+      *pg = new;
+    } else {
+      cow_restore_exclusive_page(old);
     }
     /* wet floor */
     /* fallthrough */
@@ -406,8 +502,18 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
     extern uintptr saved_limine_hhdm_offset;
     uintptr hhdm_va = s->pseg->pa + saved_limine_hhdm_offset;
 
+    if (boot_verbose) {
+      print("OWN-ACQ: pid=%lud pa=%#p hhdm=%#p kaddr=%#p off=%#p\n",
+            up ? up->pid : 0, s->pseg->pa, hhdm_va, kaddr(s->pseg->pa),
+            (void *)saved_limine_hhdm_offset);
+    }
+
     if (pageown_acquire(up, s->pseg->pa, hhdm_va) != POWN_OK) {
       print("mapphys: failed to acquire ownership of exchange page\n");
+    } else {
+      print("mapphys: exchange owned pid=%lud pa=%#p hhdm=%#p p9page=%#p\n",
+            up ? up->pid : 0, s->pseg->pa, (void *)hhdm_va,
+            up ? up->p9page : nil);
     }
   }
 
@@ -467,11 +573,11 @@ static void mapphys(Segment *s, uintptr addr, int attr) {
   if (addr >= 0x7FFFFEEFF000ULL && addr < 0x7FFFFEEFF000ULL + 0x1000) {
     uchar *data = (uchar *)kaddr(pg.pa);
     print("mapphys: VERIFY after putmmu, reading PA=0x%p first 16: ", pg.pa);
-      /*@ loop invariant 0 <= i <= 16;
-    @ loop assigns i;
-    @ loop variant 16 - i;
-    @*/
-  for (int i = 0; i < 16; i++)
+    /*@ loop invariant 0 <= i <= 16;
+  @ loop assigns i;
+  @ loop variant 16 - i;
+  @*/
+    for (int i = 0; i < 16; i++)
       print("%02x ", data[i]);
     print("\n");
   }
@@ -484,9 +590,16 @@ int fault(uintptr addr, uintptr pc, int read) {
   Segment *s;
   char *sps;
   int pnd, ins, attr;
+  static int fault_trace_count;
+  int trace = 0;
 
-  print("fault: ENTRY addr=%#llx pc=%#llx pid=%ld\n", (unsigned long long)addr,
-        (unsigned long long)pc, up ? up->pid : 0);
+  if (boot_verbose && fault_trace_count < 16) {
+    fault_trace_count++;
+    trace = 1;
+    print("fault: ENTRY addr=%#llx pc=%#llx pid=%ld\n",
+          (unsigned long long)addr, (unsigned long long)pc,
+          up ? up->pid : 0);
+  }
 
   if (up == nil)
     panic("fault: no user process pc=%#p addr=%#p", pc, addr);
@@ -511,10 +624,13 @@ int fault(uintptr addr, uintptr pc, int read) {
      * For newly forked children, this caused them to be rescheduled
      * mid-fault, never completing their TEXT page fix.
      * Fault handling must run to completion before allowing reschedule. */
-    print("fault: calling seg(%p, %#llx, 1)\n", up, (unsigned long long)addr);
+    if (trace)
+      print("fault: calling seg(%p, %#llx, 1)\n", up,
+            (unsigned long long)addr);
 
     s = seg(up, addr, 1); /* leaves s locked if seg != nil */
-    print("fault: seg() returned %p\n", s);
+    if (trace)
+      print("fault: seg() returned %p\n", s);
     if (s == nil) {
       print("fault: seg lookup FAILED addr=%#llx pid=%ld\n",
             (unsigned long long)addr, up->pid);
@@ -522,9 +638,26 @@ int fault(uintptr addr, uintptr pc, int read) {
       up->insyscall = ins;
       return -1;
     }
-    print("fault: addr=%#llx seg=%p type=%#x base=%#p top=%#p\n",
-          (unsigned long long)addr, s, s->type, (void *)s->base,
-          (void *)s->top);
+    if (trace)
+      print("fault: addr=%#llx seg=%p type=%#x base=%#p top=%#p\n",
+            (unsigned long long)addr, s, s->type, (void *)s->base,
+            (void *)s->top);
+    if (trace && (addr == 0x617000 || addr == 0x617ff8 ||
+                  addr == 0x7ffffef3aef8 || addr == 0x638000 ||
+                  addr == 0x637ff8 || addr == 0x7ffffefd9ef8)) {
+      print("fault: seg detail pid=%ld tseg=%#p-%#p dseg=%#p-%#p bseg=%#p-%#p sseg=%#p-%#p p9seg=%#p-%#p\n",
+            up ? up->pid : -1,
+            up && up->seg[TSEG] ? (void *)up->seg[TSEG]->base : 0,
+            up && up->seg[TSEG] ? (void *)up->seg[TSEG]->top : 0,
+            up && up->seg[DSEG] ? (void *)up->seg[DSEG]->base : 0,
+            up && up->seg[DSEG] ? (void *)up->seg[DSEG]->top : 0,
+            up && up->seg[BSEG] ? (void *)up->seg[BSEG]->base : 0,
+            up && up->seg[BSEG] ? (void *)up->seg[BSEG]->top : 0,
+            up && up->seg[SSEG] ? (void *)up->seg[SSEG]->base : 0,
+            up && up->seg[SSEG] ? (void *)up->seg[SSEG]->top : 0,
+            up && up->seg[P9SEG] ? (void *)up->seg[P9SEG]->base : 0,
+            up && up->seg[P9SEG] ? (void *)up->seg[P9SEG]->top : 0);
+    }
 
     attr = s->type;
     if ((attr & SG_TYPE) == SG_PHYSICAL)

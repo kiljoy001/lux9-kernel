@@ -43,7 +43,7 @@ LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 # Source files
 PORT_C := $(wildcard kernel/9front-port/*.c)
 # Filter out conflicting/duplicate files
-PORT_C := $(filter-out kernel/9front-port/rbtree.c, $(PORT_C))
+PORT_C := $(filter-out kernel/9front-port/rbtree.c kernel/9front-port/devsym.c, $(PORT_C))
 
 # Ensure TPM drivers are included
 TPM_C := kernel/9front-port/tpm2_driver.c kernel/9front-port/tpm2_sapi_minimal.c
@@ -56,7 +56,8 @@ BORROW_C := kernel/borrowchecker.c kernel/borrow_enforce.c
 LOCKDAG_C := kernel/lock_dag.c
 PROCSTATEDAG_C := kernel/proc_state_dag.c
 PROCFSM_C := kernel/proc_fsm.c
-P9ROUTER_C := kernel/router/core.c kernel/router/fs.c kernel/router/proc.c kernel/router/ipc.c kernel/router/wasm.c kernel/router/doorbell.c kernel/router/srv.c
+P9ROUTER_C := kernel/router/core.c kernel/router/fs.c kernel/router/proc.c kernel/router/ipc.c kernel/router/wasm.c kernel/router/doorbell.c kernel/router/srv.c kernel/router/srv_compat.c
+MNTDRIVER_C := userspace/ns/nsd/mnt_driver.c
 # SYSCALL9P_C removed - Phase 6: TRUE syscall elimination via exchange page doorbell
 # GHOSTDAG renamed to msgord - see MSGORD_C below
 MSGORD_C := kernel/msgord.c
@@ -66,7 +67,7 @@ PEBBLE_C := kernel/pebble.c kernel/pebble_kernel.c kernel/distributed_pebble.c
 EXCHANGE_POOL_C := kernel/exchange_pool.c kernel/exchange_pool_ipc.c
 POW_GATE_C := kernel/pow_gate.c
 BENCHMARK_C := kernel/benchmark.c
-CAPABILITY_C := kernel/capability/clr_capability.c
+CAPABILITY_C := kernel/capability/lux_capability.c
 # mini-gmp wrapper for symbolic math
 SYMBOLIC_C := kernel/symbolic/minigmp_kernel.c
 BPRINT_C := kernel/bprint.c
@@ -93,6 +94,7 @@ LOCKDAG_O := $(LOCKDAG_C:.c=.o)
 PROCSTATEDAG_O := $(PROCSTATEDAG_C:.c=.o)
 PROCFSM_O := $(PROCFSM_C:.c=.o)
 P9ROUTER_O := $(P9ROUTER_C:.c=.o)
+MNTDRIVER_O := $(MNTDRIVER_C:.c=.o)
 # SYSCALL9P_O removed - Phase 6 pure 9P via doorbell
 # GHOSTDAG_O removed - using MSGORD_O
 MSGORD_O := $(MSGORD_C:.c=.o)
@@ -105,7 +107,7 @@ POW_GATE_O := $(POW_GATE_C:.c=.o)
 BENCHMARK_O := $(BENCHMARK_C:.c=.o)
 CAPABILITY_O := $(CAPABILITY_C:.c=.o)
 WASM3_C := $(filter-out kernel/wasm/wasm_runtime/wasm3/m3_api_libc.c, $(wildcard kernel/wasm/wasm_runtime/wasm3/*.c))
-WASM_FILESERVER_C := kernel/wasm/wasm_runtime.c kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c kernel/wasm/wasi_lux9_shim.c kernel/wasm/wasm_host_lux9.c
+WASM_FILESERVER_C := kernel/wasm/wasm_runtime.c kernel/wasm/wasm_fileserver.c kernel/wasm/wasm_9p_integration.c kernel/wasm/wasm_capability_bindings.c kernel/wasm/wasi_lux9_shim.c kernel/wasm/wasm_host_lux9.c kernel/wasm/wasm_arena.c
 WASM_C := $(WASM3_C) $(WASM_FILESERVER_C)
 WASM_O := $(WASM_C:.c=.o)
 SYMBOLIC_O := $(SYMBOLIC_C:.c=.o)
@@ -114,10 +116,10 @@ BPRINT_O := $(BPRINT_C:.c=.o)
 
 # QBE_GHOSTDAG_O removed - renamed to msgord
 
-ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(BPRINT_O) $(UUID_O)
+ALL_O := $(ASM_O) $(PORT_O) $(PC64_O) $(LIBC_O) $(FAMILY_O) $(CRYPTO_O) $(MEMDRAW_O) $(BORROW_O) $(PEBBLE_O) $(EXCHANGE_POOL_O) $(POW_GATE_O) $(BENCHMARK_O) $(CAPABILITY_O) $(REAL_DRIVERS_O) $(LOCKDAG_O) $(PROCSTATEDAG_O) $(PROCFSM_O) $(P9ROUTER_O) $(MNTDRIVER_O) $(MSGORD_O) $(CONSENSUS_DEPTH_O) $(WASM_O) $(SYMBOLIC_O) $(BPRINT_O) $(UUID_O) kernel/kconf.o
 # TPM already included in PORT_O
 
-.PHONY: all clean count iso run help
+.PHONY: all clean count iso run kunit test help userspace-all
 
 all: $(KERNEL)
 
@@ -135,7 +137,12 @@ $(QBE_A): $(QBE_CORE_O)
 # WASM3 Runtime build - use WASM3's compatibility headers
 kernel/wasm/wasm_runtime/wasm3/%.o: kernel/wasm/wasm_runtime/wasm3/%.c
 	@echo "CC $< (WASM3)"
-	@$(CC) $(CFLAGS) -msse -msse2 -Wno-conversion -Wno-sign-conversion -Wno-shadow -Dd_m3HasFloat=0 -Ikernel/wasm/wasm_runtime/wasm3/include -c $< -o $@
+	@$(CC) $(CFLAGS) -msse -msse2 -Wno-conversion -Wno-sign-conversion -Wno-shadow -Wno-macro-redefined -Dd_m3HasFloat=0 -Dd_m3HasSIMD=0 -Ikernel/wasm/wasm_runtime/wasm3/include -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -include kernel/include/dat.h -c $< -o $@
+
+# mini-gmp wrapper for symbolic math
+kernel/symbolic/minigmp_kernel.o: kernel/symbolic/minigmp_kernel.c
+	@echo "CC $< (minigmp)"
+	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -Wno-sign-compare -Wno-unused-function -Wno-shadow -DMINI_GMP_LIMB_TYPE="long" -include kernel/include/u.h -include kernel/include/mem.h -c $< -o $@
 
 # WASM file server code also needs WASM3 headers
 kernel/wasm/%.o: kernel/wasm/%.c
@@ -146,6 +153,11 @@ kernel/wasm/%.o: kernel/wasm/%.c
 kernel/9p_router.o: kernel/9p_router.c
 	@echo "CC $< (Relaxed)"
 	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
+
+# Relax warnings for aml.c (ACPI bytecode interpreter is legacy code)
+kernel/9front-pc64/aml.o: kernel/9front-pc64/aml.c
+	@echo "CC $< (Relaxed)"
+	@$(CC) $(CFLAGS) -Wno-conversion -Wno-sign-conversion -Wno-shadow -Wno-parentheses -Wno-implicit-fallthrough -Wno-sign-compare -include kernel/include/u.h -include kernel/include/portlib.h -include kernel/include/mem.h -c $< -o $@
 
 %.o: %.c
 	@echo "CC $<"
@@ -158,6 +170,7 @@ kernel/9p_router.o: kernel/9p_router.c
 clean:
 	rm -f $(ALL_O) $(UUID_O) $(KERNEL)
 	rm -rf iso_root lux9.iso
+	@$(MAKE) -C userspace clean
 
 count:
 	@echo "=== Line counts ==="
@@ -182,7 +195,7 @@ test-build:
 	$(CC) $(CFLAGS) -c kernel/9front-port/alloc.c -o /tmp/test.o
 	@echo "✓ Basic compilation works!"
 
-userspace/build/initrd.tar:
+userspace-all:
 	@echo "Building userspace..."
 	@$(MAKE) -C userspace
 	@echo "Copying initrd to boot/..."
@@ -190,7 +203,10 @@ userspace/build/initrd.tar:
 	@cp userspace/build/initrd.tar boot/initrd.tar
 	@echo "✓ initrd.tar copied to boot/"
 
-iso: $(KERNEL) userspace/build/initrd.tar
+userspace/build/initrd.tar: userspace-all
+	@:
+
+iso: $(KERNEL) userspace-all
 	@echo "Creating ISO image..."
 	@echo "Checking for xorriso..."
 	@which xorriso > /dev/null || (echo "Error: xorriso not found. Please install xorriso package." && exit 1)
@@ -213,26 +229,28 @@ iso: $(KERNEL) userspace/build/initrd.tar
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o lux9.iso
-	@echo "Installing boot loader..."
-	@if [ -f boot/limine/bin/limine ]; then \
+	@echo "Applying optional Limine BIOS install patch..."
+	@if [ -x boot/limine/bin/limine ]; then \
 		echo "Using local limine binary"; \
 		if boot/limine/bin/limine bios-install lux9.iso; then \
 			echo "✓ BIOS bootloader installed successfully"; \
 		else \
-			echo "⚠ BIOS bootloader installation failed (exit code $$?)"; \
-			echo "  ISO will only boot via UEFI"; \
+			echo "⚠ limine bios-install failed (exit code $$?)"; \
+			echo "  ISO still has BIOS+UEFI El Torito entries for CD boot"; \
+			echo "  bios-install is only needed for some raw-disk/USB BIOS paths"; \
 		fi; \
 	elif command -v limine > /dev/null 2>&1; then \
 		echo "Using system limine binary"; \
 		if limine bios-install lux9.iso; then \
 			echo "✓ BIOS bootloader installed successfully"; \
 		else \
-			echo "⚠ BIOS bootloader installation failed (exit code $$?)"; \
-			echo "  ISO will only boot via UEFI"; \
+			echo "⚠ limine bios-install failed (exit code $$?)"; \
+			echo "  ISO still has BIOS+UEFI El Torito entries for CD boot"; \
+			echo "  bios-install is only needed for some raw-disk/USB BIOS paths"; \
 		fi; \
 	else \
-		echo "⚠ No limine binary found - skipping BIOS bootloader installation"; \
-		echo "  ISO will only boot via UEFI"; \
+		echo "ℹ No limine installer binary found; skipping optional bios-install step"; \
+		echo "  ISO still has BIOS+UEFI El Torito entries for CD boot"; \
 	fi
 	@rm -rf iso_root
 	@echo "✓ Created lux9.iso"
@@ -245,6 +263,61 @@ direct-run: $(KERNEL)
 	@which qemu-system-x86_64 > /dev/null || (echo "Error: qemu-system-x86_64 not found. Please install qemu package." && exit 1)
 	qemu-system-x86_64 -M q35 -m 2G -kernel $(KERNEL) -no-reboot -display none -serial stdio
 
+KUNIT_BIN := test/kunit/build/kunit_tests
+KUNIT_HOST_SRCS := \
+	test/kunit/kunit_main.c \
+	test/kunit/libc9_string_test.c \
+	test/kunit/libc9_string_ops_test.c \
+	test/kunit/libc9_memory_test.c \
+	test/kunit/libc9_numeric_test.c \
+	test/kunit/capability_stubs.c \
+	test/kunit/blind_cap_test.c \
+	test/kunit/critical_contracts_test.c \
+	kernel/libc9/kstrlen.c \
+	kernel/libc9/kstrcmp.c \
+	kernel/libc9/memcmp.c \
+	kernel/libc9/kmemmove.c \
+	kernel/libc9/kstrcpy.c \
+	kernel/libc9/kstrncpy.c \
+	kernel/libc9/kstrcat.c \
+	kernel/libc9/strncat.c \
+	kernel/libc9/kstrchr.c \
+	kernel/libc9/strncmp.c \
+	kernel/libc9/cistrncmp.c \
+	kernel/libc9/strstr.c \
+	kernel/libc9/kmemset.c \
+	kernel/libc9/memchr.c \
+	kernel/libc9/memccpy.c \
+	kernel/libc9/strecpy.c \
+	kernel/libc9/atoi.c \
+	kernel/libc9/strtol.c \
+	kernel/libc9/strtoul.c \
+	kernel/libc9/strtoull.c \
+	kernel/crypto/blind_cap.c \
+	kernel/crypto/monocypher.c
+KUNIT_HOST_CFLAGS := -std=gnu11 -O0 -g3 -Wall -Wextra -Werror \
+	-Wno-unknown-pragmas \
+	-Wno-error=sign-compare \
+	-Wno-error=parentheses \
+	-Wno-error=type-limits \
+	-Wno-error=discarded-qualifiers \
+	-Wno-error=unused-parameter \
+	-Wno-error=unused-variable \
+	-fno-builtin \
+	-fno-builtin-strcmp -fno-builtin-strlen \
+	-fno-builtin-memcmp -fno-builtin-memmove -fno-builtin-memcpy \
+	-Ikernel/include
+
+kunit: $(KUNIT_BIN)
+	@$(KUNIT_BIN)
+
+test: kunit
+
+$(KUNIT_BIN): $(KUNIT_HOST_SRCS)
+	@mkdir -p test/kunit/build
+	@echo "Building KUnit-style host tests..."
+	@$(CC) $(KUNIT_HOST_CFLAGS) $(KUNIT_HOST_SRCS) -o $(KUNIT_BIN)
+
 help:
 	@echo "Lux9 Build System (GNUmakefile):"
 	@echo "  make          - Build kernel only"
@@ -253,6 +326,8 @@ help:
 	@echo "  make clean    - Clean all build artifacts"
 	@echo "  make run      - Run kernel in QEMU (with logging)"
 	@echo "  make direct-run - Run kernel in QEMU (direct stdio)"
+	@echo "  make kunit    - Run KUnit-style host unit tests"
+	@echo "  make test     - Alias for make kunit"
 	@echo "  make help     - Show this help message"
 	@echo ""
 	@echo "Note: The Makefile in root directory provides additional targets"

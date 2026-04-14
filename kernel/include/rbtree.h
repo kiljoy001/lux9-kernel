@@ -102,9 +102,34 @@ static inline void rb_set_red(struct rb_node *rb) {
 }
 
 /* Tree navigation */
+/* Tree navigation */
+
+/*@
+  @ requires root == \null || \valid_read(root);
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 struct rb_node *rb_first(const struct rb_root *root);
+
+/*@
+  @ requires root == \null || \valid_read(root);
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 struct rb_node *rb_last(const struct rb_root *root);
+
+/*@
+  @ requires node == \null || \valid_read(node);
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 struct rb_node *rb_next(const struct rb_node *node);
+
+/*@
+  @ requires node == \null || \valid_read(node);
+  @ assigns \nothing;
+  @ ensures \result == \null || \valid(\result);
+  @*/
 struct rb_node *rb_prev(const struct rb_node *node);
 
 /* Replace a node in the tree (for updates) */

@@ -112,7 +112,14 @@ struct P9Control {
   uint req_tail;
   uint rep_head;
   uint rep_tail;
+  uint req_seq;
+  uint rep_seq;
 };
+
+#define P9_STATUS_IDLE 0
+#define P9_STATUS_PENDING 1
+#define P9_STATUS_COMPLETE 2
+#define P9_STATUS_ERROR 3
 
 /* 9P Message Types */
 enum {

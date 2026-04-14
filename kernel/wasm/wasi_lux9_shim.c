@@ -13,7 +13,61 @@ extern uint convD2M(Dir *d, uchar *buf, uint n);
 #include "../include/fns.h"
 #include "../include/portlib.h"
 #include "../include/u.h"
+
+/* Rename wasm3 panic to avoid conflict with kernel panic */
+#define panic m3_panic
+#undef NULL
+#undef assert
+
 #include "wasm_runtime.h"
+
+/* Define m3_panic wrapper */
+void m3_panic(char *fmt, ...) {
+  char buf[256];
+  va_list arg;
+  va_start(arg, fmt);
+  vseprint(buf, buf + sizeof(buf), fmt, arg);
+  va_end(arg);
+  panic("WASM: %s", buf);
+}
+
+/* redefine M3 API macros to handle offsets safely */
+#undef m3ApiReadMem8
+#undef m3ApiReadMem16
+#undef m3ApiReadMem32
+#undef m3ApiReadMem64
+#undef m3ApiWriteMem8
+#undef m3ApiWriteMem16
+#undef m3ApiWriteMem32
+#undef m3ApiWriteMem64
+#undef m3ApiCheckMem
+
+#define m3ApiReadMem8(ptr) (*(uint8_t *)m3ApiOffsetToPtr(ptr))
+#define m3ApiReadMem16(ptr) (*(uint16_t *)m3ApiOffsetToPtr(ptr))
+#define m3ApiReadMem32(ptr) (*(uint32_t *)m3ApiOffsetToPtr(ptr))
+#define m3ApiReadMem64(ptr) (*(uint64_t *)m3ApiOffsetToPtr(ptr))
+
+#define m3ApiWriteMem8(ptr, val) (*(uint8_t *)m3ApiOffsetToPtr(ptr) = (val))
+#define m3ApiWriteMem16(ptr, val) (*(uint16_t *)m3ApiOffsetToPtr(ptr) = (val))
+#define m3ApiWriteMem32(ptr, val) (*(uint32_t *)m3ApiOffsetToPtr(ptr) = (val))
+#define m3ApiWriteMem64(ptr, val) (*(uint64_t *)m3ApiOffsetToPtr(ptr) = (val))
+
+/* m3ApiCheckMem needs to check bounds relative to memory size using offset */
+/* Ensure m3ApiOffsetToPtr doesn't double add base if used inside? No, CheckMem
+ * usually checks validity. */
+/* Original: if (addr < _mem || addr + len > _mem + _memSize) trap; */
+/* With offset: if (offset + len > _memSize) trap; (Assuming unsigned wrap
+ * checks) */
+/* We can use m3ApiOffsetToPtr to check availability?  */
+/* Better: rely on runtime->memory.length defined in wasm3.h macros usually
+ * available? */
+/* _mem_size available? yes, m3ApiGetMemorySize logic */
+#define m3ApiCheckMem(offset, len)                                             \
+  do {                                                                         \
+    if (M3_UNLIKELY((uint64_t)(offset) + (uint64_t)(len) >                     \
+                    m3_GetMemorySize(runtime)))                                \
+      m3ApiTrap(m3Err_trapOutOfBoundsMemoryAccess);                            \
+  } while (0)
 
 #ifndef nil
 #define nil ((void *)0)
@@ -27,6 +81,18 @@ extern vlong nsec(void);
 
 /* Provide standard types if missing */
 /* Standard types provided by wasi_lux9_shim.h */
+#include "wasi_constants.h"
+#include "wasm_runtime/wasm3/m3_api_wasi.h"
+
+/* Helper: Pass-through POSIX path (no conversion needed for now) */
+static const char *wasi_posix_path(const char *path, uint32_t *len) {
+  if (len)
+    *len = strlen(path);
+  return path;
+}
+
+/* Helper: Fill buffer with random data */
+static void wasi_fill_random(uint8_t *buf, size_t len) { randomread(buf, len); }
 
 /* WASI is Little Endian usually.
  * wasm3.h defines m3ApiReadMem32 which handles endianness if configured.
@@ -69,111 +135,6 @@ long kpread(int fd, void *buf, long n, int64_t off);
 long kpwrite(int fd, void *buf, long n, int64_t off);
 
 /* ========== WASI Constants ========== */
-#define WASI_ERRNO_SUCCESS 0
-#define WASI_ERRNO_2BIG 1
-#define WASI_ERRNO_ACCES 2
-#define WASI_ERRNO_ADDRINUSE 3
-#define WASI_ERRNO_ADDRNOTAVAIL 4
-#define WASI_ERRNO_AFNOSUPPORT 5
-#define WASI_ERRNO_AGAIN 6
-#define WASI_ERRNO_ALREADY 7
-#define WASI_ERRNO_BADF 8
-#define WASI_ERRNO_BUSY 10
-#define WASI_ERRNO_CONNABORTED 13
-#define WASI_ERRNO_CONNREFUSED 14
-#define WASI_ERRNO_CONNRESET 15
-#define WASI_ERRNO_DESTADDRREQ 17
-#define WASI_ERRNO_EXIST 20
-#define WASI_ERRNO_FAULT 21
-#define WASI_ERRNO_FBIG 22
-#define WASI_ERRNO_HOSTUNREACH 23
-#define WASI_ERRNO_INTR 27
-#define WASI_ERRNO_INVAL 28
-#define WASI_ERRNO_IO 29
-#define WASI_ERRNO_ISCONN 30
-#define WASI_ERRNO_ISDIR 31
-#define WASI_ERRNO_LOOP 32
-#define WASI_ERRNO_MFILE 33
-#define WASI_ERRNO_MLINK 34
-#define WASI_ERRNO_MSGSIZE 35
-#define WASI_ERRNO_NAMETOOLONG 37
-#define WASI_ERRNO_NETDOWN 38
-#define WASI_ERRNO_NETRESET 39
-#define WASI_ERRNO_NETUNREACH 40
-#define WASI_ERRNO_NFILE 41
-#define WASI_ERRNO_NOBUFS 42
-#define WASI_ERRNO_NOENT 44
-#define WASI_ERRNO_NOMEM 48
-#define WASI_ERRNO_NOPROTOOPT 50
-#define WASI_ERRNO_NOSPC 51
-#define WASI_ERRNO_NOSYS 52
-#define WASI_ERRNO_NOTCONN 53
-#define WASI_ERRNO_NOTDIR 54
-#define WASI_ERRNO_NOTEMPTY 55
-#define WASI_ERRNO_NOTSOCK 57
-#define WASI_ERRNO_NOTSUP 58
-#define WASI_ERRNO_PERM 63
-#define WASI_ERRNO_PIPE 64
-#define WASI_ERRNO_PROTO 65
-#define WASI_ERRNO_PROTONOSUPPORT 66
-#define WASI_ERRNO_PROTOTYPE 67
-#define WASI_ERRNO_ROFS 69
-#define WASI_ERRNO_TIMEDOUT 73
-#define WASI_ERRNO_NOTCAPABLE 76
-
-#define WASI_CLOCK_REALTIME 0
-#define WASI_CLOCK_MONOTONIC 1
-#define WASI_CLOCK_PROCESS_CPUTIME 2
-#define WASI_CLOCK_THREAD_CPUTIME 3
-
-#define WASI_FILETYPE_UNKNOWN 0
-#define WASI_FILETYPE_BLOCK_DEVICE 1
-#define WASI_FILETYPE_CHARACTER_DEVICE 2
-#define WASI_FILETYPE_DIRECTORY 3
-#define WASI_FILETYPE_REGULAR_FILE 4
-#define WASI_FILETYPE_SOCKET_DGRAM 5
-#define WASI_FILETYPE_SOCKET_STREAM 6
-#define WASI_FILETYPE_SYMBOLIC_LINK 7
-
-#define WASI_O_CREAT 1
-#define WASI_O_DIRECTORY 2
-#define WASI_O_EXCL 4
-#define WASI_O_TRUNC 8
-
-#define WASI_RIGHT_FD_DATASYNC (1ULL << 0)
-#define WASI_RIGHT_FD_READ (1ULL << 1)
-#define WASI_RIGHT_FD_SEEK (1ULL << 2)
-#define WASI_RIGHT_FD_FDSTAT_SET_FLAGS (1ULL << 3)
-#define WASI_RIGHT_FD_SYNC (1ULL << 4)
-#define WASI_RIGHT_FD_TELL (1ULL << 5)
-#define WASI_RIGHT_FD_WRITE (1ULL << 6)
-#define WASI_RIGHT_FD_ADVISE (1ULL << 7)
-#define WASI_RIGHT_FD_ALLOCATE (1ULL << 8)
-#define WASI_RIGHT_PATH_CREATE_DIRECTORY (1ULL << 9)
-#define WASI_RIGHT_PATH_CREATE_FILE (1ULL << 10)
-#define WASI_RIGHT_PATH_LINK_SOURCE (1ULL << 11)
-#define WASI_RIGHT_PATH_LINK_TARGET (1ULL << 12)
-#define WASI_RIGHT_PATH_OPEN (1ULL << 13)
-#define WASI_RIGHT_FD_READDIR (1ULL << 14)
-#define WASI_RIGHT_PATH_READLINK (1ULL << 15)
-#define WASI_RIGHT_PATH_RENAME_SOURCE (1ULL << 16)
-#define WASI_RIGHT_PATH_RENAME_TARGET (1ULL << 17)
-#define WASI_RIGHT_PATH_FILESTAT_GET (1ULL << 18)
-#define WASI_RIGHT_PATH_FILESTAT_SET_SIZE (1ULL << 19)
-#define WASI_RIGHT_PATH_FILESTAT_SET_TIMES (1ULL << 20)
-#define WASI_RIGHT_FD_FILESTAT_GET (1ULL << 21)
-#define WASI_RIGHT_FD_FILESTAT_SET_SIZE (1ULL << 22)
-#define WASI_RIGHT_FD_FILESTAT_SET_TIMES (1ULL << 23)
-#define WASI_RIGHT_PATH_SYMLINK (1ULL << 24)
-#define WASI_RIGHT_PATH_REMOVE_DIRECTORY (1ULL << 25)
-#define WASI_RIGHT_PATH_UNLINK_FILE (1ULL << 26)
-#define WASI_RIGHT_POLL_FD_READWRITE (1ULL << 27)
-#define WASI_RIGHT_SOCK_SHUTDOWN (1ULL << 28)
-#define WASI_RIGHT_SOCK_ACCEPT (1ULL << 29)
-
-#define WASI_RIGHTS_ALL ((uint64_t)-1)
-
-#define WASI_FILESTAT_SIZE 64
 
 #define POSIX_FDSTAT_GET 1
 #define POSIX_PATHSTAT_GET 1
@@ -207,6 +168,7 @@ long kpwrite(int fd, void *buf, long n, int64_t off);
 
 #define WASI_BACKEND_NATIVE 0
 #define WASI_BACKEND_POSIX 1
+#define WASI_BACKEND_IPC 2
 
 static const char wasi_root_path[] = "/wasm";
 static const char wasi_posix_root_path[] = "/wasm/posix";
@@ -258,6 +220,58 @@ typedef struct rump_stat {
   uint32_t st_gen;
   uint32_t st_spare[2];
 } rump_stat;
+
+static int wasi_path_has_prefix(const char *path, const char *prefix) {
+  ulong prefix_len;
+
+  if (path == nil || prefix == nil)
+    return 0;
+  prefix_len = strlen(prefix);
+  if (strncmp(path, prefix, prefix_len) != 0)
+    return 0;
+  return path[prefix_len] == 0 || path[prefix_len] == '/';
+}
+
+static int wasi_env_add(wasi_context_t *ctx, const char *entry) {
+  char **newv;
+  char *dup;
+  ulong len;
+
+  if (ctx == nil || entry == nil)
+    return -1;
+  len = strlen(entry) + 1;
+  dup = malloc(len);
+  if (dup == nil)
+    return -1;
+  memmove(dup, entry, len);
+
+  newv = realloc(ctx->envv, (ctx->envc + 1) * sizeof(char *));
+  if (newv == nil) {
+    free(dup);
+    return -1;
+  }
+  ctx->envv = newv;
+  ctx->envv[ctx->envc++] = dup;
+  return 0;
+}
+
+static int wasi_env_add_kv(wasi_context_t *ctx, const char *key,
+                           const char *value) {
+  char *entry;
+  ulong len;
+  int ok;
+
+  if (ctx == nil || key == nil || value == nil)
+    return -1;
+  len = strlen(key) + 1 + strlen(value) + 1;
+  entry = malloc(len);
+  if (entry == nil)
+    return -1;
+  snprint(entry, len, "%s=%s", key, value);
+  ok = wasi_env_add(ctx, entry);
+  free(entry);
+  return ok;
+}
 
 static int wasi_rump_rpc(const char *path, const void *req, uint32_t req_len,
                          void *resp, uint32_t resp_len) {
@@ -622,70 +636,136 @@ static int wasi_is_posix_path(const char *path, uint32_t path_len) {
   requires \valid_read(path + (0..path_len-1));
   assigns \nothing;
 */
-static int wasi_path_safe(const char *path, uint32_t path_len) {
-  uint32_t i = 0;
-  while (i < path_len) {
-    while (i < path_len && path[i] == '/')
-      i++;
-    uint32_t start = i;
-    while (i < path_len && path[i] != '/') {
-      if (path[i] == 0)
-        return 0;
-      i++;
-    }
-    uint32_t seg_len = i - start;
-    if (seg_len == 2 && path[start] == '.' && path[start + 1] == '.')
-      return 0;
+/* Port of Plan 9 cleanname */
+static void wasi_cleanname(char *name) {
+  char *s;
+  char *d;
+  char *s0;
+  int c;
+  int rooted;
+
+  if (name[0] == 0) {
+    name[0] = '.';
+    name[1] = 0;
+    return;
   }
-  return 1;
-}
-
-static void wasi_fill_random(uint8_t *buf, uint32_t len) {
-  /* Use kernel CSPRNG (ChaCha20) for WASI random_get */
-  extern void genrandom(uchar * buf, int nbytes);
-  genrandom((uchar *)buf, (int)len);
-}
-
-/*@ requires \valid(out_len);
-  @ assigns *out_len;
-  @*/
-static const char *wasi_posix_path(const char *full, uint32_t *out_len) {
-  static const char posix_root[] = "/";
-
-  if (wasi_is_posix_path(full, (uint32_t)strlen(full))) {
-    const char *p = full + ((uint32_t)sizeof(wasi_posix_root_path) - 1);
-    if (*p == '\0') {
-      *out_len = 1;
-      return posix_root;
+  rooted = name[0] == '/';
+  s0 = name;
+  /* skip leading slashes */
+  while (name[0] == '/')
+    name++;
+  s = name;
+  d = name;
+  while (*s) {
+    c = *s++;
+    if (c == '/') {
+      while (*s == '/')
+        s++;
+      continue;
     }
-    if (*p != '/') {
-      *out_len = (uint32_t)strlen(p);
-      return p;
+    if (c == '.') {
+      if (s[0] == 0 || s[0] == '/') {
+        while (*s == '/')
+          s++;
+        continue;
+      }
+      if (s[0] == '.' && (s[1] == 0 || s[1] == '/')) {
+        /* .. : backtrack */
+        s++;
+        while (*s == '/')
+          s++;
+        if (d > name) {
+          while (--d > name && *d != '/')
+            ;
+        } else if (!rooted) {
+          if (d > s0)
+            *d++ = '/';
+          *d++ = '.';
+          *d++ = '.';
+          name = d;
+        }
+        continue;
+      }
     }
-    *out_len = (uint32_t)strlen(p);
-    return p;
+    if (d > name)
+      *d++ = '/';
+    *d++ = c;
+    while (*s && *s != '/')
+      *d++ = *s++;
   }
-  *out_len = (uint32_t)strlen(full);
-  return full;
+  *d = 0;
+  if (d == s0) {
+    *d++ = '.';
+    *d = 0;
+  }
 }
 
-/*@ requires \valid(ctx) && \valid_read(path + (0..path_len-1)) &&
-  \valid(out_path);
-  @ assigns *out_path;
+/*
+ * Resolve relative path against dirfd base path.
+ * 1. Join base + path
+ * 2. Canonicalize (cleanname)
+ * 3. Verify joined path starts with base (capability check)
+ */
+/*@
+  @ requires ctx != \null;
+  @ requires path != \null && \valid_read(path + (0..path_len-1));
+  @ requires out_full != \null && \valid(out_full);
+  @ assigns *out_full;
+  @ behavior success:
+  @   ensures \result == WASI_ERRNO_SUCCESS ==>
+  @     \valid(*out_full) &&
+  @     (ctx->fds[dirfd].base_path != \null ==>
+  @       \subset(\base_addr(ctx->fds[dirfd].base_path),
+  \base_addr(*out_full))); // Simplified containment checks
   @*/
+static uint32_t wasi_path_resolve(wasi_context_t *ctx, int dirfd,
+                                  const char *path, uint32_t path_len,
+                                  char **out_full) {
+  const char *base = ctx->fds[dirfd].base_path;
+  char *joined;
+  size_t base_len, join_len;
+
+  if (base == nil)
+    return WASI_ERRNO_NOTCAPABLE;
+
+  base_len = strlen(base);
+  join_len = base_len + 1 + path_len + 1;
+  joined = malloc(join_len);
+  if (!joined)
+    return WASI_ERRNO_NOMEM;
+
+  /* Constuct base/path */
+  memmove(joined, base, base_len);
+  joined[base_len] = '/';
+  memmove(joined + base_len + 1, path, path_len);
+  joined[base_len + 1 + path_len] = '\0';
+
+  /* Canonicalize in-place */
+  wasi_cleanname(joined);
+
+  /* Encapsulation Check: Result must stay beneath the dirfd base. */
+  if (strcmp(base, "/") != 0 && !wasi_path_has_prefix(joined, base)) {
+    free(joined);
+    return WASI_ERRNO_NOTCAPABLE;
+  }
+
+  *out_full = joined;
+  return WASI_ERRNO_SUCCESS;
+}
+
 static uint32_t wasi_build_path(wasi_context_t *ctx, int dirfd,
                                 const char *path, uint32_t path_len,
                                 char **out_path) {
   char *full = nil;
-  size_t total = 0;
   int absolute = 0;
 
   if (path_len == 0) {
     return WASI_ERRNO_INVAL;
   }
-  if (!wasi_path_safe(path, path_len)) {
-    return WASI_ERRNO_NOTCAPABLE;
-  }
+
+  /* Note: Removed wasi_path_safe() check. We now allow '..' but check
+     resolution result */
+
   if (path[0] == '/' || path[0] == '#') {
     absolute = 1;
   }
@@ -693,55 +773,32 @@ static uint32_t wasi_build_path(wasi_context_t *ctx, int dirfd,
   if (absolute) {
     if (path_len < 5 || memcmp(path, "/wasm", 5) != 0)
       return WASI_ERRNO_NOTCAPABLE;
-    if (wasi_is_posix_path(path, path_len) && !ctx->fds[4].is_open)
-      return WASI_ERRNO_NOTCAPABLE;
-    total = (size_t)path_len + 1;
-    full = malloc(total);
+    full = malloc((size_t)path_len + 1);
     if (!full) {
       return WASI_ERRNO_NOMEM;
     }
     memmove(full, path, path_len);
     full[path_len] = '\0';
+    wasi_cleanname(full); /* Clean absolute paths too */
+    if (!wasi_path_has_prefix(full, wasi_root_path)) {
+      free(full);
+      return WASI_ERRNO_NOTCAPABLE;
+    }
+    if (wasi_path_has_prefix(full, wasi_posix_root_path) &&
+        !ctx->fds[4].is_open) {
+      free(full);
+      return WASI_ERRNO_NOTCAPABLE;
+    }
     *out_path = full;
     return WASI_ERRNO_SUCCESS;
   }
 
-  const char *dirpath = ctx->fds[dirfd].base_path;
-  Chan *c = nil;
-  if (dirpath == nil) {
-    if (waserror()) {
-      if (c) {
-        cclose(c);
-      }
-      free(full);
-      return WASI_ERRNO_BADF;
-    }
-    c = fdtochan(ctx->fds[dirfd].lux9_fid, -1, 0, 1);
-    dirpath = chanpath(c);
-  }
-  size_t dirlen = strlen(dirpath);
-  int need_sep = (dirlen > 0 && dirpath[dirlen - 1] != '/');
+  /* Relative Path Resolution */
+  if (dirfd < 0 || dirfd >= WASI_MAX_FDS || !ctx->fds[dirfd].is_open)
+    return WASI_ERRNO_BADF;
 
-  total = dirlen + (need_sep ? 1 : 0) + path_len + 1;
-  full = malloc(total);
-  if (!full) {
-    cclose(c);
-    poperror();
-    return WASI_ERRNO_NOMEM;
-  }
-  memmove(full, dirpath, dirlen);
-  if (need_sep) {
-    full[dirlen] = '/';
-  }
-  memmove(full + dirlen + (need_sep ? 1 : 0), path, path_len);
-  full[dirlen + (need_sep ? 1 : 0) + path_len] = '\0';
-  if (c) {
-    cclose(c);
-    poperror();
-  }
-
-  *out_path = full;
-  return WASI_ERRNO_SUCCESS;
+  // Use new resolve logic
+  return wasi_path_resolve(ctx, dirfd, path, path_len, out_path);
 }
 
 static int wasi_rump_path_req(const char *endpoint, uint32_t op,
@@ -843,48 +900,56 @@ static void wasi_build_argv(wasi_context_t *ctx, Proc *p) {
 }
 
 static void wasi_build_env(wasi_context_t *ctx, Proc *p) {
-  if (!ctx || !p || !p->egrp)
+  static char dumb_term[] = "dumb";
+  const char *user = "wasm";
+  const char *pwd = wasi_root_path;
+  const char *home = wasi_root_path;
+  char tmpdir[64];
+
+  if (!ctx)
     return;
-  Egrp *eg = p->egrp;
-  rlock(&eg->rwlock);
-  int cap = 16;
-  int count = 0;
-  char **envv = malloc(cap * sizeof(char *));
-  if (!envv) {
-    runlock(&eg->rwlock);
-    return;
-  }
-  for (int i = 0; i < ENVHASH; i++) {
-    for (Evalue *e = eg->hash[i]; e != nil; e = e->hash) {
-      if (count >= cap) {
-        cap *= 2;
-        char **newv = realloc(envv, cap * sizeof(char *));
-        if (!newv)
-          goto done;
-        envv = newv;
-      }
-      int name_len = strlen(e->name);
-      int val_len = e->len;
-      if (val_len < 0)
-        val_len = 0;
-      int total = name_len + 1 + val_len;
-      char *entry = malloc(total + 1);
-      if (!entry)
-        goto done;
-      memmove(entry, e->name, name_len);
-      entry[name_len] = '=';
-      if (val_len > 0)
-        memmove(entry + name_len + 1, e->value, val_len);
-      entry[total] = '\0';
-      envv[count++] = entry;
+  if (p != nil) {
+    if (p->user != nil && p->user[0] != 0)
+      user = p->user;
+    if (p->dot != nil && p->dot->path != nil) {
+      char *dot = chanpath(p->dot);
+      if (wasi_path_has_prefix(dot, wasi_root_path) &&
+          (!wasi_path_has_prefix(dot, wasi_posix_root_path) ||
+           ctx->fds[4].is_open))
+        pwd = dot;
     }
   }
-done:
-  runlock(&eg->rwlock);
-  ctx->envv = envv;
-  ctx->envc = count;
+  snprint(tmpdir, sizeof(tmpdir), "%s/tmp", wasi_root_path);
+
+  ctx->envv = nil;
+  ctx->envc = 0;
+  if (wasi_env_add_kv(ctx, "USER", user) < 0 ||
+      wasi_env_add_kv(ctx, "LOGNAME", user) < 0 ||
+      wasi_env_add_kv(ctx, "HOME", home) < 0 ||
+      wasi_env_add_kv(ctx, "PWD", pwd) < 0 ||
+      wasi_env_add_kv(ctx, "TMPDIR", tmpdir) < 0 ||
+      wasi_env_add_kv(ctx, "TERM", dumb_term) < 0 ||
+      wasi_env_add_kv(ctx, "LUX9_SYSNAME", sysname != nil ? sysname : "lux9") <
+          0 ||
+      wasi_env_add_kv(ctx, "LUX9_WASM_ROOT", wasi_root_path) < 0) {
+    wasi_ctx_free_env(ctx);
+    return;
+  }
+  if (ctx->fds[4].is_open &&
+      wasi_env_add_kv(ctx, "LUX9_WASM_POSIX", "1") < 0) {
+    wasi_ctx_free_env(ctx);
+    return;
+  }
 }
 
+/*@
+  requires ctx != \null;
+  requires p != \null && \valid(p);
+  assigns *ctx;
+  ensures ctx->fds[0].is_open != 0;
+  ensures ctx->fds[1].is_open != 0;
+  ensures ctx->fds[2].is_open != 0;
+*/
 void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
   if (!ctx)
     return;
@@ -905,8 +970,8 @@ void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
   ctx->fds[2].backend = WASI_BACKEND_NATIVE;
   ctx->fds[2].rights = WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_FILESTAT_GET;
 
-  /* Pre-populate WASM root (3) */
-  int rootfd = kopen("/", 0); /* OREAD */
+  /* Pre-populate the sandbox root visible to WASM guests. */
+  int rootfd = kopen((char *)wasi_root_path, 0); /* OREAD */
   if (rootfd >= 0) {
     ctx->fds[3].is_open = 1;
     ctx->fds[3].lux9_fid = rootfd;
@@ -915,9 +980,9 @@ void wasi_lux9_init_context(wasi_context_t *ctx, Proc *p) {
     ctx->fds[3].base_path = (char *)wasi_root_path;
     ctx->fds[3].rights = WASI_RIGHTS_ALL;
     ctx->fds[3].rights_inheriting = WASI_RIGHTS_ALL;
-    DPRINT("WASI: Opened / at fd 3 (kernel fd %d)\n", rootfd);
+    DPRINT("WASI: Opened %s at fd 3 (kernel fd %d)\n", wasi_root_path, rootfd);
   } else {
-    DPRINT("WASI: Failed to open /, using stub\n");
+    DPRINT("WASI: Failed to open %s, using stub\n", wasi_root_path);
     ctx->fds[3].is_open = 1;
     ctx->fds[3].lux9_fid = 3;
     ctx->fds[3].is_dir = 1;
@@ -997,8 +1062,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
   DPRINT("FD_WRITE: iov_size=%ud\n", iov_size);
   /*@ assert iovs_len <= 0x1FFFFFFF; */
 
-  m3ApiCheckMem(m3ApiOffsetToPtr(iovs_ptr), iov_size);
-  m3ApiCheckMem(m3ApiOffsetToPtr(nwritten_ptr), (uint32_t)sizeof(uint32_t));
+  m3ApiCheckMem(iovs_ptr, iov_size);
+  m3ApiCheckMem(nwritten_ptr, (uint32_t)sizeof(uint32_t));
 
   /* Get Process Context */
   Proc *p = up; // Current process
@@ -1028,24 +1093,27 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
     /*@ assert i * 8 <= 0xFFFFFFFF; */
     uint32_t iov_addr = iovs_ptr + (i * 8);
 
-    uint32_t buf_ptr = m3ApiReadMem32(m3ApiOffsetToPtr(iov_addr));
-    uint32_t buf_len = m3ApiReadMem32(m3ApiOffsetToPtr(iov_addr + 4));
+    uint32_t buf_ptr = m3ApiReadMem32(iov_addr);
+    uint32_t buf_len = m3ApiReadMem32(iov_addr + 4);
 
     DPRINT("FD_WRITE: iov[%d] buf=%ud len=%ud\n", i, buf_ptr, buf_len);
 
     if (buf_len == 0)
       continue;
 
-    m3ApiCheckMem(m3ApiOffsetToPtr(buf_ptr), buf_len);
+    m3ApiCheckMem(buf_ptr, buf_len);
     void *buf = m3ApiOffsetToPtr(buf_ptr);
 
     if (fd == 1 || fd == 2) {
-      DPRINT("FD_WRITE: printing content: '%.*s'\n", buf_len, (char *)buf);
-      DPRINT("%.*s", buf_len, (char *)buf);
-      if (ctx->fds[fd].lux9_fid >= 0) {
-        /*@ assert buf_len < 0x80000000; */
-        kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
-      }
+      /* Direct print to kernel console for stdout/stderr */
+      print("%.*s", (int)buf_len, (char *)buf);
+
+      /*
+       * Do not mirror stdout/stderr back through kwrite() on fds 1/2.
+       * Those fds already represent the console path, so writing them again
+       * from inside the host callback re-enters the console write path and
+       * can deadlock on its qlock.
+       */
       total_written += buf_len;
     } else {
       long n = kwrite(ctx->fds[fd].lux9_fid, buf, buf_len);
@@ -1057,7 +1125,7 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_write) {
     }
   }
 
-  m3ApiWriteMem32(m3ApiOffsetToPtr(nwritten_ptr), total_written);
+  m3ApiWriteMem32(nwritten_ptr, total_written);
 
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
@@ -1351,6 +1419,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_clock_res_get) {
                           *((uint32_t*)(_sp-1)), (uint32_t)sizeof(uint64_t));
   assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1)));
   ensures \result == m3Err_none || \result != \null;
+  behavior realtime:
+    assumes clock_id == WASI_CLOCK_REALTIME;
+  behavior monotonic:
+    assumes clock_id == WASI_CLOCK_MONOTONIC;
+  behavior fallback:
+    assumes clock_id == WASI_CLOCK_PROCESS_CPUTIME || clock_id ==
+  WASI_CLOCK_THREAD_CPUTIME; complete behaviors realtime, monotonic, fallback;
 */
 m3ApiRawFunction(wasi_snapshot_preview1_clock_time_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(uint32_t, clock_id)
@@ -1368,8 +1443,9 @@ m3ApiRawFunction(wasi_snapshot_preview1_clock_time_get) {
     m3ApiReturn(WASI_ERRNO_SUCCESS);
   case WASI_CLOCK_PROCESS_CPUTIME:
   case WASI_CLOCK_THREAD_CPUTIME:
-    /* Fallback to monotonic for now, could use up->time if needed */
-    m3ApiWriteMem64(time_ptr, (uint64_t)nsec());
+    /* Calculate total CPU time (user + system) in nanoseconds */
+    m3ApiWriteMem64(time_ptr, (uint64_t)(up->time[TUser] + up->time[TSys]) *
+                                  (1000000000ULL / HZ));
     m3ApiReturn(WASI_ERRNO_SUCCESS);
   default:
     m3ApiReturn(WASI_ERRNO_INVAL);
@@ -1447,12 +1523,6 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
   if (oflags & WASI_O_EXCL)
     kmode |= OEXCL;
 
-  /* We treat path as absolute for now, ignoring dirfd relative path logic for
-     simplicity unless we implement full walk from dirfd's chan. Use kopen()
-     which expects full path or relative to CWD. WASM usually sends relative
-     paths.
-  */
-
   char *fullpath = nil;
   uint32_t perr = wasi_build_path(ctx, dirfd, path, path_len, &fullpath);
   if (perr != WASI_ERRNO_SUCCESS) {
@@ -1461,6 +1531,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_open) {
   int backend = ctx->fds[dirfd].backend;
   if (wasi_is_posix_path(fullpath, (uint32_t)strlen(fullpath)))
     backend = WASI_BACKEND_POSIX;
+
+  // IPC Adaptor Check
+  if (strncmp(fullpath, "/ipc/", 5) == 0) {
+    backend = WASI_BACKEND_IPC;
+  }
 
   int kfd = -1;
   if (oflags & WASI_O_CREAT) {
@@ -1817,6 +1892,11 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_pwrite) {
 /* wasi_fd_advise(fd, offset, len, advice) */
 /*@
   requires \valid_read((uint64_t *)_sp - 5); // Arguments on stack
+  assigns \nothing;
+  ensures \result == m3Err_none || \result != \null;
+*/
+/*@
+  requires \valid_read((uint64_t *)_sp - 4); // fd, offset, len, advice
   assigns \nothing;
   ensures \result == m3Err_none || \result != \null;
 */
@@ -2959,41 +3039,77 @@ m3ApiRawFunction(wasi_snapshot_preview1_poll_oneoff) {
   m3ApiCheckMem(in_ptr, in_len);
   m3ApiCheckMem(out_ptr, out_len);
 
-  uint32_t req_size = 8 + in_len;
-  uint8_t *req = malloc(req_size);
-  if (!req)
-    m3ApiReturn(WASI_ERRNO_NOMEM);
-  *(uint32_t *)(req + 0) = POSIX_POLL_ONEOFF;
-  *(uint32_t *)(req + 4) = nsubscriptions;
-  memmove(req + 8, m3ApiOffsetToPtr(in_ptr), in_len);
+  uint32_t nevents = 0;
+  vlong min_sleep_ns = -1; /* -1 means infinite/no sleep */
 
-  uint32_t resp_size = 8 + out_len;
-  uint8_t *resp = malloc(resp_size);
-  if (!resp) {
-    free(req);
-    m3ApiReturn(WASI_ERRNO_NOMEM);
+  /* Pass 1: Process subscriptions to find sleep time */
+  for (uint32_t i = 0; i < nsubscriptions; i++) {
+    uint8_t *sub_ptr = m3ApiOffsetToPtr(in_ptr) + i * WASI_SUBSCRIPTION_SIZE;
+    uint8_t type = *(uint8_t *)(sub_ptr + 8); /* eventtype type */
+
+    if (type == WASI_EVENTTYPE_CLOCK) {
+      uint32_t clock_id = *(uint32_t *)(sub_ptr + 16);
+      uint64_t timeout = *(uint64_t *)(sub_ptr + 24);
+      /* precision at +32, flags at +40 */
+      uint16_t flags = *(uint16_t *)(sub_ptr + 40);
+      int absolute = (flags & WASI_SUBSCRIPTION_CLOCK_ABSTIME) != 0;
+
+      vlong target_ns = 0;
+      if (absolute) {
+        if (clock_id == WASI_CLOCK_REALTIME) {
+          target_ns = (vlong)timeout - (seconds() * 1000000000LL);
+        } else {
+          /* Monotonic */
+          target_ns = (vlong)timeout - nsec();
+        }
+      } else {
+        target_ns = (vlong)timeout;
+      }
+
+      if (target_ns < 0)
+        target_ns = 0;
+
+      if (min_sleep_ns == -1 || target_ns < min_sleep_ns) {
+        min_sleep_ns = target_ns;
+      }
+    }
   }
 
-  int r = wasi_rump_rpc_read("/srv/rump/posix/poll_oneoff", req, req_size, resp,
-                             resp_size);
-  free(req);
-  if (r < 8) {
-    free(resp);
-    m3ApiReturn(WASI_ERRNO_IO);
+  /* Execute Sleep */
+  if (min_sleep_ns > 0) {
+    /* Convert ns to ms for tsleep, minimal 1ms */
+    long ms = (long)(min_sleep_ns / 1000000);
+    if (ms <= 0 && min_sleep_ns > 0)
+      ms = 1;
+    tsleep(&up->sleep, return0, 0, ms);
   }
 
-  uint32_t err = *(uint32_t *)resp;
-  uint32_t nevents = *(uint32_t *)(resp + 4);
-  if (err != 0) {
-    free(resp);
-    m3ApiReturn(wasi_errno_from_posix(err));
+  /* Pass 2: Generate events */
+  for (uint32_t i = 0; i < nsubscriptions; i++) {
+    uint8_t *sub_ptr = m3ApiOffsetToPtr(in_ptr) + i * WASI_SUBSCRIPTION_SIZE;
+    uint64_t userdata = *(uint64_t *)(sub_ptr + 0);
+    uint8_t type = *(uint8_t *)(sub_ptr + 8);
+
+    uint8_t *evt_ptr = m3ApiOffsetToPtr(out_ptr) + nevents * WASI_EVENT_SIZE;
+
+    if (type == WASI_EVENTTYPE_CLOCK) {
+      *(uint64_t *)(evt_ptr + 0) = userdata;
+      *(uint16_t *)(evt_ptr + 8) = WASI_ERRNO_SUCCESS;
+      *(uint8_t *)(evt_ptr + 10) = WASI_EVENTTYPE_CLOCK;
+      nevents++;
+    } else if (type == WASI_EVENTTYPE_FD_READ ||
+               type == WASI_EVENTTYPE_FD_WRITE) {
+      /* Stub: Always ready for IO (non-blocking IO will limit actual transfer)
+       */
+      *(uint64_t *)(evt_ptr + 0) = userdata;
+      *(uint16_t *)(evt_ptr + 8) = WASI_ERRNO_SUCCESS;
+      *(uint8_t *)(evt_ptr + 10) = type;
+      /* fd_readwrite.nbytes = 0 (available?) */
+      *(uint64_t *)(evt_ptr + 16) = 1; /* Claim something is available */
+      nevents++;
+    }
   }
-  if (nevents > nsubscriptions)
-    nevents = nsubscriptions;
-  if (nevents > 0) {
-    memmove(m3ApiOffsetToPtr(out_ptr), resp + 8, nevents * WASI_EVENT_SIZE);
-  }
-  free(resp);
+
   m3ApiWriteMem32(nevents_ptr, nevents);
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
@@ -3065,7 +3181,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_recv) {
     total += len;
   }
 
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE ||
+      wasi_fd_backend(ctx, fd) == WASI_BACKEND_IPC) {
     uint32_t remaining = total;
     uint32_t count = 0;
     for (uint32_t i = 0; i < ri_data_len && remaining > 0; i++) {
@@ -3170,7 +3287,8 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_send) {
     total += len;
   }
 
-  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE) {
+  if (wasi_fd_backend(ctx, fd) == WASI_BACKEND_NATIVE ||
+      wasi_fd_backend(ctx, fd) == WASI_BACKEND_IPC) {
     uint32_t written = 0;
     for (uint32_t i = 0; i < si_data_len; i++) {
       /*@ assert i * 8 <= 0xFFFFFFFF; */
@@ -3263,6 +3381,13 @@ m3ApiRawFunction(wasi_snapshot_preview1_sock_shutdown) {
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
 /* wasi_fd_filestat_get(fd, buf) */
+/*@
+  requires \valid_read((uint64_t *)_sp - 2); // fd, buf_ptr
+  requires valid_wasm_ptr(_mem, get_mem_size(runtime),
+                          *((uint32_t*)(_sp-1)), (uint32_t)WASI_FILESTAT_SIZE);
+  assigns *((uint64_t*)_mem + *((uint32_t*)(_sp-1))); // simplified assigns
+  ensures \result == m3Err_none || \result != \null;
+*/
 m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_get) {
   m3ApiReturnType(uint32_t) m3ApiGetArg(int32_t, fd)
       m3ApiGetArg(uint32_t, buf_ptr)
@@ -3297,14 +3422,15 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_get) {
 
     uint8_t filetype = (d->mode & DMDIR) ? WASI_FILETYPE_DIRECTORY
                                          : WASI_FILETYPE_REGULAR_FILE;
-    m3ApiWriteMem64(buf_ptr + 0, 0);
-    m3ApiWriteMem64(buf_ptr + 8, d->qid.path);
-    m3ApiWriteMem8(buf_ptr + 16, filetype);
-    m3ApiWriteMem64(buf_ptr + 24, 1);
-    m3ApiWriteMem64(buf_ptr + 32, (uint64_t)d->length);
-    m3ApiWriteMem64(buf_ptr + 40, (uint64_t)d->atime * 1000000000ULL);
-    m3ApiWriteMem64(buf_ptr + 48, (uint64_t)d->mtime * 1000000000ULL);
-    m3ApiWriteMem64(buf_ptr + 56, (uint64_t)d->mtime * 1000000000ULL);
+    uint8_t *host_buf = m3ApiOffsetToPtr(buf_ptr);
+    *(uint64_t *)(host_buf + 0) = 0;
+    *(uint64_t *)(host_buf + 8) = d->qid.path;
+    *(uint8_t *)(host_buf + 16) = filetype;
+    *(uint64_t *)(host_buf + 24) = 1;
+    *(uint64_t *)(host_buf + 32) = (uint64_t)d->length;
+    *(uint64_t *)(host_buf + 40) = (uint64_t)d->atime * 1000000000ULL;
+    *(uint64_t *)(host_buf + 48) = (uint64_t)d->mtime * 1000000000ULL;
+    *(uint64_t *)(host_buf + 56) = (uint64_t)d->mtime * 1000000000ULL;
 
     free(d);
     cclose(c);
@@ -3328,14 +3454,15 @@ m3ApiRawFunction(wasi_snapshot_preview1_fd_filestat_get) {
 
   rump_stat *st = (rump_stat *)(resp + 4);
 
-  m3ApiWriteMem64(buf_ptr + 0, st->st_dev);
-  m3ApiWriteMem64(buf_ptr + 8, st->st_ino);
-  m3ApiWriteMem8(buf_ptr + 16, wasi_filetype_from_mode(st->st_mode));
-  m3ApiWriteMem64(buf_ptr + 24, st->st_nlink);
-  m3ApiWriteMem64(buf_ptr + 32, st->st_size);
-  m3ApiWriteMem64(buf_ptr + 40, wasi_timespec_to_ns(&st->st_atimespec));
-  m3ApiWriteMem64(buf_ptr + 48, wasi_timespec_to_ns(&st->st_mtimespec));
-  m3ApiWriteMem64(buf_ptr + 56, wasi_timespec_to_ns(&st->st_ctimespec));
+  uint8_t *host_ptr = m3ApiOffsetToPtr(buf_ptr);
+  *(uint64_t *)(host_ptr + 0) = st->st_dev;
+  *(uint64_t *)(host_ptr + 8) = st->st_ino;
+  *(uint8_t *)(host_ptr + 16) = wasi_filetype_from_mode(st->st_mode);
+  *(uint64_t *)(host_ptr + 24) = st->st_nlink;
+  *(uint64_t *)(host_ptr + 32) = st->st_size;
+  *(uint64_t *)(host_ptr + 40) = wasi_timespec_to_ns(&st->st_atimespec);
+  *(uint64_t *)(host_ptr + 48) = wasi_timespec_to_ns(&st->st_mtimespec);
+  *(uint64_t *)(host_ptr + 56) = wasi_timespec_to_ns(&st->st_ctimespec);
 
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }
@@ -3397,17 +3524,18 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_get) {
 
     uint8_t filetype = (d->mode & DMDIR) ? WASI_FILETYPE_DIRECTORY
                                          : WASI_FILETYPE_REGULAR_FILE;
-    m3ApiWriteMem64(buf_ptr + 0, 0);                    // st_dev
-    m3ApiWriteMem64(buf_ptr + 8, d->qid.path);          // st_ino
-    m3ApiWriteMem8(buf_ptr + 16, filetype);             // st_filetype
-    m3ApiWriteMem64(buf_ptr + 24, 1);                   // st_nlink
-    m3ApiWriteMem64(buf_ptr + 32, (uint64_t)d->length); // st_size
-    m3ApiWriteMem64(buf_ptr + 40,
-                    (uint64_t)d->atime * 1000000000ULL); // st_atim
-    m3ApiWriteMem64(buf_ptr + 48,
-                    (uint64_t)d->mtime * 1000000000ULL); // st_mtim
-    m3ApiWriteMem64(buf_ptr + 56,
-                    (uint64_t)d->mtime * 1000000000ULL); // st_ctim
+    uint8_t *host_buf = m3ApiOffsetToPtr(buf_ptr);
+    *(uint64_t *)(host_buf + 0) = 0;                    // st_dev
+    *(uint64_t *)(host_buf + 8) = d->qid.path;          // st_ino
+    *(uint8_t *)(host_buf + 16) = filetype;             // st_filetype
+    *(uint64_t *)(host_buf + 24) = 1;                   // st_nlink
+    *(uint64_t *)(host_buf + 32) = (uint64_t)d->length; // st_size
+    *(uint64_t *)(host_buf + 40) =
+        (uint64_t)d->atime * 1000000000ULL; // st_atim
+    *(uint64_t *)(host_buf + 48) =
+        (uint64_t)d->mtime * 1000000000ULL; // st_mtim
+    *(uint64_t *)(host_buf + 56) =
+        (uint64_t)d->mtime * 1000000000ULL; // st_ctim
 
     free(d);
     cclose(c);
@@ -3440,14 +3568,16 @@ m3ApiRawFunction(wasi_snapshot_preview1_path_filestat_get) {
 
   rump_stat *st = (rump_stat *)(resp + 4);
 
-  m3ApiWriteMem64(buf_ptr + 0, st->st_dev);
-  m3ApiWriteMem64(buf_ptr + 8, st->st_ino);
-  m3ApiWriteMem8(buf_ptr + 16, wasi_filetype_from_mode(st->st_mode));
-  m3ApiWriteMem64(buf_ptr + 24, st->st_nlink);
-  m3ApiWriteMem64(buf_ptr + 32, st->st_size);
-  m3ApiWriteMem64(buf_ptr + 40, wasi_timespec_to_ns(&st->st_atimespec));
-  m3ApiWriteMem64(buf_ptr + 48, wasi_timespec_to_ns(&st->st_mtimespec));
-  m3ApiWriteMem64(buf_ptr + 56, wasi_timespec_to_ns(&st->st_ctimespec));
+  uint8_t *host_buf = m3ApiOffsetToPtr(buf_ptr);
+
+  *(uint64_t *)(host_buf + 0) = st->st_dev;
+  *(uint64_t *)(host_buf + 8) = st->st_ino;
+  *(uint8_t *)(host_buf + 16) = wasi_filetype_from_mode(st->st_mode);
+  *(uint64_t *)(host_buf + 24) = st->st_nlink;
+  *(uint64_t *)(host_buf + 32) = st->st_size;
+  *(uint64_t *)(host_buf + 40) = wasi_timespec_to_ns(&st->st_atimespec);
+  *(uint64_t *)(host_buf + 48) = wasi_timespec_to_ns(&st->st_mtimespec);
+  *(uint64_t *)(host_buf + 56) = wasi_timespec_to_ns(&st->st_ctimespec);
 
   m3ApiReturn(WASI_ERRNO_SUCCESS);
 }

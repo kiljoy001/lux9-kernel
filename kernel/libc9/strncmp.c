@@ -1,10 +1,12 @@
-#include <u.h>
 #include <libc.h>
+#include <u.h>
 
 /*@
   @ requires n >= 0;
-  @ requires \valid_read(s1 + (0 .. n-1)) || (\exists integer k; 0 <= k < n && s1[k] == '\0');
-  @ requires \valid_read(s2 + (0 .. n-1)) || (\exists integer k; 0 <= k < n && s2[k] == '\0');
+  @ requires \valid_read(s1 + (0 .. n-1)) || (\exists integer k; 0 <= k < n &&
+  s1[k] == '\0');
+  @ requires \valid_read(s2 + (0 .. n-1)) || (\exists integer k; 0 <= k < n &&
+  s2[k] == '\0');
   @ assigns \nothing;
   @ ensures \result == -1 || \result == 0 || \result == 1;
   @ behavior equal:
@@ -23,31 +25,29 @@
   @ complete behaviors;
   @ disjoint behaviors;
   @*/
-int
-strncmp(char *s1, char *s2, long n)
-{
-	unsigned c1, c2;
+int strncmp(const char *s1, const char *s2, ulong n) {
+  unsigned c1, c2;
 
-	/*@
-	  @ loop invariant 0 <= n <= \at(n, Pre);
-	  @ loop invariant s1 == \at(s1, Pre) + (\at(n, Pre) - n);
-	  @ loop invariant s2 == \at(s2, Pre) + (\at(n, Pre) - n);
-	  @ loop invariant \forall integer i; 0 <= i < (\at(n, Pre) - n) ==>
-	  @                  \at(s1, Pre)[i] == \at(s2, Pre)[i];
-	  @ loop assigns n, s1, s2, c1, c2;
-	  @ loop variant n;
-	  @*/
-	while(n > 0) {
-		c1 = *s1++;
-		c2 = *s2++;
-		n--;
-		if(c1 != c2) {
-			if(c1 > c2)
-				return 1;
-			return -1;
-		}
-		if(c1 == 0)
-			break;
-	}
-	return 0;
+  /*@
+    @ loop invariant 0 <= n <= \at(n, Pre);
+    @ loop invariant s1 == \at(s1, Pre) + (\at(n, Pre) - n);
+    @ loop invariant s2 == \at(s2, Pre) + (\at(n, Pre) - n);
+    @ loop invariant \forall integer i; 0 <= i < (\at(n, Pre) - n) ==>
+    @                  \at(s1, Pre)[i] == \at(s2, Pre)[i];
+    @ loop assigns n, s1, s2, c1, c2;
+    @ loop variant n;
+    @*/
+  while (n > 0) {
+    c1 = *s1++;
+    c2 = *s2++;
+    n--;
+    if (c1 != c2) {
+      if (c1 > c2)
+        return 1;
+      return -1;
+    }
+    if (c1 == 0)
+      break;
+  }
+  return 0;
 }

@@ -12,7 +12,7 @@
 
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 u8  ConvertTypeCharToTypeId (char i_code)
 {
     switch (i_code) {
@@ -30,7 +30,7 @@ u8  ConvertTypeCharToTypeId (char i_code)
 /*@
   @ requires o_functionType == \null || \valid(o_functionType);
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  SignatureToFuncType  (IM3FuncType * o_functionType, ccstr_t i_signature)
 {
     IM3FuncType funcType = NULL;
@@ -107,7 +107,7 @@ _   (AllocFuncType (& funcType, (u32) maxNumTypes));
 static
 /*@
   @ assigns \nothing;
-  @*/
+  @*\/ */
 M3Result  ValidateSignature  (IM3Function i_function, ccstr_t i_linkingSignature)
 {
     M3Result result = m3Err_none;
@@ -122,7 +122,7 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
           /*@ loop invariant 0 <= i <= ftype->numArgs;
     @ loop assigns i;
     @ loop variant ftype->numArgs - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < ftype->numArgs; ++i)
         {
             if (i != 0) print (", ");
@@ -133,7 +133,7 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
           /*@ loop invariant 0 <= i <= ftype->numRets;
     @ loop assigns i;
     @ loop variant ftype->numRets - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < ftype->numRets; ++i)
         {
             if (i != 0) print (", ");
@@ -146,7 +146,7 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
           /*@ loop invariant 0 <= i <= i_function->funcType->numArgs;
     @ loop assigns i;
     @ loop variant i_function->funcType->numArgs - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < i_function->funcType->numArgs; ++i)
         {
             if (i != 0) print (", ");
@@ -157,7 +157,7 @@ _   (SignatureToFuncType (& ftype, i_linkingSignature));
           /*@ loop invariant 0 <= i <= i_function->funcType->numRets;
     @ loop assigns i;
     @ loop variant i_function->funcType->numRets - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < i_function->funcType->numRets; ++i)
         {
             if (i != 0) print (", ");
@@ -194,7 +194,7 @@ _try {
       /*@ loop invariant 0 <= i <= io_module->numFunctions;
     @ loop assigns i;
     @ loop variant io_module->numFunctions - i;
-    @*/
+    @*\/ */
   for (u32 i = 0; i < io_module->numFunctions; ++i)
     {
         const IM3Function f = & io_module->functions [i];

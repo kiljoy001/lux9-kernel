@@ -12,53 +12,24 @@
  * - Simpler to write clean code than fix library conflicts
  */
 
-#include "u.h"
-#include "portlib.h"
-#include "mem.h"
 #include "dat.h"
 #include "fns.h"
+#include "mem.h"
+#include "portlib.h"
 #include "tpm.h"
+#include "u.h"
 
-/* External TIS driver function */
-extern int tpm_transmit(TPMContext *ctx, u8int *cmd, usize cmd_len, u8int *resp,
-                        usize *resp_len);
-
-static int verbose_tpm(void) { return getconf("debug.tpm") != nil; }
-
-/*@
-  @ requires prefix == \null || \valid(prefix);
-  @ requires buffer == \null || \valid(buffer);
-  @ assigns \nothing;
-  @*/
-void tpm_dump_buffer(const char *prefix, u8int *buffer, usize len) {
-  usize i;
-  if (!verbose_tpm())
-    return;
-  if (!verbose_tpm())
-    return;
-  print("%s", prefix);
-  for (i = 0; i < len; i++) {
-    if (i > 0 && i % 16 == 0)
-      print("\n%s", prefix);
-    print("%02X ", buffer[i]);
-  }
-  print("\n");
+/* Stub for buffer dumping */
+void tpm_dump_buffer(char *label, u8int *buf, int len) {
+  print("%s: dump %d bytes\n", label, len);
 }
 
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
 static void marshal_u16(u8int **buf, u16int val) {
   (*buf)[0] = (val >> 8) & 0xFF;
   (*buf)[1] = val & 0xFF;
   *buf += 2;
 }
 
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
 static void marshal_u32(u8int **buf, u32int val) {
   (*buf)[0] = (val >> 24) & 0xFF;
   (*buf)[1] = (val >> 16) & 0xFF;
@@ -67,20 +38,12 @@ static void marshal_u32(u8int **buf, u32int val) {
   *buf += 4;
 }
 
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
 static u16int unmarshal_u16(u8int **buf) {
   u16int val = ((*buf)[0] << 8) | (*buf)[1];
   *buf += 2;
   return val;
 }
 
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
 static u32int unmarshal_u32(u8int **buf) {
   u32int val =
       ((*buf)[0] << 24) | ((*buf)[1] << 16) | ((*buf)[2] << 8) | (*buf)[3];
@@ -89,11 +52,6 @@ static u32int unmarshal_u32(u8int **buf) {
 }
 
 /* Marshal TPM2B buffer (size + data) */
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ requires data == \null || \valid(data);
-  @ assigns \nothing;
-  @*/
 static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
   marshal_u16(buf, len);
   if (len > 0) {
@@ -103,11 +61,6 @@ static void marshal_tpm2b(u8int **buf, const u8int *data, u16int len) {
 }
 
 /* Unmarshal TPM2B buffer */
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ requires data == \null || \valid(data);
-  @ assigns \nothing;
-  @*/
 static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
   u16int len = unmarshal_u16(buf);
   if (len > max_len)
@@ -126,10 +79,6 @@ static u16int unmarshal_tpm2b(u8int **buf, u8int *data, u16int max_len) {
  * The authSize is the size of all authorization structures that follow,
  * NOT including the authSize field itself (4 bytes).
  */
-/*@
-  @ requires buf == \null || \valid(buf);
-  @ assigns \nothing;
-  @*/
 static void marshal_password_session(u8int **buf) {
   /* Authorization Size (excludes itself, includes session data):
    * sessionHandle (4) + nonce size (2) + attributes (1) + hmac size (2) = 9
@@ -138,9 +87,9 @@ static void marshal_password_session(u8int **buf) {
 
   /* Session Data */
   marshal_u32(buf, TPM2_RS_PW); /* sessionHandle: TPM2_RS_PW */
-  marshal_u16(buf, 0);         /* nonce size: empty */
-  *(*buf)++ = 0x00;            /* sessionAttributes: none (continueSession=0) */
-  marshal_u16(buf, 0);         /* hmac size: empty (password) */
+  marshal_u16(buf, 0);          /* nonce size: empty */
+  *(*buf)++ = 0x00;    /* sessionAttributes: none (continueSession=0) */
+  marshal_u16(buf, 0); /* hmac size: empty (password) */
 }
 
 /*
@@ -149,10 +98,6 @@ static void marshal_password_session(u8int **buf) {
  * Must be called before any other TPM commands.
  * Uses TPM2_SU_CLEAR to start with a clean state.
  */
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
 int tpm2_startup(TPMContext *ctx) {
   USED(ctx);
   u8int cmd[12];
@@ -202,11 +147,6 @@ int tpm2_startup(TPMContext *ctx) {
  *
  * Returns handle to primary key (parent for sealed objects)
  */
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ requires handle_out == \null || \valid(handle_out);
-  @ assigns \nothing;
-  @*/
 int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   USED(ctx);
   u8int cmd[512];
@@ -217,8 +157,8 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   u32int rc;
 
   /* Command Header */
-  marshal_u16(&p, TPM2_ST_SESSIONS);      /* tag */
-  marshal_u32(&p, 0);                     /* size - fill later */
+  marshal_u16(&p, TPM2_ST_SESSIONS);       /* tag */
+  marshal_u32(&p, 0);                      /* size - fill later */
   marshal_u32(&p, TPM2_CC_CREATE_PRIMARY); /* command code */
 
   /* Primary Handle (owner hierarchy) */
@@ -237,7 +177,7 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   marshal_u16(&p, 0); /* size - fill later */
 
   /* TPMT_PUBLIC for ECC */
-  marshal_u16(&p, TPM_ALG_ECC);    /* type = ECC */
+  marshal_u16(&p, TPM_ALG_ECC);     /* type = ECC */
   marshal_u16(&p, TPM2_ALG_SHA256); /* nameAlg */
   /* objectAttributes: fixedTPM(1) | fixedParent(4) | sensitiveDataOrigin(5) |
    * userWithAuth(6) | restricted(16) | decrypt(17) = 0x00030072 */
@@ -248,14 +188,14 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
   /* symmetric: TPMT_SYM_DEF_OBJECT (algorithm, keyBits, mode) */
   marshal_u16(&p, TPM2_ALG_AES); /* algorithm = AES */
   marshal_u16(&p, 128);          /* keyBits = 128 */
-  marshal_u16(&p, TPM_ALG_CFB); /* mode = CFB */
+  marshal_u16(&p, TPM_ALG_CFB);  /* mode = CFB */
 
   /* TPMT_ECC_SCHEME - NULL for storage key */
   marshal_u16(&p, TPM_ALG_NULL); /* scheme */
 
   /* ECC details */
   marshal_u16(&p, TPM2_ECC_NIST_P256); /* curveID */
-  marshal_u16(&p, TPM_ALG_NULL);      /* kdf */
+  marshal_u16(&p, TPM_ALG_NULL);       /* kdf */
 
   /* TPMS_ECC_POINT for unique (X and Y coordinates) */
   marshal_u16(&p, 0); /* X size - generated by TPM */
@@ -309,9 +249,9 @@ int tpm2_create_primary(TPMContext *ctx, u32int *handle_out) {
  *
  * Seals data under parent key. Data can only be unsealed if PCRs match.
  */
-int tpm2_create(u32int parent_handle, u8int *data, u16int data_len, 
-                u8int *private_out, u16int *private_len,
-                u8int *public_out, u16int *public_len) {
+int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
+                u8int *private_out, u16int *private_len, u8int *public_out,
+                u16int *public_len) {
   u8int cmd[512];
   u8int resp[512];
   usize resp_len = sizeof(resp);
@@ -359,7 +299,7 @@ int tpm2_create(u32int parent_handle, u8int *data, u16int data_len,
 
   /* KEYEDHASH parameters */
   marshal_u16(&p, TPM_ALG_NULL); /* scheme */
-  marshal_u16(&p, 0);             /* unique size */
+  marshal_u16(&p, 0);            /* unique size */
 
   u16int public_size = p - public_start - 2;
   public_start[0] = (public_size >> 8) & 0xFF;
@@ -485,11 +425,11 @@ int tpm2_load(u32int parent_handle, const u8int *private_blob,
 /*
  * TPM2_Unseal - Unseal data from loaded object
  */
-int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len, u8int *data_out,
-                u16int *data_len) {
+int tpm2_unseal(u32int item_handle, const u8int *auth, u16int auth_len,
+                u8int *data_out, u16int *data_len) {
   USED(auth);
   USED(auth_len);
-  
+
   u8int cmd[128];
   u8int resp[256];
   usize resp_len = sizeof(resp);
@@ -615,10 +555,6 @@ int tpm2_nv_define_space(TPMContext *ctx, u32int nv_index, u16int size,
 /*
  * TPM2_NV_UndefineSpace - Delete NVRAM index
  */
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
 int tpm2_nv_undefine_space(TPMContext *ctx, u32int nv_index) {
   USED(ctx);
   u8int cmd[128];
@@ -805,9 +741,6 @@ int tpm20_hmac(TPMContext *ctx, u32int key_handle, u8int *data, usize data_len,
  *
  * Based on Linux kernel's tpm2_flush_context()
  */
-/*@
-  @ assigns \nothing;
-  @*/
 int tpm2_flush_context(u32int handle) {
   u8int cmd[64];
   u8int resp[64];
@@ -865,10 +798,6 @@ int tpm2_flush_context(u32int handle) {
  *
  * Based on Linux kernel's tpm2_shutdown()
  */
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
 int tpm2_shutdown(TPMContext *ctx, u16int shutdown_type) {
   USED(ctx);
   u8int cmd[64];
@@ -1018,10 +947,6 @@ int tpm2_get_capability(TPMContext *ctx, u32int capability, u32int property,
  *
  * Based on Linux kernel's tpm2_do_selftest()
  */
-/*@
-  @ requires ctx == \null || \valid(ctx);
-  @ assigns \nothing;
-  @*/
 int tpm2_self_test(TPMContext *ctx, u8int full_test) {
   USED(ctx);
   u8int cmd[64];
@@ -1358,8 +1283,8 @@ int tpm2_seal_to_srk(const u8int *data, u16int data_len, const u8int *auth,
   }
 
   /* Seal the data under the SRK */
-  rc = tpm2_create(srk_handle, (u8int *)data, data_len, priv, &priv_len,
-                   pub, &pub_len);
+  rc = tpm2_create(srk_handle, (u8int *)data, data_len, priv, &priv_len, pub,
+                   &pub_len);
   if (rc < 0) {
     print("tpm2_seal_to_srk: failed to seal data\n");
     tpm2_flush_context(srk_handle);

@@ -45,6 +45,8 @@ BlindLedgerError exchange_prepare(uintptr vaddr, ExchangeHandle *out_cap);
 int exchange_prepare_range(uintptr vaddr, ulong len, ExchangeHandle *handles);
 int exchange_accept(const ExchangeHandle *handle, uintptr dest_vaddr, int prot);
 int exchange_cancel(const ExchangeHandle *handle);
+int exchange_transfer(Proc *from, Proc *to, const ExchangeHandle *handle,
+                      uintptr to_vaddr);
 
 /* Transfer operations */
 // No duplicate exchange_prepare_range here
@@ -58,6 +60,7 @@ uintptr sys_exchange_prepare(void *list);
 uintptr sys_exchange_prepare_range(void *list);
 uintptr sys_exchange_accept(void *list);
 uintptr sys_exchange_cancel(void *list);
+uintptr sys_exchange_transfer(void *list);
 
 /* Phase 3: Capability-Based Mapping */
 uintptr exchange_map_by_cap(const UserCapability *cap);

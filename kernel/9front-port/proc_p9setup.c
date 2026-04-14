@@ -16,7 +16,9 @@
 #include "dat.h"
 #include "exchange_pool.h"
 #include "fns.h"
+#include "hhdm.h"
 #include "mem.h"
+#include "borrowchecker.h"
 #include "pageown.h"
 #include "portlib.h"
 #include "u.h"
@@ -25,6 +27,7 @@
 
 static hsiphash_key_t p9va_key;
 static int p9va_key_init;
+extern uintptr paddr(void *);
 
 /*@
   @ assigns \nothing;
@@ -96,15 +99,99 @@ uintptr p9_pick_uaddr(Proc *p, const UserCapability *cap) {
   @ requires p == \null || \valid(p);
   @ assigns \nothing;
   @*/
+static int proc_find_pool_cap_by_pa(Proc *p, uintptr pa, UserCapability *out) {
+  ProcAllocation *alloc;
+  BlindLedgerEntry entry;
+
+  if (p == nil || out == nil || pa == 0)
+    return -1;
+
+  alloc = get_proc_allocation(p);
+  if (alloc == nil)
+    return -1;
+
+  for (uint i = 0; i < alloc->num_pages; i++) {
+    if (ledger_verify(&alloc->pages[i], &entry) != BLIND_LEDGER_OK)
+      continue;
+    if (entry.physical_address != pa)
+      continue;
+    *out = alloc->pages[i];
+    return 0;
+  }
+
+  return -1;
+}
+
+void proc_teardown_p9page(Proc *p) {
+  Segment *s;
+  void *kva;
+  uintptr pa;
+  int pooled;
+  Proc *owner;
+  UserCapability cap;
+  uintptr key;
+
+  if (p == nil || p->kp)
+    return;
+
+  s = nil;
+  kva = nil;
+  pa = 0;
+  pooled = 0;
+
+  qlock(&p->seglock);
+  s = p->seg[P9SEG];
+  if (s != nil)
+    p->seg[P9SEG] = nil;
+  kva = p->p9page;
+  pa = p->p9page_phys;
+  if (s != nil && s->pseg != nil && (s->pseg->attr & SG_POOL) != 0)
+    pooled = 1;
+  p->p9page = nil;
+  p->p9page_phys = 0;
+  qunlock(&p->seglock);
+
+  if (pa != 0) {
+    key = (uintptr)kaddr(pa);
+    owner = pageown_get_owner(pa);
+    if (owner != nil) {
+      if (borrow_release(owner, key) != BORROW_OK)
+        print("proc_teardown_p9page: borrow_release failed pid=%lud pa=%#p\n",
+              p->pid, (void *)pa);
+    } else if (borrow_is_owned_by_system(key, OWNER_KERNEL)) {
+      if (borrow_release_system(key, OWNER_KERNEL) != BORROW_OK)
+        print("proc_teardown_p9page: system release failed pid=%lud pa=%#p\n",
+              p->pid, (void *)pa);
+    }
+
+    if (pooled) {
+      if (proc_find_pool_cap_by_pa(p, pa, &cap) == 0) {
+        if (global_pool_free_page(p, &cap) != POOL_OK) {
+          print("proc_teardown_p9page: pool free failed pid=%lud pa=%#p\n",
+                p->pid, (void *)pa);
+        }
+      } else {
+        print("proc_teardown_p9page: missing pool capability pid=%lud pa=%#p\n",
+              p->pid, (void *)pa);
+      }
+    } else if (kva != nil) {
+      xfree(kva);
+    }
+  }
+
+  if (s != nil)
+    putseg(s);
+}
+
+/*@
+  @ requires p == \null || \valid(p);
+  @ assigns \nothing;
+  @*/
 int proc_setup_p9page(Proc *p) {
-  print("DEBUG:proc_setup_p9page ENTRY p=%p\n", p);
-  print("DEBUG:proc_setup_p9page reading p->kp...\n");
+  int have_cap;
+
   if (p->kp)
     return 0; /* Kernel processes don't need this */
-
-  print("DEBUG:proc_setup_p9page reading p->pid (offset in struct)...\n");
-  ulong test_pid = p->pid;
-  print("DEBUG:proc_setup_p9page p->pid=%lud\n", test_pid);
 
   if (p->seg[P9SEG] != nil)
     return 0; /* Already set up */
@@ -118,22 +205,24 @@ int proc_setup_p9page(Proc *p) {
   BlindLedgerEntry entry;
   uintptr pa = 0;
   void *kva = nil; /* Kernel virtual address for p9page */
+  memset(&cap, 0, sizeof(cap));
+  have_cap = 0;
 
   if (global_pool != nil) {
     PoolError perr = global_pool_alloc_page(p, &cap);
     if (perr == POOL_OK) {
+      have_cap = 1;
       /* Verify capability and get kernel virtual address */
       if (ledger_verify(&cap, &entry) == BLIND_LEDGER_OK) {
-        /* NOTE: BlindLedger stores KADDR, not physical address!
-         * The pool was allocated via xspanalloc() which returns KADDR.
-         */
-        kva = (void *)entry.physical_address; /* This is actually KADDR */
-        pa = PADDR(kva); /* Convert to real physical address for MMU */
+        kva = (void *)hhdm_virt(entry.physical_address);
+        pa = entry.physical_address;
         print("proc_setup_p9page: pid=%lud pool page kva=%p pa=%#p\n", p->pid,
               kva, (void *)pa);
       } else {
         print("proc_setup_p9page: pid=%lud cap verify failed, fallback\n",
               p->pid);
+        global_pool_free_page(p, &cap);
+        have_cap = 0;
         pa = 0;
       }
     } else {
@@ -155,13 +244,13 @@ int proc_setup_p9page(Proc *p) {
       return -1;
     }
     kva = page; /* xspanalloc returns KADDR */
-    pa = PADDR(page);
+    pa = paddr(page);
     print("proc_setup_p9page: pid=%lud fallback page kva=%p pa=%#p\n", p->pid,
           kva, (void *)pa);
   }
 
   if (p->p9uaddr == 0) {
-    if (pa != 0)
+    if (have_cap)
       p->p9uaddr = p9_pick_uaddr(p, &cap);
     else
       p->p9uaddr = p9_pick_uaddr(p, nil);
@@ -179,7 +268,9 @@ int proc_setup_p9page(Proc *p) {
   Segment *s = newseg(SG_PHYSICAL, p->p9uaddr, 1);
   if (s == nil) {
     print("proc_setup_p9page: newseg failed\n");
-    /* TODO: Return page to pool on failure */
+    if (have_cap)
+      global_pool_free_page(p, &cap);
+    p->p9uaddr = 0;
     return -1;
   }
 
@@ -190,11 +281,16 @@ int proc_setup_p9page(Proc *p) {
   if (s->pseg == nil) {
     print("proc_setup_p9page: malloc failed for pseg\n");
     putseg(s);
+    if (have_cap)
+      global_pool_free_page(p, &cap);
+    p->p9uaddr = 0;
     return -1;
   }
 
   /* Configure physical segment with real physical address */
-  s->pseg->attr = SG_PHYSICAL | SG_CACHED;
+  s->pseg->attr = SG_PHYSICAL | SG_CACHED | SG_NOEXEC | SG_PROCOWNED;
+  if (have_cap)
+    s->pseg->attr |= SG_POOL;
   s->pseg->name = "9pexchange";
   s->pseg->pa = pa; /* Physical address from pool */
   s->pseg->size = BY2PG;
@@ -215,19 +311,20 @@ int proc_setup_p9page(Proc *p) {
             oseg->base);
       p->seg[i] = nil;
       putseg(oseg);
-      print("DEBUG:proc_setup_p9page post-clear-seg[%d] p->pid=%lud\n", i,
-            p->pid);
     }
   }
-  print("DEBUG:proc_setup_p9page post-loop p->pid=%lud\n", p->pid);
 
   /* Assign segment to process at P9SEG slot */
   p->seg[P9SEG] = s;
-  print("DEBUG:proc_setup_p9page post-assignment p->pid=%lud\n", p->pid);
 
   /* Store kernel virtual address for p9_handle_doorbell */
   p->p9page = kva;
   p->p9page_phys = pa;
+
+  if (pageown_acquire(p, pa, (u64int)(uintptr)kaddr(pa)) != POWN_OK) {
+    print("proc_setup_p9page: borrow acquire failed pid=%lud pa=%#p\n", p->pid,
+          (void *)pa);
+  }
 
   print("proc_setup_p9page: pid=%lud seg=%p base=%#p pa=%#p kva=%p\n", p->pid,
         s, (void *)s->base, (void *)pa, p->p9page);

@@ -224,6 +224,13 @@ uint sizeS2M(Fcall *f) {
     n += BIT32SZ; /* millisecs */
     break;
 
+  case Tsysspawn:
+    n += stringsz(f->path);
+    n += BIT32SZ; /* argc */
+    for (i = 0; i < (int)f->argc; i++)
+      n += stringsz(f->argv[i]);
+    break;
+
   case Tsysbind:
     n += stringsz(f->name);
     n += stringsz(f->oldpath);
@@ -632,6 +639,14 @@ uint convS2M(Fcall *f, uchar *ap, uint nap) {
   case Tsysalarm:
     PBIT32(p, f->count);
     p += BIT32SZ;
+    break;
+
+  case Tsysspawn:
+    p = pstring(p, f->path);
+    PBIT32(p, f->argc);
+    p += BIT32SZ;
+    for (i = 0; i < (int)f->argc; i++)
+      p = pstring(p, f->argv[i]);
     break;
 
   case Tsysbind:

@@ -20,11 +20,9 @@ struct TPMFamilyContext {
 static int tpm_family_init_op(struct FamilyExchangePage *family) {
   struct TPMFamilyContext *ctx;
 
-  ctx = malloc(sizeof(struct TPMFamilyContext));
+  ctx = family_alloc_zero(sizeof(struct TPMFamilyContext));
   if (!ctx)
     return FAMILY_ENOMEM;
-
-  memset(ctx, 0, sizeof(struct TPMFamilyContext));
 
   /* Try to open TPM device */
   ctx->tpm_fd = -1;
@@ -44,7 +42,7 @@ static int tpm_family_shutdown_op(struct FamilyExchangePage *family) {
   struct TPMFamilyContext *ctx = family->family_specific_ctx;
   if (ctx) {
     // if(ctx->tpm_fd >= 0) close(ctx->tpm_fd);
-    free(ctx);
+    family_free(ctx);
   }
   return FAMILY_OK;
 }

@@ -11,6 +11,7 @@
 
 #include "family.h"
 #include "family_pci.h"
+#include <stdarg.h>
 #include <u.h>
 #define SET(x) ((x) = 0)
 #include <libc.h>
@@ -19,9 +20,16 @@
 void channel_manager_init(void);
 int family_tpm_init(void);
 void rump_integration_init(void);
+int hal_service_main(void);
 
 /* Stubs for missing liblux symbols */
 char *argv0;
+
+extern long sys_write(int fd, void *buf, long n);
+extern ulong strlen(const char *s);
+extern int sys_open(char *path, int mode);
+extern int sys_close(int fd);
+extern long sys_read(int fd, void *buf, long n);
 
 void sysfatal(char *fmt, ...) {
   // crash
@@ -32,11 +40,35 @@ void sysfatal(char *fmt, ...) {
 }
 
 int print(char *fmt, ...) {
-  // Minimal stub
-  return 0;
+  char buf[1024];
+  va_list args;
+  int n;
+
+  va_start(args, fmt);
+  n = vsnprint(buf, sizeof(buf), fmt, args);
+  va_end(args);
+
+  if (n > 0) {
+    sys_write(1, buf, n);
+  }
+  return n;
 }
 
-int fprint(int fd, char *fmt, ...) { return 0; }
+int fprint(int fd, char *fmt, ...) {
+  char buf[1024];
+  va_list args;
+  int n;
+
+  va_start(args, fmt);
+  n = vsnprint(buf, sizeof(buf), fmt, args);
+  va_end(args);
+
+  if (n > 0) {
+    sys_write(fd, buf, n);
+  }
+  return n;
+}
+
 
 int sleep(long ms) { return 0; }
 
@@ -52,13 +84,32 @@ int chartorune(Rune *rune, char *str) {
   return 1;
 }
 
-char *strncpy(char *dest, char *src, long n) {
-  long i;
-  for (i = 0; i < n && src[i] != '\0'; i++)
-    dest[i] = src[i];
-  for (; i < n; i++)
-    dest[i] = '\0';
-  return dest;
+static void hal_probe_path(char *path) {
+  int fd;
+
+  fd = sys_open(path, 0);
+  print("HAL: probe open %s -> %d\n", path, fd);
+  if (fd >= 0)
+    sys_close(fd);
+}
+
+static void hal_dump_caps(void) {
+  char buf[256];
+  int fd;
+  long n;
+
+  fd = sys_open("#Y/ctl", 0);
+  print("HAL: probe open #Y/ctl -> %d\n", fd);
+  if (fd < 0)
+    return;
+  n = sys_read(fd, buf, sizeof(buf) - 1);
+  if (n > 0) {
+    buf[n] = 0;
+    print("HAL: current caps:\n%s", buf);
+  } else {
+    print("HAL: failed to read #Y/ctl (%ld)\n", n);
+  }
+  sys_close(fd);
 }
 
 /* Global HAL Context */
@@ -75,36 +126,38 @@ void usage(void) {
 }
 
 int main(int argc, char *argv[]) {
+  // Add basic troubleshooting output
+  const char *startup_msg = "HAL: Starting Hardware Abstraction Layer...\n";
+  sys_write(1, (void*)startup_msg, strlen(startup_msg));
+
   ARGBEGIN {
   case 'd':
     hal_ctx.debug_level++;
+    const char *debug_msg = "HAL: Debug mode enabled\n";
+    sys_write(1, (void*)debug_msg, strlen(debug_msg));
     break;
   default:
     usage();
   }
   ARGEND;
 
-  print("HAL: Starting Hardware Abstraction Layer...\n");
-
+  sys_write(1, (void*)"HAL: Initializing core subsystems...\n", 38);
   /* Initialize core subsystems */
-  // resource_pool_init(); /* Handled by families */
   family_init_registry();
   channel_manager_init();
+  hal_dump_caps();
+  hal_probe_path(PCI_SHARP_ROOT);
+  hal_probe_path(PCI_BUS_PATH);
 
+  sys_write(1, (void*)"HAL: Initializing device families...\n", 37);
   /* Initialize families */
   pcifamily_init();
   family_tpm_init();
 
+  sys_write(1, (void*)"HAL: Connecting to Rump Server...\n", 34);
   /* Connect to Rump Server */
   rump_integration_init();
 
-  /* Main Event Loop */
-  hal_ctx.running = 1;
-  while (hal_ctx.running) {
-    // Handle 9P requests
-    // Handle Rump events
-    sleep(1000); // Temporary yield
-  }
-
-  return 0;
+  sys_write(1, (void*)"HAL: Entering service loop...\n", 29);
+  return hal_service_main();
 }

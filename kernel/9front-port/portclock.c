@@ -181,10 +181,13 @@ void hzclock(Ureg *ur) {
 
   if (up && up->state == Running) {
     if (userureg(ur)) {
-      /* user profiling clock */
+      /* user profiling clock - DISABLED to avoid interrupt fault on
+       * non-resident Tos page */
+      /*
       Tos *tos = (Tos *)(USTKTOP - sizeof(Tos));
       tos->clock += TK2MS(1);
       segclock(ur->pc);
+      */
     }
 
     hzsched(); /* in proc.c */

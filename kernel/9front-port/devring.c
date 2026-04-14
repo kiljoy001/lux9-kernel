@@ -182,11 +182,11 @@ static int p9_build_reply_batch(Proc *caller, BatchHeader *batch,
       break;
 
     Fcall t, r;
-    memset(&t, 0, sizeof(t));
+    t = (Fcall){0};
     if (convM2S((u8int *)batch + read_offset, msg_len, &t) == 0) {
       build_error_reply(&r, NOTAG, "bad 9p message");
     } else {
-      memset(&r, 0, sizeof(r));
+      r = (Fcall){0};
       if (p9_dispatch(caller, &t, &r) < 0 && r.type != Rerror)
         build_error_reply(&r, t.tag, "dispatch failed");
     }
@@ -358,7 +358,9 @@ static void ring_process_batch(struct ChannelState *cs) {
 Dev ringdevtab = {
     'R',      "ring",
 
-    devreset, ringinit,  devshutdown, ringattach, ringwalk,
-    ringstat, ringopen,  devcreate,   ringclose,  ringread,
-    devbread, ringwrite, devbwrite,   devremove,  devwstat,
+        devreset,      ringinit,       devshutdown, ringattach, ringwalk,
+
+        ringstat,      ringopen,       devcreate,   ringclose,  ringread,
+
+        ringwrite,     devbread,       devbwrite,   devremove,  devwstat,
 };

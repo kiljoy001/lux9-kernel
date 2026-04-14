@@ -1,9 +1,0 @@
-TEXT	floor(SB), $0
-	FMOVD	x+0(FP), F0
-	FRINTMD	F0, F0
-	RETURN
-
-TEXT	ceil(SB), $0
-	FMOVD	x+0(FP), F0
-	FRINTPD	F0, F0
-	RETURN

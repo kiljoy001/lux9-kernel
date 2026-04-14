@@ -61,8 +61,8 @@ static void wasm_arena_test_main(void) {
 
     /* Build Tsyscall(SYS_WASM_COMPILE) message */
     Fcall tx, rx;
-    memset(&tx, 0, sizeof(Fcall));
-    memset(&rx, 0, sizeof(Fcall));
+    tx = (Fcall){0};
+    rx = (Fcall){0};
 
     tx.type = Tsyscall;
     tx.tag = 1;
@@ -108,8 +108,8 @@ static void wasm_arena_test_main(void) {
         print("\n=== Test %d: %s ===\n", i+1, tests[i]);
 
         /* Build Tsyscall(SYS_WASM_EXECUTE) */
-        memset(&tx, 0, sizeof(Fcall));
-        memset(&rx, 0, sizeof(Fcall));
+        tx = (Fcall){0};
+        rx = (Fcall){0};
 
         tx.type = Tsyscall;
         tx.tag = 1;
@@ -139,8 +139,8 @@ static void wasm_arena_test_main(void) {
     print("\n=== Cleanup: arena_branch_drain ===\n");
     print("WASM_ARENA_TEST: Expected: tokens returned to process colorless_bank\n");
 
-    memset(&tx, 0, sizeof(Fcall));
-    memset(&rx, 0, sizeof(Fcall));
+    tx = (Fcall){0};
+    rx = (Fcall){0};
     tx.type = Tsyscall;
     tx.tag = 1;
     tx.scallnr = 162; /* SYS_WASM_DESTROY */

@@ -153,12 +153,13 @@ void register_verify_callback(VerifyCallback cb);
 
 /* Route operation with automatic depth classification */
 int route_with_depth(MsgOrd *dag, struct Proc *caller, Fcall *t, Fcall *r,
-                     char *path, RollbackRegistry *reg);
+                     char *path, const MsgOrdSpec *spec,
+                     RollbackRegistry *reg);
 
 /* Route with explicit depth override */
 int route_with_explicit_depth(MsgOrd *dag, struct Proc *caller, Fcall *t,
-                              Fcall *r, char *path, ConsensusDepth depth,
-                              RollbackRegistry *reg);
+                              Fcall *r, char *path, const MsgOrdSpec *spec,
+                              ConsensusDepth depth, RollbackRegistry *reg);
 
 /*
  * Global rollback registry
